@@ -4,15 +4,27 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
-import { GoalDrawer, type GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
+import { RoadmapCard } from "@/app/(app)/goals/components/RoadmapCard";
+import { RoadmapDrawer } from "@/app/(app)/goals/components/RoadmapDrawer";
+import {
+  GoalDrawer,
+  type GoalUpdateContext,
+} from "@/app/(app)/goals/components/GoalDrawer";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { projectWeight, taskWeight, type TaskLite, type ProjectLite, dueDateUrgencyBoost } from "@/lib/scheduler/weight";
+import {
+  projectWeight,
+  taskWeight,
+  type TaskLite,
+  type ProjectLite,
+  dueDateUrgencyBoost,
+} from "@/lib/scheduler/weight";
 import { getSkillsForUser } from "@/lib/queries/skills";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { persistGoalUpdate } from "@/lib/goals/persistGoalUpdate";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
+import { listRoadmaps, type Roadmap } from "@/lib/queries/roadmaps";
 
 type GoalRowWithRelations = GoalRow & {
   due_date?: string | null;
@@ -64,7 +76,9 @@ function mapPriority(
   }
 }
 
-function mapEnergy(energy: { name?: string | null } | string | null | undefined): Goal["energy"] {
+function mapEnergy(
+  energy: { name?: string | null } | string | null | undefined
+): Goal["energy"] {
   const normalized = extractLookupName(energy)?.toUpperCase();
   switch (normalized) {
     case "LOW":
@@ -139,10 +153,29 @@ const TASK_STAGE_MAP: Record<string, string> = {
   PERFECT: "Perfect",
 };
 
-const COMPLETED_PROJECT_STAGES = new Set(["RELEASE", "COMPLETE", "COMPLETED", "DONE"]);
+const COMPLETED_PROJECT_STAGES = new Set([
+  "RELEASE",
+  "COMPLETE",
+  "COMPLETED",
+  "DONE",
+]);
 
-const NORMALIZED_PRIORITY_VALUES = new Set(["NO", "LOW", "MEDIUM", "HIGH", "CRITICAL", "ULTRA-CRITICAL"]);
-const NORMALIZED_ENERGY_VALUES = new Set(["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"]);
+const NORMALIZED_PRIORITY_VALUES = new Set([
+  "NO",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "CRITICAL",
+  "ULTRA-CRITICAL",
+]);
+const NORMALIZED_ENERGY_VALUES = new Set([
+  "NO",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "ULTRA",
+  "EXTREME",
+]);
 const GOAL_GRID_CLASS =
   "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-2 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-3 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
 
@@ -158,7 +191,9 @@ const normalizeEnergyCode = (value?: string | null): string => {
   return NORMALIZED_ENERGY_VALUES.has(upper) ? upper : "NO";
 };
 
-const extractLookupName = (field: { name?: string | null } | string | null | undefined) => {
+const extractLookupName = (
+  field: { name?: string | null } | string | null | undefined
+) => {
   if (!field) return null;
   if (typeof field === "string") return field;
   if (typeof field === "object" && "name" in field) {
@@ -241,12 +276,15 @@ function computeGoalWeight(goal: Goal): number {
   return priorityWeight + projectWeightSum + ageInDays + boost + dueDateBoost;
 }
 
-async function fetchGoalsWithRelationsForMonument(monumentId: string, userId: string) {
+async function fetchGoalsWithRelationsForMonument(
+  monumentId: string,
+  userId: string
+) {
   const supabase = getSupabaseBrowser();
   if (!supabase) return [] as GoalRowWithRelations[];
 
   const baseSelect =
-    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
+    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date";
   const selectWithEnumColumns = `
     ${baseSelect},
     projects (
@@ -286,7 +324,10 @@ async function fetchGoalsWithRelationsForMonument(monumentId: string, userId: st
 
   const variants = [
     { description: "enum column project fetch", select: selectWithEnumColumns },
-    { description: "lookup relation project fetch", select: selectWithLookupRelations },
+    {
+      description: "lookup relation project fetch",
+      select: selectWithLookupRelations,
+    },
   ];
 
   for (const variant of variants) {
@@ -294,7 +335,10 @@ async function fetchGoalsWithRelationsForMonument(monumentId: string, userId: st
     if (!error) {
       return data ?? [];
     }
-    console.warn(`Monument goal fetch variant failed (${variant.description}):`, error);
+    console.warn(
+      `Monument goal fetch variant failed (${variant.description}):`,
+      error
+    );
   }
 
   console.warn("Falling back to basic monument goal fetch");
@@ -307,14 +351,28 @@ async function fetchGoalsWithRelationsForMonument(monumentId: string, userId: st
   return fallback.data ?? [];
 }
 
-export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: string; monumentEmoji?: string | null }) {
+export function MonumentGoalsList({
+  monumentId,
+  monumentEmoji,
+}: {
+  monumentId: string;
+  monumentEmoji?: string | null;
+}) {
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [roadmaps, setRoadmaps] = useState<Roadmap[]>([]);
+  const [roadmapGoals, setRoadmapGoals] = useState<Map<string, Goal[]>>(
+    new Map()
+  );
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [monuments, setMonuments] = useState<{ id: string; title: string; emoji: string | null }[]>([]);
+  const [monuments, setMonuments] = useState<
+    { id: string; title: string; emoji: string | null }[]
+  >([]);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [roadmapDrawer, setRoadmapDrawer] = useState(false);
+  const [selectedRoadmap, setSelectedRoadmap] = useState<Roadmap | null>(null);
 
   useEffect(() => {
     setOpenGoalId(null);
@@ -384,6 +442,179 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
           getMonumentsForUser(user.id).catch(() => []),
         ]);
 
+        // Prepare skill emoji resolver before mapping any goals (used in both roadmap + standalone mappings)
+        const skillIconLookup = new Map(
+          skills.map((skill) => [skill.id, skill.icon ?? null])
+        );
+        const resolveSkillEmoji = (skillId?: string | null) => {
+          if (!skillId) return null;
+          return skillIconLookup.get(skillId ?? "") ?? null;
+        };
+
+        // Check if any goals have a valid roadmap_id (non-null, non-undefined, non-empty string)
+        const roadmapIds = new Set<string>();
+        rows.forEach((g) => {
+          const roadmapId = g.roadmap_id;
+          if (roadmapId && roadmapId.trim() !== "") {
+            roadmapIds.add(roadmapId);
+          }
+        });
+
+        // If roadmaps exist, fetch them and their goals
+        let monumentRoadmaps: Roadmap[] = [];
+        const roadmapGoalsMap = new Map<string, Goal[]>();
+        if (roadmapIds.size > 0) {
+          try {
+            const allRoadmaps = await listRoadmaps(user.id);
+            monumentRoadmaps = allRoadmaps.filter((r) => roadmapIds.has(r.id));
+            setRoadmaps(monumentRoadmaps);
+
+            // Fetch goals for each roadmap
+            for (const roadmap of monumentRoadmaps) {
+              const roadmapGoalsData = rows.filter(
+                (g) => g.roadmap_id === roadmap.id
+              );
+              const roadmapGoalsList: Goal[] = roadmapGoalsData.map((g) => {
+                // Reuse the same transformation logic as below
+                const goalSkills = new Set<string>();
+                const projList: Project[] = (g.projects ?? []).map((p) => {
+                  const normalizedTasks = (p.tasks ?? []).map((task) => {
+                    const normalized = {
+                      id: task.id,
+                      name: task.name,
+                      stage: task.stage,
+                      skillId: task.skill_id ?? null,
+                      priorityCode: task.priority ?? null,
+                      isNew: false,
+                    };
+                    if (normalized.skillId) {
+                      goalSkills.add(normalized.skillId);
+                    }
+                    return normalized;
+                  });
+                  const projectSkillIds: string[] = [];
+                  (p.project_skills ?? []).forEach((record) => {
+                    if (record?.skill_id) {
+                      goalSkills.add(record.skill_id);
+                      projectSkillIds.push(record.skill_id);
+                    }
+                  });
+                  const total = normalizedTasks.length;
+                  const done = normalizedTasks.filter(
+                    (t) => t.stage === "PERFECT"
+                  ).length;
+                  let progress = total ? Math.round((done / total) * 100) : 0;
+                  if (isProjectStageComplete(p.stage)) {
+                    progress = 100;
+                  }
+                  const status = projectStageToStatus(p.stage ?? "BUILD");
+                  const schedulerTasks: TaskLite[] =
+                    normalizedTasks.map(toSchedulerTask);
+                  const relatedTaskWeightSum = schedulerTasks.reduce(
+                    (sum, t) => sum + taskWeight(t),
+                    0
+                  );
+                  const projectWeightValue = projectWeight(
+                    toSchedulerProject({
+                      id: p.id,
+                      priorityCode: p.priority ?? undefined,
+                      stage: p.stage ?? undefined,
+                      dueDate: p.due_date ?? null,
+                    }),
+                    relatedTaskWeightSum
+                  );
+                  const normalizedTaskSkillIds = normalizedTasks
+                    .map((task) => task.skillId)
+                    .filter((value): value is string => Boolean(value));
+                  const projectEmoji =
+                    projectSkillIds
+                      .map(resolveSkillEmoji)
+                      .find((emoji): emoji is string => Boolean(emoji)) ??
+                    normalizedTaskSkillIds
+                      .map(resolveSkillEmoji)
+                      .find((emoji): emoji is string => Boolean(emoji)) ??
+                    null;
+                  const rawEnergy = extractLookupName(p.energy);
+                  const rawPriority = extractLookupName(p.priority);
+                  const energyCode = normalizeEnergyCode(rawEnergy);
+                  const priorityCode = normalizePriorityCode(rawPriority);
+                  return {
+                    id: p.id,
+                    name: p.name,
+                    status,
+                    progress,
+                    energy: mapEnergy(energyCode),
+                    energyCode,
+                    dueDate: p.due_date ?? null,
+                    emoji: projectEmoji,
+                    stage: p.stage ?? "BUILD",
+                    priorityCode,
+                    durationMinutes:
+                      typeof p.duration_min === "number" &&
+                      Number.isFinite(p.duration_min)
+                        ? p.duration_min
+                        : null,
+                    skillIds: projectSkillIds,
+                    weight: projectWeightValue,
+                    isNew: false,
+                    tasks: normalizedTasks,
+                  };
+                });
+                const status = g.status
+                  ? goalStatusToStatus(g.status)
+                  : undefined;
+                let derivedProgress =
+                  projList.length > 0
+                    ? Math.round(
+                        projList.reduce((sum, p) => sum + p.progress, 0) /
+                          projList.length
+                      )
+                    : 0;
+                const normalizedStatus =
+                  status ?? (derivedProgress >= 100 ? "Completed" : "Active");
+                if (normalizedStatus === "Completed") {
+                  derivedProgress = 100;
+                }
+                const goalPrioritySource =
+                  g.priority_code ?? extractLookupName(g.priority);
+                const normalizedGoalPriorityCode = goalPrioritySource
+                  ? goalPrioritySource.toUpperCase()
+                  : null;
+                const goalEnergySource =
+                  g.energy_code ?? extractLookupName(g.energy);
+                const normalizedGoalEnergyCode = goalEnergySource
+                  ? goalEnergySource.toUpperCase()
+                  : null;
+                const base: Goal = {
+                  id: g.id,
+                  title: g.name,
+                  priority: mapPriority(goalPrioritySource),
+                  energy: mapEnergy(goalEnergySource),
+                  progress: derivedProgress,
+                  status: normalizedStatus,
+                  active: g.active ?? normalizedStatus === "Active",
+                  createdAt: g.created_at,
+                  updatedAt: g.created_at,
+                  dueDate: g.due_date ?? undefined,
+                  projects: projList,
+                  monumentId: g.monument_id ?? null,
+                  roadmapId: g.roadmap_id ?? null,
+                  priorityCode: normalizedGoalPriorityCode,
+                  energyCode: normalizedGoalEnergyCode,
+                  weightBoost: g.weight_boost ?? 0,
+                  skills: Array.from(goalSkills),
+                  why: g.why || undefined,
+                };
+                return decorate(base);
+              });
+              roadmapGoalsMap.set(roadmap.id, roadmapGoalsList);
+            }
+            setRoadmapGoals(roadmapGoalsMap);
+          } catch (err) {
+            console.error("Error fetching roadmaps for monument:", err);
+          }
+        }
+
         setMonuments(
           userMonuments.map((monument) => ({
             id: monument.id,
@@ -392,13 +623,18 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
           }))
         );
 
-        const skillIconLookup = new Map(skills.map(skill => [skill.id, skill.icon ?? null]));
-        const resolveSkillEmoji = (skillId?: string | null) => {
-          if (!skillId) return null;
-          return skillIconLookup.get(skillId ?? "") ?? null;
-        };
+        // Filter out goals with valid roadmap_id if roadmaps exist
+        // Only hide goals with a valid roadmap_id (non-null, non-undefined, non-empty string)
+        const goalsToMap =
+          monumentRoadmaps.length > 0
+            ? rows.filter((g) => {
+                const roadmapId = g.roadmap_id;
+                // Keep goals where roadmap_id is null, undefined, or empty string
+                return !roadmapId || roadmapId.trim() === "";
+              })
+            : rows;
 
-        const mapped: Goal[] = rows.map((g) => {
+        const mapped: Goal[] = goalsToMap.map((g) => {
           const goalSkills = new Set<string>();
           const projList: Project[] = (g.projects ?? []).map((p) => {
             const normalizedTasks = (p.tasks ?? []).map((task) => {
@@ -423,14 +659,20 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
               }
             });
             const total = normalizedTasks.length;
-            const done = normalizedTasks.filter((t) => t.stage === "PERFECT").length;
+            const done = normalizedTasks.filter(
+              (t) => t.stage === "PERFECT"
+            ).length;
             let progress = total ? Math.round((done / total) * 100) : 0;
             if (isProjectStageComplete(p.stage)) {
               progress = 100;
             }
             const status = projectStageToStatus(p.stage ?? "BUILD");
-            const schedulerTasks: TaskLite[] = normalizedTasks.map(toSchedulerTask);
-            const relatedTaskWeightSum = schedulerTasks.reduce((sum, t) => sum + taskWeight(t), 0);
+            const schedulerTasks: TaskLite[] =
+              normalizedTasks.map(toSchedulerTask);
+            const relatedTaskWeightSum = schedulerTasks.reduce(
+              (sum, t) => sum + taskWeight(t),
+              0
+            );
             const projectWeightValue = projectWeight(
               toSchedulerProject({
                 id: p.id,
@@ -467,7 +709,8 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
               stage: p.stage ?? "BUILD",
               priorityCode,
               durationMinutes:
-                typeof p.duration_min === "number" && Number.isFinite(p.duration_min)
+                typeof p.duration_min === "number" &&
+                Number.isFinite(p.duration_min)
                   ? p.duration_min
                   : null,
               skillIds: projectSkillIds,
@@ -481,10 +724,12 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
           let derivedProgress =
             projList.length > 0
               ? Math.round(
-                  projList.reduce((sum, p) => sum + p.progress, 0) / projList.length
+                  projList.reduce((sum, p) => sum + p.progress, 0) /
+                    projList.length
                 )
               : 0;
-          const normalizedStatus = status ?? (derivedProgress >= 100 ? "Completed" : "Active");
+          const normalizedStatus =
+            status ?? (derivedProgress >= 100 ? "Completed" : "Active");
           if (normalizedStatus === "Completed") {
             derivedProgress = 100;
           }
@@ -494,8 +739,7 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
           const normalizedGoalPriorityCode = goalPrioritySource
             ? goalPrioritySource.toUpperCase()
             : null;
-          const goalEnergySource =
-            g.energy_code ?? extractLookupName(g.energy);
+          const goalEnergySource = g.energy_code ?? extractLookupName(g.energy);
           const normalizedGoalEnergyCode = goalEnergySource
             ? goalEnergySource.toUpperCase()
             : null;
@@ -528,7 +772,8 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
           if (w !== 0) return w;
           const ad = Date.parse(a.updatedAt);
           const bd = Date.parse(b.updatedAt);
-          if (Number.isFinite(ad) && Number.isFinite(bd) && ad !== bd) return bd - ad;
+          if (Number.isFinite(ad) && Number.isFinite(bd) && ad !== bd)
+            return bd - ad;
           return a.title.localeCompare(b.title);
         });
 
@@ -566,7 +811,9 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
           if (goal.id !== goalId) return goal;
           return {
             ...goal,
-            projects: goal.projects.filter((project) => project.id !== projectId),
+            projects: goal.projects.filter(
+              (project) => project.id !== projectId
+            ),
           };
         })
       );
@@ -574,30 +821,38 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
     []
   );
 
-  const handleGoalOpenChange = useCallback((goalId: string, isOpen: boolean) => {
-    setOpenGoalId((current) => {
-      if (isOpen) {
-        return goalId;
-      }
-      if (current === goalId) {
-        return null;
-      }
-      return current;
-    });
-  }, []);
+  const handleGoalOpenChange = useCallback(
+    (goalId: string, isOpen: boolean) => {
+      setOpenGoalId((current) => {
+        if (isOpen) {
+          return goalId;
+        }
+        if (current === goalId) {
+          return null;
+        }
+        return current;
+      });
+    },
+    []
+  );
 
-  const handleGoalEdit = useCallback((goal: Goal) => {
-    setEditingGoal(null);
-    void fetchGoalForEditing(goal).then((fresh) => {
-      setEditingGoal(fresh);
-      setDrawerOpen(true);
-    });
-  }, [fetchGoalForEditing]);
+  const handleGoalEdit = useCallback(
+    (goal: Goal) => {
+      setEditingGoal(null);
+      void fetchGoalForEditing(goal).then((fresh) => {
+        setEditingGoal(fresh);
+        setDrawerOpen(true);
+      });
+    },
+    [fetchGoalForEditing]
+  );
 
   const handleGoalUpdated = useCallback(
     async (updatedGoal: Goal, context: GoalUpdateContext) => {
       setGoals((prev) =>
-        prev.map((goal) => (goal.id === updatedGoal.id ? decorate(updatedGoal) : goal))
+        prev.map((goal) =>
+          goal.id === updatedGoal.id ? decorate(updatedGoal) : goal
+        )
       );
 
       const supabase = getSupabaseBrowser();
@@ -660,12 +915,23 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
       return (
         <div className={GOAL_GRID_CLASS}>
           {Array.from({ length: 9 }).map((_, i) => (
-            <Skeleton key={i} className="h-[100px] w-full rounded-2xl bg-white/10" />
+            <Skeleton
+              key={i}
+              className="h-[100px] w-full rounded-2xl bg-white/10"
+            />
           ))}
         </div>
       );
     }
-    if (goals.length === 0) {
+
+    // Compute standalone goals by excluding any that belong to a roadmap
+    const roadmapGoalIds = new Set<string>(
+      roadmaps.flatMap((r) => (roadmapGoals.get(r.id) ?? []).map((g) => g.id))
+    );
+    const standaloneGoals = goals.filter((g) => !roadmapGoalIds.has(g.id));
+
+    // If there are no roadmaps and no standalone goals, show empty state
+    if (roadmaps.length === 0 && standaloneGoals.length === 0) {
       return (
         <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
           No goals linked to this monument yet.
@@ -673,10 +939,31 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
       );
     }
 
+    // Render both roadmap cards first and then standalone goals in the same grid
     return (
       <div className={GOAL_GRID_CLASS}>
-        {goals.map((goal) => (
-          <div key={goal.id} className="goal-card-wrapper relative z-0 w-full isolate min-w-0">
+        {roadmaps.map((roadmap) => {
+          const roadmapGoalsList = roadmapGoals.get(roadmap.id) ?? [];
+          return (
+            <div
+              key={roadmap.id}
+              className="goal-card-wrapper relative z-0 w-full isolate min-w-0"
+            >
+              <RoadmapCard
+                roadmap={roadmap}
+                goalCount={roadmapGoalsList.length}
+                goals={roadmapGoalsList}
+                variant="compact"
+              />
+            </div>
+          );
+        })}
+
+        {standaloneGoals.map((goal) => (
+          <div
+            key={goal.id}
+            className="goal-card-wrapper relative z-0 w-full isolate min-w-0"
+          >
             <GoalCard
               goal={goal}
               showWeight={false}
@@ -700,6 +987,8 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
   }, [
     loading,
     goals,
+    roadmaps,
+    roadmapGoals,
     openGoalId,
     handleGoalOpenChange,
     handleProjectUpdated,
@@ -711,8 +1000,14 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
       {content}
       <style jsx global>{`
         /* Prevent lift/overlap across browsers */
-        .monument-goals-list .group { transform: none !important; will-change: auto !important; z-index: 0 !important; }
-        .monument-goals-list .group:hover { transform: none !important; }
+        .monument-goals-list .group {
+          transform: none !important;
+          will-change: auto !important;
+          z-index: 0 !important;
+        }
+        .monument-goals-list .group:hover {
+          transform: none !important;
+        }
         @media (max-width: 520px) {
           .monument-goals-list .goal-grid {
             grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -720,22 +1015,25 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
             padding-left: 0;
             padding-right: 0;
           }
-          .monument-goals-list [data-variant='compact'] {
+          .monument-goals-list [data-variant="compact"] {
             padding: 0.55rem 0.4rem;
             border-radius: 1rem;
             min-height: 90px;
             aspect-ratio: auto;
           }
-          .monument-goals-list [data-variant='compact'] button {
+          .monument-goals-list [data-variant="compact"] button {
             gap: 0.45rem;
           }
-          .monument-goals-list [data-variant='compact'] button > div:first-of-type {
+          .monument-goals-list
+            [data-variant="compact"]
+            button
+            > div:first-of-type {
             height: 1.85rem;
             width: 1.85rem;
             border-radius: 0.85rem;
             font-size: 0.7rem;
           }
-          .monument-goals-list [data-variant='compact'] h3 {
+          .monument-goals-list [data-variant="compact"] h3 {
             font-size: 0.45rem;
             line-height: 1.1;
             min-height: 0;
@@ -749,11 +1047,17 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
         }
         /* Avoid Safari/iOS clipping issues on small screens */
         @media (min-width: 640px) {
-          .monument-goals-list .goal-card-wrapper { isolation: isolate; content-visibility: auto; contain-intrinsic-size: 300px 1px; }
+          .monument-goals-list .goal-card-wrapper {
+            isolation: isolate;
+            content-visibility: auto;
+            contain-intrinsic-size: 300px 1px;
+          }
         }
       `}</style>
       <GoalDrawer
-        key={editingGoal?.id ?? (drawerOpen ? "goal-editor" : "goal-editor-closed")}
+        key={
+          editingGoal?.id ?? (drawerOpen ? "goal-editor" : "goal-editor-closed")
+        }
         open={drawerOpen}
         onClose={() => {
           setDrawerOpen(false);
@@ -764,6 +1068,30 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
         monuments={monuments}
         onUpdate={handleGoalUpdated}
         onDelete={handleGoalDeleted}
+      />
+      <RoadmapDrawer
+        open={roadmapDrawer}
+        onClose={() => {
+          setRoadmapDrawer(false);
+          setSelectedRoadmap(null);
+        }}
+        roadmap={selectedRoadmap}
+        goals={
+          selectedRoadmap ? roadmapGoals.get(selectedRoadmap.id) ?? [] : []
+        }
+        onGoalEdit={(goal) => {
+          handleGoalEdit(goal);
+          setRoadmapDrawer(false);
+        }}
+        onGoalToggleActive={(goal) => {
+          // Handle toggle active if needed
+        }}
+        onGoalDelete={(goal) => {
+          handleGoalDeleted(goal);
+          setRoadmapDrawer(false);
+        }}
+        onProjectUpdated={handleProjectUpdated}
+        onProjectDeleted={handleProjectDeleted}
       />
     </div>
   );
