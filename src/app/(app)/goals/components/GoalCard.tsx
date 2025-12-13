@@ -16,12 +16,15 @@ import { createPortal } from "react-dom";
 import type { Goal, Project } from "../types";
 import type { ProjectCardMorphOrigin } from "./ProjectRow";
 // Lazy-load dropdown contents to reduce initial bundle and re-render cost
-const ProjectsDropdown = dynamic(() => import("./ProjectsDropdown").then(m => m.ProjectsDropdown), {
-  ssr: false,
-  loading: () => (
-    <div className="h-24 w-full animate-pulse rounded-2xl border border-white/10 bg-white/[0.03]" />
-  ),
-});
+const ProjectsDropdown = dynamic(
+  () => import("./ProjectsDropdown").then((m) => m.ProjectsDropdown),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-24 w-full animate-pulse rounded-2xl border border-white/10 bg-white/[0.03]" />
+    ),
+  }
+);
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -31,10 +34,7 @@ import {
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { ProjectQuickEditDialog } from "./ProjectQuickEditDialog";
 
-const energyAccent: Record<
-  Goal["energy"],
-  { dot: string; bar: string }
-> = {
+const energyAccent: Record<Goal["energy"], { dot: string; bar: string }> = {
   No: {
     dot: "bg-slate-200",
     bar: "linear-gradient(90deg, rgba(148,163,184,0.7), rgba(71,85,105,0.3))",
@@ -71,6 +71,7 @@ interface GoalCardProps {
   showCreatedAt?: boolean;
   showEmojiPrefix?: boolean;
   variant?: "default" | "compact";
+  showEnergyInCompact?: boolean;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   onProjectDeleted?: (projectId: string) => void;
   open?: boolean;
@@ -99,6 +100,7 @@ function GoalCardImpl({
   showCreatedAt = true,
   showEmojiPrefix = false,
   variant = "default",
+  showEnergyInCompact = false,
   onProjectUpdated,
   onProjectDeleted,
   open: openProp,
@@ -112,7 +114,8 @@ function GoalCardImpl({
   const open = isControlled ? (openProp as boolean) : internalOpen;
   const [loading] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [editingProjectOrigin, setEditingProjectOrigin] = useState<ProjectCardMorphOrigin | null>(null);
+  const [editingProjectOrigin, setEditingProjectOrigin] =
+    useState<ProjectCardMorphOrigin | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [overlayRect, setOverlayRect] = useState<DOMRect | null>(null);
 
@@ -154,7 +157,9 @@ function GoalCardImpl({
   const toggle = useCallback(() => {
     setOpen(!open);
   }, [open, setOpen]);
-  const projectLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const projectLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const projectLongPressTriggeredRef = useRef(false);
   const [isHolding, setIsHolding] = useState(false);
   const cancelProjectLongPress = useCallback(() => {
@@ -198,10 +203,13 @@ function GoalCardImpl({
     setIsHolding(false);
   }, [cancelProjectLongPress]);
 
-  const handleProjectLongPress = useCallback((project: Project, origin: ProjectCardMorphOrigin | null) => {
-    setEditingProjectOrigin(origin ?? null);
-    setEditingProject(project);
-  }, []);
+  const handleProjectLongPress = useCallback(
+    (project: Project, origin: ProjectCardMorphOrigin | null) => {
+      setEditingProjectOrigin(origin ?? null);
+      setEditingProject(project);
+    },
+    []
+  );
 
   const closeProjectEditor = useCallback(() => {
     setEditingProject(null);
@@ -232,73 +240,88 @@ function GoalCardImpl({
     const progressPct = Math.max(0, Math.min(100, Number(goal.progress ?? 0)));
     const lightness = Math.round(88 - progressPct * 0.78); // 0% -> 88% (light gray), 100% -> ~10% (near black)
     const containerBase =
-      "group relative h-full rounded-2xl ring-1 ring-white/10 p-3 text-white min-h-[96px]";
+      "group relative h-full rounded-2xl ring-1 ring-white/10 p-4 text-white";
     const completedBg =
       "bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] text-white shadow-[0_22px_42px_rgba(4,47,39,0.55),inset_0_1px_0_rgba(255,255,255,0.06)] ring-emerald-300/60";
     const inProgressBg =
       "bg-gradient-to-b from-white/[0.03] to-white/[0.015] shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)]";
-    const containerClass = `${containerBase} ${isCompleted ? completedBg : inProgressBg} aspect-[5/6]`;
-    return (
-      <>
-      <div
-        ref={cardRef}
-        className={containerClass}
-        data-variant="compact"
-        data-build-tag="gc-test-01"
-      >
-        {/* Subtle top sheen + edge glow */}
-        <div className="pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_70%)] bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
-        <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
-          <button
-            type="button"
-            onClick={toggle}
-            aria-expanded={open}
-            aria-controls={`goal-${goal.id}`}
-            onPointerDown={startProjectLongPress}
-            onPointerUp={handleProjectPointerUp}
-            onPointerCancel={handleProjectPointerCancel}
-            onPointerLeave={handleProjectPointerCancel}
-            className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center"
-          >
-            <div
-              className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] ${
-                isCompleted ? "bg-black text-white" : "bg-white/5 text-white"
-              }`}
-            >
-              {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
-            </div>
-            <h3
-              id={`goal-${goal.id}-label`}
-              className="max-w-full px-1 text-center text-[8px] leading-snug font-semibold line-clamp-2 break-words min-h-[2.4em]"
-              title={goal.title}
-              style={{ hyphens: "auto" }}
-            >
-              {goal.title}
-            </h3>
-            <div className="mt-1 h-[0.65rem] w-full overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">
-              <div
-                className="h-full rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
-                style={progressBarStyle}
-              />
-            </div>
-          </button>
+    const containerClass = `${containerBase} ${
+      isCompleted ? completedBg : inProgressBg
+    } ${showEnergyInCompact ? "min-h-[60px]" : "min-h-[96px] aspect-[5/6]"}`;
+    const displayEmoji =
+      typeof (goal.monumentEmoji ?? goal.emoji) === "string" &&
+      (goal.monumentEmoji ?? goal.emoji)?.trim().length
+        ? (goal.monumentEmoji ?? goal.emoji)?.trim()
+        : goal.title.slice(0, 2).toUpperCase();
+    const flameLevel = (goal.energyCode ? goal.energyCode : goal.energy ?? "No")
+      .toString()
+      .toUpperCase() as FlameLevel;
 
-          {open && (
-          <CompactProjectsOverlay
-            goal={goal}
-            loading={loading}
-            onClose={toggle}
-          onProjectLongPress={handleProjectLongPress}
-          onProjectUpdated={onProjectUpdated}
-          anchorRect={overlayRect}
-          projectDropdownMode={projectDropdownMode}
-          goalId={goal.id}
-          onEdit={onEdit}
-          onTaskToggleCompletion={onTaskToggleCompletion}
-        />
-          )}
-        </div>
-      </div>
+    if (showEnergyInCompact) {
+      return (
+        <>
+          <div
+            ref={cardRef}
+            className={containerClass}
+            data-variant="compact"
+            data-build-tag="gc-test-01"
+          >
+            {/* Subtle top sheen + edge glow */}
+            <div className="pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_70%)] bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
+            <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
+              <button
+                type="button"
+                onClick={toggle}
+                aria-expanded={open}
+                aria-controls={`goal-${goal.id}`}
+                onPointerDown={startProjectLongPress}
+                onPointerUp={handleProjectPointerUp}
+                onPointerCancel={handleProjectPointerCancel}
+                onPointerLeave={handleProjectPointerCancel}
+                className="flex w-full items-center justify-between text-left text-sm select-none"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
+                    {displayEmoji}
+                  </div>
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="font-semibold leading-tight truncate text-sm">
+                      {goal.title}
+                    </span>
+                    <div className="flex items-center gap-1.5 text-[11px] text-white/60">
+                      <FlameEmber level={flameLevel} size="xs" />
+                      <span className="uppercase tracking-[0.2em]">
+                        {goal.energy}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <p className="text-[11px] text-white/70">{goal.progress}%</p>
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform text-white/60 ${
+                      open ? "rotate-180" : ""
+                    }`}
+                  />
+                </div>
+              </button>
+
+              {open && (
+                <CompactProjectsOverlay
+                  goal={goal}
+                  loading={loading}
+                  onClose={toggle}
+                  onProjectLongPress={handleProjectLongPress}
+                  onProjectUpdated={onProjectUpdated}
+                  anchorRect={overlayRect}
+                  projectDropdownMode={projectDropdownMode}
+                  goalId={goal.id}
+                  onEdit={onEdit}
+                  onTaskToggleCompletion={onTaskToggleCompletion}
+                />
+              )}
+            </div>
+          </div>
           <ProjectQuickEditDialog
             project={editingProject}
             origin={editingProjectOrigin}
@@ -308,6 +331,80 @@ function GoalCardImpl({
             }
             onDeleted={(projectId) => onProjectDeleted?.(projectId)}
           />
+        </>
+      );
+    }
+
+    return (
+      <>
+        <div
+          ref={cardRef}
+          className={containerClass}
+          data-variant="compact"
+          data-build-tag="gc-test-01"
+        >
+          {/* Subtle top sheen + edge glow */}
+          <div className="pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_70%)] bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
+          <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
+            <button
+              type="button"
+              onClick={toggle}
+              aria-expanded={open}
+              aria-controls={`goal-${goal.id}`}
+              onPointerDown={startProjectLongPress}
+              onPointerUp={handleProjectPointerUp}
+              onPointerCancel={handleProjectPointerCancel}
+              onPointerLeave={handleProjectPointerCancel}
+              className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center"
+            >
+              <div
+                className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] ${
+                  isCompleted ? "bg-black text-white" : "bg-white/5 text-white"
+                }`}
+              >
+                {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
+              </div>
+              <h3
+                id={`goal-${goal.id}-label`}
+                className="max-w-full px-1 text-center text-[8px] leading-snug font-semibold line-clamp-2 break-words min-h-[2.4em]"
+                title={goal.title}
+                style={{ hyphens: "auto" }}
+              >
+                {goal.title}
+              </h3>
+              <div className="mt-1 h-[0.65rem] w-full overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">
+                <div
+                  className="h-full rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
+                  style={progressBarStyle}
+                />
+              </div>
+            </button>
+
+            {open && (
+              <CompactProjectsOverlay
+                goal={goal}
+                loading={loading}
+                onClose={toggle}
+                onProjectLongPress={handleProjectLongPress}
+                onProjectUpdated={onProjectUpdated}
+                anchorRect={overlayRect}
+                projectDropdownMode={projectDropdownMode}
+                goalId={goal.id}
+                onEdit={onEdit}
+                onTaskToggleCompletion={onTaskToggleCompletion}
+              />
+            )}
+          </div>
+        </div>
+        <ProjectQuickEditDialog
+          project={editingProject}
+          origin={editingProjectOrigin}
+          onClose={closeProjectEditor}
+          onUpdated={(projectId, updates) =>
+            onProjectUpdated?.(projectId, updates)
+          }
+          onDeleted={(projectId) => onProjectDeleted?.(projectId)}
+        />
       </>
     );
   }
@@ -317,116 +414,134 @@ function GoalCardImpl({
       <div className="group relative h-full rounded-[30px] border border-white/10 bg-white/[0.03] p-4 text-white transition hover:-translate-y-1 hover:border-white/30">
         <div className="relative flex h-full flex-col gap-3">
           <div className="flex items-start justify-between gap-3">
-          <button
-            onClick={toggle}
-            aria-expanded={open}
-            aria-controls={`goal-${goal.id}`}
-            onPointerDown={startProjectLongPress}
-            onPointerUp={handleProjectPointerUp}
-            onPointerCancel={handleProjectPointerCancel}
-            onPointerLeave={handleProjectPointerCancel}
-            className="relative flex flex-1 flex-col gap-2 text-left overflow-hidden"
-          >
-            <div
-              className="pointer-events-none absolute inset-0 transition-[height] duration-500"
-              style={{
-                height: isCompleted || isHolding ? "100%" : "0%",
-                backgroundImage: completionGradient,
-                transformOrigin: "bottom",
-                zIndex: 0,
-              }}
-            />
-            <div className="relative z-10 flex items-start gap-3">
+            <button
+              onClick={toggle}
+              aria-expanded={open}
+              aria-controls={`goal-${goal.id}`}
+              onPointerDown={startProjectLongPress}
+              onPointerUp={handleProjectPointerUp}
+              onPointerCancel={handleProjectPointerCancel}
+              onPointerLeave={handleProjectPointerCancel}
+              className="relative flex flex-1 flex-col gap-2 text-left overflow-hidden"
+            >
               <div
-                className={`flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 text-xl font-semibold ${
-                  isCompleted ? "bg-black text-white" : "bg-white/5 text-white"
-                }`}
-              >
-                {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
+                className="pointer-events-none absolute inset-0 transition-[height] duration-500"
+                style={{
+                  height: isCompleted || isHolding ? "100%" : "0%",
+                  backgroundImage: completionGradient,
+                  transformOrigin: "bottom",
+                  zIndex: 0,
+                }}
+              />
+              <div className="relative z-10 flex items-start gap-3">
+                <div
+                  className={`flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 text-xl font-semibold ${
+                    isCompleted
+                      ? "bg-black text-white"
+                      : "bg-white/5 text-white"
+                  }`}
+                >
+                  {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
+                </div>
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em]">
+                    <span className="flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-white/80">
+                      <FlameEmber
+                        level={goal.energy.toUpperCase() as FlameLevel}
+                        size="xs"
+                      />
+                      <span className="text-[10px] uppercase tracking-[0.2em]">
+                        {goal.energy}
+                      </span>
+                    </span>
+                    {showWeight ? (
+                      <span className="rounded-full border border-white/20 px-2 py-0.5 text-white/70">
+                        wt {goal.weight ?? 0}
+                      </span>
+                    ) : null}
+                  </div>
+                  <h3
+                    id={`goal-${goal.id}-label`}
+                    className="mt-2 text-xl font-semibold"
+                  >
+                    {showEmojiPrefix && (goal.monumentEmoji ?? goal.emoji) ? (
+                      <span className="mr-2 inline" aria-hidden>
+                        {goal.monumentEmoji ?? goal.emoji}
+                      </span>
+                    ) : null}
+                    {goal.title}
+                  </h3>
+                  {goal.why && (
+                    <p className="mt-1 text-sm text-white/65 line-clamp-2">
+                      {goal.why}
+                    </p>
+                  )}
+                </div>
+                <ChevronDown
+                  className={`mt-1 h-5 w-5 text-white/60 transition-transform ${
+                    open ? "rotate-180" : ""
+                  }`}
+                />
               </div>
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em]">
-                  <span className="flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-white/80">
-                    <FlameEmber
-                      level={goal.energy.toUpperCase() as FlameLevel}
-                      size="xs"
-                    />
-                    <span className="text-[10px] uppercase tracking-[0.2em]">
-                      {goal.energy}
+              <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
+                <div className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${energy.dot}`}
+                    aria-hidden="true"
+                  />
+                  <span>{goal.projects.length} projects</span>
+                </div>
+                {goal.dueDate && (
+                  <span className="rounded-full border border-white/10 px-3 py-1">
+                    Due {new Date(goal.dueDate).toLocaleDateString()}
+                  </span>
+                )}
+                {etaDisplay && (
+                  <span className="relative flex items-center gap-2 rounded-full border border-fuchsia-400/40 bg-gradient-to-r from-fuchsia-500/15 via-rose-500/10 to-amber-500/15 px-3 py-1 text-white shadow-[0_6px_18px_rgba(236,72,153,0.35)]">
+                    <span className="flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                      <Sparkles
+                        className="h-3 w-3 text-amber-100"
+                        aria-hidden="true"
+                      />
+                      ETA
+                    </span>
+                    <span className="text-sm font-semibold tracking-tight text-white">
+                      {etaDisplay}
                     </span>
                   </span>
-                  {showWeight ? (
-                    <span className="rounded-full border border-white/20 px-2 py-0.5 text-white/70">
-                      wt {goal.weight ?? 0}
-                    </span>
-                  ) : null}
-                </div>
-                <h3 id={`goal-${goal.id}-label`} className="mt-2 text-xl font-semibold">
-                  {showEmojiPrefix && (goal.monumentEmoji ?? goal.emoji) ? (
-                    <span className="mr-2 inline" aria-hidden>
-                      {goal.monumentEmoji ?? goal.emoji}
-                    </span>
-                  ) : null}
-                  {goal.title}
-                </h3>
-                {goal.why && (
-                  <p className="mt-1 text-sm text-white/65 line-clamp-2">{goal.why}</p>
+                )}
+                {createdAt && showCreatedAt && (
+                  <span className="rounded-full border border-white/10 px-3 py-1 text-white/60">
+                    Created {createdAt}
+                  </span>
                 )}
               </div>
-              <ChevronDown
-                className={`mt-1 h-5 w-5 text-white/60 transition-transform ${open ? "rotate-180" : ""}`}
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
-              <div className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
-                <span className={`h-1.5 w-1.5 rounded-full ${energy.dot}`} aria-hidden="true" />
-                <span>{goal.projects.length} projects</span>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-white/50">
+                  <span>Progress</span>
+                  <span>{goal.progress}%</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full"
+                    style={progressBarStyle}
+                  />
+                </div>
               </div>
-              {goal.dueDate && (
-                <span className="rounded-full border border-white/10 px-3 py-1">
-                  Due {new Date(goal.dueDate).toLocaleDateString()}
-                </span>
+              {onBoost && (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onBoost();
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-gradient-to-r from-red-600 to-rose-500 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white shadow-[0_8px_20px_-10px_rgba(239,68,68,0.6)] transition hover:scale-[1.02]"
+                  >
+                    Boost +250
+                  </button>
+                </div>
               )}
-              {etaDisplay && (
-                <span className="relative flex items-center gap-2 rounded-full border border-fuchsia-400/40 bg-gradient-to-r from-fuchsia-500/15 via-rose-500/10 to-amber-500/15 px-3 py-1 text-white shadow-[0_6px_18px_rgba(236,72,153,0.35)]">
-                  <span className="flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.3em] text-white/70">
-                    <Sparkles className="h-3 w-3 text-amber-100" aria-hidden="true" />
-                    ETA
-                  </span>
-                  <span className="text-sm font-semibold tracking-tight text-white">
-                    {etaDisplay}
-                  </span>
-                </span>
-              )}
-              {createdAt && showCreatedAt && (
-                <span className="rounded-full border border-white/10 px-3 py-1 text-white/60">
-                  Created {createdAt}
-                </span>
-              )}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-white/50">
-                <span>Progress</span>
-                <span>{goal.progress}%</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full rounded-full" style={progressBarStyle} />
-              </div>
-            </div>
-            {onBoost && (
-              <div className="pt-1">
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onBoost();
-                  }}
-                  className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-gradient-to-r from-red-600 to-rose-500 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white shadow-[0_8px_20px_-10px_rgba(239,68,68,0.6)] transition hover:scale-[1.02]"
-                >
-                  Boost +250
-                </button>
-              </div>
-            )}
             </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -438,7 +553,9 @@ function GoalCardImpl({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => onEdit?.()}>Edit</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onEdit?.()}>
+                  Edit
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => onToggleActive?.()}>
                   {goal.active ? "Mark Inactive" : "Mark Active"}
                 </DropdownMenuItem>
@@ -453,7 +570,7 @@ function GoalCardImpl({
           </div>
 
           {open && (
-          <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#030303] via-[#080808] to-[#1b1b1b] shadow-[0_35px_45px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.02)]">
+            <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#030303] via-[#080808] to-[#1b1b1b] shadow-[0_35px_45px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.02)]">
               <ProjectsDropdown
                 id={`goal-${goal.id}`}
                 goalTitle={goal.title}
@@ -487,7 +604,10 @@ type CompactProjectsOverlayProps = {
   loading: boolean;
   onClose: () => void;
   anchorRect: DOMRect | null;
-  onProjectLongPress: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
+  onProjectLongPress: (
+    project: Project,
+    origin: ProjectCardMorphOrigin | null
+  ) => void;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   projectDropdownMode?: "default" | "tasks-only";
   goalId: string;
@@ -533,7 +653,8 @@ function CompactProjectsOverlay({
 
   const regionId = `goal-${goal.id}`;
   const headingId = `${regionId}-overlay-title`;
-  const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : true;
+  const isMobile =
+    typeof window !== "undefined" ? window.innerWidth < 640 : true;
   const computedMaxWidth = anchorRect
     ? Math.min(640, Math.max(anchorRect.width + 64, 300))
     : undefined;
@@ -579,19 +700,19 @@ function CompactProjectsOverlay({
   );
 
   const listContent = (
-      <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
-        <ProjectsDropdown
-          id={regionId}
-          goalTitle={goal.title}
-          projects={goal.projects}
-          loading={loading}
-          onProjectLongPress={onProjectLongPress}
-          onProjectUpdated={onProjectUpdated}
-          projectTasksOnly={projectDropdownMode === "tasks-only"}
-          goalId={goalId}
-          onTaskToggleCompletion={onTaskToggleCompletion}
-        />
-      </div>
+    <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
+      <ProjectsDropdown
+        id={regionId}
+        goalTitle={goal.title}
+        projects={goal.projects}
+        loading={loading}
+        onProjectLongPress={onProjectLongPress}
+        onProjectUpdated={onProjectUpdated}
+        projectTasksOnly={projectDropdownMode === "tasks-only"}
+        goalId={goalId}
+        onTaskToggleCompletion={onTaskToggleCompletion}
+      />
+    </div>
   );
 
   const basePanelClass =
@@ -612,14 +733,16 @@ function CompactProjectsOverlay({
             aria-modal="true"
             aria-labelledby={headingId}
             className={`w-full max-w-sm ${basePanelClass}`}
-            style={computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined}
+            style={
+              computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined
+            }
           >
             {header}
             {listContent}
           </div>
         </div>
       </>,
-      document.body,
+      document.body
     );
   }
 
@@ -644,7 +767,7 @@ function CompactProjectsOverlay({
         </div>
       </div>
     </>,
-    document.body,
+    document.body
   );
 }
 
