@@ -202,6 +202,48 @@ body.modal-open [data-bottom-nav] {
   pointer-events: none;
 }
 
+/* Emerald faceted border effect for completed goals */
+.goal-card.emerald-completed {
+  /* Remove default background fill */
+  background: transparent !important;
+
+  /* Faceted emerald border gradient */
+  border: 4px solid transparent;
+  background: linear-gradient(45deg, #004d40, #00897b, #4db6ac) border-box;
+
+  /* Create diagonal facets with hard planes */
+  box-shadow:
+    /* Top-left facet */ inset 0 0 0 2px
+      linear-gradient(135deg, #004d40 0%, #00897b 50%, #4db6ac 100%),
+    /* Top-right facet */ inset 2px 0 0 2px
+      linear-gradient(45deg, #004d40 0%, #00897b 50%, #4db6ac 100%),
+    /* Bottom-left facet */ inset 0 2px 0 2px
+      linear-gradient(225deg, #004d40 0%, #00897b 50%, #4db6ac 100%),
+    /* Bottom-right facet */ inset 2px 2px 0 2px
+      linear-gradient(315deg, #004d40 0%, #00897b 50%, #4db6ac 100%),
+    /* Subtle bevel effect */ 0 0 0 1px rgba(77, 182, 172, 0.3),
+    /* Outer glow for gem-like effect */ 0 0 20px rgba(0, 137, 123, 0.4);
+}
+
+/* Compact emerald border for mobile cards */
+.goal-card.emerald-completed-compact {
+  /* Remove default background fill */
+  background: transparent !important;
+
+  /* Thicker emerald border for compact cards */
+  border: 3px solid transparent;
+  background: linear-gradient(45deg, #004d40, #00897b, #4db6ac) border-box;
+
+  /* Compact faceted effect */
+  box-shadow:
+    /* Diagonal facets */ inset 0 0 0 2px
+      linear-gradient(135deg, #004d40 0%, #00897b 50%, #4db6ac 100%),
+    inset 1px 0 0 1px
+      linear-gradient(45deg, #004d40 0%, #00897b 50%, #4db6ac 100%),
+    /* Bevel */ 0 0 0 1px rgba(77, 182, 172, 0.3),
+    /* Subtle outer glow */ 0 0 15px rgba(0, 137, 123, 0.3);
+}
+
 .progress-fill::before {
   content: "";
   position: absolute;

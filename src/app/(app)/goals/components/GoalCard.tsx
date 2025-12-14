@@ -246,11 +246,8 @@ function GoalCardImpl({
     const lightness = Math.round(88 - progressPct * 0.78); // 0% -> 88% (light gray), 100% -> ~10% (near black)
     const containerBase =
       "group relative h-full rounded-2xl p-4 text-white goal-card";
-    const completedBg =
-      "bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] text-white";
-    const inProgressBg = "";
     const containerClass = `${containerBase} ${
-      isCompleted ? completedBg : inProgressBg
+      isCompleted ? "emerald-completed-compact" : ""
     } ${showEnergyInCompact ? "min-h-[60px]" : "min-h-[96px] aspect-[5/6]"}`;
     const displayEmoji =
       typeof (goal.emoji ?? goal.monumentEmoji) === "string" &&
@@ -420,7 +417,11 @@ function GoalCardImpl({
 
   return (
     <>
-      <div className="group relative h-full rounded-xl goal-card p-4 text-white mb-[20px]">
+      <div
+        className={`group relative h-full rounded-xl goal-card p-4 text-white mb-[20px] ${
+          isCompleted ? "emerald-completed" : ""
+        }`}
+      >
         <div className="relative flex h-full flex-col gap-3">
           <div className="flex items-start justify-between gap-3">
             <button
@@ -433,15 +434,6 @@ function GoalCardImpl({
               onPointerLeave={handleProjectPointerCancel}
               className="relative flex flex-1 flex-col gap-2 text-left overflow-hidden"
             >
-              <div
-                className="pointer-events-none absolute inset-0 transition-[height] duration-500"
-                style={{
-                  height: isCompleted || isHolding ? "100%" : "0%",
-                  backgroundImage: completionGradient,
-                  transformOrigin: "bottom",
-                  zIndex: 0,
-                }}
-              />
               <div className="relative z-10 flex items-start gap-3">
                 <div
                   className={`flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 text-xl font-semibold ${
@@ -493,13 +485,15 @@ function GoalCardImpl({
                 />
               </div>
               <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
-                <div className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${energy.dot}`}
-                    aria-hidden="true"
-                  />
-                  <span>{goal.projects.length} projects</span>
-                </div>
+                {!open && (
+                  <div className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${energy.dot}`}
+                      aria-hidden="true"
+                    />
+                    <span>{goal.projects.length} projects</span>
+                  </div>
+                )}
                 {goal.dueDate && (
                   <span className="rounded-full border border-white/10 px-3 py-1">
                     Due {new Date(goal.dueDate).toLocaleDateString()}
@@ -525,24 +519,26 @@ function GoalCardImpl({
                   </span>
                 )}
               </div>
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-white/50">
-                  <span>Progress</span>
-                  <span>{goal.progress}%</span>
-                </div>
-                <div
-                  className="h-[14px] overflow-hidden rounded-[999px] border-2 border-[#0f1115] bg-[#1b1e24]"
-                  style={{
-                    boxShadow:
-                      "inset 0 2px 3px rgba(0,0,0,0.6), 0 1px 2px rgba(255,255,255,0.08)",
-                  }}
-                >
+              {!open && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-white/50">
+                    <span>Progress</span>
+                    <span>{goal.progress}%</span>
+                  </div>
                   <div
-                    className="progress-fill h-full rounded-[999px]"
-                    style={progressBarStyle}
-                  />
+                    className="h-[14px] overflow-hidden rounded-[999px] border-2 border-[#0f1115] bg-[#1b1e24]"
+                    style={{
+                      boxShadow:
+                        "inset 0 2px 3px rgba(0,0,0,0.6), 0 1px 2px rgba(255,255,255,0.08)",
+                    }}
+                  >
+                    <div
+                      className="progress-fill h-full rounded-[999px]"
+                      style={progressBarStyle}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
               {onBoost && (
                 <div className="pt-1">
                   <button

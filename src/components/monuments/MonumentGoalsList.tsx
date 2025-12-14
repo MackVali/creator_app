@@ -517,7 +517,7 @@ export function MonumentGoalsList({
                       id: p.id,
                       priorityCode: p.priority ?? undefined,
                       stage: p.stage ?? undefined,
-                      dueDate: p.due_date ?? null,
+                      dueDate: p.due_date ?? undefined,
                     }),
                     relatedTaskWeightSum
                   );
@@ -543,7 +543,7 @@ export function MonumentGoalsList({
                     progress,
                     energy: mapEnergy(energyCode),
                     energyCode,
-                    dueDate: p.due_date ?? null,
+                    dueDate: p.due_date ?? undefined,
                     emoji: projectEmoji,
                     stage: p.stage ?? "BUILD",
                     priorityCode,
@@ -568,8 +568,12 @@ export function MonumentGoalsList({
                           projList.length
                       )
                     : 0;
+                // Check if ALL projects are completed (progress = 100)
+                const allProjectsCompleted =
+                  projList.length > 0 &&
+                  projList.every((p) => p.progress >= 100);
                 const normalizedStatus =
-                  status ?? (derivedProgress >= 100 ? "Completed" : "Active");
+                  status ?? (allProjectsCompleted ? "Completed" : "Active");
                 if (normalizedStatus === "Completed") {
                   derivedProgress = 100;
                 }
@@ -676,7 +680,7 @@ export function MonumentGoalsList({
                 id: p.id,
                 priorityCode: p.priority ?? undefined,
                 stage: p.stage ?? undefined,
-                dueDate: p.due_date ?? null,
+                dueDate: p.due_date ?? undefined,
               }),
               relatedTaskWeightSum
             );
@@ -702,7 +706,7 @@ export function MonumentGoalsList({
               progress,
               energy: mapEnergy(energyCode),
               energyCode,
-              dueDate: p.due_date ?? null,
+              dueDate: p.due_date ?? undefined,
               emoji: projectEmoji,
               stage: p.stage ?? "BUILD",
               priorityCode,

@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, GripVertical } from "lucide-react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -22,7 +22,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Roadmap } from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import FlameEmber from "@/components/FlameEmber";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 
 import type { Goal } from "../types";
 import { GoalCard } from "./GoalCard";
@@ -30,9 +30,22 @@ import { GoalCard } from "./GoalCard";
 interface SortableGoalItemProps {
   goal: Goal;
   index: number;
+  isOpen?: boolean;
+  onToggle?: () => void;
+  onClick?: () => void;
 }
 
-function SortableGoalItem({ goal, index }: SortableGoalItemProps) {
+function DraggableGoalCard({
+  goal,
+  index,
+  isOpen,
+  onOpenChange,
+}: {
+  goal: Goal;
+  index: number;
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
   const {
     attributes,
     listeners,
@@ -56,23 +69,7 @@ function SortableGoalItem({ goal, index }: SortableGoalItemProps) {
 
   const flameLevel = (goal.energyCode ? goal.energyCode : goal.energy ?? "No")
     .toString()
-    .toUpperCase() as any; // FlameLevel
-
-  const isCompleted = goal.progress >= 100 || goal.status === "Completed";
-  const primaryTextClass = isCompleted ? "text-emerald-50" : "text-white";
-  const secondaryTextClass = isCompleted
-    ? "text-emerald-100/80"
-    : "text-white/60";
-  const accentTextClass = isCompleted ? "text-emerald-100/75" : "text-white/70";
-  const chevronColorClass = isCompleted
-    ? "text-emerald-100/70"
-    : "text-white/60";
-  const overlayGlowClass = isCompleted
-    ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(52,211,153,0.35),transparent_55%)]"
-    : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
-  const cardSurfaceClass = isCompleted
-    ? "ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] shadow-[0_22px_42px_rgba(4,47,39,0.55)]"
-    : "ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]";
+    .toUpperCase() as FlameLevel;
 
   return (
     <div
@@ -83,51 +80,70 @@ function SortableGoalItem({ goal, index }: SortableGoalItemProps) {
           : undefined,
         transition,
       }}
-      className={`flex items-center gap-4 ${
-        isDragging ? "scale-105 shadow-2xl" : ""
-      }`}
+      className={`relative ${isDragging ? "scale-105 shadow-2xl z-50" : ""}`}
       {...attributes}
-      {...listeners}
     >
-      <span className="text-3xl font-black text-white/60 min-w-[3ch] select-none">
-        {index + 1}.
-      </span>
-      <div
-        className={`relative rounded-2xl p-4 transition-transform select-none flex-1 ${cardSurfaceClass} ${primaryTextClass} ${
-          isDragging ? "opacity-70" : ""
-        }`}
-      >
-        <div
-          className={`pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
-        />
-        <div
-          className={`relative z-0 flex w-full items-center justify-between text-left text-sm select-none ${primaryTextClass}`}
+      {/* Drag Handle */}
+      <div className="absolute -left-8 top-2 z-10 flex items-center gap-2">
+        <span className="text-lg font-black text-white/60 min-w-[2ch] select-none">
+          {index + 1}.
+        </span>
+        <button
+          type="button"
+          className="flex items-center justify-center w-5 h-5 rounded-md hover:bg-white/10 transition-colors cursor-grab active:cursor-grabbing"
+          {...listeners}
+          aria-label="Drag to reorder"
         >
-          <div className={`flex items-center gap-3 ${primaryTextClass}`}>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
+          <GripVertical className="w-3 h-3 text-white/60" />
+        </button>
+      </div>
+
+      {/* Goal Card with inline expansion */}
+      <div className="ml-6">
+        {isOpen ? (
+          <GoalCard
+            goal={goal}
+            showWeight={false}
+            showCreatedAt={false}
+            showEmojiPrefix={false}
+            variant="default"
+            open={true}
+            onOpenChange={onOpenChange}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => onOpenChange?.(true)}
+            className="w-full flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-white transition hover:bg-white/[0.04] text-left"
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-sm font-semibold">
               {displayEmoji}
             </div>
-            <div className="flex flex-col">
-              <span className="font-semibold leading-tight">{goal.title}</span>
-              <div
-                className={`flex items-center gap-1.5 text-[11px] ${secondaryTextClass}`}
-              >
+            <div className="flex-1 min-w-0">
+              <h4 className="font-medium text-sm truncate">{goal.title}</h4>
+              <div className="flex items-center gap-2 mt-1">
                 <FlameEmber level={flameLevel} size="xs" />
-                <span className="uppercase tracking-[0.2em]">
+                <span className="text-xs text-white/60 uppercase tracking-wide">
                   {goal.energy}
                 </span>
+                <span className="text-xs text-white/70">{goal.progress}%</span>
+                {goal.dueDate && (
+                  <span className="text-xs text-white/60">
+                    Due {new Date(goal.dueDate).toLocaleDateString()}
+                  </span>
+                )}
               </div>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <p className={`text-[11px] ${accentTextClass}`}>{goal.progress}%</p>
-            {goal.dueDate && (
-              <span className={`text-xs ${secondaryTextClass}`}>
-                {new Date(goal.dueDate).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-        </div>
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-16 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(100, goal.progress)}%` }}
+                />
+              </div>
+            </div>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -150,6 +166,7 @@ function RoadmapCardImpl({
 }: RoadmapCardProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [localGoals, setLocalGoals] = useState(goals);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -190,6 +207,11 @@ function RoadmapCardImpl({
     setOpen((prev) => !prev);
   }, []);
 
+  const handleGoalClick = useCallback((goalId: string) => {
+    console.log("🎯 Goal clicked:", goalId);
+    setOpenGoalId((current) => (current === goalId ? null : goalId));
+  }, []);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -227,7 +249,7 @@ function RoadmapCardImpl({
         for (const { id, priority_rank } of updates) {
           const { error } = await supabase
             .from("goals")
-            .update({ priority_rank } as any)
+            .update({ priority_rank })
             .eq("id", id)
             .eq("roadmap_id", roadmap.id); // Ensure we only update goals in this roadmap
 
@@ -326,6 +348,7 @@ function RoadmapCardImpl({
               goals={goals}
               onClose={handleToggle}
               anchorRect={null}
+              onGoalClick={handleGoalClick}
             />
           )}
         </div>
@@ -412,10 +435,18 @@ function RoadmapCardImpl({
                     }}
                   >
                     {localGoals.map((goal, index) => (
-                      <SortableGoalItem
+                      <DraggableGoalCard
                         key={goal.id}
                         goal={goal}
                         index={index}
+                        isOpen={openGoalId === goal.id}
+                        onOpenChange={(isOpen) => {
+                          if (isOpen) {
+                            setOpenGoalId(goal.id);
+                          } else if (openGoalId === goal.id) {
+                            setOpenGoalId(null);
+                          }
+                        }}
                       />
                     ))}
                   </div>
@@ -428,6 +459,20 @@ function RoadmapCardImpl({
             )}
           </div>
         )}
+
+        {openGoalId && (
+          <GoalCard
+            goal={localGoals.find((g) => g.id === openGoalId)!}
+            variant="default"
+            showWeight={false}
+            showCreatedAt={false}
+            showEmojiPrefix={false}
+            open={true}
+            onOpenChange={(isOpen) => {
+              if (!isOpen) setOpenGoalId(null);
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -438,6 +483,7 @@ type CompactGoalsOverlayProps = {
   goals: Goal[];
   onClose: () => void;
   anchorRect: DOMRect | null;
+  onGoalClick?: (goalId: string) => void;
 };
 
 function CompactGoalsOverlay({
@@ -445,9 +491,15 @@ function CompactGoalsOverlay({
   goals,
   onClose,
   anchorRect,
+  onGoalClick,
 }: CompactGoalsOverlayProps) {
   const [mounted, setMounted] = useState(false);
   const [localGoals, setLocalGoals] = useState(goals);
+  const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+
+  const handleGoalClick = useCallback((goalId: string) => {
+    setOpenGoalId((current) => (current === goalId ? null : goalId));
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -507,43 +559,83 @@ function CompactGoalsOverlay({
 
   const goalsContent = (
     <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={(event) => {
-          console.log("🎯 Drag started:", event.active.id);
-        }}
-        onDragEnd={(event) => {
-          console.log("🎯 Drag ended:", event);
-          const { active, over } = event;
-          if (over && active.id !== over.id) {
-            const oldIndex = localGoals.findIndex((g) => g.id === active.id);
-            const newIndex = localGoals.findIndex((g) => g.id === over.id);
-            console.log(`Moving from index ${oldIndex} to ${newIndex}`);
-            const reordered = arrayMove(localGoals, oldIndex, newIndex);
-            setLocalGoals(reordered);
-          }
-        }}
-      >
-        <SortableContext items={localGoals.map((g) => g.id)}>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-            }}
-          >
-            {localGoals.map((goal, index) => (
-              <SortableGoalItem key={goal.id} goal={goal} index={index} />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+      {openGoalId ? (
+        <GoalCard
+          goal={localGoals.find((g) => g.id === openGoalId)!}
+          variant="default"
+          showWeight={false}
+          showCreatedAt={false}
+          showEmojiPrefix={false}
+          open={true}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setOpenGoalId(null);
+          }}
+        />
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={(event) => {
+            console.log("🎯 Drag started:", event.active.id);
+          }}
+          onDragEnd={(event) => {
+            console.log("🎯 Drag ended:", event);
+            const { active, over } = event;
+            if (over && active.id !== over.id) {
+              const oldIndex = localGoals.findIndex((g) => g.id === active.id);
+              const newIndex = localGoals.findIndex((g) => g.id === over.id);
+              console.log(`Moving from index ${oldIndex} to ${newIndex}`);
+              const reordered = arrayMove(localGoals, oldIndex, newIndex);
+              setLocalGoals(reordered);
+            }
+          }}
+        >
+          <SortableContext items={localGoals.map((g) => g.id)}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              {localGoals.map((goal, index) => (
+                <DraggableGoalCard
+                  key={goal.id}
+                  goal={goal}
+                  index={index}
+                  isOpen={openGoalId === goal.id}
+                  onOpenChange={(isOpen) => {
+                    if (isOpen) {
+                      setOpenGoalId(goal.id);
+                    } else if (openGoalId === goal.id) {
+                      setOpenGoalId(null);
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
     </div>
   );
 
   const basePanelClass =
     "overflow-hidden rounded-2xl border border-white/15 bg-black shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)]";
+
+  const goalCardContent = openGoalId ? (
+    <GoalCard
+      goal={localGoals.find((g) => g.id === openGoalId)!}
+      variant="default"
+      showWeight={false}
+      showCreatedAt={false}
+      showEmojiPrefix={false}
+      open={true}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) setOpenGoalId(null);
+      }}
+    />
+  ) : null;
 
   if (isMobile || !anchorRect) {
     return createPortal(
@@ -568,6 +660,7 @@ function CompactGoalsOverlay({
             {goalsContent}
           </div>
         </div>
+        {goalCardContent}
       </>,
       document.body
     );
@@ -593,6 +686,7 @@ function CompactGoalsOverlay({
           {goalsContent}
         </div>
       </div>
+      {goalCardContent}
     </>,
     document.body
   );
