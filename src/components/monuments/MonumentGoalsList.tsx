@@ -371,6 +371,10 @@ export function MonumentGoalsList({
   >([]);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [roadmapEditingGoal, setRoadmapEditingGoal] = useState<Goal | null>(
+    null
+  );
+  const [roadmapDrawerOpen, setRoadmapDrawerOpen] = useState(false);
 
   useEffect(() => {
     setOpenGoalId(null);
@@ -851,6 +855,23 @@ export function MonumentGoalsList({
     [fetchGoalForEditing]
   );
 
+  const handleRoadmapGoalEdit = useCallback(
+    (goal: Goal) => {
+      console.log(
+        "🎯 handleRoadmapGoalEdit called with goal:",
+        goal.id,
+        goal.title
+      );
+      setRoadmapEditingGoal(null);
+      void fetchGoalForEditing(goal).then((fresh) => {
+        console.log("🎯 Setting roadmap editingGoal and opening drawer");
+        setRoadmapEditingGoal(fresh);
+        setRoadmapDrawerOpen(true);
+      });
+    },
+    [fetchGoalForEditing]
+  );
+
   const handleGoalUpdated = useCallback(
     async (updatedGoal: Goal, context: GoalUpdateContext) => {
       setGoals((prev) =>
@@ -958,6 +979,7 @@ export function MonumentGoalsList({
                 goalCount={roadmapGoalsList.length}
                 goals={roadmapGoalsList}
                 variant="compact"
+                onGoalEdit={handleRoadmapGoalEdit}
               />
             </div>
           );

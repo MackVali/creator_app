@@ -479,58 +479,6 @@ function RoadmapCardImpl({
             )}
           </div>
         )}
-
-        {openGoalId && (
-          <GoalCard
-            goal={localGoals.find((g) => g.id === openGoalId)!}
-            variant="default"
-            showWeight={false}
-            showCreatedAt={false}
-            showEmojiPrefix={false}
-            open={true}
-            onOpenChange={(isOpen) => {
-              if (!isOpen) setOpenGoalId(null);
-            }}
-            onEdit={
-              onGoalEdit
-                ? () => {
-                    console.log(
-                      "🎯 RoadmapCard onEdit called for goal:",
-                      openGoalId
-                    );
-                    const goal = localGoals.find((g) => g.id === openGoalId);
-                    console.log("🎯 Found goal:", goal?.id, goal?.title);
-                    onGoalEdit(goal!);
-                    console.log("🎯 Called onGoalEdit");
-                  }
-                : () =>
-                    console.log(
-                      "🎯 RoadmapCard onEdit called but no onGoalEdit handler"
-                    )
-            }
-            onToggleActive={
-              onGoalToggleActive
-                ? () => {
-                    console.log(
-                      "🎯 Toggle active clicked for goal:",
-                      openGoalId
-                    );
-                    onGoalToggleActive(
-                      localGoals.find((g) => g.id === openGoalId)!
-                    );
-                  }
-                : () => console.log("🎯 Toggle active clicked but no handler")
-            }
-            onDelete={
-              onGoalDelete
-                ? () => {
-                    console.log("🎯 Delete clicked for goal:", openGoalId);
-                    onGoalDelete(localGoals.find((g) => g.id === openGoalId)!);
-                  }
-                : () => console.log("🎯 Delete clicked but no handler")
-            }
-          />
-        )}
       </div>
     </div>
   );
