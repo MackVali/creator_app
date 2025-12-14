@@ -5,7 +5,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import { RoadmapCard } from "@/app/(app)/goals/components/RoadmapCard";
-import { RoadmapDrawer } from "@/app/(app)/goals/components/RoadmapDrawer";
+
 import {
   GoalDrawer,
   type GoalUpdateContext,
@@ -371,8 +371,6 @@ export function MonumentGoalsList({
   >([]);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [roadmapDrawer, setRoadmapDrawer] = useState(false);
-  const [selectedRoadmap, setSelectedRoadmap] = useState<Roadmap | null>(null);
 
   useEffect(() => {
     setOpenGoalId(null);
@@ -1068,30 +1066,6 @@ export function MonumentGoalsList({
         monuments={monuments}
         onUpdate={handleGoalUpdated}
         onDelete={handleGoalDeleted}
-      />
-      <RoadmapDrawer
-        open={roadmapDrawer}
-        onClose={() => {
-          setRoadmapDrawer(false);
-          setSelectedRoadmap(null);
-        }}
-        roadmap={selectedRoadmap}
-        goals={
-          selectedRoadmap ? roadmapGoals.get(selectedRoadmap.id) ?? [] : []
-        }
-        onGoalEdit={(goal) => {
-          handleGoalEdit(goal);
-          setRoadmapDrawer(false);
-        }}
-        onGoalToggleActive={(goal) => {
-          // Handle toggle active if needed
-        }}
-        onGoalDelete={(goal) => {
-          handleGoalDeleted(goal);
-          setRoadmapDrawer(false);
-        }}
-        onProjectUpdated={handleProjectUpdated}
-        onProjectDeleted={handleProjectDeleted}
       />
     </div>
   );

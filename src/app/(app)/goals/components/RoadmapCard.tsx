@@ -54,7 +54,7 @@ function RoadmapCardImpl({
             }}
             className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-500/30 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] bg-amber-500/10 text-white">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] bg-white/5 text-white">
               {roadmap.emoji ?? roadmap.title.slice(0, 2)}
             </div>
             <h3
@@ -94,12 +94,12 @@ function RoadmapCardImpl({
             className="relative flex flex-1 flex-col gap-2 overflow-hidden text-left"
           >
             <div className="relative z-10 flex items-start gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-500/30 text-xl font-semibold bg-amber-500/10 text-white">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 text-xl font-semibold bg-white/5 text-white">
                 {roadmap.emoji ?? roadmap.title.slice(0, 2)}
               </div>
               <div className="flex-1">
                 <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em]">
-                  <span className="flex items-center gap-1 rounded-full border border-amber-500/30 px-2 py-0.5 text-amber-200/80">
+                  <span className="flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-white/80">
                     <span className="text-[10px] uppercase tracking-[0.2em]">
                       ROADMAP
                     </span>
@@ -114,9 +114,9 @@ function RoadmapCardImpl({
               />
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
-              <div className="flex items-center gap-2 rounded-full border border-amber-500/20 px-3 py-1">
+              <div className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
                 <span
-                  className="h-1.5 w-1.5 rounded-full bg-amber-400"
+                  className="h-1.5 w-1.5 rounded-full bg-white/60"
                   aria-hidden="true"
                 />
                 <span>
