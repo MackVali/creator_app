@@ -270,8 +270,6 @@ function GoalCardImpl({
             data-variant="compact"
             data-build-tag="gc-test-01"
           >
-            {/* Subtle top sheen + edge glow */}
-            <div className="pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_70%)] bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
             <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
               <button
                 type="button"
@@ -347,8 +345,6 @@ function GoalCardImpl({
           data-variant="compact"
           data-build-tag="gc-test-01"
         >
-          {/* Subtle top sheen + edge glow */}
-          <div className="pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_70%)] bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
           <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
             <button
               type="button"
@@ -424,7 +420,7 @@ function GoalCardImpl({
 
   return (
     <>
-      <div className="group relative h-full rounded-xl goal-card p-4 text-white transition hover:-translate-y-1 mb-[20px]">
+      <div className="group relative h-full rounded-xl goal-card p-4 text-white mb-[20px]">
         <div className="relative flex h-full flex-col gap-3">
           <div className="flex items-start justify-between gap-3">
             <button
@@ -491,7 +487,7 @@ function GoalCardImpl({
                   )}
                 </div>
                 <ChevronDown
-                  className={`mt-1 h-5 w-5 text-white/60 transition-transform ${
+                  className={`mt-1 h-5 w-5 text-white/60 ${
                     open ? "rotate-180" : ""
                   }`}
                 />
@@ -555,7 +551,7 @@ function GoalCardImpl({
                       event.stopPropagation();
                       onBoost();
                     }}
-                    className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-gradient-to-r from-red-600 to-rose-500 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white shadow-[0_8px_20px_-10px_rgba(239,68,68,0.6)] transition hover:scale-[1.02]"
+                    className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-gradient-to-r from-red-600 to-rose-500 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white shadow-[0_8px_20px_-10px_rgba(239,68,68,0.6)]"
                   >
                     Boost +250
                   </button>
@@ -567,7 +563,7 @@ function GoalCardImpl({
               <DropdownMenuTrigger asChild>
                 <button
                   aria-label="Goal actions"
-                  className="rounded-full border border-white/10 bg-white/10 p-1.5 text-white/70 transition hover:border-white/40 hover:text-white"
+                  className="rounded-full border border-white/10 bg-white/10 p-1.5 text-white/70"
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
@@ -693,7 +689,7 @@ function CompactProjectsOverlay({
             <button
               type="button"
               aria-label="Goal actions"
-              className="rounded-full border border-white/15 bg-white/10 p-1.5 text-white/70 transition hover:border-white/40 hover:text-white"
+              className="rounded-full border border-white/15 bg-white/10 p-1.5 text-white/70"
             >
               <MoreHorizontal className="h-4 w-4" />
             </button>
@@ -711,7 +707,7 @@ function CompactProjectsOverlay({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/80 transition hover:border-white/30 hover:text-white"
+          className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/80"
         >
           Close
         </button>

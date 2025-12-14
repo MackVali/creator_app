@@ -198,17 +198,7 @@ body.modal-open [data-bottom-nav] {
   position: absolute;
   inset: 3px;
   border-radius: 8px;
-
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  pointer-events: none;
-}
-
-.goal-card::after {
-  content: "";
-  position: absolute;
-  inset: 5px;
-  border-radius: 10px;
-  border: 1px solid rgba(0, 0, 0, 0.35);
+  border: 2px solid rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
 
