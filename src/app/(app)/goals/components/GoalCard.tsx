@@ -222,7 +222,12 @@ function GoalCardImpl({
     "linear-gradient(135deg,rgba(6,78,59,0.96) 0%,rgba(4,120,87,0.94) 42%,rgba(16,185,129,0.9) 100%)";
   const progressBarStyle = {
     width: `${goal.progress}%`,
-    backgroundImage: isCompleted ? completionGradient : energy.bar,
+    height: "100%",
+    borderRadius: "inherit",
+    background:
+      "linear-gradient(to bottom, #4fd18b 0%, #2fb36f 50%, #21965b 100%)",
+    boxShadow:
+      "inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 0 rgba(0,0,0,0.35)",
   };
   const createdAt = useMemo(() => {
     if (goal.createdAt) return new Date(goal.createdAt).toLocaleDateString();
@@ -240,11 +245,10 @@ function GoalCardImpl({
     const progressPct = Math.max(0, Math.min(100, Number(goal.progress ?? 0)));
     const lightness = Math.round(88 - progressPct * 0.78); // 0% -> 88% (light gray), 100% -> ~10% (near black)
     const containerBase =
-      "group relative h-full rounded-2xl ring-1 ring-white/10 p-4 text-white";
+      "group relative h-full rounded-2xl p-4 text-white goal-card";
     const completedBg =
-      "bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] text-white shadow-[0_22px_42px_rgba(4,47,39,0.55),inset_0_1px_0_rgba(255,255,255,0.06)] ring-emerald-300/60";
-    const inProgressBg =
-      "bg-gradient-to-b from-white/[0.03] to-white/[0.015] shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)]";
+      "bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] text-white";
+    const inProgressBg = "";
     const containerClass = `${containerBase} ${
       isCompleted ? completedBg : inProgressBg
     } ${showEnergyInCompact ? "min-h-[60px]" : "min-h-[96px] aspect-[5/6]"}`;
@@ -321,6 +325,23 @@ function GoalCardImpl({
                 />
               )}
             </div>
+            <div
+              className="progress-dock absolute left-1/2 w-[90%] rounded-[999px] -translate-x-1/2"
+              style={{ bottom: "-18px", zIndex: 999 }}
+            >
+              <div className="progress-dock-trench">
+                <div
+                  className="progress-dock-fill h-full rounded-[8px]"
+                  style={{
+                    width: `${goal.progress}%`,
+                    background:
+                      "linear-gradient(to bottom, #5ee39c 0%, #34c47a 55%, #1f8f55 100%)",
+                    boxShadow:
+                      "inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 0 rgba(0,0,0,0.45)",
+                  }}
+                ></div>
+              </div>
+            </div>
           </div>
           <ProjectQuickEditDialog
             project={editingProject}
@@ -375,9 +396,15 @@ function GoalCardImpl({
                   : ""}
                 {goal.title}
               </h3>
-              <div className="mt-1 h-[0.65rem] w-full overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">
+              <div
+                className="mt-1 h-[14px] w-full overflow-hidden rounded-[999px] border-2 border-[#0f1115] bg-[#1b1e24]"
+                style={{
+                  boxShadow:
+                    "inset 0 2px 3px rgba(0,0,0,0.6), 0 1px 2px rgba(255,255,255,0.08)",
+                }}
+              >
                 <div
-                  className="h-full rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
+                  className="h-full rounded-[999px]"
                   style={progressBarStyle}
                 />
               </div>
@@ -398,6 +425,23 @@ function GoalCardImpl({
               />
             )}
           </div>
+          <div
+            className="progress-dock absolute left-1/2 w-[90%] rounded-[999px] -translate-x-1/2"
+            style={{ bottom: "-18px", zIndex: 999 }}
+          >
+            <div className="progress-dock-trench">
+              <div
+                className="progress-dock-fill h-full rounded-[8px]"
+                style={{
+                  width: `${goal.progress}%`,
+                  background:
+                    "linear-gradient(to bottom, #5ee39c 0%, #34c47a 55%, #1f8f55 100%)",
+                  boxShadow:
+                    "inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 0 rgba(0,0,0,0.45)",
+                }}
+              ></div>
+            </div>
+          </div>
         </div>
         <ProjectQuickEditDialog
           project={editingProject}
@@ -414,7 +458,7 @@ function GoalCardImpl({
 
   return (
     <>
-      <div className="group relative h-full rounded-[30px] border border-white/10 bg-white/[0.03] p-4 text-white transition hover:-translate-y-1 hover:border-white/30">
+      <div className="group relative h-full rounded-xl goal-card p-4 text-white transition hover:-translate-y-1 mb-[20px]">
         <div className="relative flex h-full flex-col gap-3">
           <div className="flex items-start justify-between gap-3">
             <button
@@ -524,9 +568,15 @@ function GoalCardImpl({
                   <span>Progress</span>
                   <span>{goal.progress}%</span>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-[14px] overflow-hidden rounded-[999px] border-2 border-[#0f1115] bg-[#1b1e24]"
+                  style={{
+                    boxShadow:
+                      "inset 0 2px 3px rgba(0,0,0,0.6), 0 1px 2px rgba(255,255,255,0.08)",
+                  }}
+                >
                   <div
-                    className="h-full rounded-full"
+                    className="progress-fill h-full rounded-[999px]"
                     style={progressBarStyle}
                   />
                 </div>
@@ -546,6 +596,7 @@ function GoalCardImpl({
                 </div>
               )}
             </button>
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -587,6 +638,24 @@ function GoalCardImpl({
               />
             </div>
           )}
+        </div>
+
+        <div
+          className="progress-dock absolute left-1/2 w-[90%] rounded-[999px] -translate-x-1/2"
+          style={{ bottom: "-18px", zIndex: 999 }}
+        >
+          <div className="progress-dock-trench">
+            <div
+              className="progress-dock-fill h-full rounded-[8px]"
+              style={{
+                width: `${goal.progress}%`,
+                background:
+                  "linear-gradient(to bottom, #5ee39c 0%, #34c47a 55%, #1f8f55 100%)",
+                boxShadow:
+                  "inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 0 rgba(0,0,0,0.45)",
+              }}
+            ></div>
+          </div>
         </div>
       </div>
       <ProjectQuickEditDialog

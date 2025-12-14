@@ -945,7 +945,7 @@ export function MonumentGoalsList({
           return (
             <div
               key={roadmap.id}
-              className="goal-card-wrapper relative z-0 w-full isolate min-w-0"
+              className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-[22px]"
             >
               <RoadmapCard
                 roadmap={roadmap}
@@ -960,7 +960,7 @@ export function MonumentGoalsList({
         {standaloneGoals.map((goal) => (
           <div
             key={goal.id}
-            className="goal-card-wrapper relative z-0 w-full isolate min-w-0"
+            className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-[22px]"
           >
             <GoalCard
               goal={goal}
@@ -1046,9 +1046,7 @@ export function MonumentGoalsList({
         /* Avoid Safari/iOS clipping issues on small screens */
         @media (min-width: 640px) {
           .monument-goals-list .goal-card-wrapper {
-            isolation: isolate;
-            content-visibility: auto;
-            contain-intrinsic-size: 300px 1px;
+            overflow: visible;
           }
         }
       `}</style>
