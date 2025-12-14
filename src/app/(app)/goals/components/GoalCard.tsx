@@ -559,21 +559,37 @@ function GoalCardImpl({
               <DropdownMenuTrigger asChild>
                 <button
                   aria-label="Goal actions"
-                  className="rounded-full border border-white/10 bg-white/10 p-1.5 text-white/70"
+                  className="rounded-full border border-white/10 bg-white/10 p-1.5 text-white/70 hover:bg-white/20"
+                  onClick={() =>
+                    console.log("🎯 Three dots clicked, onEdit:", !!onEdit)
+                  }
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => onEdit?.()}>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    console.log("🎯 Edit menu item selected");
+                    onEdit?.();
+                  }}
+                >
                   Edit
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onToggleActive?.()}>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    console.log("🎯 Toggle active menu item selected");
+                    onToggleActive?.();
+                  }}
+                >
                   {goal.active ? "Mark Inactive" : "Mark Active"}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-rose-500 focus:text-rose-400"
-                  onSelect={() => onDelete?.()}
+                  onSelect={() => {
+                    console.log("🎯 Delete menu item selected");
+                    onDelete?.();
+                  }}
                 >
                   Delete
                 </DropdownMenuItem>
