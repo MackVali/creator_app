@@ -371,6 +371,10 @@ export function MonumentGoalsList({
   >([]);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [roadmapEditingGoal, setRoadmapEditingGoal] = useState<Goal | null>(
+    null
+  );
+  const [roadmapDrawerOpen, setRoadmapDrawerOpen] = useState(false);
 
   useEffect(() => {
     setOpenGoalId(null);
@@ -517,7 +521,7 @@ export function MonumentGoalsList({
                       id: p.id,
                       priorityCode: p.priority ?? undefined,
                       stage: p.stage ?? undefined,
-                      dueDate: p.due_date ?? null,
+                      dueDate: p.due_date ?? undefined,
                     }),
                     relatedTaskWeightSum
                   );
@@ -543,7 +547,7 @@ export function MonumentGoalsList({
                     progress,
                     energy: mapEnergy(energyCode),
                     energyCode,
-                    dueDate: p.due_date ?? null,
+                    dueDate: p.due_date ?? undefined,
                     emoji: projectEmoji,
                     stage: p.stage ?? "BUILD",
                     priorityCode,
@@ -568,8 +572,12 @@ export function MonumentGoalsList({
                           projList.length
                       )
                     : 0;
+                // Check if ALL projects are completed (progress = 100)
+                const allProjectsCompleted =
+                  projList.length > 0 &&
+                  projList.every((p) => p.progress >= 100);
                 const normalizedStatus =
-                  status ?? (derivedProgress >= 100 ? "Completed" : "Active");
+                  status ?? (allProjectsCompleted ? "Completed" : "Active");
                 if (normalizedStatus === "Completed") {
                   derivedProgress = 100;
                 }
@@ -676,7 +684,7 @@ export function MonumentGoalsList({
                 id: p.id,
                 priorityCode: p.priority ?? undefined,
                 stage: p.stage ?? undefined,
-                dueDate: p.due_date ?? null,
+                dueDate: p.due_date ?? undefined,
               }),
               relatedTaskWeightSum
             );
@@ -702,7 +710,7 @@ export function MonumentGoalsList({
               progress,
               energy: mapEnergy(energyCode),
               energyCode,
-              dueDate: p.due_date ?? null,
+              dueDate: p.due_date ?? undefined,
               emoji: projectEmoji,
               stage: p.stage ?? "BUILD",
               priorityCode,
@@ -836,10 +844,29 @@ export function MonumentGoalsList({
 
   const handleGoalEdit = useCallback(
     (goal: Goal) => {
+      console.log("🎯 handleGoalEdit called with goal:", goal.id, goal.title);
       setEditingGoal(null);
       void fetchGoalForEditing(goal).then((fresh) => {
+        console.log("🎯 Setting editingGoal and opening drawer");
         setEditingGoal(fresh);
         setDrawerOpen(true);
+      });
+    },
+    [fetchGoalForEditing]
+  );
+
+  const handleRoadmapGoalEdit = useCallback(
+    (goal: Goal) => {
+      console.log(
+        "🎯 handleRoadmapGoalEdit called with goal:",
+        goal.id,
+        goal.title
+      );
+      setRoadmapEditingGoal(null);
+      void fetchGoalForEditing(goal).then((fresh) => {
+        console.log("🎯 Setting roadmap editingGoal and opening drawer");
+        setRoadmapEditingGoal(fresh);
+        setRoadmapDrawerOpen(true);
       });
     },
     [fetchGoalForEditing]
@@ -952,6 +979,7 @@ export function MonumentGoalsList({
                 goalCount={roadmapGoalsList.length}
                 goals={roadmapGoalsList}
                 variant="compact"
+                onGoalEdit={handleRoadmapGoalEdit}
               />
             </div>
           );
@@ -1061,6 +1089,24 @@ export function MonumentGoalsList({
         }}
         onAdd={() => {}}
         initialGoal={editingGoal}
+        monuments={monuments}
+        onUpdate={handleGoalUpdated}
+        onDelete={handleGoalDeleted}
+      />
+      <GoalDrawer
+        key={
+          roadmapEditingGoal?.id ??
+          (roadmapDrawerOpen
+            ? "roadmap-goal-editor"
+            : "roadmap-goal-editor-closed")
+        }
+        open={roadmapDrawerOpen}
+        onClose={() => {
+          setRoadmapDrawerOpen(false);
+          setRoadmapEditingGoal(null);
+        }}
+        onAdd={() => {}}
+        initialGoal={roadmapEditingGoal}
         monuments={monuments}
         onUpdate={handleGoalUpdated}
         onDelete={handleGoalDeleted}
