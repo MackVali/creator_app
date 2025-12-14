@@ -366,6 +366,9 @@ function RoadmapCardImpl({
               onClose={handleToggle}
               anchorRect={null}
               onGoalClick={handleGoalClick}
+              onGoalEdit={onGoalEdit}
+              onGoalToggleActive={onGoalToggleActive}
+              onGoalDelete={onGoalDelete}
             />
           )}
         </div>
@@ -490,6 +493,9 @@ type CompactGoalsOverlayProps = {
   onClose: () => void;
   anchorRect: DOMRect | null;
   onGoalClick?: (goalId: string) => void;
+  onGoalEdit?: (goal: Goal) => void;
+  onGoalToggleActive?: (goal: Goal) => void;
+  onGoalDelete?: (goal: Goal) => void;
 };
 
 function CompactGoalsOverlay({
@@ -498,6 +504,9 @@ function CompactGoalsOverlay({
   onClose,
   anchorRect,
   onGoalClick,
+  onGoalEdit,
+  onGoalToggleActive,
+  onGoalDelete,
 }: CompactGoalsOverlayProps) {
   const [mounted, setMounted] = useState(false);
   const [localGoals, setLocalGoals] = useState(goals);
@@ -576,6 +585,24 @@ function CompactGoalsOverlay({
           onOpenChange={(isOpen) => {
             if (!isOpen) setOpenGoalId(null);
           }}
+          onEdit={
+            onGoalEdit
+              ? () => onGoalEdit(localGoals.find((g) => g.id === openGoalId)!)
+              : undefined
+          }
+          onToggleActive={
+            onGoalToggleActive
+              ? () =>
+                  onGoalToggleActive(
+                    localGoals.find((g) => g.id === openGoalId)!
+                  )
+              : undefined
+          }
+          onDelete={
+            onGoalDelete
+              ? () => onGoalDelete(localGoals.find((g) => g.id === openGoalId)!)
+              : undefined
+          }
         />
       ) : (
         <DndContext
@@ -617,6 +644,9 @@ function CompactGoalsOverlay({
                       setOpenGoalId(null);
                     }
                   }}
+                  onGoalEdit={onGoalEdit}
+                  onGoalToggleActive={onGoalToggleActive}
+                  onGoalDelete={onGoalDelete}
                 />
               ))}
             </div>
