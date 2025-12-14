@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { PostgrestError, PostgrestResponse } from "@supabase/supabase-js";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { startOfDayInTimeZone } from "@/lib/scheduler/timezone";
 import type {
   AnalyticsActivityEvent,
   AnalyticsHabitSummary,
@@ -845,15 +846,13 @@ function addDays(date: Date, amount: number) {
 }
 
 function startOfDay(date: Date) {
-  const next = new Date(date);
-  next.setUTCHours(0, 0, 0, 0);
-  return next;
+  return startOfDayInTimeZone(date, "UTC");
 }
 
 function endOfDay(date: Date) {
-  const next = new Date(date);
-  next.setUTCHours(23, 59, 59, 999);
-  return next;
+  const start = startOfDay(date);
+  const nextStart = startOfDay(addDays(start, 1));
+  return new Date(nextStart.getTime() - 1);
 }
 
 function parseDate(value: string | null | undefined) {

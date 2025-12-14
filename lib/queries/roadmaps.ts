@@ -1,9 +1,16 @@
 import { getSupabaseBrowser } from "@/lib/supabase";
 
+export interface RoadmapGoal {
+  id: string;
+  name: string;
+  roadmap_id: string | null;
+}
+
 export interface Roadmap {
   id: string;
   title: string;
   emoji: string | null;
+  goals: RoadmapGoal[];
 }
 
 export async function listRoadmaps(
@@ -16,7 +23,13 @@ export async function listRoadmaps(
 
   const { data, error } = await supabase
     .from("roadmaps")
-    .select("id, title, emoji")
+    .select(`
+      id,
+      title,
+      emoji,
+      created_at,
+      goals:goals(id, name, roadmap_id)
+    `)
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -29,6 +42,7 @@ export async function listRoadmaps(
     id: row.id,
     title: row.title,
     emoji: row.emoji ?? null,
+    goals: (row.goals ?? []) as RoadmapGoal[],
   }));
 }
 
@@ -48,7 +62,13 @@ export async function createRoadmap(
       title: roadmap.title.trim(),
       emoji: roadmap.emoji?.trim() || null,
     })
-    .select("id, title, emoji")
+    .select(`
+      id,
+      title,
+      emoji,
+      created_at,
+      goals:goals(id, name, roadmap_id)
+    `)
     .single();
 
   if (error) {
@@ -60,6 +80,7 @@ export async function createRoadmap(
     id: data.id,
     title: data.title,
     emoji: data.emoji ?? null,
+    goals: (data.goals ?? []) as RoadmapGoal[],
   };
 }
 
