@@ -51,4 +51,5 @@ export interface Goal {
   weight?: number;
   weightBoost?: number;
   why?: string;
+  priorityRank?: number;
 }

@@ -3,10 +3,135 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { createPortal } from "react-dom";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { Roadmap } from "@/lib/queries/roadmaps";
+import { getSupabaseBrowser } from "@/lib/supabase";
+import FlameEmber from "@/components/FlameEmber";
 
 import type { Goal } from "../types";
 import { GoalCard } from "./GoalCard";
+
+interface SortableGoalItemProps {
+  goal: Goal;
+  index: number;
+}
+
+function SortableGoalItem({ goal, index }: SortableGoalItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: goal.id });
+
+  // Debug logging for drag start
+  useEffect(() => {
+    if (isDragging) {
+      console.log(`🎯 Drag started for goal: ${goal.id}`);
+    }
+  }, [isDragging, goal.id]);
+
+  const displayEmoji =
+    typeof goal.emoji === "string" && goal.emoji.trim().length > 0
+      ? goal.emoji.trim()
+      : goal.title.slice(0, 2).toUpperCase();
+
+  const flameLevel = (goal.energyCode ? goal.energyCode : goal.energy ?? "No")
+    .toString()
+    .toUpperCase() as any; // FlameLevel
+
+  const isCompleted = goal.progress >= 100 || goal.status === "Completed";
+  const primaryTextClass = isCompleted ? "text-emerald-50" : "text-white";
+  const secondaryTextClass = isCompleted
+    ? "text-emerald-100/80"
+    : "text-white/60";
+  const accentTextClass = isCompleted ? "text-emerald-100/75" : "text-white/70";
+  const chevronColorClass = isCompleted
+    ? "text-emerald-100/70"
+    : "text-white/60";
+  const overlayGlowClass = isCompleted
+    ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(52,211,153,0.35),transparent_55%)]"
+    : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
+  const cardSurfaceClass = isCompleted
+    ? "ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] shadow-[0_22px_42px_rgba(4,47,39,0.55)]"
+    : "ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]";
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: transform
+          ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+          : undefined,
+        transition,
+      }}
+      className={`flex items-center gap-4 ${
+        isDragging ? "scale-105 shadow-2xl" : ""
+      }`}
+      {...attributes}
+      {...listeners}
+    >
+      <span className="text-3xl font-black text-white/60 min-w-[3ch] select-none">
+        {index + 1}.
+      </span>
+      <div
+        className={`relative rounded-2xl p-4 transition-transform select-none flex-1 ${cardSurfaceClass} ${primaryTextClass} ${
+          isDragging ? "opacity-70" : ""
+        }`}
+      >
+        <div
+          className={`pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
+        />
+        <div
+          className={`relative z-0 flex w-full items-center justify-between text-left text-sm select-none ${primaryTextClass}`}
+        >
+          <div className={`flex items-center gap-3 ${primaryTextClass}`}>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
+              {displayEmoji}
+            </div>
+            <div className="flex flex-col">
+              <span className="font-semibold leading-tight">{goal.title}</span>
+              <div
+                className={`flex items-center gap-1.5 text-[11px] ${secondaryTextClass}`}
+              >
+                <FlameEmber level={flameLevel} size="xs" />
+                <span className="uppercase tracking-[0.2em]">
+                  {goal.energy}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <p className={`text-[11px] ${accentTextClass}`}>{goal.progress}%</p>
+            {goal.dueDate && (
+              <span className={`text-xs ${secondaryTextClass}`}>
+                {new Date(goal.dueDate).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface RoadmapCardProps {
   roadmap: Roadmap;
@@ -25,6 +150,35 @@ function RoadmapCardImpl({
 }: RoadmapCardProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [localGoals, setLocalGoals] = useState(goals);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    // Sort goals by priority_rank if available, otherwise maintain original order
+    const sortedGoals = [...goals].sort((a, b) => {
+      const aRank = a.priorityRank;
+      const bRank = b.priorityRank;
+
+      // If both have priority_rank, sort by it
+      if (aRank !== undefined && bRank !== undefined) {
+        return aRank - bRank;
+      }
+
+      // If only one has priority_rank, prioritize the one that has it
+      if (aRank !== undefined && bRank === undefined) {
+        return -1;
+      }
+      if (bRank !== undefined && aRank === undefined) {
+        return 1;
+      }
+
+      // If neither has priority_rank, maintain original order (by index in goals array)
+      return 0;
+    });
+
+    setLocalGoals(sortedGoals);
+  }, [goals]);
 
   useEffect(() => {
     return () => {
@@ -35,6 +189,102 @@ function RoadmapCardImpl({
   const handleToggle = useCallback(() => {
     setOpen((prev) => !prev);
   }, []);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const dragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    })
+  );
+
+  const savePriorityRanks = useCallback(
+    async (goalsToSave: Goal[]) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+
+      setIsSaving(true);
+      try {
+        // Batch update priority_rank for all goals in this roadmap
+        const updates = goalsToSave.map((goal) => ({
+          id: goal.id,
+          priority_rank: goal.priorityRank!,
+        }));
+
+        // Update each goal sequentially
+        for (const { id, priority_rank } of updates) {
+          const { error } = await supabase
+            .from("goals")
+            .update({ priority_rank } as any)
+            .eq("id", id)
+            .eq("roadmap_id", roadmap.id); // Ensure we only update goals in this roadmap
+
+          if (error) {
+            console.error(`Failed to update goal ${id}:`, error);
+          }
+        }
+
+        console.log(
+          `Saved priority ranks for ${updates.length} goals in roadmap ${roadmap.id}`
+        );
+      } catch (error) {
+        console.error("Failed to save priority ranks:", error);
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [roadmap.id]
+  );
+
+  const debouncedSave = useCallback(
+    (goalsToSave: Goal[]) => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      saveTimeoutRef.current = setTimeout(() => {
+        savePriorityRanks(goalsToSave);
+      }, 1000); // Debounce for 1 second
+    },
+    [savePriorityRanks]
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+
+      if (over && active.id !== over.id) {
+        setLocalGoals((items) => {
+          const oldIndex = items.findIndex((item) => item.id === active.id);
+          const newIndex = items.findIndex((item) => item.id === over.id);
+
+          const reordered = arrayMove(items, oldIndex, newIndex);
+
+          // Generate contiguous priority_rank values
+          const updatedGoals = reordered.map((goal, index) => ({
+            ...goal,
+            priorityRank: index + 1,
+          }));
+
+          // Debounced save
+          debouncedSave(updatedGoals);
+
+          return updatedGoals;
+        });
+      }
+    },
+    [debouncedSave]
+  );
 
   const hasGoals = goals.length > 0;
 
@@ -130,22 +380,46 @@ function RoadmapCardImpl({
         {open && (
           <div className="flex-1">
             {hasGoals ? (
-              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                {goals.map((goal) => (
+              <DndContext
+                sensors={dragSensors}
+                collisionDetection={closestCenter}
+                onDragStart={(event) => {
+                  console.log("🎯 Drag started:", event.active.id);
+                }}
+                onDragEnd={(event) => {
+                  console.log("🎯 Drag ended:", event);
+                  const { active, over } = event;
+                  if (over && active.id !== over.id) {
+                    const oldIndex = localGoals.findIndex(
+                      (g) => g.id === active.id
+                    );
+                    const newIndex = localGoals.findIndex(
+                      (g) => g.id === over.id
+                    );
+                    console.log(`Moving from index ${oldIndex} to ${newIndex}`);
+                    const reordered = arrayMove(localGoals, oldIndex, newIndex);
+                    setLocalGoals(reordered);
+                  }
+                }}
+              >
+                <SortableContext items={localGoals.map((g) => g.id)}>
                   <div
-                    key={goal.id}
-                    className="goal-card-wrapper relative z-0 w-full isolate min-w-0"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                    }}
                   >
-                    <GoalCard
-                      goal={goal}
-                      showWeight={false}
-                      showCreatedAt={false}
-                      showEmojiPrefix={true}
-                      variant="compact"
-                    />
+                    {localGoals.map((goal, index) => (
+                      <SortableGoalItem
+                        key={goal.id}
+                        goal={goal}
+                        index={index}
+                      />
+                    ))}
                   </div>
-                ))}
-              </div>
+                </SortableContext>
+              </DndContext>
             ) : (
               <div className="rounded-2xl border border-dashed border-white/20 bg-white/[0.02] px-4 py-6 text-center text-sm text-white/60">
                 No goals yet

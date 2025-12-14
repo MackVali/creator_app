@@ -18,6 +18,8 @@ function getFormatter(timeZone: string) {
   return formatter
 }
 
+export const GLOBAL_DAY_START_HOUR = 4
+
 type DateParts = {
   year: number
   month: number
@@ -110,8 +112,29 @@ export function normalizeTimeZone(timeZone?: string | null) {
 
 export function startOfDayInTimeZone(date: Date, timeZone: string) {
   const parts = getDateTimeParts(date, timeZone)
+  const start = makeZonedDate(
+    {
+      year: parts.year,
+      month: parts.month,
+      day: parts.day,
+      hour: GLOBAL_DAY_START_HOUR,
+      minute: 0,
+      second: 0,
+    },
+    timeZone,
+  )
+  if (date.getTime() >= start.getTime()) {
+    return start
+  }
   return makeZonedDate(
-    { year: parts.year, month: parts.month, day: parts.day, hour: 0, minute: 0, second: 0 },
+    {
+      year: parts.year,
+      month: parts.month,
+      day: parts.day - 1,
+      hour: GLOBAL_DAY_START_HOUR,
+      minute: 0,
+      second: 0,
+    },
     timeZone,
   )
 }

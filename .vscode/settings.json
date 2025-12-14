@@ -1,9 +1,6 @@
 {
   "deno.enable": false,
-  "deno.enablePaths": [
-    "supabase/functions",
-    "scripts/deno"
-  ],
+  "deno.enablePaths": ["supabase/functions", "scripts/deno"],
   "deno.lint": true,
   "deno.unstable": true,
   "deno.suggest.imports.hosts": {
@@ -22,7 +19,6 @@
   },
   "[typescript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
-  }
+  },
+  "CodeGPT.apiKey": "CodeGPT Plus Beta"
 }
-
-

@@ -391,7 +391,8 @@ async function fetchGoalsByRoadmapId(
       .select(select)
       .eq("user_id", userId)
       .eq("roadmap_id", roadmapId)
-      .order("created_at", { ascending: false });
+      .order("priority_code", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true });
 
   const variants = [
     { description: "enum column project fetch", select: selectWithEnumColumns },
