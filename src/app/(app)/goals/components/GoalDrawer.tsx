@@ -16,7 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { cn } from "@/lib/utils";
 import type { Goal, Project, Task } from "../types";
@@ -100,7 +106,9 @@ const PRIORITY_LABEL_TO_CODE: Record<Goal["priority"], string> = {
 
 type PriorityCodeInput = string | { name?: string | null } | null | undefined;
 
-const normalizePriorityCodeInput = (code?: PriorityCodeInput): string | null => {
+const normalizePriorityCodeInput = (
+  code?: PriorityCodeInput
+): string | null => {
   if (!code) return null;
   if (typeof code === "string") {
     return code.toUpperCase();
@@ -265,6 +273,12 @@ export function GoalDrawer({
   roadmaps = undefined,
   hideProjects = false,
 }: GoalDrawerProps) {
+  console.log(
+    "🎯 GoalDrawer render - open:",
+    open,
+    "initialGoal:",
+    initialGoal?.id
+  );
   const formId = "goal-editor-form";
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("");
@@ -280,7 +294,9 @@ export function GoalDrawer({
   const [showCreateRoadmap, setShowCreateRoadmap] = useState(false);
   const [newRoadmapTitle, setNewRoadmapTitle] = useState("");
   const [newRoadmapEmoji, setNewRoadmapEmoji] = useState("");
-  const [roadmapsList, setRoadmapsList] = useState<{ id: string; title: string; emoji?: string | null }[]>(roadmaps || []);
+  const [roadmapsList, setRoadmapsList] = useState<
+    { id: string; title: string; emoji?: string | null }[]
+  >(roadmaps || []);
   const [isCreatingRoadmap, setIsCreatingRoadmap] = useState(false);
   const [projectsState, setProjectsState] = useState<EditableProject[]>([]);
   const [removedProjectIds, setRemovedProjectIds] = useState<string[]>([]);
@@ -306,7 +322,9 @@ export function GoalDrawer({
         initialGoal.priorityCode,
         initialGoal.priority
       );
-      const monumentDefaultEmoji = getMonumentEmojiById(initialGoal.monumentId ?? null);
+      const monumentDefaultEmoji = getMonumentEmojiById(
+        initialGoal.monumentId ?? null
+      );
       const initialEmojiValue = initialGoal.emoji || monumentDefaultEmoji || "";
       setTitle(initialGoal.title);
       setEmoji(initialEmojiValue);
@@ -314,7 +332,10 @@ export function GoalDrawer({
         Boolean(initialGoal.emoji && initialGoal.emoji !== monumentDefaultEmoji)
       );
       setPriority(resolvedPriority);
-      const resolvedEnergy = energyLabelFromCode(initialGoal.energyCode, initialGoal.energy);
+      const resolvedEnergy = energyLabelFromCode(
+        initialGoal.energyCode,
+        initialGoal.energy
+      );
       setEnergy(resolvedEnergy);
       setActive(initialGoal.active ?? true);
       setWhy(initialGoal.why || "");
@@ -412,7 +433,9 @@ export function GoalDrawer({
       const supabase = getSupabaseBrowser();
       if (!supabase) return;
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         if (!user || cancelled) return;
         const roadmapsData = await listRoadmaps(user.id);
         if (!cancelled) {
@@ -434,7 +457,9 @@ export function GoalDrawer({
     if (!supabase) return;
     try {
       setIsCreatingRoadmap(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
       const newRoadmap = await createRoadmap(user.id, {
         title: newRoadmapTitle.trim(),
@@ -503,7 +528,7 @@ export function GoalDrawer({
       progress: 0,
       energy: "No",
       energyCode: energyToDbValue("No"),
-       dueDate: undefined,
+      dueDate: undefined,
       tasks: [],
       stage,
       priorityCode: "NO",
@@ -568,7 +593,8 @@ export function GoalDrawer({
   const handleRemoveProject = (projectId: string) => {
     let removedProject: EditableProject | null = null;
     setProjectsState((projects) => {
-      removedProject = projects.find((project) => project.id === projectId) ?? null;
+      removedProject =
+        projects.find((project) => project.id === projectId) ?? null;
       return projects.filter((project) => project.id !== projectId);
     });
     if (removedProject && !removedProject.isNew) {
@@ -710,28 +736,28 @@ export function GoalDrawer({
 
     const goalProgress = computeGoalProgress(preparedProjects);
 
-  const context: GoalUpdateContext = {
-    projects: projectsState.map((project) => ({
-      ...project,
-      tasks: project.tasks.map((task) => ({ ...task })),
-    })),
+    const context: GoalUpdateContext = {
+      projects: projectsState.map((project) => ({
+        ...project,
+        tasks: project.tasks.map((task) => ({ ...task })),
+      })),
       removedProjectIds,
       removedTaskIds,
     };
 
-  const normalizedGoalDueDate = fromDateInputValue(dueDateInput);
-  const normalizedPriorityCode = PRIORITY_LABEL_TO_CODE[priority] ?? "LOW";
-  const normalizedEnergyCode = ENERGY_LABEL_TO_CODE[energy] ?? "NO";
+    const normalizedGoalDueDate = fromDateInputValue(dueDateInput);
+    const normalizedPriorityCode = PRIORITY_LABEL_TO_CODE[priority] ?? "LOW";
+    const normalizedEnergyCode = ENERGY_LABEL_TO_CODE[energy] ?? "NO";
 
-  const nextGoal: Goal = {
-    id: initialGoal?.id || Date.now().toString(),
-    title: title.trim(),
-    emoji: emoji.trim() || undefined,
-    dueDate: normalizedGoalDueDate,
-    priority,
-    priorityCode: normalizedPriorityCode,
-    energy,
-    energyCode: normalizedEnergyCode,
+    const nextGoal: Goal = {
+      id: initialGoal?.id || Date.now().toString(),
+      title: title.trim(),
+      emoji: emoji.trim() || undefined,
+      dueDate: normalizedGoalDueDate,
+      priority,
+      priorityCode: normalizedPriorityCode,
+      energy,
+      energyCode: normalizedEnergyCode,
       progress: goalProgress,
       status: computedStatus,
       active: computedActive,
@@ -764,13 +790,18 @@ export function GoalDrawer({
       <SheetContent
         side="center"
         className="h-[90vh] w-full max-w-3xl overflow-hidden border border-white/10 bg-[#05070c] text-white shadow-[0_45px_120px_-40px_rgba(5,8,21,0.85)] sm:max-w-4xl"
+        style={{ zIndex: 1000 }}
       >
         <SheetHeader className="border-b border-white/10 px-6 py-5 sm:px-8 sm:py-6">
           <SheetTitle className="text-left text-xl font-semibold text-white tracking-[0.2em] uppercase">
             {editing ? "Edit goal" : "Create a goal"}
           </SheetTitle>
         </SheetHeader>
-        <form id={formId} onSubmit={submit} className="flex flex-1 min-h-0 flex-col">
+        <form
+          id={formId}
+          onSubmit={submit}
+          className="flex flex-1 min-h-0 flex-col"
+        >
           <div className="flex-1 min-h-0 space-y-8 overflow-y-auto px-6 pb-10 pt-6 sm:px-8 sm:pb-12">
             <div className="grid grid-cols-1 gap-6">
               <div className="space-y-2">
@@ -824,7 +855,9 @@ export function GoalDrawer({
                   >
                     <SelectContent>
                       <SelectItem value="" label="Not linked">
-                        <span className="text-sm text-white/70">Not linked</span>
+                        <span className="text-sm text-white/70">
+                          Not linked
+                        </span>
                       </SelectItem>
                       {monumentOptions.map((monument) => (
                         <SelectItem key={monument.id} value={monument.id}>
@@ -900,7 +933,9 @@ export function GoalDrawer({
                   >
                     <SelectContent>
                       <SelectItem value="" label="Not linked">
-                        <span className="text-sm text-white/70">Not linked</span>
+                        <span className="text-sm text-white/70">
+                          Not linked
+                        </span>
                       </SelectItem>
                       {roadmapOptions.map((roadmap) => (
                         <SelectItem key={roadmap.id} value={roadmap.id}>
@@ -910,7 +945,10 @@ export function GoalDrawer({
                           </span>
                         </SelectItem>
                       ))}
-                      <SelectItem value="__create__" label="➕ Create new roadmap">
+                      <SelectItem
+                        value="__create__"
+                        label="➕ Create new roadmap"
+                      >
                         <span className="flex items-center gap-2 text-sm text-white/70">
                           <Plus className="h-4 w-4" />
                           <span>Create new roadmap</span>
@@ -925,14 +963,21 @@ export function GoalDrawer({
                   <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
                     Priority
                   </Label>
-                  <Select value={priority} onValueChange={(value) => setPriority(value as Goal["priority"])}>
+                  <Select
+                    value={priority}
+                    onValueChange={(value) =>
+                      setPriority(value as Goal["priority"])
+                    }
+                  >
                     <SelectTrigger className="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white">
                       <SelectValue placeholder="Select priority" />
                     </SelectTrigger>
                     <SelectContent className="bg-[#0f172a] text-sm text-white">
                       {PRIORITY_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
-                          <span className="font-semibold">{option.label.toUpperCase()}</span>
+                          <span className="font-semibold">
+                            {option.label.toUpperCase()}
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -943,7 +988,12 @@ export function GoalDrawer({
                   <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
                     Energy
                   </Label>
-                  <Select value={energy} onValueChange={(value) => setEnergy(value as Goal["energy"])}>
+                  <Select
+                    value={energy}
+                    onValueChange={(value) =>
+                      setEnergy(value as Goal["energy"])
+                    }
+                  >
                     <SelectTrigger className="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white">
                       <SelectValue placeholder="Select energy level" />
                     </SelectTrigger>
@@ -951,7 +1001,10 @@ export function GoalDrawer({
                       {ENERGY_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           <div className="flex items-center gap-2">
-                            <FlameEmber level={option.value.toUpperCase() as FlameLevel} size="xs" />
+                            <FlameEmber
+                              level={option.value.toUpperCase() as FlameLevel}
+                              size="xs"
+                            />
                             <span>{option.label.toUpperCase()}</span>
                           </div>
                         </SelectItem>
@@ -968,11 +1021,16 @@ export function GoalDrawer({
                   className="flex w-full items-center justify-between text-left text-sm font-semibold text-white"
                 >
                   <span className="inline-flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4 text-white/70" aria-hidden="true" />
+                    <CalendarDays
+                      className="h-4 w-4 text-white/70"
+                      aria-hidden="true"
+                    />
                     Advanced timeline
                   </span>
                   <ChevronDown
-                    className={`h-4 w-4 text-white/60 transition-transform ${showAdvanced ? "rotate-180" : ""}`}
+                    className={`h-4 w-4 text-white/60 transition-transform ${
+                      showAdvanced ? "rotate-180" : ""
+                    }`}
                   />
                 </button>
                 {showAdvanced && (
@@ -984,7 +1042,9 @@ export function GoalDrawer({
                       <Input
                         type="date"
                         value={dueDateInput}
-                        onChange={(event) => setDueDateInput(event.target.value)}
+                        onChange={(event) =>
+                          setDueDateInput(event.target.value)
+                        }
                         className="h-11 rounded-xl border-white/15 bg-white/[0.05] text-sm text-white sm:flex-1"
                       />
                       {dueDateInput ? (
@@ -999,8 +1059,9 @@ export function GoalDrawer({
                       ) : null}
                     </div>
                     <p className="text-xs text-white/50">
-                      Due dates slowly boost weight inside a 4-week window and spike over the final few days so
-                      this goal takes the lead when it matters.
+                      Due dates slowly boost weight inside a 4-week window and
+                      spike over the final few days so this goal takes the lead
+                      when it matters.
                     </p>
                   </div>
                 )}
@@ -1030,8 +1091,8 @@ export function GoalDrawer({
                         Projects &amp; tasks
                       </Label>
                       <p className="text-xs text-white/55">
-                        Manage the projects and tasks connected to this goal without
-                        leaving the page.
+                        Manage the projects and tasks connected to this goal
+                        without leaving the page.
                       </p>
                     </div>
                     <Button
@@ -1048,250 +1109,283 @@ export function GoalDrawer({
 
                   {projectsState.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-4 text-sm text-white/60">
-                      No projects linked yet. Add one to keep your plan in sync with
-                      this goal.
+                      No projects linked yet. Add one to keep your plan in sync
+                      with this goal.
                     </div>
                   ) : (
                     <div className="space-y-4">
                       {projectsState.map((project, index) => {
                         const stageValue =
                           project.stage ?? projectStatusToStage(project.status);
-                        const projectDueDateValue = toDateInputValue(project.dueDate);
+                        const projectDueDateValue = toDateInputValue(
+                          project.dueDate
+                        );
                         return (
                           <div
                             key={project.id}
                             className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
                           >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 space-y-2">
-                              <div className="flex items-center justify-between gap-3">
-                                <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-                                  Project {index + 1}
-                                </Label>
-                                <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] text-white/60">
-                                  {project.progress}% progress
-                                </span>
-                              </div>
-                              <Input
-                                value={project.name}
-                                onChange={(event) =>
-                                  handleProjectNameChange(
-                                    project.id,
-                                    event.target.value
-                                  )
-                                }
-                                placeholder="Name this project"
-                                className="h-11 rounded-xl border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
-                              />
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="mt-1 size-8 rounded-full border border-white/10 bg-white/[0.04] text-white/60 hover:border-rose-400/50 hover:text-rose-200"
-                              onClick={() => handleRemoveProject(project.id)}
-                              aria-label={`Remove project ${index + 1}`}
-                            >
-                              <X className="h-4 w-4" aria-hidden="true" />
-                            </Button>
-                          </div>
-
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-1">
-                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
-                                Stage
-                              </Label>
-                              <Select
-                                value={stageValue}
-                                onValueChange={(value) =>
-                                  handleProjectStageChange(project.id, value)
-                                }
-                                triggerClassName="h-10 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
-                              >
-                                <SelectContent className="bg-[#0f172a] text-sm text-white">
-                                  {PROJECT_STAGE_OPTIONS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-1">
-                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
-                                Energy
-                              </Label>
-                              <Select
-                                value={project.energy}
-                                onValueChange={(value) =>
-                                  handleProjectEnergyChange(
-                                    project.id,
-                                    value as Goal["energy"]
-                                  )
-                                }
-                                triggerClassName="h-10 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
-                              >
-                                <SelectContent className="bg-[#0f172a] text-sm text-white">
-                                  {ENERGY_OPTIONS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-
-                          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-                            <details className="group" defaultOpen={Boolean(projectDueDateValue)}>
-                              <summary className="flex cursor-pointer items-center justify-between text-sm font-semibold text-white">
-                                <span>Advanced options</span>
-                                <ChevronDown className="h-4 w-4 text-white/60 transition-transform group-open:rotate-180" />
-                              </summary>
-                              <div className="mt-3 space-y-2">
-                                <Label className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/60">
-                                  Project due date
-                                </Label>
-                                <div className="flex flex-col gap-2 sm:flex-row">
-                                  <Input
-                                    type="date"
-                                    value={projectDueDateValue}
-                                    onChange={(event) =>
-                                      handleProjectDueDateChange(project.id, event.target.value)
-                                    }
-                                    className="h-10 rounded-xl border-white/20 bg-white/5 text-sm text-white sm:flex-1"
-                                  />
-                                  {projectDueDateValue ? (
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      className="h-10 rounded-xl border border-white/15 bg-white/[0.03] text-xs text-white/70 hover:text-white"
-                                      onClick={() => handleProjectDueDateChange(project.id, "")}
-                                    >
-                                      Clear
-                                    </Button>
-                                  ) : null}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-center justify-between gap-3">
+                                  <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                                    Project {index + 1}
+                                  </Label>
+                                  <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] text-white/60">
+                                    {project.progress}% progress
+                                  </span>
                                 </div>
-                                <p className="text-xs text-white/50">
-                                  Projects surge to the top of schedules as their due date nears.
-                                </p>
+                                <Input
+                                  value={project.name}
+                                  onChange={(event) =>
+                                    handleProjectNameChange(
+                                      project.id,
+                                      event.target.value
+                                    )
+                                  }
+                                  placeholder="Name this project"
+                                  className="h-11 rounded-xl border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                                />
                               </div>
-                            </details>
-                          </div>
-
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
-                                Tasks
-                              </Label>
                               <Button
                                 type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 rounded-lg border-white/20 bg-white/[0.04] px-3 text-xs font-medium text-white/80 hover:border-indigo-400/50 hover:text-white"
-                                onClick={() => handleAddTask(project.id)}
+                                variant="ghost"
+                                size="icon"
+                                className="mt-1 size-8 rounded-full border border-white/10 bg-white/[0.04] text-white/60 hover:border-rose-400/50 hover:text-rose-200"
+                                onClick={() => handleRemoveProject(project.id)}
+                                aria-label={`Remove project ${index + 1}`}
                               >
-                                <Plus className="mr-1 h-3 w-3" aria-hidden="true" />
-                                Add task
+                                <X className="h-4 w-4" aria-hidden="true" />
                               </Button>
                             </div>
 
-                            {project.tasks.length === 0 ? (
-                              <p className="text-xs text-white/50">
-                                No tasks yet. Break this project down into actionable
-                                steps.
-                              </p>
-                            ) : (
-                              <div className="space-y-3">
-                                {project.tasks.map((task, taskIndex) => (
-                                  <div
-                                    key={task.id}
-                                    className="space-y-3 rounded-xl border border-white/10 bg-white/[0.04] p-3"
-                                  >
-                                    <div className="flex items-start gap-3">
-                                      <div className="flex-1 space-y-1">
-                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                                          Task {taskIndex + 1}
-                                        </Label>
-                                        <Input
-                                          value={task.name}
-                                          onChange={(event) =>
-                                            handleTaskNameChange(
-                                              project.id,
-                                              task.id,
-                                              event.target.value
-                                            )
-                                          }
-                                          placeholder="Describe the task"
-                                          className="h-10 rounded-lg border-white/10 bg-white/[0.05] text-sm"
-                                        />
-                                      </div>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <div className="space-y-1">
+                                <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                                  Stage
+                                </Label>
+                                <Select
+                                  value={stageValue}
+                                  onValueChange={(value) =>
+                                    handleProjectStageChange(project.id, value)
+                                  }
+                                  triggerClassName="h-10 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
+                                >
+                                  <SelectContent className="bg-[#0f172a] text-sm text-white">
+                                    {PROJECT_STAGE_OPTIONS.map((option) => (
+                                      <SelectItem
+                                        key={option.value}
+                                        value={option.value}
+                                      >
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                                  Energy
+                                </Label>
+                                <Select
+                                  value={project.energy}
+                                  onValueChange={(value) =>
+                                    handleProjectEnergyChange(
+                                      project.id,
+                                      value as Goal["energy"]
+                                    )
+                                  }
+                                  triggerClassName="h-10 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
+                                >
+                                  <SelectContent className="bg-[#0f172a] text-sm text-white">
+                                    {ENERGY_OPTIONS.map((option) => (
+                                      <SelectItem
+                                        key={option.value}
+                                        value={option.value}
+                                      >
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+                              <details
+                                className="group"
+                                defaultOpen={Boolean(projectDueDateValue)}
+                              >
+                                <summary className="flex cursor-pointer items-center justify-between text-sm font-semibold text-white">
+                                  <span>Advanced options</span>
+                                  <ChevronDown className="h-4 w-4 text-white/60 transition-transform group-open:rotate-180" />
+                                </summary>
+                                <div className="mt-3 space-y-2">
+                                  <Label className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/60">
+                                    Project due date
+                                  </Label>
+                                  <div className="flex flex-col gap-2 sm:flex-row">
+                                    <Input
+                                      type="date"
+                                      value={projectDueDateValue}
+                                      onChange={(event) =>
+                                        handleProjectDueDateChange(
+                                          project.id,
+                                          event.target.value
+                                        )
+                                      }
+                                      className="h-10 rounded-xl border-white/20 bg-white/5 text-sm text-white sm:flex-1"
+                                    />
+                                    {projectDueDateValue ? (
                                       <Button
                                         type="button"
                                         variant="ghost"
-                                        size="icon"
-                                        className="mt-1 size-8 rounded-full border border-white/10 bg-white/[0.05] text-white/60 hover:border-rose-400/50 hover:text-rose-200"
+                                        className="h-10 rounded-xl border border-white/15 bg-white/[0.03] text-xs text-white/70 hover:text-white"
                                         onClick={() =>
-                                          handleRemoveTask(project.id, task.id)
+                                          handleProjectDueDateChange(
+                                            project.id,
+                                            ""
+                                          )
                                         }
-                                        aria-label={`Remove task ${taskIndex + 1}`}
                                       >
-                                        <X className="h-4 w-4" aria-hidden="true" />
+                                        Clear
                                       </Button>
-                                    </div>
+                                    ) : null}
+                                  </div>
+                                  <p className="text-xs text-white/50">
+                                    Projects surge to the top of schedules as
+                                    their due date nears.
+                                  </p>
+                                </div>
+                              </details>
+                            </div>
 
-                                    <div className="grid gap-3 sm:grid-cols-2">
-                                      <div className="space-y-1">
-                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                                          Stage
-                                        </Label>
-                                        <Select
-                                          value={task.stage}
-                                          onValueChange={(value) =>
-                                            handleTaskStageChange(
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                                  Tasks
+                                </Label>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 rounded-lg border-white/20 bg-white/[0.04] px-3 text-xs font-medium text-white/80 hover:border-indigo-400/50 hover:text-white"
+                                  onClick={() => handleAddTask(project.id)}
+                                >
+                                  <Plus
+                                    className="mr-1 h-3 w-3"
+                                    aria-hidden="true"
+                                  />
+                                  Add task
+                                </Button>
+                              </div>
+
+                              {project.tasks.length === 0 ? (
+                                <p className="text-xs text-white/50">
+                                  No tasks yet. Break this project down into
+                                  actionable steps.
+                                </p>
+                              ) : (
+                                <div className="space-y-3">
+                                  {project.tasks.map((task, taskIndex) => (
+                                    <div
+                                      key={task.id}
+                                      className="space-y-3 rounded-xl border border-white/10 bg-white/[0.04] p-3"
+                                    >
+                                      <div className="flex items-start gap-3">
+                                        <div className="flex-1 space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                                            Task {taskIndex + 1}
+                                          </Label>
+                                          <Input
+                                            value={task.name}
+                                            onChange={(event) =>
+                                              handleTaskNameChange(
+                                                project.id,
+                                                task.id,
+                                                event.target.value
+                                              )
+                                            }
+                                            placeholder="Describe the task"
+                                            className="h-10 rounded-lg border-white/10 bg-white/[0.05] text-sm"
+                                          />
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="mt-1 size-8 rounded-full border border-white/10 bg-white/[0.05] text-white/60 hover:border-rose-400/50 hover:text-rose-200"
+                                          onClick={() =>
+                                            handleRemoveTask(
                                               project.id,
-                                              task.id,
-                                              value
+                                              task.id
                                             )
                                           }
-                                          triggerClassName="h-9 rounded-lg border-white/10 bg-white/[0.05] text-left text-sm"
+                                          aria-label={`Remove task ${
+                                            taskIndex + 1
+                                          }`}
                                         >
-                                          <SelectContent className="bg-[#0f172a] text-sm text-white">
-                                            {TASK_STAGE_OPTIONS.map((option) => (
-                                              <SelectItem
-                                                key={option.value}
-                                                value={option.value}
-                                              >
-                                                {option.label}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                          <X
+                                            className="h-4 w-4"
+                                            aria-hidden="true"
+                                          />
+                                        </Button>
                                       </div>
-                                      <div className="space-y-1">
-                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                                          Status
-                                        </Label>
-                                        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/60">
-                                          {task.stage === "PERFECT"
-                                            ? "Complete"
-                                            : task.stage === "PRODUCE"
-                                            ? "In progress"
-                                            : "Preparing"}
+
+                                      <div className="grid gap-3 sm:grid-cols-2">
+                                        <div className="space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                                            Stage
+                                          </Label>
+                                          <Select
+                                            value={task.stage}
+                                            onValueChange={(value) =>
+                                              handleTaskStageChange(
+                                                project.id,
+                                                task.id,
+                                                value
+                                              )
+                                            }
+                                            triggerClassName="h-9 rounded-lg border-white/10 bg-white/[0.05] text-left text-sm"
+                                          >
+                                            <SelectContent className="bg-[#0f172a] text-sm text-white">
+                                              {TASK_STAGE_OPTIONS.map(
+                                                (option) => (
+                                                  <SelectItem
+                                                    key={option.value}
+                                                    value={option.value}
+                                                  >
+                                                    {option.label}
+                                                  </SelectItem>
+                                                )
+                                              )}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                                            Status
+                                          </Label>
+                                          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/60">
+                                            {task.stage === "PERFECT"
+                                              ? "Complete"
+                                              : task.stage === "PRODUCE"
+                                              ? "In progress"
+                                              : "Preparing"}
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>

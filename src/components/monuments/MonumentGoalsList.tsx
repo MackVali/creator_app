@@ -840,8 +840,10 @@ export function MonumentGoalsList({
 
   const handleGoalEdit = useCallback(
     (goal: Goal) => {
+      console.log("🎯 handleGoalEdit called with goal:", goal.id, goal.title);
       setEditingGoal(null);
       void fetchGoalForEditing(goal).then((fresh) => {
+        console.log("🎯 Setting editingGoal and opening drawer");
         setEditingGoal(fresh);
         setDrawerOpen(true);
       });
