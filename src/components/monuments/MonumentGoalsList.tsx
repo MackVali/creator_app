@@ -1093,6 +1093,24 @@ export function MonumentGoalsList({
         onUpdate={handleGoalUpdated}
         onDelete={handleGoalDeleted}
       />
+      <GoalDrawer
+        key={
+          roadmapEditingGoal?.id ??
+          (roadmapDrawerOpen
+            ? "roadmap-goal-editor"
+            : "roadmap-goal-editor-closed")
+        }
+        open={roadmapDrawerOpen}
+        onClose={() => {
+          setRoadmapDrawerOpen(false);
+          setRoadmapEditingGoal(null);
+        }}
+        onAdd={() => {}}
+        initialGoal={roadmapEditingGoal}
+        monuments={monuments}
+        onUpdate={handleGoalUpdated}
+        onDelete={handleGoalDeleted}
+      />
     </div>
   );
 }
