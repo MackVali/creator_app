@@ -786,11 +786,12 @@ export function GoalDrawer({
           onClose();
         }
       }}
+      modal={false}
     >
       <SheetContent
         side="center"
         className="h-[90vh] w-full max-w-3xl overflow-hidden border border-white/10 bg-[#05070c] text-white shadow-[0_45px_120px_-40px_rgba(5,8,21,0.85)] sm:max-w-4xl"
-        style={{ zIndex: 1000 }}
+        style={{ zIndex: 9999 }}
       >
         <SheetHeader className="border-b border-white/10 px-6 py-5 sm:px-8 sm:py-6">
           <SheetTitle className="text-left text-xl font-semibold text-white tracking-[0.2em] uppercase">
