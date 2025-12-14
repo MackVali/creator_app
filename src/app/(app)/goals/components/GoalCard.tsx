@@ -249,9 +249,9 @@ function GoalCardImpl({
       isCompleted ? completedBg : inProgressBg
     } ${showEnergyInCompact ? "min-h-[60px]" : "min-h-[96px] aspect-[5/6]"}`;
     const displayEmoji =
-      typeof (goal.monumentEmoji ?? goal.emoji) === "string" &&
-      (goal.monumentEmoji ?? goal.emoji)?.trim().length
-        ? (goal.monumentEmoji ?? goal.emoji)?.trim()
+      typeof (goal.emoji ?? goal.monumentEmoji) === "string" &&
+      (goal.emoji ?? goal.monumentEmoji)?.trim().length
+        ? (goal.emoji ?? goal.monumentEmoji)?.trim()
         : goal.title.slice(0, 2).toUpperCase();
     const flameLevel = (goal.energyCode ? goal.energyCode : goal.energy ?? "No")
       .toString()
@@ -362,7 +362,7 @@ function GoalCardImpl({
                   isCompleted ? "bg-black text-white" : "bg-white/5 text-white"
                 }`}
               >
-                {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
+                {goal.emoji ?? goal.monumentEmoji ?? goal.title.slice(0, 2)}
               </div>
               <h3
                 id={`goal-${goal.id}-label`}
@@ -370,6 +370,9 @@ function GoalCardImpl({
                 title={goal.title}
                 style={{ hyphens: "auto" }}
               >
+                {showEmojiPrefix && (goal.emoji ?? goal.monumentEmoji)
+                  ? `${goal.emoji ?? goal.monumentEmoji} `
+                  : ""}
                 {goal.title}
               </h3>
               <div className="mt-1 h-[0.65rem] w-full overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">
@@ -441,7 +444,7 @@ function GoalCardImpl({
                       : "bg-white/5 text-white"
                   }`}
                 >
-                  {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
+                  {goal.emoji ?? goal.monumentEmoji ?? goal.title.slice(0, 2)}
                 </div>
                 <div className="flex-1">
                   <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em]">
@@ -464,9 +467,9 @@ function GoalCardImpl({
                     id={`goal-${goal.id}-label`}
                     className="mt-2 text-xl font-semibold"
                   >
-                    {showEmojiPrefix && (goal.monumentEmoji ?? goal.emoji) ? (
+                    {showEmojiPrefix && (goal.emoji ?? goal.monumentEmoji) ? (
                       <span className="mr-2 inline" aria-hidden>
-                        {goal.monumentEmoji ?? goal.emoji}
+                        {goal.emoji ?? goal.monumentEmoji}
                       </span>
                     ) : null}
                     {goal.title}
