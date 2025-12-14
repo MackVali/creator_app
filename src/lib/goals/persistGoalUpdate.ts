@@ -57,7 +57,8 @@ const PG_COLUMN_MISSING_CODE = "42703";
 export function isGoalCodeColumnMissingError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const cast = error as { message?: string; code?: string };
-  const message = typeof cast.message === "string" ? cast.message.toLowerCase() : "";
+  const message =
+    typeof cast.message === "string" ? cast.message.toLowerCase() : "";
   if (!message && !cast.code) return false;
   if (cast.code && cast.code !== PG_COLUMN_MISSING_CODE) return false;
   if (message.length === 0 && cast.code !== PG_COLUMN_MISSING_CODE) {
@@ -76,7 +77,10 @@ async function syncProjectsAndTasks(
 
   const uniqueProjectIds = Array.from(new Set(removedProjectIds));
   if (uniqueProjectIds.length > 0) {
-    const { error } = await supabase.from("projects").delete().in("id", uniqueProjectIds);
+    const { error } = await supabase
+      .from("projects")
+      .delete()
+      .in("id", uniqueProjectIds);
     if (error) {
       console.error("Error deleting projects:", error);
     }
@@ -84,7 +88,10 @@ async function syncProjectsAndTasks(
 
   const uniqueTaskIds = Array.from(new Set(removedTaskIds));
   if (uniqueTaskIds.length > 0) {
-    const { error } = await supabase.from("tasks").delete().in("id", uniqueTaskIds);
+    const { error } = await supabase
+      .from("tasks")
+      .delete()
+      .in("id", uniqueTaskIds);
     if (error) {
       console.error("Error deleting tasks:", error);
     }
@@ -137,7 +144,9 @@ async function syncProjectsAndTasks(
   await Promise.all(
     projects.map(async (project) => {
       const projectId = project.id;
-      const projectTasks = (project.tasks ?? []).filter((task) => task.name.trim().length > 0);
+      const projectTasks = (project.tasks ?? []).filter(
+        (task) => task.name.trim().length > 0
+      );
 
       const newTasks = projectTasks.filter((task) => task.isNew);
       if (newTasks.length > 0) {
@@ -206,6 +215,7 @@ export async function persistGoalUpdate({
     monument_id: goal.monumentId || null,
     roadmap_id: goal.roadmapId || null,
     due_date: goal.dueDate ?? null,
+    emoji: goal.emoji ?? null,
   };
 
   const buildEnumPayload = (includeCodeColumns: boolean) => {
@@ -226,7 +236,9 @@ export async function persistGoalUpdate({
 
   let { error } = await attemptUpdate(buildEnumPayload(true));
   if (error && isGoalCodeColumnMissingError(error)) {
-    console.warn("Goal code columns missing during update, retrying without them.");
+    console.warn(
+      "Goal code columns missing during update, retrying without them."
+    );
     ({ error } = await attemptUpdate(buildEnumPayload(false)));
   }
 
