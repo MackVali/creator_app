@@ -1521,7 +1521,7 @@ export default function GoalsPage() {
                   return (
                     <div
                       key={roadmap.id}
-                      className="h-full snap-center sm:[scroll-snap-align:unset]"
+                      className="relative h-full snap-center sm:[scroll-snap-align:unset] mb-[22px] overflow-visible"
                     >
                       <RoadmapCard
                         roadmap={roadmap}
@@ -1538,7 +1538,7 @@ export default function GoalsPage() {
                 {visibleGoals.map((goal) => (
                   <div
                     key={goal.id}
-                    className="h-full snap-center sm:[scroll-snap-align:unset]"
+                    className="relative h-full snap-center sm:[scroll-snap-align:unset] mb-[22px] overflow-visible"
                   >
                     <GoalCard
                       goal={goal}
