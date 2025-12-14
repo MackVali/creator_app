@@ -325,23 +325,6 @@ function GoalCardImpl({
                 />
               )}
             </div>
-            <div
-              className="progress-dock absolute left-1/2 w-[90%] rounded-[999px] -translate-x-1/2"
-              style={{ bottom: "-18px", zIndex: 999 }}
-            >
-              <div className="progress-dock-trench">
-                <div
-                  className="progress-dock-fill h-full rounded-[8px]"
-                  style={{
-                    width: `${goal.progress}%`,
-                    background:
-                      "linear-gradient(to bottom, #5ee39c 0%, #34c47a 55%, #1f8f55 100%)",
-                    boxShadow:
-                      "inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 0 rgba(0,0,0,0.45)",
-                  }}
-                ></div>
-              </div>
-            </div>
           </div>
           <ProjectQuickEditDialog
             project={editingProject}
@@ -424,23 +407,6 @@ function GoalCardImpl({
                 onTaskToggleCompletion={onTaskToggleCompletion}
               />
             )}
-          </div>
-          <div
-            className="progress-dock absolute left-1/2 w-[90%] rounded-[999px] -translate-x-1/2"
-            style={{ bottom: "-18px", zIndex: 999 }}
-          >
-            <div className="progress-dock-trench">
-              <div
-                className="progress-dock-fill h-full rounded-[8px]"
-                style={{
-                  width: `${goal.progress}%`,
-                  background:
-                    "linear-gradient(to bottom, #5ee39c 0%, #34c47a 55%, #1f8f55 100%)",
-                  boxShadow:
-                    "inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 0 rgba(0,0,0,0.45)",
-                }}
-              ></div>
-            </div>
           </div>
         </div>
         <ProjectQuickEditDialog
@@ -638,24 +604,6 @@ function GoalCardImpl({
               />
             </div>
           )}
-        </div>
-
-        <div
-          className="progress-dock absolute left-1/2 w-[90%] rounded-[999px] -translate-x-1/2"
-          style={{ bottom: "-18px", zIndex: 999 }}
-        >
-          <div className="progress-dock-trench">
-            <div
-              className="progress-dock-fill h-full rounded-[8px]"
-              style={{
-                width: `${goal.progress}%`,
-                background:
-                  "linear-gradient(to bottom, #5ee39c 0%, #34c47a 55%, #1f8f55 100%)",
-                boxShadow:
-                  "inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 0 rgba(0,0,0,0.45)",
-              }}
-            ></div>
-          </div>
         </div>
       </div>
       <ProjectQuickEditDialog
