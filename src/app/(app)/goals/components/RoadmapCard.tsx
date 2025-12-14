@@ -40,11 +40,17 @@ function DraggableGoalCard({
   index,
   isOpen,
   onOpenChange,
+  onGoalEdit,
+  onGoalToggleActive,
+  onGoalDelete,
 }: {
   goal: Goal;
   index: number;
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onGoalEdit?: (goal: Goal) => void;
+  onGoalToggleActive?: (goal: Goal) => void;
+  onGoalDelete?: (goal: Goal) => void;
 }) {
   const {
     attributes,
@@ -109,6 +115,11 @@ function DraggableGoalCard({
             variant="default"
             open={true}
             onOpenChange={onOpenChange}
+            onEdit={onGoalEdit ? () => onGoalEdit(goal) : undefined}
+            onToggleActive={
+              onGoalToggleActive ? () => onGoalToggleActive(goal) : undefined
+            }
+            onDelete={onGoalDelete ? () => onGoalDelete(goal) : undefined}
           />
         ) : (
           <button
@@ -453,6 +464,9 @@ function RoadmapCardImpl({
                             setOpenGoalId(null);
                           }
                         }}
+                        onGoalEdit={onGoalEdit}
+                        onGoalToggleActive={onGoalToggleActive}
+                        onGoalDelete={onGoalDelete}
                       />
                     ))}
                   </div>
@@ -480,10 +494,19 @@ function RoadmapCardImpl({
             onEdit={
               onGoalEdit
                 ? () => {
-                    console.log("🎯 Edit clicked for goal:", openGoalId);
-                    onGoalEdit(localGoals.find((g) => g.id === openGoalId)!);
+                    console.log(
+                      "🎯 RoadmapCard onEdit called for goal:",
+                      openGoalId
+                    );
+                    const goal = localGoals.find((g) => g.id === openGoalId);
+                    console.log("🎯 Found goal:", goal?.id, goal?.title);
+                    onGoalEdit(goal!);
+                    console.log("🎯 Called onGoalEdit");
                   }
-                : () => console.log("🎯 Edit clicked but no handler")
+                : () =>
+                    console.log(
+                      "🎯 RoadmapCard onEdit called but no onGoalEdit handler"
+                    )
             }
             onToggleActive={
               onGoalToggleActive
