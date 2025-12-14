@@ -155,6 +155,9 @@ interface RoadmapCardProps {
   goals: Goal[];
   onClick?(): void;
   variant?: "default" | "compact";
+  onGoalEdit?: (goal: Goal) => void;
+  onGoalToggleActive?: (goal: Goal) => void;
+  onGoalDelete?: (goal: Goal) => void;
 }
 
 function RoadmapCardImpl({
@@ -163,6 +166,9 @@ function RoadmapCardImpl({
   goals,
   onClick,
   variant = "default",
+  onGoalEdit,
+  onGoalToggleActive,
+  onGoalDelete,
 }: RoadmapCardProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -471,6 +477,35 @@ function RoadmapCardImpl({
             onOpenChange={(isOpen) => {
               if (!isOpen) setOpenGoalId(null);
             }}
+            onEdit={
+              onGoalEdit
+                ? () => {
+                    console.log("🎯 Edit clicked for goal:", openGoalId);
+                    onGoalEdit(localGoals.find((g) => g.id === openGoalId)!);
+                  }
+                : () => console.log("🎯 Edit clicked but no handler")
+            }
+            onToggleActive={
+              onGoalToggleActive
+                ? () => {
+                    console.log(
+                      "🎯 Toggle active clicked for goal:",
+                      openGoalId
+                    );
+                    onGoalToggleActive(
+                      localGoals.find((g) => g.id === openGoalId)!
+                    );
+                  }
+                : () => console.log("🎯 Toggle active clicked but no handler")
+            }
+            onDelete={
+              onGoalDelete
+                ? () => {
+                    console.log("🎯 Delete clicked for goal:", openGoalId);
+                    onGoalDelete(localGoals.find((g) => g.id === openGoalId)!);
+                  }
+                : () => console.log("🎯 Delete clicked but no handler")
+            }
           />
         )}
       </div>
