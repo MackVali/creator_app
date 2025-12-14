@@ -555,46 +555,70 @@ function GoalCardImpl({
               )}
             </button>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  aria-label="Goal actions"
-                  className="rounded-full border border-white/10 bg-white/10 p-1.5 text-white/70 hover:bg-white/20"
-                  onClick={() =>
-                    console.log("🎯 Three dots clicked, onEdit:", !!onEdit)
+            <div className="relative">
+              <button
+                aria-label="Goal actions"
+                className="rounded-full border border-white/10 bg-white/10 p-1.5 text-white/70 hover:bg-white/20"
+                onClick={() => {
+                  console.log("🎯 Three dots clicked, onEdit:", !!onEdit);
+                  // Simple custom dropdown toggle
+                  const dropdown = document.getElementById(
+                    `dropdown-${goal.id}`
+                  );
+                  if (dropdown) {
+                    dropdown.classList.toggle("hidden");
+                    console.log("🎯 Toggled dropdown visibility");
+                  } else {
+                    console.log("🎯 Dropdown element not found");
                   }
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onSelect={() => {
-                    console.log("🎯 Edit menu item selected");
-                    onEdit?.();
-                  }}
-                >
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => {
-                    console.log("🎯 Toggle active menu item selected");
-                    onToggleActive?.();
-                  }}
-                >
-                  {goal.active ? "Mark Inactive" : "Mark Active"}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-rose-500 focus:text-rose-400"
-                  onSelect={() => {
-                    console.log("🎯 Delete menu item selected");
-                    onDelete?.();
-                  }}
-                >
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                }}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              <div
+                id={`dropdown-${goal.id}`}
+                className="absolute right-0 top-full mt-1 hidden z-50 w-48 rounded-md border border-white/10 bg-black shadow-lg"
+              >
+                <div className="py-1">
+                  <button
+                    className="block w-full px-4 py-2 text-left text-sm text-white hover:bg-white/10"
+                    onClick={() => {
+                      console.log("🎯 Edit button clicked");
+                      document
+                        .getElementById(`dropdown-${goal.id}`)
+                        ?.classList.add("hidden");
+                      onEdit?.();
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="block w-full px-4 py-2 text-left text-sm text-white hover:bg-white/10"
+                    onClick={() => {
+                      console.log("🎯 Toggle active button clicked");
+                      document
+                        .getElementById(`dropdown-${goal.id}`)
+                        ?.classList.add("hidden");
+                      onToggleActive?.();
+                    }}
+                  >
+                    {goal.active ? "Mark Inactive" : "Mark Active"}
+                  </button>
+                  <button
+                    className="block w-full px-4 py-2 text-left text-sm text-rose-400 hover:bg-white/10"
+                    onClick={() => {
+                      console.log("🎯 Delete button clicked");
+                      document
+                        .getElementById(`dropdown-${goal.id}`)
+                        ?.classList.add("hidden");
+                      onDelete?.();
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {open && (
