@@ -204,7 +204,8 @@ function RoadmapCardImpl({
   const dragSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5,
+        delay: 200,
+        tolerance: 10,
       },
     })
   );
@@ -446,6 +447,20 @@ function CompactGoalsOverlay({
   anchorRect,
 }: CompactGoalsOverlayProps) {
   const [mounted, setMounted] = useState(false);
+  const [localGoals, setLocalGoals] = useState(goals);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        delay: 200,
+        tolerance: 10,
+      },
+    })
+  );
+
+  useEffect(() => {
+    setLocalGoals(goals);
+  }, [goals]);
 
   useEffect(() => {
     setMounted(true);
@@ -492,23 +507,38 @@ function CompactGoalsOverlay({
 
   const goalsContent = (
     <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
-      <div className="space-y-1">
-        {goals.map((goal) => (
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={(event) => {
+          console.log("🎯 Drag started:", event.active.id);
+        }}
+        onDragEnd={(event) => {
+          console.log("🎯 Drag ended:", event);
+          const { active, over } = event;
+          if (over && active.id !== over.id) {
+            const oldIndex = localGoals.findIndex((g) => g.id === active.id);
+            const newIndex = localGoals.findIndex((g) => g.id === over.id);
+            console.log(`Moving from index ${oldIndex} to ${newIndex}`);
+            const reordered = arrayMove(localGoals, oldIndex, newIndex);
+            setLocalGoals(reordered);
+          }
+        }}
+      >
+        <SortableContext items={localGoals.map((g) => g.id)}>
           <div
-            key={goal.id}
-            className="goal-card-wrapper relative z-0 w-full isolate min-w-0"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+            }}
           >
-            <GoalCard
-              goal={goal}
-              showWeight={false}
-              showCreatedAt={false}
-              showEmojiPrefix={true}
-              variant="compact"
-              showEnergyInCompact={true}
-            />
+            {localGoals.map((goal, index) => (
+              <SortableGoalItem key={goal.id} goal={goal} index={index} />
+            ))}
           </div>
-        ))}
-      </div>
+        </SortableContext>
+      </DndContext>
     </div>
   );
 
