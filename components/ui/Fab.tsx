@@ -34,6 +34,7 @@ type FabSearchResult = {
   nextDueAt: string | null;
   completedAt: string | null;
   isCompleted: boolean;
+  global_rank?: number | null;
 };
 
 export function Fab({
@@ -60,7 +61,8 @@ export function Fab({
   const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [rescheduleTarget, setRescheduleTarget] = useState<FabSearchResult | null>(null);
+  const [rescheduleTarget, setRescheduleTarget] =
+    useState<FabSearchResult | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [rescheduleError, setRescheduleError] = useState<string | null>(null);
@@ -105,23 +107,30 @@ export function Fab({
   );
 
   const formatDateInput = (date: Date) =>
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-      date.getDate()
-    ).padStart(2, "0")}`;
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(date.getDate()).padStart(2, "0")}`;
 
   const formatTimeInput = (date: Date) =>
-    `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+    `${String(date.getHours()).padStart(2, "0")}:${String(
+      date.getMinutes()
+    ).padStart(2, "0")}`;
 
   const fetchNextScheduledInstance = useCallback(
     async (sourceId: string, sourceType: "PROJECT" | "HABIT") => {
       const params = new URLSearchParams({ sourceId, sourceType });
-      const response = await fetch(`/api/schedule/instances/next?${params.toString()}`);
+      const response = await fetch(
+        `/api/schedule/instances/next?${params.toString()}`
+      );
       if (!response.ok) {
         return null;
       }
-      const payload = (await response.json().catch(() => null)) as
-        | { instanceId: string | null; startUtc: string | null; durationMinutes?: number | null }
-        | null;
+      const payload = (await response.json().catch(() => null)) as {
+        instanceId: string | null;
+        startUtc: string | null;
+        durationMinutes?: number | null;
+      } | null;
       return payload ?? null;
     },
     []
@@ -312,7 +321,7 @@ export function Fab({
   };
 
   const toggleMenu = () => {
-    setIsOpen(prev => !prev);
+    setIsOpen((prev) => !prev);
   };
 
   const handleFabButtonClick = () => {
@@ -331,12 +340,16 @@ export function Fab({
     return false;
   };
 
-  const handleFabButtonTouchStart = (event: React.TouchEvent<HTMLButtonElement>) => {
+  const handleFabButtonTouchStart = (
+    event: React.TouchEvent<HTMLButtonElement>
+  ) => {
     if (!swipeUpToOpen) return;
     setTouchStartY(event.touches[0].clientY);
   };
 
-  const handleFabButtonTouchEnd = (event: React.TouchEvent<HTMLButtonElement>) => {
+  const handleFabButtonTouchEnd = (
+    event: React.TouchEvent<HTMLButtonElement>
+  ) => {
     if (!swipeUpToOpen || touchStartY === null) return;
     const diffY = event.changedTouches[0].clientY - touchStartY;
     setTouchStartY(null);
@@ -388,9 +401,13 @@ export function Fab({
     setRescheduleTarget(result);
     setDeleteError(null);
     setRescheduleError(
-      result.scheduleInstanceId ? null : "This event has no upcoming scheduled time."
+      result.scheduleInstanceId
+        ? null
+        : "This event has no upcoming scheduled time."
     );
-    const baseDate = result.nextScheduledAt ? new Date(result.nextScheduledAt) : new Date();
+    const baseDate = result.nextScheduledAt
+      ? new Date(result.nextScheduledAt)
+      : new Date();
     if (Number.isNaN(baseDate.getTime())) {
       const now = new Date();
       setRescheduleDate(formatDateInput(now));
@@ -514,14 +531,17 @@ export function Fab({
         if (trimmed.length > 0) {
           params.set("q", trimmed);
         }
-        const url = params.toString().length > 0
-          ? `/api/schedule/search?${params.toString()}`
-          : "/api/schedule/search";
+        const url =
+          params.toString().length > 0
+            ? `/api/schedule/search?${params.toString()}`
+            : "/api/schedule/search";
         const response = await fetch(url, { signal: controller.signal });
         if (!response.ok) {
           throw new Error(`Request failed: ${response.status}`);
         }
-        const payload = (await response.json()) as { results?: FabSearchResult[] };
+        const payload = (await response.json()) as {
+          results?: FabSearchResult[];
+        };
         if (!controller.signal.aborted) {
           setSearchResults(sortSearchResults(payload.results ?? []));
         }
@@ -574,15 +594,18 @@ export function Fab({
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.error ?? "Unable to update schedule");
       }
-      const payload = (await response.json().catch(() => null)) as
-        | { startUtc?: string | null }
-        | null;
+      const payload = (await response.json().catch(() => null)) as {
+        startUtc?: string | null;
+      } | null;
       let nextStart = payload?.startUtc ?? parsed.toISOString();
       let nextInstanceId = rescheduleTarget.scheduleInstanceId;
       let nextDuration = rescheduleTarget.durationMinutes;
 
       if (rescheduleTarget.type === "HABIT") {
-        const refreshed = await fetchNextScheduledInstance(rescheduleTarget.id, "HABIT");
+        const refreshed = await fetchNextScheduledInstance(
+          rescheduleTarget.id,
+          "HABIT"
+        );
         if (refreshed) {
           nextStart = refreshed.startUtc ?? nextStart;
           nextInstanceId = refreshed.instanceId ?? nextInstanceId;
@@ -595,10 +618,11 @@ export function Fab({
         }
       }
 
-      setSearchResults(prev =>
+      setSearchResults((prev) =>
         sortSearchResults(
-          prev.map(item =>
-            item.id === rescheduleTarget.id && item.type === rescheduleTarget.type
+          prev.map((item) =>
+            item.id === rescheduleTarget.id &&
+            item.type === rescheduleTarget.type
               ? {
                   ...item,
                   nextScheduledAt: nextStart,
@@ -615,7 +639,9 @@ export function Fab({
       setDeleteError(null);
     } catch (error) {
       console.error("Failed to reschedule", error);
-      setRescheduleError(error instanceof Error ? error.message : "Unable to update schedule");
+      setRescheduleError(
+        error instanceof Error ? error.message : "Unable to update schedule"
+      );
       setIsSavingReschedule(false);
     }
   }, [
@@ -648,9 +674,9 @@ export function Fab({
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.error ?? "Unable to delete this event");
       }
-      setSearchResults(prev =>
+      setSearchResults((prev) =>
         prev.filter(
-          item => !(item.id === target.id && item.type === target.type)
+          (item) => !(item.id === target.id && item.type === target.type)
         )
       );
       setRescheduleTarget(null);
@@ -691,13 +717,10 @@ export function Fab({
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     const startY = menuVerticalStartRef.current;
-    const diffY =
-      startY === null ? 0 : e.changedTouches[0].clientY - startY;
+    const diffY = startY === null ? 0 : e.changedTouches[0].clientY - startY;
     const absDiffY = Math.abs(diffY);
     const diffX =
-      menuSection === "content"
-        ? e.changedTouches[0].clientX - touchStartX
-        : 0;
+      menuSection === "content" ? e.changedTouches[0].clientX - touchStartX : 0;
     menuVerticalStartRef.current = null;
 
     if (absDiffY > 40 && absDiffY >= Math.abs(diffX)) {
@@ -756,7 +779,8 @@ export function Fab({
             )}
             style={{
               ...getMenuBackgroundStyles(),
-              transition: "background-image 0.1s linear, border-color 0.1s linear",
+              transition:
+                "background-image 0.1s linear, border-color 0.1s linear",
               transformOrigin:
                 menuVariant === "timeline" ? "bottom right" : "bottom center",
               minHeight: menuContainerHeight,
@@ -896,14 +920,18 @@ function FabNexus({
 }: FabNexusProps) {
   const hasResults = results.length > 0;
 
-  const formatDateTime = (value: string | null, options?: Intl.DateTimeFormatOptions) => {
+  const formatDateTime = (
+    value: string | null,
+    options?: Intl.DateTimeFormatOptions
+  ) => {
     if (!value) return null;
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return null;
     try {
-      return new Intl.DateTimeFormat(undefined, options ?? { dateStyle: "medium", timeStyle: "short" }).format(
-        date
-      );
+      return new Intl.DateTimeFormat(
+        undefined,
+        options ?? { dateStyle: "medium", timeStyle: "short" }
+      ).format(date);
     } catch {
       return date.toLocaleString();
     }
@@ -919,14 +947,19 @@ function FabNexus({
       return scheduledLabel ? `Scheduled ${scheduledLabel}` : "Scheduled";
     }
     if (result.type === "HABIT" && result.nextDueAt) {
-      const dueLabel = formatDateTime(result.nextDueAt, { dateStyle: "medium" });
+      const dueLabel = formatDateTime(result.nextDueAt, {
+        dateStyle: "medium",
+      });
       return dueLabel ? `Due ${dueLabel}` : "Due soon";
     }
     return "No upcoming schedule";
   };
 
   return (
-    <div className="flex h-full w-full flex-col gap-3 px-4 py-4 text-white" style={{ backgroundColor: "rgba(0,0,0,0.75)" }}>
+    <div
+      className="flex h-full w-full flex-col gap-3 px-4 py-4 text-white"
+      style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
+    >
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
         <input
@@ -948,8 +981,9 @@ function FabNexus({
           </div>
         ) : hasResults ? (
           <div className="flex flex-col">
-            {results.map(result => {
-              const isCompletedProject = result.type === "PROJECT" && result.isCompleted;
+            {results.map((result) => {
+              const isCompletedProject =
+                result.type === "PROJECT" && result.isCompleted;
               const isDisabled = isCompletedProject;
               const statusText = getStatusText(result);
               const cardClassName = cn(
@@ -959,7 +993,9 @@ function FabNexus({
                   : "border-white/5 bg-black/60 text-white/85 hover:bg-black/70",
                 isDisabled && "cursor-not-allowed"
               );
-              const nameTextClass = isCompletedProject ? "text-emerald-50" : "text-white";
+              const nameTextClass = isCompletedProject
+                ? "text-emerald-50"
+                : "text-white";
               const metaLabelClass = isCompletedProject
                 ? "text-[4px] uppercase tracking-[0.4em] text-emerald-100/70"
                 : "text-[4px] uppercase tracking-[0.4em] text-white/45";
@@ -979,7 +1015,7 @@ function FabNexus({
                   className={cardClassName}
                 >
                   <div className="flex w-full items-start justify-between gap-3">
-                    <span className="block flex-[3] basis-3/4 break-words pr-0 text-[12px] font-medium leading-snug tracking-wide min-w-0">
+                    <div className="flex flex-col gap-1 flex-[3] basis-3/4 min-w-0">
                       <span
                         className={cn(
                           "block line-clamp-2 break-words text-[12px] font-medium leading-snug tracking-wide",
@@ -988,16 +1024,21 @@ function FabNexus({
                       >
                         {result.name}
                       </span>
-                    </span>
+                      {result.type === "PROJECT" &&
+                        result.global_rank !== null &&
+                        result.global_rank !== undefined && (
+                          <span className="text-gray-600 font-bold text-xs leading-none">
+                            #{result.global_rank}
+                          </span>
+                        )}
+                    </div>
                     <div className="flex flex-col items-end gap-1 text-right flex-[1] basis-1/4 min-w-0">
                       <div className="flex items-center gap-1">
-                      <span className={metaLabelClass}>
-                        {result.type === "PROJECT" ? "Project" : "Habit"}
-                      </span>
+                        <span className={metaLabelClass}>
+                          {result.type === "PROJECT" ? "Project" : "Habit"}
+                        </span>
                       </div>
-                      <span className={statusLabelClass}>
-                        {statusText}
-                      </span>
+                      <span className={statusLabelClass}>{statusText}</span>
                     </div>
                   </div>
                 </button>
@@ -1045,17 +1086,23 @@ function FabRescheduleOverlay({
   onSave,
   onDelete,
 }: FabRescheduleOverlayProps) {
-  if (typeof document === "undefined") return null;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   useEffect(() => {
     setConfirmingDelete(false);
   }, [open, target?.id]);
+
+  if (typeof document === "undefined") return null;
   const combinedErrors = [error, deleteError].filter(
-    (message): message is string => typeof message === "string" && message.length > 0
+    (message): message is string =>
+      typeof message === "string" && message.length > 0
   );
   const disableActions = isSaving || isDeleting;
   const deleteLabel =
-    target?.type === "HABIT" ? "Habit" : target?.type === "PROJECT" ? "Project" : "Event";
+    target?.type === "HABIT"
+      ? "Habit"
+      : target?.type === "PROJECT"
+      ? "Project"
+      : "Event";
   const handleDeleteClick = () => {
     if (disableActions || !target) return;
     if (!confirmingDelete) {
@@ -1081,7 +1128,7 @@ function FabRescheduleOverlay({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ type: "spring", stiffness: 260, damping: 22 }}
-            onClick={event => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
           >
             <button
               type="button"
@@ -1093,8 +1140,12 @@ function FabRescheduleOverlay({
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
             <div className="space-y-1">
-              <p className="text-xs uppercase tracking-[0.35em] text-white/40">Reschedule</p>
-              <h3 className="text-lg font-semibold leading-tight">{target?.name ?? "Event"}</h3>
+              <p className="text-xs uppercase tracking-[0.35em] text-white/40">
+                Reschedule
+              </p>
+              <h3 className="text-lg font-semibold leading-tight">
+                {target?.name ?? "Event"}
+              </h3>
             </div>
             <div className="mt-4 space-y-4">
               <div className="space-y-1">
@@ -1143,8 +1194,8 @@ function FabRescheduleOverlay({
                     {isDeleting
                       ? "Deleting…"
                       : confirmingDelete
-                        ? `Confirm delete ${deleteLabel}`
-                        : `Delete ${deleteLabel}`}
+                      ? `Confirm delete ${deleteLabel}`
+                      : `Delete ${deleteLabel}`}
                   </Button>
                   <div className="flex items-center justify-end gap-2">
                     <Button

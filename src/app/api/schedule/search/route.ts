@@ -18,6 +18,7 @@ type SearchResult = {
   nextDueAt: string | null;
   completedAt: string | null;
   isCompleted: boolean;
+  global_rank?: number | null;
 };
 
 type HabitSearchRecord = {
@@ -45,6 +46,7 @@ type ProjectSearchRecord = {
   id: string;
   name?: string | null;
   completed_at?: string | null;
+  global_rank?: number | null;
 };
 
 type ScheduleSummary = {
@@ -64,7 +66,10 @@ function normalizeQuery(value: string | null): string {
 export async function GET(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
-    return NextResponse.json({ error: "Supabase client unavailable" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Supabase client unavailable" },
+      { status: 500 }
+    );
   }
 
   const {
@@ -77,13 +82,15 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const query = normalizeQuery(searchParams.get("q"));
-  const likeQuery = query ? `%${query.replace(/%/g, "\\%").replace(/_/g, "\\_")}%` : null;
+  const likeQuery = query
+    ? `%${query.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`
+    : null;
 
   const timeZone = await resolveUserTimezone(supabase, user.id);
   const normalizedTimeZone = normalizeTimeZone(timeZone);
   const baseProjectQuery = supabase
     .from("projects")
-    .select("id,name,completed_at")
+    .select("id,name,completed_at,global_rank")
     .eq("user_id", user.id)
     .order("name", { ascending: true })
     .limit(25);
@@ -104,19 +111,25 @@ export async function GET(request: NextRequest) {
 
   if (projectsResponse.error) {
     console.error("FAB search projects error", projectsResponse.error);
-    return NextResponse.json({ error: "Unable to load projects" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Unable to load projects" },
+      { status: 500 }
+    );
   }
 
   if (habitsResponse.error) {
     console.error("FAB search habits error", habitsResponse.error);
-    return NextResponse.json({ error: "Unable to load habits" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Unable to load habits" },
+      { status: 500 }
+    );
   }
 
   const projectIds = (projectsResponse.data ?? [])
-    .map(project => project?.id)
+    .map((project) => project?.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
   const habitIds = (habitsResponse.data ?? [])
-    .map(habit => habit?.id)
+    .map((habit) => habit?.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
 
   const lookup = new Map<string, ScheduleSummary>();
@@ -126,7 +139,9 @@ export async function GET(request: NextRequest) {
     const nowMs = Date.now();
     const { data: scheduleRows, error: scheduleError } = await supabase
       .from("schedule_instances")
-      .select("id, source_id, source_type, start_utc, duration_min, status, completed_at")
+      .select(
+        "id, source_id, source_type, start_utc, duration_min, status, completed_at"
+      )
       .eq("user_id", user.id)
       .in("source_id", sourceIds)
       .in("source_type", ["PROJECT", "HABIT"])
@@ -139,15 +154,15 @@ export async function GET(request: NextRequest) {
       for (const row of scheduleRows ?? []) {
         if (!row?.source_id) continue;
         const key = `${row.source_type}:${row.source_id}`;
-        const summary =
-          lookup.get(key) ?? {
-            nextScheduledId: null,
-            nextScheduledStart: null,
-            nextScheduledDuration: null,
-            latestCompletedAt: null,
-          };
+        const summary = lookup.get(key) ?? {
+          nextScheduledId: null,
+          nextScheduledStart: null,
+          nextScheduledDuration: null,
+          latestCompletedAt: null,
+        };
         if (row.status === "scheduled") {
-          const startUtc = typeof row.start_utc === "string" ? row.start_utc : null;
+          const startUtc =
+            typeof row.start_utc === "string" ? row.start_utc : null;
           const startMs = startUtc ? Date.parse(startUtc) : Number.NaN;
           if (
             startUtc &&
@@ -159,7 +174,8 @@ export async function GET(request: NextRequest) {
             summary.nextScheduledId = row.id ?? null;
             summary.nextScheduledStart = startUtc;
             summary.nextScheduledDuration =
-              typeof row.duration_min === "number" && Number.isFinite(row.duration_min)
+              typeof row.duration_min === "number" &&
+              Number.isFinite(row.duration_min)
                 ? row.duration_min
                 : null;
           }
@@ -168,9 +184,11 @@ export async function GET(request: NextRequest) {
             typeof row.completed_at === "string" && row.completed_at.length > 0
               ? row.completed_at
               : typeof row.start_utc === "string"
-                ? row.start_utc
-                : null;
-          const completedMs = completedIso ? Date.parse(completedIso) : Number.NaN;
+              ? row.start_utc
+              : null;
+          const completedMs = completedIso
+            ? Date.parse(completedIso)
+            : Number.NaN;
           if (
             completedIso &&
             Number.isFinite(completedMs) &&
@@ -193,10 +211,12 @@ export async function GET(request: NextRequest) {
     const key = `PROJECT:${project.id}`;
     const summary = lookup.get(key);
     const projectCompletedAt =
-      typeof projectRecord.completed_at === "string" && projectRecord.completed_at.length > 0
+      typeof projectRecord.completed_at === "string" &&
+      projectRecord.completed_at.length > 0
         ? projectRecord.completed_at
         : null;
-    const completedAt = projectCompletedAt ?? summary?.latestCompletedAt ?? null;
+    const completedAt =
+      projectCompletedAt ?? summary?.latestCompletedAt ?? null;
     results.push({
       id: project.id,
       name: project.name?.trim() || "Untitled project",
@@ -207,6 +227,7 @@ export async function GET(request: NextRequest) {
       nextDueAt: null,
       completedAt,
       isCompleted: typeof completedAt === "string",
+      global_rank: projectRecord.global_rank ?? null,
     });
   }
 
@@ -234,7 +255,8 @@ export async function GET(request: NextRequest) {
       return Number.POSITIVE_INFINITY;
     }
     const candidate =
-      result.nextScheduledAt ?? (result.type === "HABIT" ? result.nextDueAt : null);
+      result.nextScheduledAt ??
+      (result.type === "HABIT" ? result.nextDueAt : null);
     if (!candidate) return Number.POSITIVE_INFINITY;
     const parsed = Date.parse(candidate);
     return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
@@ -266,7 +288,8 @@ async function resolveUserTimezone(
     if (error) {
       console.warn("Failed to resolve profile timezone for FAB search", error);
     }
-    const value = typeof data?.timezone === "string" ? data.timezone.trim() : "";
+    const value =
+      typeof data?.timezone === "string" ? data.timezone.trim() : "";
     return value || "UTC";
   } catch (error) {
     console.warn("Failed to resolve profile timezone for FAB search", error);
@@ -320,7 +343,10 @@ function parseIsoDate(value?: string | null): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function computeHabitNextDue(record: HabitSearchRecord, timeZone: string): string | null {
+function computeHabitNextDue(
+  record: HabitSearchRecord,
+  timeZone: string
+): string | null {
   try {
     const habit = buildHabitScheduleItem(record);
     const zone = timeZone || "UTC";
@@ -344,7 +370,10 @@ function computeHabitNextDue(record: HabitSearchRecord, timeZone: string): strin
     }
     return nextDueOverride ? nextDueOverride.toISOString() : null;
   } catch (error) {
-    console.error("Failed to compute next due date for habit search result", error);
+    console.error(
+      "Failed to compute next due date for habit search result",
+      error
+    );
     return record.next_due_override ?? null;
   }
 }
