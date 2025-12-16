@@ -302,6 +302,7 @@ export function GoalDrawer({
   const [removedProjectIds, setRemovedProjectIds] = useState<string[]>([]);
   const [removedTaskIds, setRemovedTaskIds] = useState<string[]>([]);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const monumentSelectionRef = useRef<string>("");
 
   const editing = Boolean(initialGoal);
@@ -497,13 +498,11 @@ export function GoalDrawer({
 
   const handleDeleteGoal = async () => {
     if (!initialGoal || !onDelete) return;
-    const shouldDelete =
-      typeof window === "undefined"
-        ? true
-        : window.confirm(
-            "Deleting this goal will also delete any related projects and tasks. This action cannot be undone. Continue?"
-          );
-    if (!shouldDelete) return;
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!initialGoal || !onDelete) return;
     let success = false;
     try {
       setDeleteLoading(true);
@@ -1392,38 +1391,68 @@ export function GoalDrawer({
           </div>
         </form>
         <SheetFooter className="border-t border-white/10 bg-white/[0.02] px-6 py-4 sm:px-8">
-          <div className="flex w-full flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              {showDeleteAction ? (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  className="bg-red-600 text-white hover:bg-red-500 disabled:opacity-70"
-                  onClick={handleDeleteGoal}
-                  disabled={deleteLoading}
-                >
-                  Delete goal
-                </Button>
-              ) : null}
+          {showDeleteConfirm ? (
+            <div className="flex items-center gap-3">
+              <div className="flex-1 space-y-2">
+                <h4 className="text-sm font-semibold text-white">
+                  Delete Goal
+                </h4>
+                <p className="text-sm text-white/70">
+                  This will permanently delete this goal and all related
+                  projects and tasks.
+                </p>
+              </div>
               <Button
                 type="button"
-                variant="ghost"
-                className="text-sm text-white/70 hover:text-white"
-                onClick={onClose}
+                variant="outline"
+                onClick={() => setShowDeleteConfirm(false)}
                 disabled={deleteLoading}
               >
                 Cancel
               </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleConfirmDelete}
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? "Deleting..." : "Delete Goal"}
+              </Button>
             </div>
-            <Button
-              type="submit"
-              form={formId}
-              className="bg-white text-sm font-semibold text-[#05070c] hover:bg-white/90 disabled:opacity-60"
-              disabled={!canSubmit || deleteLoading}
-            >
-              Save goal
-            </Button>
-          </div>
+          ) : (
+            <div className="flex w-full flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                {showDeleteAction ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    className="bg-red-600 text-white hover:bg-red-500 disabled:opacity-70"
+                    onClick={handleDeleteGoal}
+                    disabled={deleteLoading}
+                  >
+                    Delete goal
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-sm text-white/70 hover:text-white"
+                  onClick={onClose}
+                  disabled={deleteLoading}
+                >
+                  Cancel
+                </Button>
+              </div>
+              <Button
+                type="submit"
+                form={formId}
+                className="bg-white text-sm font-semibold text-[#05070c] hover:bg-white/90 disabled:opacity-60"
+                disabled={!canSubmit || deleteLoading}
+              >
+                Save goal
+              </Button>
+            </div>
+          )}
         </SheetFooter>
       </SheetContent>
     </Sheet>
