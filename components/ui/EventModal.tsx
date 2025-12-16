@@ -55,10 +55,7 @@ import {
   getProjectsForUser,
   type Project,
 } from "@/lib/queries/projects";
-import {
-  getMonumentsForUser,
-  type Monument,
-} from "@/lib/queries/monuments";
+import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
@@ -165,10 +162,7 @@ const normalizeLookupKey = (value?: string | null) => {
     .replace(/[^A-Z0-9]/g, "");
 };
 
-async function cleanupGoalHierarchy(
-  supabase: SupabaseClient,
-  goalId: string
-) {
+async function cleanupGoalHierarchy(supabase: SupabaseClient, goalId: string) {
   const { error: taskCleanupError } = await supabase
     .from("tasks")
     .delete()
@@ -203,7 +197,8 @@ async function createGoalFallback(
   const createdProjectIds: string[] = [];
 
   const fallbackGoalPriority =
-    (goalInput.priority && String(goalInput.priority).trim()) || DEFAULT_PRIORITY;
+    (goalInput.priority && String(goalInput.priority).trim()) ||
+    DEFAULT_PRIORITY;
   const fallbackGoalEnergy =
     (goalInput.energy && String(goalInput.energy).trim()) || DEFAULT_ENERGY;
 
@@ -231,7 +226,8 @@ async function createGoalFallback(
 
     for (const project of projects) {
       const projectPriorityCode =
-        (project.priority && String(project.priority).trim()) || DEFAULT_PRIORITY;
+        (project.priority && String(project.priority).trim()) ||
+        DEFAULT_PRIORITY;
       const projectEnergyCode =
         (project.energy && String(project.energy).trim()) || DEFAULT_ENERGY;
       const { data: projectRecord, error: projectError } = await supabase
@@ -273,24 +269,23 @@ async function createGoalFallback(
       }
 
       if (project.tasks.length > 0) {
-        const { error: taskError } = await supabase
-          .from("tasks")
-          .insert(
-            project.tasks.map((task) => ({
-              user_id: goalInput.user_id,
-              goal_id: createdGoalId,
-              project_id: projectRecord.id,
-              name: task.name,
-              stage: task.stage,
-              priority:
-                (task.priority && String(task.priority).trim()) || DEFAULT_PRIORITY,
-              energy:
-                (task.energy && String(task.energy).trim()) || DEFAULT_ENERGY,
-              notes: task.notes,
-              skill_id: task.skill_id,
-              due_date: task.due_date,
-            }))
-          );
+        const { error: taskError } = await supabase.from("tasks").insert(
+          project.tasks.map((task) => ({
+            user_id: goalInput.user_id,
+            goal_id: createdGoalId,
+            project_id: projectRecord.id,
+            name: task.name,
+            stage: task.stage,
+            priority:
+              (task.priority && String(task.priority).trim()) ||
+              DEFAULT_PRIORITY,
+            energy:
+              (task.energy && String(task.energy).trim()) || DEFAULT_ENERGY,
+            notes: task.notes,
+            skill_id: task.skill_id,
+            due_date: task.due_date,
+          }))
+        );
 
         if (taskError) {
           console.error("Fallback task insert failed:", taskError);
@@ -299,7 +294,11 @@ async function createGoalFallback(
       }
     }
 
-    return { success: true, goalId: createdGoalId, projectIds: createdProjectIds };
+    return {
+      success: true,
+      goalId: createdGoalId,
+      projectIds: createdProjectIds,
+    };
   } catch (error) {
     console.error("Fallback goal creation failed:", error);
     if (createdGoalId) {
@@ -413,7 +412,10 @@ const renderFlameIcon = (level: FlameLevel) => {
 
 const normalizeSelectionLabel = (value?: string | null) => {
   if (!value) return "";
-  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
 };
 
 const resolveSelectValue = (
@@ -488,7 +490,8 @@ const priorityCodeToOptionId = (
   const match = definitions.find((entry) => {
     const labelNormalized = normalizeSelectionLabel(entry.name);
     return (
-      labelNormalized === normalized || String(entry.id).toUpperCase() === normalized
+      labelNormalized === normalized ||
+      String(entry.id).toUpperCase() === normalized
     );
   });
   return match ? match.id : null;
@@ -502,7 +505,8 @@ const energyCodeToOptionId = (
   const match = definitions.find((entry) => {
     const labelNormalized = normalizeSelectionLabel(entry.name);
     return (
-      labelNormalized === normalized || String(entry.id).toUpperCase() === normalized
+      labelNormalized === normalized ||
+      String(entry.id).toUpperCase() === normalized
     );
   });
   return match ? match.id : null;
@@ -531,21 +535,50 @@ const legacyEnergyCodeFromSelection = (
 };
 
 const PROJECT_STAGE_OPTIONS: ChoiceOption[] = [
-  { value: "RESEARCH", label: "Research", description: "Gather insight and define the edges." },
-  { value: "TEST", label: "Test", description: "Experiment and validate assumptions." },
-  { value: "BUILD", label: "Build", description: "Execute the core of the work." },
-  { value: "REFINE", label: "Refine", description: "Polish and iterate based on feedback." },
-  { value: "RELEASE", label: "Release", description: "Launch, share, or deliver the outcome." },
+  {
+    value: "RESEARCH",
+    label: "Research",
+    description: "Gather insight and define the edges.",
+  },
+  {
+    value: "TEST",
+    label: "Test",
+    description: "Experiment and validate assumptions.",
+  },
+  {
+    value: "BUILD",
+    label: "Build",
+    description: "Execute the core of the work.",
+  },
+  {
+    value: "REFINE",
+    label: "Refine",
+    description: "Polish and iterate based on feedback.",
+  },
+  {
+    value: "RELEASE",
+    label: "Release",
+    description: "Launch, share, or deliver the outcome.",
+  },
 ];
 
 const TASK_STAGE_OPTIONS: ChoiceOption[] = [
-  { value: "PREPARE", label: "Prepare", description: "Set up or gather what you need." },
+  {
+    value: "PREPARE",
+    label: "Prepare",
+    description: "Set up or gather what you need.",
+  },
   { value: "PRODUCE", label: "Produce", description: "Do the focused work." },
-  { value: "PERFECT", label: "Perfect", description: "Review, tidy, and ship it." },
+  {
+    value: "PERFECT",
+    label: "Perfect",
+    description: "Review, tidy, and ship it.",
+  },
 ];
 
 const DEFAULT_SKILL_ICON = "✦";
-const getSkillIcon = (icon?: string | null) => icon?.trim() || DEFAULT_SKILL_ICON;
+const getSkillIcon = (icon?: string | null) =>
+  icon?.trim() || DEFAULT_SKILL_ICON;
 const UNCATEGORIZED_GROUP_ID = "__uncategorized__";
 const UNCATEGORIZED_GROUP_LABEL = "Uncategorized";
 
@@ -619,8 +652,7 @@ const createInitialFormState = (
       ? TASK_STAGE_OPTIONS[0].value
       : "",
   type: eventType === "HABIT" ? HABIT_TYPE_OPTIONS[0].value : "",
-  recurrence:
-    eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
+  recurrence: eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   recurrence_days: [],
   location_context_id: "",
   daylight_preference: "ALL_DAY",
@@ -790,10 +822,7 @@ function SkillMultiSelect({
 
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node;
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(target)
-      ) {
+      if (containerRef.current && !containerRef.current.contains(target)) {
         setIsOpen(false);
       }
     };
@@ -910,14 +939,17 @@ function SkillMultiSelect({
                           }}
                           className={cn(
                             "flex w-full items-center justify-between rounded-lg border border-transparent px-2 py-1 text-[10px] text-zinc-200 transition hover:border-white/20 hover:bg-white/5",
-                            isSelected && "border-blue-500/40 bg-blue-500/10 text-white"
+                            isSelected &&
+                              "border-blue-500/40 bg-blue-500/10 text-white"
                           )}
                         >
                           <span className="flex items-center gap-1 truncate">
                             <span className="text-xs leading-none">
                               {getSkillIcon(skill.icon)}
                             </span>
-                            <span className="truncate text-[11px]">{skill.name}</span>
+                            <span className="truncate text-[11px]">
+                              {skill.name}
+                            </span>
                           </span>
                           {isSelected ? (
                             <CheckSquare className="h-4 w-4 text-blue-400" />
@@ -998,19 +1030,17 @@ function OptionDropdown({
         {options.map((option) => {
           const selected = option.value === value;
           const IconComponent = option.icon;
-          const iconNode = option.renderIcon
-            ? option.renderIcon(selected)
-            : IconComponent
-            ? (
-                <IconComponent
-                  className={cn(
-                    "h-4 w-4",
-                    option.iconClassName ??
-                      (selected ? "text-blue-400" : "text-zinc-400")
-                  )}
-                />
-              )
-            : null;
+          const iconNode = option.renderIcon ? (
+            option.renderIcon(selected)
+          ) : IconComponent ? (
+            <IconComponent
+              className={cn(
+                "h-4 w-4",
+                option.iconClassName ??
+                  (selected ? "text-blue-400" : "text-zinc-400")
+              )}
+            />
+          ) : null;
 
           return (
             <SelectItem
@@ -1033,7 +1063,10 @@ function OptionDropdown({
               >
                 {iconNode ? (
                   <span
-                    className={cn(iconWrapperClass, selected && "bg-blue-500/20 text-blue-300")}
+                    className={cn(
+                      iconWrapperClass,
+                      selected && "bg-blue-500/20 text-blue-300"
+                    )}
                   >
                     {iconNode}
                   </span>
@@ -1078,9 +1111,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     createDraftProject(),
   ]);
   const [showGoalAdvanced, setShowGoalAdvanced] = useState(false);
-  const [projectAdvanced, setProjectAdvanced] = useState<Record<string, boolean>>({});
+  const [projectAdvanced, setProjectAdvanced] = useState<
+    Record<string, boolean>
+  >({});
   const [taskAdvanced, setTaskAdvanced] = useState<Record<string, boolean>>({});
-  const [showProjectAdvancedOptions, setShowProjectAdvancedOptions] = useState(false);
+  const [showProjectAdvancedOptions, setShowProjectAdvancedOptions] =
+    useState(false);
 
   // State for dropdown data
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -1093,7 +1129,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
   const [routinesLoading, setRoutinesLoading] = useState(false);
   const [routineLoadError, setRoutineLoadError] = useState<string | null>(null);
-  const priorityDefinitions: PriorityDefinition[] = DEFAULT_PRIORITY_DEFINITIONS;
+  const priorityDefinitions: PriorityDefinition[] =
+    DEFAULT_PRIORITY_DEFINITIONS;
   const energyDefinitions: EnergyDefinition[] = DEFAULT_ENERGY_DEFINITIONS;
   const priorityOptionsLoading = false;
   const priorityOptionsError: string | null = null;
@@ -1141,7 +1178,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         matchedCode ?? rawLabel.toUpperCase().replace(/\s+/g, " ");
       const level =
         ENERGY_META.find(
-          (entry) => entry.code === (matchedCode ?? inferEnergyCodeFromLabel(rawLabel))
+          (entry) =>
+            entry.code === (matchedCode ?? inferEnergyCodeFromLabel(rawLabel))
         )?.level ?? "LOW";
       return {
         value: energy.id,
@@ -1162,7 +1200,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   }, [energyChoiceOptions]);
 
   const resolvePriorityPayloadValue = useCallback(
-    (value: string) => resolveSelectValue(value, priorityChoiceOptions, "PRIORITY"),
+    (value: string) =>
+      resolveSelectValue(value, priorityChoiceOptions, "PRIORITY"),
     [priorityChoiceOptions]
   );
 
@@ -1427,7 +1466,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           value: "__priority_loading__",
           label:
             priorityOptionsError ??
-            (priorityOptionsLoading ? "Loading priority options…" : "No priority options available"),
+            (priorityOptionsLoading
+              ? "Loading priority options…"
+              : "No priority options available"),
           disabled: true,
         },
       ];
@@ -1439,7 +1480,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           value: "__energy_loading__",
           label:
             energyOptionsError ??
-            (energyOptionsLoading ? "Loading energy options…" : "No energy options available"),
+            (energyOptionsLoading
+              ? "Loading energy options…"
+              : "No energy options available"),
           disabled: true,
         },
       ];
@@ -1451,7 +1494,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           value: "__habit_energy_loading__",
           label:
             energyOptionsError ??
-            (energyOptionsLoading ? "Loading energy options…" : "No energy options available"),
+            (energyOptionsLoading
+              ? "Loading energy options…"
+              : "No energy options available"),
           disabled: true,
         },
       ];
@@ -1585,19 +1630,35 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }
 
     setFormData((prev) => {
-      const resolved = resolveSelectValue(prev.priority, priorityChoiceOptions, "PRIORITY");
-      return resolved === prev.priority ? prev : { ...prev, priority: resolved };
+      const resolved = resolveSelectValue(
+        prev.priority,
+        priorityChoiceOptions,
+        "PRIORITY"
+      );
+      return resolved === prev.priority
+        ? prev
+        : { ...prev, priority: resolved };
     });
 
     setGoalForm((prev) => {
-      const resolved = resolveSelectValue(prev.priority, priorityChoiceOptions, "PRIORITY");
-      return resolved === prev.priority ? prev : { ...prev, priority: resolved };
+      const resolved = resolveSelectValue(
+        prev.priority,
+        priorityChoiceOptions,
+        "PRIORITY"
+      );
+      return resolved === prev.priority
+        ? prev
+        : { ...prev, priority: resolved };
     });
 
     setDraftProjects((prev) => {
       let changedAny = false;
       const nextProjects = prev.map((draft) => {
-        const nextPriority = resolveSelectValue(draft.priority, priorityChoiceOptions, "PRIORITY");
+        const nextPriority = resolveSelectValue(
+          draft.priority,
+          priorityChoiceOptions,
+          "PRIORITY"
+        );
         let changed = nextPriority !== draft.priority;
         const nextTasks = draft.tasks.map((task) => {
           const nextTaskPriority = resolveSelectValue(
@@ -1627,19 +1688,31 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }
 
     setFormData((prev) => {
-      const resolved = resolveSelectValue(prev.energy, energyChoiceOptions, "ENERGY");
+      const resolved = resolveSelectValue(
+        prev.energy,
+        energyChoiceOptions,
+        "ENERGY"
+      );
       return resolved === prev.energy ? prev : { ...prev, energy: resolved };
     });
 
     setGoalForm((prev) => {
-      const resolved = resolveSelectValue(prev.energy, energyChoiceOptions, "ENERGY");
+      const resolved = resolveSelectValue(
+        prev.energy,
+        energyChoiceOptions,
+        "ENERGY"
+      );
       return resolved === prev.energy ? prev : { ...prev, energy: resolved };
     });
 
     setDraftProjects((prev) => {
       let changedAny = false;
       const nextProjects = prev.map((draft) => {
-        const nextEnergy = resolveSelectValue(draft.energy, energyChoiceOptions, "ENERGY");
+        const nextEnergy = resolveSelectValue(
+          draft.energy,
+          energyChoiceOptions,
+          "ENERGY"
+        );
         let changed = nextEnergy !== draft.energy;
         const nextTasks = draft.tasks.map((task) => {
           const nextTaskEnergy = resolveSelectValue(
@@ -1741,7 +1814,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       return;
     }
 
-    const projectToRemove = draftProjects.find((draft) => draft.id === projectId);
+    const projectToRemove = draftProjects.find(
+      (draft) => draft.id === projectId
+    );
     setDraftProjects((prev) => prev.filter((draft) => draft.id !== projectId));
     setProjectAdvanced((prev) => {
       if (!(projectId in prev)) {
@@ -1933,7 +2008,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     if (eventType === "PROJECT") {
       const manualStartValue = formData.manual_start.trim();
       const manualEndValue = formData.manual_end.trim();
-      if ((manualStartValue && !manualEndValue) || (!manualStartValue && manualEndValue)) {
+      if (
+        (manualStartValue && !manualEndValue) ||
+        (!manualStartValue && manualEndValue)
+      ) {
         toast.error(
           "Manual schedule incomplete",
           "Provide both start and end times to lock this project."
@@ -2158,9 +2236,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.recurrence = isPracticeHabit
           ? "none"
           : normalizedRecurrence === "none"
-            ? null
-            : formData.recurrence;
-        insertData.recurrence_days = isPracticeHabit ? null : recurrenceDaysValue;
+          ? null
+          : formData.recurrence;
+        insertData.recurrence_days = isPracticeHabit
+          ? null
+          : recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
 
         let resolvedLocationContextId: string | null = null;
@@ -2171,13 +2251,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             resolvedLocationContextId = await resolveLocationContextId(
               supabase,
               user.id,
-              formData.location_context_id,
+              formData.location_context_id
             );
 
             if (!resolvedLocationContextId) {
               toast.error(
                 "Location unavailable",
-                "We couldn’t save that location right now. Please try again.",
+                "We couldn’t save that location right now. Please try again."
               );
               return;
             }
@@ -2190,8 +2270,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           formData.daylight_preference !== "ALL_DAY"
             ? formData.daylight_preference
             : null;
-        insertData.window_edge_preference =
-          (formData.window_edge_preference || "FRONT").toUpperCase();
+        insertData.window_edge_preference = (
+          formData.window_edge_preference || "FRONT"
+        ).toUpperCase();
         insertData.window_id =
           formData.window_id && formData.window_id.length > 0
             ? formData.window_id
@@ -2217,15 +2298,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           }
 
           const routineDescription = newRoutineDescription.trim();
-          const { data: routineData, error: routineInsertError } = await supabase
-            .from("habit_routines")
-            .insert({
-              user_id: user.id,
-              name: routineName,
-              description: routineDescription ? routineDescription : null,
-            })
-            .select("id")
-            .single();
+          const { data: routineData, error: routineInsertError } =
+            await supabase
+              .from("habit_routines")
+              .insert({
+                user_id: user.id,
+                name: routineName,
+                description: routineDescription ? routineDescription : null,
+              })
+              .select("id")
+              .single();
 
           if (routineInsertError) {
             throw routineInsertError;
@@ -2283,11 +2365,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         }
       }
 
-      if (
-        eventType === "PROJECT" &&
-        pendingManualPlacement &&
-        data?.id
-      ) {
+      if (eventType === "PROJECT" && pendingManualPlacement && data?.id) {
         try {
           await persistLockedProjectPlacements({
             supabase,
@@ -2305,7 +2383,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             ],
           });
         } catch (lockError) {
-          console.error("Failed to persist locked project schedule:", lockError);
+          console.error(
+            "Failed to persist locked project schedule:",
+            lockError
+          );
           toast.error(
             "Manual lock failed",
             "Project saved, but its manual schedule could not be applied."
@@ -2317,7 +2398,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       router.refresh();
       onClose();
     } catch (error) {
-      const fallbackMessage = "Failed to create " + (eventType?.toLowerCase() ?? "event");
+      const fallbackMessage =
+        "Failed to create " + (eventType?.toLowerCase() ?? "event");
       console.error(
         "Error creating " + (eventType?.toLowerCase() ?? "event") + ":",
         error
@@ -2358,14 +2440,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         } = await supabase.auth.getUser();
 
         if (userError || !user) {
-          toast.error(
-            "Authentication Required",
-            "Please sign in to continue."
-          );
+          toast.error("Authentication Required", "Please sign in to continue.");
           return;
         }
 
-        if (priorityChoiceOptions.length === 0 || energyChoiceOptions.length === 0) {
+        if (
+          priorityChoiceOptions.length === 0 ||
+          energyChoiceOptions.length === 0
+        ) {
           toast.error(
             "Loading",
             "Priority and energy options are still loading. Please try again in a moment."
@@ -2387,10 +2469,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           if (hasStart && hasEnd) {
             const start = new Date(draft.manualStart);
             const end = new Date(draft.manualEnd);
-            if (
-              Number.isNaN(start.getTime()) ||
-              Number.isNaN(end.getTime())
-            ) {
+            if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
               toast.error(
                 "Manual schedule invalid",
                 "Enter valid start and end times."
@@ -2410,22 +2489,19 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         }
 
         const sanitizedProjectTuples = draftProjects
-          .map<
-            | {
-                draftId: string;
-                payload: NormalizedProjectPayload;
-                priorityCode: string;
-                energyCode: string;
-                manualSchedule?:
-                  | {
-                      startUTC: string;
-                      endUTC: string;
-                      durationMin: number;
-                    }
-                  | undefined;
-              }
-            | null
-          >((draft) => {
+          .map<{
+            draftId: string;
+            payload: NormalizedProjectPayload;
+            priorityCode: string;
+            energyCode: string;
+            manualSchedule?:
+              | {
+                  startUTC: string;
+                  endUTC: string;
+                  durationMin: number;
+                }
+              | undefined;
+          } | null>((draft) => {
             const rawName = draft.name.trim();
             const formattedName = formatNameValue(rawName);
             if (!formattedName) {
@@ -2448,14 +2524,17 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 const trimmedNotes = task.notes.trim();
                 const trimmedTaskDueDate = task.dueDate.trim();
                 const taskSkillId = task.skillId ? task.skillId : null;
-                const taskPriorityValue = resolvePriorityPayloadValue(task.priority);
+                const taskPriorityValue = resolvePriorityPayloadValue(
+                  task.priority
+                );
                 const taskEnergyValue = resolveEnergyPayloadValue(task.energy);
 
                 return {
                   name: formattedTaskName,
                   stage: task.stage || DEFAULT_TASK_STAGE,
-                  priority: taskPriorityValue,
-                  energy: taskEnergyValue,
+                  priority:
+                    priorityIdToEnum[taskPriorityValue] || DEFAULT_PRIORITY,
+                  energy: energyIdToEnum[taskEnergyValue] || DEFAULT_ENERGY,
                   notes: trimmedNotes.length > 0 ? trimmedNotes : null,
                   skill_id: taskSkillId,
                   due_date:
@@ -2492,7 +2571,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               }
             }
 
-            const projectPriorityValue = resolvePriorityPayloadValue(draft.priority);
+            const projectPriorityValue = resolvePriorityPayloadValue(
+              draft.priority
+            );
             const projectEnergyValue = resolveEnergyPayloadValue(draft.energy);
             const projectPriorityCode = legacyPriorityCodeFromSelection(
               projectPriorityValue,
@@ -2508,8 +2589,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               payload: {
                 name: formattedName,
                 stage: draft.stage || PROJECT_STAGE_OPTIONS[0].value,
-                priority: projectPriorityValue,
-                energy: projectEnergyValue,
+                priority:
+                  priorityIdToEnum[projectPriorityValue] || DEFAULT_PRIORITY,
+                energy: energyIdToEnum[projectEnergyValue] || DEFAULT_ENERGY,
                 why: trimmedWhy.length > 0 ? trimmedWhy : null,
                 duration_min:
                   Number.isFinite(parsedDuration) && parsedDuration > 0
@@ -2517,7 +2599,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     : null,
                 skill_id: projectSkillId,
                 due_date:
-                  trimmedProjectDueDate.length > 0 ? trimmedProjectDueDate : null,
+                  trimmedProjectDueDate.length > 0
+                    ? trimmedProjectDueDate
+                    : null,
                 tasks,
               } satisfies NormalizedProjectPayload,
               priorityCode: projectPriorityCode,
@@ -2553,7 +2637,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         const selectedMonumentId = goalForm.monument_id.trim();
         const goalDueDate = goalForm.dueDate.trim();
 
-        const goalPriorityValue = resolvePriorityPayloadValue(goalForm.priority);
+        const goalPriorityValue = resolvePriorityPayloadValue(
+          goalForm.priority
+        );
         const goalEnergyValue = resolveEnergyPayloadValue(goalForm.energy);
         const goalPriorityCode = legacyPriorityCodeFromSelection(
           goalPriorityValue,
@@ -2564,11 +2650,29 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           energyChoiceOptions
         );
 
+        const priorityIdToEnum: Record<string, string> = {
+          "1": "NO",
+          "2": "LOW",
+          "3": "MEDIUM",
+          "4": "HIGH",
+          "5": "CRITICAL",
+          "6": "ULTRA-CRITICAL",
+        };
+
+        const energyIdToEnum: Record<string, string> = {
+          "1": "NO",
+          "2": "LOW",
+          "3": "MEDIUM",
+          "4": "HIGH",
+          "5": "ULTRA",
+          "6": "EXTREME",
+        };
+
         const goalInput: GoalWizardRpcInput = {
           user_id: user.id,
           name: formatNameValue(trimmedGoalName),
-          priority: goalPriorityValue,
-          energy: goalEnergyValue,
+          priority: priorityIdToEnum[goalPriorityValue] || DEFAULT_PRIORITY,
+          energy: energyIdToEnum[goalEnergyValue] || DEFAULT_ENERGY,
           monument_id: selectedMonumentId,
           why: goalWhy ? goalWhy : null,
           due_date: goalDueDate ? goalDueDate : null,
@@ -2589,34 +2693,51 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
         if (rpcError || !data) {
           // Log everything we know to help diagnose local dev issues
-          console.error("Error creating goal with projects via RPC:", {
-            rpcError,
+          console.error("[GOAL WIZARD RPC ERROR FULL]", {
+            error: rpcError,
+            error_message: rpcError?.message,
+            error_code: rpcError?.code,
+            error_details: rpcError?.details,
+            error_hint: rpcError?.hint,
+            error_data: (rpcError as any)?.data,
             data,
             goalInput,
             hasProjects,
             projectCount: sanitizedProjects.length,
           });
           const missingFn =
-            (rpcError?.code === "42883") ||
+            rpcError?.code === "42883" ||
             /create_goal_with_projects_and_tasks/.test(rpcError?.message || "");
           if (missingFn) {
-            toast.error("Database not ready", "Please run migrations so the goal wizard function exists.");
+            toast.error(
+              "Database not ready",
+              "Please run migrations so the goal wizard function exists."
+            );
           } else if (rpcError) {
             const label = rpcError.code ? `Error ${rpcError.code}` : "Error";
-            const details = rpcError.message || rpcError.details || "We couldn't save that goal just yet.";
+            const details =
+              rpcError.message ||
+              rpcError.details ||
+              "We couldn't save that goal just yet.";
             toast.error(label, details);
           } else {
-            toast.error("Error", "RPC returned no data. Ensure the function returns JSON and migrations are applied.");
+            toast.error(
+              "Error",
+              "RPC returned no data. Ensure the function returns JSON and migrations are applied."
+            );
           }
           return;
         } else {
           const rpcPayload =
-            (data as { goal?: { id?: string }; projects?: unknown } | null) ?? null;
+            (data as { goal?: { id?: string }; projects?: unknown } | null) ??
+            null;
           createdGoalId = rpcPayload?.goal?.id;
           if (Array.isArray(rpcPayload?.projects)) {
-            createdProjectIds = (rpcPayload?.projects as Array<{ id?: string }>).map(
-              (project) => (typeof project?.id === "string" ? project.id : null)
-            ).filter((id): id is string => Boolean(id));
+            createdProjectIds = (rpcPayload?.projects as Array<{ id?: string }>)
+              .map((project) =>
+                typeof project?.id === "string" ? project.id : null
+              )
+              .filter((id): id is string => Boolean(id));
           } else {
             createdProjectIds = [];
           }
@@ -2837,9 +2958,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     return base[eventType];
   }, [eventType, formData.type]);
 
-  const submitLabel = loading || isSaving
-    ? "Creating..."
-    : `Create ${eventMeta.badge}`;
+  const submitLabel =
+    loading || isSaving ? "Creating..." : `Create ${eventMeta.badge}`;
 
   const isGoalWizard = resolvedType === "GOAL";
   const EventIcon = eventMeta.icon;
@@ -2850,9 +2970,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const wizardPrimaryDisabled =
     isSaving ||
     (goalWizardStep === "GOAL" &&
-      (loading ||
-        !goalForm.name.trim() ||
-        !goalForm.monument_id.trim()));
+      (loading || !goalForm.name.trim() || !goalForm.monument_id.trim()));
   const canSaveGoalWizard =
     !loading &&
     !isSaving &&
@@ -2878,14 +2996,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             <div className="relative flex flex-col gap-2.5 px-4 pb-3 pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:pb-4 sm:pt-3.5">
               <div className="flex flex-1 flex-col gap-2">
                 <div className="flex items-center gap-2.5">
-                    <span
-                      className={cn(
-                        "flex h-9 w-9 items-center justify-center rounded-2xl border text-white shadow-inner",
-                        eventMeta.iconBg
-                      )}
-                    >
-                      <EventIcon className="h-5 w-5" />
-                    </span>
+                  <span
+                    className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-2xl border text-white shadow-inner",
+                      eventMeta.iconBg
+                    )}
+                  >
+                    <EventIcon className="h-5 w-5" />
+                  </span>
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-1">
                       <Badge
@@ -2915,254 +3033,263 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             </div>
           </div>
 
-        <form
-          onSubmit={isGoalWizard ? handleGoalFormSubmit : handleStandardSubmit}
-          className="flex flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden touch-pan-y overscroll-x-none px-4 pb-5 pt-5 sm:gap-6 sm:px-8 sm:pb-8 sm:pt-6"
-        >
-          {isGoalWizard ? (
-            <>
-              <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 sm:px-5">
-                {GOAL_WIZARD_STEPS.map((step, index) => {
-                  const isActive = step.key === goalWizardStep;
-                  const isComplete = index < activeWizardIndex;
-                  const isLast = index === GOAL_WIZARD_STEPS.length - 1;
-                  return (
-                    <div
-                      key={step.key}
-                      className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500"
-                    >
-                      <span
-                        className={cn(
-                          "flex h-7 w-7 items-center justify-center rounded-full border text-[11px] transition",
-                          isActive
-                            ? "border-blue-500/70 bg-blue-500/20 text-white"
-                            : isComplete
-                            ? "border-emerald-500/70 bg-emerald-500/15 text-emerald-200"
-                            : "border-white/10 bg-white/[0.04] text-zinc-400"
-                        )}
+          <form
+            onSubmit={
+              isGoalWizard ? handleGoalFormSubmit : handleStandardSubmit
+            }
+            className="flex flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden touch-pan-y overscroll-x-none px-4 pb-5 pt-5 sm:gap-6 sm:px-8 sm:pb-8 sm:pt-6"
+          >
+            {isGoalWizard ? (
+              <>
+                <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3 sm:px-5">
+                  {GOAL_WIZARD_STEPS.map((step, index) => {
+                    const isActive = step.key === goalWizardStep;
+                    const isComplete = index < activeWizardIndex;
+                    const isLast = index === GOAL_WIZARD_STEPS.length - 1;
+                    return (
+                      <div
+                        key={step.key}
+                        className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500"
                       >
-                        {index + 1}
-                      </span>
-                      <span
-                        className={cn(
-                          "tracking-[0.2em]",
-                          isActive ? "text-white" : "text-zinc-500"
-                        )}
-                      >
-                        {step.label}
-                      </span>
-                      {!isLast ? (
-                        <span className="hidden h-px w-8 bg-white/10 sm:block" />
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {goalWizardStep === "GOAL" ? (
-                <FormSection title="Goal details">
-                  <div className="space-y-5">
-                    <div className="space-y-2">
-                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                        Name
-                      </Label>
-                      <Input
-                        value={goalForm.name}
-                        onChange={(event) =>
-                          handleGoalFormChange("name", event.target.value)
-                        }
-                        placeholder="Name this goal"
-                        className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                      />
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                          Monument
-                        </Label>
-                        <Select
-                          value={goalForm.monument_id}
-                          onValueChange={(value) =>
-                            handleGoalFormChange("monument_id", value)
-                          }
-                          placeholder={
-                            loading ? "Loading monuments..." : "Select monument..."
-                          }
-                          triggerClassName="h-12"
+                        <span
+                          className={cn(
+                            "flex h-7 w-7 items-center justify-center rounded-full border text-[11px] transition",
+                            isActive
+                              ? "border-blue-500/70 bg-blue-500/20 text-white"
+                              : isComplete
+                              ? "border-emerald-500/70 bg-emerald-500/15 text-emerald-200"
+                              : "border-white/10 bg-white/[0.04] text-zinc-400"
+                          )}
                         >
-                          <SelectContent>
-                            {monuments.length === 0 ? (
-                              <SelectItem value="" disabled>
-                                {loading ? "Loading monuments..." : "No monuments found"}
-                              </SelectItem>
-                            ) : (
-                              monuments.map((monument) => (
-                                <SelectItem key={monument.id} value={monument.id}>
-                                  {monument.title}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                            Priority
-                          </Label>
-                    <OptionDropdown
-                      value={goalForm.priority}
-                      options={priorityDropdownOptions}
-                      onChange={(value) =>
-                        handleGoalFormChange("priority", value)
-                      }
-                      placeholder="Select priority..."
-                      itemSize="compact"
-                    />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                            Energy
-                          </Label>
-                    <OptionDropdown
-                      value={goalForm.energy}
-                      options={energyDropdownOptions}
-                      onChange={(value) =>
-                        handleGoalFormChange("energy", value)
-                      }
-                      placeholder="Select energy..."
-                      itemSize="compact"
-                    />
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                            Advanced options
-                          </Label>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              setShowGoalAdvanced((prev) => !prev)
-                            }
-                            className="h-8 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
-                          >
-                            {showGoalAdvanced ? "Hide" : "Show"}
-                          </Button>
-                        </div>
-                        {showGoalAdvanced ? (
-                          <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                              Due date
-                            </Label>
-                            <Input
-                              type="date"
-                              value={goalForm.dueDate}
-                              onChange={(event) =>
-                                handleGoalFormChange(
-                                  "dueDate",
-                                  event.target.value
-                                )
-                              }
-                              className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
-                            />
-                          </div>
+                          {index + 1}
+                        </span>
+                        <span
+                          className={cn(
+                            "tracking-[0.2em]",
+                            isActive ? "text-white" : "text-zinc-500"
+                          )}
+                        >
+                          {step.label}
+                        </span>
+                        {!isLast ? (
+                          <span className="hidden h-px w-8 bg-white/10 sm:block" />
                         ) : null}
                       </div>
-                    </div>
+                    );
+                  })}
+                </div>
 
-                    <div className="space-y-2">
-                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                        Why?
-                      </Label>
-                      <Textarea
-                        value={goalForm.why}
-                        onChange={(event) =>
-                          handleGoalFormChange("why", event.target.value)
-                        }
-                        placeholder="Capture the motivation or vision for this goal"
-                        className="min-h-[110px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                      />
-                    </div>
-                  </div>
-                </FormSection>
-              ) : null}
+                {goalWizardStep === "GOAL" ? (
+                  <FormSection title="Goal details">
+                    <div className="space-y-5">
+                      <div className="space-y-2">
+                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                          Name
+                        </Label>
+                        <Input
+                          value={goalForm.name}
+                          onChange={(event) =>
+                            handleGoalFormChange("name", event.target.value)
+                          }
+                          placeholder="Name this goal"
+                          className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                        />
+                      </div>
 
-              {goalWizardStep === "PROJECTS" ? (
-                <FormSection title="Projects">
-                  <div className="space-y-4">
-                    {draftProjects.map((draft, index) => (
-                      <div
-                        key={draft.id}
-                        className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5"
-                      >
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="flex-1 space-y-4">
-                            <div className="space-y-2">
-                              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                                Project {index + 1}
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                            Monument
+                          </Label>
+                          <Select
+                            value={goalForm.monument_id}
+                            onValueChange={(value) =>
+                              handleGoalFormChange("monument_id", value)
+                            }
+                            placeholder={
+                              loading
+                                ? "Loading monuments..."
+                                : "Select monument..."
+                            }
+                            triggerClassName="h-12"
+                          >
+                            <SelectContent>
+                              {monuments.length === 0 ? (
+                                <SelectItem value="" disabled>
+                                  {loading
+                                    ? "Loading monuments..."
+                                    : "No monuments found"}
+                                </SelectItem>
+                              ) : (
+                                monuments.map((monument) => (
+                                  <SelectItem
+                                    key={monument.id}
+                                    value={monument.id}
+                                  >
+                                    {monument.title}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                              Priority
+                            </Label>
+                            <OptionDropdown
+                              value={goalForm.priority}
+                              options={priorityDropdownOptions}
+                              onChange={(value) =>
+                                handleGoalFormChange("priority", value)
+                              }
+                              placeholder="Select priority..."
+                              itemSize="compact"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                              Energy
+                            </Label>
+                            <OptionDropdown
+                              value={goalForm.energy}
+                              options={energyDropdownOptions}
+                              onChange={(value) =>
+                                handleGoalFormChange("energy", value)
+                              }
+                              placeholder="Select energy..."
+                              itemSize="compact"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                              Advanced options
+                            </Label>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                setShowGoalAdvanced((prev) => !prev)
+                              }
+                              className="h-8 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
+                            >
+                              {showGoalAdvanced ? "Hide" : "Show"}
+                            </Button>
+                          </div>
+                          {showGoalAdvanced ? (
+                            <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                Due date
                               </Label>
                               <Input
-                                value={draft.name}
+                                type="date"
+                                value={goalForm.dueDate}
                                 onChange={(event) =>
-                                  handleDraftProjectChange(
-                                    draft.id,
-                                    "name",
+                                  handleGoalFormChange(
+                                    "dueDate",
                                     event.target.value
                                   )
                                 }
-                                placeholder="Name this project"
-                                className="h-11 rounded-xl border border-white/10 bg-black/70 text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                                className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
                               />
                             </div>
+                          ) : null}
+                        </div>
+                      </div>
 
-                            <div className="grid grid-cols-2 gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                          Why?
+                        </Label>
+                        <Textarea
+                          value={goalForm.why}
+                          onChange={(event) =>
+                            handleGoalFormChange("why", event.target.value)
+                          }
+                          placeholder="Capture the motivation or vision for this goal"
+                          className="min-h-[110px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                        />
+                      </div>
+                    </div>
+                  </FormSection>
+                ) : null}
+
+                {goalWizardStep === "PROJECTS" ? (
+                  <FormSection title="Projects">
+                    <div className="space-y-4">
+                      {draftProjects.map((draft, index) => (
+                        <div
+                          key={draft.id}
+                          className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5"
+                        >
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="flex-1 space-y-4">
                               <div className="space-y-2">
                                 <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                                  Stage
-                                </Label>
-                                <OptionDropdown
-                                  variant="black"
-                                  value={draft.stage}
-                                  options={PROJECT_STAGE_OPTIONS}
-                                  onChange={(value) =>
-                                    handleDraftProjectChange(
-                                      draft.id,
-                                      "stage",
-                                      value
-                                    )
-                                  }
-                                  placeholder="Select stage..."
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                                  Duration
+                                  Project {index + 1}
                                 </Label>
                                 <Input
-                                  value={draft.duration}
+                                  value={draft.name}
                                   onChange={(event) =>
                                     handleDraftProjectChange(
                                       draft.id,
-                                      "duration",
+                                      "name",
                                       event.target.value
                                     )
                                   }
-                                  inputMode="numeric"
-                                  pattern="[0-9]*"
-                                  placeholder="x minutes"
+                                  placeholder="Name this project"
                                   className="h-11 rounded-xl border border-white/10 bg-black/70 text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
                                 />
                               </div>
-                              <div className="space-y-2">
-                                <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                                  Priority
-                                </Label>
+
+                              <div className="grid grid-cols-2 gap-4 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                  <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                    Stage
+                                  </Label>
+                                  <OptionDropdown
+                                    variant="black"
+                                    value={draft.stage}
+                                    options={PROJECT_STAGE_OPTIONS}
+                                    onChange={(value) =>
+                                      handleDraftProjectChange(
+                                        draft.id,
+                                        "stage",
+                                        value
+                                      )
+                                    }
+                                    placeholder="Select stage..."
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                    Duration
+                                  </Label>
+                                  <Input
+                                    value={draft.duration}
+                                    onChange={(event) =>
+                                      handleDraftProjectChange(
+                                        draft.id,
+                                        "duration",
+                                        event.target.value
+                                      )
+                                    }
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    placeholder="x minutes"
+                                    className="h-11 rounded-xl border border-white/10 bg-black/70 text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                    Priority
+                                  </Label>
                                   <OptionDropdown
                                     variant="black"
                                     value={draft.priority}
@@ -3177,11 +3304,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     placeholder="Select priority..."
                                     itemSize="compact"
                                   />
-                              </div>
-                              <div className="space-y-2">
-                                <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                                  Energy
-                                </Label>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                    Energy
+                                  </Label>
                                   <OptionDropdown
                                     variant="black"
                                     value={draft.energy}
@@ -3196,838 +3323,679 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     placeholder="Select energy..."
                                     itemSize="compact"
                                   />
+                                </div>
                               </div>
-                            </div>
 
-                            <div className="space-y-4">
-                              <div className="space-y-2">
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                      Skill
+                                    </Label>
+                                    {draft.skillId ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleDraftProjectSkillChange(
+                                            draft.id,
+                                            null
+                                          )
+                                        }
+                                        className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/50 transition hover:text-white"
+                                      >
+                                        Clear
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                  <SkillMultiSelect
+                                    skills={sortedSkills}
+                                    selectedIds={
+                                      draft.skillId ? [draft.skillId] : []
+                                    }
+                                    onToggle={(skillId) =>
+                                      handleDraftProjectSkillChange(
+                                        draft.id,
+                                        skillId === draft.skillId
+                                          ? null
+                                          : skillId
+                                      )
+                                    }
+                                    placeholder="Assign a skill"
+                                    buttonClassName="rounded-full border border-white/10 bg-black/70 px-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70 hover:border-white/40"
+                                    categories={skillCategories}
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                    Why?
+                                  </Label>
+                                  <Textarea
+                                    value={draft.why}
+                                    onChange={(event) =>
+                                      handleDraftProjectChange(
+                                        draft.id,
+                                        "why",
+                                        event.target.value
+                                      )
+                                    }
+                                    placeholder="Outline the intent or outcome for this project"
+                                    className="min-h-[88px] rounded-xl border border-white/10 bg-black/70 text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="space-y-3">
                                 <div className="flex items-center justify-between">
                                   <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                                    Skill
+                                    Advanced options
                                   </Label>
-                                  {draft.skillId ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleDraftProjectSkillChange(
-                                          draft.id,
-                                          null
-                                        )
-                                      }
-                                      className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/50 transition hover:text-white"
-                                    >
-                                      Clear
-                                    </button>
-                                  ) : null}
-                                </div>
-                                <SkillMultiSelect
-                                  skills={sortedSkills}
-                                  selectedIds={draft.skillId ? [draft.skillId] : []}
-                                  onToggle={(skillId) =>
-                                    handleDraftProjectSkillChange(
-                                      draft.id,
-                                      skillId === draft.skillId ? null : skillId
-                                    )
-                                  }
-                                  placeholder="Assign a skill"
-                                  buttonClassName="rounded-full border border-white/10 bg-black/70 px-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70 hover:border-white/40"
-                                  categories={skillCategories}
-                                />
-                                </div>
-                              <div className="space-y-2">
-                                <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                                  Why?
-                                </Label>
-                                <Textarea
-                                  value={draft.why}
-                                  onChange={(event) =>
-                                    handleDraftProjectChange(
-                                      draft.id,
-                                      "why",
-                                      event.target.value
-                                    )
-                                  }
-                                  placeholder="Outline the intent or outcome for this project"
-                                  className="min-h-[88px] rounded-xl border border-white/10 bg-black/70 text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="space-y-3">
-                              <div className="flex items-center justify-between">
-                                <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                                  Advanced options
-                                </Label>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() =>
-                                    setProjectAdvanced((prev) => ({
-                                      ...prev,
-                                      [draft.id]: !prev[draft.id],
-                                    }))
-                                  }
-                                  className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
-                                >
-                                  {projectAdvanced[draft.id] ? "Hide" : "Show"}
-                                </Button>
-                              </div>
-                              {projectAdvanced[draft.id] ? (
-                                <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                                  <div className="space-y-1">
-                                    <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                      Due date
-                                    </Label>
-                                    <Input
-                                      type="date"
-                                      value={draft.dueDate}
-                                      onChange={(event) =>
-                                        handleDraftProjectDueDateChange(
-                                          draft.id,
-                                          event.target.value
-                                        )
-                                      }
-                                      className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
-                                    />
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                                    <div className="space-y-1">
-                                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                        Manual start time
-                                      </Label>
-                                      <Input
-                                        type="datetime-local"
-                                        value={draft.manualStart}
-                                        onChange={(event) =>
-                                          handleDraftProjectChange(
-                                            draft.id,
-                                            "manualStart",
-                                            event.target.value
-                                          )
-                                        }
-                                        className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
-                                      />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                        Manual end time
-                                      </Label>
-                                      <Input
-                                        type="datetime-local"
-                                        value={draft.manualEnd}
-                                        onChange={(event) =>
-                                          handleDraftProjectChange(
-                                            draft.id,
-                                            "manualEnd",
-                                            event.target.value
-                                          )
-                                        }
-                                        className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
-                                      />
-                                    </div>
-                                  </div>
-                                  <p className="text-[11px] text-zinc-500">
-                                    Provide both a start and end time to lock this project at an exact slot.
-                                  </p>
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                          {draftProjects.length > 1 ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={() => handleRemoveDraftProject(draft.id)}
-                              className="h-10 w-10 shrink-0 rounded-full text-zinc-400 hover:bg-red-500/10 hover:text-red-300"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))}
-                    <Button
-                      type="button"
-                      onClick={handleAddDraftProject}
-                      variant="outline"
-                      disabled={isSaving}
-                      className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.02] text-sm text-white hover:border-white/20 hover:bg-white/10"
-                    >
-                      <Plus className="mr-2 h-4 w-4" /> Add another project
-                    </Button>
-                  </div>
-                </FormSection>
-              ) : null}
-
-              {goalWizardStep === "TASKS" ? (
-                <FormSection title="Tasks">
-                  <div className="space-y-4">
-                    {draftProjects.map((draft) => (
-                      <div
-                        key={draft.id}
-                        className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5"
-                      >
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <p className="text-sm font-semibold text-white">
-                              {draft.name ? draft.name : "Untitled project"}
-                            </p>
-                            <p className="text-xs text-zinc-400">
-                              Outline the actions that will move this forward.
-                            </p>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => handleAddTaskToDraft(draft.id)}
-                            className="h-9 rounded-lg border border-white/10 bg-white/[0.03] text-xs font-medium text-white hover:border-white/20 hover:bg-white/10"
-                          >
-                            <Plus className="mr-2 h-4 w-4" /> Add task
-                          </Button>
-                        </div>
-                        {draft.tasks.length > 0 ? (
-                          <div className="mt-4 space-y-3">
-                            {draft.tasks.map((task, index) => (
-                              <div
-                                key={task.id}
-                                className="rounded-xl border border-white/10 bg-white/[0.04] p-3 sm:p-4"
-                              >
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                  <div className="flex-1 space-y-3">
-                                    <div className="space-y-2">
-                                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                        Task {index + 1}
-                                      </Label>
-                                      <Input
-                                        value={task.name}
-                                        onChange={(event) =>
-                                          handleTaskChange(
-                                            draft.id,
-                                            task.id,
-                                            "name",
-                                            event.target.value
-                                          )
-                                        }
-                                        placeholder="Name this task"
-                                        className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                                      />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                                      <OptionDropdown
-                                        value={task.stage}
-                                        options={PROJECT_STAGE_OPTIONS}
-                                        onChange={(value) =>
-                                          handleTaskChange(
-                                            draft.id,
-                                            task.id,
-                                            "stage",
-                                            value
-                                          )
-                                        }
-                                        placeholder="Stage"
-                                      />
-                                      <OptionDropdown
-                                        value={task.priority}
-                                        options={priorityDropdownOptions}
-                                        onChange={(value) =>
-                                          handleTaskChange(
-                                            draft.id,
-                                            task.id,
-                                            "priority",
-                                            value
-                                          )
-                                        }
-                                        placeholder="Priority"
-                                        itemSize="compact"
-                                      />
-                                      <OptionDropdown
-                                        value={task.energy}
-                                        options={energyDropdownOptions}
-                                        onChange={(value) =>
-                                          handleTaskChange(
-                                            draft.id,
-                                            task.id,
-                                            "energy",
-                                            value
-                                          )
-                                        }
-                                        placeholder="Energy"
-                                        itemSize="compact"
-                                      />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                        Notes (optional)
-                                      </Label>
-                                      <Textarea
-                                        value={task.notes}
-                                        onChange={(event) =>
-                                          handleTaskChange(
-                                            draft.id,
-                                            task.id,
-                                            "notes",
-                                            event.target.value
-                                          )
-                                        }
-                                        placeholder="Add context, links, or success criteria"
-                                        className="min-h-[72px] rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                                      />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                      <div className="flex items-center justify-between">
-                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                          Advanced options
-                                        </Label>
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() =>
-                                            setTaskAdvanced((prev) => ({
-                                              ...prev,
-                                              [task.id]: !prev[task.id],
-                                            }))
-                                          }
-                                          className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
-                                        >
-                                          {taskAdvanced[task.id] ? "Hide" : "Show"}
-                                        </Button>
-                                      </div>
-                                      {taskAdvanced[task.id] ? (
-                                        <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                                          <div className="space-y-1">
-                                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                              Skill link
-                                            </Label>
-                                            <Select
-                                              value={task.skillId ?? ""}
-                                              onValueChange={(value) =>
-                                                handleDraftTaskSkillChange(
-                                                  draft.id,
-                                                  task.id,
-                                                  value ? value : null
-                                                )
-                                              }
-                                            >
-                                              <SelectTrigger className="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                                                <SelectValue placeholder="Not linked" />
-                                              </SelectTrigger>
-                                              <SelectContent className="bg-[#0b101b] text-sm text-white">
-                                                <SelectItem value="">
-                                                  <span className="text-zinc-400">Not linked</span>
-                                                </SelectItem>
-                                                {sortedSkills.map((skill) => (
-                                                  <SelectItem key={skill.id} value={skill.id}>
-                                                    {skill.name}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                          <div className="space-y-1">
-                                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                              Due date
-                                            </Label>
-                                            <Input
-                                              type="date"
-                                              value={task.dueDate}
-                                              onChange={(event) =>
-                                                handleDraftTaskDueDateChange(
-                                                  draft.id,
-                                                  task.id,
-                                                  event.target.value
-                                                )
-                                              }
-                                              className="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
-                                            />
-                                          </div>
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  </div>
                                   <Button
                                     type="button"
                                     variant="ghost"
+                                    size="sm"
                                     onClick={() =>
-                                      handleRemoveTaskFromDraft(draft.id, task.id)
+                                      setProjectAdvanced((prev) => ({
+                                        ...prev,
+                                        [draft.id]: !prev[draft.id],
+                                      }))
                                     }
-                                    disabled={draft.tasks.length === 1}
-                                    className="h-9 w-9 shrink-0 rounded-full text-zinc-400 hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
+                                    className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
                                   >
-                                    <Trash2 className="h-4 w-4" />
+                                    {projectAdvanced[draft.id]
+                                      ? "Hide"
+                                      : "Show"}
                                   </Button>
                                 </div>
+                                {projectAdvanced[draft.id] ? (
+                                  <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                                    <div className="space-y-1">
+                                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                        Due date
+                                      </Label>
+                                      <Input
+                                        type="date"
+                                        value={draft.dueDate}
+                                        onChange={(event) =>
+                                          handleDraftProjectDueDateChange(
+                                            draft.id,
+                                            event.target.value
+                                          )
+                                        }
+                                        className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                                      />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                                      <div className="space-y-1">
+                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                          Manual start time
+                                        </Label>
+                                        <Input
+                                          type="datetime-local"
+                                          value={draft.manualStart}
+                                          onChange={(event) =>
+                                            handleDraftProjectChange(
+                                              draft.id,
+                                              "manualStart",
+                                              event.target.value
+                                            )
+                                          }
+                                          className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                          Manual end time
+                                        </Label>
+                                        <Input
+                                          type="datetime-local"
+                                          value={draft.manualEnd}
+                                          onChange={(event) =>
+                                            handleDraftProjectChange(
+                                              draft.id,
+                                              "manualEnd",
+                                              event.target.value
+                                            )
+                                          }
+                                          className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                                        />
+                                      </div>
+                                    </div>
+                                    <p className="text-[11px] text-zinc-500">
+                                      Provide both a start and end time to lock
+                                      this project at an exact slot.
+                                    </p>
+                                  </div>
+                                ) : null}
                               </div>
-                            ))}
+                            </div>
+                            {draftProjects.length > 1 ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() =>
+                                  handleRemoveDraftProject(draft.id)
+                                }
+                                className="h-10 w-10 shrink-0 rounded-full text-zinc-400 hover:bg-red-500/10 hover:text-red-300"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            ) : null}
                           </div>
-                        ) : (
-                          <p className="mt-4 text-xs text-zinc-500">
-                            No tasks yet. Add at least one to outline the next moves.
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </FormSection>
-              ) : null}
-            </>
-        ) : eventType === "HABIT" ? (
-          <FormSection>
-            <HabitFormFields
-              name={formData.name}
-              description={formData.description}
-              habitType={formData.type}
-              recurrence={formData.recurrence}
-              recurrenceDays={formData.recurrence_days}
-              duration={formData.duration_min}
-              energy={formData.energy}
-              skillId={formData.skill_id || "none"}
-              locationContextId={
-                formData.location_context_id
-                  ? formData.location_context_id
-                  : null
-              }
-              daylightPreference={
-                formData.daylight_preference || "ALL_DAY"
-              }
-              windowEdgePreference={
-                formData.window_edge_preference || "FRONT"
-              }
-              windowId={formData.window_id && formData.window_id.length > 0 ? formData.window_id : "none"}
-              windowOptions={habitWindowOptions}
-              windowsLoading={habitWindowsLoading}
-              windowError={habitWindowError}
-              energyOptions={habitEnergyOptions}
-              skillsLoading={skillsLoading}
-              skillOptions={habitSkillSelectOptions}
-              skillCategories={skillCategories}
-              skillError={skillError}
-              goalId={formData.goal_id || "none"}
-              goalOptions={habitGoalSelectOptions}
-              onGoalChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  goal_id: value === "none" ? "" : value,
-                }))
-              }
-              completionTarget={formData.completion_target}
-              onCompletionTargetChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  completion_target: value,
-                }))
-              }
-              showDescriptionField={false}
-              onNameChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  name: formatNameValue(value),
-                }))
-                }
-                onDescriptionChange={(value) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    description: value,
-                  }))
-                }
-              onHabitTypeChange={(value) =>
-                setFormData((prev) => ({ ...prev, type: value }))
-              }
-              onRecurrenceChange={(value) =>
-                setFormData((prev) => ({ ...prev, recurrence: value }))
-              }
-              onRecurrenceDaysChange={(days) =>
-                setFormData((prev) => ({ ...prev, recurrence_days: days }))
-              }
-              onEnergyChange={(value) =>
-                setFormData((prev) => ({ ...prev, energy: value }))
-              }
-              onDurationChange={(value) =>
-                setFormData((prev) => ({ ...prev, duration_min: value }))
-              }
-              onSkillChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  skill_id: value === "none" ? "" : value,
-                }))
-              }
-              onLocationContextIdChange={(id) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  location_context_id: id ?? "",
-                }))
-              }
-              onDaylightPreferenceChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  daylight_preference: value.toUpperCase(),
-                }))
-              }
-              onWindowEdgePreferenceChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  window_edge_preference: value.toUpperCase(),
-                }))
-              }
-              onWindowChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  window_id: value === "none" ? "" : value,
-                }))
-              }
-              footerSlot={
-                <div className="space-y-4">
-                  <div className="space-y-3">
-                    <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                      Routine
-                    </Label>
-                    <Select
-                      value={routineId}
-                      onValueChange={(value) => {
-                        setRoutineId(value);
-                        if (value !== "__create__") {
-                          setNewRoutineName("");
-                          setNewRoutineDescription("");
-                        }
-                      }}
-                      disabled={routinesLoading}
-                    >
-                      <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                        <SelectValue placeholder="Choose a routine" />
-                      </SelectTrigger>
-                    <SelectContent className="bg-[#0b101b] text-sm text-white">
-                      {routineSelectOptions.map((option) => (
-                        <SelectItem
-                          key={`${option.value}-${option.label}`}
-                          value={option.value}
-                            disabled={option.disabled}
-                          >
-                            <div className="flex flex-col">
-                              <span>{option.label}</span>
-                              {option.description ? (
-                                <span className="text-xs text-white/60">
-                                  {option.description}
-                                </span>
-                              ) : null}
-                          </div>
-                        </SelectItem>
+                        </div>
                       ))}
-                    </SelectContent>
-                  </Select>
-                  {routineLoadError ? (
-                    <p className="text-xs text-red-300">{routineLoadError}</p>
-                  ) : null}
-                </div>
-
-                  {routineId === "__create__" ? (
-                    <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
-                      <div className="space-y-3">
-                        <Label
-                          htmlFor="new-routine-name"
-                          className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
-                        >
-                          Routine name
-                        </Label>
-                        <Input
-                          id="new-routine-name"
-                          value={newRoutineName}
-                          onChange={(event) => setNewRoutineName(event.target.value)}
-                          placeholder="e.g. Morning kickoff"
-                          className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
-                        />
-                      </div>
-
-                      <div className="space-y-3">
-                        <Label
-                          htmlFor="new-routine-description"
-                          className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
-                        >
-                          Description (optional)
-                        </Label>
-                        <Textarea
-                          id="new-routine-description"
-                          value={newRoutineDescription}
-                          onChange={(event) =>
-                            setNewRoutineDescription(event.target.value)
-                          }
-                          placeholder="Give your routine a purpose so future habits stay aligned."
-                          className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
-                        />
-                      </div>
+                      <Button
+                        type="button"
+                        onClick={handleAddDraftProject}
+                        variant="outline"
+                        disabled={isSaving}
+                        className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.02] text-sm text-white hover:border-white/20 hover:bg-white/10"
+                      >
+                        <Plus className="mr-2 h-4 w-4" /> Add another project
+                      </Button>
                     </div>
-                  ) : null}
-                </div>
-              }
-            />
-          </FormSection>
-        ) : eventType === "PROJECT" ? (
-        <FormSection title="Project details">
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                Name
-              </Label>
-              <Input
-                value={formData.name}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    name: formatNameValue(event.target.value),
-                  }))
-                }
-                placeholder={`Enter ${eventMeta.badge.toLowerCase()} name`}
-                className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                required
-              />
-            </div>
+                  </FormSection>
+                ) : null}
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                  Priority
-                </Label>
-                  <OptionDropdown
-                    value={formData.priority}
-                    options={priorityDropdownOptions}
-                    onChange={(value) =>
-                      setFormData({ ...formData, priority: value })
-                    }
-                    placeholder="Select priority..."
-                    itemSize="compact"
-                  />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                  Energy
-                </Label>
-                  <OptionDropdown
-                    value={formData.energy}
-                    options={energyDropdownOptions}
-                    onChange={(value) =>
-                      setFormData({ ...formData, energy: value })
-                    }
-                    placeholder="Select energy..."
-                    itemSize="compact"
-                  />
-              </div>
-            </div>
+                {goalWizardStep === "TASKS" ? (
+                  <FormSection title="Tasks">
+                    <div className="space-y-4">
+                      {draftProjects.map((draft) => (
+                        <div
+                          key={draft.id}
+                          className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-white">
+                                {draft.name ? draft.name : "Untitled project"}
+                              </p>
+                              <p className="text-xs text-zinc-400">
+                                Outline the actions that will move this forward.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => handleAddTaskToDraft(draft.id)}
+                              className="h-9 rounded-lg border border-white/10 bg-white/[0.03] text-xs font-medium text-white hover:border-white/20 hover:bg-white/10"
+                            >
+                              <Plus className="mr-2 h-4 w-4" /> Add task
+                            </Button>
+                          </div>
+                          {draft.tasks.length > 0 ? (
+                            <div className="mt-4 space-y-3">
+                              {draft.tasks.map((task, index) => (
+                                <div
+                                  key={task.id}
+                                  className="rounded-xl border border-white/10 bg-white/[0.04] p-3 sm:p-4"
+                                >
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="flex-1 space-y-3">
+                                      <div className="space-y-2">
+                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                          Task {index + 1}
+                                        </Label>
+                                        <Input
+                                          value={task.name}
+                                          onChange={(event) =>
+                                            handleTaskChange(
+                                              draft.id,
+                                              task.id,
+                                              "name",
+                                              event.target.value
+                                            )
+                                          }
+                                          placeholder="Name this task"
+                                          className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                                        />
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                                        <OptionDropdown
+                                          value={task.stage}
+                                          options={PROJECT_STAGE_OPTIONS}
+                                          onChange={(value) =>
+                                            handleTaskChange(
+                                              draft.id,
+                                              task.id,
+                                              "stage",
+                                              value
+                                            )
+                                          }
+                                          placeholder="Stage"
+                                        />
+                                        <OptionDropdown
+                                          value={task.priority}
+                                          options={priorityDropdownOptions}
+                                          onChange={(value) =>
+                                            handleTaskChange(
+                                              draft.id,
+                                              task.id,
+                                              "priority",
+                                              value
+                                            )
+                                          }
+                                          placeholder="Priority"
+                                          itemSize="compact"
+                                        />
+                                        <OptionDropdown
+                                          value={task.energy}
+                                          options={energyDropdownOptions}
+                                          onChange={(value) =>
+                                            handleTaskChange(
+                                              draft.id,
+                                              task.id,
+                                              "energy",
+                                              value
+                                            )
+                                          }
+                                          placeholder="Energy"
+                                          itemSize="compact"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                          Notes (optional)
+                                        </Label>
+                                        <Textarea
+                                          value={task.notes}
+                                          onChange={(event) =>
+                                            handleTaskChange(
+                                              draft.id,
+                                              task.id,
+                                              "notes",
+                                              event.target.value
+                                            )
+                                          }
+                                          placeholder="Add context, links, or success criteria"
+                                          className="min-h-[72px] rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                                        />
+                                      </div>
 
-            <div className="space-y-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                Stage
-              </p>
-              <Select
-                value={formData.stage}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, stage: value })
-                }
-                triggerClassName="h-12 px-4 text-left"
-                contentWrapperClassName="bg-[#0b1222]"
-              >
-                <SelectContent className="space-y-1">
-                  {PROJECT_STAGE_OPTIONS.map((option) => (
-                    <SelectItem
-                      key={option.value}
-                      value={option.value}
-                      label={option.label}
-                      className="px-4 py-3"
-                    >
-                      <span className="text-sm font-medium text-white">
-                        {option.label}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                                      <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                            Advanced options
+                                          </Label>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() =>
+                                              setTaskAdvanced((prev) => ({
+                                                ...prev,
+                                                [task.id]: !prev[task.id],
+                                              }))
+                                            }
+                                            className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
+                                          >
+                                            {taskAdvanced[task.id]
+                                              ? "Hide"
+                                              : "Show"}
+                                          </Button>
+                                        </div>
+                                        {taskAdvanced[task.id] ? (
+                                          <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                                            <div className="space-y-1">
+                                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                                Skill link
+                                              </Label>
+                                              <Select
+                                                value={task.skillId ?? ""}
+                                                onValueChange={(value) =>
+                                                  handleDraftTaskSkillChange(
+                                                    draft.id,
+                                                    task.id,
+                                                    value ? value : null
+                                                  )
+                                                }
+                                              >
+                                                <SelectTrigger className="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                                                  <SelectValue placeholder="Not linked" />
+                                                </SelectTrigger>
+                                                <SelectContent className="bg-[#0b101b] text-sm text-white">
+                                                  <SelectItem value="">
+                                                    <span className="text-zinc-400">
+                                                      Not linked
+                                                    </span>
+                                                  </SelectItem>
+                                                  {sortedSkills.map((skill) => (
+                                                    <SelectItem
+                                                      key={skill.id}
+                                                      value={skill.id}
+                                                    >
+                                                      {skill.name}
+                                                    </SelectItem>
+                                                  ))}
+                                                </SelectContent>
+                                              </Select>
+                                            </div>
+                                            <div className="space-y-1">
+                                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                                Due date
+                                              </Label>
+                                              <Input
+                                                type="date"
+                                                value={task.dueDate}
+                                                onChange={(event) =>
+                                                  handleDraftTaskDueDateChange(
+                                                    draft.id,
+                                                    task.id,
+                                                    event.target.value
+                                                  )
+                                                }
+                                                className="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                                              />
+                                            </div>
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      onClick={() =>
+                                        handleRemoveTaskFromDraft(
+                                          draft.id,
+                                          task.id
+                                        )
+                                      }
+                                      disabled={draft.tasks.length === 1}
+                                      className="h-9 w-9 shrink-0 rounded-full text-zinc-400 hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-4 text-xs text-zinc-500">
+                              No tasks yet. Add at least one to outline the next
+                              moves.
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </FormSection>
+                ) : null}
+              </>
+            ) : eventType === "HABIT" ? (
+              <FormSection>
+                <HabitFormFields
+                  name={formData.name}
+                  description={formData.description}
+                  habitType={formData.type}
+                  recurrence={formData.recurrence}
+                  recurrenceDays={formData.recurrence_days}
+                  duration={formData.duration_min}
+                  energy={formData.energy}
+                  skillId={formData.skill_id || "none"}
+                  locationContextId={
+                    formData.location_context_id
+                      ? formData.location_context_id
+                      : null
+                  }
+                  daylightPreference={formData.daylight_preference || "ALL_DAY"}
+                  windowEdgePreference={
+                    formData.window_edge_preference || "FRONT"
+                  }
+                  windowId={
+                    formData.window_id && formData.window_id.length > 0
+                      ? formData.window_id
+                      : "none"
+                  }
+                  windowOptions={habitWindowOptions}
+                  windowsLoading={habitWindowsLoading}
+                  windowError={habitWindowError}
+                  energyOptions={habitEnergyOptions}
+                  skillsLoading={skillsLoading}
+                  skillOptions={habitSkillSelectOptions}
+                  skillCategories={skillCategories}
+                  skillError={skillError}
+                  goalId={formData.goal_id || "none"}
+                  goalOptions={habitGoalSelectOptions}
+                  onGoalChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      goal_id: value === "none" ? "" : value,
+                    }))
+                  }
+                  completionTarget={formData.completion_target}
+                  onCompletionTargetChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      completion_target: value,
+                    }))
+                  }
+                  showDescriptionField={false}
+                  onNameChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      name: formatNameValue(value),
+                    }))
+                  }
+                  onDescriptionChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      description: value,
+                    }))
+                  }
+                  onHabitTypeChange={(value) =>
+                    setFormData((prev) => ({ ...prev, type: value }))
+                  }
+                  onRecurrenceChange={(value) =>
+                    setFormData((prev) => ({ ...prev, recurrence: value }))
+                  }
+                  onRecurrenceDaysChange={(days) =>
+                    setFormData((prev) => ({ ...prev, recurrence_days: days }))
+                  }
+                  onEnergyChange={(value) =>
+                    setFormData((prev) => ({ ...prev, energy: value }))
+                  }
+                  onDurationChange={(value) =>
+                    setFormData((prev) => ({ ...prev, duration_min: value }))
+                  }
+                  onSkillChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      skill_id: value === "none" ? "" : value,
+                    }))
+                  }
+                  onLocationContextIdChange={(id) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      location_context_id: id ?? "",
+                    }))
+                  }
+                  onDaylightPreferenceChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      daylight_preference: value.toUpperCase(),
+                    }))
+                  }
+                  onWindowEdgePreferenceChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      window_edge_preference: value.toUpperCase(),
+                    }))
+                  }
+                  onWindowChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      window_id: value === "none" ? "" : value,
+                    }))
+                  }
+                  footerSlot={
+                    <div className="space-y-4">
+                      <div className="space-y-3">
+                        <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                          Routine
+                        </Label>
+                        <Select
+                          value={routineId}
+                          onValueChange={(value) => {
+                            setRoutineId(value);
+                            if (value !== "__create__") {
+                              setNewRoutineName("");
+                              setNewRoutineDescription("");
+                            }
+                          }}
+                          disabled={routinesLoading}
+                        >
+                          <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                            <SelectValue placeholder="Choose a routine" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#0b101b] text-sm text-white">
+                            {routineSelectOptions.map((option) => (
+                              <SelectItem
+                                key={`${option.value}-${option.label}`}
+                                value={option.value}
+                                disabled={option.disabled}
+                              >
+                                <div className="flex flex-col">
+                                  <span>{option.label}</span>
+                                  {option.description ? (
+                                    <span className="text-xs text-white/60">
+                                      {option.description}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {routineLoadError ? (
+                          <p className="text-xs text-red-300">
+                            {routineLoadError}
+                          </p>
+                        ) : null}
+                      </div>
 
-            <div className="space-y-2">
-              <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                Duration
-              </Label>
-              <Input
-                type="number"
-                min={1}
-                value={formData.duration_min}
-                onChange={(event) =>
-                  setFormData({
-                    ...formData,
-                    duration_min: event.target.value,
-                  })
-                }
-                className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                required
-              />
-            </div>
+                      {routineId === "__create__" ? (
+                        <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
+                          <div className="space-y-3">
+                            <Label
+                              htmlFor="new-routine-name"
+                              className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
+                            >
+                              Routine name
+                            </Label>
+                            <Input
+                              id="new-routine-name"
+                              value={newRoutineName}
+                              onChange={(event) =>
+                                setNewRoutineName(event.target.value)
+                              }
+                              placeholder="e.g. Morning kickoff"
+                              className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+                            />
+                          </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                  Skills
-                </Label>
-                <SkillMultiSelect
-                  skills={sortedSkills}
-                  selectedIds={formData.skill_ids}
-                  onToggle={toggleSkill}
-                  categories={skillCategories}
+                          <div className="space-y-3">
+                            <Label
+                              htmlFor="new-routine-description"
+                              className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
+                            >
+                              Description (optional)
+                            </Label>
+                            <Textarea
+                              id="new-routine-description"
+                              value={newRoutineDescription}
+                              onChange={(event) =>
+                                setNewRoutineDescription(event.target.value)
+                              }
+                              placeholder="Give your routine a purpose so future habits stay aligned."
+                              className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  }
                 />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                  Goal
-                </Label>
-                <Select
-                  value={formData.goal_id}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, goal_id: value })
-                  }
-                >
-                  <SelectContent>
-                    <SelectItem value="">Select goal...</SelectItem>
-                    {goals.map((goal) => (
-                      <SelectItem key={goal.id} value={goal.id}>
-                        {formatNameDisplay(goal.name)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+              </FormSection>
+            ) : eventType === "PROJECT" ? (
+              <FormSection title="Project details">
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Name
+                    </Label>
+                    <Input
+                      value={formData.name}
+                      onChange={(event) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          name: formatNameValue(event.target.value),
+                        }))
+                      }
+                      placeholder={`Enter ${eventMeta.badge.toLowerCase()} name`}
+                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                      required
+                    />
+                  </div>
 
-            <div className="space-y-2">
-              <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                Why?
-              </Label>
-              <Textarea
-                value={formData.description}
-                onChange={(event) =>
-                  setFormData({ ...formData, description: event.target.value })
-                }
-                placeholder="Capture context or success criteria"
-                className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-              />
-            </div>
-
-            <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-zinc-400">
-                  Advanced scheduling
-                </Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    setShowProjectAdvancedOptions((prev) => !prev)
-                  }
-                  className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
-                >
-                  {showProjectAdvancedOptions ? "Hide" : "Show"}
-                </Button>
-              </div>
-              {showProjectAdvancedOptions ? (
-                <>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                        Manual start time
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Priority
                       </Label>
-                      <Input
-                        type="datetime-local"
-                        value={formData.manual_start}
-                        onChange={(event) =>
-                          setFormData({
-                            ...formData,
-                            manual_start: event.target.value,
-                          })
+                      <OptionDropdown
+                        value={formData.priority}
+                        options={priorityDropdownOptions}
+                        onChange={(value) =>
+                          setFormData({ ...formData, priority: value })
                         }
-                        className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                        placeholder="Select priority..."
+                        itemSize="compact"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                        Manual end time
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Energy
                       </Label>
-                      <Input
-                        type="datetime-local"
-                        value={formData.manual_end}
-                        onChange={(event) =>
-                          setFormData({
-                            ...formData,
-                            manual_end: event.target.value,
-                          })
+                      <OptionDropdown
+                        value={formData.energy}
+                        options={energyDropdownOptions}
+                        onChange={(value) =>
+                          setFormData({ ...formData, energy: value })
                         }
-                        className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                        placeholder="Select energy..."
+                        itemSize="compact"
                       />
                     </div>
                   </div>
-                  <p className="text-[11px] text-zinc-400">
-                    Provide both a start and end time to create a locked block that the scheduler will keep in place. Clear both fields to return this project to dynamic scheduling.
-                  </p>
-                </>
-              ) : (
-                <p className="text-[11px] text-zinc-500">
-                  Lock this project into a fixed window by setting a manual start and end time.
-                </p>
-              )}
-            </div>
-          </div>
-        </FormSection>
-        ) : eventType === "TASK" ? (
-            <FormSection title="Task details">
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                    Name
-                  </Label>
-                  <Input
-                    value={formData.name}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        name: formatNameValue(event.target.value),
-                      }))
-                    }
-                    placeholder={`Enter ${eventMeta.badge.toLowerCase()} name`}
-                    className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                    required
-                  />
-                </div>
 
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Priority
-                    </Label>
-                  <OptionDropdown
-                    value={formData.priority}
-                    options={priorityDropdownOptions}
-                    onChange={(value) =>
-                      setFormData({ ...formData, priority: value })
-                    }
-                    placeholder="Select priority..."
-                    itemSize="compact"
-                  />
+                  <div className="space-y-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                      Stage
+                    </p>
+                    <Select
+                      value={formData.stage}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, stage: value })
+                      }
+                      triggerClassName="h-12 px-4 text-left"
+                      contentWrapperClassName="bg-[#0b1222]"
+                    >
+                      <SelectContent className="space-y-1">
+                        {PROJECT_STAGE_OPTIONS.map((option) => (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            label={option.label}
+                            className="px-4 py-3"
+                          >
+                            <span className="text-sm font-medium text-white">
+                              {option.label}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Energy
-                    </Label>
-                  <OptionDropdown
-                    value={formData.energy}
-                    options={energyDropdownOptions}
-                    onChange={(value) =>
-                      setFormData({ ...formData, energy: value })
-                    }
-                    placeholder="Select energy..."
-                    itemSize="compact"
-                  />
-                  </div>
-                </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                       Duration
@@ -4046,97 +4014,130 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Stage
-                    </Label>
-                    <Select
-                      value={formData.stage}
-                      onValueChange={(value) =>
-                        setFormData({ ...formData, stage: value })
-                      }
-                      triggerClassName="h-12 px-4 text-left"
-                      contentWrapperClassName="bg-[#0b1222]"
-                    >
-                      <SelectContent className="space-y-1">
-                        {TASK_STAGE_OPTIONS.map((option) => (
-                          <SelectItem
-                            key={option.value}
-                            value={option.value}
-                            label={option.label}
-                            className="px-4 py-3"
-                          >
-                            <span className="text-sm font-medium text-white">
-                              {option.label}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Goal
-                    </Label>
-                    <Select
-                      value={formData.goal_id}
-                      onValueChange={handleGoalChange}
-                      placeholder="Select goal..."
-                    >
-                      <SelectContent>
-                        <SelectItem value="">Select goal...</SelectItem>
-                        {goals.map((goal) => (
-                          <SelectItem key={goal.id} value={goal.id}>
-                            {formatNameDisplay(goal.name)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Skills
+                      </Label>
+                      <SkillMultiSelect
+                        skills={sortedSkills}
+                        selectedIds={formData.skill_ids}
+                        onToggle={toggleSkill}
+                        categories={skillCategories}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Goal
+                      </Label>
+                      <Select
+                        value={formData.goal_id}
+                        onValueChange={(value) =>
+                          setFormData({ ...formData, goal_id: value })
+                        }
+                      >
+                        <SelectContent>
+                          <SelectItem value="">Select goal...</SelectItem>
+                          {goals.map((goal) => (
+                            <SelectItem key={goal.id} value={goal.id}>
+                              {formatNameDisplay(goal.name)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Project
-                    </Label>
-                    <Select
-                      value={formData.project_id}
-                      onValueChange={(value) =>
-                        setFormData({ ...formData, project_id: value })
-                      }
-                    >
-                      <SelectContent>
-                        <SelectItem value="">Select project...</SelectItem>
-                        {projects.map((project) => (
-                          <SelectItem key={project.id} value={project.id}>
-                            {formatNameDisplay(project.name)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
 
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Skill
+                      Why?
                     </Label>
-                    <SkillMultiSelect
-                      skills={sortedSkills}
-                      selectedIds={formData.skill_id ? [formData.skill_id] : []}
-                      onToggle={handleTaskSkillToggle}
-                      placeholder="Select skill..."
-                      buttonClassName="rounded-full border border-white/10 bg-white/[0.04] text-sm text-white/80"
-                      categories={skillCategories}
+                    <Textarea
+                      value={formData.description}
+                      onChange={(event) =>
+                        setFormData({
+                          ...formData,
+                          description: event.target.value,
+                        })
+                      }
+                      placeholder="Capture context or success criteria"
+                      className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                     />
                   </div>
-              </div>
-            </FormSection>
-        ) : (
-            <>
-              <FormSection title="Overview">
-                <div className="grid gap-4">
+
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-zinc-400">
+                        Advanced scheduling
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setShowProjectAdvancedOptions((prev) => !prev)
+                        }
+                        className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
+                      >
+                        {showProjectAdvancedOptions ? "Hide" : "Show"}
+                      </Button>
+                    </div>
+                    {showProjectAdvancedOptions ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                              Manual start time
+                            </Label>
+                            <Input
+                              type="datetime-local"
+                              value={formData.manual_start}
+                              onChange={(event) =>
+                                setFormData({
+                                  ...formData,
+                                  manual_start: event.target.value,
+                                })
+                              }
+                              className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                              Manual end time
+                            </Label>
+                            <Input
+                              type="datetime-local"
+                              value={formData.manual_end}
+                              onChange={(event) =>
+                                setFormData({
+                                  ...formData,
+                                  manual_end: event.target.value,
+                                })
+                              }
+                              className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-zinc-400">
+                          Provide both a start and end time to create a locked
+                          block that the scheduler will keep in place. Clear
+                          both fields to return this project to dynamic
+                          scheduling.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-[11px] text-zinc-500">
+                        Lock this project into a fixed window by setting a
+                        manual start and end time.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </FormSection>
+            ) : eventType === "TASK" ? (
+              <FormSection title="Task details">
+                <div className="space-y-6">
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                       Name
@@ -4154,30 +4155,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       required
                     />
                   </div>
-                  {eventType !== "PROJECT" && eventType !== "TASK" ? (
+
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                        Description
+                        Priority
                       </Label>
-                      <Textarea
-                        value={formData.description}
-                        onChange={(event) =>
-                          setFormData({ ...formData, description: event.target.value })
-                        }
-                        placeholder={`Describe your ${eventMeta.badge.toLowerCase()}`}
-                        className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              </FormSection>
-
-              <FormSection title="Intensity">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Priority
-                    </Label>
                       <OptionDropdown
                         value={formData.priority}
                         options={priorityDropdownOptions}
@@ -4187,11 +4170,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         placeholder="Select priority..."
                         itemSize="compact"
                       />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Energy
-                    </Label>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Energy
+                      </Label>
                       <OptionDropdown
                         value={formData.energy}
                         options={energyDropdownOptions}
@@ -4201,17 +4184,58 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         placeholder="Select energy..."
                         itemSize="compact"
                       />
+                    </div>
                   </div>
 
-                </div>
-              </FormSection>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Duration
+                      </Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={formData.duration_min}
+                        onChange={(event) =>
+                          setFormData({
+                            ...formData,
+                            duration_min: event.target.value,
+                          })
+                        }
+                        className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Stage
+                      </Label>
+                      <Select
+                        value={formData.stage}
+                        onValueChange={(value) =>
+                          setFormData({ ...formData, stage: value })
+                        }
+                        triggerClassName="h-12 px-4 text-left"
+                        contentWrapperClassName="bg-[#0b1222]"
+                      >
+                        <SelectContent className="space-y-1">
+                          {TASK_STAGE_OPTIONS.map((option) => (
+                            <SelectItem
+                              key={option.value}
+                              value={option.value}
+                              label={option.label}
+                              className="px-4 py-3"
+                            >
+                              <span className="text-sm font-medium text-white">
+                                {option.label}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
 
-
-
-
-
-              {eventType === "TASK" ? null : (
-                <FormSection title="Context">
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -4253,6 +4277,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       </Select>
                     </div>
                   </div>
+
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                       Skill
@@ -4266,110 +4291,245 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       categories={skillCategories}
                     />
                   </div>
+                </div>
+              </FormSection>
+            ) : (
+              <>
+                <FormSection title="Overview">
+                  <div className="grid gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Name
+                      </Label>
+                      <Input
+                        value={formData.name}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            name: formatNameValue(event.target.value),
+                          }))
+                        }
+                        placeholder={`Enter ${eventMeta.badge.toLowerCase()} name`}
+                        className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                        required
+                      />
+                    </div>
+                    {eventType !== "PROJECT" && eventType !== "TASK" ? (
+                      <div className="space-y-2">
+                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                          Description
+                        </Label>
+                        <Textarea
+                          value={formData.description}
+                          onChange={(event) =>
+                            setFormData({
+                              ...formData,
+                              description: event.target.value,
+                            })
+                          }
+                          placeholder={`Describe your ${eventMeta.badge.toLowerCase()}`}
+                          className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                        />
+                      </div>
+                    ) : null}
+                  </div>
                 </FormSection>
-              )}
-            </>
-          )}
 
-          <div className="flex flex-col gap-3 border-t border-white/5 pt-6">
-            {isGoalWizard ? (
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                {goalWizardStep === "GOAL" ? (
-                  <Button
-                    type="button"
-                    onClick={handlePlanGoal}
-                    disabled={
-                      loading ||
-                      isSaving ||
-                      !goalForm.name.trim() ||
-                      !goalForm.monument_id.trim()
-                    }
-                    variant="secondary"
-                    className="h-11 rounded-xl bg-white/[0.08] px-5 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(59,130,246,0.45)] transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Plan goal in workspace
-                  </Button>
-                ) : (
-                  <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-                    Step {activeWizardIndex + 1} of {GOAL_WIZARD_STEPS.length}
-                  </span>
+                <FormSection title="Intensity">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Priority
+                      </Label>
+                      <OptionDropdown
+                        value={formData.priority}
+                        options={priorityDropdownOptions}
+                        onChange={(value) =>
+                          setFormData({ ...formData, priority: value })
+                        }
+                        placeholder="Select priority..."
+                        itemSize="compact"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Energy
+                      </Label>
+                      <OptionDropdown
+                        value={formData.energy}
+                        options={energyDropdownOptions}
+                        onChange={(value) =>
+                          setFormData({ ...formData, energy: value })
+                        }
+                        placeholder="Select energy..."
+                        itemSize="compact"
+                      />
+                    </div>
+                  </div>
+                </FormSection>
+
+                {eventType === "TASK" ? null : (
+                  <FormSection title="Context">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                          Goal
+                        </Label>
+                        <Select
+                          value={formData.goal_id}
+                          onValueChange={handleGoalChange}
+                          placeholder="Select goal..."
+                        >
+                          <SelectContent>
+                            <SelectItem value="">Select goal...</SelectItem>
+                            {goals.map((goal) => (
+                              <SelectItem key={goal.id} value={goal.id}>
+                                {formatNameDisplay(goal.name)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                          Project
+                        </Label>
+                        <Select
+                          value={formData.project_id}
+                          onValueChange={(value) =>
+                            setFormData({ ...formData, project_id: value })
+                          }
+                        >
+                          <SelectContent>
+                            <SelectItem value="">Select project...</SelectItem>
+                            {projects.map((project) => (
+                              <SelectItem key={project.id} value={project.id}>
+                                {formatNameDisplay(project.name)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Skill
+                      </Label>
+                      <SkillMultiSelect
+                        skills={sortedSkills}
+                        selectedIds={
+                          formData.skill_id ? [formData.skill_id] : []
+                        }
+                        onToggle={handleTaskSkillToggle}
+                        placeholder="Select skill..."
+                        buttonClassName="rounded-full border border-white/10 bg-white/[0.04] text-sm text-white/80"
+                        categories={skillCategories}
+                      />
+                    </div>
+                  </FormSection>
                 )}
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              </>
+            )}
+
+            <div className="flex flex-col gap-3 border-t border-white/5 pt-6">
+              {isGoalWizard ? (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  {goalWizardStep === "GOAL" ? (
+                    <Button
+                      type="button"
+                      onClick={handlePlanGoal}
+                      disabled={
+                        loading ||
+                        isSaving ||
+                        !goalForm.name.trim() ||
+                        !goalForm.monument_id.trim()
+                      }
+                      variant="secondary"
+                      className="h-11 rounded-xl bg-white/[0.08] px-5 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(59,130,246,0.45)] transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Plan goal in workspace
+                    </Button>
+                  ) : (
+                    <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">
+                      Step {activeWizardIndex + 1} of {GOAL_WIZARD_STEPS.length}
+                    </span>
+                  )}
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleModalClose}
+                      disabled={isSaving}
+                      className="h-11 rounded-xl border border-white/10 bg-white/[0.03] px-6 text-sm text-zinc-300 hover:border-white/20 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Cancel
+                    </Button>
+                    {goalWizardStep !== "GOAL" ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={handleWizardBack}
+                        disabled={isSaving}
+                        className="h-11 rounded-xl border border-transparent px-6 text-sm font-semibold text-zinc-200 hover:border-white/10 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Back
+                      </Button>
+                    ) : null}
+                    {goalWizardStep !== "TASKS" ? (
+                      <Button
+                        type="button"
+                        onClick={handleSaveGoalWizard}
+                        disabled={!canSaveGoalWizard}
+                        className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {saveButtonLabel}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="submit"
+                      disabled={wizardPrimaryDisabled}
+                      className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isSaving && goalWizardStep === "TASKS"
+                        ? "Saving..."
+                        : goalWizardStep === "TASKS"
+                        ? "Save goal & launch"
+                        : goalWizardStep === "PROJECTS"
+                        ? "Continue to tasks"
+                        : "Continue to projects"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={handleModalClose}
-                    disabled={isSaving}
-                    className="h-11 rounded-xl border border-white/10 bg-white/[0.03] px-6 text-sm text-zinc-300 hover:border-white/20 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    className="h-11 rounded-xl border border-white/10 bg-white/[0.03] px-6 text-sm text-zinc-300 hover:border-white/20 hover:bg-white/10 hover:text-white"
                   >
                     Cancel
                   </Button>
-                  {goalWizardStep !== "GOAL" ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={handleWizardBack}
-                      disabled={isSaving}
-                      className="h-11 rounded-xl border border-transparent px-6 text-sm font-semibold text-zinc-200 hover:border-white/10 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Back
-                    </Button>
-                  ) : null}
-                  {goalWizardStep !== "TASKS" ? (
-                    <Button
-                      type="button"
-                      onClick={handleSaveGoalWizard}
-                      disabled={!canSaveGoalWizard}
-                      className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {saveButtonLabel}
-                    </Button>
-                  ) : null}
                   <Button
                     type="submit"
-                    disabled={wizardPrimaryDisabled}
+                    disabled={
+                      loading ||
+                      isSaving ||
+                      !formData.name.trim() ||
+                      (eventType === "PROJECT" && !formData.goal_id) ||
+                      (eventType === "TASK" && !formData.project_id)
+                    }
                     className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isSaving && goalWizardStep === "TASKS"
-                      ? "Saving..."
-                      : goalWizardStep === "TASKS"
-                      ? "Save goal & launch"
-                      : goalWizardStep === "PROJECTS"
-                      ? "Continue to tasks"
-                      : "Continue to projects"}
+                    {submitLabel}
                   </Button>
                 </div>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleModalClose}
-                  className="h-11 rounded-xl border border-white/10 bg-white/[0.03] px-6 text-sm text-zinc-300 hover:border-white/20 hover:bg-white/10 hover:text-white"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={
-                    loading ||
-                    isSaving ||
-                    !formData.name.trim() ||
-                    (eventType === "PROJECT" && !formData.goal_id) ||
-                    (eventType === "TASK" && !formData.project_id)
-                  }
-                  className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {submitLabel}
-                </Button>
-              </div>
-            )}
-          </div>
-        </form>
+              )}
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
-  </div>,
+    </div>,
     document.body
   );
 }
