@@ -5,10 +5,7 @@ import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import {
-  PageHeader,
-  Skeleton,
-} from "@/components/ui";
+import { PageHeader, Skeleton } from "@/components/ui";
 import {
   HabitFormFields,
   HABIT_RECURRENCE_OPTIONS,
@@ -33,6 +30,7 @@ import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import { resolveEveryXDaysInterval } from "@/lib/recurrence";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCatsForUser } from "@/lib/data/cats";
+import { deleteHabitCascade } from "@/lib/habits/deleteHabitCascade";
 import type { CatRow } from "@/lib/types/cat";
 import { useHabitWindows } from "@/lib/hooks/useHabitWindows";
 
@@ -65,9 +63,7 @@ function isGoalMetadataError(maybeError?: unknown) {
   if (!haystack) {
     return false;
   }
-  return (
-    haystack.includes("goal_id") || haystack.includes("completion_target")
-  );
+  return haystack.includes("goal_id") || haystack.includes("completion_target");
 }
 
 function buildHabitSelectColumns(includeGoalMetadata: boolean) {
@@ -132,7 +128,9 @@ export default function EditHabitPage() {
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
-  const [locationContextId, setLocationContextId] = useState<string | null>(null);
+  const [locationContextId, setLocationContextId] = useState<string | null>(
+    null
+  );
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
   const [windowId, setWindowId] = useState<string>("none");
@@ -160,6 +158,8 @@ export default function EditHabitPage() {
   const [goalId, setGoalId] = useState<string>("none");
   const [completionTarget, setCompletionTarget] = useState("10");
   const [goalMetadataSupported, setGoalMetadataSupported] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -323,7 +323,8 @@ export default function EditHabitPage() {
             const goalIdValue =
               typeof goalRecord.id === "string" ? goalRecord.id : null;
             const goalNameValue =
-              typeof goalRecord.name === "string" && goalRecord.name.trim().length > 0
+              typeof goalRecord.name === "string" &&
+              goalRecord.name.trim().length > 0
                 ? goalRecord.name.trim()
                 : null;
             return {
@@ -406,11 +407,9 @@ export default function EditHabitPage() {
           return [] as Monument[];
         });
 
-        const [skillsResult, categoriesData, monumentsData] = await Promise.all([
-          skillsPromise,
-          categoriesPromise,
-          monumentsPromise,
-        ]);
+        const [skillsResult, categoriesData, monumentsData] = await Promise.all(
+          [skillsPromise, categoriesPromise, monumentsPromise]
+        );
 
         if (skillsResult.error) throw skillsResult.error;
 
@@ -671,10 +670,15 @@ export default function EditHabitPage() {
               ? String(data.duration_minutes)
               : ""
           );
-          const normalizedEnergy = (data.energy ?? "").toString().trim().toUpperCase();
+          const normalizedEnergy = (data.energy ?? "")
+            .toString()
+            .trim()
+            .toUpperCase();
           const fallbackEnergy = HABIT_ENERGY_OPTIONS[0]?.value ?? "NO";
           setEnergy(
-            HABIT_ENERGY_OPTIONS.some((option) => option.value === normalizedEnergy)
+            HABIT_ENERGY_OPTIONS.some(
+              (option) => option.value === normalizedEnergy
+            )
               ? normalizedEnergy
               : fallbackEnergy
           );
@@ -700,7 +704,7 @@ export default function EditHabitPage() {
           setLocationContextId(
             isValidUuid(data.location_context_id)
               ? data.location_context_id
-              : null,
+              : null
           );
           setDaylightPreference(
             data.daylight_preference
@@ -780,7 +784,9 @@ export default function EditHabitPage() {
       return;
     }
     if (habitType.toUpperCase() === "MEMO" && skillId === "none") {
-      setError("Memo habits need to stay connected to a skill so their notes are saved.");
+      setError(
+        "Memo habits need to stay connected to a skill so their notes are saved."
+      );
       return;
     }
 
@@ -832,7 +838,8 @@ export default function EditHabitPage() {
       }
 
       const trimmedDescription = description.trim();
-      const recurrenceValue = normalizedRecurrence === "none" ? null : recurrence;
+      const recurrenceValue =
+        normalizedRecurrence === "none" ? null : recurrence;
       const recurrenceDaysValue =
         !isPracticeHabit &&
         normalizedRecurrence === "every x days" &&
@@ -877,12 +884,12 @@ export default function EditHabitPage() {
           resolvedLocationContextId = await resolveLocationContextId(
             supabase,
             user.id,
-            locationContextId,
+            locationContextId
           );
 
           if (!resolvedLocationContextId) {
             setError(
-              "We couldn’t save that location just yet. Please try again.",
+              "We couldn’t save that location just yet. Please try again."
             );
             setLoading(false);
             return;
@@ -909,8 +916,7 @@ export default function EditHabitPage() {
       };
 
       if (goalMetadataSupported) {
-        basePayload.goal_id =
-          isTempHabit && goalId !== "none" ? goalId : null;
+        basePayload.goal_id = isTempHabit && goalId !== "none" ? goalId : null;
         basePayload.completion_target = goalMetadataRequired
           ? parsedCompletionTarget
           : null;
@@ -944,6 +950,27 @@ export default function EditHabitPage() {
       setLoading(false);
     }
   }
+
+  const handleConfirmDelete = async () => {
+    if (deleting || !habitId) return;
+
+    try {
+      setDeleting(true);
+
+      console.log("[HABIT DELETE] confirmed", habitId);
+
+      await deleteHabitCascade(habitId);
+
+      console.log("[HABIT DELETE] success");
+
+      router.push("/habits");
+    } catch (err) {
+      console.error("[HABIT DELETE] failed", err);
+      setError("Failed to delete this habit. Try again in a moment.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <ProtectedRoute>
@@ -980,7 +1007,11 @@ export default function EditHabitPage() {
               <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
                 {habitLoadError}
               </div>
-              <Button asChild variant="secondary" className="self-start text-white">
+              <Button
+                asChild
+                variant="secondary"
+                className="self-start text-white"
+              >
                 <Link href="/habits">Go back</Link>
               </Button>
             </div>
@@ -993,17 +1024,17 @@ export default function EditHabitPage() {
                   habitType={habitType}
                   recurrence={recurrence}
                   recurrenceDays={recurrenceDays}
-                duration={duration}
-                energy={energy}
-                skillId={skillId}
-            locationContextId={locationContextId}
-            daylightPreference={daylightPreference}
-            windowEdgePreference={windowEdgePreference}
-            windowId={windowId}
-            windowOptions={windowOptions}
-            windowsLoading={windowsLoading}
-            windowError={windowError}
-            energyOptions={energySelectOptions}
+                  duration={duration}
+                  energy={energy}
+                  skillId={skillId}
+                  locationContextId={locationContextId}
+                  daylightPreference={daylightPreference}
+                  windowEdgePreference={windowEdgePreference}
+                  windowId={windowId}
+                  windowOptions={windowOptions}
+                  windowsLoading={windowsLoading}
+                  windowError={windowError}
+                  energyOptions={energySelectOptions}
                   skillsLoading={skillsLoading}
                   skillOptions={skillSelectOptions}
                   skillCategories={skillCategories}
@@ -1022,14 +1053,14 @@ export default function EditHabitPage() {
                   onEnergyChange={setEnergy}
                   onDurationChange={setDuration}
                   onSkillChange={setSkillId}
-            onLocationContextIdChange={setLocationContextId}
-            onDaylightPreferenceChange={(value) =>
-              setDaylightPreference(value.toUpperCase())
-            }
-            onWindowEdgePreferenceChange={(value) =>
-              setWindowEdgePreference(value.toUpperCase())
-            }
-            onWindowChange={(value) => setWindowId(value)}
+                  onLocationContextIdChange={setLocationContextId}
+                  onDaylightPreferenceChange={(value) =>
+                    setDaylightPreference(value.toUpperCase())
+                  }
+                  onWindowEdgePreferenceChange={(value) =>
+                    setWindowEdgePreference(value.toUpperCase())
+                  }
+                  onWindowChange={(value) => setWindowId(value)}
                   showDescriptionField={false}
                   footerSlot={
                     <div className="space-y-4">
@@ -1061,7 +1092,9 @@ export default function EditHabitPage() {
                                 <div className="flex flex-col">
                                   <span>{option.label}</span>
                                   {option.description ? (
-                                    <span className="text-xs text-white/60">{option.description}</span>
+                                    <span className="text-xs text-white/60">
+                                      {option.description}
+                                    </span>
                                   ) : null}
                                 </div>
                               </SelectItem>
@@ -1069,7 +1102,9 @@ export default function EditHabitPage() {
                           </SelectContent>
                         </Select>
                         {routineLoadError ? (
-                          <p className="text-xs text-red-300">{routineLoadError}</p>
+                          <p className="text-xs text-red-300">
+                            {routineLoadError}
+                          </p>
                         ) : null}
                       </div>
 
@@ -1081,7 +1116,9 @@ export default function EditHabitPage() {
                             </Label>
                             <Input
                               value={newRoutineName}
-                              onChange={(event) => setNewRoutineName(event.target.value)}
+                              onChange={(event) =>
+                                setNewRoutineName(event.target.value)
+                              }
                               placeholder="Morning Focus"
                               className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
                             />
@@ -1092,7 +1129,9 @@ export default function EditHabitPage() {
                             </Label>
                             <Textarea
                               value={newRoutineDescription}
-                              onChange={(event) => setNewRoutineDescription(event.target.value)}
+                              onChange={(event) =>
+                                setNewRoutineDescription(event.target.value)
+                              }
                               placeholder="Group habits focused on deep work."
                               className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
                             />
@@ -1109,12 +1148,62 @@ export default function EditHabitPage() {
                   </div>
                 ) : null}
 
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button type="submit" disabled={loading} className="text-white">
-                    {loading ? "Saving changes…" : "Save changes"}
-                  </Button>
-                  <Button type="button" variant="ghost" className="text-white/70 hover:text-white" onClick={() => router.push("/habits")}>Cancel</Button>
-                </div>
+                {showDeleteConfirm ? (
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 space-y-2">
+                      <h4 className="text-sm font-semibold text-white">
+                        Delete habit
+                      </h4>
+                      <p className="text-sm text-white/70">
+                        This cannot be undone.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      disabled={deleting}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={handleConfirmDelete}
+                      disabled={deleting}
+                    >
+                      {deleting ? "Deleting…" : "Delete habit"}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      className="bg-red-600 text-white hover:bg-red-500 disabled:opacity-70"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      disabled={loading}
+                    >
+                      Delete habit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-white/70 hover:text-white"
+                      onClick={() => router.push("/habits")}
+                      disabled={loading}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={loading}
+                      className="text-white"
+                    >
+                      {loading ? "Saving changes…" : "Save changes"}
+                    </Button>
+                  </div>
+                )}
               </form>
             </div>
           )}

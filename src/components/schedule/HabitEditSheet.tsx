@@ -2,7 +2,15 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { HabitFormFields, HABIT_ENERGY_OPTIONS, HABIT_RECURRENCE_OPTIONS, HABIT_TYPE_OPTIONS, type HabitEnergySelectOption, type HabitGoalSelectOption, type HabitSkillSelectOption } from "@/components/habits/habit-form-fields";
+import {
+  HabitFormFields,
+  HABIT_ENERGY_OPTIONS,
+  HABIT_RECURRENCE_OPTIONS,
+  HABIT_TYPE_OPTIONS,
+  type HabitEnergySelectOption,
+  type HabitGoalSelectOption,
+  type HabitSkillSelectOption,
+} from "@/components/habits/habit-form-fields";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -15,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCatsForUser } from "@/lib/data/cats";
+import { deleteHabitCascade } from "@/lib/habits/deleteHabitCascade";
 import type { CatRow } from "@/lib/types/cat";
 import { cn } from "@/lib/utils";
 import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
@@ -99,9 +108,7 @@ function isGoalMetadataError(maybeError?: unknown) {
   if (!haystack) {
     return false;
   }
-  return (
-    haystack.includes("goal_id") || haystack.includes("completion_target")
-  );
+  return haystack.includes("goal_id") || haystack.includes("completion_target");
 }
 
 function buildHabitSelectColumns(includeGoalMetadata: boolean) {
@@ -172,13 +179,13 @@ export function HabitEditSheet({
   const [description, setDescription] = useState("");
   const [habitType, setHabitType] = useState(HABIT_TYPE_OPTIONS[0].value);
   const [recurrence, setRecurrence] = useState(
-    HABIT_RECURRENCE_OPTIONS[0].value,
+    HABIT_RECURRENCE_OPTIONS[0].value
   );
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [locationContextId, setLocationContextId] = useState<string | null>(
-    null,
+    null
   );
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
@@ -208,12 +215,15 @@ export function HabitEditSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextDueOverrideInput, setNextDueOverrideInput] = useState("");
-  const [nextDueOverrideOriginal, setNextDueOverrideOriginal] =
-    useState<string | null>(null);
+  const [nextDueOverrideOriginal, setNextDueOverrideOriginal] = useState<
+    string | null
+  >(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
-    [],
+    []
   );
   const { windowOptions, windowsLoading, windowError } = useHabitWindows();
 
@@ -251,6 +261,8 @@ export function HabitEditSheet({
     setError(null);
     setNextDueOverrideInput("");
     setNextDueOverrideOriginal(null);
+    setShowDeleteConfirm(false);
+    setDeleting(false);
   }, []);
 
   useEffect(() => {
@@ -454,11 +466,9 @@ export function HabitEditSheet({
           return [] as Monument[];
         });
 
-        const [skillsResult, categoriesData, monumentsData] = await Promise.all([
-          skillsPromise,
-          categoriesPromise,
-          monumentsPromise,
-        ]);
+        const [skillsResult, categoriesData, monumentsData] = await Promise.all(
+          [skillsPromise, categoriesPromise, monumentsPromise]
+        );
 
         if (skillsResult.error) throw skillsResult.error;
 
@@ -594,7 +604,10 @@ export function HabitEditSheet({
   }, [goalMetadataSupported, goalOptions, goalsLoading]);
 
   useEffect(() => {
-    if (habitType.toUpperCase() === "PRACTICE" && energy !== MAX_PRACTICE_ENERGY) {
+    if (
+      habitType.toUpperCase() === "PRACTICE" &&
+      energy !== MAX_PRACTICE_ENERGY
+    ) {
       setEnergy(MAX_PRACTICE_ENERGY);
     }
   }, [energy, habitType]);
@@ -639,7 +652,7 @@ export function HabitEditSheet({
   const localTimeZoneLabel = useMemo(() => {
     try {
       return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "local time";
-      } catch {
+    } catch {
       return "local time";
     }
   }, []);
@@ -692,9 +705,9 @@ export function HabitEditSheet({
         }
 
         let includeGoalMetadata = true;
-        let habitResponse:
-          | PostgrestSingleResponse<Record<string, unknown>>
-          | null = null;
+        let habitResponse: PostgrestSingleResponse<
+          Record<string, unknown>
+        > | null = null;
 
         for (let attempt = 0; attempt < 3; attempt += 1) {
           habitResponse = await supabase
@@ -763,19 +776,24 @@ export function HabitEditSheet({
               ? resolveEveryXDaysInterval(rawRecurrence, safeRecurrenceDays)
               : null;
           setRecurrenceDays(
-            everyXDaysInterval ? [everyXDaysInterval] : safeRecurrenceDays,
+            everyXDaysInterval ? [everyXDaysInterval] : safeRecurrenceDays
           );
           setDuration(
             typeof data.duration_minutes === "number"
               ? String(data.duration_minutes)
-              : "",
+              : ""
           );
-          const normalizedEnergy = (data.energy ?? "").toString().trim().toUpperCase();
+          const normalizedEnergy = (data.energy ?? "")
+            .toString()
+            .trim()
+            .toUpperCase();
           const fallbackEnergy = HABIT_ENERGY_OPTIONS[0]?.value ?? "NO";
           setEnergy(
-            HABIT_ENERGY_OPTIONS.some((option) => option.value === normalizedEnergy)
+            HABIT_ENERGY_OPTIONS.some(
+              (option) => option.value === normalizedEnergy
+            )
               ? normalizedEnergy
-              : fallbackEnergy,
+              : fallbackEnergy
           );
           setRoutineId(data.routine_id ?? "none");
           setSkillId(data.skill_id ?? "none");
@@ -799,18 +817,18 @@ export function HabitEditSheet({
           setLocationContextId(
             isValidUuid(data.location_context_id)
               ? data.location_context_id
-              : null,
+              : null
           );
           setWindowId(data.window_id ?? "none");
           setDaylightPreference(
             data.daylight_preference
               ? String(data.daylight_preference).toUpperCase()
-              : "ALL_DAY",
+              : "ALL_DAY"
           );
           setWindowEdgePreference(
             data.window_edge_preference
               ? String(data.window_edge_preference).toUpperCase()
-              : "FRONT",
+              : "FRONT"
           );
         }
       } catch (err) {
@@ -819,7 +837,7 @@ export function HabitEditSheet({
           setHabitLoadError(
             err instanceof Error
               ? err.message
-              : "Unable to load the habit right now.",
+              : "Unable to load the habit right now."
           );
         }
       } finally {
@@ -899,9 +917,7 @@ export function HabitEditSheet({
             </Label>
             <Textarea
               value={newRoutineDescription}
-              onChange={(event) =>
-                setNewRoutineDescription(event.target.value)
-              }
+              onChange={(event) => setNewRoutineDescription(event.target.value)}
               placeholder="Group habits focused on deep work."
               className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
             />
@@ -913,6 +929,27 @@ export function HabitEditSheet({
 
   const disableSubmit =
     !habitId || !name.trim() || saving || habitLoading || skillsLoading;
+
+  const handleConfirmDelete = async () => {
+    if (deleting || !habitId) return;
+
+    try {
+      setDeleting(true);
+
+      console.log("[HABIT DELETE] confirmed", habitId);
+
+      await deleteHabitCascade(habitId);
+
+      console.log("[HABIT DELETE] success");
+
+      onClose(); // close the sheet after delete
+    } catch (err) {
+      console.error("[HABIT DELETE] failed", err);
+      setError("Failed to delete this habit. Try again in a moment.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -1003,12 +1040,12 @@ export function HabitEditSheet({
             resolvedLocationContextId = await resolveLocationContextId(
               supabase,
               user.id,
-              locationContextId,
+              locationContextId
             );
 
             if (!resolvedLocationContextId) {
               setError(
-                "We couldn’t save that location just yet. Please try again.",
+                "We couldn’t save that location just yet. Please try again."
               );
               setSaving(false);
               return;
@@ -1017,8 +1054,11 @@ export function HabitEditSheet({
         }
 
         const resolvedWindowId = windowId === "none" ? null : windowId;
-        const recurrencePayload =
-          isPracticeHabit ? "none" : normalizedRecurrence === "none" ? null : recurrence;
+        const recurrencePayload = isPracticeHabit
+          ? "none"
+          : normalizedRecurrence === "none"
+          ? null
+          : recurrence;
 
         const basePayload: Record<string, unknown> = {
           name: name.trim(),
@@ -1027,7 +1067,7 @@ export function HabitEditSheet({
           recurrence: recurrencePayload,
           recurrence_days: isPracticeHabit ? null : recurrenceDaysValue,
           duration_minutes: durationMinutes,
-        energy: isPracticeHabit ? MAX_PRACTICE_ENERGY : energy,
+          energy: isPracticeHabit ? MAX_PRACTICE_ENERGY : energy,
           routine_id: routineIdToUse,
           skill_id: skillId === "none" ? null : skillId,
           daylight_preference:
@@ -1040,7 +1080,8 @@ export function HabitEditSheet({
 
         if (goalMetadataSupported) {
           const isTempHabit =
-            habitType.toUpperCase() === "TEMP" || habitType.toUpperCase() === "MEMO";
+            habitType.toUpperCase() === "TEMP" ||
+            habitType.toUpperCase() === "MEMO";
           const parsedCompletionTarget = Number(completionTarget);
           const goalMetadataRequired =
             isTempHabit &&
@@ -1090,7 +1131,7 @@ export function HabitEditSheet({
         setError(
           err instanceof Error
             ? err.message
-            : "Unable to update the habit right now.",
+            : "Unable to update the habit right now."
         );
       } finally {
         setSaving(false);
@@ -1120,7 +1161,7 @@ export function HabitEditSheet({
       nextDueOverrideInput,
       onSaved,
       onClose,
-    ],
+    ]
   );
 
   if (!habitId) {
@@ -1248,7 +1289,9 @@ export function HabitEditSheet({
                 <Input
                   type="datetime-local"
                   value={nextDueOverrideInput}
-                  onChange={(event) => setNextDueOverrideInput(event.target.value)}
+                  onChange={(event) =>
+                    setNextDueOverrideInput(event.target.value)
+                  }
                   className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
                 />
               </div>
@@ -1274,7 +1317,9 @@ export function HabitEditSheet({
                   Currently deferred until {savedNextDueOverrideLabel}.
                 </p>
               ) : (
-                <p>Leave blank to let the scheduler follow the regular cadence.</p>
+                <p>
+                  Leave blank to let the scheduler follow the regular cadence.
+                </p>
               )}
             </div>
           </div>
@@ -1285,27 +1330,65 @@ export function HabitEditSheet({
             </div>
           ) : null}
 
-          <div className="flex flex-col-reverse gap-3 pb-2 sm:flex-row sm:justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
-              onClick={onClose}
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className={cn(
-                "bg-white text-zinc-900 hover:bg-white/90",
-                disableSubmit && "opacity-50",
-              )}
-              disabled={disableSubmit}
-            >
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-          </div>
+          {showDeleteConfirm ? (
+            <div className="flex items-center gap-3">
+              <div className="flex-1 space-y-2">
+                <h4 className="text-sm font-semibold text-white">
+                  Delete habit
+                </h4>
+                <p className="text-sm text-white/70">This cannot be undone.</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+              >
+                {deleting ? "Deleting…" : "Delete habit"}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col-reverse gap-3 pb-2 sm:flex-row sm:justify-between sm:items-center">
+              <Button
+                type="button"
+                variant="destructive"
+                className="bg-red-600 text-white hover:bg-red-500 disabled:opacity-70"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={saving}
+              >
+                Delete habit
+              </Button>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
+                  onClick={onClose}
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className={cn(
+                    "bg-white text-zinc-900 hover:bg-white/90",
+                    disableSubmit && "opacity-50"
+                  )}
+                  disabled={disableSubmit}
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
+            </div>
+          )}
         </form>
       )}
     </ScheduleMorphDialog>
