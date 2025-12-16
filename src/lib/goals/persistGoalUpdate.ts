@@ -221,12 +221,13 @@ export async function persistGoalUpdate({
   const buildEnumPayload = (includeCodeColumns: boolean) => {
     const payload: Record<string, unknown> = {
       ...sharedFields,
-      priority: priorityDb,
-      energy: energyDb,
     };
     if (includeCodeColumns) {
       payload.priority_code = priorityDb;
       payload.energy_code = energyDb;
+    } else {
+      payload.priority = priorityDb;
+      payload.energy = energyDb;
     }
     return payload;
   };

@@ -76,8 +76,8 @@ begin
   values (
     goal_user_id,
     coalesce(nullif(btrim(payload->>'name'), ''), 'Untitled Goal'),
-    public.lookup_priority_id(payload->>'priority'),
-    public.lookup_energy_id(payload->>'energy'),
+    (upper(coalesce(nullif(payload->>'priority',''),'NO')))::priority_enum,
+    (upper(coalesce(nullif(payload->>'energy',''),'NO')))::energy_enum,
     coalesce(
       nullif(payload->>'monument_id', ''),
       nullif(payload->>'monumentId', '')
@@ -103,8 +103,8 @@ begin
       new_goal.id,
       project_elem->>'name',
       coalesce(project_elem->>'stage', 'RESEARCH')::project_stage_enum,
-      public.lookup_priority_id(project_elem->>'priority'),
-      public.lookup_energy_id(project_elem->>'energy'),
+      (upper(coalesce(nullif(project_elem->>'priority',''),'NO')))::priority_enum,
+      (upper(coalesce(nullif(project_elem->>'energy',''),'NO')))::energy_enum,
       nullif(project_elem->>'why', ''),
       case
         when trim(coalesce(project_elem->>'duration_min', '')) ~ '^[0-9]+$'
@@ -154,8 +154,8 @@ begin
         new_project.id,
         task_elem->>'name',
         coalesce(task_elem->>'stage', 'PREPARE')::task_stage_enum,
-        public.lookup_priority_id(task_elem->>'priority'),
-        public.lookup_energy_id(task_elem->>'energy'),
+        (upper(coalesce(nullif(task_elem->>'priority',''),'NO')))::priority_enum,
+        (upper(coalesce(nullif(task_elem->>'energy',''),'NO')))::energy_enum,
         nullif(task_elem->>'notes', ''),
         nullif(task_elem->>'skill_id', '')::uuid,
         nullif(task_elem->>'due_date', '')::timestamptz

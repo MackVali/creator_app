@@ -1297,32 +1297,47 @@ export default function GoalsPage() {
           ? "INACTIVE"
           : "ACTIVE";
 
-      const performInsert = (includeCodeColumns: boolean) =>
-        supabase
+      const performInsert = (includeCodeColumns: boolean) => {
+        const payload = {
+          user_id: user.id,
+          name: _goal.title.trim(),
+          active: _goal.active,
+          status: statusDb,
+          why: _goal.why ?? null,
+          monument_id: _goal.monumentId || null,
+          roadmap_id: _goal.roadmapId || null,
+          due_date: _goal.dueDate ?? null,
+          emoji: goalEmoji || undefined,
+          ...(includeCodeColumns
+            ? {
+                priority_code: priorityDb,
+                energy_code: energyDb,
+              }
+            : {
+                priority: priorityDb,
+                energy: energyDb,
+              }),
+        };
+        console.log("[ADD GOAL FINAL INSERT PAYLOAD]", {
+          fullPayload: payload,
+          priority: "priority" in payload ? payload.priority : undefined,
+          priority_code:
+            "priority_code" in payload ? payload.priority_code : undefined,
+          priority_type:
+            "priority" in payload ? typeof payload.priority : "undefined",
+          priority_code_type:
+            "priority_code" in payload
+              ? typeof payload.priority_code
+              : "undefined",
+        });
+        return supabase
           .from("goals")
-          .insert({
-            user_id: user.id,
-            name: _goal.title.trim(),
-            priority: priorityDb,
-            energy: energyDb,
-            active: _goal.active,
-            status: statusDb,
-            why: _goal.why ?? null,
-            monument_id: _goal.monumentId || null,
-            roadmap_id: _goal.roadmapId || null,
-            due_date: _goal.dueDate ?? null,
-            emoji: goalEmoji || undefined,
-            ...(includeCodeColumns
-              ? {
-                  priority_code: priorityDb,
-                  energy_code: energyDb,
-                }
-              : {}),
-          })
+          .insert(payload)
           .select(
             "id, created_at, weight, weight_boost, monument_id, roadmap_id, due_date"
           )
           .single();
+      };
 
       let insertResult = await performInsert(true);
       if (

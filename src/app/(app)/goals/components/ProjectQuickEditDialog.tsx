@@ -41,7 +41,14 @@ const ENERGY_OPTIONS: { value: Project["energy"]; label: string }[] = [
   { value: "Extreme", label: "Extreme" },
 ];
 
-const FLAME_LEVELS: FlameLevel[] = ["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"];
+const FLAME_LEVELS: FlameLevel[] = [
+  "NO",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "ULTRA",
+  "EXTREME",
+];
 
 type EnergySelectOption = {
   id: string;
@@ -163,6 +170,7 @@ export function ProjectQuickEditDialog({
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [morphReady, setMorphReady] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -402,15 +410,15 @@ export function ProjectQuickEditDialog({
     const priorityCode = priority;
     const dueDateValue = fromDateInputValue(dueDateInput);
     const { error: updateError } = await supabase
-        .from("projects")
-        .update({
-          name: trimmed,
-          stage: nextStage,
-          energy: energyCode,
-          priority: priorityCode,
-          duration_min: parsedDuration,
-          due_date: dueDateValue,
-        })
+      .from("projects")
+      .update({
+        name: trimmed,
+        stage: nextStage,
+        energy: energyCode,
+        priority: priorityCode,
+        duration_min: parsedDuration,
+        due_date: dueDateValue,
+      })
       .eq("id", project.id);
     if (updateError) {
       setError("Failed to update this project. Try again in a moment.");
@@ -420,12 +428,17 @@ export function ProjectQuickEditDialog({
     let nextEmoji = project.emoji ?? null;
     if (selectedSkillId !== initialSkillId) {
       try {
-        await supabase.from("project_skills").delete().eq("project_id", project.id);
+        await supabase
+          .from("project_skills")
+          .delete()
+          .eq("project_id", project.id);
         if (selectedSkillId) {
           await supabase
             .from("project_skills")
             .insert({ project_id: project.id, skill_id: selectedSkillId });
-          const selectedSkill = skillOptions.find((skill) => skill.id === selectedSkillId);
+          const selectedSkill = skillOptions.find(
+            (skill) => skill.id === selectedSkillId
+          );
           if (selectedSkill?.icon) {
             nextEmoji = selectedSkill.icon;
           }
@@ -473,16 +486,18 @@ export function ProjectQuickEditDialog({
     onClose();
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (deleting || !project) return;
-    if (typeof window !== "undefined") {
-      const confirmed = window.confirm(
-        "Delete this project? This cannot be undone."
-      );
-      if (!confirmed) {
-        return;
-      }
-    }
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    console.log("[CONFIRM DELETE] handler fired", {
+      deleting,
+      hasProject: !!project,
+      hasSupabase: !!supabase,
+    });
+    if (deleting || !project) return;
     if (!supabase) {
       setError("Supabase client not available.");
       return;
@@ -491,6 +506,8 @@ export function ProjectQuickEditDialog({
     setDeleting(true);
     let succeeded = false;
     try {
+      console.log("[CONFIRM DELETE] starting delete");
+      console.log("[CONFIRM DELETE] deleting project_skills");
       const { error: skillError } = await supabase
         .from("project_skills")
         .delete()
@@ -498,6 +515,7 @@ export function ProjectQuickEditDialog({
       if (skillError) {
         throw skillError;
       }
+      console.log("[CONFIRM DELETE] deleting tasks");
       const { error: taskError } = await supabase
         .from("tasks")
         .delete()
@@ -505,6 +523,7 @@ export function ProjectQuickEditDialog({
       if (taskError) {
         throw taskError;
       }
+      console.log("[CONFIRM DELETE] deleting project");
       const { error: deleteError } = await supabase
         .from("projects")
         .delete()
@@ -512,11 +531,13 @@ export function ProjectQuickEditDialog({
       if (deleteError) {
         throw deleteError;
       }
+      console.log("[CONFIRM DELETE] success");
       onDeleted?.(project.id);
       succeeded = true;
       setDeleting(false);
       onClose();
     } catch (err) {
+      console.log("[CONFIRM DELETE] error", err);
       console.error("Failed to delete project", err);
       setError("Failed to delete this project. Try again in a moment.");
     } finally {
@@ -554,13 +575,29 @@ export function ProjectQuickEditDialog({
                 onSubmit={handleSubmit}
                 className="flex h-full flex-col gap-4 overflow-hidden"
               >
-                <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+                <div
+                  className="flex-1 space-y-4 overflow-y-auto px-5 py-4"
+                  onTouchStart={() =>
+                    console.log("[SCROLL CONTAINER] touchstart")
+                  }
+                  onTouchMove={() =>
+                    console.log("[SCROLL CONTAINER] touchmove")
+                  }
+                  onTouchEnd={() => console.log("[SCROLL CONTAINER] touchend")}
+                >
                   <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">Project</p>
-                    <h3 className="text-lg font-semibold text-white">{project.name}</h3>
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">
+                      Project
+                    </p>
+                    <h3 className="text-lg font-semibold text-white">
+                      {project.name}
+                    </h3>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="project-name" className="text-xs uppercase tracking-[0.24em] text-white/70">
+                    <Label
+                      htmlFor="project-name"
+                      className="text-xs uppercase tracking-[0.24em] text-white/70"
+                    >
                       Name
                     </Label>
                     <Input
@@ -573,188 +610,240 @@ export function ProjectQuickEditDialog({
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-[0.24em] text-white/70">Stage</Label>
-                    <Select
-                      value={displayStage}
-                      onValueChange={setStage}
-                      triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
-                    >
-                      <SelectContent className="bg-black text-sm text-white">
-                        {STAGE_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-[0.24em] text-white/70">Energy</Label>
-                    <Select
-                      value={energy}
-                      onValueChange={(value) => setEnergy(value as Project["energy"])}
-                      triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
-                    >
-                      <SelectContent className="bg-black text-sm text-white">
-                        {energySelectOptions.map((option) => (
-                          <SelectItem key={option.id} value={option.label} className="text-xs">
-                            <div className="flex items-center gap-2">
-                              <FlameEmber level={option.level} size="xs" />
-                              <span className="text-xs">{option.label}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
-                      Priority
-                    </Label>
-                    <Select
-                      value={priority}
-                      onValueChange={setPriority}
-                      triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
-                    >
-                      <SelectContent className="bg-black text-sm text-white">
-                        {prioritySelectOptions.map((option) => (
-                          <SelectItem key={option.id} value={option.code}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
-                      Duration (min)
-                    </Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      inputMode="numeric"
-                      value={durationInput}
-                      onChange={(event) => setDurationInput(event.target.value)}
-                      className="h-11 rounded-xl border-white/10 bg-white/[0.04] text-sm"
-                      placeholder="e.g. 60"
-                      disabled={isBusy}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
-                    Due date
-                  </Label>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <Input
-                      type="date"
-                      value={dueDateInput}
-                      onChange={(event) => setDueDateInput(event.target.value)}
-                      className="h-11 rounded-xl border-white/10 bg-white/[0.04] text-sm text-white sm:flex-1"
-                      disabled={isBusy}
-                    />
-                    {dueDateInput ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="h-11 rounded-xl border border-white/10 bg-white/[0.02] px-4 text-xs text-white/70 hover:text-white"
-                        onClick={() => setDueDateInput("")}
-                        disabled={isBusy}
+                    <div className="space-y-2">
+                      <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
+                        Stage
+                      </Label>
+                      <Select
+                        value={displayStage}
+                        onValueChange={setStage}
+                        triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
                       >
-                        Clear
-                      </Button>
-                    ) : null}
+                        <SelectContent className="bg-black text-sm text-white">
+                          {STAGE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
+                        Energy
+                      </Label>
+                      <Select
+                        value={energy}
+                        onValueChange={(value) =>
+                          setEnergy(value as Project["energy"])
+                        }
+                        triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
+                      >
+                        <SelectContent className="bg-black text-sm text-white">
+                          {energySelectOptions.map((option) => (
+                            <SelectItem
+                              key={option.id}
+                              value={option.label}
+                              className="text-xs"
+                            >
+                              <div className="flex items-center gap-2">
+                                <FlameEmber level={option.level} size="xs" />
+                                <span className="text-xs">{option.label}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <p className="text-xs text-white/50">
-                    Projects with due dates climb the schedule as the deadline approaches.
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
-                    Skill relation
-                  </Label>
-                  <Select
-                    value={selectedSkillId ?? "none"}
-                    onValueChange={(value) =>
-                      setSelectedSkillId(value === "none" ? null : value)
-                    }
-                    triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
-                  >
-                    <SelectContent className="bg-black text-sm text-white">
-                      <div className="p-2">
-                        <Input
-                          value={skillSearch}
-                          onChange={(event) => setSkillSearch(event.target.value)}
-                          placeholder="Search skills…"
-                          className="h-9 rounded-lg border-white/10 bg-white/10 text-xs"
-                          onKeyDown={(event) => event.stopPropagation()}
-                        />
-                      </div>
-                      <SelectItem value="none">No linked skill</SelectItem>
-                      {filteredSkills.length === 0 ? (
-                        <div className="px-3 py-2 text-xs text-white/60">
-                          No skills match your search.
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
+                        Priority
+                      </Label>
+                      <Select
+                        value={priority}
+                        onValueChange={setPriority}
+                        triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
+                      >
+                        <SelectContent className="bg-black text-sm text-white">
+                          {prioritySelectOptions.map((option) => (
+                            <SelectItem key={option.id} value={option.code}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
+                        Duration (min)
+                      </Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        inputMode="numeric"
+                        value={durationInput}
+                        onChange={(event) =>
+                          setDurationInput(event.target.value)
+                        }
+                        className="h-11 rounded-xl border-white/10 bg-white/[0.04] text-sm"
+                        placeholder="e.g. 60"
+                        disabled={isBusy}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
+                      Due date
+                    </Label>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input
+                        type="date"
+                        value={dueDateInput}
+                        onChange={(event) =>
+                          setDueDateInput(event.target.value)
+                        }
+                        className="h-11 rounded-xl border-white/10 bg-white/[0.04] text-sm text-white sm:flex-1"
+                        disabled={isBusy}
+                      />
+                      {dueDateInput ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-11 rounded-xl border border-white/10 bg-white/[0.02] px-4 text-xs text-white/70 hover:text-white"
+                          onClick={() => setDueDateInput("")}
+                          disabled={isBusy}
+                        >
+                          Clear
+                        </Button>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-white/50">
+                      Projects with due dates climb the schedule as the deadline
+                      approaches.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
+                      Skill relation
+                    </Label>
+                    <Select
+                      value={selectedSkillId ?? "none"}
+                      onValueChange={(value) =>
+                        setSelectedSkillId(value === "none" ? null : value)
+                      }
+                      triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
+                    >
+                      <SelectContent className="bg-black text-sm text-white">
+                        <div className="p-2">
+                          <Input
+                            value={skillSearch}
+                            onChange={(event) =>
+                              setSkillSearch(event.target.value)
+                            }
+                            placeholder="Search skills…"
+                            className="h-9 rounded-lg border-white/10 bg-white/10 text-xs"
+                            onKeyDown={(event) => event.stopPropagation()}
+                          />
                         </div>
-                      ) : (
-                        groupedSkills.map((group) => (
-                          <Fragment key={group.id}>
-                            <div className="px-3 pt-2">
-                              <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">
-                                {group.label}
-                              </p>
-                            </div>
-                            {group.skills.map((skill) => (
-                              <SelectItem
-                                key={skill.id}
-                                value={skill.id}
-                                className="px-3 text-sm"
-                              >
-                                {skill.icon ? `${skill.icon} ` : ""}
-                                {skill.name}
-                              </SelectItem>
-                            ))}
-                          </Fragment>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
-                    Status
-                  </Label>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white/70">
-                    {projectStageToStatus(displayStage)}
+                        <SelectItem value="none">No linked skill</SelectItem>
+                        {filteredSkills.length === 0 ? (
+                          <div className="px-3 py-2 text-xs text-white/60">
+                            No skills match your search.
+                          </div>
+                        ) : (
+                          groupedSkills.map((group) => (
+                            <Fragment key={group.id}>
+                              <div className="px-3 pt-2">
+                                <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">
+                                  {group.label}
+                                </p>
+                              </div>
+                              {group.skills.map((skill) => (
+                                <SelectItem
+                                  key={skill.id}
+                                  value={skill.id}
+                                  className="px-3 text-sm"
+                                >
+                                  {skill.icon ? `${skill.icon} ` : ""}
+                                  {skill.name}
+                                </SelectItem>
+                              ))}
+                            </Fragment>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
+                      Status
+                    </Label>
+                    <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white/70">
+                      {projectStageToStatus(displayStage)}
+                    </div>
+                  </div>
+                  {error && <p className="text-sm text-rose-400">{error}</p>}
                 </div>
-                {error && <p className="text-sm text-rose-400">{error}</p>}
-                </div>
-                <div className="flex items-center justify-end gap-3 border-t border-white/10 px-5 py-4">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-sm text-rose-400 hover:text-rose-200"
-                    onClick={handleDelete}
-                    disabled={isBusy}
-                  >
-                    Delete project
-                  </Button>
-                  <Button
-                    type="button"
-                     variant="ghost"
-                    className="text-sm text-white/70 hover:text-white"
-                    onClick={onClose}
-                    disabled={isBusy}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="rounded-full px-5 text-sm" disabled={isBusy}>
-                    {saving ? "Saving..." : "Save changes"}
-                  </Button>
-                </div>
+                {showDeleteConfirm ? (
+                  <div className="flex items-center gap-3 border-t border-white/10 px-5 py-4">
+                    <div className="flex-1 space-y-2">
+                      <h4 className="text-sm font-semibold text-white">
+                        Delete Project
+                      </h4>
+                      <p className="text-sm text-white/70">
+                        This cannot be undone.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      disabled={deleting}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      className="flex-1"
+                      onClick={handleConfirmDelete}
+                      disabled={deleting}
+                    >
+                      {deleting ? "Deleting..." : "Delete Project"}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-end gap-3 border-t border-white/10 px-5 py-4">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-sm text-rose-400 hover:text-rose-200"
+                      onClick={handleDelete}
+                      disabled={isBusy}
+                    >
+                      Delete project
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-sm text-white/70 hover:text-white"
+                      onClick={onClose}
+                      disabled={isBusy}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      className="rounded-full px-5 text-sm"
+                      disabled={isBusy}
+                    >
+                      {saving ? "Saving..." : "Save changes"}
+                    </Button>
+                  </div>
+                )}
               </form>
             </motion.div>
           </motion.div>
