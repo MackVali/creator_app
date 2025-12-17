@@ -1,41 +1,40 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { buildScheduleEventDataset } from '@/lib/scheduler/dataset'
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { buildScheduleEventDataset } from "@/lib/scheduler/dataset";
 
-export const runtime = 'nodejs'
+export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const supabase = await createClient()
+  const supabase = await createClient();
   if (!supabase) {
     return NextResponse.json(
-      { error: 'supabase client unavailable' },
+      { error: "supabase client unavailable" },
       { status: 500 }
-    )
+    );
   }
 
   const {
     data: { user },
     error: authError,
-  } = await supabase.auth.getUser()
+  } = await supabase.auth.getUser();
 
   if (authError) {
     return NextResponse.json(
-      { error: authError.message ?? 'failed to authenticate user' },
+      { error: authError.message ?? "failed to authenticate user" },
       { status: 500 }
-    )
+    );
   }
 
   if (!user) {
-    return NextResponse.json({ error: 'not authenticated' }, { status: 401 })
+    return NextResponse.json({ error: "not authenticated" }, { status: 401 });
   }
 
-  const url = new URL(request.url)
-  const lookaheadParam = url.searchParams.get('lookaheadDays')
-  const requestedTimeZone = url.searchParams.get('timeZone')
-  const lookaheadDays = parseLookaheadDays(lookaheadParam)
-  const effectiveTimeZone = requestedTimeZone?.trim()
-    ? requestedTimeZone
-    : extractUserTimeZone(user)
+  const url = new URL(request.url);
+  const lookaheadParam = url.searchParams.get("lookaheadDays");
+  const requestedTimeZone = url.searchParams.get("timeZone");
+  const lookaheadDays = parseLookaheadDays(lookaheadParam);
+  const effectiveTimeZone =
+    requestedTimeZone?.trim() || extractUserTimeZone(user) || "UTC";
 
   try {
     const dataset = await buildScheduleEventDataset({
@@ -44,33 +43,35 @@ export async function GET(request: Request) {
       baseDate: new Date(),
       timeZone: effectiveTimeZone,
       lookaheadDays,
-    })
-    return NextResponse.json(dataset)
+    });
+    return NextResponse.json(dataset);
   } catch (error) {
-    console.error('Failed to build schedule event dataset', error)
+    console.error("Failed to build schedule event dataset", error);
     return NextResponse.json(
-      { error: 'failed to load schedule data' },
+      { error: "failed to load schedule data" },
       { status: 500 }
-    )
+    );
   }
 }
 
 function parseLookaheadDays(value: string | null): number | undefined {
-  if (!value) return undefined
-  const parsed = Number.parseInt(value, 10)
+  if (!value) return undefined;
+  const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    return undefined
+    return undefined;
   }
-  return Math.min(365, Math.max(1, parsed))
+  return Math.min(365, Math.max(1, parsed));
 }
 
-function extractUserTimeZone(user: { user_metadata?: Record<string, unknown> | null }) {
-  const metadata = user.user_metadata ?? {}
-  const candidates = [metadata?.timezone, metadata?.timeZone, metadata?.tz]
+function extractUserTimeZone(user: {
+  user_metadata?: Record<string, unknown> | null;
+}) {
+  const metadata = user.user_metadata ?? {};
+  const candidates = [metadata?.timezone, metadata?.timeZone, metadata?.tz];
   for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim().length > 0) {
-      return candidate
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate;
     }
   }
-  return null
+  return null;
 }
