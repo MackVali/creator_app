@@ -2,6 +2,8 @@
 
 export const runtime = "nodejs";
 
+const DEBUG_DAY_SHIFT = true;
+
 import {
   useCallback,
   useEffect,
@@ -77,12 +79,15 @@ import {
   type TimelineCardLayoutMode,
 } from "@/lib/scheduler/syncLayout";
 import type { ScheduleEventDataset } from "@/lib/scheduler/dataset";
-import { formatLocalDateKey, toLocal } from "@/lib/time/tz";
+import { formatLocalDateKey, toLocal, dayKeyFromUtc } from "@/lib/time/tz";
 import {
   startOfDayInTimeZone,
   addDaysInTimeZone,
   makeDateInTimeZone,
+  getDateTimeParts,
+  makeZonedDate,
 } from "@/lib/scheduler/timezone";
+import { toZonedTime, format } from "date-fns-tz";
 import {
   TIME_FORMATTER,
   describeEmptyWindowReport,
@@ -101,21 +106,13 @@ import { createMemoNoteForHabit } from "@/lib/notesStorage";
 import { MemoNoteSheet } from "@/components/schedule/MemoNoteSheet";
 import { useProfile } from "@/lib/hooks/useProfile";
 
-function dayKeyFromUtc(utc: string | Date, timeZone: string): string {
-  const d = typeof utc === "string" ? new Date(utc) : utc;
-
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(d);
-
-  const y = parts.find((p) => p.type === "year")!.value;
-  const m = parts.find((p) => p.type === "month")!.value;
-  const day = parts.find((p) => p.type === "day")!.value;
-
-  return `${y}-${m}-${day}`;
+function safeDateTimeFormat(
+  locale: string | undefined,
+  tz: string | null | undefined,
+  options: any
+) {
+  const effectiveTz = typeof tz === "string" && tz.trim() ? tz : "UTC";
+  return new Intl.DateTimeFormat(locale, { ...options, timeZone: effectiveTz });
 }
 
 type DayTransitionDirection = -1 | 0 | 1;
@@ -264,11 +261,8 @@ function localDayFromKey(dayKey: string, timeZone: string): Date {
 
 function parseScheduleDateParam(value: string | null) {
   if (!value) {
-    return {
-      date: new Date(),
-      key: formatLocalDateKey(new Date()),
-      wasValid: false,
-    };
+    const todayKey = formatLocalDateKey(new Date());
+    return { date: new Date(), key: todayKey, wasValid: false };
   }
 
   const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -277,24 +271,25 @@ function parseScheduleDateParam(value: string | null) {
     const year = Number(yearStr);
     const month = Number(monthStr);
     const day = Number(dayStr);
+
     if (
       Number.isFinite(year) &&
       Number.isFinite(month) &&
-      Number.isFinite(day) &&
-      year >= 1900 &&
-      year <= 2100 &&
-      month >= 1 &&
-      month <= 12 &&
-      day >= 1 &&
-      day <= 31
+      Number.isFinite(day)
     ) {
-      return { date: new Date(), key: value, wasValid: true };
+      const parsedDateKey = `${yearStr}-${monthStr}-${dayStr}`;
+      return {
+        date: new Date(year, month - 1, day), // <<< FIX: construct real local date
+        key: parsedDateKey,
+        wasValid: true,
+      };
     }
   }
 
+  const fallback = new Date();
   return {
-    date: new Date(),
-    key: formatLocalDateKey(new Date()),
+    date: fallback,
+    key: formatLocalDateKey(fallback),
     wasValid: false,
   };
 }
@@ -959,7 +954,7 @@ function computeHabitPlacementsForDay({
             end,
             timeZone: zone,
           });
-      const timelineKey = habitTimelinePlacementKey(habit.id, start);
+      const timelineKey = habitTimelinePlacementKey(habit.id, start, timeZone);
       if (placedHabitKeys.has(timelineKey)) {
         continue;
       }
@@ -1028,6 +1023,11 @@ function habitTimelinePlacementKey(
   startUtc: Date | string,
   timeZone: string
 ) {
+  if (process.env.NODE_ENV !== "production") {
+    if (typeof timeZone !== "string") {
+      throw new Error("INVALID_TIMEZONE_FOR_HABIT_KEY");
+    }
+  }
   return `${habitId}:${dayKeyFromUtc(startUtc, timeZone)}`;
 }
 
@@ -1979,14 +1979,36 @@ export default function SchedulePage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { localTimeZone, profile, loading: profileLoading } = useProfile();
+
+  // 1. browser timezone detection
+  const browserTimeZone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      return "UTC";
+    }
+  }, []);
+
   // 2. derived but nullable values
-  const stableTimeZone = useMemo(() => localTimeZone ?? null, [localTimeZone]);
+  const stableTimeZone = useMemo(() => {
+    if (
+      !localTimeZone ||
+      typeof localTimeZone !== "string" ||
+      localTimeZone.trim() === "" ||
+      localTimeZone === "null"
+    )
+      return null;
+    return localTimeZone;
+  }, [localTimeZone]);
+  const effectiveTimeZone = useMemo(() => {
+    return localTimeZone || browserTimeZone || "UTC";
+  }, [localTimeZone, browserTimeZone]);
   const dateParam = searchParams.get("date"); // string | null
   // 3. parsed DAY KEY (string only, NOT Date)
   const parsedDayKey = useMemo(() => {
-    if (!stableTimeZone || !dateParam) return null;
+    if (!dateParam) return null;
     return parseScheduleDateParam(dateParam).key; // must return YYYY-MM-DD
-  }, [stableTimeZone, dateParam]);
+  }, [dateParam]);
   // 4. viewedDate (Date object, LOCAL midnight)
   const viewedDate = useMemo(() => {
     if (!stableTimeZone || !parsedDayKey) return null;
@@ -2003,10 +2025,8 @@ export default function SchedulePage() {
   }, [viewedDate]);
   // 6. canonical today (already fixed earlier)
   const canonicalTodayDateKey = useMemo(() => {
-    if (!stableTimeZone) return null;
-    const base = startOfDayInTimeZone(new Date(), stableTimeZone);
-    return formatLocalDateKey(base);
-  }, [stableTimeZone]);
+    return dayKeyFromUtc(new Date().toISOString(), effectiveTimeZone);
+  }, [effectiveTimeZone]);
   // 7. comparison
   const isViewingToday = useMemo(() => {
     if (!viewedDayKey || !canonicalTodayDateKey) return false;
@@ -2036,20 +2056,12 @@ export default function SchedulePage() {
   const [currentDateKey, setCurrentDateKey] = useState(
     () => initialDateResult.key
   );
-  const normalizedTz = useMemo(() => localTimeZone ?? "UTC", [localTimeZone]);
-  const stableTimeZone = useMemo(() => localTimeZone ?? null, [localTimeZone]);
+  const normalizedTz = useMemo(() => effectiveTimeZone, [effectiveTimeZone]);
   const isTimeZoneReady = stableTimeZone !== null;
   const todayBaseDate = useMemo(
     () =>
       isTimeZoneReady ? startOfDayInTimeZone(new Date(), normalizedTz) : null,
     [isTimeZoneReady, normalizedTz]
-  );
-  const canonicalTodayDateKey = useMemo(
-    () =>
-      isTimeZoneReady && todayBaseDate
-        ? formatLocalDateKey(todayBaseDate)
-        : null,
-    [isTimeZoneReady, todayBaseDate]
   );
 
   const currentDate = useMemo(() => {
@@ -2325,7 +2337,7 @@ export default function SchedulePage() {
     schedulerTimelinePlacements: typeof schedulerTimelinePlacements;
     timeZoneShortName: string;
     friendlyTimeZone: string;
-    localTimeZone: string | null;
+    effectiveTimeZone: string;
   } | null>(null);
 
   const [peekState, setPeekState] = useState<PeekState>({
@@ -2602,7 +2614,7 @@ export default function SchedulePage() {
   const timeZoneShortName = useMemo(() => {
     try {
       const formatter = new Intl.DateTimeFormat(undefined, {
-        timeZone: localTimeZone,
+        timeZone: effectiveTimeZone,
         timeZoneName: "short",
       });
       const part = formatter
@@ -2615,7 +2627,7 @@ export default function SchedulePage() {
       }
       return "";
     }
-  }, [currentDate, localTimeZone]);
+  }, [currentDate, effectiveTimeZone]);
   const scheduleContentPaddingTop = useMemo(() => {
     if (topBarHeight !== null && Number.isFinite(topBarHeight)) {
       const clamped = Math.max(0, topBarHeight);
@@ -2624,8 +2636,8 @@ export default function SchedulePage() {
     return "calc(4rem + env(safe-area-inset-top, 0px))";
   }, [topBarHeight]);
   const friendlyTimeZone = useMemo(() => {
-    if (!localTimeZone) return "UTC";
-    const segments = localTimeZone.split("/");
+    if (!effectiveTimeZone) return "UTC";
+    const segments = effectiveTimeZone.split("/");
     const city = segments.pop();
     const region = segments.length > 0 ? segments.join(" / ") : "";
     const readableCity = city?.replace(/_/g, " ");
@@ -2635,8 +2647,8 @@ export default function SchedulePage() {
     }
     if (readableCity) return readableCity;
     if (readableRegion) return readableRegion;
-    return localTimeZone.replace(/_/g, " ");
-  }, [localTimeZone]);
+    return effectiveTimeZone.replace(/_/g, " ");
+  }, [effectiveTimeZone]);
   const previousDayDate = useMemo(() => {
     const prev = new Date(currentDate);
     prev.setDate(currentDate.getDate() - 1);
@@ -2648,12 +2660,12 @@ export default function SchedulePage() {
     return next;
   }, [currentDate]);
   const previousDayLabel = useMemo(
-    () => formatDayViewLabel(previousDayDate, localTimeZone),
-    [previousDayDate, localTimeZone]
+    () => formatDayViewLabel(previousDayDate, effectiveTimeZone),
+    [previousDayDate, effectiveTimeZone]
   );
   const nextDayLabel = useMemo(
-    () => formatDayViewLabel(nextDayDate, localTimeZone),
-    [nextDayDate, localTimeZone]
+    () => formatDayViewLabel(nextDayDate, effectiveTimeZone),
+    [nextDayDate, effectiveTimeZone]
   );
   const previousDayKey = useMemo(
     () => formatLocalDateKey(previousDayDate),
@@ -2681,7 +2693,7 @@ export default function SchedulePage() {
           body: JSON.stringify({
             habitId: params.habitId,
             completedAt: completedAtISO,
-            timeZone: localTimeZone ?? "UTC",
+            timeZone: effectiveTimeZone,
             action: params.action,
           }),
         });
@@ -2713,14 +2725,14 @@ export default function SchedulePage() {
       try {
         const base = makeDateInTimeZone(
           { year, month, day, hour: 12, minute: 0 },
-          localTimeZone ?? "UTC"
+          effectiveTimeZone
         );
         return base.toISOString();
       } catch {
         return new Date().toISOString();
       }
     },
-    [localTimeZone]
+    [effectiveTimeZone]
   );
   const setProjectExpansion = useCallback(
     (projectId: string, nextState?: boolean) => {
@@ -2897,9 +2909,7 @@ export default function SchedulePage() {
       try {
         const params = new URLSearchParams();
         params.set("lookaheadDays", String(FULL_WRITE_WINDOW_DAYS));
-        if (localTimeZone) {
-          params.set("timeZone", localTimeZone);
-        }
+        params.set("timeZone", effectiveTimeZone);
         const response = await fetch(
           `/api/schedule/events?${params.toString()}`,
           {
@@ -2956,11 +2966,32 @@ export default function SchedulePage() {
       if (allInstances.length === 0) {
         return [];
       }
-      const dayStart = startOfDayInTimeZone(date, timeZone);
-      const nextDay = addDaysInTimeZone(dayStart, 1, timeZone);
+      const dayParts = getDateTimeParts(date, timeZone);
+      const dayStart = makeZonedDate(
+        {
+          year: dayParts.year,
+          month: dayParts.month,
+          day: dayParts.day,
+          hour: 0,
+          minute: 0,
+          second: 0,
+        },
+        timeZone
+      );
+      const nextDayStart = makeZonedDate(
+        {
+          year: dayParts.year,
+          month: dayParts.month,
+          day: dayParts.day + 1,
+          hour: 0,
+          minute: 0,
+          second: 0,
+        },
+        timeZone
+      );
       const startMs = dayStart.getTime();
-      const endMs = nextDay.getTime();
-      return allInstances.filter((instance) => {
+      const endMs = nextDayStart.getTime();
+      const filtered = allInstances.filter((instance) => {
         const start = new Date(instance.start_utc ?? "").getTime();
         const end = new Date(instance.end_utc ?? "").getTime();
         if (!Number.isFinite(start) || !Number.isFinite(end)) {
@@ -2968,19 +2999,42 @@ export default function SchedulePage() {
         }
         return end > startMs && start < endMs;
       });
+      if (DEBUG_DAY_SHIFT && filtered.length > 0) {
+        const inst = filtered[0];
+
+        console.group("DAY SHIFT TRACE");
+        console.log("viewedDate:", date);
+        console.log("viewedDayKey:", format(date, "yyyy-MM-dd"));
+        console.log("effectiveTimeZone:", timeZone);
+        console.log("instance.start_utc:", inst.start_utc);
+        console.log(
+          "instance zoned:",
+          toZonedTime(new Date(inst.start_utc), timeZone)
+        );
+        console.log(
+          "instance dayKey:",
+          dayKeyFromUtc(inst.start_utc, timeZone)
+        );
+        console.groupEnd();
+      }
+      return filtered;
     },
     [allInstances]
   );
 
   const visibleInstances = useMemo(() => {
-    if (!userId || !isTimeZoneReady) return [];
-    return filterInstancesForDate(currentDate, stableTimeZone);
+    if (!userId) return [];
+    return filterInstancesForDate(currentDate, effectiveTimeZone);
   }, [
-    filterInstancesForDate,
-    currentDate,
     userId,
-    isTimeZoneReady,
-    stableTimeZone,
+    currentDate,
+    effectiveTimeZone,
+    filterInstancesForDate,
+    allInstances,
+    refreshScheduledProjectIds,
+    localTimeZone,
+    resolvedModePayload,
+    loadInstancesRef,
   ]);
 
   useEffect(() => {
@@ -3281,7 +3335,7 @@ export default function SchedulePage() {
             schedulerTimelinePlacements ||
           previousDeps.timeZoneShortName !== timeZoneShortName ||
           previousDeps.friendlyTimeZone !== friendlyTimeZone ||
-          previousDeps.localTimeZone !== localTimeZone)
+          previousDeps.effectiveTimeZone !== effectiveTimeZone)
     );
 
     peekDataDepsRef.current = {
@@ -3295,7 +3349,7 @@ export default function SchedulePage() {
       schedulerTimelinePlacements,
       timeZoneShortName,
       friendlyTimeZone,
-      localTimeZone,
+      effectiveTimeZone,
     };
 
     let cancelled = false;
@@ -3328,10 +3382,10 @@ export default function SchedulePage() {
             ? windowsForDateFromSnapshot(
                 windowSnapshot,
                 date,
-                localTimeZone ?? "UTC"
+                effectiveTimeZone
               )
             : [];
-        const instancesForDay = filterInstancesForDate(date);
+        const instancesForDay = filterInstancesForDate(date, effectiveTimeZone);
         if (cancelled) {
           return;
         }
@@ -3351,7 +3405,7 @@ export default function SchedulePage() {
           schedulerTimelinePlacements,
           timeZoneShortName,
           friendlyTimeZone,
-          localTimeZone,
+          localTimeZone: effectiveTimeZone,
           todayDateKey: canonicalTodayDateKey,
         });
         if (cancelled) return;
@@ -3375,7 +3429,7 @@ export default function SchedulePage() {
     view,
     previousDayDate,
     nextDayDate,
-    localTimeZone,
+    effectiveTimeZone,
     projectMap,
     taskMap,
     tasksByProjectId,
@@ -4002,7 +4056,7 @@ export default function SchedulePage() {
 
       const localNow = new Date();
       const utcOffsetMinutes = -localNow.getTimezoneOffset();
-      const timeZone: string | null = localTimeZone ?? null;
+      const timeZone: string | null = effectiveTimeZone ?? null;
 
       if (!background) {
         if (isSchedulingRef.current) return;
@@ -4121,7 +4175,7 @@ export default function SchedulePage() {
     [
       userId,
       refreshScheduledProjectIds,
-      profileTimeZone,
+      localTimeZone,
       resolvedModePayload,
       loadInstancesRef,
     ]
@@ -4709,7 +4763,6 @@ export default function SchedulePage() {
   }, []);
 
   const dayTimelineModel = useMemo(() => {
-    if (!isTimeZoneReady) return null;
     return buildDayTimelineModel({
       date: currentDate,
       windows,
@@ -4726,11 +4779,10 @@ export default function SchedulePage() {
       schedulerTimelinePlacements,
       timeZoneShortName,
       friendlyTimeZone,
-      localTimeZone,
+      localTimeZone: effectiveTimeZone,
       todayDateKey: canonicalTodayDateKey,
     });
   }, [
-    isTimeZoneReady,
     currentDate,
     windows,
     visibleInstances,
@@ -4746,7 +4798,7 @@ export default function SchedulePage() {
     schedulerTimelinePlacements,
     timeZoneShortName,
     friendlyTimeZone,
-    localTimeZone,
+    effectiveTimeZone,
     canonicalTodayDateKey,
   ]);
 
@@ -4779,7 +4831,7 @@ export default function SchedulePage() {
       dayTimelineModel
         ? computeDayTimelineHeightPx(dayTimelineModel.startHour, pxPerMin)
         : 0,
-    [dayTimelineModel, pxPerMin]
+    [dayTimelineModel?.startHour, pxPerMin]
   );
 
   const measuredTimelineContainerHeight =
@@ -4803,7 +4855,8 @@ export default function SchedulePage() {
   }, [measuredTimelineContainerHeight, baseTimelineHeight]);
 
   const renderDayTimeline = useCallback(
-    (model: DayTimelineModel, options?: DayTimelineRenderOptions) => {
+    (model: DayTimelineModel | null, options?: DayTimelineRenderOptions) => {
+      if (!model) return null;
       const {
         isViewingToday,
         dayViewDateKey,
@@ -4824,6 +4877,8 @@ export default function SchedulePage() {
       const viewDateComparison = dayViewDateKey.localeCompare(todayDateKey);
       const viewIsPastDay = viewDateComparison < 0;
       const viewIsFutureDay = viewDateComparison > 0;
+
+      let hasLoggedInstance = false;
 
       const toTimelinePosition = (minutes: number) => {
         if (!Number.isFinite(minutes)) return "0px";
@@ -4977,6 +5032,22 @@ export default function SchedulePage() {
               if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
                 durationMinutes = placement.durationMinutes;
               }
+
+              if (DEBUG_DAY_SHIFT && !hasLoggedInstance) {
+                hasLoggedInstance = true;
+                const diffMinutes =
+                  (placement.start.getTime() - date.getTime()) / (1000 * 60);
+                const computedTopPx = diffMinutes * modelPxPerMin;
+                console.log("RENDER POSITION TRACE", {
+                  viewedDate: date,
+                  instanceStart: placement.start,
+                  diffMinutes,
+                  startHour: modelStartHour,
+                  pxPerMin: modelPxPerMin,
+                  computedTopPx,
+                });
+              }
+
               const topStyle = toTimelinePosition(startOffsetMinutes);
               const heightStyle = toTimelinePosition(durationMinutes);
               const habitHeightPx = Math.max(
@@ -5315,6 +5386,22 @@ export default function SchedulePage() {
                   (end.getTime() - start.getTime()) / 60000
                 );
                 const shouldWrapProjectTitle = Number(durationMinutes) >= 30;
+
+                if (DEBUG_DAY_SHIFT && !hasLoggedInstance) {
+                  hasLoggedInstance = true;
+                  const diffMinutes =
+                    (start.getTime() - date.getTime()) / (1000 * 60);
+                  const computedTopPx = diffMinutes * modelPxPerMin;
+                  console.log("RENDER POSITION TRACE", {
+                    viewedDate: date,
+                    instanceStart: start,
+                    diffMinutes,
+                    startHour: modelStartHour,
+                    pxPerMin: modelPxPerMin,
+                    computedTopPx,
+                  });
+                }
+
                 const topStyle = toTimelinePosition(startOffsetMinutes);
                 const heightStyle = toTimelinePosition(durationMinutes);
                 const isExpanded = expandedProjects.has(projectId);
@@ -6048,6 +6135,22 @@ export default function SchedulePage() {
                     0,
                     (end.getTime() - start.getTime()) / 60000
                   );
+
+                  if (DEBUG_DAY_SHIFT && !hasLoggedInstance) {
+                    hasLoggedInstance = true;
+                    const diffMinutes =
+                      (start.getTime() - date.getTime()) / (1000 * 60);
+                    const computedTopPx = diffMinutes * modelPxPerMin;
+                    console.log("RENDER POSITION TRACE", {
+                      viewedDate: date,
+                      instanceStart: start,
+                      diffMinutes,
+                      startHour: modelStartHour,
+                      pxPerMin: modelPxPerMin,
+                      computedTopPx,
+                    });
+                  }
+
                   const progress =
                     (task as { progress?: number }).progress ?? 0;
                   const standaloneEnergyLevel: FlameLevel =
@@ -6339,7 +6442,7 @@ export default function SchedulePage() {
     return () => {
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [view, dayTimelineModel.dayViewDateKey]);
+  }, [view, dayTimelineModel?.dayViewDateKey]);
 
   useEffect(() => {
     if (!focusInstanceId) return;
@@ -6359,7 +6462,15 @@ export default function SchedulePage() {
       setFocusInstanceId(null);
     });
     return () => cancelAnimationFrame(raf);
-  }, [focusInstanceId, dayTimelineModel.dayViewDateKey]);
+  }, [focusInstanceId, dayTimelineModel?.dayViewDateKey]);
+
+  if (!dayTimelineModel) {
+    return (
+      <div className="flex h-full w-full items-center justify-center text-white/60">
+        Loading schedule…
+      </div>
+    );
+  }
 
   return (
     <LayoutGroup id="schedule-shared-layout">
@@ -6468,7 +6579,7 @@ export default function SchedulePage() {
         open={isJumpToDateOpen}
         onOpenChange={(open) => setIsJumpToDateOpen(open)}
         currentDate={currentDate}
-        timeZone={localTimeZone}
+        timeZone={effectiveTimeZone}
         onSelectDate={handleJumpToDateSelect}
       />
       <ScheduleSearchSheet

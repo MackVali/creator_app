@@ -21,7 +21,8 @@ import {
   normalizeTimeZone,
   startOfDayInTimeZone,
 } from "./timezone";
-import { formatLocalDateKey, toLocal } from "@/lib/time/tz";
+import { toZonedTime } from "date-fns-tz";
+import { dayKeyFromUtc } from "@/lib/time/tz";
 import type { TaskLite, ProjectLite } from "./weight";
 import { ENERGY } from "./config";
 import type { SkillRow } from "@/lib/types/skill";
@@ -73,8 +74,7 @@ function groupCountByDayKey(
 ): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const instance of instances) {
-    const localStart = toLocal(instance.start_utc ?? "");
-    const dayKey = formatLocalDateKey(localStart);
+    const dayKey = dayKeyFromUtc(instance.start_utc ?? "", tz);
     counts[dayKey] = (counts[dayKey] ?? 0) + 1;
   }
   return counts;
@@ -84,14 +84,13 @@ function sample(
   instances: ScheduleInstance[],
   tz: string,
   n = 5
-): Array<{ id: string; start_utc: string; localDayKey: string }> {
+): Array<{ id: string; start_utc: string; dayKey: string }> {
   return instances.slice(0, n).map((instance) => {
-    const localStart = toLocal(instance.start_utc ?? "");
-    const localDayKey = formatLocalDateKey(localStart);
+    const dayKey = dayKeyFromUtc(instance.start_utc ?? "", tz);
     return {
       id: instance.id,
       start_utc: instance.start_utc ?? "",
-      localDayKey,
+      dayKey,
     };
   });
 }
@@ -175,11 +174,9 @@ export async function buildScheduleEventDataset({
     throw instanceError;
   }
 
-  const todayKey = formatLocalDateKey(
-    startOfDayInTimeZone(baseDate, normalizedTz)
-  );
+  const todayKey = dayKeyFromUtc(baseDate.toISOString(), normalizedTz);
   const fetchedTodayCount = (instanceRows ?? []).filter(
-    (i) => formatLocalDateKey(toLocal(i.start_utc ?? "")) === todayKey
+    (i) => dayKeyFromUtc(i.start_utc ?? "", normalizedTz) === todayKey
   ).length;
   if (fetchedTodayCount === 0) {
     const fetchedByLocalDayKey = groupCountByDayKey(
@@ -214,7 +211,7 @@ export async function buildScheduleEventDataset({
   });
   const todayInstanceCount = filteredInstances.filter(
     (instance) =>
-      formatLocalDateKey(toLocal(instance.start_utc ?? "")) === todayKey
+      dayKeyFromUtc(instance.start_utc ?? "", normalizedTz) === todayKey
   ).length;
   if (todayInstanceCount === 0) {
     const fetchedByLocalDayKey = groupCountByDayKey(
@@ -247,6 +244,16 @@ export async function buildScheduleEventDataset({
     energyLookup,
     projectMap
   );
+
+  if (process.env.NODE_ENV !== "production") {
+    const inst = normalizedInstances[0];
+    console.log("SCHEDULER CREATE", {
+      start_utc: inst.start_utc,
+      timeZone,
+      dayKey: dayKeyFromUtc(inst.start_utc, normalizedTz),
+      zoned: toZonedTime(new Date(inst.start_utc), normalizedTz),
+    });
+  }
 
   const priorityLookup = normalizePriorityLookup(
     priorityEnergyLookups.priority
