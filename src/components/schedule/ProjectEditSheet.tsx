@@ -690,327 +690,335 @@ export function ProjectEditSheet({
             }}
             className="flex flex-col gap-4"
           >
-          <div className="relative pb-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="absolute right-0 top-0 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
-            >
-              <XIcon className="size-4" aria-hidden="true" />
-              <span className="sr-only">Close</span>
-            </button>
-            <div className="pr-10">
-              <h2 className="text-lg font-semibold text-white">Edit project</h2>
-              <p className="mt-1 text-sm text-white/70">
-                Update the underlying project details. Changes here apply
-                everywhere this project appears.
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-              Project name
-            </Label>
-            <Input
-              ref={nameInputRef}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Project title"
-              className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
-              required
-              disabled={loading}
-            />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Priority
-              </Label>
-              <Select
-                value={priority}
-                onValueChange={setPriority}
-                disabled={loading}
+            <div className="relative pb-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="absolute right-0 top-0 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
               >
-                <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                  <SelectValue placeholder="Priority" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#05070c] text-white">
-                  {PRIORITY_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <XIcon className="size-4" aria-hidden="true" />
+                <span className="sr-only">Close</span>
+              </button>
+              <div className="pr-10">
+                <h2 className="text-lg font-semibold text-white">
+                  Edit project
+                </h2>
+                <p className="mt-1 text-sm text-white/70">
+                  Update the underlying project details. Changes here apply
+                  everywhere this project appears.
+                </p>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Stage
-              </Label>
-              <Select value={stage} onValueChange={setStage} disabled={loading}>
-                <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                  <SelectValue placeholder="Stage" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#05070c] text-white">
-                  {STAGE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Energy
-              </Label>
-              <Select
-                value={energy}
-                onValueChange={(value) =>
-                  setEnergy(value as (typeof ENERGY.LIST)[number])
-                }
-                disabled={loading}
-              >
-                <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                  <SelectValue placeholder="Energy" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#05070c] text-white">
-                  {ENERGY.LIST.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value.charAt(0) + value.slice(1).toLowerCase()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Estimated duration (minutes)
+                Project name
               </Label>
               <Input
-                value={duration}
-                onChange={(event) => setDuration(event.target.value)}
-                placeholder="60"
-                inputMode="numeric"
-                pattern="[0-9]*"
+                ref={nameInputRef}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Project title"
                 className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                required
                 disabled={loading}
               />
             </div>
-          </div>
 
-          <div className="space-y-2">
-            <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-              Skill relation
-            </Label>
-            <Select
-              value={selectedSkillId ?? "none"}
-              onValueChange={(value) =>
-                setSelectedSkillId(value === "none" ? null : value)
-              }
-              disabled={skillsLoading && skillOptions.length === 0}
-            >
-              <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                <SelectValue placeholder="Choose a linked skill" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#05070c] text-white">
-                <div className="p-2">
-                  <Input
-                    value={skillSearch}
-                    onChange={(event) => setSkillSearch(event.target.value)}
-                    placeholder="Search skills..."
-                    className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
-                  />
-                </div>
-                <SelectItem value="none">No linked skill</SelectItem>
-                {filteredSkills.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-white/60">
-                    {skillsLoading
-                      ? "Loading skills…"
-                      : "No skills match your search."}
+            <div className="grid gap-4 grid-cols-2">
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+                  Priority
+                </Label>
+                <Select
+                  value={priority}
+                  onValueChange={setPriority}
+                  disabled={loading}
+                >
+                  <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
+                    <SelectValue placeholder="Priority" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#05070c] text-white">
+                    {PRIORITY_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+                  Stage
+                </Label>
+                <Select
+                  value={stage}
+                  onValueChange={setStage}
+                  disabled={loading}
+                >
+                  <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
+                    <SelectValue placeholder="Stage" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#05070c] text-white">
+                    {STAGE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid gap-4 grid-cols-2">
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+                  Energy
+                </Label>
+                <Select
+                  value={energy}
+                  onValueChange={(value) =>
+                    setEnergy(value as (typeof ENERGY.LIST)[number])
+                  }
+                  disabled={loading}
+                >
+                  <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
+                    <SelectValue placeholder="Energy" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#05070c] text-white">
+                    {ENERGY.LIST.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value.charAt(0) + value.slice(1).toLowerCase()}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+                  Estimated duration (minutes)
+                </Label>
+                <Input
+                  value={duration}
+                  onChange={(event) => setDuration(event.target.value)}
+                  placeholder="60"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+                Skill relation
+              </Label>
+              <Select
+                value={selectedSkillId ?? "none"}
+                onValueChange={(value) =>
+                  setSelectedSkillId(value === "none" ? null : value)
+                }
+                disabled={skillsLoading && skillOptions.length === 0}
+              >
+                <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
+                  <SelectValue placeholder="Choose a linked skill" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#05070c] text-white">
+                  <div className="p-2">
+                    <Input
+                      value={skillSearch}
+                      onChange={(event) => setSkillSearch(event.target.value)}
+                      placeholder="Search skills..."
+                      className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                    />
                   </div>
-                ) : (
-                  groupedSkills.map((group, index) => (
-                    <Fragment key={group.id}>
-                      <div
-                        className={cn("px-3 pt-2", index === 0 ? "pt-0" : "")}
-                      >
-                        <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
-                          {group.label}
-                        </p>
-                      </div>
-                      {group.skills.map((skill) => (
-                        <SelectItem
-                          key={skill.id}
-                          value={skill.id}
-                          className="px-3 text-sm"
+                  <SelectItem value="none">No linked skill</SelectItem>
+                  {filteredSkills.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-white/60">
+                      {skillsLoading
+                        ? "Loading skills…"
+                        : "No skills match your search."}
+                    </div>
+                  ) : (
+                    groupedSkills.map((group, index) => (
+                      <Fragment key={group.id}>
+                        <div
+                          className={cn("px-3 pt-2", index === 0 ? "pt-0" : "")}
                         >
-                          <span className="flex items-center gap-2">
-                            <span className="text-base leading-none">
-                              {getSkillIcon(skill.icon)}
+                          <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+                            {group.label}
+                          </p>
+                        </div>
+                        {group.skills.map((skill) => (
+                          <SelectItem
+                            key={skill.id}
+                            value={skill.id}
+                            className="px-3 text-sm"
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="text-base leading-none">
+                                {getSkillIcon(skill.icon)}
+                              </span>
+                              <span>{skill.name}</span>
                             </span>
-                            <span>{skill.name}</span>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </Fragment>
-                  ))
+                          </SelectItem>
+                        ))}
+                      </Fragment>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {skillLoadError ? (
+                <p className="text-xs text-rose-400">{skillLoadError}</p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+                Goal
+              </Label>
+              <Select
+                value={
+                  goalOptions.some((option) => option.value === goalId)
+                    ? goalId
+                    : "none"
+                }
+                onValueChange={setGoalId}
+                disabled={goalsLoading || loading}
+              >
+                <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
+                  <SelectValue placeholder="No goal linked" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#05070c] text-white">
+                  {(goalOptions.length === 0
+                    ? [{ value: "none", label: "No goal linked" }]
+                    : goalOptions
+                  ).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                    Manual schedule
+                  </p>
+                  <p className="text-sm text-white/70">
+                    Locked blocks stay fixed when you rerun the scheduler.
+                  </p>
+                </div>
+                {lockedInstance ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-white/20 px-2 py-1 text-xs font-semibold text-white/80">
+                    <Lock className="h-3.5 w-3.5" />
+                    Locked
+                  </span>
+                ) : (
+                  <span className="text-xs font-semibold uppercase tracking-[0.3em] text-white/40">
+                    Dynamic
+                  </span>
                 )}
-              </SelectContent>
-            </Select>
-            {skillLoadError ? (
-              <p className="text-xs text-rose-400">{skillLoadError}</p>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-              Goal
-            </Label>
-            <Select
-              value={
-                goalOptions.some((option) => option.value === goalId)
-                  ? goalId
-                  : "none"
-              }
-              onValueChange={setGoalId}
-              disabled={goalsLoading || loading}
-            >
-              <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                <SelectValue placeholder="No goal linked" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#05070c] text-white">
-                {(goalOptions.length === 0
-                  ? [{ value: "none", label: "No goal linked" }]
-                  : goalOptions
-                ).map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">
-                  Manual schedule
-                </p>
-                <p className="text-sm text-white/70">
-                  Locked blocks stay fixed when you rerun the scheduler.
-                </p>
               </div>
               {lockedInstance ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-white/20 px-2 py-1 text-xs font-semibold text-white/80">
-                  <Lock className="h-3.5 w-3.5" />
-                  Locked
-                </span>
+                <>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                        Start time
+                      </Label>
+                      <Input
+                        type="datetime-local"
+                        value={manualStart}
+                        onChange={(event) => setManualStart(event.target.value)}
+                        disabled={manualScheduleSaving}
+                        className="border-white/20 bg-white/5 text-sm text-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                        End time
+                      </Label>
+                      <Input
+                        type="datetime-local"
+                        value={manualEnd}
+                        onChange={(event) => setManualEnd(event.target.value)}
+                        disabled={manualScheduleSaving}
+                        className="border-white/20 bg-white/5 text-sm text-white"
+                      />
+                    </div>
+                  </div>
+                  {manualScheduleError ? (
+                    <p className="text-sm text-red-300">
+                      {manualScheduleError}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-white/60">
+                      Update the exact timing for this locked project or remove
+                      the lock to return it to the automatic scheduler.
+                    </p>
+                  )}
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      type="button"
+                      onClick={handleUpdateLockedSchedule}
+                      disabled={manualScheduleSaving}
+                      className="flex-1 bg-white text-zinc-900 hover:bg-white/90"
+                    >
+                      {manualScheduleSaving ? "Saving…" : "Update times"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRemoveLockedSchedule}
+                      disabled={manualScheduleSaving}
+                      className="flex-1 border-red-500/40 text-red-200 hover:bg-red-500/10"
+                    >
+                      Remove lock
+                    </Button>
+                  </div>
+                </>
               ) : (
-                <span className="text-xs font-semibold uppercase tracking-[0.3em] text-white/40">
-                  Dynamic
-                </span>
+                <p className="text-sm text-white/60">
+                  This project is currently scheduled dynamically. To lock a
+                  project at a specific time, create it with manual times from
+                  the scheduler’s project workflow.
+                </p>
               )}
             </div>
-            {lockedInstance ? (
-              <>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                      Start time
-                    </Label>
-                    <Input
-                      type="datetime-local"
-                      value={manualStart}
-                      onChange={(event) => setManualStart(event.target.value)}
-                      disabled={manualScheduleSaving}
-                      className="border-white/20 bg-white/5 text-sm text-white"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                      End time
-                    </Label>
-                    <Input
-                      type="datetime-local"
-                      value={manualEnd}
-                      onChange={(event) => setManualEnd(event.target.value)}
-                      disabled={manualScheduleSaving}
-                      className="border-white/20 bg-white/5 text-sm text-white"
-                    />
-                  </div>
-                </div>
-                {manualScheduleError ? (
-                  <p className="text-sm text-red-300">{manualScheduleError}</p>
-                ) : (
-                  <p className="text-xs text-white/60">
-                    Update the exact timing for this locked project or remove
-                    the lock to return it to the automatic scheduler.
-                  </p>
+
+            {error ? (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+                {error}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
+                onClick={onClose}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className={cn(
+                  "bg-white text-zinc-900 hover:bg-white/90",
+                  disableSubmit && "opacity-50"
                 )}
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button
-                    type="button"
-                    onClick={handleUpdateLockedSchedule}
-                    disabled={manualScheduleSaving}
-                    className="flex-1 bg-white text-zinc-900 hover:bg-white/90"
-                  >
-                    {manualScheduleSaving ? "Saving…" : "Update times"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleRemoveLockedSchedule}
-                    disabled={manualScheduleSaving}
-                    className="flex-1 border-red-500/40 text-red-200 hover:bg-red-500/10"
-                  >
-                    Remove lock
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-white/60">
-                This project is currently scheduled dynamically. To lock a
-                project at a specific time, create it with manual times from the
-                scheduler’s project workflow.
-              </p>
-            )}
-          </div>
-
-          {error ? (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-              {error}
+                disabled={disableSubmit}
+              >
+                {saving ? "Saving…" : "Save changes"}
+              </Button>
             </div>
-          ) : null}
-
-          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
-              onClick={onClose}
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className={cn(
-                "bg-white text-zinc-900 hover:bg-white/90",
-                disableSubmit && "opacity-50"
-              )}
-              disabled={disableSubmit}
-            >
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-          </div>
-        </form>
+          </form>
         </>
       )}
     </ScheduleMorphDialog>
