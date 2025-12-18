@@ -1,6 +1,13 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -22,14 +29,19 @@ import {
   ScheduleMorphDialog,
   type ScheduleEditOrigin,
 } from "@/components/schedule/ScheduleMorphDialog";
-import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
+import type {
+  ScheduleInstance,
+  ScheduleContext,
+} from "@/lib/scheduler/instanceRepo";
 
 const toDatetimeLocalValue = (value?: string | null) => {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   const pad = (input: number) => String(input).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
 const PRIORITY_OPTIONS = [
@@ -46,13 +58,13 @@ const PRIORITY_OPTION_LOOKUP = PRIORITY_OPTIONS.reduce<Record<string, string>>(
     map[option.value.toUpperCase()] = option.value;
     return map;
   },
-  {},
+  {}
 );
 const PRIORITY_NUMERIC_PATTERN = /^\d+$/;
 
 const resolvePriorityOption = (
   raw: unknown,
-  lookup: Record<string, string> = {},
+  lookup: Record<string, string> = {}
 ): string => {
   let candidate: string | null = null;
   if (typeof raw === "number") {
@@ -73,7 +85,7 @@ const resolvePriorityOption = (
 
 const resolveEnergyValue = (
   raw: unknown,
-  lookup: Record<string, string> = {},
+  lookup: Record<string, string> = {}
 ): (typeof ENERGY.LIST)[number] => {
   let candidate: string | null = null;
   if (typeof raw === "number") {
@@ -103,9 +115,12 @@ const STAGE_OPTIONS = [
 ];
 
 const DEFAULT_SKILL_ICON = "✦";
-const getSkillIcon = (icon?: string | null) => icon?.trim() || DEFAULT_SKILL_ICON;
+const getSkillIcon = (icon?: string | null) =>
+  icon?.trim() || DEFAULT_SKILL_ICON;
 const UNCATEGORIZED_GROUP_ID = "__uncategorized__";
 const UNCATEGORIZED_GROUP_LABEL = "Uncategorized";
+
+console.log("[ProjectEditSheet] MODULE LOADED");
 
 type GoalOption = {
   value: string;
@@ -120,6 +135,8 @@ type LookupRow = {
 type ProjectEditSheetProps = {
   open: boolean;
   projectId: string | null;
+  instance?: ScheduleInstance | null;
+  scheduleContext?: ScheduleContext | null;
   eventTitle?: string | null;
   eventTypeLabel?: string | null;
   timeRangeLabel?: string | null;
@@ -132,6 +149,8 @@ type ProjectEditSheetProps = {
 export function ProjectEditSheet({
   open,
   projectId,
+  instance,
+  scheduleContext,
   eventTitle,
   eventTypeLabel,
   timeRangeLabel,
@@ -140,6 +159,7 @@ export function ProjectEditSheet({
   onClose,
   onSaved,
 }: ProjectEditSheetProps) {
+  console.log("[ProjectEditSheet] RENDER", { open, projectId });
   const supabase = getSupabaseBrowser();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -153,10 +173,14 @@ export function ProjectEditSheet({
   const [goalId, setGoalId] = useState<string>("none");
   const [goalOptions, setGoalOptions] = useState<GoalOption[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(false);
-  const [lockedInstance, setLockedInstance] = useState<ScheduleInstance | null>(null);
+  const [lockedInstance, setLockedInstance] = useState<ScheduleInstance | null>(
+    null
+  );
   const [manualStart, setManualStart] = useState("");
   const [manualEnd, setManualEnd] = useState("");
-  const [manualScheduleError, setManualScheduleError] = useState<string | null>(null);
+  const [manualScheduleError, setManualScheduleError] = useState<string | null>(
+    null
+  );
   const [manualScheduleSaving, setManualScheduleSaving] = useState(false);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const [skillOptions, setSkillOptions] = useState<Skill[]>([]);
@@ -192,12 +216,18 @@ export function ProjectEditSheet({
     setSkillSearch("");
   }, []);
 
+  const handleClose = () => {
+    resetState();
+    onClose();
+  };
+
   const loadProject = useCallback(async () => {
     if (!projectId) return;
     if (!supabase) {
       setError("Supabase client not available.");
       return;
     }
+    console.log("[ProjectEditSheet] loadProject START", projectId);
     setLoading(true);
     setGoalsLoading(true);
     setSkillsLoading(true);
@@ -214,28 +244,29 @@ export function ProjectEditSheet({
         throw new Error("You must be signed in to edit a project.");
       }
 
-    const [projectResponse, goalsResponse, lockedResponse] = await Promise.all([
-      supabase
-        .from("projects")
-        .select("id, name, priority, stage, energy, duration_min, goal_id")
-        .eq("id", projectId)
-        .eq("user_id", user.id)
-        .single(),
-      supabase
-        .from("goals")
-        .select("id, name")
-        .eq("user_id", user.id)
-        .order("name", { ascending: true }),
-      supabase
-        .from("schedule_instances")
-        .select("id, start_utc, end_utc, duration_min, locked, status")
-        .eq("user_id", user.id)
-        .eq("source_type", "PROJECT")
-        .eq("source_id", projectId)
-        .eq("locked", true)
-        .order("start_utc", { ascending: true })
-        .limit(1),
-    ]);
+      const [projectResponse, goalsResponse, lockedResponse] =
+        await Promise.all([
+          supabase
+            .from("projects")
+            .select("id, name, priority, stage, energy, duration_min, goal_id")
+            .eq("id", projectId)
+            .eq("user_id", user.id)
+            .single(),
+          supabase
+            .from("goals")
+            .select("id, name")
+            .eq("user_id", user.id)
+            .order("name", { ascending: true }),
+          supabase
+            .from("schedule_instances")
+            .select("id, start_utc, end_utc, duration_min, locked, status")
+            .eq("user_id", user.id)
+            .eq("source_type", "PROJECT")
+            .eq("source_id", projectId)
+            .eq("locked", true)
+            .order("start_utc", { ascending: true })
+            .limit(1),
+        ]);
 
       if (projectResponse.error) throw projectResponse.error;
 
@@ -247,17 +278,23 @@ export function ProjectEditSheet({
       setName(projectData.name ?? "");
       setPriority(resolvePriorityOption(projectData.priority));
       setStage(projectData.stage ?? STAGE_OPTIONS[0].value);
-      const normalizedEnergy = resolveEnergyValue(projectData.energy);
-      setEnergy(normalizedEnergy);
+      setEnergy(
+        scheduleContext?.energyResolved ??
+          instance?.energy_resolved ??
+          projectData.energy
+      );
+
       setDuration(
-        typeof projectData.duration_min === "number"
-          ? String(projectData.duration_min)
-          : "",
+        scheduleContext?.durationMin != null
+          ? String(scheduleContext.durationMin)
+          : instance?.duration_min
+          ? String(instance.duration_min)
+          : String(projectData.duration_min)
       );
       setGoalId(
         projectData.goal_id && projectData.goal_id.trim().length > 0
           ? projectData.goal_id
-          : "none",
+          : "none"
       );
 
       setGoalOptions(
@@ -269,7 +306,7 @@ export function ProjectEditSheet({
           })) as GoalOption[]),
         ].filter((option, index, self) => {
           return self.findIndex((o) => o.value === option.value) === index;
-        }),
+        })
       );
       setGoalsLoading(false);
       try {
@@ -287,14 +324,18 @@ export function ProjectEditSheet({
         setSkillLoadError("Unable to load your skills right now.");
       }
 
-      const { data: projectSkillsData, error: projectSkillsError } = await supabase
-        .from("project_skills")
-        .select("skill_id")
-        .eq("project_id", projectId)
-        .limit(1);
+      const { data: projectSkillsData, error: projectSkillsError } =
+        await supabase
+          .from("project_skills")
+          .select("skill_id")
+          .eq("project_id", projectId)
+          .limit(1);
 
       if (projectSkillsError) {
-        console.error("Failed to load project skill relation:", projectSkillsError);
+        console.error(
+          "Failed to load project skill relation:",
+          projectSkillsError
+        );
         setSelectedSkillId(null);
         setInitialSkillId(null);
       } else {
@@ -303,12 +344,16 @@ export function ProjectEditSheet({
         setInitialSkillId(primarySkillId);
       }
       if (lockedResponse.error) {
-        console.error("Failed to load locked schedule instance:", lockedResponse.error);
+        console.error(
+          "Failed to load locked schedule instance:",
+          lockedResponse.error
+        );
         setLockedInstance(null);
         setManualStart("");
         setManualEnd("");
       } else {
-        const lockedRecord = (lockedResponse.data?.[0] as ScheduleInstance | undefined) ?? null;
+        const lockedRecord =
+          (lockedResponse.data?.[0] as ScheduleInstance | undefined) ?? null;
         setLockedInstance(lockedRecord ?? null);
         if (lockedRecord) {
           setManualStart(toDatetimeLocalValue(lockedRecord.start_utc));
@@ -323,22 +368,21 @@ export function ProjectEditSheet({
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to load this project right now.",
+          : "Unable to load this project right now."
       );
     } finally {
       setLoading(false);
       setGoalsLoading(false);
       setSkillsLoading(false);
+      console.log("[ProjectEditSheet] loadProject END", projectId);
     }
   }, [projectId, supabase]);
 
   useEffect(() => {
     if (open && projectId) {
       void loadProject();
-    } else if (!open) {
-      resetState();
     }
-  }, [open, projectId, loadProject, resetState]);
+  }, [open, projectId, loadProject]);
 
   useEffect(() => {
     setSkillSearch("");
@@ -358,9 +402,10 @@ export function ProjectEditSheet({
       return skillOptions;
     }
 
-    return skillOptions.filter((skill) =>
-      (skill.name ?? "").toLowerCase().includes(term) ||
-      (skill.icon ?? "").toLowerCase().includes(term)
+    return skillOptions.filter(
+      (skill) =>
+        (skill.name ?? "").toLowerCase().includes(term) ||
+        (skill.icon ?? "").toLowerCase().includes(term)
     );
   }, [skillOptions, skillSearch]);
 
@@ -455,34 +500,34 @@ export function ProjectEditSheet({
         goal_id: goalId === "none" ? null : goalId,
       };
 
-    const { error: updateError } = await supabase
-      .from("projects")
-      .update(payload)
-      .eq("id", projectId)
-      .eq("user_id", user.id);
+      const { error: updateError } = await supabase
+        .from("projects")
+        .update(payload)
+        .eq("id", projectId)
+        .eq("user_id", user.id);
 
-    if (updateError) {
-      throw updateError;
-    }
-
-    if (selectedSkillId !== initialSkillId) {
-      const { error: skillDeleteError } = await supabase
-        .from("project_skills")
-        .delete()
-        .eq("project_id", projectId);
-      if (skillDeleteError) {
-        throw skillDeleteError;
+      if (updateError) {
+        throw updateError;
       }
-      if (selectedSkillId) {
-        const { error: skillInsertError } = await supabase
+
+      if (selectedSkillId !== initialSkillId) {
+        const { error: skillDeleteError } = await supabase
           .from("project_skills")
-          .insert({ project_id: projectId, skill_id: selectedSkillId });
-        if (skillInsertError) {
-          throw skillInsertError;
+          .delete()
+          .eq("project_id", projectId);
+        if (skillDeleteError) {
+          throw skillDeleteError;
         }
+        if (selectedSkillId) {
+          const { error: skillInsertError } = await supabase
+            .from("project_skills")
+            .insert({ project_id: projectId, skill_id: selectedSkillId });
+          if (skillInsertError) {
+            throw skillInsertError;
+          }
+        }
+        setInitialSkillId(selectedSkillId);
       }
-      setInitialSkillId(selectedSkillId);
-    }
 
       if (onSaved) {
         await onSaved();
@@ -493,7 +538,7 @@ export function ProjectEditSheet({
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to update this project right now.",
+          : "Unable to update this project right now."
       );
     } finally {
       setSaving(false);
@@ -510,10 +555,7 @@ export function ProjectEditSheet({
     }
     const startDate = new Date(manualStart);
     const endDate = new Date(manualEnd);
-    if (
-      Number.isNaN(startDate.getTime()) ||
-      Number.isNaN(endDate.getTime())
-    ) {
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
       setManualScheduleError("Enter valid start and end times.");
       return;
     }
@@ -601,8 +643,19 @@ export function ProjectEditSheet({
   };
 
   if (!projectId) {
+    console.log("[ProjectEditSheet] NO PROJECT ID, returning null");
     return null;
   }
+
+  console.log("[ProjectEditSheet] render state snapshot", {
+    projectId,
+    open,
+    loading,
+    error,
+    disableSubmit,
+    nameReady: Boolean(name),
+    hasGoalOptions: goalOptions.length,
+  });
 
   return (
     <ScheduleMorphDialog
@@ -610,7 +663,7 @@ export function ProjectEditSheet({
       title={eventTitle ?? "Project"}
       subtitle={timeRangeLabel}
       typeLabel={eventTypeLabel ?? "Project"}
-      onClose={onClose}
+      onClose={handleClose}
       origin={origin}
       layoutId={layoutId}
       focusRef={nameInputRef}
@@ -618,7 +671,25 @@ export function ProjectEditSheet({
       {loading ? (
         <div className="px-1 py-4 text-sm text-white/70">Loading…</div>
       ) : (
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <>
+          {console.log("[ProjectEditSheet] rendering form", {
+            loading,
+            error,
+            disableSubmit,
+            name,
+            duration,
+          })}
+          <form
+            onSubmit={handleSubmit}
+            onClick={(event) => {
+              const target = event.target as HTMLElement | null;
+              console.log("[ProjectEditSheet] form click received", {
+                tagName: target?.tagName,
+                className: target?.className,
+              });
+            }}
+            className="flex flex-col gap-4"
+          >
           <div className="relative pb-2">
             <button
               type="button"
@@ -631,7 +702,8 @@ export function ProjectEditSheet({
             <div className="pr-10">
               <h2 className="text-lg font-semibold text-white">Edit project</h2>
               <p className="mt-1 text-sm text-white/70">
-                Update the underlying project details. Changes here apply everywhere this project appears.
+                Update the underlying project details. Changes here apply
+                everywhere this project appears.
               </p>
             </div>
           </div>
@@ -656,7 +728,11 @@ export function ProjectEditSheet({
               <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
                 Priority
               </Label>
-              <Select value={priority} onValueChange={setPriority} disabled={loading}>
+              <Select
+                value={priority}
+                onValueChange={setPriority}
+                disabled={loading}
+              >
                 <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
                   <SelectValue placeholder="Priority" />
                 </SelectTrigger>
@@ -709,93 +785,92 @@ export function ProjectEditSheet({
                       {value.charAt(0) + value.slice(1).toLowerCase()}
                     </SelectItem>
                   ))}
-              </SelectContent>
-            </Select>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+                Estimated duration (minutes)
+              </Label>
+              <Input
+                value={duration}
+                onChange={(event) => setDuration(event.target.value)}
+                placeholder="60"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                disabled={loading}
+              />
+            </div>
           </div>
+
           <div className="space-y-2">
             <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-              Estimated duration (minutes)
+              Skill relation
             </Label>
-            <Input
-              value={duration}
-              onChange={(event) => setDuration(event.target.value)}
-              placeholder="60"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
-              disabled={loading}
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-            Skill relation
-          </Label>
-          <Select
-            value={selectedSkillId ?? "none"}
-            onValueChange={(value) =>
-              setSelectedSkillId(value === "none" ? null : value)
-            }
-            disabled={skillsLoading && skillOptions.length === 0}
-          >
-            <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-              <SelectValue placeholder="Choose a linked skill" />
-            </SelectTrigger>
-            <SelectContent className="bg-[#05070c] text-white">
-              <div className="p-2">
-                <Input
-                  value={skillSearch}
-                  onChange={(event) => setSkillSearch(event.target.value)}
-                  placeholder="Search skills..."
-                  className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
-                />
-              </div>
-              <SelectItem value="none">No linked skill</SelectItem>
-              {filteredSkills.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-white/60">
-                  {skillsLoading ? "Loading skills…" : "No skills match your search."}
+            <Select
+              value={selectedSkillId ?? "none"}
+              onValueChange={(value) =>
+                setSelectedSkillId(value === "none" ? null : value)
+              }
+              disabled={skillsLoading && skillOptions.length === 0}
+            >
+              <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
+                <SelectValue placeholder="Choose a linked skill" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#05070c] text-white">
+                <div className="p-2">
+                  <Input
+                    value={skillSearch}
+                    onChange={(event) => setSkillSearch(event.target.value)}
+                    placeholder="Search skills..."
+                    className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                  />
                 </div>
-              ) : (
-                groupedSkills.map((group, index) => (
-                  <Fragment key={group.id}>
-                    <div
-                      className={cn(
-                        "px-3 pt-2",
-                        index === 0 ? "pt-0" : ""
-                      )}
-                    >
-                      <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
-                        {group.label}
-                      </p>
-                    </div>
-                    {group.skills.map((skill) => (
-                      <SelectItem
-                        key={skill.id}
-                        value={skill.id}
-                        className="px-3 text-sm"
+                <SelectItem value="none">No linked skill</SelectItem>
+                {filteredSkills.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-white/60">
+                    {skillsLoading
+                      ? "Loading skills…"
+                      : "No skills match your search."}
+                  </div>
+                ) : (
+                  groupedSkills.map((group, index) => (
+                    <Fragment key={group.id}>
+                      <div
+                        className={cn("px-3 pt-2", index === 0 ? "pt-0" : "")}
                       >
-                        <span className="flex items-center gap-2">
-                          <span className="text-base leading-none">
-                            {getSkillIcon(skill.icon)}
+                        <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+                          {group.label}
+                        </p>
+                      </div>
+                      {group.skills.map((skill) => (
+                        <SelectItem
+                          key={skill.id}
+                          value={skill.id}
+                          className="px-3 text-sm"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="text-base leading-none">
+                              {getSkillIcon(skill.icon)}
+                            </span>
+                            <span>{skill.name}</span>
                           </span>
-                          <span>{skill.name}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </Fragment>
-                ))
-              )}
-            </SelectContent>
-          </Select>
-          {skillLoadError ? (
-            <p className="text-xs text-rose-400">{skillLoadError}</p>
-          ) : null}
-        </div>
+                        </SelectItem>
+                      ))}
+                    </Fragment>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            {skillLoadError ? (
+              <p className="text-xs text-rose-400">{skillLoadError}</p>
+            ) : null}
+          </div>
 
-        <div className="space-y-2">
-          <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-            Goal
+          <div className="space-y-2">
+            <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+              Goal
             </Label>
             <Select
               value={
@@ -875,7 +950,8 @@ export function ProjectEditSheet({
                   <p className="text-sm text-red-300">{manualScheduleError}</p>
                 ) : (
                   <p className="text-xs text-white/60">
-                    Update the exact timing for this locked project or remove the lock to return it to the automatic scheduler.
+                    Update the exact timing for this locked project or remove
+                    the lock to return it to the automatic scheduler.
                   </p>
                 )}
                 <div className="flex flex-col gap-2 sm:flex-row">
@@ -900,7 +976,9 @@ export function ProjectEditSheet({
               </>
             ) : (
               <p className="text-sm text-white/60">
-                This project is currently scheduled dynamically. To lock a project at a specific time, create it with manual times from the scheduler’s project workflow.
+                This project is currently scheduled dynamically. To lock a
+                project at a specific time, create it with manual times from the
+                scheduler’s project workflow.
               </p>
             )}
           </div>
@@ -925,7 +1003,7 @@ export function ProjectEditSheet({
               type="submit"
               className={cn(
                 "bg-white text-zinc-900 hover:bg-white/90",
-                disableSubmit && "opacity-50",
+                disableSubmit && "opacity-50"
               )}
               disabled={disableSubmit}
             >
@@ -933,6 +1011,7 @@ export function ProjectEditSheet({
             </Button>
           </div>
         </form>
+        </>
       )}
     </ScheduleMorphDialog>
   );

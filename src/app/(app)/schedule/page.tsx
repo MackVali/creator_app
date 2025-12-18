@@ -64,6 +64,7 @@ import {
   fetchScheduledProjectIds,
   updateInstanceStatus,
   type ScheduleInstance,
+  type ScheduleContext,
 } from "@/lib/scheduler/instanceRepo";
 import { TaskLite, ProjectLite } from "@/lib/scheduler/weight";
 import { buildProjectItems } from "@/lib/scheduler/projects";
@@ -134,6 +135,7 @@ const PX_PER_MIN_STOPS = [
 const VERTICAL_SCROLL_THRESHOLD_PX = 20;
 const VERTICAL_SCROLL_BIAS_PX = 8;
 const VERTICAL_SCROLL_SLOPE = 1.35;
+const DEBUG_LONG_PRESS = true;
 const SCHEDULE_CARD_LONG_PRESS_MS = 650;
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280;
 const LONG_PRESS_ACTION_DELAY_MS = 120;
@@ -561,6 +563,7 @@ type HabitTimelinePlacement = {
   rawStart: string;
   rawEnd: string;
   durationMinutes: number;
+  energyLabel: FlameLevel;
   window: RepoWindow;
   truncated: boolean;
 };
@@ -570,6 +573,37 @@ type MemoNoteDraftState = {
   habitName: string;
   skillId: string | null;
   dateKey: string;
+};
+
+type EditingSnapshot = {
+  source_type: "PROJECT" | "HABIT";
+  projectId: string | null;
+  habitId: string | null;
+  originData?: ScheduleEditOrigin | null;
+};
+
+const scheduleEditNow = () =>
+  typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+
+const describeEditingSnapshot = (snapshot: EditingSnapshot | null) => ({
+  source_type: snapshot?.source_type ?? null,
+  projectId: snapshot?.projectId ?? null,
+  habitId: snapshot?.habitId ?? null,
+});
+
+const logEditingSnapshotEvent = (
+  label: string,
+  snapshot: EditingSnapshot | null,
+  extra?: Record<string, unknown>
+) => {
+  console.log("[ScheduleEdit] snapshot event", {
+    label,
+    timestamp: scheduleEditNow(),
+    ...describeEditingSnapshot(snapshot),
+    ...extra,
+  });
 };
 
 function isValidDate(value: unknown): value is Date {
@@ -992,6 +1026,12 @@ function computeHabitPlacementsForDay({
         rawStart: instance.start_utc,
         rawEnd: instance.end_utc,
         durationMinutes,
+        energyLabel: normalizeEnergyLabel(
+          instance.energy_resolved ||
+            habit.energy ||
+            habit.window?.energy ||
+            "NO"
+        ),
         window,
         truncated: timelinePlacement?.clipped ?? false,
       });
@@ -2215,16 +2255,21 @@ export default function SchedulePage() {
   const [isJumpToDateOpen, setIsJumpToDateOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null);
-  const [editInstanceId, setEditInstanceId] = useState<string | null>(null);
+  const [editingInstance, setEditingInstance] =
+    useState<ScheduleInstance | null>(null);
   const [editOrigin, setEditOrigin] = useState<ScheduleEditOrigin | null>(null);
-  const [isEditSheetOpen, setIsEditSheetOpen] = useState(false);
+  const [editingSnapshot, setEditingSnapshot] =
+    useState<EditingSnapshot | null>(null);
+
   const [topBarHeight, setTopBarHeight] = useState<number | null>(null);
   const sliderControls = useAnimationControls();
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const activePressRef = useRef<{
     instanceId: string;
+    habitId?: string;
     shortPress: (() => void) | null;
+    pointerId?: number;
   } | null>(null);
   const shortPressHandledRef = useRef(false);
   const [longPressBounceId, setLongPressBounceId] = useState<string | null>(
@@ -2232,6 +2277,11 @@ export default function SchedulePage() {
   );
   const longPressBounceTimeoutRef = useRef<number | null>(null);
   const longPressOriginRef = useRef<HTMLElement | null>(null);
+  const pendingLongPressActionRef = useRef<{
+    action: () => void;
+    instanceId: string;
+    originData: any;
+  } | null>(null);
   const [peekModels, setPeekModels] = useState<{
     previous?: DayTimelineModel | null;
     next?: DayTimelineModel | null;
@@ -2347,10 +2397,7 @@ export default function SchedulePage() {
   const backlogTaskPreviousStageRef = useRef<Map<string, TaskLite["stage"]>>(
     new Map()
   );
-  const editingInstance = useMemo(() => {
-    if (!editInstanceId) return null;
-    return instances.find((instance) => instance.id === editInstanceId) ?? null;
-  }, [editInstanceId, instances]);
+  const resolvedEditingInstance = null;
 
   useEffect(() => {
     setPendingInstanceStatuses((prev) => {
@@ -2367,6 +2414,7 @@ export default function SchedulePage() {
       return changed ? next : prev;
     });
   }, [instances]);
+
   const clearScheduleData = useCallback(() => {
     setWindowSnapshot([]);
     setWindows([]);
@@ -2385,7 +2433,7 @@ export default function SchedulePage() {
     backlogTaskPreviousStageRef.current = new Map();
     scheduleDatasetRef.current = null;
   }, []);
-  const [pxPerMin, setPxPerMin] = useState(snapPxPerMin(2));
+  const [pxPerMin, setPxPerMin] = useState<number>(snapPxPerMin(2));
   const animatedPxPerMin = useMotionValue<number>(pxPerMin);
   const zoomAnimationRef = useRef<AnimationPlaybackControls | null>(null);
   const basePxPerMinRef = useRef(pxPerMin);
@@ -2418,7 +2466,7 @@ export default function SchedulePage() {
         type: "spring",
         stiffness: 140,
         damping: 26,
-        mass: 0.9,
+        mass: 0.9 as number,
       });
     },
     [animatedPxPerMin, prefersReducedMotion, stopZoomAnimation]
@@ -2755,6 +2803,7 @@ export default function SchedulePage() {
   const swipeDeltaRef = useRef(0);
   const swipeScrollProgressRef = useRef<number | null>(null);
   const navLock = useRef(false);
+  const loadReqIdRef = useRef(0);
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {});
   const refreshScheduleData = useCallback(async () => {
     await loadInstancesRef.current();
@@ -2903,6 +2952,7 @@ export default function SchedulePage() {
     };
 
     const load = async () => {
+      const reqId = ++loadReqIdRef.current;
       if (!active) return;
       setMetaStatus("loading");
       setInstancesStatus("loading");
@@ -2916,11 +2966,13 @@ export default function SchedulePage() {
             cache: "no-store",
           }
         );
+        if (reqId !== loadReqIdRef.current) return; // stale response, ignore
         if (!active) return;
         if (!response.ok) {
           throw new Error(`Failed to load schedule data (${response.status})`);
         }
         const payload = (await response.json()) as ScheduleEventDataset;
+        if (reqId !== loadReqIdRef.current) return; // stale response, ignore
         if (!active) return;
         scheduleDatasetRef.current = payload;
         applyDataset(payload);
@@ -3110,9 +3162,9 @@ export default function SchedulePage() {
   }, [habits]);
 
   const editingEventTitle = useMemo(() => {
-    if (!editingInstance) return "Scheduled event";
-    const sourceId = editingInstance.source_id ?? "";
-    if (editingInstance.source_type === "TASK") {
+    if (!resolvedEditingInstance) return "Scheduled event";
+    const sourceId = resolvedEditingInstance.source_id ?? "";
+    if (resolvedEditingInstance.source_type === "TASK") {
       const task = taskMap[sourceId];
       if (task?.name?.trim()) {
         return task.name;
@@ -3124,23 +3176,23 @@ export default function SchedulePage() {
       if (parent?.name?.trim()) {
         return parent.name;
       }
-    } else if (editingInstance.source_type === "PROJECT") {
+    } else if (resolvedEditingInstance.source_type === "PROJECT") {
       const project = projectMap[sourceId];
       if (project?.name?.trim()) {
         return project.name;
       }
-    } else if (editingInstance.source_type === "HABIT") {
+    } else if (resolvedEditingInstance.source_type === "HABIT") {
       const habit = habitMap[sourceId];
       if (habit?.name?.trim()) {
         return habit.name;
       }
     }
     return sourceId || "Scheduled event";
-  }, [editingInstance, taskMap, projectMap, habitMap]);
+  }, [resolvedEditingInstance, taskMap, projectMap, habitMap]);
 
   const editingEventTypeLabel = useMemo(() => {
-    if (!editingInstance) return "Event";
-    switch (editingInstance.source_type) {
+    if (!resolvedEditingInstance) return "Event";
+    switch (resolvedEditingInstance.source_type) {
       case "PROJECT":
         return "Project";
       case "TASK":
@@ -3150,12 +3202,12 @@ export default function SchedulePage() {
       default:
         return "Event";
     }
-  }, [editingInstance]);
+  }, [resolvedEditingInstance]);
 
   const editingTimeRangeLabel = useMemo(() => {
-    if (!editingInstance) return null;
-    const startDate = toLocal(editingInstance.start_utc);
-    const endDate = toLocal(editingInstance.end_utc);
+    if (!resolvedEditingInstance) return null;
+    const startDate = toLocal(resolvedEditingInstance.start_utc);
+    const endDate = toLocal(resolvedEditingInstance.end_utc);
     if (
       !(startDate instanceof Date) ||
       Number.isNaN(startDate.getTime()) ||
@@ -3172,27 +3224,65 @@ export default function SchedulePage() {
     const endLabel = formatter.format(endDate);
     const zoneLabel = friendlyTimeZone ? ` • ${friendlyTimeZone}` : "";
     return `${startLabel} – ${endLabel}${zoneLabel}`;
-  }, [editingInstance, friendlyTimeZone]);
+  }, [resolvedEditingInstance, friendlyTimeZone]);
 
-  const editingProjectId = useMemo(() => {
-    if (!editingInstance) return null;
-    if (editingInstance.source_type !== "PROJECT") return null;
-    const sourceId = editingInstance.source_id ?? "";
-    return sourceId && sourceId.length > 0 ? sourceId : null;
-  }, [editingInstance]);
+  const editingProjectId =
+    editingSnapshot?.source_type === "PROJECT"
+      ? editingSnapshot.projectId ?? null
+      : null;
 
-  const editingHabitId = useMemo(() => {
-    if (!editingInstance) return null;
-    if (editingInstance.source_type !== "HABIT") return null;
-    const sourceId = editingInstance.source_id ?? "";
-    return sourceId && sourceId.length > 0 ? sourceId : null;
-  }, [editingInstance]);
+  const editingHabitId =
+    editingSnapshot?.source_type === "HABIT"
+      ? editingSnapshot.habitId ?? null
+      : null;
 
-  const editingLayoutId = useMemo(
-    () =>
-      editInstanceId ? getScheduleInstanceLayoutId(editInstanceId) : undefined,
-    [editInstanceId]
-  );
+  const editingLayoutId = undefined;
+
+  const isProjectEditing =
+    editingSnapshot?.source_type === "PROJECT" &&
+    Boolean(editingSnapshot.projectId);
+
+  const isHabitEditing =
+    editingSnapshot?.source_type === "HABIT" &&
+    Boolean(editingSnapshot.habitId);
+
+  const previousSnapshotRef = useRef<EditingSnapshot | null>(null);
+  useEffect(() => {
+    if (previousSnapshotRef.current !== editingSnapshot) {
+      console.log("[ScheduleEdit] editingSnapshot changed", {
+        prev: describeEditingSnapshot(previousSnapshotRef.current),
+        next: describeEditingSnapshot(editingSnapshot),
+        timestamp: scheduleEditNow(),
+      });
+      previousSnapshotRef.current = editingSnapshot;
+    }
+  }, [editingSnapshot]);
+
+  const previousProjectEditingRef = useRef<boolean>(isProjectEditing);
+  useEffect(() => {
+    if (previousProjectEditingRef.current !== isProjectEditing) {
+      console.log("[ScheduleEdit] isProjectEditing changed", {
+        prev: previousProjectEditingRef.current,
+        next: isProjectEditing,
+        snapshot: describeEditingSnapshot(editingSnapshot),
+        timestamp: scheduleEditNow(),
+      });
+      previousProjectEditingRef.current = isProjectEditing;
+    }
+  }, [isProjectEditing, editingSnapshot]);
+
+  const previousHabitEditingRef = useRef<boolean>(isHabitEditing);
+  useEffect(() => {
+    if (previousHabitEditingRef.current !== isHabitEditing) {
+      console.log("[ScheduleEdit] isHabitEditing changed", {
+        prev: previousHabitEditingRef.current,
+        next: isHabitEditing,
+        snapshot: describeEditingSnapshot(editingSnapshot),
+        timestamp: scheduleEditNow(),
+      });
+      previousHabitEditingRef.current = isHabitEditing;
+    }
+  }, [isHabitEditing, editingSnapshot]);
 
   const windowMap = useMemo(() => buildWindowMap(windows), [windows]);
 
@@ -3833,9 +3923,10 @@ export default function SchedulePage() {
   );
 
   const handleCloseEditSheet = useCallback(() => {
-    setIsEditSheetOpen(false);
-    setEditInstanceId(null);
-    setEditOrigin(null);
+    logEditingSnapshotEvent("handleCloseEditSheet", null, {
+      reason: "close",
+    });
+    setEditingSnapshot(null);
   }, []);
 
   useEffect(() => {
@@ -4320,6 +4411,16 @@ export default function SchedulePage() {
       return;
     }
 
+    if (touches.length === 1) {
+      const firstTouch = touches[0];
+      if (
+        firstTouch &&
+        isTouchWithinElement(firstTouch, dayTimelineContainerRef.current)
+      ) {
+        event.preventDefault();
+      }
+    }
+
     if (view !== "day" || prefersReducedMotion || pinchActiveRef.current) {
       touchStartX.current = null;
       touchStartY.current = null;
@@ -4587,14 +4688,7 @@ export default function SchedulePage() {
     setFocusInstanceId(instanceId);
   };
 
-  const openInstanceEditor = useCallback(
-    (instanceId: string, origin?: ScheduleEditOrigin | null) => {
-      setEditInstanceId(instanceId);
-      setEditOrigin(origin ?? null);
-      setIsEditSheetOpen(true);
-    },
-    []
-  );
+  // Editor opening logic moved inline to decouple from schedule instances
 
   const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current !== null) {
@@ -4631,14 +4725,118 @@ export default function SchedulePage() {
     };
   }, []);
 
+  const openInstanceEditor = useCallback(
+    (instance: ScheduleInstance, originData: ScheduleEditOrigin | null) => {
+      const nextSnapshot: EditingSnapshot = {
+        source_type: instance.source_type as "PROJECT" | "HABIT",
+        projectId:
+          instance.source_type === "PROJECT" ? instance.source_id : null,
+        habitId: instance.source_type === "HABIT" ? instance.source_id : null,
+        originData,
+      };
+      logEditingSnapshotEvent("openInstanceEditor", nextSnapshot, {
+        instanceId: instance.id,
+        hasOrigin: Boolean(originData),
+      });
+      setEditingSnapshot({
+        ...nextSnapshot,
+        instance,
+      } as EditingSnapshot & { instance?: ScheduleInstance });
+    },
+    []
+  );
+
   const handleInstancePointerDown = useCallback(
     (
       event: ReactPointerEvent<HTMLElement>,
-      instanceId?: string | null,
-      onShortPress?: () => void,
-      onLongPress?: () => void
+      instance?: ScheduleInstance | null,
+      onShortPress?: (() => void) | null,
+      onLongPress?: (() => void) | null,
+      habitId?: string,
+      placement?: HabitTimelinePlacement,
+      scheduleContext?: ScheduleContext | null
     ) => {
-      if (!instanceId) return;
+      if (onLongPress) {
+        console.log("[INTERACT] POINTER DOWN", {
+          pointerType: event.pointerType,
+          button: event.button,
+          buttons: event.buttons,
+          instanceId: instance?.id,
+        });
+        if (event.pointerType !== "mouse") {
+          event.preventDefault();
+        }
+        if (!instance && !habitId) return;
+        const pointerType = event.pointerType;
+        const isTouchLike =
+          pointerType === "touch" ||
+          pointerType === "pen" ||
+          pointerType === "mouse" ||
+          pointerType === "" ||
+          pointerType === undefined;
+        if (pointerType === "mouse" && event.button !== 0) {
+          return;
+        }
+        if (DEBUG_LONG_PRESS) {
+          console.log(
+            `[LONGPRESS] down ${instance?.id || habitId} ${event.pointerType} ${
+              event.button
+            } ${event.buttons} ${performance.now()}`
+          );
+        }
+        if (!isTouchLike) {
+          activePressRef.current = null;
+          longPressTriggeredRef.current = false;
+          shortPressHandledRef.current = false;
+          clearLongPressTimer();
+          longPressOriginRef.current = null;
+          pendingLongPressActionRef.current = null;
+          return;
+        }
+        longPressOriginRef.current = event.currentTarget;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        activePressRef.current = {
+          instanceId: instance?.id || habitId || "",
+          habitId,
+          shortPress: onShortPress ?? null,
+          pointerId: event.pointerId,
+        };
+        longPressTriggeredRef.current = false;
+        shortPressHandledRef.current = false;
+        pendingLongPressActionRef.current = null;
+        clearLongPressTimer();
+        console.log("[INTERACT] LONG PRESS TIMER SET", {
+          delay: SCHEDULE_CARD_LONG_PRESS_MS,
+        });
+        const timerId = window.setTimeout(() => {
+          console.log("[INTERACT] LONG PRESS TIMER FIRED");
+          longPressTimerRef.current = null;
+          if (DEBUG_LONG_PRESS) {
+            console.log(`[LONGPRESS] timer fired`);
+          }
+          longPressTriggeredRef.current = true;
+          if (DEBUG_LONG_PRESS) {
+            console.log(`[LONGPRESS] OPEN EDITOR ${instance?.id || habitId}`);
+          }
+          console.log("[INTERACT] LONGPRESS OPEN", {
+            id: instance?.id || habitId,
+            source_type: instance?.source_type,
+          });
+          onLongPress();
+        }, SCHEDULE_CARD_LONG_PRESS_MS);
+        longPressTimerRef.current = timerId;
+        return;
+      }
+      console.log("[INTERACT] POINTER DOWN", {
+        pointerType: event.pointerType,
+        button: event.button,
+        buttons: event.buttons,
+        instanceId: instance?.id,
+      });
+      if (event.pointerType !== "mouse") {
+        event.preventDefault();
+      }
+      if (!instance && !habitId) return;
       const pointerType = event.pointerType;
       const isTouchLike =
         pointerType === "touch" ||
@@ -4649,23 +4847,39 @@ export default function SchedulePage() {
       if (pointerType === "mouse" && event.button !== 0) {
         return;
       }
+      if (DEBUG_LONG_PRESS) {
+        console.log(
+          `[LONGPRESS] down ${instance?.id || habitId} ${event.pointerType} ${
+            event.button
+          } ${event.buttons} ${performance.now()}`
+        );
+      }
       if (!isTouchLike) {
         activePressRef.current = null;
         longPressTriggeredRef.current = false;
         shortPressHandledRef.current = false;
         clearLongPressTimer();
         longPressOriginRef.current = null;
+        pendingLongPressActionRef.current = null;
         return;
       }
       longPressOriginRef.current = event.currentTarget;
+      event.currentTarget.setPointerCapture(event.pointerId);
       activePressRef.current = {
-        instanceId,
+        instanceId: instance?.id || habitId || "",
+        habitId,
         shortPress: onShortPress ?? null,
+        pointerId: event.pointerId,
       };
       longPressTriggeredRef.current = false;
       shortPressHandledRef.current = false;
+      pendingLongPressActionRef.current = null;
       clearLongPressTimer();
+      console.log("[INTERACT] LONG PRESS TIMER SET", {
+        delay: SCHEDULE_CARD_LONG_PRESS_MS,
+      });
       const timerId = window.setTimeout(() => {
+        console.log("[INTERACT] LONG PRESS TIMER FIRED");
         longPressTimerRef.current = null;
         const element = longPressOriginRef.current;
         let originData: ScheduleEditOrigin | null = null;
@@ -4711,20 +4925,98 @@ export default function SchedulePage() {
             boxShadow,
           };
         }
-        triggerLongPressFeedback(instanceId);
-        longPressTriggeredRef.current = true;
-        const runLongPressAction = () => {
-          if (onLongPress) {
-            onLongPress();
-          } else {
-            openInstanceEditor(instanceId, originData);
+        if (DEBUG_LONG_PRESS) {
+          console.log(`[LONGPRESS] timer fired`);
+        }
+        const active = activePressRef.current;
+        if (active?.pointerId != null && longPressOriginRef.current) {
+          try {
+            longPressOriginRef.current.releasePointerCapture(active.pointerId);
+          } catch {}
+        }
+        if (
+          instance &&
+          instance.source_id &&
+          (instance.source_type === "PROJECT" ||
+            instance.source_type === "HABIT")
+        ) {
+          if (DEBUG_LONG_PRESS) {
+            console.log(`[LONGPRESS] feedback start`);
           }
-          longPressOriginRef.current = null;
-        };
-        if (LONG_PRESS_ACTION_DELAY_MS > 0) {
-          window.setTimeout(runLongPressAction, LONG_PRESS_ACTION_DELAY_MS);
-        } else {
-          runLongPressAction();
+          triggerLongPressFeedback(instance.id);
+          longPressTriggeredRef.current = true;
+          if (DEBUG_LONG_PRESS) {
+            console.log(
+              `[LONGPRESS] OPEN EDITOR ${instance.id} ${
+                originData ? "hasOriginData" : "noOriginData"
+              }`
+            );
+          }
+          console.log("[INTERACT] LONGPRESS OPEN", {
+            id: instance.id,
+            source_type: instance.source_type,
+          });
+          const nextSnapshot: EditingSnapshot = {
+            source_type: instance.source_type as "PROJECT" | "HABIT",
+            projectId:
+              instance.source_type === "PROJECT" ? instance.source_id : null,
+            habitId:
+              instance.source_type === "HABIT" ? instance.source_id : null,
+            originData,
+          };
+          logEditingSnapshotEvent("longpress-instance", nextSnapshot, {
+            instanceId: instance.id,
+            hasOrigin: Boolean(originData),
+          });
+          setEditingSnapshot({
+            ...nextSnapshot,
+            instance,
+          } as EditingSnapshot & { instance?: ScheduleInstance });
+        } else if (!instance && habitId) {
+          if (DEBUG_LONG_PRESS) {
+            console.log(`[LONGPRESS] feedback start for habit ${habitId}`);
+          }
+          triggerLongPressFeedback(habitId);
+          longPressTriggeredRef.current = true;
+          if (DEBUG_LONG_PRESS) {
+            console.log(
+              `[LONGPRESS] OPEN EDITOR ${habitId} ${
+                originData ? "hasOriginData" : "noOriginData"
+              }`
+            );
+          }
+          console.log("[INTERACT] LONGPRESS OPEN", {
+            id: habitId,
+            source_type: "HABIT",
+          });
+          const syntheticHabitInstance: ScheduleInstance = {
+            id: `synthetic-${habitId}-${dayViewDateKey}`,
+            source_type: "HABIT",
+            source_id: habitId,
+            user_id: userId ?? "",
+            status: "scheduled",
+            start_utc: placement?.rawStart ?? "",
+            end_utc: placement?.rawEnd ?? "",
+            duration_min: placement?.durationMinutes ?? null,
+            energy_resolved: placement?.energyLabel ?? null,
+            window_id: placement?.window.id ?? null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          const nextSnapshot: EditingSnapshot = {
+            source_type: "HABIT",
+            projectId: null,
+            habitId,
+            originData,
+          };
+          logEditingSnapshotEvent("longpress-habit-synthetic", nextSnapshot, {
+            instanceId: syntheticHabitInstance.id,
+            hasOrigin: Boolean(originData),
+          });
+          setEditingSnapshot({
+            ...nextSnapshot,
+            instance: syntheticHabitInstance,
+          } as EditingSnapshot & { instance?: ScheduleInstance });
         }
       }, SCHEDULE_CARD_LONG_PRESS_MS);
       longPressTimerRef.current = timerId;
@@ -4732,23 +5024,63 @@ export default function SchedulePage() {
     [clearLongPressTimer, openInstanceEditor, triggerLongPressFeedback]
   );
 
-  const handleInstancePointerUp = useCallback(() => {
-    const pending = activePressRef.current;
-    const longPressTriggered = longPressTriggeredRef.current;
-    cancelLongPress();
-    activePressRef.current = null;
-    longPressOriginRef.current = null;
-    if (!longPressTriggered && pending?.shortPress) {
-      shortPressHandledRef.current = true;
-      pending.shortPress();
-    }
-  }, [cancelLongPress]);
+  const handleInstancePointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      console.log("[INTERACT] POINTER UP", {
+        longPressTriggered: longPressTriggeredRef.current,
+        activePress: activePressRef.current,
+      });
+      if (DEBUG_LONG_PRESS) {
+        console.log(
+          `[LONGPRESS] up ${
+            activePressRef.current?.instanceId || "none"
+          } ${performance.now()}`
+        );
+      }
+      const pending = activePressRef.current;
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      cancelLongPress();
+      activePressRef.current = null;
+      longPressOriginRef.current = null;
+      if (pendingLongPressActionRef.current) {
+        console.log("[INTERACT] OPEN EDITOR", {
+          instanceId: pendingLongPressActionRef.current.instanceId,
+          hasOrigin: Boolean(pendingLongPressActionRef.current.originData),
+        });
+        const instance = instances.find(
+          (inst) => inst.id === pendingLongPressActionRef.current.instanceId
+        );
+        if (instance) {
+          openInstanceEditor(
+            instance,
+            pendingLongPressActionRef.current.originData
+          );
+        }
+        pendingLongPressActionRef.current = null;
+      } else if (pending?.shortPress && !longPressTriggeredRef.current) {
+        shortPressHandledRef.current = true;
+        pending.shortPress();
+      }
+    },
+    [cancelLongPress, openInstanceEditor]
+  );
 
-  const handleInstancePointerCancel = useCallback(() => {
-    activePressRef.current = null;
-    cancelLongPress();
-    longPressOriginRef.current = null;
-  }, [cancelLongPress]);
+  const handleInstancePointerCancel = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      console.log("[INTERACT] POINTER CANCEL", {
+        activePress: activePressRef.current,
+      });
+      if (DEBUG_LONG_PRESS) {
+        console.log(`[LONGPRESS] cancel ${performance.now()}`);
+      }
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      activePressRef.current = null;
+      cancelLongPress();
+      longPressOriginRef.current = null;
+      pendingLongPressActionRef.current = null;
+    },
+    [cancelLongPress]
+  );
 
   const shouldBlockClickFromLongPress = useCallback(() => {
     if (longPressTriggeredRef.current) {
@@ -4807,24 +5139,6 @@ export default function SchedulePage() {
       clearLongPressTimer();
     };
   }, [clearLongPressTimer]);
-
-  useEffect(() => {
-    if (!isEditSheetOpen) return;
-    if (editInstanceId && !editingInstance) {
-      setIsEditSheetOpen(false);
-      setEditInstanceId(null);
-      setEditOrigin(null);
-    }
-  }, [isEditSheetOpen, editInstanceId, editingInstance]);
-
-  useEffect(() => {
-    if (!isEditSheetOpen) return;
-    if (!editingProjectId && !editingHabitId) {
-      setIsEditSheetOpen(false);
-      setEditInstanceId(null);
-      setEditOrigin(null);
-    }
-  }, [isEditSheetOpen, editingProjectId, editingHabitId]);
 
   const baseTimelineHeight = useMemo(
     () =>
@@ -5066,7 +5380,7 @@ export default function SchedulePage() {
               // Instances must never be hidden based on "now"
               // Completion affects styling, not existence
               const isHabitCompleted = habitStatus === "completed";
-              let shouldHideHabit = false;
+              const shouldHideHabit = false;
               // TEMP: disabled habit hiding for isolation test
               // if (isHabitCompleted && viewIsFutureDay) {
               //   shouldHideHabit = true;
@@ -5259,7 +5573,7 @@ export default function SchedulePage() {
                 layoutMode,
                 { animate: !prefersReducedMotion }
               );
-              const hasHabitInstance = Boolean(placement.instanceId);
+              const hasHabitInstance = Boolean(placement.habitId);
               const habitBounceActive =
                 hasHabitInstance && placement.instanceId
                   ? longPressBounceId === placement.instanceId
@@ -5272,15 +5586,85 @@ export default function SchedulePage() {
                 ? {
                     onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
                       if (options?.disableInteractions) return;
-                      if (!placement.instanceId) return;
                       handleInstancePointerDown(
                         event,
-                        placement.instanceId,
-                        handleHabitPrimaryAction
+                        null,
+                        handleHabitPrimaryAction,
+                        () => {
+                          const element = event.currentTarget;
+                          let originData: ScheduleEditOrigin | null = null;
+                          if (element) {
+                            const rect = element.getBoundingClientRect();
+                            const computed = window.getComputedStyle(element);
+                            const fallbackRadius = [
+                              computed.borderTopLeftRadius,
+                              computed.borderTopRightRadius,
+                              computed.borderBottomRightRadius,
+                              computed.borderBottomLeftRadius,
+                            ]
+                              .filter(Boolean)
+                              .join(" ")
+                              .trim();
+                            const radius =
+                              (computed.borderRadius &&
+                              computed.borderRadius.trim().length > 0
+                                ? computed.borderRadius
+                                : fallbackRadius) || "0px";
+                            const backgroundImage =
+                              computed.backgroundImage &&
+                              computed.backgroundImage !== "none"
+                                ? computed.backgroundImage
+                                : undefined;
+                            const backgroundColorRaw = computed.backgroundColor;
+                            const backgroundColor =
+                              backgroundColorRaw &&
+                              backgroundColorRaw !== "rgba(0, 0, 0, 0)" &&
+                              backgroundColorRaw.toLowerCase() !== "transparent"
+                                ? backgroundColorRaw
+                                : undefined;
+                            const boxShadow =
+                              computed.boxShadow &&
+                              computed.boxShadow !== "none"
+                                ? computed.boxShadow
+                                : undefined;
+                            originData = {
+                              x: rect.left,
+                              y: rect.top,
+                              width: rect.width,
+                              height: rect.height,
+                              borderRadius: radius,
+                              backgroundColor,
+                              backgroundImage,
+                              boxShadow,
+                            };
+                          }
+                          const nextSnapshot: EditingSnapshot = {
+                            source_type: "HABIT",
+                            projectId: null,
+                            habitId: placement.habitId,
+                            originData,
+                          };
+                          logEditingSnapshotEvent(
+                            "habit-card-pointerdown",
+                            nextSnapshot,
+                            {
+                              hasOrigin: Boolean(originData),
+                              placementId: placement.instanceId,
+                            }
+                          );
+                          setEditingSnapshot(nextSnapshot);
+                        },
+                        placement.habitId,
+                        placement,
+                        {
+                          energyResolved: placement.energyLabel,
+                          durationMin: placement.durationMinutes,
+                          windowId: placement.window.id,
+                        }
                       );
                     },
-                    onPointerUp: handleInstancePointerUp,
-                    onPointerCancel: handleInstancePointerCancel,
+                    onPointerUp: (e) => handleInstancePointerUp(e),
+                    onPointerCancel: (e) => handleInstancePointerCancel(e),
                   }
                 : {};
 
@@ -5290,15 +5674,10 @@ export default function SchedulePage() {
               const habitLayoutTokens = habitLayoutId
                 ? scheduleInstanceLayoutTokens(habitLayoutId)
                 : null;
+              const editorMounted =
+                editingProjectId !== null || editingHabitId !== null;
               const hideForEdit =
-                hasHabitInstance &&
-                Boolean(
-                  isEditSheetOpen &&
-                    editInstanceId &&
-                    editInstanceId === placement.instanceId &&
-                    !editingProjectId &&
-                    !editingHabitId
-                );
+                editorMounted && editingHabitId === placement.habitId;
 
               if (hideForEdit) {
                 return null;
@@ -5308,7 +5687,8 @@ export default function SchedulePage() {
 
               return (
                 <motion.div
-                  key={`habit-${placement.habitId}-${index}`}
+                  key={placement.instanceId}
+                  layout="position"
                   layoutId={habitLayoutTokens?.card}
                   className={`absolute flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 ${habitPaddingClass} text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer select-none`}
                   role="button"
@@ -5316,7 +5696,14 @@ export default function SchedulePage() {
                   aria-pressed={isHabitCompleted}
                   aria-disabled={options?.disableInteractions ?? false}
                   style={layeredCardStyle}
+                  onContextMenu={() => console.log("[LONGPRESS] contextmenu")}
                   onClick={() => {
+                    console.log("[INTERACT] CLICK", {
+                      shouldBlock: shouldBlockClickFromLongPress(),
+                      longPressTriggered: longPressTriggeredRef.current,
+                      shortPressHandled: shortPressHandledRef.current,
+                      disableInteractions: options?.disableInteractions,
+                    });
                     if (shouldBlockClickFromLongPress()) return;
                     handleHabitPrimaryAction();
                   }}
@@ -5376,7 +5763,7 @@ export default function SchedulePage() {
               );
             })}
             {modelProjectInstances.map(
-              ({ instance, project, start, end }, index) => {
+              ({ instance, project, start, end, assignedWindow }, index) => {
                 if (!isValidDate(start) || !isValidDate(end)) return null;
                 const projectId = project.id;
                 const startMin = getDayMinuteOffset(start);
@@ -5531,13 +5918,10 @@ export default function SchedulePage() {
                 const projectLongPressActive =
                   longPressBounceId === instance.id;
 
-                const hideForEdit = Boolean(
-                  isEditSheetOpen &&
-                    editInstanceId &&
-                    editInstanceId === instance.id &&
-                    !editingProjectId &&
-                    !editingHabitId
-                );
+                const editorMounted =
+                  editingProjectId !== null || editingHabitId !== null;
+                const hideForEdit =
+                  editorMounted && editingProjectId === projectId;
 
                 const instanceLayoutId = getScheduleInstanceLayoutId(
                   instance.id
@@ -5614,12 +5998,97 @@ export default function SchedulePage() {
                               if (options?.disableInteractions) return;
                               handleInstancePointerDown(
                                 event,
-                                instance.id,
-                                handleProjectPrimaryAction
+                                instance,
+                                handleProjectPrimaryAction,
+                                () => {
+                                  const element = event.currentTarget;
+                                  let originData: ScheduleEditOrigin | null =
+                                    null;
+                                  if (element) {
+                                    const rect =
+                                      element.getBoundingClientRect();
+                                    const computed =
+                                      window.getComputedStyle(element);
+                                    const fallbackRadius = [
+                                      computed.borderTopLeftRadius,
+                                      computed.borderTopRightRadius,
+                                      computed.borderBottomRightRadius,
+                                      computed.borderBottomLeftRadius,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" ")
+                                      .trim();
+                                    const radius =
+                                      (computed.borderRadius &&
+                                      computed.borderRadius.trim().length > 0
+                                        ? computed.borderRadius
+                                        : fallbackRadius) || "0px";
+                                    const backgroundImage =
+                                      computed.backgroundImage &&
+                                      computed.backgroundImage !== "none"
+                                        ? computed.backgroundImage
+                                        : undefined;
+                                    const backgroundColorRaw =
+                                      computed.backgroundColor;
+                                    const backgroundColor =
+                                      backgroundColorRaw &&
+                                      backgroundColorRaw !==
+                                        "rgba(0, 0, 0, 0)" &&
+                                      backgroundColorRaw.toLowerCase() !==
+                                        "transparent"
+                                        ? backgroundColorRaw
+                                        : undefined;
+                                    const boxShadow =
+                                      computed.boxShadow &&
+                                      computed.boxShadow !== "none"
+                                        ? computed.boxShadow
+                                        : undefined;
+                                    originData = {
+                                      x: rect.left,
+                                      y: rect.top,
+                                      width: rect.width,
+                                      height: rect.height,
+                                      borderRadius: radius,
+                                      backgroundColor,
+                                      backgroundImage,
+                                      boxShadow,
+                                    };
+                                  }
+                                  const nextSnapshot: EditingSnapshot = {
+                                    source_type: "PROJECT",
+                                    projectId: project.id,
+                                    habitId: null,
+                                    originData,
+                                  };
+                                  logEditingSnapshotEvent(
+                                    "project-card-pointerdown",
+                                    nextSnapshot,
+                                    {
+                                      projectId: project.id,
+                                      hasOrigin: Boolean(originData),
+                                      instanceId: instance?.id ?? null,
+                                    }
+                                  );
+                                  setEditingSnapshot(nextSnapshot);
+                                },
+                                undefined,
+                                undefined,
+                                {
+                                  energyResolved: cardEnergyLevel,
+                                  durationMin: Math.max(
+                                    1,
+                                    Math.round(
+                                      (end.getTime() - start.getTime()) / 60000
+                                    )
+                                  ),
+                                  windowId: assignedWindow?.id ?? null,
+                                }
                               );
                             }}
-                            onPointerUp={handleInstancePointerUp}
-                            onPointerCancel={handleInstancePointerCancel}
+                            onPointerUp={(e) => handleInstancePointerUp(e)}
+                            onPointerCancel={(e) =>
+                              handleInstancePointerCancel(e)
+                            }
                             onDoubleClick={(event) => {
                               event.preventDefault();
                               if (options?.disableInteractions) return;
@@ -5928,13 +6397,13 @@ export default function SchedulePage() {
                                     ? longPressBounceId === instanceId
                                     : false;
 
+                                const editorMounted =
+                                  editingProjectId !== null ||
+                                  editingHabitId !== null;
                                 const hideForEdit = Boolean(
-                                  isEditSheetOpen &&
-                                    editInstanceId &&
-                                    instanceId &&
-                                    editInstanceId === instanceId &&
-                                    !editingProjectId &&
-                                    !editingHabitId
+                                  editorMounted &&
+                                    editingInstance?.id === instanceId &&
+                                    longPressTriggeredRef.current
                                 );
 
                                 if (hideForEdit) {
@@ -6004,9 +6473,13 @@ export default function SchedulePage() {
                                     style={tStyle}
                                     onPointerDown={(event) => {
                                       if (!instanceId) return;
+                                      const taskInstance =
+                                        instances.find(
+                                          (inst) => inst.id === instanceId
+                                        ) || null;
                                       handleInstancePointerDown(
                                         event,
-                                        instanceId,
+                                        taskInstance,
                                         handleTaskCardPrimaryAction
                                       );
                                     }}
@@ -6210,9 +6683,9 @@ export default function SchedulePage() {
                     longPressBounceId === instance.id;
 
                   const hideForEdit = Boolean(
-                    isEditSheetOpen &&
-                      editInstanceId &&
-                      editInstanceId === instance.id &&
+                    editingSnapshot &&
+                      editingInstance?.id &&
+                      editingInstance.id === instance.id &&
                       !editingProjectId &&
                       !editingHabitId
                   );
@@ -6253,7 +6726,7 @@ export default function SchedulePage() {
                       onPointerDown={(event) => {
                         handleInstancePointerDown(
                           event,
-                          instance.id,
+                          instance,
                           handleStandaloneTaskPrimaryAction
                         );
                       }}
@@ -6358,8 +6831,7 @@ export default function SchedulePage() {
       handleInstancePointerCancel,
       shouldBlockClickFromLongPress,
       longPressBounceId,
-      isEditSheetOpen,
-      editInstanceId,
+      editingInstance,
       editingProjectId,
       editingHabitId,
     ]
@@ -6603,27 +7075,34 @@ export default function SchedulePage() {
         monuments={monuments}
         skills={skills}
       />
+      {process.env.NODE_ENV === "development" && (
+        <div className="fixed bottom-3 left-3 z-[99999] rounded-lg bg-black/80 px-3 py-2 text-xs text-white">
+          <div>
+            snapshot:{" "}
+            {editingSnapshot
+              ? `${editingSnapshot.source_type}:${
+                  editingSnapshot.projectId || editingSnapshot.habitId
+                }`
+              : "null"}
+          </div>
+          <div>isHabitEditing: {String(isHabitEditing)}</div>
+          <div>habitId: {String(editingHabitId)}</div>
+        </div>
+      )}
+      {console.log("[SchedulePage] edit sheet props", {
+        snapshot: describeEditingSnapshot(editingSnapshot),
+        isProjectEditing,
+        isHabitEditing,
+      })}
       <ProjectEditSheet
-        open={isEditSheetOpen && Boolean(editingProjectId)}
-        projectId={editingProjectId}
-        eventTitle={editingEventTitle}
-        eventTypeLabel={editingEventTypeLabel}
-        timeRangeLabel={editingTimeRangeLabel}
-        origin={editOrigin}
-        layoutId={editingLayoutId}
+        open={isProjectEditing}
+        projectId={editingSnapshot?.projectId ?? null}
         onClose={handleCloseEditSheet}
-        onSaved={refreshScheduleData}
       />
       <HabitEditSheet
-        open={isEditSheetOpen && Boolean(editingHabitId)}
-        habitId={editingHabitId}
-        eventTitle={editingEventTitle}
-        eventTypeLabel={editingEventTypeLabel}
-        timeRangeLabel={editingTimeRangeLabel}
-        origin={editOrigin}
-        layoutId={editingLayoutId}
+        open={isHabitEditing}
+        habitId={editingSnapshot?.habitId ?? null}
         onClose={handleCloseEditSheet}
-        onSaved={refreshScheduleData}
       />
     </LayoutGroup>
   );
