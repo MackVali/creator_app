@@ -4,6 +4,7 @@ import React, {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type RefObject,
 } from "react";
@@ -37,6 +38,8 @@ type ScheduleMorphDialogProps = {
   focusRef?: RefObject<HTMLElement>;
 };
 
+console.log("[ScheduleMorphDialog] MODULE LOADED");
+
 export function ScheduleMorphDialog({
   open,
   title,
@@ -52,13 +55,25 @@ export function ScheduleMorphDialog({
     width: typeof window === "undefined" ? 0 : window.innerWidth,
     height: typeof window === "undefined" ? 0 : window.innerHeight,
   }));
-  const [originSnapshot, setOriginSnapshot] = useState<ScheduleEditOrigin | null>(
-    origin ?? null,
-  );
-  const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>(
-    open ? "morphing" : "idle",
-  );
+  const effectiveLayoutId =
+    layoutId && layoutId.length > 0 ? layoutId : undefined;
+  const hasMorph = Boolean(effectiveLayoutId && origin);
+
+  const [originSnapshot, setOriginSnapshot] =
+    useState<ScheduleEditOrigin | null>(hasMorph && origin ? origin : null);
+  const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>(() => {
+    if (!open) return "idle";
+    return hasMorph ? "morphing" : "modal";
+  });
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const bodyProbeRef = useRef<HTMLDivElement | null>(null);
   const titleId = useId();
+  console.log("[ScheduleMorphDialog] RENDER", {
+    open,
+    hasMorph,
+    layoutPhase,
+    originProvided: Boolean(origin),
+  });
 
   useEffect(() => {
     const handleResize = () => {
@@ -90,18 +105,19 @@ export function ScheduleMorphDialog({
   }, [open, onClose]);
 
   useEffect(() => {
+    console.log("[ScheduleMorphDialog] open effect", { open, hasMorph });
     if (!open) {
       setLayoutPhase("idle");
       return;
     }
-    setLayoutPhase("morphing");
-  }, [open]);
+    setLayoutPhase(hasMorph ? "morphing" : "modal");
+  }, [open, hasMorph]);
 
   useEffect(() => {
-    if (origin) {
+    if (hasMorph && origin) {
       setOriginSnapshot(origin);
     }
-  }, [origin]);
+  }, [hasMorph, origin]);
 
   useEffect(() => {
     if (!open || layoutPhase !== "modal") return;
@@ -111,6 +127,50 @@ export function ScheduleMorphDialog({
     return () => window.clearTimeout(timer);
   }, [open, layoutPhase, focusRef]);
 
+  useEffect(() => {
+    if (!open) return;
+    const target = scrollContainerRef.current;
+    let frame = 0;
+    const logMetrics = () => {
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      const styles = window.getComputedStyle(target);
+      console.log("[ScheduleMorphDialog] SCROLL METRICS", {
+        layoutPhase,
+        clientHeight: target.clientHeight,
+        scrollHeight: target.scrollHeight,
+        rectHeight: rect.height,
+        rectTop: rect.top,
+        overflowY: styles.overflowY,
+      });
+    };
+    frame = window.requestAnimationFrame(logMetrics);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [open, layoutPhase]);
+
+  useEffect(() => {
+    if (!open) return;
+    const probeNode = bodyProbeRef.current;
+    let probeFrame = 0;
+    const logProbeRect = () => {
+      if (!probeNode) return;
+      const rect = probeNode.getBoundingClientRect();
+      console.log("[ScheduleMorphDialog] BODY PROBE RECT", {
+        layoutPhase,
+        height: rect.height,
+        width: rect.width,
+        top: rect.top,
+        left: rect.left,
+      });
+    };
+    probeFrame = window.requestAnimationFrame(logProbeRect);
+    return () => {
+      if (probeFrame) window.cancelAnimationFrame(probeFrame);
+    };
+  }, [open, layoutPhase]);
+
   const targetMetrics = useMemo(() => {
     const width = viewport.width || 520;
     const height = viewport.height || 720;
@@ -119,7 +179,10 @@ export function ScheduleMorphDialog({
     const usableWidth = Math.max(320, width - horizontalMargin * 2);
     const targetWidth = Math.min(560, usableWidth);
     const maxHeight = Math.max(420, Math.min(740, height - verticalMargin * 2));
-    const preferredHeight = Math.min(maxHeight, Math.max(360, height - verticalMargin * 2));
+    const preferredHeight = Math.min(
+      maxHeight,
+      Math.max(360, height - verticalMargin * 2)
+    );
     return {
       width: targetWidth,
       maxWidth: Math.min(600, usableWidth),
@@ -129,17 +192,21 @@ export function ScheduleMorphDialog({
     };
   }, [viewport.width, viewport.height]);
 
-  const effectiveLayoutId =
-    layoutId && layoutId.length > 0 ? layoutId : undefined;
   const layoutTokens = useMemo(
     () =>
-      effectiveLayoutId ? scheduleInstanceLayoutTokens(effectiveLayoutId) : null,
-    [effectiveLayoutId],
+      effectiveLayoutId
+        ? scheduleInstanceLayoutTokens(effectiveLayoutId)
+        : null,
+    [effectiveLayoutId]
   );
 
   const handleLayoutComplete = () => {
     if (open) {
       setLayoutPhase("modal");
+      console.log("[ScheduleMorphDialog] layout animation complete", {
+        hasMorph,
+        originSnapshot: Boolean(originSnapshot),
+      });
     }
   };
 
@@ -173,26 +240,32 @@ export function ScheduleMorphDialog({
             onClick={onClose}
           />
           <motion.div
-            layout
-            layoutId={effectiveLayoutId}
+            {...(hasMorph ? { layout: true, layoutId: effectiveLayoutId } : {})}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
             data-phase={layoutPhase}
             className={cn(
               "relative z-10 w-full rounded-[32px] border border-white/10 bg-[var(--surface-elevated)] text-white shadow-[0_32px_80px_rgba(5,8,22,0.78)] backdrop-blur",
-              layoutPhase !== "modal" && "pointer-events-none",
+              layoutPhase !== "modal" && "pointer-events-none"
             )}
             style={{
               width: targetMetrics.width,
-              maxWidth: `min(${targetMetrics.maxWidth}px, calc(100vw - ${targetMetrics.marginX * 2}px))`,
+              maxWidth: `min(${targetMetrics.maxWidth}px, calc(100vw - ${
+                targetMetrics.marginX * 2
+              }px))`,
               height: targetMetrics.height,
               maxHeight: targetMetrics.maxHeight,
             }}
-            transition={{ type: "spring", stiffness: 150, damping: 22, mass: 0.9 }}
+            transition={{
+              type: "spring",
+              stiffness: 150,
+              damping: 22,
+              mass: 0.9,
+            }}
             onLayoutAnimationComplete={handleLayoutComplete}
           >
-            <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[inherit]">
+            <div className="relative flex h-full w-full min-h-0 flex-col overflow-hidden rounded-[inherit]">
               {originSnapshot ? (
                 <motion.div
                   aria-hidden="true"
@@ -204,7 +277,10 @@ export function ScheduleMorphDialog({
                   }}
                   initial={false}
                   animate={{ opacity: layoutPhase === "modal" ? 0 : 1 }}
-                  transition={{ duration: 0.36, ease: [0.33, 1, 0.68, 1] as const }}
+                  transition={{
+                    duration: 0.36,
+                    ease: [0.33, 1, 0.68, 1] as const,
+                  }}
                 />
               ) : null}
               <div className="relative z-10 flex max-h-full flex-1 flex-col min-h-0">
@@ -218,7 +294,10 @@ export function ScheduleMorphDialog({
                       exit={{
                         opacity: 0,
                         y: -8,
-                        transition: { duration: 0.24, ease: [0.4, 0, 0.2, 1] as const },
+                        transition: {
+                          duration: 0.24,
+                          ease: [0.4, 0, 0.2, 1] as const,
+                        },
                       }}
                     >
                       <motion.p
@@ -243,19 +322,28 @@ export function ScheduleMorphDialog({
                   {layoutPhase === "modal" ? (
                     <motion.div
                       key="modal-content"
-                      className="relative flex flex-1 flex-col overflow-hidden"
+                      className="relative flex flex-1 min-h-0 flex-col"
                       initial={{ opacity: 0, y: 18 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 18 }}
-                      transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] as const }}
+                      transition={{
+                        duration: 0.32,
+                        ease: [0.2, 0.8, 0.2, 1] as const,
+                      }}
                     >
-                      <div className="flex-1 overflow-y-auto px-4 pb-5 pt-2 sm:px-5 sm:pb-6 sm:pt-3 touch-pan-y overscroll-contain min-h-0">
+                      <div
+                        ref={scrollContainerRef}
+                        className="flex-1 overflow-y-auto px-4 pb-5 pt-2 sm:px-5 sm:pb-6 sm:pt-3 touch-pan-y overscroll-contain min-h-0"
+                      >
                         <motion.div
                           className="sticky top-0 z-10 bg-[var(--surface-elevated)]/92 pb-3 backdrop-blur"
                           initial={{ opacity: 0, y: 12 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 12 }}
-                          transition={{ duration: 0.26, ease: [0.2, 0.8, 0.2, 1] as const }}
+                          transition={{
+                            duration: 0.26,
+                            ease: [0.2, 0.8, 0.2, 1] as const,
+                          }}
                         >
                           <motion.p
                             layoutId={layoutTokens?.title}
@@ -275,13 +363,28 @@ export function ScheduleMorphDialog({
                           <motion.p
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
-                            transition={{ duration: 0.24, ease: [0.33, 1, 0.68, 1] as const, delay: 0.08 }}
+                            transition={{
+                              duration: 0.24,
+                              ease: [0.33, 1, 0.68, 1] as const,
+                              delay: 0.08,
+                            }}
                             className="mt-3 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/60"
                           >
                             {typeLabel}
                           </motion.p>
                         </motion.div>
-                        <div className="relative flex flex-col gap-4 pt-3 pb-4">
+                        <div
+                          ref={bodyProbeRef}
+                          className="relative flex flex-col gap-4 pt-3 pb-4"
+                          onClick={() =>
+                            console.log(
+                              "[ScheduleMorphDialog] body click received",
+                              {
+                                layoutPhase,
+                              }
+                            )
+                          }
+                        >
                           {children}
                         </div>
                       </div>

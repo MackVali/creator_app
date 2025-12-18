@@ -2,7 +2,15 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { HabitFormFields, HABIT_ENERGY_OPTIONS, HABIT_RECURRENCE_OPTIONS, HABIT_TYPE_OPTIONS, type HabitEnergySelectOption, type HabitGoalSelectOption, type HabitSkillSelectOption } from "@/components/habits/habit-form-fields";
+import {
+  HabitFormFields,
+  HABIT_ENERGY_OPTIONS,
+  HABIT_RECURRENCE_OPTIONS,
+  HABIT_TYPE_OPTIONS,
+  type HabitEnergySelectOption,
+  type HabitGoalSelectOption,
+  type HabitSkillSelectOption,
+} from "@/components/habits/habit-form-fields";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -27,6 +35,11 @@ import {
   ScheduleMorphDialog,
   type ScheduleEditOrigin,
 } from "@/components/schedule/ScheduleMorphDialog";
+import type {
+  ScheduleInstance,
+  ScheduleContext,
+  HabitTimelinePlacement,
+} from "@/lib/scheduler/instanceRepo";
 
 type RoutineOption = {
   id: string;
@@ -44,6 +57,9 @@ type RoutineSelectOption = {
 type HabitEditSheetProps = {
   open: boolean;
   habitId: string | null;
+  instance?: ScheduleInstance | null;
+  scheduleContext?: ScheduleContext | null;
+  placement?: HabitTimelinePlacement | null;
   eventTitle?: string | null;
   eventTypeLabel?: string | null;
   timeRangeLabel?: string | null;
@@ -52,6 +68,8 @@ type HabitEditSheetProps = {
   onClose: () => void;
   onSaved?: () => Promise<void> | void;
 };
+
+console.log("[HabitEditSheet] MODULE LOADED");
 
 type RoutineSelectValue = string;
 
@@ -99,9 +117,7 @@ function isGoalMetadataError(maybeError?: unknown) {
   if (!haystack) {
     return false;
   }
-  return (
-    haystack.includes("goal_id") || haystack.includes("completion_target")
-  );
+  return haystack.includes("goal_id") || haystack.includes("completion_target");
 }
 
 function buildHabitSelectColumns(includeGoalMetadata: boolean) {
@@ -159,6 +175,9 @@ function formatDateTimeDisplay(value?: string | null) {
 export function HabitEditSheet({
   open,
   habitId,
+  instance,
+  scheduleContext,
+  placement,
   eventTitle,
   eventTypeLabel,
   timeRangeLabel,
@@ -172,13 +191,13 @@ export function HabitEditSheet({
   const [description, setDescription] = useState("");
   const [habitType, setHabitType] = useState(HABIT_TYPE_OPTIONS[0].value);
   const [recurrence, setRecurrence] = useState(
-    HABIT_RECURRENCE_OPTIONS[0].value,
+    HABIT_RECURRENCE_OPTIONS[0].value
   );
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [locationContextId, setLocationContextId] = useState<string | null>(
-    null,
+    null
   );
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
@@ -208,14 +227,16 @@ export function HabitEditSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextDueOverrideInput, setNextDueOverrideInput] = useState("");
-  const [nextDueOverrideOriginal, setNextDueOverrideOriginal] =
-    useState<string | null>(null);
+  const [nextDueOverrideOriginal, setNextDueOverrideOriginal] = useState<
+    string | null
+  >(null);
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
-    [],
+    []
   );
   const { windowOptions, windowsLoading, windowError } = useHabitWindows();
+  console.log("[HabitEditSheet] RENDER", { open, habitId });
 
   const resetForm = useCallback(() => {
     setName("");
@@ -454,11 +475,9 @@ export function HabitEditSheet({
           return [] as Monument[];
         });
 
-        const [skillsResult, categoriesData, monumentsData] = await Promise.all([
-          skillsPromise,
-          categoriesPromise,
-          monumentsPromise,
-        ]);
+        const [skillsResult, categoriesData, monumentsData] = await Promise.all(
+          [skillsPromise, categoriesPromise, monumentsPromise]
+        );
 
         if (skillsResult.error) throw skillsResult.error;
 
@@ -594,7 +613,10 @@ export function HabitEditSheet({
   }, [goalMetadataSupported, goalOptions, goalsLoading]);
 
   useEffect(() => {
-    if (habitType.toUpperCase() === "PRACTICE" && energy !== MAX_PRACTICE_ENERGY) {
+    if (
+      habitType.toUpperCase() === "PRACTICE" &&
+      energy !== MAX_PRACTICE_ENERGY
+    ) {
       setEnergy(MAX_PRACTICE_ENERGY);
     }
   }, [energy, habitType]);
@@ -639,7 +661,7 @@ export function HabitEditSheet({
   const localTimeZoneLabel = useMemo(() => {
     try {
       return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "local time";
-      } catch {
+    } catch {
       return "local time";
     }
   }, []);
@@ -692,9 +714,9 @@ export function HabitEditSheet({
         }
 
         let includeGoalMetadata = true;
-        let habitResponse:
-          | PostgrestSingleResponse<Record<string, unknown>>
-          | null = null;
+        let habitResponse: PostgrestSingleResponse<
+          Record<string, unknown>
+        > | null = null;
 
         for (let attempt = 0; attempt < 3; attempt += 1) {
           habitResponse = await supabase
@@ -763,20 +785,23 @@ export function HabitEditSheet({
               ? resolveEveryXDaysInterval(rawRecurrence, safeRecurrenceDays)
               : null;
           setRecurrenceDays(
-            everyXDaysInterval ? [everyXDaysInterval] : safeRecurrenceDays,
+            everyXDaysInterval ? [everyXDaysInterval] : safeRecurrenceDays
           );
-          setDuration(
-            typeof data.duration_minutes === "number"
-              ? String(data.duration_minutes)
-              : "",
-          );
-          const normalizedEnergy = (data.energy ?? "").toString().trim().toUpperCase();
-          const fallbackEnergy = HABIT_ENERGY_OPTIONS[0]?.value ?? "NO";
           setEnergy(
-            HABIT_ENERGY_OPTIONS.some((option) => option.value === normalizedEnergy)
-              ? normalizedEnergy
-              : fallbackEnergy,
+            scheduleContext?.energyResolved ??
+              instance?.energy_resolved ??
+              data.energy
           );
+
+          setDuration(
+            scheduleContext?.durationMin != null
+              ? String(scheduleContext.durationMin)
+              : instance?.duration_min
+              ? String(instance.duration_min)
+              : String(data.duration_minutes)
+          );
+
+          setWindowId(scheduleContext?.windowId ?? data.window_id);
           setRoutineId(data.routine_id ?? "none");
           setSkillId(data.skill_id ?? "none");
           if (includeGoalMetadata) {
@@ -799,18 +824,17 @@ export function HabitEditSheet({
           setLocationContextId(
             isValidUuid(data.location_context_id)
               ? data.location_context_id
-              : null,
+              : null
           );
-          setWindowId(data.window_id ?? "none");
           setDaylightPreference(
             data.daylight_preference
               ? String(data.daylight_preference).toUpperCase()
-              : "ALL_DAY",
+              : "ALL_DAY"
           );
           setWindowEdgePreference(
             data.window_edge_preference
               ? String(data.window_edge_preference).toUpperCase()
-              : "FRONT",
+              : "FRONT"
           );
         }
       } catch (err) {
@@ -819,7 +843,7 @@ export function HabitEditSheet({
           setHabitLoadError(
             err instanceof Error
               ? err.message
-              : "Unable to load the habit right now.",
+              : "Unable to load the habit right now."
           );
         }
       } finally {
@@ -835,6 +859,17 @@ export function HabitEditSheet({
       active = false;
     };
   }, [habitId, open, supabase]);
+
+  // placement-first initialization
+  useEffect(() => {
+    if (!open || !placement) return;
+
+    const p = placement;
+
+    setEnergy(p.energyLabel);
+    setDuration(String(p.durationMinutes));
+    setWindowId(p.window?.id ?? null);
+  }, [open, placement]);
 
   const routineFooter = (
     <div className="space-y-4">
@@ -899,9 +934,7 @@ export function HabitEditSheet({
             </Label>
             <Textarea
               value={newRoutineDescription}
-              onChange={(event) =>
-                setNewRoutineDescription(event.target.value)
-              }
+              onChange={(event) => setNewRoutineDescription(event.target.value)}
               placeholder="Group habits focused on deep work."
               className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
             />
@@ -1003,12 +1036,12 @@ export function HabitEditSheet({
             resolvedLocationContextId = await resolveLocationContextId(
               supabase,
               user.id,
-              locationContextId,
+              locationContextId
             );
 
             if (!resolvedLocationContextId) {
               setError(
-                "We couldn’t save that location just yet. Please try again.",
+                "We couldn’t save that location just yet. Please try again."
               );
               setSaving(false);
               return;
@@ -1017,8 +1050,11 @@ export function HabitEditSheet({
         }
 
         const resolvedWindowId = windowId === "none" ? null : windowId;
-        const recurrencePayload =
-          isPracticeHabit ? "none" : normalizedRecurrence === "none" ? null : recurrence;
+        const recurrencePayload = isPracticeHabit
+          ? "none"
+          : normalizedRecurrence === "none"
+          ? null
+          : recurrence;
 
         const basePayload: Record<string, unknown> = {
           name: name.trim(),
@@ -1027,7 +1063,7 @@ export function HabitEditSheet({
           recurrence: recurrencePayload,
           recurrence_days: isPracticeHabit ? null : recurrenceDaysValue,
           duration_minutes: durationMinutes,
-        energy: isPracticeHabit ? MAX_PRACTICE_ENERGY : energy,
+          energy: isPracticeHabit ? MAX_PRACTICE_ENERGY : energy,
           routine_id: routineIdToUse,
           skill_id: skillId === "none" ? null : skillId,
           daylight_preference:
@@ -1040,7 +1076,8 @@ export function HabitEditSheet({
 
         if (goalMetadataSupported) {
           const isTempHabit =
-            habitType.toUpperCase() === "TEMP" || habitType.toUpperCase() === "MEMO";
+            habitType.toUpperCase() === "TEMP" ||
+            habitType.toUpperCase() === "MEMO";
           const parsedCompletionTarget = Number(completionTarget);
           const goalMetadataRequired =
             isTempHabit &&
@@ -1090,7 +1127,7 @@ export function HabitEditSheet({
         setError(
           err instanceof Error
             ? err.message
-            : "Unable to update the habit right now.",
+            : "Unable to update the habit right now."
         );
       } finally {
         setSaving(false);
@@ -1120,12 +1157,23 @@ export function HabitEditSheet({
       nextDueOverrideInput,
       onSaved,
       onClose,
-    ],
+    ]
   );
 
   if (!habitId) {
+    console.log("[HabitEditSheet] NO HABIT ID, returning null");
     return null;
   }
+
+  console.log("[HabitEditSheet] render state snapshot", {
+    open,
+    habitId,
+    habitLoading,
+    habitLoadError,
+    error,
+    disableSubmit,
+    nameReady: Boolean(name),
+  });
 
   return (
     <ScheduleMorphDialog
@@ -1154,7 +1202,24 @@ export function HabitEditSheet({
           </Button>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="flex flex-col gap-6 pb-4">
+        <>
+          {console.log("[HabitEditSheet] rendering form", {
+            habitLoading,
+            habitLoadError,
+            error,
+            disableSubmit,
+          })}
+          <form
+            onSubmit={handleSubmit}
+            onClick={(event) => {
+              const target = event.target as HTMLElement | null;
+              console.log("[HabitEditSheet] form click received", {
+                tagName: target?.tagName,
+                className: target?.className,
+              });
+            }}
+            className="flex flex-col gap-6 pb-4"
+          >
           <div className="relative pb-2">
             <button
               type="button"
@@ -1248,7 +1313,9 @@ export function HabitEditSheet({
                 <Input
                   type="datetime-local"
                   value={nextDueOverrideInput}
-                  onChange={(event) => setNextDueOverrideInput(event.target.value)}
+                  onChange={(event) =>
+                    setNextDueOverrideInput(event.target.value)
+                  }
                   className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
                 />
               </div>
@@ -1274,7 +1341,9 @@ export function HabitEditSheet({
                   Currently deferred until {savedNextDueOverrideLabel}.
                 </p>
               ) : (
-                <p>Leave blank to let the scheduler follow the regular cadence.</p>
+                <p>
+                  Leave blank to let the scheduler follow the regular cadence.
+                </p>
               )}
             </div>
           </div>
@@ -1299,14 +1368,15 @@ export function HabitEditSheet({
               type="submit"
               className={cn(
                 "bg-white text-zinc-900 hover:bg-white/90",
-                disableSubmit && "opacity-50",
+                disableSubmit && "opacity-50"
               )}
               disabled={disableSubmit}
             >
               {saving ? "Saving…" : "Save changes"}
             </Button>
           </div>
-        </form>
+          </form>
+        </>
       )}
     </ScheduleMorphDialog>
   );
