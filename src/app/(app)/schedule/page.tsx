@@ -3869,6 +3869,7 @@ export default function SchedulePage() {
           if (inst.id !== instanceId) {
             return inst;
           }
+          const isHabitInstance = inst.source_type === "HABIT";
           const nextInstance = {
             ...inst,
             status: nextStatus,
@@ -3877,10 +3878,11 @@ export default function SchedulePage() {
                 ? completionIso ?? new Date().toISOString()
                 : null,
             end_utc:
-              nextStatus === "completed" && trimResult?.endUTC
+              !isHabitInstance && nextStatus === "completed" && trimResult?.endUTC
                 ? trimResult.endUTC
                 : inst.end_utc,
             duration_min:
+              !isHabitInstance &&
               nextStatus === "completed" &&
               typeof trimResult?.durationMin === "number"
                 ? trimResult.durationMin
