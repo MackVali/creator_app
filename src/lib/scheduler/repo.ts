@@ -450,6 +450,7 @@ export async function fetchProjectsMap(
     'duration_min',
     'goal_id',
     'due_date',
+    'global_rank',
   ].join(', ');
 
   const [lookups, { data, error }] = await Promise.all([
@@ -468,6 +469,7 @@ export async function fetchProjectsMap(
     duration_min?: number | null;
     goal_id?: string | null;
     due_date?: string | null;
+    global_rank?: number | null;
   };
 
   for (const p of (data ?? []) as ProjectRecord[]) {
@@ -483,6 +485,10 @@ export async function fetchProjectsMap(
       duration_min: Number.isFinite(duration) ? duration : null,
       goal_id: p.goal_id ?? null,
       due_date: p.due_date ?? null,
+      globalRank:
+        typeof p.global_rank === 'number' && Number.isFinite(p.global_rank)
+          ? p.global_rank
+          : null,
     };
   }
   return map;
