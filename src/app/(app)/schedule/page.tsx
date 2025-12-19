@@ -2178,6 +2178,35 @@ export default function SchedulePage() {
   }
   const [allInstances, setAllInstances_REAL] = useState<ScheduleInstance[]>([]);
   const [instances, setInstances_REAL] = useState<ScheduleInstance[]>([]);
+  const instanceStatusLogRef = useRef<Map<string, ScheduleInstance["status"]>>(
+    new Map()
+  );
+  const logInstanceStatusChange = useCallback(
+    (
+      source: string,
+      instanceId: string,
+      nextStatus: ScheduleInstance["status"] | null | undefined
+    ) => {
+      if (!instanceId) return;
+      const prev = instanceStatusLogRef.current.get(instanceId) ?? null;
+      const normalized =
+        typeof nextStatus === "string" && nextStatus.length > 0
+          ? nextStatus
+          : null;
+      if (prev === normalized) {
+        return;
+      }
+      instanceStatusLogRef.current.set(instanceId, normalized ?? undefined);
+      console.log("[INSTANCE STATUS]", {
+        source,
+        instanceId,
+        previousStatus: prev,
+        nextStatus: normalized,
+        timestamp: new Date().toISOString(),
+      });
+    },
+    []
+  );
 
   function setAllInstances(next) {
     debugger;
@@ -2947,7 +2976,13 @@ export default function SchedulePage() {
       setProjectSkillIds(payload.projectSkillIds);
       setProjectGoalRelations(payload.projectGoalRelations);
       setHabits(payload.habits);
-      setAllInstances(payload.instances ?? []);
+      const nextInstances = payload.instances ?? [];
+      setAllInstances(nextInstances);
+      setInstances(nextInstances);
+      nextInstances.forEach((instance) => {
+        if (!instance?.id) return;
+        logInstanceStatusChange("REFRESH_LOAD", instance.id, instance.status);
+      });
       setScheduledProjectIds(new Set(payload.scheduledProjectIds));
     };
 
@@ -2994,7 +3029,13 @@ export default function SchedulePage() {
     return () => {
       active = false;
     };
-  }, [userId, localTimeZone, clearScheduleData, FULL_WRITE_WINDOW_DAYS]);
+  }, [
+    userId,
+    localTimeZone,
+    clearScheduleData,
+    FULL_WRITE_WINDOW_DAYS,
+    logInstanceStatusChange,
+  ]);
 
   useEffect(() => {
     if (!userId) {
@@ -3090,10 +3131,44 @@ export default function SchedulePage() {
   ]);
 
   useEffect(() => {
-    setHabitCompletionByDate((prev) =>
-      mergeHabitCompletionStateFromInstances(prev, instances)
-    );
-  }, [instances]);
+    const habitInstanceSnapshot = instances
+      .filter((inst) => inst?.source_type === "HABIT")
+      .map((inst) => ({
+        id: inst.id,
+        status: inst.status,
+        completed_at: inst.completed_at,
+        start_utc: inst.start_utc,
+        end_utc: inst.end_utc,
+      }));
+    console.log("[HABIT_COMPLETION][EFFECT] run", {
+      timestamp: new Date().toISOString(),
+      instanceCount: instances.length,
+      effectiveTimeZone,
+      habitInstanceSnapshot,
+    });
+    setHabitCompletionByDate((prev) => {
+      console.log("[HABIT_COMPLETION][EFFECT] prevState", {
+        keys: Object.keys(prev),
+        snapshot: prev,
+      });
+      const next = mergeHabitCompletionStateFromInstances(
+        prev,
+        instances,
+        effectiveTimeZone
+      );
+      if (next === prev) {
+        console.log("[HABIT_COMPLETION][EFFECT] no change", {
+          keys: Object.keys(prev),
+        });
+      } else {
+        console.log("[HABIT_COMPLETION][EFFECT] updated", {
+          keys: Object.keys(next),
+          snapshot: next,
+        });
+      }
+      return next;
+    });
+  }, [instances, effectiveTimeZone]);
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks]
@@ -3686,6 +3761,15 @@ export default function SchedulePage() {
         return;
       }
 
+      const instance = instancesById.get(instanceId);
+      const previousStatus = instance?.status ?? null;
+      console.log("[INSTANCE WRITE][USER_TAP]", {
+        instanceId,
+        previousStatus,
+        nextStatus,
+        timestamp: new Date().toISOString(),
+      });
+
       setPendingInstanceStatuses((prev) => {
         const next = new Map(prev);
         next.set(instanceId, nextStatus);
@@ -3693,7 +3777,6 @@ export default function SchedulePage() {
       });
 
       try {
-        const instance = instancesById.get(instanceId);
         const trimResult =
           nextStatus === "completed"
             ? computeTrimmedHabitTiming(instance)
@@ -3781,29 +3864,47 @@ export default function SchedulePage() {
           });
         }
 
-        setInstances((prev) =>
-          prev.map((inst) =>
-            inst.id === instanceId
-              ? {
-                  ...inst,
-                  status: nextStatus,
-                  completed_at:
-                    nextStatus === "completed"
-                      ? completionIso ?? new Date().toISOString()
-                      : null,
-                  end_utc:
-                    nextStatus === "completed" && trimResult?.endUTC
-                      ? trimResult.endUTC
-                      : inst.end_utc,
-                  duration_min:
-                    nextStatus === "completed" &&
-                    typeof trimResult?.durationMin === "number"
-                      ? trimResult.durationMin
-                      : inst.duration_min,
-                }
-              : inst
-          )
-        );
+        let hasLoggedOptimisticUpdate = false;
+        const applyOptimisticInstanceUpdate = (inst: ScheduleInstance) => {
+          if (inst.id !== instanceId) {
+            return inst;
+          }
+          const isHabitInstance = inst.source_type === "HABIT";
+          const nextInstance = {
+            ...inst,
+            status: nextStatus,
+            completed_at:
+              nextStatus === "completed"
+                ? completionIso ?? new Date().toISOString()
+                : null,
+            end_utc:
+              !isHabitInstance && nextStatus === "completed" && trimResult?.endUTC
+                ? trimResult.endUTC
+                : inst.end_utc,
+            duration_min:
+              !isHabitInstance &&
+              nextStatus === "completed" &&
+              typeof trimResult?.durationMin === "number"
+                ? trimResult.durationMin
+                : inst.duration_min,
+          };
+          console.log("[HABIT_COMPLETION][OPTIMISTIC_UPDATE]", {
+            instanceId,
+            sourceType: inst.source_type,
+            previousCompletedAt: inst.completed_at ?? null,
+            nextCompletedAt: nextInstance.completed_at ?? null,
+            nextStatus: nextInstance.status,
+            startUTC: nextInstance.start_utc,
+            endUTC: nextInstance.end_utc,
+          });
+          if (!hasLoggedOptimisticUpdate) {
+            logInstanceStatusChange("USER_TAP_LOCAL", instanceId, nextStatus);
+            hasLoggedOptimisticUpdate = true;
+          }
+          return nextInstance;
+        };
+        setInstances((prev) => prev.map(applyOptimisticInstanceUpdate));
+        setAllInstances((prev) => prev.map(applyOptimisticInstanceUpdate));
       } catch (error) {
         console.error(error);
       } finally {
@@ -3821,14 +3922,22 @@ export default function SchedulePage() {
       buildXpAwardPayload,
       recordHabitCompletionRemote,
       computeTrimmedHabitTiming,
+      logInstanceStatusChange,
     ]
   );
 
   const getHabitCompletionStatus = useCallback(
     (dateKey: string, habitId: string): HabitCompletionStatus => {
       const dayMap = habitCompletionByDate[dateKey];
-      if (!dayMap) return "scheduled";
-      return dayMap[habitId] ?? "scheduled";
+      const status = dayMap?.[habitId] ?? "scheduled";
+      console.log("[HABIT_COMPLETION][READ]", {
+        dayKey: dateKey,
+        habitId,
+        dayMap,
+        knownKeys: Object.keys(habitCompletionByDate),
+        status,
+      });
+      return status;
     },
     [habitCompletionByDate]
   );
@@ -5188,6 +5297,11 @@ export default function SchedulePage() {
 
       const modelPxPerMin = pxPerMin;
       const todayDateKey = model.todayDateKey;
+      console.log("[HABIT_COMPLETION][TIMELINE_DAYKEY]", {
+        dayViewDateKey,
+        todayDateKey,
+        timestamp: new Date().toISOString(),
+      });
       const viewDateComparison = dayViewDateKey.localeCompare(todayDateKey);
       const viewIsPastDay = viewDateComparison < 0;
       const viewIsFutureDay = viewDateComparison > 0;

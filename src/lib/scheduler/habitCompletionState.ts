@@ -14,12 +14,35 @@ export function mergeHabitCompletionStateFromInstances(
 
   const habitIdsByDate = new Map<string, Set<string>>();
   const completedByDate = new Map<string, Set<string>>();
+  const instanceMetaByDate = new Map<
+    string,
+    Map<
+      string,
+      {
+        instanceId: string | null;
+        habitId: string;
+        status: ScheduleInstance["status"] | null | undefined;
+        completedAt: string | null | undefined;
+      }
+    >
+  >();
 
   for (const instance of instances) {
     if (!instance || instance.source_type !== "HABIT") continue;
     const habitId = instance.source_id;
     if (!habitId) continue;
     const dateKey = dayKeyFromUtc(instance.start_utc ?? "", timeZone);
+    let instanceMeta = instanceMetaByDate.get(dateKey);
+    if (!instanceMeta) {
+      instanceMeta = new Map();
+      instanceMetaByDate.set(dateKey, instanceMeta);
+    }
+    instanceMeta.set(habitId, {
+      instanceId: instance.id ?? null,
+      habitId,
+      status: instance.status,
+      completedAt: instance.completed_at,
+    });
     let allIds = habitIdsByDate.get(dateKey);
     if (!allIds) {
       allIds = new Set();
@@ -49,6 +72,14 @@ export function mergeHabitCompletionStateFromInstances(
     let dayChanged = false;
     const completedIds = completedByDate.get(dateKey) ?? new Set<string>();
     habitIds.forEach((habitId) => {
+      const wasCompleted = prevDay?.[habitId] === "completed";
+      const isCompleted = completedIds.has(habitId);
+      let action: "add" | "remove" | "noop" = "noop";
+      if (isCompleted && !wasCompleted) {
+        action = "add";
+      } else if (!isCompleted && wasCompleted) {
+        action = "remove";
+      }
       if (completedIds.has(habitId)) {
         if (nextDay[habitId] !== "completed") {
           nextDay[habitId] = "completed";
@@ -58,6 +89,15 @@ export function mergeHabitCompletionStateFromInstances(
         delete nextDay[habitId];
         dayChanged = true;
       }
+      const meta = instanceMetaByDate.get(dateKey)?.get(habitId);
+      console.log("[HABIT_COMPLETION][MERGE_INSTANCE]", {
+        instanceId: meta?.instanceId ?? null,
+        habitId,
+        status: meta?.status ?? null,
+        completedAt: meta?.completedAt ?? null,
+        dayKey: dateKey,
+        action,
+      });
     });
     if (dayChanged) {
       changed = true;
