@@ -9,7 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, type PanInfo } from "framer-motion";
 import { Loader2, Plus, Search, X } from "lucide-react";
 import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
@@ -51,11 +51,10 @@ export function Fab({
   const [showPost, setShowPost] = useState(false);
   const [comingSoon, setComingSoon] = useState<string | null>(null);
   const [menuPage, setMenuPage] = useState(0);
+  const [pageDirection, setPageDirection] = useState<1 | -1>(1);
   const [menuSection, setMenuSection] = useState<"content" | "blank">(
     "content"
   );
-  const [touchStartX, setTouchStartX] = useState(0);
-  const [swipeProgress, setSwipeProgress] = useState(0);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
@@ -69,7 +68,6 @@ export function Fab({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isSavingReschedule, setIsSavingReschedule] = useState(false);
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
-  const menuVerticalStartRef = useRef<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const skipClickRef = useRef(false);
@@ -77,9 +75,7 @@ export function Fab({
   const [menuWidth, setMenuWidth] = useState<number | null>(null);
   const router = useRouter();
   const VERTICAL_WHEEL_TRIGGER = 20;
-  const HORIZONTAL_WHEEL_TRIGGER = 10;
-
-  const clampColorValue = (value: number) => Math.min(255, Math.max(0, value));
+  const DRAG_THRESHOLD_PX = 80;
 
   const getResultSortValue = useCallback((item: FabSearchResult) => {
     if (item.isCompleted) return Number.POSITIVE_INFINITY;
@@ -171,29 +167,25 @@ export function Fab({
   }, []);
 
   const getMenuBackgroundStyles = () => {
-    const progress = menuPage === 1 ? 1 - swipeProgress : swipeProgress;
-    const start = [55, 65, 81]; // gray-700
-    const end = [0, 0, 0]; // black
-    const r = start[0] + (end[0] - start[0]) * progress;
-    const g = start[1] + (end[1] - start[1]) * progress;
-    const b = start[2] + (end[2] - start[2]) * progress;
-
-    const highlight = [
-      clampColorValue(r + 35),
-      clampColorValue(g + 35),
-      clampColorValue(b + 35),
-    ];
-    const lowlight = [
-      clampColorValue(r - 25),
-      clampColorValue(g - 25),
-      clampColorValue(b - 25),
-    ];
+    const palettes =
+      menuPage === 0
+        ? {
+            base: [55, 65, 81],
+            highlight: [90, 110, 135],
+            lowlight: [25, 30, 40],
+          }
+        : {
+            base: [8, 17, 28],
+            highlight: [50, 80, 120],
+            lowlight: [2, 4, 10],
+          };
+    const [r, g, b] = palettes.base;
 
     return {
-      backgroundImage: `radial-gradient(circle at top, rgba(${highlight[0]}, ${highlight[1]}, ${highlight[2]}, 0.65), rgba(${r}, ${g}, ${b}, 0.1) 45%), linear-gradient(160deg, rgba(${highlight[0]}, ${highlight[1]}, ${highlight[2]}, 0.95) 0%, rgba(${r}, ${g}, ${b}, 0.97) 50%, rgba(${lowlight[0]}, ${lowlight[1]}, ${lowlight[2]}, 0.98) 100%)`,
+      backgroundImage: `radial-gradient(circle at top, rgba(${palettes.highlight[0]}, ${palettes.highlight[1]}, ${palettes.highlight[2]}, 0.65), rgba(${r}, ${g}, ${b}, 0.15) 45%), linear-gradient(160deg, rgba(${palettes.highlight[0]}, ${palettes.highlight[1]}, ${palettes.highlight[2]}, 0.95) 0%, rgba(${r}, ${g}, ${b}, 0.97) 50%, rgba(${palettes.lowlight[0]}, ${palettes.lowlight[1]}, ${palettes.lowlight[2]}, 0.98) 100%)`,
       boxShadow:
         "0 18px 36px rgba(15, 23, 42, 0.55), 0 8px 18px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)",
-      borderColor: `rgba(${highlight[0]}, ${highlight[1]}, ${highlight[2]}, 0.35)`,
+      borderColor: `rgba(${palettes.highlight[0]}, ${palettes.highlight[1]}, ${palettes.highlight[2]}, 0.35)`,
     };
   };
 
@@ -299,6 +291,18 @@ export function Fab({
       transition: { type: "tween", ease: "easeOut", duration: 0.15 },
     },
   } as const;
+
+  const pageVariants = {
+    enter: (direction: 1 | -1) => ({
+      x: direction === 1 ? "100%" : "-100%",
+    }),
+    center: {
+      x: "0%",
+    },
+    exit: (direction: 1 | -1) => ({
+      x: direction === 1 ? "-100%" : "100%",
+    }),
+  };
 
   const handleEventClick = (
     eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT"
@@ -418,39 +422,7 @@ export function Fab({
     setRescheduleTime(formatTimeInput(baseDate));
   };
 
-  const handleHorizontalMenuWheel = (
-    deltaX: number,
-    deltaY: number,
-    shiftKey: boolean
-  ) => {
-    if (menuSection !== "content") return false;
-    let horizontalDelta = deltaX;
-    if (horizontalDelta === 0 && shiftKey) {
-      horizontalDelta = deltaY;
-    }
-    if (Math.abs(horizontalDelta) < HORIZONTAL_WHEEL_TRIGGER) return false;
-    if (horizontalDelta < 0 && menuPage === 0) {
-      setMenuPage(1);
-      return true;
-    }
-    if (horizontalDelta > 0 && menuPage === 1) {
-      setMenuPage(0);
-      return true;
-    }
-    return false;
-  };
-
   const handleMenuWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    const handledHorizontal = handleHorizontalMenuWheel(
-      event.deltaX,
-      event.deltaY,
-      event.shiftKey
-    );
-    if (handledHorizontal) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
     if (Math.abs(event.deltaY) >= VERTICAL_WHEEL_TRIGGER) {
       if (event.deltaY < 0 && menuSection === "content") {
         setMenuSection("blank");
@@ -472,6 +444,35 @@ export function Fab({
     }
   };
 
+  const changeMenuPage = useCallback(
+    (nextPage: 0 | 1) => {
+      setMenuPage((prev) => {
+        if (prev === nextPage) {
+          return prev;
+        }
+        setPageDirection(nextPage > prev ? 1 : -1);
+        return nextPage;
+      });
+    },
+    []
+  );
+
+  const handlePageDragEnd = useCallback(
+    (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (menuSection !== "content") {
+        return;
+      }
+      if (info.offset.x < -DRAG_THRESHOLD_PX && menuPage === 0) {
+        changeMenuPage(1);
+        return;
+      }
+      if (info.offset.x > DRAG_THRESHOLD_PX && menuPage === 1) {
+        changeMenuPage(0);
+      }
+    },
+    [changeMenuPage, menuPage, menuSection]
+  );
+
   const handleCloseReschedule = () => {
     if (isSavingReschedule || isDeletingEvent) return;
     setRescheduleTarget(null);
@@ -483,6 +484,7 @@ export function Fab({
     if (!isOpen) {
       setMenuSection("content");
       setMenuPage(0);
+      setPageDirection(1);
       resetSearchState();
       setRescheduleTarget(null);
       setDeleteError(null);
@@ -509,7 +511,7 @@ export function Fab({
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [isOpen, menuSection, primary.length]);
+  }, [isOpen, menuSection, primary.length, secondary.length]);
 
   useEffect(() => {
     if (!isOpen || menuSection !== "blank") {
@@ -695,53 +697,6 @@ export function Fab({
     }
   }, [isDeletingEvent, notifySchedulerOfChange, rescheduleTarget]);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    menuVerticalStartRef.current = e.touches[0].clientY;
-    if (menuSection !== "content") return;
-    setTouchStartX(e.touches[0].clientX);
-    setSwipeProgress(0);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (menuSection !== "content") return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - touchStartX;
-    if (menuPage === 0 && diff < 0) {
-      setSwipeProgress(Math.min(-diff / 100, 1));
-    } else if (menuPage === 1 && diff > 0) {
-      setSwipeProgress(Math.min(diff / 100, 1));
-    } else {
-      setSwipeProgress(0);
-    }
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const startY = menuVerticalStartRef.current;
-    const diffY = startY === null ? 0 : e.changedTouches[0].clientY - startY;
-    const absDiffY = Math.abs(diffY);
-    const diffX =
-      menuSection === "content" ? e.changedTouches[0].clientX - touchStartX : 0;
-    menuVerticalStartRef.current = null;
-
-    if (absDiffY > 40 && absDiffY >= Math.abs(diffX)) {
-      if (diffY < 0 && menuSection === "content") {
-        setMenuSection("blank");
-        setSwipeProgress(0);
-        return;
-      }
-      if (diffY > 0 && menuSection === "blank") {
-        setMenuSection("content");
-        return;
-      }
-    }
-
-    if (menuSection !== "content") return;
-    const diff = diffX;
-    if (diff < -50) setMenuPage(1);
-    if (diff > 50) setMenuPage(0);
-    setSwipeProgress(0);
-  };
-
   // Close menu when clicking outside
   useEffect(() => {
     if (rescheduleTarget) return;
@@ -763,6 +718,9 @@ export function Fab({
     };
   }, [isOpen, rescheduleTarget]);
 
+  const menuBackgroundStyles = getMenuBackgroundStyles();
+  const { backgroundImage, ...menuChromeStyles } = menuBackgroundStyles;
+
   return (
     <div className={cn("relative", className)} {...wrapperProps}>
       {/* AddEvents Menu */}
@@ -770,17 +728,13 @@ export function Fab({
         {isOpen && (
           <motion.div
             ref={menuRef}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
             className={cn(
               "absolute bottom-20 mb-2 z-50 min-w-[200px] border rounded-lg shadow-2xl overflow-hidden",
               menuClassName
             )}
             style={{
-              ...getMenuBackgroundStyles(),
-              transition:
-                "background-image 0.1s linear, border-color 0.1s linear",
+              ...menuChromeStyles,
+              transition: "border-color 0.1s linear",
               transformOrigin:
                 menuVariant === "timeline" ? "bottom right" : "bottom center",
               minHeight: menuContainerHeight,
@@ -805,37 +759,77 @@ export function Fab({
                 error={searchError}
                 onSelectResult={handleOpenReschedule}
               />
-            ) : menuPage === 0 ? (
-              primary.map((event) => (
-                <motion.button
-                  key={event.label}
-                  variants={itemVariants}
-                  onClick={() => handleEventClick(event.eventType)}
-                  className={cn(
-                    "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
-                    itemAlignmentClass,
-                    event.color
-                  )}
-                >
-                  <span className="text-sm opacity-80">add</span>{" "}
-                  <span className="text-lg font-bold">{event.label}</span>
-                </motion.button>
-              ))
             ) : (
-              secondary.map((event) => (
-                <motion.button
-                  key={event.label}
-                  variants={itemVariants}
-                  onClick={() => handleExtraClick(event.label)}
-                  className={cn(
-                    "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
-                    itemAlignmentClass
-                  )}
+              <>
+                <div
+                  className="relative h-full w-full px-4 py-2"
+                  style={{
+                    backgroundImage,
+                    borderRadius: "inherit",
+                  }}
                 >
-                  <span className="text-sm opacity-80">add</span>{" "}
-                  <span className="text-lg font-bold">{event.label}</span>
-                </motion.button>
-              ))
+                  <div className="relative h-full w-full overflow-hidden rounded-[inherit]">
+                    {/* Single-viewport pager: pages slide in/out iOS-style; no horizontal scroll so side peeks are impossible. */}
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.div
+                        key={`fab-page-${menuPage}`}
+                        className="absolute inset-0 flex"
+                        drag="x"
+                        dragConstraints={{ left: 0, right: 0 }}
+                        dragElastic={0.08}
+                        onDragEnd={handlePageDragEnd}
+                        variants={pageVariants}
+                        initial="enter"
+                        animate="center"
+                        exit="exit"
+                        custom={pageDirection}
+                        transition={{ duration: 0.25, ease: "easeOut" }}
+                      >
+                        {menuPage === 0 ? (
+                          <div className="flex w-full flex-col">
+                            {primary.map((event) => (
+                              <motion.button
+                                key={event.label}
+                                variants={itemVariants}
+                                onClick={() => handleEventClick(event.eventType)}
+                                className={cn(
+                                  "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
+                                  itemAlignmentClass,
+                                  event.color
+                                )}
+                              >
+                                <span className="text-sm opacity-80">add</span>{" "}
+                                <span className="text-lg font-bold">
+                                  {event.label}
+                                </span>
+                              </motion.button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex w-full flex-col">
+                            {secondary.map((event) => (
+                              <motion.button
+                                key={event.label}
+                                variants={itemVariants}
+                                onClick={() => handleExtraClick(event.label)}
+                                className={cn(
+                                  "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
+                                  itemAlignmentClass
+                                )}
+                              >
+                                <span className="text-sm opacity-80">add</span>{" "}
+                                <span className="text-lg font-bold">
+                                  {event.label}
+                                </span>
+                              </motion.button>
+                            ))}
+                          </div>
+                        )}
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
+                </div>
+              </>
             )}
           </motion.div>
         )}
