@@ -306,6 +306,11 @@ export function Fab({
     },
   } as const;
 
+  const pageContentVariants = {
+    closed: {},
+    open: {},
+  } as const;
+
   const normalizedStageWidth = Math.max(stageWidth, 1);
   const incomingFromRight = useTransform(pageX, (latest) => {
     const width = normalizedStageWidth;
@@ -357,8 +362,16 @@ export function Fab({
     </div>
   );
 
-  const renderPage = (pageIndex: 0 | 1) =>
-    pageIndex === 0 ? renderPrimaryPage() : renderSecondaryPage();
+  const renderPage = (pageIndex: 0 | 1, forceOpen: boolean) => (
+    <motion.div
+      variants={pageContentVariants}
+      initial={forceOpen ? "open" : undefined}
+      animate={forceOpen ? "open" : undefined}
+    >
+      {/* Newly mounted page content needs its own variant context; otherwise itemVariants stay "closed" when mounted mid-gesture. */}
+      {pageIndex === 0 ? renderPrimaryPage() : renderSecondaryPage()}
+    </motion.div>
+  );
 
   const handleEventClick = (
     eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT"
@@ -974,7 +987,7 @@ export function Fab({
                       onDrag={handlePageDrag}
                       onDragEnd={handlePageDragEnd}
                     >
-                      {renderPage(menuPage as 0 | 1)}
+                      {renderPage(menuPage as 0 | 1, isDragging)}
                     </motion.div>
                     {neighborPage !== null && neighborDirection !== null && (
                       <motion.div
@@ -987,7 +1000,7 @@ export function Fab({
                         }}
                       >
                         {/* During drag we mount both pages so the incoming page’s real content is visible throughout the transition. */}
-                        {renderPage(neighborPage as 0 | 1)}
+                        {renderPage(neighborPage as 0 | 1, true)}
                       </motion.div>
                     )}
                   </div>
