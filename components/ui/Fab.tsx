@@ -180,28 +180,61 @@ export function Fab({
     }
   }, []);
 
-  const getMenuBackgroundStyles = () => {
-    const palettes =
-      menuPage === 0
-        ? {
-            base: [55, 65, 81],
-            highlight: [90, 110, 135],
-            lowlight: [25, 30, 40],
-          }
-        : {
-            base: [8, 17, 28],
-            highlight: [50, 80, 120],
-            lowlight: [2, 4, 10],
-          };
-    const [r, g, b] = palettes.base;
-
-    return {
-      backgroundImage: `radial-gradient(circle at top, rgba(${palettes.highlight[0]}, ${palettes.highlight[1]}, ${palettes.highlight[2]}, 0.65), rgba(${r}, ${g}, ${b}, 0.15) 45%), linear-gradient(160deg, rgba(${palettes.highlight[0]}, ${palettes.highlight[1]}, ${palettes.highlight[2]}, 0.95) 0%, rgba(${r}, ${g}, ${b}, 0.97) 50%, rgba(${palettes.lowlight[0]}, ${palettes.lowlight[1]}, ${palettes.lowlight[2]}, 0.98) 100%)`,
-      boxShadow:
-        "0 18px 36px rgba(15, 23, 42, 0.55), 0 8px 18px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)",
-      borderColor: `rgba(${palettes.highlight[0]}, ${palettes.highlight[1]}, ${palettes.highlight[2]}, 0.35)`,
-    };
+  type MenuPalette = {
+    base: [number, number, number];
+    highlight: [number, number, number];
+    lowlight: [number, number, number];
   };
+
+  const MENU_PALETTES: readonly MenuPalette[] = [
+    {
+      base: [55, 65, 81],
+      highlight: [90, 110, 135],
+      lowlight: [25, 30, 40],
+    },
+    {
+      base: [8, 17, 28],
+      highlight: [50, 80, 120],
+      lowlight: [2, 4, 10],
+    },
+  ];
+
+  const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+  const getMenuPalette = (pageIndex: 0 | 1): MenuPalette => MENU_PALETTES[pageIndex];
+
+  const lerp = (start: number, end: number, t: number) => start + (end - start) * t;
+
+  const blendPalette = (from: MenuPalette, to: MenuPalette, t: number): MenuPalette => ({
+    base: [
+      lerp(from.base[0], to.base[0], t),
+      lerp(from.base[1], to.base[1], t),
+      lerp(from.base[2], to.base[2], t),
+    ],
+    highlight: [
+      lerp(from.highlight[0], to.highlight[0], t),
+      lerp(from.highlight[1], to.highlight[1], t),
+      lerp(from.highlight[2], to.highlight[2], t),
+    ],
+    lowlight: [
+      lerp(from.lowlight[0], to.lowlight[0], t),
+      lerp(from.lowlight[1], to.lowlight[1], t),
+      lerp(from.lowlight[2], to.lowlight[2], t),
+    ],
+  });
+
+  const createPaletteBackground = (palette: MenuPalette) => {
+    const [r, g, b] = palette.base;
+    const [hr, hg, hb] = palette.highlight;
+    const [lr, lg, lb] = palette.lowlight;
+    return `radial-gradient(circle at top, rgba(${hr}, ${hg}, ${hb}, 0.65), rgba(${r}, ${g}, ${b}, 0.15) 45%), linear-gradient(160deg, rgba(${hr}, ${hg}, ${hb}, 0.95) 0%, rgba(${r}, ${g}, ${b}, 0.97) 50%, rgba(${lr}, ${lg}, ${lb}, 0.98) 100%)`;
+  };
+
+  const createPaletteBorderColor = (palette: MenuPalette) =>
+    `rgba(${palette.highlight[0]}, ${palette.highlight[1]}, ${palette.highlight[2]}, 0.35)`;
+
+  const MENU_BOX_SHADOW =
+    "0 18px 36px rgba(15, 23, 42, 0.55), 0 8px 18px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 
   const menuConfigs = {
     default: {
@@ -312,6 +345,11 @@ export function Fab({
   } as const;
 
   const normalizedStageWidth = Math.max(stageWidth, 1);
+  const dragProgress = useTransform(pageX, (latest) => {
+    const width = normalizedStageWidth;
+    const ratio = Math.abs(latest) / (width || 1);
+    return clamp01(ratio);
+  });
   const incomingFromRight = useTransform(pageX, (latest) => {
     const width = normalizedStageWidth;
     const clamped = Math.max(-width, Math.min(0, latest));
@@ -918,8 +956,20 @@ export function Fab({
   const neighborDirection =
     neighborPage !== null ? (neighborPage > menuPage ? 1 : -1) : null;
 
-  const menuBackgroundStyles = getMenuBackgroundStyles();
-  const { backgroundImage, ...menuChromeStyles } = menuBackgroundStyles;
+  const restingPalette = getMenuPalette(menuPage as 0 | 1);
+  const staticBackgroundImage = createPaletteBackground(restingPalette);
+  const staticBorderColor = createPaletteBorderColor(restingPalette);
+  const targetPalette =
+    dragTargetPage !== null ? getMenuPalette(dragTargetPage as 0 | 1) : restingPalette;
+  const blendedBackgroundImage = useTransform(dragProgress, (value) => {
+    const palette = blendPalette(restingPalette, targetPalette, value);
+    return createPaletteBackground(palette);
+  });
+  const blendedBorderColor = useTransform(dragProgress, (value) => {
+    const palette = blendPalette(restingPalette, targetPalette, value);
+    return createPaletteBorderColor(palette);
+  });
+  const isBlendingGradient = isDragging && dragTargetPage !== null;
 
   return (
     <div className={cn("relative", className)} {...wrapperProps}>
@@ -933,7 +983,8 @@ export function Fab({
               menuClassName
             )}
             style={{
-              ...menuChromeStyles,
+              boxShadow: MENU_BOX_SHADOW,
+              borderColor: isBlendingGradient ? blendedBorderColor : staticBorderColor,
               transition: "border-color 0.1s linear",
               transformOrigin:
                 menuVariant === "timeline" ? "bottom right" : "bottom center",
@@ -961,13 +1012,16 @@ export function Fab({
               />
             ) : (
               <>
-                <div
+                <motion.div
                   className="relative h-full w-full px-4 py-2"
                   style={{
-                    backgroundImage,
+                    backgroundImage: isBlendingGradient
+                      ? blendedBackgroundImage
+                      : staticBackgroundImage,
                     borderRadius: "inherit",
                   }}
                 >
+                  {/* Gradient blending is driven by drag motion value so color transitions stay continuous during interactive paging. */}
                   <div
                     ref={stageRef}
                     className="relative h-full w-full overflow-hidden rounded-[inherit]"
@@ -1004,7 +1058,7 @@ export function Fab({
                       </motion.div>
                     )}
                   </div>
-                </div>
+                </motion.div>
               </>
             )}
           </motion.div>
