@@ -9,7 +9,15 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence, type PanInfo } from "framer-motion";
+import {
+  motion,
+  AnimatePresence,
+  useMotionValue,
+  useTransform,
+  animate,
+  useReducedMotion,
+  type PanInfo,
+} from "framer-motion";
 import { Loader2, Plus, Search, X } from "lucide-react";
 import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
@@ -51,10 +59,12 @@ export function Fab({
   const [showPost, setShowPost] = useState(false);
   const [comingSoon, setComingSoon] = useState<string | null>(null);
   const [menuPage, setMenuPage] = useState(0);
-  const [pageDirection, setPageDirection] = useState<1 | -1>(1);
   const [menuSection, setMenuSection] = useState<"content" | "blank">(
     "content"
   );
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragTargetPage, setDragTargetPage] = useState<0 | 1 | null>(null);
+  const [isAnimatingPageChange, setIsAnimatingPageChange] = useState(false);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
@@ -73,6 +83,10 @@ export function Fab({
   const skipClickRef = useRef(false);
   const searchAbortRef = useRef<AbortController | null>(null);
   const [menuWidth, setMenuWidth] = useState<number | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageWidth, setStageWidth] = useState(0);
+  const pageX = useMotionValue(0);
+  const prefersReducedMotion = useReducedMotion();
   const router = useRouter();
   const VERTICAL_WHEEL_TRIGGER = 20;
   const DRAG_THRESHOLD_PX = 80;
@@ -292,17 +306,56 @@ export function Fab({
     },
   } as const;
 
-  const pageVariants = {
-    enter: (direction: 1 | -1) => ({
-      x: direction === 1 ? "100%" : "-100%",
-    }),
-    center: {
-      x: "0%",
-    },
-    exit: (direction: 1 | -1) => ({
-      x: direction === 1 ? "-100%" : "100%",
-    }),
-  };
+  const normalizedStageWidth = Math.max(stageWidth, 1);
+  const incomingFromRight = useTransform(pageX, (latest) => {
+    const width = normalizedStageWidth;
+    const clamped = Math.max(-width, Math.min(0, latest));
+    return width + clamped;
+  });
+  const incomingFromLeft = useTransform(pageX, (latest) => {
+    const width = normalizedStageWidth;
+    const clamped = Math.max(0, Math.min(width, latest));
+    return -width + clamped;
+  });
+
+  const renderPrimaryPage = () => (
+    <div className="flex w-full flex-col">
+      {primary.map((event) => (
+        <motion.button
+          key={event.label}
+          variants={itemVariants}
+          onClick={() => handleEventClick(event.eventType)}
+          className={cn(
+            "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
+            itemAlignmentClass,
+            event.color
+          )}
+        >
+          <span className="text-sm opacity-80">add</span>{" "}
+          <span className="text-lg font-bold">{event.label}</span>
+        </motion.button>
+      ))}
+    </div>
+  );
+
+  const renderSecondaryPage = () => (
+    <div className="flex w-full flex-col">
+      {secondary.map((event) => (
+        <motion.button
+          key={event.label}
+          variants={itemVariants}
+          onClick={() => handleExtraClick(event.label)}
+          className={cn(
+            "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
+            itemAlignmentClass
+          )}
+        >
+          <span className="text-sm opacity-80">add</span>{" "}
+          <span className="text-lg font-bold">{event.label}</span>
+        </motion.button>
+      ))}
+    </div>
+  );
 
   const handleEventClick = (
     eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT"
@@ -443,34 +496,131 @@ export function Fab({
       event.stopPropagation();
     }
   };
-
-  const changeMenuPage = useCallback(
-    (nextPage: 0 | 1) => {
-      setMenuPage((prev) => {
-        if (prev === nextPage) {
-          return prev;
-        }
-        setPageDirection(nextPage > prev ? 1 : -1);
-        return nextPage;
+  const animateToPage = useCallback(
+    async (targetPage: 0 | 1, options?: { fromDrag?: boolean }) => {
+      if (targetPage === menuPage) {
+        pageX.set(0);
+        setDragTargetPage(null);
+        setIsAnimatingPageChange(false);
+        return;
+      }
+      const width = stageWidth > 0 ? stageWidth : 280;
+      const direction = targetPage > menuPage ? 1 : -1;
+      if (dragTargetPage === null) {
+        setDragTargetPage(targetPage);
+      }
+      setIsAnimatingPageChange(true);
+      if (!options?.fromDrag) {
+        pageX.set(0);
+      }
+      if (prefersReducedMotion) {
+        setMenuPage(targetPage);
+        pageX.set(0);
+        setDragTargetPage(null);
+        setIsAnimatingPageChange(false);
+        return;
+      }
+      const controls = animate(pageX, direction === 1 ? -width : width, {
+        duration: 0.25,
+        ease: "easeOut",
       });
+      try {
+        await controls.finished;
+      } catch {
+        // Ignore interruptions
+      }
+      setMenuPage(targetPage);
+      pageX.set(0);
+      setDragTargetPage(null);
+      setIsAnimatingPageChange(false);
     },
-    []
+    [
+      dragTargetPage,
+      menuPage,
+      pageX,
+      prefersReducedMotion,
+      stageWidth,
+    ]
+  );
+
+  const handlePageDragStart = useCallback(() => {
+    if (menuSection !== "content" || stageWidth <= 0) {
+      return;
+    }
+    setIsDragging(true);
+    setIsAnimatingPageChange(false);
+  }, [menuSection, stageWidth]);
+
+  const handlePageDrag = useCallback(
+    (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (!isDragging || menuSection !== "content") {
+        return;
+      }
+      const limit = stageWidth > 0 ? stageWidth : DRAG_THRESHOLD_PX;
+      let nextX = Math.max(-limit, Math.min(limit, info.offset.x));
+      if ((menuPage === 0 && nextX > 0) || (menuPage === 1 && nextX < 0)) {
+        nextX = 0;
+      }
+      pageX.set(nextX);
+      if (nextX < 0 && menuPage === 0) {
+        if (dragTargetPage !== 1) {
+          setDragTargetPage(1);
+        }
+      } else if (nextX > 0 && menuPage === 1) {
+        if (dragTargetPage !== 0) {
+          setDragTargetPage(0);
+        }
+      } else if (dragTargetPage !== null) {
+        setDragTargetPage(null);
+      }
+    },
+    [
+      dragTargetPage,
+      isDragging,
+      menuPage,
+      menuSection,
+      pageX,
+      stageWidth,
+    ]
   );
 
   const handlePageDragEnd = useCallback(
-    (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-      if (menuSection !== "content") {
+    async (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (!isDragging) {
         return;
       }
-      if (info.offset.x < -DRAG_THRESHOLD_PX && menuPage === 0) {
-        changeMenuPage(1);
+      setIsDragging(false);
+      const target = dragTargetPage;
+      const width = stageWidth > 0 ? stageWidth : 0;
+      const threshold = width > 0 ? width * 0.33 : 120;
+      const distance = Math.abs(pageX.get());
+      const shouldCommit =
+        target !== null &&
+        (distance > threshold || Math.abs(info.velocity.x) > 600);
+      if (shouldCommit && target !== null) {
+        await animateToPage(target, { fromDrag: true });
         return;
       }
-      if (info.offset.x > DRAG_THRESHOLD_PX && menuPage === 1) {
-        changeMenuPage(0);
+      setIsAnimatingPageChange(true);
+      try {
+        await animate(pageX, 0, {
+          duration: 0.2,
+          ease: "easeOut",
+        }).finished;
+      } catch {
+        // Ignore interruptions
       }
+      pageX.set(0);
+      setDragTargetPage(null);
+      setIsAnimatingPageChange(false);
     },
-    [changeMenuPage, menuPage, menuSection]
+    [
+      animateToPage,
+      dragTargetPage,
+      isDragging,
+      pageX,
+      stageWidth,
+    ]
   );
 
   const handleCloseReschedule = () => {
@@ -484,13 +634,16 @@ export function Fab({
     if (!isOpen) {
       setMenuSection("content");
       setMenuPage(0);
-      setPageDirection(1);
+      setDragTargetPage(null);
+      setIsDragging(false);
+      setIsAnimatingPageChange(false);
+      pageX.set(0);
       resetSearchState();
       setRescheduleTarget(null);
       setDeleteError(null);
       setIsDeletingEvent(false);
     }
-  }, [isOpen, resetSearchState]);
+  }, [isOpen, pageX, resetSearchState]);
 
   useEffect(() => {
     return () => {
@@ -512,6 +665,32 @@ export function Fab({
     });
     return () => cancelAnimationFrame(frame);
   }, [isOpen, menuSection, primary.length, secondary.length]);
+
+  useEffect(() => {
+    if (!isOpen || menuSection !== "content") {
+      setStageWidth(0);
+      return;
+    }
+    const node = stageRef.current;
+    if (!node) {
+      return;
+    }
+    const updateWidth = () => setStageWidth(node.clientWidth || 0);
+    updateWidth();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateWidth);
+      return () => {
+        window.removeEventListener("resize", updateWidth);
+      };
+    }
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+  }, [isOpen, menuSection]);
 
   useEffect(() => {
     if (!isOpen || menuSection !== "blank") {
@@ -718,6 +897,12 @@ export function Fab({
     };
   }, [isOpen, rescheduleTarget]);
 
+  const shouldRenderNeighbor =
+    dragTargetPage !== null && (isDragging || isAnimatingPageChange);
+  const neighborPage = shouldRenderNeighbor ? dragTargetPage : null;
+  const neighborDirection =
+    neighborPage !== null ? (neighborPage > menuPage ? 1 : -1) : null;
+
   const menuBackgroundStyles = getMenuBackgroundStyles();
   const { backgroundImage, ...menuChromeStyles } = menuBackgroundStyles;
 
@@ -768,65 +953,44 @@ export function Fab({
                     borderRadius: "inherit",
                   }}
                 >
-                  <div className="relative h-full w-full overflow-hidden rounded-[inherit]">
-                    {/* Single-viewport pager: pages slide in/out iOS-style; no horizontal scroll so side peeks are impossible. */}
-                    <AnimatePresence mode="wait" initial={false}>
+                  <div
+                    ref={stageRef}
+                    className="relative h-full w-full overflow-hidden rounded-[inherit]"
+                  >
+                    {/* Interactive pager: renders neighbor only while dragging; both pages are driven by shared motion value for iOS push feel. */}
+                    <motion.div
+                      className="absolute inset-0 flex"
+                      drag="x"
+                      dragElastic={0}
+                      dragMomentum={false}
+                      dragConstraints={{
+                        left: menuPage === 0 ? -normalizedStageWidth : 0,
+                        right: menuPage === 1 ? normalizedStageWidth : 0,
+                      }}
+                      style={{ x: pageX }}
+                      onDragStart={handlePageDragStart}
+                      onDrag={handlePageDrag}
+                      onDragEnd={handlePageDragEnd}
+                    >
+                      {menuPage === 0
+                        ? renderPrimaryPage()
+                        : renderSecondaryPage()}
+                    </motion.div>
+                    {neighborPage !== null && neighborDirection !== null && (
                       <motion.div
-                        key={`fab-page-${menuPage}`}
-                        className="absolute inset-0 flex"
-                        drag="x"
-                        dragConstraints={{ left: 0, right: 0 }}
-                        dragElastic={0.08}
-                        onDragEnd={handlePageDragEnd}
-                        variants={pageVariants}
-                        initial="enter"
-                        animate="center"
-                        exit="exit"
-                        custom={pageDirection}
-                        transition={{ duration: 0.25, ease: "easeOut" }}
+                        className="pointer-events-none absolute inset-0 flex"
+                        style={{
+                          x:
+                            neighborDirection === 1
+                              ? incomingFromRight
+                              : incomingFromLeft,
+                        }}
                       >
-                        {menuPage === 0 ? (
-                          <div className="flex w-full flex-col">
-                            {primary.map((event) => (
-                              <motion.button
-                                key={event.label}
-                                variants={itemVariants}
-                                onClick={() => handleEventClick(event.eventType)}
-                                className={cn(
-                                  "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
-                                  itemAlignmentClass,
-                                  event.color
-                                )}
-                              >
-                                <span className="text-sm opacity-80">add</span>{" "}
-                                <span className="text-lg font-bold">
-                                  {event.label}
-                                </span>
-                              </motion.button>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex w-full flex-col">
-                            {secondary.map((event) => (
-                              <motion.button
-                                key={event.label}
-                                variants={itemVariants}
-                                onClick={() => handleExtraClick(event.label)}
-                                className={cn(
-                                  "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
-                                  itemAlignmentClass
-                                )}
-                              >
-                                <span className="text-sm opacity-80">add</span>{" "}
-                                <span className="text-lg font-bold">
-                                  {event.label}
-                                </span>
-                              </motion.button>
-                            ))}
-                          </div>
-                        )}
+                        {neighborPage === 0
+                          ? renderPrimaryPage()
+                          : renderSecondaryPage()}
                       </motion.div>
-                    </AnimatePresence>
+                    )}
                   </div>
                 </div>
               </>
