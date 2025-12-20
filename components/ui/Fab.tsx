@@ -357,6 +357,9 @@ export function Fab({
     </div>
   );
 
+  const renderPage = (pageIndex: 0 | 1) =>
+    pageIndex === 0 ? renderPrimaryPage() : renderSecondaryPage();
+
   const handleEventClick = (
     eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT"
   ) => {
@@ -897,8 +900,7 @@ export function Fab({
     };
   }, [isOpen, rescheduleTarget]);
 
-  const shouldRenderNeighbor =
-    dragTargetPage !== null && (isDragging || isAnimatingPageChange);
+  const shouldRenderNeighbor = isDragging && dragTargetPage !== null;
   const neighborPage = shouldRenderNeighbor ? dragTargetPage : null;
   const neighborDirection =
     neighborPage !== null ? (neighborPage > menuPage ? 1 : -1) : null;
@@ -972,9 +974,7 @@ export function Fab({
                       onDrag={handlePageDrag}
                       onDragEnd={handlePageDragEnd}
                     >
-                      {menuPage === 0
-                        ? renderPrimaryPage()
-                        : renderSecondaryPage()}
+                      {renderPage(menuPage as 0 | 1)}
                     </motion.div>
                     {neighborPage !== null && neighborDirection !== null && (
                       <motion.div
@@ -986,9 +986,8 @@ export function Fab({
                               : incomingFromLeft,
                         }}
                       >
-                        {neighborPage === 0
-                          ? renderPrimaryPage()
-                          : renderSecondaryPage()}
+                        {/* During drag we mount both pages so the incoming page’s real content is visible throughout the transition. */}
+                        {renderPage(neighborPage as 0 | 1)}
                       </motion.div>
                     )}
                   </div>
