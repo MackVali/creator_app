@@ -443,6 +443,7 @@ export async function scheduleBacklog(
     energy: string;
     weight: number;
     goalWeight: number;
+    globalRank: number | null;
     instanceId?: string | null;
     preferred?: boolean;
     eventName: string;
@@ -516,6 +517,10 @@ export async function scheduleBacklog(
       energy: (resolvedEnergy ?? "NO").toUpperCase(),
       weight,
       goalWeight: def.goalWeight ?? 0,
+      globalRank:
+        typeof def.globalRank === "number" && Number.isFinite(def.globalRank)
+          ? def.globalRank
+          : null,
       instanceId: m.id,
       eventName: def.name || def.id,
     });
@@ -553,6 +558,7 @@ export async function scheduleBacklog(
       duration_min: number;
       energy: string | null | undefined;
       weight: number;
+      globalRank?: number | null;
       name?: string;
     } | null
   ) => {
@@ -573,6 +579,10 @@ export async function scheduleBacklog(
       energy,
       weight: def.weight ?? 0,
       goalWeight: def.goalWeight ?? 0,
+      globalRank:
+        typeof def.globalRank === "number" && Number.isFinite(def.globalRank)
+          ? def.globalRank
+          : null,
       preferred: projectMatchesSelectedMonument(def.id),
       eventName: def.name || def.id,
     });
@@ -606,12 +616,17 @@ export async function scheduleBacklog(
   );
   const dedupeWindowDays = Math.max(lookaheadDays, 28);
   const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone);
+  const writeThroughEnd =
+    persistedDayLimit > 0
+      ? addDaysInTimeZone(baseStart, persistedDayLimit, timeZone)
+      : baseStart;
   const dedupe = await dedupeScheduledProjects(
     supabase,
     userId,
     baseStart,
     rangeEnd,
-    finalQueueProjectIds
+    finalQueueProjectIds,
+    writeThroughEnd
   );
   if (dedupe.error) {
     result.error = dedupe.error;
@@ -837,6 +852,10 @@ export async function scheduleBacklog(
       energy: energyResolved,
       weight: def.weight ?? 0,
       goalWeight: def.goalWeight ?? 0,
+      globalRank:
+        typeof def.globalRank === "number" && Number.isFinite(def.globalRank)
+          ? def.globalRank
+          : null,
       instanceId: inst.id,
       preferred: projectMatchesSelectedMonument(projectId),
     };
@@ -970,10 +989,17 @@ export async function scheduleBacklog(
     reuseInstanceByProject.delete(item.id);
   }
 
+  const rankValue = (value: number | null | undefined) =>
+    typeof value === "number" && Number.isFinite(value)
+      ? value
+      : Number.POSITIVE_INFINITY;
+
   const compareQueueItems = (a: QueueItem, b: QueueItem) => {
     const preferredDiff =
       Number(b.preferred === true) - Number(a.preferred === true);
     if (preferredDiff !== 0) return preferredDiff;
+    const globalRankDiff = rankValue(a.globalRank) - rankValue(b.globalRank);
+    if (globalRankDiff !== 0) return globalRankDiff;
     const goalWeightDiff = b.goalWeight - a.goalWeight;
     if (goalWeightDiff !== 0) return goalWeightDiff;
     const weightDiff = b.weight - a.weight;
@@ -1212,6 +1238,51 @@ export async function scheduleBacklog(
         );
         if (windows.length === 0) continue;
 
+        const reservationsForItem: Array<{
+          key: string;
+          previous: WindowAvailabilityBounds | null;
+        }> = [];
+        const releaseReservationsForItem = () => {
+          if (reservationsForItem.length === 0) return;
+          for (const reservation of reservationsForItem) {
+            if (reservation.previous) {
+              windowAvailability.set(reservation.key, {
+                front: new Date(reservation.previous.front.getTime()),
+                back: new Date(reservation.previous.back.getTime()),
+              });
+            } else {
+              windowAvailability.delete(reservation.key);
+            }
+          }
+          reservationsForItem.length = 0;
+        };
+        const notBeforeMs =
+          offset === 0 ? baseDate.getTime() : Number.NEGATIVE_INFINITY;
+        for (const win of windows) {
+          if (!win.key) continue;
+          const candidateStart =
+            win.availableStartLocal ?? win.startLocal ?? null;
+          if (!candidateStart) continue;
+          const candidateStartMs = Math.max(
+            candidateStart.getTime(),
+            notBeforeMs
+          );
+          const previousBounds = windowAvailability.get(win.key);
+          reservationsForItem.push({
+            key: win.key,
+            previous: previousBounds
+              ? {
+                  front: new Date(previousBounds.front.getTime()),
+                  back: new Date(previousBounds.back.getTime()),
+                }
+              : null,
+          });
+          windowAvailability.set(win.key, {
+            front: new Date(candidateStartMs),
+            back: new Date(candidateStartMs),
+          });
+        }
+
         const placed = await placeItemInWindows({
           userId,
           item,
@@ -1225,6 +1296,7 @@ export async function scheduleBacklog(
         });
 
         if (!("status" in placed)) {
+          releaseReservationsForItem();
           if (placed.error !== "NO_FIT") {
             result.failures.push({
               itemId: item.id,
@@ -1236,6 +1308,7 @@ export async function scheduleBacklog(
         }
 
         if (placed.error) {
+          releaseReservationsForItem();
           result.failures.push({
             itemId: item.id,
             reason: "error",
@@ -1243,6 +1316,8 @@ export async function scheduleBacklog(
           });
           continue;
         }
+
+        releaseReservationsForItem();
 
         if (placed.data) {
           result.placed.push(placed.data);
@@ -1374,7 +1449,8 @@ async function dedupeScheduledProjects(
   userId: string,
   baseStart: Date,
   rangeEnd: Date,
-  projectsToReset: Set<string>
+  projectsToReset: Set<string>,
+  writeThroughEnd: Date
 ): Promise<DedupeResult> {
   const response = await fetchInstancesForRange(
     userId,
@@ -1405,12 +1481,20 @@ async function dedupeScheduledProjects(
   const extras: ScheduleInstance[] = [];
   const lockedProjectInstances = new Map<string, ScheduleInstance>();
 
+  const writeThroughCutoffMs = writeThroughEnd.getTime();
+  const baseStartMs = baseStart.getTime();
+
   for (const inst of allInstances) {
     const isProject = inst.source_type === "PROJECT";
     const projectId = inst.source_id ?? "";
     if (!isProject || !projectId) continue;
     if (inst.status !== "scheduled") continue;
     const isLockedProject = inst.locked === true;
+    const startMs = new Date(inst.start_utc ?? "").getTime();
+    const withinWriteThrough =
+      Number.isFinite(startMs) &&
+      startMs >= baseStartMs &&
+      startMs < writeThroughCutoffMs;
 
     if (projectsToReset.has(projectId)) {
       if (isLockedProject) {
@@ -1433,6 +1517,11 @@ async function dedupeScheduledProjects(
       } else {
         extras.push(inst);
       }
+      continue;
+    }
+
+    if (withinWriteThrough && !isLockedProject) {
+      extras.push(inst);
       continue;
     }
 
@@ -3781,6 +3870,11 @@ const attemptProjectConflictPlacement = async (
     energy,
     weight: projectDef.weight ?? 0,
     goalWeight: projectDef.goalWeight ?? 0,
+    globalRank:
+      typeof projectDef.globalRank === "number" &&
+      Number.isFinite(projectDef.globalRank)
+        ? projectDef.globalRank
+        : null,
     instanceId: conflict.id,
     preferred: options.projectMatchesMonument
       ? options.projectMatchesMonument(projectId)
