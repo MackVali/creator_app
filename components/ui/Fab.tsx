@@ -6,6 +6,7 @@ import {
   useRef,
   useCallback,
   type HTMLAttributes,
+  type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
@@ -96,6 +97,7 @@ export function Fab({
   const router = useRouter();
   const VERTICAL_WHEEL_TRIGGER = 20;
   const DRAG_THRESHOLD_PX = 80;
+  const EDGE_SWIPE_ZONE_RATIO = 0.12;
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
 
   const getResultSortValue = useCallback((item: FabSearchResult) => {
@@ -216,7 +218,8 @@ export function Fab({
   const getMenuPalette = (pageIndex: number): MenuPalette =>
     MENU_PALETTES[pageIndex];
 
-  const lerp = (start: number, end: number, t: number) => start + (end - start) * t;
+  const lerp = (start: number, end: number, t: number) =>
+    start + (end - start) * t;
 
   const createPaletteBackground = (palette: MenuPalette) => {
     const [r, g, b] = palette.base;
@@ -564,10 +567,14 @@ export function Fab({
         setIsAnimatingPageChange(false);
         return;
       }
-      const controls = animate(pageX, resolvedDirection === 1 ? -width : width, {
-        duration: 0.25,
-        ease: "easeOut",
-      });
+      const controls = animate(
+        pageX,
+        resolvedDirection === 1 ? -width : width,
+        {
+          duration: 0.25,
+          ease: "easeOut",
+        }
+      );
       try {
         await controls.finished;
       } catch {
@@ -597,6 +604,31 @@ export function Fab({
     setDragDirection(null);
     setIsAnimatingPageChange(false);
   }, [isOpen, stageWidth]);
+
+  const isPointerInEdgeZone = useCallback((clientX: number) => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) {
+      return true;
+    }
+    const edgeZone = rect.width * EDGE_SWIPE_ZONE_RATIO;
+    const offsetX = clientX - rect.left;
+    return offsetX <= edgeZone || offsetX >= rect.width - edgeZone;
+  }, []);
+
+  const handlePagePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!isOpen) return;
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+      const isNexusPageActive = pages[activeFabPage] === "nexus";
+      if (isNexusPageActive && !isPointerInEdgeZone(event.clientX)) {
+        return;
+      }
+      pageDragControls.start(event);
+    },
+    [activeFabPage, isOpen, isPointerInEdgeZone, pageDragControls, pages]
+  );
 
   const handlePageDrag = useCallback(
     (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
@@ -652,8 +684,7 @@ export function Fab({
         target !== null &&
         (distance > threshold || Math.abs(info.velocity.x) > 600);
       if (shouldCommit && target !== null) {
-        const direction =
-          dragDirection ?? (pageX.get() < 0 ? 1 : -1);
+        const direction = dragDirection ?? (pageX.get() < 0 ? 1 : -1);
         await animateToPage(target, { fromDrag: true, direction });
         return;
       }
@@ -1045,7 +1076,9 @@ export function Fab({
             )}
             style={{
               boxShadow: MENU_BOX_SHADOW,
-              borderColor: isBlendingGradient ? blendedBorderColor : staticBorderColor,
+              borderColor: isBlendingGradient
+                ? blendedBorderColor
+                : staticBorderColor,
               transition: "border-color 0.1s linear",
               transformOrigin:
                 menuVariant === "timeline" ? "bottom right" : "bottom center",
@@ -1079,6 +1112,7 @@ export function Fab({
                   <motion.div
                     className="absolute inset-0 flex"
                     drag="x"
+                    dragListener={false}
                     dragControls={pageDragControls}
                     dragElastic={0}
                     dragMomentum={false}
@@ -1087,6 +1121,7 @@ export function Fab({
                       right: dragConstraintRight,
                     }}
                     style={{ x: pageX }}
+                    onPointerDown={handlePagePointerDown}
                     onDragStart={handlePageDragStart}
                     onDrag={handlePageDrag}
                     onDragEnd={handlePageDragEnd}
