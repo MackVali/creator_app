@@ -1238,7 +1238,11 @@ export function Fab({
                     onDrag={handleSectionDrag}
                     onDragEnd={handleSectionDragEnd}
                   >
-                    <div className="h-full w-full">
+                    <div
+                      className="w-full relative"
+                      style={{ height: menuContainerHeight }}
+                    >
+                      {/* Content section must have explicit height because its children are absolutely positioned and would otherwise collapse in the vertical flex stack. */}
                       <div
                         ref={stageRef}
                         className={cn(
