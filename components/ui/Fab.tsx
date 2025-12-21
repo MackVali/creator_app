@@ -1251,8 +1251,10 @@ function FabNexus({
       className="flex h-full w-full flex-col text-white"
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
-      <div className="flex items-center gap-2 px-4 pt-4">
-        <Search className="pointer-events-none h-4 w-4 text-white/30" />
+      <div className="relative px-4 pt-4">
+        <span className="pointer-events-none absolute left-3 inset-y-0 flex items-center">
+          <Search className="h-4 w-4 text-white/30" />
+        </span>
         <input
           ref={inputRef}
           value={query}
