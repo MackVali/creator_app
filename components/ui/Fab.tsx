@@ -6,10 +6,23 @@ import {
   useRef,
   useCallback,
   type HTMLAttributes,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+  type UIEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import {
+  motion,
+  AnimatePresence,
+  useMotionValue,
+  useTransform,
+  useMotionTemplate,
+  useDragControls,
+  animate,
+  useReducedMotion,
+  type PanInfo,
+} from "framer-motion";
 import { Loader2, Plus, Search, X } from "lucide-react";
 import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
@@ -37,6 +50,14 @@ type FabSearchResult = {
   global_rank?: number | null;
 };
 
+type FabSearchCursor = {
+  startUtc: string;
+  sourceType: "PROJECT" | "HABIT";
+  sourceId: string;
+};
+
+const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
+
 export function Fab({
   className = "",
   menuVariant = "default",
@@ -50,17 +71,22 @@ export function Fab({
   const [showNote, setShowNote] = useState(false);
   const [showPost, setShowPost] = useState(false);
   const [comingSoon, setComingSoon] = useState<string | null>(null);
-  const [menuPage, setMenuPage] = useState(0);
-  const [menuSection, setMenuSection] = useState<"content" | "blank">(
-    "content"
-  );
-  const [touchStartX, setTouchStartX] = useState(0);
-  const [swipeProgress, setSwipeProgress] = useState(0);
+  const pages = FAB_PAGES;
+  const pageCount = FAB_PAGES.length;
+  const [activeFabPage, setActiveFabPage] = useState<number>(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragTargetPage, setDragTargetPage] = useState<number | null>(null);
+  const [dragDirection, setDragDirection] = useState<1 | -1 | null>(null);
+  const [, setIsAnimatingPageChange] = useState(false);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchCursor, setSearchCursor] = useState<FabSearchCursor | null>(
+    null
+  );
   const [rescheduleTarget, setRescheduleTarget] =
     useState<FabSearchResult | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
@@ -69,42 +95,21 @@ export function Fab({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isSavingReschedule, setIsSavingReschedule] = useState(false);
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
-  const menuVerticalStartRef = useRef<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const skipClickRef = useRef(false);
   const searchAbortRef = useRef<AbortController | null>(null);
   const [menuWidth, setMenuWidth] = useState<number | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageWidth, setStageWidth] = useState(0);
+  const pageX = useMotionValue(0);
+  const pageDragControls = useDragControls();
+  const prefersReducedMotion = useReducedMotion();
   const router = useRouter();
   const VERTICAL_WHEEL_TRIGGER = 20;
-  const HORIZONTAL_WHEEL_TRIGGER = 10;
-
-  const clampColorValue = (value: number) => Math.min(255, Math.max(0, value));
-
-  const getResultSortValue = useCallback((item: FabSearchResult) => {
-    if (item.isCompleted) return Number.POSITIVE_INFINITY;
-    const candidate =
-      item.nextScheduledAt ?? (item.type === "HABIT" ? item.nextDueAt : null);
-    if (!candidate) return Number.POSITIVE_INFINITY;
-    const parsed = Date.parse(candidate);
-    return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
-  }, []);
-
-  const sortSearchResults = useCallback(
-    (items: FabSearchResult[]) =>
-      [...items].sort((a, b) => {
-        if (a.isCompleted !== b.isCompleted) {
-          return a.isCompleted ? 1 : -1;
-        }
-        const timeA = getResultSortValue(a);
-        const timeB = getResultSortValue(b);
-        if (timeA === timeB) {
-          return a.name.localeCompare(b.name);
-        }
-        return timeA - timeB;
-      }),
-    [getResultSortValue]
-  );
+  const DRAG_THRESHOLD_PX = 80;
+  const EDGE_SWIPE_ZONE_RATIO = 0.12;
+  const nexusInputRef = useRef<HTMLInputElement | null>(null);
 
   const formatDateInput = (date: Date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
@@ -136,6 +141,67 @@ export function Fab({
     []
   );
 
+  const buildSearchUrl = useCallback(
+    (cursor: FabSearchCursor | null) => {
+      const trimmed = searchQuery.trim();
+      const params = new URLSearchParams();
+      if (trimmed.length > 0) {
+        params.set("q", trimmed);
+      }
+      if (cursor) {
+        params.set("cursorStartUtc", cursor.startUtc);
+        params.set("cursorSourceType", cursor.sourceType);
+        params.set("cursorSourceId", cursor.sourceId);
+      }
+      return params.toString().length > 0
+        ? `/api/schedule/search?${params.toString()}`
+        : "/api/schedule/search";
+    },
+    [searchQuery]
+  );
+
+  const runSearch = useCallback(
+    async ({
+      cursor,
+      append,
+      signal,
+    }: {
+      cursor: FabSearchCursor | null;
+      append: boolean;
+      signal?: AbortSignal;
+    }) => {
+      const response = await fetch(buildSearchUrl(cursor), { signal });
+      if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+      }
+      const payload = (await response.json()) as {
+        results?: FabSearchResult[];
+        nextCursor?: {
+          startUtc?: string | null;
+          sourceType?: "PROJECT" | "HABIT" | null;
+          sourceId?: string | null;
+        } | null;
+      };
+      const nextCursor =
+        payload.nextCursor?.startUtc &&
+        payload.nextCursor?.sourceType &&
+        payload.nextCursor?.sourceId
+          ? {
+              startUtc: payload.nextCursor.startUtc,
+              sourceType: payload.nextCursor.sourceType,
+              sourceId: payload.nextCursor.sourceId,
+            }
+          : null;
+      if (!signal?.aborted) {
+        setSearchResults((prev) =>
+          append ? [...prev, ...(payload.results ?? [])] : payload.results ?? []
+        );
+        setSearchCursor(nextCursor);
+      }
+    },
+    [buildSearchUrl]
+  );
+
   const notifySchedulerOfChange = useCallback(async () => {
     try {
       const timeZone =
@@ -162,40 +228,60 @@ export function Fab({
   const resetSearchState = useCallback(() => {
     setSearchQuery("");
     setSearchResults([]);
+    setSearchCursor(null);
     setSearchError(null);
     setIsSearching(false);
+    setIsLoadingMore(false);
     if (searchAbortRef.current) {
       searchAbortRef.current.abort();
       searchAbortRef.current = null;
     }
   }, []);
 
-  const getMenuBackgroundStyles = () => {
-    const progress = menuPage === 1 ? 1 - swipeProgress : swipeProgress;
-    const start = [55, 65, 81]; // gray-700
-    const end = [0, 0, 0]; // black
-    const r = start[0] + (end[0] - start[0]) * progress;
-    const g = start[1] + (end[1] - start[1]) * progress;
-    const b = start[2] + (end[2] - start[2]) * progress;
-
-    const highlight = [
-      clampColorValue(r + 35),
-      clampColorValue(g + 35),
-      clampColorValue(b + 35),
-    ];
-    const lowlight = [
-      clampColorValue(r - 25),
-      clampColorValue(g - 25),
-      clampColorValue(b - 25),
-    ];
-
-    return {
-      backgroundImage: `radial-gradient(circle at top, rgba(${highlight[0]}, ${highlight[1]}, ${highlight[2]}, 0.65), rgba(${r}, ${g}, ${b}, 0.1) 45%), linear-gradient(160deg, rgba(${highlight[0]}, ${highlight[1]}, ${highlight[2]}, 0.95) 0%, rgba(${r}, ${g}, ${b}, 0.97) 50%, rgba(${lowlight[0]}, ${lowlight[1]}, ${lowlight[2]}, 0.98) 100%)`,
-      boxShadow:
-        "0 18px 36px rgba(15, 23, 42, 0.55), 0 8px 18px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)",
-      borderColor: `rgba(${highlight[0]}, ${highlight[1]}, ${highlight[2]}, 0.35)`,
-    };
+  type MenuPalette = {
+    base: [number, number, number];
+    highlight: [number, number, number];
+    lowlight: [number, number, number];
   };
+
+  const MENU_PALETTES: readonly MenuPalette[] = [
+    {
+      base: [55, 65, 81],
+      highlight: [90, 110, 135],
+      lowlight: [25, 30, 40],
+    },
+    {
+      base: [8, 17, 28],
+      highlight: [50, 80, 120],
+      lowlight: [2, 4, 10],
+    },
+    {
+      base: [10, 12, 24],
+      highlight: [86, 60, 140],
+      lowlight: [4, 6, 18],
+    },
+  ];
+
+  const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+  const getMenuPalette = (pageIndex: number): MenuPalette =>
+    MENU_PALETTES[pageIndex];
+
+  const lerp = (start: number, end: number, t: number) =>
+    start + (end - start) * t;
+
+  const createPaletteBackground = (palette: MenuPalette) => {
+    const [r, g, b] = palette.base;
+    const [hr, hg, hb] = palette.highlight;
+    const [lr, lg, lb] = palette.lowlight;
+    return `radial-gradient(circle at top, rgba(${hr}, ${hg}, ${hb}, 0.65), rgba(${r}, ${g}, ${b}, 0.15) 45%), linear-gradient(160deg, rgba(${hr}, ${hg}, ${hb}, 0.95) 0%, rgba(${r}, ${g}, ${b}, 0.97) 50%, rgba(${lr}, ${lg}, ${lb}, 0.98) 100%)`;
+  };
+
+  const createPaletteBorderColor = (palette: MenuPalette) =>
+    `rgba(${palette.highlight[0]}, ${palette.highlight[1]}, ${palette.highlight[2]}, 0.35)`;
+
+  const MENU_BOX_SHADOW =
+    "0 18px 36px rgba(15, 23, 42, 0.55), 0 8px 18px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 
   const menuConfigs = {
     default: {
@@ -300,6 +386,93 @@ export function Fab({
     },
   } as const;
 
+  const pageVariants = {
+    closed: {},
+    open: {},
+  } as const;
+
+  const normalizedStageWidth = Math.max(stageWidth, 1);
+  const dragProgress = useTransform(pageX, (latest) => {
+    const width = normalizedStageWidth;
+    const ratio = Math.abs(latest) / (width || 1);
+    return clamp01(ratio);
+  });
+  const incomingFromRight = useTransform(pageX, (latest) => {
+    const width = normalizedStageWidth;
+    const clamped = Math.max(-width, Math.min(0, latest));
+    return width + clamped;
+  });
+  const incomingFromLeft = useTransform(pageX, (latest) => {
+    const width = normalizedStageWidth;
+    const clamped = Math.max(0, Math.min(width, latest));
+    return -width + clamped;
+  });
+
+  const renderPrimaryPage = () => (
+    <div className="flex w-full flex-col px-4 py-2">
+      {primary.map((event) => (
+        <motion.button
+          key={event.label}
+          variants={itemVariants}
+          onClick={() => handleEventClick(event.eventType)}
+          className={cn(
+            "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
+            itemAlignmentClass,
+            event.color
+          )}
+        >
+          <span className="text-sm opacity-80">add</span>{" "}
+          <span className="text-lg font-bold">{event.label}</span>
+        </motion.button>
+      ))}
+    </div>
+  );
+
+  const renderSecondaryPage = () => (
+    <div className="flex w-full flex-col px-4 py-2">
+      {secondary.map((event) => (
+        <motion.button
+          key={event.label}
+          variants={itemVariants}
+          onClick={() => handleExtraClick(event.label)}
+          className={cn(
+            "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
+            itemAlignmentClass
+          )}
+        >
+          <span className="text-sm opacity-80">add</span>{" "}
+          <span className="text-lg font-bold">{event.label}</span>
+        </motion.button>
+      ))}
+    </div>
+  );
+
+  const renderNexusPage = () => (
+    <FabNexus
+      query={searchQuery}
+      onQueryChange={setSearchQuery}
+      results={searchResults}
+      isSearching={isSearching}
+      isLoadingMore={isLoadingMore}
+      error={searchError}
+      hasMore={Boolean(searchCursor)}
+      onLoadMore={handleLoadMoreResults}
+      onSelectResult={handleOpenReschedule}
+      inputRef={nexusInputRef}
+    />
+  );
+
+  const renderPage = (pageIndex: number) => {
+    const page = pages[pageIndex];
+    if (page === "primary") {
+      return renderPrimaryPage();
+    }
+    if (page === "secondary") {
+      return renderSecondaryPage();
+    }
+    return renderNexusPage();
+  };
+
   const handleEventClick = (
     eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT"
   ) => {
@@ -353,17 +526,8 @@ export function Fab({
     if (!swipeUpToOpen || touchStartY === null) return;
     const diffY = event.changedTouches[0].clientY - touchStartY;
     setTouchStartY(null);
-    if (diffY < -40) {
-      if (!isOpen) {
-        setIsOpen(true);
-      } else if (menuSection === "content") {
-        setMenuSection("blank");
-      }
-      skipClickRef.current = true;
-      return;
-    }
-    if (isOpen && diffY > 40 && menuSection === "blank") {
-      setMenuSection("content");
+    if (diffY < -40 && !isOpen) {
+      setIsOpen(true);
       skipClickRef.current = true;
       return;
     }
@@ -375,18 +539,6 @@ export function Fab({
   };
 
   const handleFabButtonWheel = (event: React.WheelEvent<HTMLButtonElement>) => {
-    if (isOpen) {
-      if (
-        Math.abs(event.deltaY) >= VERTICAL_WHEEL_TRIGGER &&
-        ((menuSection === "content" && event.deltaY < 0) ||
-          (menuSection === "blank" && event.deltaY > 0))
-      ) {
-        setMenuSection(event.deltaY < 0 ? "blank" : "content");
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-    }
     if (!swipeUpToOpen) return;
     if (interpretWheelGesture(event.deltaY)) {
       event.preventDefault();
@@ -418,59 +570,199 @@ export function Fab({
     setRescheduleTime(formatTimeInput(baseDate));
   };
 
-  const handleHorizontalMenuWheel = (
-    deltaX: number,
-    deltaY: number,
-    shiftKey: boolean
-  ) => {
-    if (menuSection !== "content") return false;
-    let horizontalDelta = deltaX;
-    if (horizontalDelta === 0 && shiftKey) {
-      horizontalDelta = deltaY;
-    }
-    if (Math.abs(horizontalDelta) < HORIZONTAL_WHEEL_TRIGGER) return false;
-    if (horizontalDelta < 0 && menuPage === 0) {
-      setMenuPage(1);
-      return true;
-    }
-    if (horizontalDelta > 0 && menuPage === 1) {
-      setMenuPage(0);
-      return true;
-    }
-    return false;
-  };
-
   const handleMenuWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    const handledHorizontal = handleHorizontalMenuWheel(
-      event.deltaX,
-      event.deltaY,
-      event.shiftKey
-    );
-    if (handledHorizontal) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    if (Math.abs(event.deltaY) >= VERTICAL_WHEEL_TRIGGER) {
-      if (event.deltaY < 0 && menuSection === "content") {
-        setMenuSection("blank");
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-      if (event.deltaY > 0 && menuSection === "blank") {
-        setMenuSection("content");
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-    }
     if (!swipeUpToOpen) return;
     if (interpretWheelGesture(event.deltaY)) {
       event.preventDefault();
       event.stopPropagation();
     }
   };
+
+  const getNextIndex = useCallback(
+    (index: number) => (index + 1) % pageCount,
+    [pageCount]
+  );
+
+  const getPrevIndex = useCallback(
+    (index: number) => (index - 1 + pageCount) % pageCount,
+    [pageCount]
+  );
+
+  const animateToPage = useCallback(
+    async (
+      targetPage: number,
+      options?: { fromDrag?: boolean; direction?: 1 | -1 }
+    ) => {
+      if (targetPage === activeFabPage) {
+        pageX.set(0);
+        setDragTargetPage(null);
+        setDragDirection(null);
+        setIsAnimatingPageChange(false);
+        return;
+      }
+      const width = stageWidth > 0 ? stageWidth : 280;
+      const resolvedDirection =
+        options?.direction ??
+        (targetPage === getNextIndex(activeFabPage) ? 1 : -1);
+      if (dragTargetPage === null) {
+        setDragTargetPage(targetPage);
+      }
+      setIsAnimatingPageChange(true);
+      if (!options?.fromDrag) {
+        pageX.set(0);
+      }
+      if (prefersReducedMotion) {
+        setActiveFabPage(targetPage);
+        pageX.set(0);
+        setDragTargetPage(null);
+        setDragDirection(null);
+        setIsAnimatingPageChange(false);
+        return;
+      }
+      const controls = animate(
+        pageX,
+        resolvedDirection === 1 ? -width : width,
+        {
+          duration: 0.25,
+          ease: "easeOut",
+        }
+      );
+      try {
+        await controls.finished;
+      } catch {
+        // Ignore interruptions
+      }
+      setActiveFabPage(targetPage);
+      pageX.set(0);
+      setDragTargetPage(null);
+      setDragDirection(null);
+      setIsAnimatingPageChange(false);
+    },
+    [
+      activeFabPage,
+      dragTargetPage,
+      getNextIndex,
+      pageX,
+      prefersReducedMotion,
+      stageWidth,
+    ]
+  );
+
+  const handlePageDragStart = useCallback(() => {
+    if (!isOpen || stageWidth <= 0) {
+      return;
+    }
+    setIsDragging(true);
+    setDragDirection(null);
+    setIsAnimatingPageChange(false);
+  }, [isOpen, stageWidth]);
+
+  const isPointerInEdgeZone = useCallback((clientX: number) => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) {
+      return true;
+    }
+    const edgeZone = rect.width * EDGE_SWIPE_ZONE_RATIO;
+    const offsetX = clientX - rect.left;
+    return offsetX <= edgeZone || offsetX >= rect.width - edgeZone;
+  }, []);
+
+  const handlePagePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!isOpen) return;
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+      const isNexusPageActive = pages[activeFabPage] === "nexus";
+      if (isNexusPageActive && !isPointerInEdgeZone(event.clientX)) {
+        return;
+      }
+      pageDragControls.start(event);
+    },
+    [activeFabPage, isOpen, isPointerInEdgeZone, pageDragControls, pages]
+  );
+
+  const handlePageDrag = useCallback(
+    (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (!isDragging) {
+        return;
+      }
+      const limit = stageWidth > 0 ? stageWidth : DRAG_THRESHOLD_PX;
+      const nextX = Math.max(-limit, Math.min(limit, info.offset.x));
+      pageX.set(nextX);
+      let nextTarget: number | null = null;
+      let nextDirection: 1 | -1 | null = null;
+      if (nextX < 0) {
+        nextTarget = getNextIndex(activeFabPage);
+        nextDirection = 1;
+      } else if (nextX > 0) {
+        nextTarget = getPrevIndex(activeFabPage);
+        nextDirection = -1;
+      }
+      if (nextTarget !== dragTargetPage) {
+        setDragTargetPage(nextTarget);
+      }
+      if (nextDirection !== null && nextDirection !== dragDirection) {
+        setDragDirection(nextDirection);
+      } else if (nextDirection === null && dragDirection !== null) {
+        setDragDirection(null);
+      }
+    },
+    [
+      activeFabPage,
+      dragDirection,
+      dragTargetPage,
+      getNextIndex,
+      getPrevIndex,
+      isDragging,
+      pageX,
+      stageWidth,
+    ]
+  );
+
+  const handlePageDragEnd = useCallback(
+    async (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (!isDragging) {
+        setDragTargetPage(null);
+        setDragDirection(null);
+        return;
+      }
+      setIsDragging(false);
+      const target = dragTargetPage;
+      const width = stageWidth > 0 ? stageWidth : 0;
+      const threshold = width > 0 ? width * 0.33 : 120;
+      const distance = Math.abs(pageX.get());
+      const shouldCommit =
+        target !== null &&
+        (distance > threshold || Math.abs(info.velocity.x) > 600);
+      if (shouldCommit && target !== null) {
+        const direction = dragDirection ?? (pageX.get() < 0 ? 1 : -1);
+        await animateToPage(target, { fromDrag: true, direction });
+        return;
+      }
+      setIsAnimatingPageChange(true);
+      try {
+        await animate(pageX, 0, {
+          duration: 0.2,
+          ease: "easeOut",
+        }).finished;
+      } catch {
+        // Ignore interruptions
+      }
+      pageX.set(0);
+      setDragTargetPage(null);
+      setDragDirection(null);
+      setIsAnimatingPageChange(false);
+    },
+    [
+      animateToPage,
+      dragDirection,
+      dragTargetPage,
+      isDragging,
+      pageX,
+      stageWidth,
+    ]
+  );
 
   const handleCloseReschedule = () => {
     if (isSavingReschedule || isDeletingEvent) return;
@@ -481,14 +773,25 @@ export function Fab({
 
   useEffect(() => {
     if (!isOpen) {
-      setMenuSection("content");
-      setMenuPage(0);
+      setActiveFabPage(0);
+      setDragTargetPage(null);
+      setDragDirection(null);
+      setIsDragging(false);
+      setIsAnimatingPageChange(false);
+      if (
+        typeof document !== "undefined" &&
+        document.activeElement === nexusInputRef.current
+      ) {
+        nexusInputRef.current?.blur();
+      }
+      pageX.set(0);
       resetSearchState();
       setRescheduleTarget(null);
       setDeleteError(null);
       setIsDeletingEvent(false);
+      searchAbortRef.current?.abort();
     }
-  }, [isOpen, resetSearchState]);
+  }, [isOpen, pageX, resetSearchState]);
 
   useEffect(() => {
     return () => {
@@ -499,7 +802,7 @@ export function Fab({
   }, []);
 
   useEffect(() => {
-    if (!isOpen || menuSection !== "content") return;
+    if (!isOpen) return;
     const node = menuRef.current;
     if (!node) return;
     const frame = requestAnimationFrame(() => {
@@ -509,10 +812,36 @@ export function Fab({
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [isOpen, menuSection, primary.length]);
+  }, [isOpen, primary.length, secondary.length]);
 
   useEffect(() => {
-    if (!isOpen || menuSection !== "blank") {
+    if (!isOpen) {
+      setStageWidth(0);
+      return;
+    }
+    const node = stageRef.current;
+    if (!node) {
+      return;
+    }
+    const updateWidth = () => setStageWidth(node.clientWidth || 0);
+    updateWidth();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateWidth);
+      return () => {
+        window.removeEventListener("resize", updateWidth);
+      };
+    }
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || pages[activeFabPage] !== "nexus") {
       return;
     }
     if (typeof window === "undefined") return;
@@ -522,29 +851,18 @@ export function Fab({
     searchAbortRef.current = controller;
 
     setIsSearching(true);
+    setIsLoadingMore(false);
     setSearchError(null);
+    setSearchResults([]);
+    setSearchCursor(null);
 
     const timer = window.setTimeout(async () => {
       try {
-        const trimmed = searchQuery.trim();
-        const params = new URLSearchParams();
-        if (trimmed.length > 0) {
-          params.set("q", trimmed);
-        }
-        const url =
-          params.toString().length > 0
-            ? `/api/schedule/search?${params.toString()}`
-            : "/api/schedule/search";
-        const response = await fetch(url, { signal: controller.signal });
-        if (!response.ok) {
-          throw new Error(`Request failed: ${response.status}`);
-        }
-        const payload = (await response.json()) as {
-          results?: FabSearchResult[];
-        };
-        if (!controller.signal.aborted) {
-          setSearchResults(sortSearchResults(payload.results ?? []));
-        }
+        await runSearch({
+          cursor: null,
+          append: false,
+          signal: controller.signal,
+        });
       } catch (error) {
         if (controller.signal.aborted) return;
         console.error("FAB menu search failed", error);
@@ -559,8 +877,51 @@ export function Fab({
     return () => {
       window.clearTimeout(timer);
       controller.abort();
+      setIsSearching(false);
     };
-  }, [isOpen, menuSection, searchQuery, sortSearchResults]);
+  }, [activeFabPage, isOpen, runSearch, searchQuery]);
+
+  const handleLoadMoreResults = useCallback(async () => {
+    if (!searchCursor || isSearching || isLoadingMore) {
+      return;
+    }
+    setIsLoadingMore(true);
+    setSearchError(null);
+    try {
+      await runSearch({ cursor: searchCursor, append: true });
+    } catch (error) {
+      console.error("FAB menu search pagination failed", error);
+      if (searchResults.length === 0) {
+        setSearchError("Unable to load results");
+      }
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [
+    isLoadingMore,
+    isSearching,
+    runSearch,
+    searchCursor,
+    searchResults.length,
+  ]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    if (pages[activeFabPage] === "nexus") {
+      const frame = requestAnimationFrame(() => {
+        nexusInputRef.current?.focus();
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    if (
+      typeof document !== "undefined" &&
+      document.activeElement === nexusInputRef.current
+    ) {
+      nexusInputRef.current?.blur();
+    }
+  }, [activeFabPage, isOpen]);
 
   const handleRescheduleSave = useCallback(async () => {
     if (isDeletingEvent) {
@@ -619,18 +980,16 @@ export function Fab({
       }
 
       setSearchResults((prev) =>
-        sortSearchResults(
-          prev.map((item) =>
-            item.id === rescheduleTarget.id &&
-            item.type === rescheduleTarget.type
-              ? {
-                  ...item,
-                  nextScheduledAt: nextStart,
-                  scheduleInstanceId: nextInstanceId,
-                  durationMinutes: nextDuration,
-                }
-              : item
-          )
+        prev.map((item) =>
+          item.id === rescheduleTarget.id &&
+          item.type === rescheduleTarget.type
+            ? {
+                ...item,
+                nextScheduledAt: nextStart,
+                scheduleInstanceId: nextInstanceId,
+                durationMinutes: nextDuration,
+              }
+            : item
         )
       );
       void notifySchedulerOfChange();
@@ -650,7 +1009,6 @@ export function Fab({
     rescheduleDate,
     rescheduleTime,
     rescheduleTarget,
-    sortSearchResults,
     notifySchedulerOfChange,
   ]);
 
@@ -695,53 +1053,6 @@ export function Fab({
     }
   }, [isDeletingEvent, notifySchedulerOfChange, rescheduleTarget]);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    menuVerticalStartRef.current = e.touches[0].clientY;
-    if (menuSection !== "content") return;
-    setTouchStartX(e.touches[0].clientX);
-    setSwipeProgress(0);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (menuSection !== "content") return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - touchStartX;
-    if (menuPage === 0 && diff < 0) {
-      setSwipeProgress(Math.min(-diff / 100, 1));
-    } else if (menuPage === 1 && diff > 0) {
-      setSwipeProgress(Math.min(diff / 100, 1));
-    } else {
-      setSwipeProgress(0);
-    }
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const startY = menuVerticalStartRef.current;
-    const diffY = startY === null ? 0 : e.changedTouches[0].clientY - startY;
-    const absDiffY = Math.abs(diffY);
-    const diffX =
-      menuSection === "content" ? e.changedTouches[0].clientX - touchStartX : 0;
-    menuVerticalStartRef.current = null;
-
-    if (absDiffY > 40 && absDiffY >= Math.abs(diffX)) {
-      if (diffY < 0 && menuSection === "content") {
-        setMenuSection("blank");
-        setSwipeProgress(0);
-        return;
-      }
-      if (diffY > 0 && menuSection === "blank") {
-        setMenuSection("content");
-        return;
-      }
-    }
-
-    if (menuSection !== "content") return;
-    const diff = diffX;
-    if (diff < -50) setMenuPage(1);
-    if (diff > 50) setMenuPage(0);
-    setSwipeProgress(0);
-  };
-
   // Close menu when clicking outside
   useEffect(() => {
     if (rescheduleTarget) return;
@@ -763,6 +1074,57 @@ export function Fab({
     };
   }, [isOpen, rescheduleTarget]);
 
+  const shouldRenderNeighbor = isDragging && dragTargetPage !== null;
+  const neighborPage = shouldRenderNeighbor ? dragTargetPage : null;
+  const neighborDirection =
+    neighborPage !== null ? dragDirection ?? (pageX.get() < 0 ? 1 : -1) : null;
+
+  const restingPalette = getMenuPalette(activeFabPage);
+  const staticBackgroundImage = createPaletteBackground(restingPalette);
+  const staticBorderColor = createPaletteBorderColor(restingPalette);
+  const targetPalette =
+    isDragging && dragTargetPage !== null
+      ? getMenuPalette(dragTargetPage)
+      : restingPalette;
+  const baseR = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.base[0], targetPalette.base[0], value)
+  );
+  const baseG = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.base[1], targetPalette.base[1], value)
+  );
+  const baseB = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.base[2], targetPalette.base[2], value)
+  );
+  const highlightR = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.highlight[0], targetPalette.highlight[0], value)
+  );
+  const highlightG = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.highlight[1], targetPalette.highlight[1], value)
+  );
+  const highlightB = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.highlight[2], targetPalette.highlight[2], value)
+  );
+  const lowlightR = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.lowlight[0], targetPalette.lowlight[0], value)
+  );
+  const lowlightG = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.lowlight[1], targetPalette.lowlight[1], value)
+  );
+  const lowlightB = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.lowlight[2], targetPalette.lowlight[2], value)
+  );
+  // Background blends from drag motion value so color transitions stay continuous during interactive paging.
+  const blendedBackgroundImage = useMotionTemplate`
+    radial-gradient(circle at top, rgba(${highlightR}, ${highlightG}, ${highlightB}, 0.65), rgba(${baseR}, ${baseG}, ${baseB}, 0.15) 45%),
+    linear-gradient(160deg, rgba(${highlightR}, ${highlightG}, ${highlightB}, 0.95) 0%, rgba(${baseR}, ${baseG}, ${baseB}, 0.97) 50%, rgba(${lowlightR}, ${lowlightG}, ${lowlightB}, 0.98) 100%)
+  `;
+  const blendedBorderColor = useMotionTemplate`
+    rgba(${highlightR}, ${highlightG}, ${highlightB}, 0.35)
+  `;
+  const isBlendingGradient = isDragging && dragTargetPage !== null;
+  const dragConstraintLeft = -normalizedStageWidth;
+  const dragConstraintRight = normalizedStageWidth;
+
   return (
     <div className={cn("relative", className)} {...wrapperProps}>
       {/* AddEvents Menu */}
@@ -770,17 +1132,16 @@ export function Fab({
         {isOpen && (
           <motion.div
             ref={menuRef}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
             className={cn(
               "absolute bottom-20 mb-2 z-50 min-w-[200px] border rounded-lg shadow-2xl overflow-hidden",
               menuClassName
             )}
             style={{
-              ...getMenuBackgroundStyles(),
-              transition:
-                "background-image 0.1s linear, border-color 0.1s linear",
+              boxShadow: MENU_BOX_SHADOW,
+              borderColor: isBlendingGradient
+                ? blendedBorderColor
+                : staticBorderColor,
+              transition: "border-color 0.1s linear",
               transformOrigin:
                 menuVariant === "timeline" ? "bottom right" : "bottom center",
               minHeight: menuContainerHeight,
@@ -796,47 +1157,72 @@ export function Fab({
             exit="closed"
             onWheel={handleMenuWheel}
           >
-            {menuSection === "blank" ? (
-              <FabNexus
-                query={searchQuery}
-                onQueryChange={setSearchQuery}
-                results={searchResults}
-                isSearching={isSearching}
-                error={searchError}
-                onSelectResult={handleOpenReschedule}
-              />
-            ) : menuPage === 0 ? (
-              primary.map((event) => (
-                <motion.button
-                  key={event.label}
-                  variants={itemVariants}
-                  onClick={() => handleEventClick(event.eventType)}
-                  className={cn(
-                    "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
-                    itemAlignmentClass,
-                    event.color
-                  )}
+            <>
+              <motion.div
+                className="relative h-full w-full"
+                style={{
+                  backgroundImage: isBlendingGradient
+                    ? blendedBackgroundImage
+                    : staticBackgroundImage,
+                  borderRadius: "inherit",
+                }}
+              >
+                <div
+                  ref={stageRef}
+                  className="relative h-full w-full overflow-hidden rounded-[inherit]"
                 >
-                  <span className="text-sm opacity-80">add</span>{" "}
-                  <span className="text-lg font-bold">{event.label}</span>
-                </motion.button>
-              ))
-            ) : (
-              secondary.map((event) => (
-                <motion.button
-                  key={event.label}
-                  variants={itemVariants}
-                  onClick={() => handleExtraClick(event.label)}
-                  className={cn(
-                    "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
-                    itemAlignmentClass
+                  <motion.div
+                    className="absolute inset-0 flex"
+                    drag="x"
+                    dragListener={false}
+                    dragControls={pageDragControls}
+                    dragElastic={0}
+                    dragMomentum={false}
+                    dragConstraints={{
+                      left: dragConstraintLeft,
+                      right: dragConstraintRight,
+                    }}
+                    style={{ x: pageX }}
+                    onPointerDown={handlePagePointerDown}
+                    onDragStart={handlePageDragStart}
+                    onDrag={handlePageDrag}
+                    onDragEnd={handlePageDragEnd}
+                    dragPropagation
+                  >
+                    <motion.div
+                      className="absolute inset-0 flex overflow-hidden"
+                      variants={pageVariants}
+                      initial="open"
+                      animate="open"
+                      style={{ borderRadius: "inherit" }}
+                    >
+                      {renderPage(activeFabPage)}
+                    </motion.div>
+                  </motion.div>
+                  {neighborPage !== null && neighborDirection !== null && (
+                    <motion.div
+                      className="pointer-events-none absolute inset-0 flex"
+                      style={{
+                        x:
+                          neighborDirection === 1
+                            ? incomingFromRight
+                            : incomingFromLeft,
+                      }}
+                    >
+                      <motion.div
+                        className="absolute inset-0 flex overflow-hidden"
+                        variants={pageVariants}
+                        initial="open"
+                        animate="open"
+                        style={{ borderRadius: "inherit" }}
+                      >
+                        {renderPage(neighborPage)}
+                      </motion.div>
+                    </motion.div>
                   )}
-                >
-                  <span className="text-sm opacity-80">add</span>{" "}
-                  <span className="text-lg font-bold">{event.label}</span>
-                </motion.button>
-              ))
-            )}
+                </div>
+              </motion.div>
+            </>
           </motion.div>
         )}
       </AnimatePresence>
@@ -906,8 +1292,12 @@ type FabNexusProps = {
   onQueryChange: (value: string) => void;
   results: FabSearchResult[];
   isSearching: boolean;
+  isLoadingMore: boolean;
   error: string | null;
+  hasMore: boolean;
+  onLoadMore: () => void;
   onSelectResult: (result: FabSearchResult) => void;
+  inputRef?: RefObject<HTMLInputElement>;
 };
 
 function FabNexus({
@@ -915,10 +1305,22 @@ function FabNexus({
   onQueryChange,
   results,
   isSearching,
+  isLoadingMore,
   error,
+  hasMore,
+  onLoadMore,
   onSelectResult,
+  inputRef,
 }: FabNexusProps) {
   const hasResults = results.length > 0;
+  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (!hasMore || isLoadingMore) return;
+    const target = event.currentTarget;
+    const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
+    if (remaining < 120) {
+      onLoadMore();
+    }
+  };
 
   const formatDateTime = (
     value: string | null,
@@ -957,20 +1359,29 @@ function FabNexus({
 
   return (
     <div
-      className="flex h-full w-full flex-col gap-3 px-4 py-4 text-white"
+      className="flex h-full w-full flex-col text-white"
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
-        <input
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="search NEXUS"
-          className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
-          aria-label="Search NEXUS"
-        />
+      <div className="px-4 pt-4">
+        <div className="relative h-10">
+          <span className="pointer-events-none absolute left-3 inset-y-0 flex items-center">
+            <Search className="h-4 w-4 text-white/30" />
+          </span>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="search NEXUS"
+            className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
+            aria-label="Search NEXUS"
+          />
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto pr-1">
+      <div
+        className="flex-1 overflow-y-auto px-4 pb-4 pr-5 pt-3"
+        data-fab-nexus-scroll="true"
+        onScroll={handleScroll}
+      >
         {isSearching ? (
           <div className="flex h-32 items-center justify-center text-white/60">
             <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
@@ -1044,6 +1455,11 @@ function FabNexus({
                 </button>
               );
             })}
+            {isLoadingMore ? (
+              <div className="flex items-center justify-center py-3 text-white/60">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="rounded-xl border border-white/10 bg-black/50 px-4 py-6 text-center text-sm text-white/60">
