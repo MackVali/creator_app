@@ -8,6 +8,7 @@ import {
   type HTMLAttributes,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
+  type UIEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -49,6 +50,11 @@ type FabSearchResult = {
   global_rank?: number | null;
 };
 
+type FabSearchCursor = {
+  startUtc: string;
+  projectId: string;
+};
+
 const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
 
 export function Fab({
@@ -75,7 +81,11 @@ export function Fab({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchCursor, setSearchCursor] = useState<FabSearchCursor | null>(
+    null
+  );
   const [rescheduleTarget, setRescheduleTarget] =
     useState<FabSearchResult | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
@@ -99,31 +109,6 @@ export function Fab({
   const DRAG_THRESHOLD_PX = 80;
   const EDGE_SWIPE_ZONE_RATIO = 0.12;
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
-
-  const getResultSortValue = useCallback((item: FabSearchResult) => {
-    if (item.isCompleted) return Number.POSITIVE_INFINITY;
-    const candidate =
-      item.nextScheduledAt ?? (item.type === "HABIT" ? item.nextDueAt : null);
-    if (!candidate) return Number.POSITIVE_INFINITY;
-    const parsed = Date.parse(candidate);
-    return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
-  }, []);
-
-  const sortSearchResults = useCallback(
-    (items: FabSearchResult[]) =>
-      [...items].sort((a, b) => {
-        if (a.isCompleted !== b.isCompleted) {
-          return a.isCompleted ? 1 : -1;
-        }
-        const timeA = getResultSortValue(a);
-        const timeB = getResultSortValue(b);
-        if (timeA === timeB) {
-          return a.name.localeCompare(b.name);
-        }
-        return timeA - timeB;
-      }),
-    [getResultSortValue]
-  );
 
   const formatDateInput = (date: Date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
@@ -155,6 +140,59 @@ export function Fab({
     []
   );
 
+  const buildSearchUrl = useCallback(
+    (cursor: FabSearchCursor | null) => {
+      const trimmed = searchQuery.trim();
+      const params = new URLSearchParams();
+      if (trimmed.length > 0) {
+        params.set("q", trimmed);
+      }
+      if (cursor) {
+        params.set("cursorStartUtc", cursor.startUtc);
+        params.set("cursorProjectId", cursor.projectId);
+      }
+      return params.toString().length > 0
+        ? `/api/schedule/search?${params.toString()}`
+        : "/api/schedule/search";
+    },
+    [searchQuery]
+  );
+
+  const runSearch = useCallback(
+    async ({
+      cursor,
+      append,
+      signal,
+    }: {
+      cursor: FabSearchCursor | null;
+      append: boolean;
+      signal?: AbortSignal;
+    }) => {
+      const response = await fetch(buildSearchUrl(cursor), { signal });
+      if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+      }
+      const payload = (await response.json()) as {
+        results?: FabSearchResult[];
+        nextCursor?: { startUtc?: string | null; projectId?: string | null } | null;
+      };
+      const nextCursor =
+        payload.nextCursor?.startUtc && payload.nextCursor?.projectId
+          ? {
+              startUtc: payload.nextCursor.startUtc,
+              projectId: payload.nextCursor.projectId,
+            }
+          : null;
+      if (!signal?.aborted) {
+        setSearchResults((prev) =>
+          append ? [...prev, ...(payload.results ?? [])] : payload.results ?? []
+        );
+        setSearchCursor(nextCursor);
+      }
+    },
+    [buildSearchUrl]
+  );
+
   const notifySchedulerOfChange = useCallback(async () => {
     try {
       const timeZone =
@@ -181,8 +219,10 @@ export function Fab({
   const resetSearchState = useCallback(() => {
     setSearchQuery("");
     setSearchResults([]);
+    setSearchCursor(null);
     setSearchError(null);
     setIsSearching(false);
+    setIsLoadingMore(false);
     if (searchAbortRef.current) {
       searchAbortRef.current.abort();
       searchAbortRef.current = null;
@@ -404,7 +444,10 @@ export function Fab({
       onQueryChange={setSearchQuery}
       results={searchResults}
       isSearching={isSearching}
+      isLoadingMore={isLoadingMore}
       error={searchError}
+      hasMore={Boolean(searchCursor)}
+      onLoadMore={handleLoadMoreResults}
       onSelectResult={handleOpenReschedule}
       inputRef={nexusInputRef}
     />
@@ -799,29 +842,18 @@ export function Fab({
     searchAbortRef.current = controller;
 
     setIsSearching(true);
+    setIsLoadingMore(false);
     setSearchError(null);
+    setSearchResults([]);
+    setSearchCursor(null);
 
     const timer = window.setTimeout(async () => {
       try {
-        const trimmed = searchQuery.trim();
-        const params = new URLSearchParams();
-        if (trimmed.length > 0) {
-          params.set("q", trimmed);
-        }
-        const url =
-          params.toString().length > 0
-            ? `/api/schedule/search?${params.toString()}`
-            : "/api/schedule/search";
-        const response = await fetch(url, { signal: controller.signal });
-        if (!response.ok) {
-          throw new Error(`Request failed: ${response.status}`);
-        }
-        const payload = (await response.json()) as {
-          results?: FabSearchResult[];
-        };
-        if (!controller.signal.aborted) {
-          setSearchResults(sortSearchResults(payload.results ?? []));
-        }
+        await runSearch({
+          cursor: null,
+          append: false,
+          signal: controller.signal,
+        });
       } catch (error) {
         if (controller.signal.aborted) return;
         console.error("FAB menu search failed", error);
@@ -838,7 +870,31 @@ export function Fab({
       controller.abort();
       setIsSearching(false);
     };
-  }, [activeFabPage, isOpen, searchQuery, sortSearchResults]);
+  }, [activeFabPage, isOpen, runSearch, searchQuery]);
+
+  const handleLoadMoreResults = useCallback(async () => {
+    if (!searchCursor || isSearching || isLoadingMore) {
+      return;
+    }
+    setIsLoadingMore(true);
+    setSearchError(null);
+    try {
+      await runSearch({ cursor: searchCursor, append: true });
+    } catch (error) {
+      console.error("FAB menu search pagination failed", error);
+      if (searchResults.length === 0) {
+        setSearchError("Unable to load results");
+      }
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [
+    isLoadingMore,
+    isSearching,
+    runSearch,
+    searchCursor,
+    searchResults.length,
+  ]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -915,18 +971,16 @@ export function Fab({
       }
 
       setSearchResults((prev) =>
-        sortSearchResults(
-          prev.map((item) =>
-            item.id === rescheduleTarget.id &&
-            item.type === rescheduleTarget.type
-              ? {
-                  ...item,
-                  nextScheduledAt: nextStart,
-                  scheduleInstanceId: nextInstanceId,
-                  durationMinutes: nextDuration,
-                }
-              : item
-          )
+        prev.map((item) =>
+          item.id === rescheduleTarget.id &&
+          item.type === rescheduleTarget.type
+            ? {
+                ...item,
+                nextScheduledAt: nextStart,
+                scheduleInstanceId: nextInstanceId,
+                durationMinutes: nextDuration,
+              }
+            : item
         )
       );
       void notifySchedulerOfChange();
@@ -946,7 +1000,6 @@ export function Fab({
     rescheduleDate,
     rescheduleTime,
     rescheduleTarget,
-    sortSearchResults,
     notifySchedulerOfChange,
   ]);
 
@@ -1230,7 +1283,10 @@ type FabNexusProps = {
   onQueryChange: (value: string) => void;
   results: FabSearchResult[];
   isSearching: boolean;
+  isLoadingMore: boolean;
   error: string | null;
+  hasMore: boolean;
+  onLoadMore: () => void;
   onSelectResult: (result: FabSearchResult) => void;
   inputRef?: RefObject<HTMLInputElement>;
 };
@@ -1240,11 +1296,22 @@ function FabNexus({
   onQueryChange,
   results,
   isSearching,
+  isLoadingMore,
   error,
+  hasMore,
+  onLoadMore,
   onSelectResult,
   inputRef,
 }: FabNexusProps) {
   const hasResults = results.length > 0;
+  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (!hasMore || isLoadingMore) return;
+    const target = event.currentTarget;
+    const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
+    if (remaining < 120) {
+      onLoadMore();
+    }
+  };
 
   const formatDateTime = (
     value: string | null,
@@ -1304,6 +1371,7 @@ function FabNexus({
       <div
         className="flex-1 overflow-y-auto px-4 pb-4 pr-5 pt-3"
         data-fab-nexus-scroll="true"
+        onScroll={handleScroll}
       >
         {isSearching ? (
           <div className="flex h-32 items-center justify-center text-white/60">
@@ -1378,6 +1446,11 @@ function FabNexus({
                 </button>
               );
             })}
+            {isLoadingMore ? (
+              <div className="flex items-center justify-center py-3 text-white/60">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="rounded-xl border border-white/10 bg-black/50 px-4 py-6 text-center text-sm text-white/60">
