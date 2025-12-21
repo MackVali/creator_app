@@ -52,7 +52,8 @@ type FabSearchResult = {
 
 type FabSearchCursor = {
   startUtc: string;
-  projectId: string;
+  sourceType: "PROJECT" | "HABIT";
+  sourceId: string;
 };
 
 const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
@@ -149,7 +150,8 @@ export function Fab({
       }
       if (cursor) {
         params.set("cursorStartUtc", cursor.startUtc);
-        params.set("cursorProjectId", cursor.projectId);
+        params.set("cursorSourceType", cursor.sourceType);
+        params.set("cursorSourceId", cursor.sourceId);
       }
       return params.toString().length > 0
         ? `/api/schedule/search?${params.toString()}`
@@ -174,13 +176,20 @@ export function Fab({
       }
       const payload = (await response.json()) as {
         results?: FabSearchResult[];
-        nextCursor?: { startUtc?: string | null; projectId?: string | null } | null;
+        nextCursor?: {
+          startUtc?: string | null;
+          sourceType?: "PROJECT" | "HABIT" | null;
+          sourceId?: string | null;
+        } | null;
       };
       const nextCursor =
-        payload.nextCursor?.startUtc && payload.nextCursor?.projectId
+        payload.nextCursor?.startUtc &&
+        payload.nextCursor?.sourceType &&
+        payload.nextCursor?.sourceId
           ? {
               startUtc: payload.nextCursor.startUtc,
-              projectId: payload.nextCursor.projectId,
+              sourceType: payload.nextCursor.sourceType,
+              sourceId: payload.nextCursor.sourceId,
             }
           : null;
       if (!signal?.aborted) {

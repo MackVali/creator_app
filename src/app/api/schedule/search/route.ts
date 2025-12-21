@@ -25,13 +25,15 @@ type ProjectSearchRecord = {
 type ScheduleRow = {
   id: string;
   source_id: string;
+  source_type: "PROJECT" | "HABIT";
   start_utc: string | null;
   duration_min: number | null;
 };
 
 type SearchCursor = {
   startUtc: string;
-  projectId: string;
+  sourceType: "PROJECT" | "HABIT";
+  sourceId: string;
 };
 
 function normalizeQuery(value: string | null): string {
@@ -65,45 +67,86 @@ export async function GET(request: NextRequest) {
   const cursor = parseCursor(searchParams);
 
   let projectIdFilter: string[] | null = null;
+  let habitIdFilter: string[] | null = null;
   if (likeQuery) {
-    const { data: projectIdRows, error: projectIdError } = await supabase
-      .from("projects")
-      .select("id")
-      .eq("user_id", user.id)
-      .ilike("name", likeQuery);
-    if (projectIdError) {
-      console.error("FAB search project lookup error", projectIdError);
+    const [projectIdResponse, habitIdResponse] = await Promise.all([
+      supabase
+        .from("projects")
+        .select("id")
+        .eq("user_id", user.id)
+        .ilike("name", likeQuery),
+      supabase
+        .from("habits")
+        .select("id")
+        .eq("user_id", user.id)
+        .ilike("name", likeQuery),
+    ]);
+    if (projectIdResponse.error) {
+      console.error(
+        "FAB search project lookup error",
+        projectIdResponse.error
+      );
       return NextResponse.json(
         { error: "Unable to load projects" },
         { status: 500 }
       );
     }
-    projectIdFilter = (projectIdRows ?? [])
+    if (habitIdResponse.error) {
+      console.error("FAB search habit lookup error", habitIdResponse.error);
+      return NextResponse.json(
+        { error: "Unable to load habits" },
+        { status: 500 }
+      );
+    }
+    projectIdFilter = (projectIdResponse.data ?? [])
       .map((row) => row?.id)
       .filter((id): id is string => typeof id === "string" && id.length > 0);
-    if (projectIdFilter.length === 0) {
+    habitIdFilter = (habitIdResponse.data ?? [])
+      .map((row) => row?.id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+    if (projectIdFilter.length === 0 && habitIdFilter.length === 0) {
       return NextResponse.json({ results: [], nextCursor: null });
     }
   }
 
   let scheduleQuery = supabase
     .from("schedule_instances")
-    .select("id, source_id, start_utc, duration_min")
+    .select("id, source_id, source_type, start_utc, duration_min")
     .eq("user_id", user.id)
-    .eq("source_type", "PROJECT")
+    .in("source_type", ["PROJECT", "HABIT"])
     .eq("status", "scheduled")
     .gte("start_utc", new Date().toISOString())
     .order("start_utc", { ascending: true })
+    .order("source_type", { ascending: true })
     .order("source_id", { ascending: true })
     .limit(PAGE_SIZE + 1);
 
-  if (projectIdFilter) {
-    scheduleQuery = scheduleQuery.in("source_id", projectIdFilter);
+  if (projectIdFilter || habitIdFilter) {
+    const projectFilter =
+      projectIdFilter && projectIdFilter.length > 0
+        ? `and(source_type.eq.PROJECT,source_id.in.(${projectIdFilter.join(
+            ","
+          )}))`
+        : null;
+    const habitFilter =
+      habitIdFilter && habitIdFilter.length > 0
+        ? `and(source_type.eq.HABIT,source_id.in.(${habitIdFilter.join(",")}))`
+        : null;
+    const filters = [projectFilter, habitFilter].filter(
+      (value): value is string => Boolean(value)
+    );
+    if (filters.length > 0) {
+      scheduleQuery = scheduleQuery.or(filters.join(","));
+    }
   }
 
   if (cursor) {
     scheduleQuery = scheduleQuery.or(
-      `start_utc.gt.${cursor.startUtc},and(start_utc.eq.${cursor.startUtc},source_id.gt.${cursor.projectId})`
+      [
+        `start_utc.gt.${cursor.startUtc}`,
+        `and(start_utc.eq.${cursor.startUtc},source_type.gt.${cursor.sourceType})`,
+        `and(start_utc.eq.${cursor.startUtc},source_type.eq.${cursor.sourceType},source_id.gt.${cursor.sourceId})`,
+      ].join(",")
     );
   }
 
@@ -117,61 +160,121 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const pageRows = (scheduleRows ?? []).slice(0, PAGE_SIZE) as ScheduleRow[];
-  const hasMore = (scheduleRows ?? []).length > PAGE_SIZE;
+  const seen = new Set<string>();
+  const dedupedRows: ScheduleRow[] = [];
+  for (const row of (scheduleRows ?? []) as ScheduleRow[]) {
+    const key = `${row.source_type}:${row.source_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    dedupedRows.push(row);
+  }
+
+  const pageRows = dedupedRows.slice(0, PAGE_SIZE);
+  const hasMore = dedupedRows.length > PAGE_SIZE;
   const lastRow = pageRows[pageRows.length - 1] ?? null;
   const nextCursor =
     hasMore && lastRow?.start_utc && lastRow.source_id
       ? {
           startUtc: lastRow.start_utc,
-          projectId: lastRow.source_id,
+          sourceType: lastRow.source_type,
+          sourceId: lastRow.source_id,
         }
       : null;
 
   const projectIds = pageRows
-    .map((row) => row?.source_id)
+    .filter((row) => row.source_type === "PROJECT")
+    .map((row) => row.source_id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  const habitIds = pageRows
+    .filter((row) => row.source_type === "HABIT")
+    .map((row) => row.source_id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
 
-  if (projectIds.length === 0) {
+  if (projectIds.length === 0 && habitIds.length === 0) {
     return NextResponse.json({
       results: [],
       nextCursor: null,
     });
   }
 
-  const { data: projectRows, error: projectError } = await supabase
-    .from("projects")
-    .select("id,name,completed_at,global_rank")
-    .eq("user_id", user.id)
-    .in("id", projectIds);
+  const [projectResponse, habitResponse] = await Promise.all([
+    projectIds.length > 0
+      ? supabase
+          .from("projects")
+          .select("id,name,completed_at,global_rank")
+          .eq("user_id", user.id)
+          .in("id", projectIds)
+      : Promise.resolve({ data: [], error: null }),
+    habitIds.length > 0
+      ? supabase
+          .from("habits")
+          .select("id,name")
+          .eq("user_id", user.id)
+          .in("id", habitIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
 
-  if (projectError) {
-    console.error("FAB search projects error", projectError);
+  if (projectResponse.error) {
+    console.error("FAB search projects error", projectResponse.error);
     return NextResponse.json(
       { error: "Unable to load projects" },
       { status: 500 }
     );
   }
+  if (habitResponse.error) {
+    console.error("FAB search habits error", habitResponse.error);
+    return NextResponse.json(
+      { error: "Unable to load habits" },
+      { status: 500 }
+    );
+  }
 
   const projectLookup = new Map<string, ProjectSearchRecord>();
-  for (const project of projectRows ?? []) {
+  for (const project of projectResponse.data ?? []) {
     if (!project?.id) continue;
     projectLookup.set(project.id, project as ProjectSearchRecord);
+  }
+  const habitLookup = new Map<string, { id: string; name?: string | null }>();
+  for (const habit of habitResponse.data ?? []) {
+    if (!habit?.id) continue;
+    habitLookup.set(habit.id, habit as { id: string; name?: string | null });
   }
 
   const results: SearchResult[] = [];
   for (const row of pageRows) {
-    const project = projectLookup.get(row.source_id);
-    if (!project) continue;
-    const completedAt =
-      typeof project.completed_at === "string" &&
-      project.completed_at.length > 0
-        ? project.completed_at
-        : null;
+    if (row.source_type === "PROJECT") {
+      const project = projectLookup.get(row.source_id);
+      if (!project) continue;
+      const completedAt =
+        typeof project.completed_at === "string" &&
+        project.completed_at.length > 0
+          ? project.completed_at
+          : null;
+      results.push({
+        id: project.id,
+        name: project.name?.trim() || "Untitled project",
+        type: "PROJECT",
+        nextScheduledAt:
+          typeof row.start_utc === "string" ? row.start_utc : null,
+        scheduleInstanceId: row.id ?? null,
+        durationMinutes:
+          typeof row.duration_min === "number" &&
+          Number.isFinite(row.duration_min)
+            ? row.duration_min
+            : null,
+        nextDueAt: null,
+        completedAt,
+        isCompleted: typeof completedAt === "string",
+        global_rank: project.global_rank ?? null,
+      });
+      continue;
+    }
+    const habit = habitLookup.get(row.source_id);
+    if (!habit) continue;
     results.push({
-      id: project.id,
-      name: project.name?.trim() || "Untitled project",
-      type: "PROJECT",
+      id: habit.id,
+      name: habit.name?.trim() || "Untitled habit",
+      type: "HABIT",
       nextScheduledAt:
         typeof row.start_utc === "string" ? row.start_utc : null,
       scheduleInstanceId: row.id ?? null,
@@ -181,9 +284,8 @@ export async function GET(request: NextRequest) {
           ? row.duration_min
           : null,
       nextDueAt: null,
-      completedAt,
-      isCompleted: typeof completedAt === "string",
-      global_rank: project.global_rank ?? null,
+      completedAt: null,
+      isCompleted: false,
     });
   }
 
@@ -192,9 +294,11 @@ export async function GET(request: NextRequest) {
 
 function parseCursor(searchParams: URLSearchParams): SearchCursor | null {
   const startUtc = searchParams.get("cursorStartUtc");
-  const projectId = searchParams.get("cursorProjectId");
-  if (!startUtc || !projectId) return null;
+  const sourceType = searchParams.get("cursorSourceType");
+  const sourceId = searchParams.get("cursorSourceId");
+  if (!startUtc || !sourceType || !sourceId) return null;
   const parsed = Date.parse(startUtc);
   if (Number.isNaN(parsed)) return null;
-  return { startUtc, projectId };
+  if (sourceType !== "PROJECT" && sourceType !== "HABIT") return null;
+  return { startUtc, sourceType, sourceId };
 }
