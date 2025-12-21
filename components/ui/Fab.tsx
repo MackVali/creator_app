@@ -14,6 +14,7 @@ import {
   AnimatePresence,
   useMotionValue,
   useTransform,
+  useMotionTemplate,
   animate,
   useReducedMotion,
   type PanInfo,
@@ -205,24 +206,6 @@ export function Fab({
 
   const lerp = (start: number, end: number, t: number) => start + (end - start) * t;
 
-  const blendPalette = (from: MenuPalette, to: MenuPalette, t: number): MenuPalette => ({
-    base: [
-      lerp(from.base[0], to.base[0], t),
-      lerp(from.base[1], to.base[1], t),
-      lerp(from.base[2], to.base[2], t),
-    ],
-    highlight: [
-      lerp(from.highlight[0], to.highlight[0], t),
-      lerp(from.highlight[1], to.highlight[1], t),
-      lerp(from.highlight[2], to.highlight[2], t),
-    ],
-    lowlight: [
-      lerp(from.lowlight[0], to.lowlight[0], t),
-      lerp(from.lowlight[1], to.lowlight[1], t),
-      lerp(from.lowlight[2], to.lowlight[2], t),
-    ],
-  });
-
   const createPaletteBackground = (palette: MenuPalette) => {
     const [r, g, b] = palette.base;
     const [hr, hg, hb] = palette.highlight;
@@ -339,7 +322,7 @@ export function Fab({
     },
   } as const;
 
-  const pageContentVariants = {
+  const pageVariants = {
     closed: {},
     open: {},
   } as const;
@@ -400,16 +383,8 @@ export function Fab({
     </div>
   );
 
-  const renderPage = (pageIndex: 0 | 1, forceOpen: boolean) => (
-    <motion.div
-      variants={pageContentVariants}
-      initial={forceOpen ? "open" : undefined}
-      animate={forceOpen ? "open" : undefined}
-    >
-      {/* Newly mounted page content needs its own variant context; otherwise itemVariants stay "closed" when mounted mid-gesture. */}
-      {pageIndex === 0 ? renderPrimaryPage() : renderSecondaryPage()}
-    </motion.div>
-  );
+  const renderPage = (pageIndex: 0 | 1) =>
+    pageIndex === 0 ? renderPrimaryPage() : renderSecondaryPage();
 
   const handleEventClick = (
     eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT"
@@ -961,14 +936,41 @@ export function Fab({
   const staticBorderColor = createPaletteBorderColor(restingPalette);
   const targetPalette =
     dragTargetPage !== null ? getMenuPalette(dragTargetPage as 0 | 1) : restingPalette;
-  const blendedBackgroundImage = useTransform(dragProgress, (value) => {
-    const palette = blendPalette(restingPalette, targetPalette, value);
-    return createPaletteBackground(palette);
-  });
-  const blendedBorderColor = useTransform(dragProgress, (value) => {
-    const palette = blendPalette(restingPalette, targetPalette, value);
-    return createPaletteBorderColor(palette);
-  });
+  const baseR = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.base[0], targetPalette.base[0], value)
+  );
+  const baseG = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.base[1], targetPalette.base[1], value)
+  );
+  const baseB = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.base[2], targetPalette.base[2], value)
+  );
+  const highlightR = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.highlight[0], targetPalette.highlight[0], value)
+  );
+  const highlightG = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.highlight[1], targetPalette.highlight[1], value)
+  );
+  const highlightB = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.highlight[2], targetPalette.highlight[2], value)
+  );
+  const lowlightR = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.lowlight[0], targetPalette.lowlight[0], value)
+  );
+  const lowlightG = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.lowlight[1], targetPalette.lowlight[1], value)
+  );
+  const lowlightB = useTransform(dragProgress, (value) =>
+    lerp(restingPalette.lowlight[2], targetPalette.lowlight[2], value)
+  );
+  // Background blends from drag motion value so color transitions stay continuous during interactive paging.
+  const blendedBackgroundImage = useMotionTemplate`
+    radial-gradient(circle at top, rgba(${highlightR}, ${highlightG}, ${highlightB}, 0.65), rgba(${baseR}, ${baseG}, ${baseB}, 0.15) 45%),
+    linear-gradient(160deg, rgba(${highlightR}, ${highlightG}, ${highlightB}, 0.95) 0%, rgba(${baseR}, ${baseG}, ${baseB}, 0.97) 50%, rgba(${lowlightR}, ${lowlightG}, ${lowlightB}, 0.98) 100%)
+  `;
+  const blendedBorderColor = useMotionTemplate`
+    rgba(${highlightR}, ${highlightG}, ${highlightB}, 0.35)
+  `;
   const isBlendingGradient = isDragging && dragTargetPage !== null;
 
   return (
@@ -1041,7 +1043,15 @@ export function Fab({
                       onDrag={handlePageDrag}
                       onDragEnd={handlePageDragEnd}
                     >
-                      {renderPage(menuPage as 0 | 1, isDragging)}
+                      {/* Each page provides its own variant context so rows mounted mid-drag resolve to open immediately. */}
+                      <motion.div
+                        className="absolute inset-0 flex"
+                        variants={pageVariants}
+                        initial="open"
+                        animate="open"
+                      >
+                        {renderPage(menuPage as 0 | 1)}
+                      </motion.div>
                     </motion.div>
                     {neighborPage !== null && neighborDirection !== null && (
                       <motion.div
@@ -1054,7 +1064,14 @@ export function Fab({
                         }}
                       >
                         {/* During drag we mount both pages so the incoming page’s real content is visible throughout the transition. */}
-                        {renderPage(neighborPage as 0 | 1, true)}
+                        <motion.div
+                          className="absolute inset-0 flex"
+                          variants={pageVariants}
+                          initial="open"
+                          animate="open"
+                        >
+                          {renderPage(neighborPage as 0 | 1)}
+                        </motion.div>
                       </motion.div>
                     )}
                   </div>
