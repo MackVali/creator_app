@@ -98,11 +98,19 @@ export function Fab({
   const router = useRouter();
   const VERTICAL_WHEEL_TRIGGER = 20;
   const DRAG_THRESHOLD_PX = 80;
-  const MIN_SECTION_THRESHOLD = 80;
+  const MIN_SECTION_THRESHOLD = 48;
   const SECTION_VELOCITY_THRESHOLD = 600;
+  const GESTURE_LOCK_PX = 10;
   const [isNexusInputFocused, setIsNexusInputFocused] = useState(false);
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
   const [isSectionDragging, setIsSectionDragging] = useState(false);
+  const gestureLockRef = useRef<"none" | "x" | "y">("none");
+  const gestureStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const resetGestureLock = useCallback(() => {
+    gestureLockRef.current = "none";
+    gestureStartRef.current = null;
+  }, []);
 
   const getResultSortValue = useCallback((item: FabSearchResult) => {
     if (item.isCompleted) return Number.POSITIVE_INFINITY;
@@ -516,7 +524,12 @@ export function Fab({
 
   const handlePagerPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!isOpen || stageWidth <= 0 || fabSection !== "content") {
+      if (
+        !isOpen ||
+        stageWidth <= 0 ||
+        fabSection !== "content" ||
+        gestureLockRef.current === "y"
+      ) {
         return;
       }
       pageDragControls.start(event);
@@ -571,7 +584,12 @@ export function Fab({
   );
 
   const handlePageDragStart = useCallback(() => {
-    if (!isOpen || stageWidth <= 0 || fabSection !== "content") {
+    if (
+      !isOpen ||
+      stageWidth <= 0 ||
+      fabSection !== "content" ||
+      gestureLockRef.current === "y"
+    ) {
       return;
     }
     setIsDragging(true);
@@ -580,7 +598,11 @@ export function Fab({
 
   const handlePageDrag = useCallback(
     (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-      if (!isDragging || fabSection !== "content") {
+      if (
+        !isDragging ||
+        fabSection !== "content" ||
+        gestureLockRef.current === "y"
+      ) {
         return;
       }
       const limit = stageWidth > 0 ? stageWidth : DRAG_THRESHOLD_PX;
@@ -607,6 +629,7 @@ export function Fab({
   const handlePageDragEnd = useCallback(
     async (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
       if (!isDragging || fabSection !== "content") {
+        resetGestureLock();
         return;
       }
       setIsDragging(false);
@@ -615,10 +638,12 @@ export function Fab({
       const threshold = width > 0 ? width * 0.33 : 120;
       const distance = Math.abs(pageX.get());
       const shouldCommit =
+        gestureLockRef.current !== "y" &&
         target !== null &&
         (distance > threshold || Math.abs(info.velocity.x) > 600);
       if (shouldCommit && target !== null) {
         await animateToPage(target, { fromDrag: true });
+        resetGestureLock();
         return;
       }
       setIsAnimatingPageChange(true);
@@ -633,8 +658,17 @@ export function Fab({
       pageX.set(0);
       setDragTargetPage(null);
       setIsAnimatingPageChange(false);
+      resetGestureLock();
     },
-    [animateToPage, dragTargetPage, fabSection, isDragging, pageX, stageWidth]
+    [
+      animateToPage,
+      dragTargetPage,
+      fabSection,
+      isDragging,
+      pageX,
+      resetGestureLock,
+      stageWidth,
+    ]
   );
 
   const animateSectionTo = useCallback(
@@ -687,6 +721,9 @@ export function Fab({
       if (!isOpen || normalizedStageHeight <= 0) {
         return;
       }
+      if (gestureLockRef.current === "x") {
+        return;
+      }
       if (fabSection === "nexus") {
         if (isNexusInputFocused) {
           return;
@@ -708,14 +745,18 @@ export function Fab({
   );
 
   const handleSectionDragStart = useCallback(() => {
-    if (!isOpen || normalizedStageHeight <= 0) {
+    if (
+      !isOpen ||
+      normalizedStageHeight <= 0 ||
+      gestureLockRef.current === "x"
+    ) {
       return;
     }
     setIsSectionDragging(true);
   }, [isOpen, normalizedStageHeight]);
 
   const handleSectionDrag = useCallback(() => {
-    if (!isSectionDragging) {
+    if (!isSectionDragging || gestureLockRef.current === "x") {
       return;
     }
     const height = normalizedStageHeight;
@@ -729,22 +770,23 @@ export function Fab({
   const handleSectionDragEnd = useCallback(
     async (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
       if (!isSectionDragging) {
+        resetGestureLock();
         return;
       }
       setIsSectionDragging(false);
       const height = normalizedStageHeight;
       const restingY = fabSection === "content" ? 0 : -height;
       const currentY = sectionY.get();
-      const threshold = Math.max(height * 0.25, MIN_SECTION_THRESHOLD);
+      const commitDistance = Math.max(height * 0.22, MIN_SECTION_THRESHOLD);
       let targetSection: FabSection | null = null;
       if (fabSection === "content") {
-        const crossedThreshold = currentY <= -threshold;
+        const crossedThreshold = currentY <= -commitDistance;
         const fastEnough = info.velocity.y < -SECTION_VELOCITY_THRESHOLD;
         if (crossedThreshold || fastEnough) {
           targetSection = "nexus";
         }
       } else {
-        const crossedThreshold = currentY >= -height + threshold;
+        const crossedThreshold = currentY >= -height + commitDistance;
         const fastEnough = info.velocity.y > SECTION_VELOCITY_THRESHOLD;
         if (crossedThreshold || fastEnough) {
           targetSection = "content";
@@ -752,6 +794,7 @@ export function Fab({
       }
       if (targetSection) {
         await animateSectionTo(targetSection);
+        resetGestureLock();
         return;
       }
       try {
@@ -763,15 +806,51 @@ export function Fab({
         // Ignore interruption
       }
       sectionY.set(restingY);
+      resetGestureLock();
     },
     [
+      MIN_SECTION_THRESHOLD,
+      SECTION_VELOCITY_THRESHOLD,
       animateSectionTo,
       fabSection,
       isSectionDragging,
       normalizedStageHeight,
+      resetGestureLock,
       sectionY,
     ]
   );
+
+  const handleStagePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      gestureStartRef.current = { x: event.clientX, y: event.clientY };
+      gestureLockRef.current = "none";
+      handleSectionPointerDown(event);
+    },
+    [handleSectionPointerDown]
+  );
+
+  const handleStagePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!isOpen) {
+        return;
+      }
+      const start = gestureStartRef.current;
+      if (!start || gestureLockRef.current !== "none") {
+        return;
+      }
+      const dx = Math.abs(event.clientX - start.x);
+      const dy = Math.abs(event.clientY - start.y);
+      if (dx < GESTURE_LOCK_PX && dy < GESTURE_LOCK_PX) {
+        return;
+      }
+      gestureLockRef.current = dy >= dx ? "y" : "x";
+    },
+    [isOpen]
+  );
+
+  const handleStagePointerEnd = useCallback(() => {
+    resetGestureLock();
+  }, [resetGestureLock]);
 
   const handleCloseReschedule = () => {
     if (isSavingReschedule || isDeletingEvent) return;
@@ -789,6 +868,7 @@ export function Fab({
       setFabSection("content");
       setIsSectionDragging(false);
       sectionY.set(0);
+      resetGestureLock();
       setIsNexusInputFocused(false);
       if (
         typeof document !== "undefined" &&
@@ -803,7 +883,7 @@ export function Fab({
       setIsDeletingEvent(false);
       searchAbortRef.current?.abort();
     }
-  }, [isOpen, pageX, resetSearchState, sectionY]);
+  }, [isOpen, pageX, resetGestureLock, resetSearchState, sectionY]);
 
   useEffect(() => {
     return () => {
@@ -1233,7 +1313,10 @@ export function Fab({
                       top: -normalizedStageHeight,
                       bottom: 0,
                     }}
-                    onPointerDownCapture={handleSectionPointerDown}
+                    onPointerDownCapture={handleStagePointerDown}
+                    onPointerMoveCapture={handleStagePointerMove}
+                    onPointerUpCapture={handleStagePointerEnd}
+                    onPointerCancelCapture={handleStagePointerEnd}
                     onDragStart={handleSectionDragStart}
                     onDrag={handleSectionDrag}
                     onDragEnd={handleSectionDragEnd}
