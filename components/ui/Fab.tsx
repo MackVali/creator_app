@@ -1080,7 +1080,6 @@ export function Fab({
                     className="absolute inset-0 flex"
                     drag="x"
                     dragControls={pageDragControls}
-                    dragListener={false}
                     dragElastic={0}
                     dragMomentum={false}
                     dragConstraints={{
