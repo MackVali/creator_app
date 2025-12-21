@@ -1246,10 +1246,10 @@ function FabNexus({
 
   return (
     <div
-      className="flex h-full w-full flex-col gap-3 px-4 py-4 text-white"
+      className="flex h-full w-full flex-col text-white"
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
-      <div className="relative">
+      <div className="relative px-4 pt-4">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
         <input
           ref={inputRef}
@@ -1260,7 +1260,10 @@ function FabNexus({
           aria-label="Search NEXUS"
         />
       </div>
-      <div className="flex-1 overflow-y-auto pr-1" data-fab-nexus-scroll="true">
+      <div
+        className="flex-1 overflow-y-auto px-4 pb-4 pr-5 pt-3"
+        data-fab-nexus-scroll="true"
+      >
         {isSearching ? (
           <div className="flex h-32 items-center justify-center text-white/60">
             <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
