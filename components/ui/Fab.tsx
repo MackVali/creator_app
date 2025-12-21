@@ -1251,18 +1251,20 @@ function FabNexus({
       className="flex h-full w-full flex-col text-white"
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
-      <div className="relative px-4 pt-4">
-        <span className="pointer-events-none absolute left-3 inset-y-0 flex items-center">
-          <Search className="h-4 w-4 text-white/30" />
-        </span>
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="search NEXUS"
-          className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
-          aria-label="Search NEXUS"
-        />
+      <div className="px-4 pt-4">
+        <div className="relative h-10">
+          <span className="pointer-events-none absolute left-3 inset-y-0 flex items-center">
+            <Search className="h-4 w-4 text-white/30" />
+          </span>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="search NEXUS"
+            className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
+            aria-label="Search NEXUS"
+          />
+        </div>
       </div>
       <div
         className="flex-1 overflow-y-auto px-4 pb-4 pr-5 pt-3"
