@@ -100,16 +100,18 @@ export function Fab({
   const DRAG_THRESHOLD_PX = 80;
   const MIN_SECTION_THRESHOLD = 48;
   const SECTION_VELOCITY_THRESHOLD = 600;
-  const GESTURE_LOCK_PX = 10;
+  const GESTURE_LOCK_PX = 6;
   const [isNexusInputFocused, setIsNexusInputFocused] = useState(false);
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
   const [isSectionDragging, setIsSectionDragging] = useState(false);
   const gestureLockRef = useRef<"none" | "x" | "y">("none");
   const gestureStartRef = useRef<{ x: number; y: number } | null>(null);
+  const gestureStartTargetRef = useRef<HTMLElement | null>(null);
 
   const resetGestureLock = useCallback(() => {
     gestureLockRef.current = "none";
     gestureStartRef.current = null;
+    gestureStartTargetRef.current = null;
   }, []);
 
   const getResultSortValue = useCallback((item: FabSearchResult) => {
@@ -522,20 +524,6 @@ export function Fab({
     }
   };
 
-  const handlePagerPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (
-        !isOpen ||
-        stageWidth <= 0 ||
-        fabSection !== "content" ||
-        gestureLockRef.current === "y"
-      ) {
-        return;
-      }
-      pageDragControls.start(event);
-    },
-    [fabSection, isOpen, pageDragControls, stageWidth]
-  );
   const animateToPage = useCallback(
     async (targetPage: 0 | 1, options?: { fromDrag?: boolean }) => {
       if (targetPage === activeFabPage) {
@@ -628,6 +616,10 @@ export function Fab({
 
   const handlePageDragEnd = useCallback(
     async (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (gestureLockRef.current === "y") {
+        resetGestureLock();
+        return;
+      }
       if (!isDragging || fabSection !== "content") {
         resetGestureLock();
         return;
@@ -716,34 +708,6 @@ export function Fab({
     ]
   );
 
-  const handleSectionPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!isOpen || normalizedStageHeight <= 0) {
-        return;
-      }
-      if (gestureLockRef.current === "x") {
-        return;
-      }
-      if (fabSection === "nexus") {
-        if (isNexusInputFocused) {
-          return;
-        }
-        const target = event.target as HTMLElement | null;
-        if (target?.closest('[data-fab-nexus-scroll="true"]')) {
-          return;
-        }
-      }
-      sectionDragControls.start(event);
-    },
-    [
-      fabSection,
-      isNexusInputFocused,
-      isOpen,
-      normalizedStageHeight,
-      sectionDragControls,
-    ]
-  );
-
   const handleSectionDragStart = useCallback(() => {
     if (
       !isOpen ||
@@ -769,6 +733,10 @@ export function Fab({
 
   const handleSectionDragEnd = useCallback(
     async (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (gestureLockRef.current === "x") {
+        resetGestureLock();
+        return;
+      }
       if (!isSectionDragging) {
         resetGestureLock();
         return;
@@ -823,10 +791,10 @@ export function Fab({
   const handleStagePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       gestureStartRef.current = { x: event.clientX, y: event.clientY };
+      gestureStartTargetRef.current = event.target as HTMLElement | null;
       gestureLockRef.current = "none";
-      handleSectionPointerDown(event);
     },
-    [handleSectionPointerDown]
+    []
   );
 
   const handleStagePointerMove = useCallback(
@@ -843,9 +811,46 @@ export function Fab({
       if (dx < GESTURE_LOCK_PX && dy < GESTURE_LOCK_PX) {
         return;
       }
-      gestureLockRef.current = dy >= dx ? "y" : "x";
+      const shouldLockY = dy >= dx * 0.85;
+      if (shouldLockY) {
+        if (normalizedStageHeight <= 0) {
+          return;
+        }
+        if (fabSection === "nexus") {
+          if (isNexusInputFocused) {
+            return;
+          }
+          const startTarget = gestureStartTargetRef.current;
+          const scrollContainer = startTarget?.closest(
+            '[data-fab-nexus-scroll="true"]'
+          ) as HTMLElement | null;
+          if (scrollContainer) {
+            const scrollTop = scrollContainer.scrollTop;
+            const isDraggingDown = event.clientY - start.y > 0;
+            if (scrollTop > 0 || !isDraggingDown) {
+              return;
+            }
+          }
+        }
+        gestureLockRef.current = "y";
+        sectionDragControls.start(event);
+        return;
+      }
+      if (stageWidth <= 0 || fabSection !== "content") {
+        return;
+      }
+      gestureLockRef.current = "x";
+      pageDragControls.start(event);
     },
-    [isOpen]
+    [
+      fabSection,
+      isNexusInputFocused,
+      isOpen,
+      normalizedStageHeight,
+      pageDragControls,
+      sectionDragControls,
+      stageWidth,
+    ]
   );
 
   const handleStagePointerEnd = useCallback(() => {
@@ -884,6 +889,10 @@ export function Fab({
       searchAbortRef.current?.abort();
     }
   }, [isOpen, pageX, resetGestureLock, resetSearchState, sectionY]);
+
+  useEffect(() => {
+    resetGestureLock();
+  }, [fabSection, resetGestureLock]);
 
   useEffect(() => {
     return () => {
@@ -1345,7 +1354,6 @@ export function Fab({
                             right: dragConstraintRight,
                           }}
                           style={{ x: pageX }}
-                          onPointerDownCapture={handlePagerPointerDown}
                           onDragStart={handlePageDragStart}
                           onDrag={handlePageDrag}
                           onDragEnd={handlePageDragEnd}
