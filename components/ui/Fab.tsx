@@ -357,7 +357,7 @@ export function Fab({
   });
 
   const renderPrimaryPage = () => (
-    <div className="flex w-full flex-col">
+    <div className="flex w-full flex-col px-4 py-2">
       {primary.map((event) => (
         <motion.button
           key={event.label}
@@ -377,7 +377,7 @@ export function Fab({
   );
 
   const renderSecondaryPage = () => (
-    <div className="flex w-full flex-col">
+    <div className="flex w-full flex-col px-4 py-2">
       {secondary.map((event) => (
         <motion.button
           key={event.label}
@@ -1064,7 +1064,7 @@ export function Fab({
           >
             <>
               <motion.div
-                className="relative h-full w-full px-4 py-2"
+                className="relative h-full w-full"
                 style={{
                   backgroundImage: isBlendingGradient
                     ? blendedBackgroundImage
@@ -1093,10 +1093,11 @@ export function Fab({
                     dragPropagation
                   >
                     <motion.div
-                      className="absolute inset-0 flex"
+                      className="absolute inset-0 flex overflow-hidden"
                       variants={pageVariants}
                       initial="open"
                       animate="open"
+                      style={{ borderRadius: "inherit" }}
                     >
                       {renderPage(activeFabPage)}
                     </motion.div>
@@ -1112,10 +1113,11 @@ export function Fab({
                       }}
                     >
                       <motion.div
-                        className="absolute inset-0 flex"
+                        className="absolute inset-0 flex overflow-hidden"
                         variants={pageVariants}
                         initial="open"
                         animate="open"
+                        style={{ borderRadius: "inherit" }}
                       >
                         {renderPage(neighborPage)}
                       </motion.div>
