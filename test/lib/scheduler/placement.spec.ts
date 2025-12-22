@@ -184,7 +184,7 @@ describe("placeItemInWindows", () => {
       date: firstWindowStart,
     });
 
-    expect(capturedStartUTC).toBe(new Date("2024-01-02T10:00:00Z").toISOString());
+    expect(capturedStartUTC).toBe(new Date("2024-01-02T09:00:00Z").toISOString());
     expect(fetchInstancesMock).toHaveBeenCalledTimes(2);
   });
 
@@ -245,5 +245,224 @@ describe("placeItemInWindows", () => {
 
     expect(capturedStartUTC).toBe(windowStart.toISOString());
   });
-});
 
+  it("advances non-SYNC habits past existing non-SYNC habit blocks", async () => {
+    const createInstanceMock = instanceRepo.createInstance as unknown as vi.Mock;
+
+    let capturedStartUTC: string | null = null;
+    createInstanceMock.mockImplementation(async (input: { startUTC: string }) => {
+      capturedStartUTC = input.startUTC;
+      return {
+        data: { id: "inst-non-sync" },
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      };
+    });
+
+    const windowStart = new Date("2024-01-02T02:00:00Z");
+    const windowEnd = new Date("2024-01-02T03:00:00Z");
+    const habitTypeById = new Map([["habit-blocker", "HABIT"]]);
+
+    await placeItemInWindows({
+      userId: "user-1",
+      item: {
+        id: "habit-next",
+        sourceType: "HABIT",
+        duration_min: 10,
+        energy: "LOW",
+        weight: 0,
+      },
+      windows: [
+        {
+          id: "win-early",
+          startLocal: windowStart,
+          endLocal: windowEnd,
+        },
+      ],
+      date: windowStart,
+      existingInstances: [
+        {
+          id: "inst-blocker",
+          source_id: "habit-blocker",
+          source_type: "HABIT",
+          status: "scheduled",
+          start_utc: "2024-01-02T02:00:00Z",
+          end_utc: "2024-01-02T02:15:00Z",
+        },
+      ],
+      habitTypeById,
+    });
+
+    expect(capturedStartUTC).toBe("2024-01-02T02:15:00.000Z");
+  });
+
+  it("lets SYNC habits overlap habits but still respects project blockers", async () => {
+    const createInstanceMock = instanceRepo.createInstance as unknown as vi.Mock;
+
+    const capturedStarts: string[] = [];
+    createInstanceMock.mockImplementation(async (input: { startUTC: string }) => {
+      capturedStarts.push(input.startUTC);
+      return {
+        data: { id: `inst-${capturedStarts.length}` },
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      };
+    });
+
+    const windowStart = new Date("2024-01-02T02:00:00Z");
+    const windowEnd = new Date("2024-01-02T03:00:00Z");
+    const habitTypeById = new Map([["habit-blocker", "HABIT"], ["habit-sync", "SYNC"]]);
+
+    await placeItemInWindows({
+      userId: "user-1",
+      item: {
+        id: "habit-sync",
+        sourceType: "HABIT",
+        duration_min: 10,
+        energy: "LOW",
+        weight: 0,
+      },
+      windows: [
+        {
+          id: "win-early",
+          startLocal: windowStart,
+          endLocal: windowEnd,
+        },
+      ],
+      date: windowStart,
+      existingInstances: [
+        {
+          id: "inst-habit",
+          source_id: "habit-blocker",
+          source_type: "HABIT",
+          status: "scheduled",
+          start_utc: "2024-01-02T02:00:00Z",
+          end_utc: "2024-01-02T02:15:00Z",
+        },
+      ],
+      allowHabitOverlap: true,
+      habitTypeById,
+    });
+
+    await placeItemInWindows({
+      userId: "user-1",
+      item: {
+        id: "habit-sync",
+        sourceType: "HABIT",
+        duration_min: 10,
+        energy: "LOW",
+        weight: 0,
+      },
+      windows: [
+        {
+          id: "win-early",
+          startLocal: windowStart,
+          endLocal: windowEnd,
+        },
+      ],
+      date: windowStart,
+      existingInstances: [
+        {
+          id: "inst-habit",
+          source_id: "habit-blocker",
+          source_type: "HABIT",
+          status: "scheduled",
+          start_utc: "2024-01-02T02:00:00Z",
+          end_utc: "2024-01-02T02:15:00Z",
+        },
+        {
+          id: "inst-project",
+          source_id: "proj-1",
+          source_type: "PROJECT",
+          status: "scheduled",
+          start_utc: "2024-01-02T02:00:00Z",
+          end_utc: "2024-01-02T02:30:00Z",
+        },
+      ],
+      allowHabitOverlap: true,
+      habitTypeById,
+    });
+
+    expect(capturedStarts[0]).toBe("2024-01-02T02:00:00.000Z");
+    expect(capturedStarts[1]).toBe("2024-01-02T02:30:00.000Z");
+  });
+
+  it("allows project placement overlapping SYNC habits but not non-SYNC habits", async () => {
+    const createInstanceMock = instanceRepo.createInstance as unknown as vi.Mock;
+
+    const capturedStarts: string[] = [];
+    createInstanceMock.mockImplementation(async (input: { startUTC: string }) => {
+      capturedStarts.push(input.startUTC);
+      return {
+        data: { id: `inst-${capturedStarts.length}` },
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      };
+    });
+
+    const windowStart = new Date("2024-01-02T02:00:00Z");
+    const windowEnd = new Date("2024-01-02T03:00:00Z");
+
+    const habitTypeById = new Map<string, string>([
+      ["habit-sync", "SYNC"],
+      ["habit-hard", "HABIT"],
+    ]);
+
+    await placeItemInWindows({
+      userId: "user-1",
+      item: {
+        id: "project-1",
+        sourceType: "PROJECT",
+        duration_min: 15,
+        energy: "LOW",
+        weight: 0,
+      },
+      windows: [{ id: "win", startLocal: windowStart, endLocal: windowEnd }],
+      date: windowStart,
+      existingInstances: [
+        {
+          id: "inst-sync",
+          source_id: "habit-sync",
+          source_type: "HABIT",
+          status: "scheduled",
+          start_utc: "2024-01-02T02:00:00Z",
+          end_utc: "2024-01-02T02:30:00Z",
+        },
+      ],
+      habitTypeById,
+    });
+
+    await placeItemInWindows({
+      userId: "user-1",
+      item: {
+        id: "project-2",
+        sourceType: "PROJECT",
+        duration_min: 15,
+        energy: "LOW",
+        weight: 0,
+      },
+      windows: [{ id: "win", startLocal: windowStart, endLocal: windowEnd }],
+      date: windowStart,
+      existingInstances: [
+        {
+          id: "inst-hard",
+          source_id: "habit-hard",
+          source_type: "HABIT",
+          status: "scheduled",
+          start_utc: "2024-01-02T02:00:00Z",
+          end_utc: "2024-01-02T02:30:00Z",
+        },
+      ],
+      habitTypeById,
+    });
+
+    expect(capturedStarts[0]).toBe("2024-01-02T02:00:00.000Z");
+    expect(capturedStarts[1]).toBe("2024-01-02T02:30:00.000Z");
+  });
+});

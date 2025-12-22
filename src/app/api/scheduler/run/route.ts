@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
+import { filterIllegalOverlapsForRender } from '@/lib/scheduler/overlapFilter'
 import {
   normalizeSchedulerModePayload,
   type SchedulerModePayload,
@@ -77,13 +78,46 @@ export async function POST(request: Request) {
   const userTimeZone =
     requestTimeZone ?? profileTimeZone ?? metadataTimeZone
   const coordinates = extractUserCoordinates(user)
-  const scheduleResult = await scheduleBacklog(user.id, now, schedulingClient, {
-    timeZone: userTimeZone,
-    location: coordinates,
-    utcOffsetMinutes,
-    mode,
-    writeThroughDays,
-  })
+  let scheduleResult;
+  try {
+    scheduleResult = await scheduleBacklog(user.id, now, schedulingClient, {
+      timeZone: userTimeZone,
+      location: coordinates,
+      utcOffsetMinutes,
+      mode,
+      writeThroughDays,
+    })
+    if (scheduleResult.placed?.length) {
+      const filtered = filterIllegalOverlapsForRender(scheduleResult.placed)
+      const droppedIds = filtered.droppedIds
+      if (droppedIds.length > 0) {
+        await schedulingClient
+          .from('schedule_instances')
+          .update({
+            status: 'canceled',
+            canceled_reason: 'ILLEGAL_OVERLAP_LEGACY',
+          } as Record<string, unknown>)
+          .in('id', droppedIds)
+        scheduleResult.placed = filtered.kept
+        scheduleResult.timeline = (scheduleResult.timeline ?? []).filter(entry => {
+          if (entry.type === 'PROJECT') {
+            const instanceId = entry.instance?.id ?? null
+            return !instanceId || !droppedIds.includes(instanceId)
+          }
+          if (entry.type === 'HABIT') {
+            const instanceId = entry.instanceId ?? null
+            return !instanceId || !droppedIds.includes(instanceId)
+          }
+          return true
+        })
+      }
+    }
+  } catch (_error) {
+    return NextResponse.json(
+      { error: 'SCHEDULER_SOFT_FAIL', skipped: true },
+      { status: 200 }
+    )
+  }
   const status = scheduleResult.error ? 500 : 200
 
   return NextResponse.json(

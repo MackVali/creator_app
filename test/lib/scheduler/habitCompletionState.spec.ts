@@ -61,7 +61,7 @@ describe('mergeHabitCompletionStateFromInstances', () => {
       }),
     ]
 
-    const next = mergeHabitCompletionStateFromInstances({}, instances)
+    const next = mergeHabitCompletionStateFromInstances({}, instances, "UTC")
     expect(next).toEqual({
       [dayKey]: {
         'habit-1': 'completed',
@@ -94,7 +94,7 @@ describe('mergeHabitCompletionStateFromInstances', () => {
       }),
     ]
 
-    const next = mergeHabitCompletionStateFromInstances(prev, instances)
+    const next = mergeHabitCompletionStateFromInstances(prev, instances, "UTC")
     expect(next).toEqual({
       [dayKey]: {
         'habit-keep': 'completed',
@@ -120,7 +120,7 @@ describe('mergeHabitCompletionStateFromInstances', () => {
       }),
     ]
 
-    const next = mergeHabitCompletionStateFromInstances(prev, instances)
+    const next = mergeHabitCompletionStateFromInstances(prev, instances, "UTC")
     expect(next).toBe(prev)
   })
 })
