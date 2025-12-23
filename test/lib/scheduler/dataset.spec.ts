@@ -10,6 +10,7 @@ import type { Database } from "../../../types/supabase";
 type Client = SupabaseClient<Database>;
 
 const createSupabaseMock = () => {
+  const mockGoals: Array<{ id: string; weight?: number | null }> = [];
   const skillsResponse = Promise.resolve({
     data: [],
     error: null,
@@ -42,6 +43,32 @@ const createSupabaseMock = () => {
         return {
           select: () => ({
             eq: () => withOrder(monumentsResponse),
+          }),
+        };
+      }
+      if (table === "goals") {
+        return {
+          select: () => ({
+            eq: () => ({
+              data: mockGoals,
+              error: null,
+            }),
+          }),
+        };
+      }
+      if (table === "priority") {
+        return {
+          select: () => ({
+            data: [],
+            error: null,
+          }),
+        };
+      }
+      if (table === "energy") {
+        return {
+          select: () => ({
+            data: [],
+            error: null,
           }),
         };
       }
@@ -133,9 +160,22 @@ describe("buildScheduleEventDataset", () => {
       start_utc: "2024-01-05T11:00:00Z",
       end_utc: "2024-01-05T12:00:00Z",
     };
+    const scheduledToday = {
+      ...completedYesterday,
+      id: "inst-today",
+      status: "scheduled",
+      start_utc: "2024-01-04T09:00:00Z",
+      end_utc: "2024-01-04T10:00:00Z",
+    };
 
     vi.spyOn(instanceRepo, "fetchInstancesForRange").mockResolvedValue({
-      data: [completedYesterday, completedOld, completedFuture, scheduledFuture],
+      data: [
+        completedYesterday,
+        completedOld,
+        completedFuture,
+        scheduledFuture,
+        scheduledToday,
+      ],
       error: null,
       count: null,
       status: 200,
@@ -152,9 +192,11 @@ describe("buildScheduleEventDataset", () => {
 
     expect(dataset.instances.map(inst => inst.id)).toEqual([
       "inst-yesterday",
+      "inst-future",
       "inst-scheduled",
+      "inst-today",
     ]);
-    expect(dataset.rangeStartUTC).toBe("2024-01-01T00:00:00.000Z");
-    expect(dataset.rangeEndUTC).toBe("2024-01-11T00:00:00.000Z");
+    expect(dataset.rangeStartUTC).toBe("2024-01-01T04:00:00.000Z");
+    expect(dataset.rangeEndUTC).toBe("2024-01-11T04:00:00.000Z");
   });
 });

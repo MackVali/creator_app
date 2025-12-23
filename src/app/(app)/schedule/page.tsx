@@ -60,6 +60,7 @@ import {
   windowsForDateFromSnapshot,
   type WindowLite as RepoWindow,
 } from "@/lib/scheduler/repo";
+import { filterIllegalOverlapsForRender } from "@/lib/scheduler/overlapFilter";
 import {
   fetchScheduledProjectIds,
   updateInstanceStatus,
@@ -2019,6 +2020,7 @@ export default function SchedulePage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { localTimeZone, profile, loading: profileLoading } = useProfile();
+  const ENABLE_BACKGROUND_SCHEDULER = false;
 
   // 1. browser timezone detection
   const browserTimeZone = useMemo(() => {
@@ -2097,6 +2099,7 @@ export default function SchedulePage() {
     () => initialDateResult.key
   );
   const normalizedTz = useMemo(() => effectiveTimeZone, [effectiveTimeZone]);
+  const runIdRef = useRef(0);
   const isTimeZoneReady = stableTimeZone !== null;
   const todayBaseDate = useMemo(
     () =>
@@ -2977,8 +2980,9 @@ export default function SchedulePage() {
       setProjectGoalRelations(payload.projectGoalRelations);
       setHabits(payload.habits);
       const nextInstances = payload.instances ?? [];
+      const filtered = filterIllegalOverlapsForRender(nextInstances);
       setAllInstances(nextInstances);
-      setInstances(nextInstances);
+      setInstances(filtered.kept);
       nextInstances.forEach((instance) => {
         if (!instance?.id) return;
         logInstanceStatusChange("REFRESH_LOAD", instance.id, instance.status);
@@ -2987,6 +2991,7 @@ export default function SchedulePage() {
     };
 
     const load = async () => {
+      const localRunId = runIdRef.current;
       const reqId = ++loadReqIdRef.current;
       if (!active) return;
       setMetaStatus("loading");
@@ -3009,6 +3014,7 @@ export default function SchedulePage() {
         const payload = (await response.json()) as ScheduleEventDataset;
         if (reqId !== loadReqIdRef.current) return; // stale response, ignore
         if (!active) return;
+        if (localRunId !== runIdRef.current) return; // stale scheduler run
         scheduleDatasetRef.current = payload;
         applyDataset(payload);
       } catch (error) {
@@ -4254,6 +4260,7 @@ export default function SchedulePage() {
         return;
       }
 
+      runIdRef.current += 1;
       const localNow = new Date();
       const utcOffsetMinutes = -localNow.getTimezoneOffset();
       const timeZone: string | null = effectiveTimeZone ?? null;
@@ -4416,27 +4423,13 @@ export default function SchedulePage() {
     if (!userId) return;
     const todayKey = formatLocalDateKey(new Date());
     await runScheduler({ writeThroughDays: PRIMARY_WRITE_WINDOW_DAYS });
-    if (PRIMARY_WRITE_WINDOW_DAYS < FULL_WRITE_WINDOW_DAYS) {
+    if (
+      ENABLE_BACKGROUND_SCHEDULER &&
+      PRIMARY_WRITE_WINDOW_DAYS < FULL_WRITE_WINDOW_DAYS
+    ) {
       void runScheduler({
         writeThroughDays: FULL_WRITE_WINDOW_DAYS,
         background: true,
-      }).then(async () => {
-        try {
-          await loadInstancesRef.current();
-        } catch (error) {
-          console.error(
-            "Failed to reload schedule data after background scheduler run",
-            error
-          );
-        }
-        try {
-          await refreshScheduledProjectIds();
-        } catch (error) {
-          console.error(
-            "Failed to refresh scheduled project history after background scheduler run",
-            error
-          );
-        }
       });
     }
     persistAutoRunDate(todayKey);
@@ -5324,7 +5317,7 @@ export default function SchedulePage() {
           }
         : TIMELINE_CSS_VARIABLES;
 
-      const { habitLayouts, projectLayouts, syncHabitAlignment } =
+      const { habitLayouts, projectLayouts } =
         computeTimelineLayoutForSyncHabits({
           habitPlacements: modelHabitPlacements,
           projectInstances: modelProjectInstances,
@@ -5429,28 +5422,8 @@ export default function SchedulePage() {
               const rawHabitType = placement.habitType || "HABIT";
               const normalizedHabitType =
                 rawHabitType === "ASYNC" ? "SYNC" : rawHabitType;
-              let displayStart = placement.start;
-              let displayEnd = placement.end;
-              const alignment =
-                normalizedHabitType === "SYNC"
-                  ? syncHabitAlignment.get(index)
-                  : undefined;
-              if (alignment) {
-                const alignedStartMs = Math.min(
-                  alignment.startMs,
-                  placement.start.getTime()
-                );
-                const alignedEndMs = Math.max(
-                  alignment.endMs,
-                  placement.end.getTime()
-                );
-                const alignedStart = new Date(alignedStartMs);
-                const alignedEnd = new Date(alignedEndMs);
-                if (isValidDate(alignedStart) && isValidDate(alignedEnd)) {
-                  displayStart = alignedStart;
-                  displayEnd = alignedEnd;
-                }
-              }
+              const displayStart = placement.start;
+              const displayEnd = placement.end;
               const startMin = getDayMinuteOffset(displayStart);
               const startOffsetMinutes = startMin;
               let durationMinutes = Math.max(

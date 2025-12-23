@@ -22,7 +22,7 @@ import {
   startOfDayInTimeZone,
 } from "./timezone";
 import { toZonedTime } from "date-fns-tz";
-import { dayKeyFromUtc } from "@/lib/time/tz";
+import { dayKeyFromUtc } from "../time/tz";
 import type { TaskLite, ProjectLite } from "./weight";
 import { ENERGY } from "./config";
 import type { SkillRow } from "@/lib/types/skill";

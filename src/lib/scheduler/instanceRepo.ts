@@ -3,6 +3,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Database } from "../../../types/supabase";
 import type { FlameLevel } from "@/components/FlameEmber";
 import type { WindowLite as RepoWindow } from "@/lib/scheduler/repo";
+import { safeDate } from "@/lib/scheduler/safeDate";
 
 export type ScheduleInstance =
   Database["public"]["Tables"]["schedule_instances"]["Row"];
@@ -50,14 +51,25 @@ export async function fetchInstancesForRange(
   client?: Client
 ) {
   const supabase = await ensureClient(client);
+  const safeStart = safeDate(startUTC);
+  const safeEnd = safeDate(endUTC);
+  if (!safeStart || !safeEnd) {
+    return {
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+  }
   const base = supabase
     .from("schedule_instances")
     .select("*")
     .eq("user_id", userId)
     .neq("status", "canceled");
 
-  const startParam = startUTC;
-  const endParam = endUTC;
+  const startParam = safeStart.toISOString();
+  const endParam = safeEnd.toISOString();
 
   return await base
     .or(

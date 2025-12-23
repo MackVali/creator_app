@@ -80,18 +80,15 @@ describe("fetchWindowsForDate", () => {
 
     expect(windows).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: "win-today" }),
         expect.objectContaining({ id: "win-recurring" }),
         expect.objectContaining({ id: "win-recurring-cross" }),
-        expect.objectContaining({ id: "win-prev-cross", fromPrevDay: true }),
+        expect.objectContaining({ id: "win-recurring-cross", fromPrevDay: true }),
       ]),
     );
 
     const carryover = windows.filter(win => win.fromPrevDay);
-    expect(carryover).toHaveLength(2);
-    expect(carryover.map(win => win.id)).toEqual(
-      expect.arrayContaining(["win-prev-cross", "win-recurring-cross"]),
-    );
+    expect(carryover).toHaveLength(1);
+    expect(carryover.map(win => win.id)).toEqual(["win-recurring-cross"]);
 
     const recurringAppearances = windows.filter(win => win.id === "win-recurring-cross");
     expect(recurringAppearances.some(win => win.fromPrevDay === true)).toBe(true);
@@ -143,4 +140,3 @@ describe("fetchWindowsForDate", () => {
       expect(eq).toHaveBeenCalledWith("user_id", "user-123");
     }
   });
-

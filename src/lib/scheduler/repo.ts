@@ -299,6 +299,24 @@ const crossesMidnight = (w: WindowLite) => {
   return eh < sh || (eh === sh && em < sm);
 };
 
+const timeToMinutes = (value?: string | null): number => {
+  const [h = 0, m = 0] = String(value ?? '0:0').split(':').map(Number);
+  const safeH = Number.isFinite(h) ? h : 0;
+  const safeM = Number.isFinite(m) ? m : 0;
+  return safeH * 60 + safeM;
+};
+
+const overlapsPrevCross = (base: WindowLite, prev: WindowLite): boolean => {
+  const prevEnd = timeToMinutes(prev.end_local);
+  if (prevEnd <= 0) return false;
+  const baseStart = timeToMinutes(base.start_local);
+  let baseEnd = timeToMinutes(base.end_local);
+  if (baseEnd <= baseStart) {
+    baseEnd = 24 * 60;
+  }
+  return baseStart < prevEnd && baseEnd > 0;
+};
+
 function buildWindowsForDateFromSnapshot(
   snapshot: WindowLite[],
   date: Date,
@@ -334,9 +352,12 @@ function buildWindowsForDateFromSnapshot(
     }
   }
 
-  const prevCross = [...prev, ...always.filter(crossesMidnight).map((w) => ({ ...w, fromPrevDay: true }))];
+  const baseWindows = [...base.values()];
+  const prevCross = [...prev, ...always.filter(crossesMidnight).map((w) => ({ ...w, fromPrevDay: true }))].filter(
+    (prevWindow) => !baseWindows.some((baseWindow) => overlapsPrevCross(baseWindow, prevWindow)),
+  );
 
-  return [...base.values(), ...prevCross];
+  return [...baseWindows, ...prevCross];
 }
 
 export async function fetchWindowsForDate(
@@ -393,11 +414,13 @@ export async function fetchWindowsForDate(
     }
   }
 
+  const baseWindows = [...base.values()];
   const prevCross = [...prevWindows, ...alwaysWindows]
     .filter(crossesMidnight)
-    .map((w) => ({ ...w, fromPrevDay: true }));
+    .map((w) => ({ ...w, fromPrevDay: true }))
+    .filter((prevWindow) => !baseWindows.some((baseWindow) => overlapsPrevCross(baseWindow, prevWindow)));
 
-  return [...base.values(), ...prevCross];
+  return [...baseWindows, ...prevCross];
 }
 
 export async function fetchWindowsSnapshot(
@@ -469,13 +492,17 @@ export async function fetchProjectsMap(
     duration_min?: number | null;
     goal_id?: string | null;
     due_date?: string | null;
-    global_rank?: number | null;
+    global_rank?: number | string | null;
   };
 
   for (const p of (data ?? []) as ProjectRecord[]) {
     const priorityName = resolvePriorityLabel(p.priority, lookups.priority);
     const energyName = resolveEnergyLabel(p.energy, lookups.energy);
     const duration = Number(p.duration_min ?? 0);
+    const parsedGlobalRank =
+      typeof p.global_rank === "number"
+        ? p.global_rank
+        : Number(p.global_rank);
     map[p.id] = {
       id: p.id,
       name: p.name ?? undefined,
@@ -485,10 +512,7 @@ export async function fetchProjectsMap(
       duration_min: Number.isFinite(duration) ? duration : null,
       goal_id: p.goal_id ?? null,
       due_date: p.due_date ?? null,
-      globalRank:
-        typeof p.global_rank === 'number' && Number.isFinite(p.global_rank)
-          ? p.global_rank
-          : null,
+      globalRank: Number.isFinite(parsedGlobalRank) ? parsedGlobalRank : null,
     };
   }
   return map;

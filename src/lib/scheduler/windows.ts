@@ -26,10 +26,38 @@ export async function getWindowsForDate(date: Date, userId: string) {
     return eh < sh || (eh === sh && em < sm);
   };
 
+  const timeToMinutes = (value?: string | null): number => {
+    const [h = 0, m = 0] = String(value ?? "0:0").split(":").map(Number);
+    const safeH = Number.isFinite(h) ? h : 0;
+    const safeM = Number.isFinite(m) ? m : 0;
+    return safeH * 60 + safeM;
+  };
+
+  const overlapsPrevCross = (
+    base: Pick<WindowRow, "start_local" | "end_local">,
+    prevWindow: Pick<WindowRow, "start_local" | "end_local">
+  ) => {
+    const prevEnd = timeToMinutes(prevWindow.end_local);
+    if (prevEnd <= 0) return false;
+    const baseStart = timeToMinutes(base.start_local);
+    let baseEnd = timeToMinutes(base.end_local);
+    if (baseEnd <= baseStart) {
+      baseEnd = 24 * 60;
+    }
+    return baseStart < prevEnd && baseEnd > 0;
+  };
+
+  const todayWindows = today ?? [];
   const prevCross = (prev ?? [])
     .filter(crosses)
-    .map((w) => ({ ...w, fromPrevDay: true }));
-  return [...(today ?? []), ...prevCross] as (
+    .map((w) => ({ ...w, fromPrevDay: true }))
+    .filter(
+      (prevWindow) =>
+        !todayWindows.some((baseWindow) =>
+          overlapsPrevCross(baseWindow, prevWindow)
+        )
+    );
+  return [...todayWindows, ...prevCross] as (
     WindowRow & { fromPrevDay?: boolean }
   )[];
 }
@@ -81,4 +109,3 @@ export function genSlots(
   }
   return slots;
 }
-
