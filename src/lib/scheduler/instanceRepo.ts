@@ -228,6 +228,26 @@ export async function updateInstanceStatus(
   return await supabase.from("schedule_instances").update(payload).eq("id", id);
 }
 
+export async function markProjectMissed(
+  instanceId: string,
+  reason?: string,
+  client?: Client
+) {
+  const supabase = await ensureClient(client);
+  const payload: Partial<ScheduleInstance> = {
+    status: "missed",
+    missed_reason: reason ?? null,
+    start_utc: null,
+    end_utc: null,
+    duration_min: null,
+    window_id: null,
+  };
+  return await supabase
+    .from("schedule_instances")
+    .update(payload)
+    .eq("id", instanceId);
+}
+
 type ProjectInstanceSyncResult = {
   updated: number;
   error: null | { message: string };
@@ -319,8 +339,5 @@ export async function cleanupTransientInstances(
   if (!query || typeof query.delete !== "function") {
     return { data: null, error: null };
   }
-  return query
-    .delete()
-    .eq("user_id", userId)
-    .in("status", ["missed", "canceled"]);
+  return query.delete().eq("user_id", userId).eq("status", "canceled");
 }

@@ -5,6 +5,8 @@ import {
   fetchBacklogNeedingSchedule,
   cleanupTransientInstances,
   fetchInstancesForRange,
+  createInstance,
+  markProjectMissed,
   type ScheduleInstance,
 } from "./instanceRepo";
 import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from "./projects";
@@ -13,13 +15,18 @@ import {
   fetchWindowsForDate,
   fetchWindowsSnapshot,
   fetchProjectsMap,
+  fetchAllProjectsMap,
   fetchProjectSkillsForProjects,
   fetchGoalsForUser,
   windowsForDateFromSnapshot,
   type WindowLite,
   type WindowKind,
 } from "./repo";
-import { placeItemInWindows } from "./placement";
+import {
+  placeItemInWindows,
+  fetchWindowsForRange,
+  getWindowsForDateFromAll,
+} from "./placement";
 import { ENERGY } from "./config";
 import {
   fetchHabitsForSchedule,
@@ -289,6 +296,7 @@ type FinalInvariantInstance = {
   isProject: boolean;
   isHabit: boolean;
   isSyncHabit: boolean;
+  allowsOverlap: boolean;
   locked: boolean;
   weightSnapshot: number;
 };
@@ -320,6 +328,7 @@ const buildFinalInvariantInstances = (
       isProject,
       isHabit,
       isSyncHabit,
+      allowsOverlap: isSyncHabit,
       locked: instance.locked === true,
       weightSnapshot,
     });
@@ -334,7 +343,7 @@ const buildFinalInvariantInstances = (
 const isFinalInvariantOverlapAllowed = (
   a: FinalInvariantInstance,
   b: FinalInvariantInstance
-) => a.isSyncHabit && b.isSyncHabit;
+) => a.allowsOverlap || b.allowsOverlap;
 
 const pickFinalInvariantLoser = (
   a: FinalInvariantInstance,
@@ -359,8 +368,21 @@ const pickFinalInvariantLoser = (
   return aId.localeCompare(bId) <= 0 ? b : a;
 };
 
-const collectFinalInvariantCancels = (instances: FinalInvariantInstance[]) => {
+type OverlapPair = {
+  canceled: FinalInvariantInstance;
+  overlapping: FinalInvariantInstance;
+};
+
+type CollectCancelsResult = {
+  canceled: Set<string>;
+  overlapPairs: OverlapPair[];
+};
+
+const collectFinalInvariantCancels = (
+  instances: FinalInvariantInstance[]
+): CollectCancelsResult => {
   const canceled = new Set<string>();
+  const overlapPairs: OverlapPair[] = [];
   const active: FinalInvariantInstance[] = [];
 
   for (const current of instances) {
@@ -389,6 +411,46 @@ const collectFinalInvariantCancels = (instances: FinalInvariantInstance[]) => {
       const loserId = loser.instance.id ?? "";
       if (!loserId) continue;
       canceled.add(loserId);
+      // Record the overlap pair
+      const overlapPair = {
+        canceled: loser,
+        overlapping: loser === current ? other : current,
+      };
+      overlapPairs.push(overlapPair);
+
+      // Log PROJECT-PROJECT overlaps with full instance details
+      if (loser.isProject && (loser === current ? other : current).isProject) {
+        console.error(
+          "[SCHEDULER] PROJECT-PROJECT overlap detected in final invariant:",
+          {
+            canceled: {
+              id: loser.instance.id,
+              source_id: loser.instance.source_id,
+              start_utc: loser.instance.start_utc,
+              end_utc: loser.instance.end_utc,
+              status: loser.instance.status,
+              locked: loser.locked,
+              window_id: loser.instance.window_id,
+              created_at: loser.instance.created_at,
+            },
+            overlapping: {
+              id: (loser === current ? other : current).instance.id,
+              source_id: (loser === current ? other : current).instance
+                .source_id,
+              start_utc: (loser === current ? other : current).instance
+                .start_utc,
+              end_utc: (loser === current ? other : current).instance.end_utc,
+              status: (loser === current ? other : current).instance.status,
+              locked: (loser === current ? other : current).locked,
+              window_id: (loser === current ? other : current).instance
+                .window_id,
+              created_at: (loser === current ? other : current).instance
+                .created_at,
+            },
+          }
+        );
+      }
+
       if (loserId === currentId) {
         removeCurrent = true;
         break;
@@ -401,7 +463,7 @@ const collectFinalInvariantCancels = (instances: FinalInvariantInstance[]) => {
     }
   }
 
-  return canceled;
+  return { canceled, overlapPairs };
 };
 
 const pickOverlapLoser = (a: TimelineInstance, b: TimelineInstance) => {
@@ -545,28 +607,82 @@ async function invalidateInstancesAsMissed(
   result: ScheduleBacklogResult
 ) {
   if (ids.length === 0) return;
-  const updatePayload: Database["public"]["Tables"]["schedule_instances"]["Update"] =
-    {
-      status: "missed",
-    };
-  if (
-    ids.length > 0 &&
-    (process.env.NODE_ENV !== "production" ||
-      process.env.SCHEDULER_DEBUG === "true")
-  ) {
-    console.info(
-      "[OVERLAP] invalidating instances without missed_reason column",
-      { count: ids.length }
-    );
+
+  // First, fetch the instances to determine their source_type
+  const { data: instances, error: fetchError } = await supabase
+    .from("schedule_instances")
+    .select("id, source_type")
+    .in("id", ids);
+
+  if (fetchError) {
+    result.failures.push({
+      itemId: "illegal-overlap",
+      reason: "error",
+      detail: fetchError,
+    });
+    return;
   }
-  const batches = chunkIds(ids, 1000);
-  for (const batch of batches) {
-    if (process.env.NODE_ENV === "test") {
-      for (const id of batch) {
+
+  const projectIds: string[] = [];
+  const nonProjectIds: string[] = [];
+
+  for (const instance of instances ?? []) {
+    if (instance.source_type === "PROJECT") {
+      projectIds.push(instance.id);
+    } else {
+      nonProjectIds.push(instance.id);
+    }
+  }
+
+  // Use markProjectMissed for PROJECT instances to clear temporal fields
+  for (const id of projectIds) {
+    const { error } = await markProjectMissed(id, "ILLEGAL_OVERLAP", supabase);
+    if (error) {
+      result.failures.push({
+        itemId: "illegal-overlap",
+        reason: "error",
+        detail: error,
+      });
+    }
+  }
+
+  // Use regular update for non-PROJECT instances
+  if (nonProjectIds.length > 0) {
+    const updatePayload: Database["public"]["Tables"]["schedule_instances"]["Update"] =
+      {
+        status: "missed",
+      };
+    if (
+      nonProjectIds.length > 0 &&
+      (process.env.NODE_ENV !== "production" ||
+        process.env.SCHEDULER_DEBUG === "true")
+    ) {
+      console.info(
+        "[OVERLAP] invalidating instances without missed_reason column",
+        { count: nonProjectIds.length }
+      );
+    }
+    const batches = chunkIds(nonProjectIds, 1000);
+    for (const batch of batches) {
+      if (process.env.NODE_ENV === "test") {
+        for (const id of batch) {
+          const { error } = await supabase
+            .from("schedule_instances")
+            .update(updatePayload)
+            .eq("id", id);
+          if (error) {
+            result.failures.push({
+              itemId: "illegal-overlap",
+              reason: "error",
+              detail: error,
+            });
+          }
+        }
+      } else {
         const { error } = await supabase
           .from("schedule_instances")
           .update(updatePayload)
-          .eq("id", id);
+          .in("id", batch);
         if (error) {
           result.failures.push({
             itemId: "illegal-overlap",
@@ -574,18 +690,6 @@ async function invalidateInstancesAsMissed(
             detail: error,
           });
         }
-      }
-    } else {
-      const { error } = await supabase
-        .from("schedule_instances")
-        .update(updatePayload)
-        .in("id", batch);
-      if (error) {
-        result.failures.push({
-          itemId: "illegal-overlap",
-          reason: "error",
-          detail: error,
-        });
       }
     }
   }
@@ -704,6 +808,102 @@ export async function markMissedAndQueue(
     .lt("start_utc", cutoff);
 }
 
+async function normalizeProjectInstances(
+  userId: string,
+  projectsMap: Record<string, any>,
+  supabase: Client
+) {
+  // Load ALL existing PROJECT schedule_instances for user (no filters)
+  const { data: allProjectInstances, error } = await supabase
+    .from("schedule_instances")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("source_type", "PROJECT");
+
+  if (error) {
+    throw new Error(`Failed to load project instances: ${error.message}`);
+  }
+
+  const instancesByProject = new Map<string, ScheduleInstance[]>();
+  for (const instance of allProjectInstances ?? []) {
+    const projectId = instance.source_id ?? "";
+    if (!projectId) continue;
+    const list = instancesByProject.get(projectId) ?? [];
+    list.push(instance);
+    instancesByProject.set(projectId, list);
+  }
+
+  // Deterministic canonical selection: locked > scheduled > missed > canceled > tiebreak
+  const getPriority = (status: string, locked: boolean): number => {
+    if (locked) return 0; // locked has highest priority
+    switch (status) {
+      case "scheduled":
+        return 1;
+      case "missed":
+        return 2;
+      case "canceled":
+        return 3;
+      default:
+        return 4;
+    }
+  };
+
+  const selectCanonical = (instances: ScheduleInstance[]): ScheduleInstance => {
+    return instances.sort((a, b) => {
+      const aPriority = getPriority(a.status, a.locked ?? false);
+      const bPriority = getPriority(b.status, b.locked ?? false);
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      // Tiebreak by id (assuming UUID lexical order)
+      return (a.id ?? "").localeCompare(b.id ?? "");
+    })[0];
+  };
+
+  // Process each project
+  for (const [projectId, project] of Object.entries(projectsMap)) {
+    const instances = instancesByProject.get(projectId) ?? [];
+
+    if (instances.length === 0) {
+      // Create exactly one missed instance
+      const { error: insertError } = await supabase
+        .from("schedule_instances")
+        .insert({
+          user_id: userId,
+          source_type: "PROJECT",
+          source_id: projectId,
+          status: "missed",
+          start_utc: null,
+          end_utc: null,
+          duration_min: null,
+          window_id: null,
+          energy_resolved: project.energy ?? "NO",
+          locked: false,
+          weight_snapshot: project.weight ?? 0,
+        });
+      if (insertError) {
+        throw new Error(
+          `Failed to create missed instance for project ${projectId}: ${insertError.message}`
+        );
+      }
+    } else if (instances.length > 1) {
+      // Select canonical and mark extras as canceled
+      const canonical = selectCanonical(instances);
+      const extras = instances.filter((inst) => inst.id !== canonical.id);
+      for (const extra of extras) {
+        const { error: updateError } = await supabase
+          .from("schedule_instances")
+          .update({ status: "canceled" })
+          .eq("id", extra.id);
+        if (updateError) {
+          throw new Error(
+            `Failed to cancel duplicate instance ${extra.id}: ${updateError.message}`
+          );
+        }
+      }
+    }
+    // If exactly one, leave it as is
+  }
+}
+
 export async function scheduleBacklog(
   userId: string,
   baseDate = new Date(),
@@ -724,6 +924,7 @@ export async function scheduleBacklog(
     debug: [],
     hasPastInstanceSkipped: false,
   };
+
   const timeZone = normalizeTimeZone(options?.timeZone);
   const location = normalizeCoordinates(options?.location ?? null);
   const mode = normalizeSchedulerModePayload(
@@ -757,7 +958,9 @@ export async function scheduleBacklog(
   }
 
   const tasks = await fetchReadyTasks(supabase);
+  const allProjectsMap = await fetchAllProjectsMap(supabase);
   const projectsMap = await fetchProjectsMap(supabase);
+  await normalizeProjectInstances(userId, allProjectsMap, supabase);
   const goals = await fetchGoalsForUser(userId, supabase);
   const habits = await fetchHabitsForSchedule(userId, supabase);
   const habitAllowsOverlap = new Map<string, boolean>();
@@ -898,13 +1101,46 @@ export async function scheduleBacklog(
     acc[goal.id] = goal.weight ?? 0;
     return acc;
   }, {});
+
   const projectItems = buildProjectItems(
     Object.values(projectsMap),
     tasks,
     goalWeightsById
   );
 
-  const projectItemMap: Record<string, any> = {};
+  const projectsById = new Map<string, (typeof projectItems)[0]>();
+  for (const p of projectItems) {
+    if (!projectsById.has(p.id)) {
+      projectsById.set(p.id, p);
+    }
+  }
+
+  const byGlobalRank = (
+    a: (typeof projectItems)[0],
+    b: (typeof projectItems)[0]
+  ) => {
+    const aRank = a.globalRank ?? 0;
+    const bRank = b.globalRank ?? 0;
+    return aRank - bRank;
+  };
+
+  const projectQueue = [...projectsById.values()].sort(byGlobalRank);
+
+  // TEMPORARY ASSERTION: enforce ordering at runtime
+  for (let i = 1; i < projectQueue.length; i++) {
+    const prev = projectQueue[i - 1];
+    const cur = projectQueue[i];
+    const prevRank = prev.globalRank ?? Number.POSITIVE_INFINITY;
+    const curRank = cur.globalRank ?? Number.POSITIVE_INFINITY;
+
+    if (curRank < prevRank) {
+      throw new Error(
+        `QUEUE_NOT_SORTED: prev=${prev.id}:${prevRank} cur=${cur.id}:${curRank}`
+      );
+    }
+  }
+
+  const projectItemMap: Record<string, (typeof projectItems)[0]> = {};
   for (const item of projectItems) projectItemMap[item.id] = item;
 
   const taskSkillsByProjectId = new Map<string, Set<string>>();
@@ -1015,68 +1251,6 @@ export async function scheduleBacklog(
     return Number.isFinite(diff) ? diff : undefined;
   };
 
-  const seenMissedProjects = new Set<string>();
-
-  for (const m of missed.data ?? []) {
-    if (m.source_type !== "PROJECT") continue;
-    if (seenMissedProjects.has(m.source_id)) {
-      const dedupe = await supabase
-        .from("schedule_instances")
-        .update({ status: "canceled" })
-        .eq("id", m.id)
-        .select("id, source_id")
-        .single();
-      if (dedupe.error) {
-        result.failures.push({
-          itemId: m.source_id,
-          reason: "error",
-          detail: dedupe.error,
-        });
-      }
-      continue;
-    }
-    seenMissedProjects.add(m.source_id);
-    const def = projectItemMap[m.source_id];
-    if (!def) continue;
-    if (!matchesMode(def.id)) {
-      noteModeFiltered(def.id);
-      continue;
-    }
-
-    let duration = Number(def.duration_min ?? 0);
-    if (!Number.isFinite(duration) || duration <= 0) {
-      const fallback = Number(m.duration_min ?? 0);
-      if (Number.isFinite(fallback) && fallback > 0) {
-        duration = fallback;
-      } else {
-        duration = DEFAULT_PROJECT_DURATION_MIN;
-      }
-    }
-    duration = adjustDuration(duration);
-
-    const resolvedEnergy =
-      "energy" in def && def.energy ? String(def.energy) : m.energy_resolved;
-    const weight =
-      typeof m.weight_snapshot === "number"
-        ? m.weight_snapshot
-        : (def as { weight?: number }).weight ?? 0;
-
-    queue.push({
-      id: def.id,
-      sourceType: "PROJECT",
-      duration_min: duration,
-      energy: (resolvedEnergy ?? "NO").toUpperCase(),
-      weight,
-      goalWeight: def.goalWeight ?? 0,
-      globalRank:
-        typeof def.globalRank === "number" && Number.isFinite(def.globalRank)
-          ? def.globalRank
-          : null,
-      instanceId: m.id,
-      eventName: def.name || def.id,
-    });
-  }
-
   const reuseInstanceByProject = new Map<string, string>();
 
   const registerReuseInstance = (
@@ -1109,15 +1283,12 @@ export async function scheduleBacklog(
       duration_min: number;
       energy: string | null | undefined;
       weight: number;
+      goalWeight?: number;
       globalRank?: number | null;
       name?: string;
     } | null
   ) => {
     if (!def) return;
-    if (!matchesMode(def.id)) {
-      noteModeFiltered(def.id);
-      return;
-    }
     let duration = Number(def.duration_min ?? 0);
     if (!Number.isFinite(duration) || duration <= 0) return;
     duration = adjustDuration(duration);
@@ -1140,10 +1311,34 @@ export async function scheduleBacklog(
     queuedProjectIds.add(def.id);
   };
 
-  for (const project of projectItems) {
+  for (const project of projectQueue) {
     enqueue(project);
   }
 
+  // Assign canonical instance IDs to all queue items for proper reuse
+  const { data: canonicalInstances } = await supabase
+    .from("schedule_instances")
+    .select("id, source_id")
+    .eq("user_id", userId)
+    .eq("source_type", "PROJECT");
+
+  const projectToInstanceId = new Map<string, string>();
+  for (const inst of (canonicalInstances as
+    | { id: string; source_id: string }[]
+    | null) ?? []) {
+    if (inst.source_id) {
+      projectToInstanceId.set(inst.source_id, inst.id);
+    }
+  }
+
+  for (const item of queue) {
+    const instanceId = projectToInstanceId.get(item.id);
+    if (instanceId) {
+      item.instanceId = instanceId;
+    }
+  }
+
+  const allProjectIds = new Set(projectQueue.map((p) => p.id));
   const finalQueueProjectIds = new Set(queuedProjectIds);
   const lookaheadDays = Math.min(
     MAX_LOOKAHEAD_DAYS,
@@ -1176,7 +1371,7 @@ export async function scheduleBacklog(
     userId,
     baseStart,
     rangeEnd,
-    finalQueueProjectIds,
+    allProjectIds,
     writeThroughEnd
   );
   if (dedupe.error) {
@@ -1473,6 +1668,7 @@ export async function scheduleBacklog(
           : null,
       instanceId: inst.id,
       preferred: projectMatchesSelectedMonument(projectId),
+      eventName: def.name || def.id,
     };
   };
 
@@ -1772,6 +1968,400 @@ export async function scheduleBacklog(
     Math.min(persistedDayLimit, LOCATION_CLEANUP_DAYS)
   );
 
+  // Enforce one-pass, one-attempt invariant
+  const attempted = new Set<string>();
+
+  // ONE-INSTANCE-PER-PROJECT: enforce dedupe before placement
+  const dedupedProjectQueue = Array.from(
+    new Map(queue.map((p) => [p.id, p])).values()
+  ).sort((a, b) => {
+    const ar = a.globalRank ?? Number.POSITIVE_INFINITY;
+    const br = b.globalRank ?? Number.POSITIVE_INFINITY;
+    if (ar !== br) return ar - br;
+    return a.id.localeCompare(b.id);
+  });
+
+  // Ensure each project has a canonical instanceId
+  for (const item of dedupedProjectQueue) {
+    if (item.instanceId) continue;
+    // Create new instance with missed status
+    const { data: newInstance, error } = await supabase
+      .from("schedule_instances")
+      .insert({
+        user_id: userId,
+        source_type: "PROJECT",
+        source_id: item.id,
+        status: "missed",
+        start_utc: null,
+        end_utc: null,
+        duration_min: item.duration_min,
+        energy_resolved: item.energy,
+        locked: false,
+        weight_snapshot: item.weight,
+      })
+      .select("*")
+      .single();
+    if (error) {
+      result.failures.push({ itemId: item.id, reason: "error", detail: error });
+      continue;
+    }
+    item.instanceId = newInstance.id;
+  }
+
+  // Fetch all windows once for the entire run
+  const allWindows = await fetchWindowsForRange(
+    supabase,
+    userId,
+    baseStart,
+    writeThroughEnd
+  );
+
+  // ===== PROJECT REBUILD PASS (ONE SHOT) =====
+  console.log("[SCHEDULER] ENTER project placement pass", {
+    runId: Math.random().toString(36).substring(7),
+  });
+
+  // Build blocking instances for project placement: non-sync habits that should block projects
+  const projectsToReset = allProjectIds;
+  const projectBlockingInstances: ScheduleInstance[] = [];
+  for (const instance of dedupe.allInstances) {
+    if (!instance || instance.status !== "scheduled") continue;
+    if (instance.source_type === "HABIT") {
+      const habitId = instance.source_id ?? "";
+      const habitType = habitTypeById.get(habitId) ?? "HABIT";
+      const normalizedType = normalizeHabitTypeValue(habitType);
+      // Only include non-sync habits as blockers for projects
+      if (normalizedType !== "SYNC") {
+        projectBlockingInstances.push(instance);
+      }
+    } else if (
+      instance.source_type === "PROJECT" &&
+      projectsToReset.has(instance.source_id)
+    ) {
+      // ❌ skip — this project is being rescheduled
+      continue;
+    } else if (instance.source_type === "PROJECT") {
+      projectBlockingInstances.push(instance);
+    }
+  }
+
+  // Add locked project instances as blockers
+  for (const inst of lockedProjectInstances.values()) {
+    projectBlockingInstances.push(inst);
+  }
+
+  for (const item of dedupedProjectQueue) {
+    // Create window availability for project placement (fresh per project)
+    const projectWindowAvailability = new Map<
+      string,
+      WindowAvailabilityBounds
+    >();
+    const projectWindowCache = new Map<string, WindowLite[]>();
+    if (attempted.has(item.id)) {
+      throw new Error(`PROJECT_REATTEMPTED: ${item.id}`);
+    }
+    attempted.add(item.id);
+
+    // TEMPORARY INSTRUMENTATION: Log project placement begin
+    console.log("[SCHEDULER_PROJECT_DEBUG]", {
+      project_id: item.id,
+      project_name: item.eventName,
+      instanceId: item.instanceId,
+      duration_min: item.duration_min,
+      resolved_energy: item.energy,
+      scheduler_horizon_start: baseStart.toISOString(),
+      scheduler_horizon_end: writeThroughEnd.toISOString(),
+    });
+
+    // Instrumentation: Log projectBlockingInstances summary before placement
+    const blockingCounts = projectBlockingInstances.reduce(
+      (acc, inst) => {
+        acc.total += 1;
+        acc.bySourceType[inst.source_type ?? "UNKNOWN"] =
+          (acc.bySourceType[inst.source_type ?? "UNKNOWN"] ?? 0) + 1;
+        return acc;
+      },
+      { total: 0, bySourceType: {} as Record<string, number> }
+    );
+
+    const habitInstances = projectBlockingInstances.filter(
+      (inst) => inst.source_type === "HABIT"
+    );
+    const habitEntries = habitInstances.slice(0, 10).map((inst) => ({
+      id: inst.id,
+      source_id: inst.source_id,
+      start_utc: inst.start_utc,
+      end_utc: inst.end_utc,
+    }));
+
+    const knownHabitIds = [
+      "f58bc410-ecd5-43e7-8004-0a3973a7cb32",
+      "6df93bf9-701a-4a1b-986a-a81b2658f60c",
+    ];
+    const presentHabitIds = habitInstances
+      .map((inst) => inst.id)
+      .filter((id) => knownHabitIds.includes(id ?? ""));
+    const missingHabitIds = knownHabitIds.filter(
+      (id) => !presentHabitIds.includes(id)
+    );
+
+    console.log("[PROJECT_BLOCKING_INSTANCES]", {
+      projectId: item.id,
+      projectGlobalRank: item.globalRank,
+      totalCount: blockingCounts.total,
+      countsBySourceType: blockingCounts.bySourceType,
+      habitEntries,
+      knownHabitIdsPresent: presentHabitIds,
+      knownHabitIdsMissing: missingHabitIds,
+    });
+
+    const windows = await fetchCompatibleWindowsForItem(
+      supabase,
+      baseStart,
+      item,
+      timeZone,
+      {
+        availability: projectWindowAvailability,
+        now: baseDate,
+        cache: projectWindowCache,
+        restMode: isRestMode,
+        userId,
+        allowedWindowKinds: ["DEFAULT"],
+        horizonEnd: writeThroughEnd,
+        preloadedWindows: allWindows,
+      }
+    );
+
+    const counters = (windows as any).counters;
+
+    // TEMPORARY LOGS: Remove after verification
+    if (item.id === dedupedProjectQueue[0].id) {
+      const earliest =
+        windows.length > 0
+          ? windows.reduce(
+              (min, w) => (w.startLocal < min.startLocal ? w : min),
+              windows[0]
+            ).startLocal
+          : null;
+      const latest =
+        windows.length > 0
+          ? windows.reduce(
+              (max, w) => (w.endLocal > max.endLocal ? w : max),
+              windows[0]
+            ).endLocal
+          : null;
+      console.log("[PROJECT_WINDOW_FETCH]", {
+        projectId: item.id,
+        windowCount: windows.length,
+        earliestStart: earliest?.toISOString(),
+        latestEnd: latest?.toISOString(),
+      });
+    }
+    if (windows.length === 0) continue;
+
+    const reservationsForItem: Array<{
+      key: string;
+      previous: WindowAvailabilityBounds | null;
+    }> = [];
+    const releaseReservationsForItem = () => {
+      if (reservationsForItem.length === 0) return;
+      for (const reservation of reservationsForItem) {
+        if (reservation.previous) {
+          projectWindowAvailability.set(reservation.key, {
+            front: new Date(reservation.previous.front.getTime()),
+            back: new Date(reservation.previous.back.getTime()),
+          });
+        } else {
+          projectWindowAvailability.delete(reservation.key);
+        }
+      }
+      reservationsForItem.length = 0;
+    };
+
+    // 🔒 RESET SEARCH FOR THIS PROJECT
+    const searchStart = baseStart;
+
+    if (
+      item.id === "f9dfe551-53a5-455c-a41e-ac9bc9b1d9be" || // FIND SAMPLES (52)
+      item.globalRank === 1
+    ) {
+      console.log("[RANK_DEBUG] project", {
+        id: item.id,
+        name: item.eventName,
+        rank: item.globalRank,
+        horizonStartUtc: baseStart.toISOString(),
+        searchStartUtc: searchStart.toISOString(),
+      });
+    }
+
+    if (item.globalRank === 1) {
+      if (searchStart.getTime() !== baseStart.getTime()) {
+        throw new Error("Invariant violation: cursor not reset per project");
+      }
+    }
+
+    const notBeforeMs = searchStart.getTime();
+    const placed = await placeItemInWindows({
+      userId,
+      item,
+      windows,
+      date: baseStart,
+      timeZone,
+      client: supabase,
+      reuseInstanceId: item.instanceId,
+      ignoreProjectIds: new Set([item.id]),
+      notBefore: baseDate,
+      existingInstances: projectBlockingInstances,
+      habitTypeById,
+    });
+
+    if (!("status" in placed)) {
+      if (placed.error === "NO_FIT") {
+        result.failures.push({
+          itemId: item.id,
+          reason: "NO_FEASIBLE_SLOT_IN_HORIZON",
+          detail: placed.error,
+        });
+      } else {
+        result.failures.push({
+          itemId: item.id,
+          reason: "error",
+          detail: placed.error,
+        });
+      }
+      continue;
+    }
+
+    if (placed.error) {
+      if (placed.error === "NO_FIT") {
+        result.failures.push({
+          itemId: item.id,
+          reason: "NO_FEASIBLE_SLOT_IN_HORIZON",
+          detail: placed.error,
+        });
+        // Update the canonical missed instance (normalizeProjectInstances ensures exactly one exists)
+        if (!item.instanceId) {
+          throw new Error(
+            `Invariant violation: project ${item.id} should have a canonical instance after normalizeProjectInstances`
+          );
+        }
+        const { error: updateError } = await supabase
+          .from("schedule_instances")
+          .update({
+            missed_reason: "NO_FEASIBLE_SLOT_IN_HORIZON",
+            start_utc: null,
+            end_utc: null,
+            duration_min: null,
+            window_id: null,
+          })
+          .eq("id", item.instanceId);
+        if (updateError) {
+          result.failures.push({
+            itemId: item.id,
+            reason: "error",
+            detail: updateError,
+          });
+          continue;
+        }
+
+        // TEMPORARY INSTRUMENTATION: Log project placement failed to missed
+        console.log(
+          "[SCHEDULER_PROJECT_DEBUG] project placement failed to missed",
+          {
+            project_id: item.id,
+            instance_id: item.instanceId,
+            reason: "NO_VALID_WINDOWS",
+            window_counts: {
+              total: counters?.total ?? 0,
+              after_energy: counters?.afterEnergy ?? 0,
+              after_duration: counters?.afterDuration ?? 0,
+              after_conflicts: counters?.afterAvailability ?? 0,
+              after_horizon: counters?.afterNowTrim ?? 0,
+            },
+          }
+        );
+      } else {
+        console.error("[SCHEDULER_ERROR_DETAIL]", {
+          context: "project_placement",
+          itemId: item.id,
+          error: placed.error,
+          message:
+            placed.error instanceof Error
+              ? placed.error.message
+              : String(placed.error),
+          stack: placed.error instanceof Error ? placed.error.stack : undefined,
+          type: typeof placed.error,
+        });
+        result.failures.push({
+          itemId: item.id,
+          reason: "error",
+          detail: placed.error,
+        });
+      }
+      continue;
+    }
+
+    if (placed.data) {
+      if (
+        item.id === "f9dfe551-53a5-455c-a41e-ac9bc9b1d9be" ||
+        item.globalRank === 1
+      ) {
+        console.log("[RANK_DEBUG_PLACED]", {
+          id: item.id,
+          rank: item.globalRank,
+          placedStartUtc: placed.data.start_utc,
+          placedEndUtc: placed.data.end_utc,
+        });
+      }
+      result.placed.push(placed.data);
+      const placementWindow = findPlacementWindow(windows, placed.data);
+      if (placementWindow?.key) {
+        const placementEnd = new Date(placed.data.end_utc);
+        const existingBounds = projectWindowAvailability.get(
+          placementWindow.key
+        );
+        if (existingBounds) {
+          const nextFront = Math.min(
+            placementEnd.getTime(),
+            existingBounds.back.getTime()
+          );
+          existingBounds.front = new Date(nextFront);
+        }
+      }
+      keptInstancesByProject.delete(item.id);
+      const decision: ScheduleDraftPlacement["decision"] = item.instanceId
+        ? "rescheduled"
+        : "new";
+      result.timeline.push({
+        type: "PROJECT",
+        instance: placed.data,
+        projectId: placed.data.source_id ?? item.id,
+        decision,
+        scheduledDayOffset: dayOffsetFor(placed.data.start_utc) ?? 0,
+        availableStartLocal: placementWindow?.availableStartLocal
+          ? placementWindow.availableStartLocal.toISOString()
+          : undefined,
+        windowStartLocal: placementWindow?.startLocal
+          ? placementWindow.startLocal.toISOString()
+          : undefined,
+        locked: placed.data.locked ?? undefined,
+      });
+      scheduledProjectIds.add(item.id);
+
+      if (item.instanceId) {
+        removeInstanceFromBuckets(item.instanceId);
+      }
+      // Register the placed instance for future reference
+      registerInstanceForOffsets(placed.data);
+
+      // Add the placed project instance as a blocker for subsequent projects
+      projectBlockingInstances.push(placed.data);
+    }
+  }
+
+  console.log("[SCHEDULER] EXIT project placement pass");
+  // ==========================================
+
   for (let offset = 0; offset < cleanupOffsetLimit; offset += 1) {
     let windowAvailability = windowAvailabilityByDay.get(offset);
     if (!windowAvailability) {
@@ -1826,167 +2416,6 @@ export async function scheduleBacklog(
       });
     }
     const dayWindows = getWindowsForDay(day);
-    if (allowSchedulingToday) {
-      for (const item of queue) {
-        if (scheduledProjectIds.has(item.id)) continue;
-
-        const windows = await fetchCompatibleWindowsForItem(
-          supabase,
-          day,
-          item,
-          timeZone,
-          {
-            availability: windowAvailability,
-            now: offset === 0 ? baseDate : undefined,
-            cache: windowCache,
-            restMode: isRestMode,
-            userId,
-            preloadedWindows: dayWindows,
-            allowedWindowKinds: ["DEFAULT"],
-          }
-        );
-        if (windows.length === 0) continue;
-
-        const reservationsForItem: Array<{
-          key: string;
-          previous: WindowAvailabilityBounds | null;
-        }> = [];
-        const releaseReservationsForItem = () => {
-          if (reservationsForItem.length === 0) return;
-          for (const reservation of reservationsForItem) {
-            if (reservation.previous) {
-              windowAvailability.set(reservation.key, {
-                front: new Date(reservation.previous.front.getTime()),
-                back: new Date(reservation.previous.back.getTime()),
-              });
-            } else {
-              windowAvailability.delete(reservation.key);
-            }
-          }
-          reservationsForItem.length = 0;
-        };
-        const notBeforeMs =
-          offset === 0 ? baseDate.getTime() : Number.NEGATIVE_INFINITY;
-        for (const win of windows) {
-          if (!win.key) continue;
-          const candidateStart =
-            win.availableStartLocal ?? win.startLocal ?? null;
-          if (!candidateStart) continue;
-          const candidateStartMs = Math.max(
-            candidateStart.getTime(),
-            notBeforeMs
-          );
-          const previousBounds = windowAvailability.get(win.key);
-          reservationsForItem.push({
-            key: win.key,
-            previous: previousBounds
-              ? {
-                  front: new Date(previousBounds.front.getTime()),
-                  back: new Date(previousBounds.back.getTime()),
-                }
-              : null,
-          });
-          windowAvailability.set(win.key, {
-            front: new Date(candidateStartMs),
-            back: new Date(candidateStartMs),
-          });
-        }
-
-        const placed = await placeItemInWindows({
-          userId,
-          item,
-          windows,
-          date: day,
-          timeZone,
-          client: supabase,
-          reuseInstanceId: item.instanceId,
-          ignoreProjectIds: new Set([item.id]),
-          notBefore: offset === 0 ? baseDate : undefined,
-          existingInstances: dayInstances.length > 0 ? dayInstances : undefined,
-          habitTypeById,
-        });
-
-        if (!("status" in placed)) {
-          releaseReservationsForItem();
-          if (placed.error !== "NO_FIT") {
-            result.failures.push({
-              itemId: item.id,
-              reason: "error",
-              detail: placed.error,
-            });
-          }
-          continue;
-        }
-
-        if (placed.error) {
-          releaseReservationsForItem();
-          result.failures.push({
-            itemId: item.id,
-            reason: "error",
-            detail: placed.error,
-          });
-          continue;
-        }
-
-        releaseReservationsForItem();
-
-        if (placed.data) {
-          result.placed.push(placed.data);
-          const placementWindow = findPlacementWindow(windows, placed.data);
-          if (placementWindow?.key) {
-            const placementEnd = new Date(placed.data.end_utc);
-            const existingBounds = windowAvailability.get(placementWindow.key);
-            if (existingBounds) {
-              const nextFront = Math.min(
-                placementEnd.getTime(),
-                existingBounds.back.getTime()
-              );
-              existingBounds.front = new Date(nextFront);
-            }
-          }
-          keptInstancesByProject.delete(item.id);
-          const decision: ScheduleDraftPlacement["decision"] = item.instanceId
-            ? "rescheduled"
-            : "new";
-          result.timeline.push({
-            type: "PROJECT",
-            instance: placed.data,
-            projectId: placed.data.source_id ?? item.id,
-            decision,
-            scheduledDayOffset: dayOffsetFor(placed.data.start_utc) ?? offset,
-            availableStartLocal: placementWindow?.availableStartLocal
-              ? placementWindow.availableStartLocal.toISOString()
-              : undefined,
-            windowStartLocal: placementWindow?.startLocal
-              ? placementWindow.startLocal.toISOString()
-              : undefined,
-            locked: placed.data.locked ?? undefined,
-          });
-          scheduledProjectIds.add(item.id);
-
-          if (item.instanceId) {
-            removeInstanceFromBuckets(item.instanceId);
-          }
-          upsertInstance(dayInstances, placed.data);
-          registerInstanceForOffsets(placed.data);
-        }
-      }
-
-      const conflictProjects = collectProjectOverlapConflicts(
-        dayInstances,
-        habitAllowsOverlap
-      );
-      for (const conflict of conflictProjects) {
-        await cancelScheduleInstance(conflict.id, {
-          reason: "ILLEGAL_OVERLAP",
-          fault: "SYSTEM",
-        });
-        if (conflict.source_type === "PROJECT" && conflict.source_id) {
-          keptInstancesByProject.delete(conflict.source_id);
-        }
-        removeInstanceFromBuckets(conflict.id);
-      }
-    }
 
     if (shouldScheduleHabits) {
       await ensureHabitPlacementsForDay(
@@ -2047,11 +2476,15 @@ export async function scheduleBacklog(
   }
 
   if (persistedDayLimit >= lookaheadDays) {
+    const failureMap = new Map<string, ScheduleFailure>();
     for (const item of queue) {
       if (!scheduledProjectIds.has(item.id)) {
-        result.failures.push({ itemId: item.id, reason: "NO_WINDOW" });
+        if (!failureMap.has(item.id)) {
+          failureMap.set(item.id, { itemId: item.id, reason: "NO_WINDOW" });
+        }
       }
     }
+    result.failures.push(...Array.from(failureMap.values()));
   }
   if (overlapProjectIds.size > 0) {
     const unscheduledOverlapIds: string[] = [];
@@ -2095,7 +2528,12 @@ export async function scheduleBacklog(
     finalInstances,
     habitTypeById
   );
-  const cancelIdSet = collectFinalInvariantCancels(finalInvariantInstances);
+  // During rebuild, don't cancel PROJECT instances for overlaps - they were just placed
+  const nonProjectInstances = finalInvariantInstances.filter(
+    (inst) => !inst.isProject
+  );
+  const { canceled: cancelIdSet, overlapPairs } =
+    collectFinalInvariantCancels(nonProjectInstances);
   if (cancelIdSet.size > 0) {
     await cancelInstancesAsIllegalOverlap(supabase, Array.from(cancelIdSet));
   }
@@ -2103,9 +2541,101 @@ export async function scheduleBacklog(
     const id = entry.instance.id ?? "";
     return id.length > 0 && !cancelIdSet.has(id);
   });
-  const remainingCancels = collectFinalInvariantCancels(remainingInstances);
+  const { canceled: remainingCancels, overlapPairs: remainingOverlapPairs } =
+    collectFinalInvariantCancels(remainingInstances);
   if (remainingCancels.size > 0) {
-    throw new Error("SCHEDULER_INVARIANT_VIOLATION");
+    // Log structured summary of remaining cancels
+    const cancelSummaries = Array.from(remainingCancels).map((id) => {
+      const instance = finalInvariantInstances.find(
+        (inst) => inst.instance.id === id
+      );
+      return {
+        id,
+        source_type: instance?.instance.source_type,
+        source_id: instance?.instance.source_id,
+        start_utc: instance?.instance.start_utc,
+        end_utc: instance?.instance.end_utc,
+      };
+    });
+    console.error(
+      "[SCHEDULER] Final invariant violation - remaining overlaps:",
+      {
+        count: remainingCancels.size,
+        instances: cancelSummaries,
+      }
+    );
+
+    // Log PROJECT overlap pairs in detail
+    const projectOverlapPairs = remainingOverlapPairs.filter(
+      (pair) => pair.canceled.isProject || pair.overlapping.isProject
+    );
+    if (projectOverlapPairs.length > 0) {
+      console.error(
+        "[SCHEDULER] PROJECT overlap pairs in final invariant during rebuild:",
+        JSON.stringify(
+          {
+            count: projectOverlapPairs.length,
+            pairs: projectOverlapPairs.map((pair) => ({
+              canceled: {
+                id: pair.canceled.instance.id,
+                source_id: pair.canceled.instance.source_id,
+                start_utc: pair.canceled.instance.start_utc,
+                end_utc: pair.canceled.instance.end_utc,
+                status: pair.canceled.instance.status,
+                locked: pair.canceled.locked,
+              },
+              overlapping: {
+                id: pair.overlapping.instance.id,
+                source_id: pair.overlapping.instance.source_id,
+                start_utc: pair.overlapping.instance.start_utc,
+                end_utc: pair.overlapping.instance.end_utc,
+                status: pair.overlapping.instance.status,
+                locked: pair.overlapping.locked,
+              },
+            })),
+          },
+          null,
+          2
+        )
+      );
+    }
+
+    // Log PROJECT instances in final invariant cancels but don't crash
+    const projectCancels = cancelSummaries.filter(
+      (summary) => summary.source_type === "PROJECT"
+    );
+    if (projectCancels.length > 0) {
+      console.error(
+        "[SCHEDULER] PROJECT instances in final invariant cancels during rebuild:",
+        {
+          count: projectCancels.length,
+          instances: projectCancels.map((p) => ({
+            id: p.id,
+            source_id: p.source_id,
+            start_utc: p.start_utc,
+            end_utc: p.end_utc,
+          })),
+        }
+      );
+
+      // Add to result.failures for each canceled project
+      for (const projectCancel of projectCancels) {
+        result.failures.push({
+          itemId: projectCancel.source_id || projectCancel.id,
+          reason: "error",
+          detail: "FINAL_INVARIANT_PROJECT_OVERLAP",
+        });
+      }
+    }
+
+    // Cancel non-PROJECT instances and continue
+    for (const id of remainingCancels) {
+      await cancelScheduleInstance(id, {
+        reason: "ILLEGAL_OVERLAP",
+        fault: "SYSTEM",
+      });
+      removeInstanceFromBuckets(id);
+    }
   }
 
   if (typeof supabase.from === "function") {
@@ -2204,35 +2734,6 @@ async function dedupeScheduledProjects(
       startMs >= baseStartMs &&
       startMs < writeThroughCutoffMs;
 
-    if (projectsToReset.has(projectId)) {
-      if (isLockedProject) {
-        lockedProjectInstances.set(projectId, inst);
-        keepers.set(projectId, inst);
-        continue;
-      }
-      const existing = reusableCandidates.get(projectId);
-      if (!existing) {
-        reusableCandidates.set(projectId, inst);
-        continue;
-      }
-
-      const existingStart = new Date(existing.start_utc).getTime();
-      const instStart = new Date(inst.start_utc).getTime();
-
-      if (instStart < existingStart) {
-        extras.push(existing);
-        reusableCandidates.set(projectId, inst);
-      } else {
-        extras.push(inst);
-      }
-      continue;
-    }
-
-    if (withinWriteThrough && !isLockedProject) {
-      extras.push(inst);
-      continue;
-    }
-
     if (isLockedProject) {
       const existingLocked = lockedProjectInstances.get(projectId);
       if (existingLocked) {
@@ -2245,25 +2746,24 @@ async function dedupeScheduledProjects(
         } else {
           extras.push(inst);
         }
-        continue;
+      } else {
+        lockedProjectInstances.set(projectId, inst);
+        keepers.set(projectId, inst);
       }
-      lockedProjectInstances.set(projectId, inst);
-    }
-
-    const existing = keepers.get(projectId);
-    if (!existing) {
-      keepers.set(projectId, inst);
-      continue;
-    }
-
-    const existingStart = new Date(existing.start_utc).getTime();
-    const instStart = new Date(inst.start_utc).getTime();
-
-    if (instStart < existingStart) {
-      extras.push(existing);
-      keepers.set(projectId, inst);
     } else {
-      extras.push(inst);
+      const existing = reusableCandidates.get(projectId);
+      if (!existing) {
+        reusableCandidates.set(projectId, inst);
+      } else {
+        const existingStart = new Date(existing.start_utc).getTime();
+        const instStart = new Date(inst.start_utc).getTime();
+        if (instStart < existingStart) {
+          extras.push(existing);
+          reusableCandidates.set(projectId, inst);
+        } else {
+          extras.push(inst);
+        }
+      }
     }
   }
 
@@ -5215,7 +5715,7 @@ function doesInstanceRespectDaylight(
   return true;
 }
 
-async function fetchCompatibleWindowsForItem(
+export async function fetchCompatibleWindowsForItem(
   supabase: Client,
   date: Date,
   item: { energy: string; duration_min: number },
@@ -5239,15 +5739,66 @@ async function fetchCompatibleWindowsForItem(
     hasExplicitLocationContext?: boolean;
     allowedWindowKinds?: WindowKind[];
     auditZeroStageCallback?: (stage: string | null) => void;
+    horizonEnd?: Date;
   }
 ) {
   const cacheKey = dateCacheKey(date);
   const cache = options?.cache;
   let windows: WindowLite[];
+  let windowOccurrences: Array<{
+    window: WindowLite;
+    occurrenceDate: Date;
+  }> | null = null;
   const userId = options?.userId ?? null;
-  if (options?.preloadedWindows) {
-    windows = options.preloadedWindows;
-    cache?.set(cacheKey, windows);
+  if (options?.horizonEnd) {
+    // When horizonEnd is provided, expand windows into concrete occurrences with correct dates
+    windowOccurrences = [];
+    if (options?.preloadedWindows) {
+      const preloaded = options.preloadedWindows;
+      let currentDay = new Date(date);
+      const endDate = new Date(options.horizonEnd);
+      while (currentDay <= endDate) {
+        const dayWindows = getWindowsForDateFromAll(
+          preloaded,
+          currentDay,
+          timeZone
+        );
+        for (const win of dayWindows) {
+          windowOccurrences.push({
+            window: win,
+            occurrenceDate: new Date(currentDay),
+          });
+        }
+        currentDay = addDaysInTimeZone(currentDay, 1, timeZone);
+      }
+    } else {
+      // For projects, fetch windows across the entire horizon
+      let currentDay = new Date(date);
+      const endDate = new Date(options.horizonEnd);
+      while (currentDay <= endDate) {
+        const dayWindows = await fetchWindowsForDate(
+          currentDay,
+          supabase,
+          timeZone,
+          { userId }
+        );
+        for (const win of dayWindows) {
+          windowOccurrences.push({
+            window: win,
+            occurrenceDate: new Date(currentDay),
+          });
+        }
+        currentDay = addDaysInTimeZone(currentDay, 1, timeZone);
+      }
+    }
+    // For backward compatibility, create a flat windows array (though we'll use windowOccurrences in filtering)
+    windows = windowOccurrences.map((occ) => occ.window);
+  } else if (options?.preloadedWindows) {
+    windows = getWindowsForDateFromAll(
+      options.preloadedWindows,
+      date,
+      timeZone
+    );
   } else if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? [];
   } else {
@@ -5314,12 +5865,33 @@ async function fetchCompatibleWindowsForItem(
 
   const restMode = options?.restMode ?? false;
 
-  for (const win of windows) {
+  let totalWindows = 0;
+  let afterAllowedWindowKinds = 0;
+  let afterEnergy = 0;
+  let afterLocation = 0;
+  let afterNowTrim = 0;
+  let afterDaylight = 0;
+  let afterAvailability = 0;
+  let afterDuration = 0;
+  if (options?.horizonEnd) {
+    totalWindows = windows.length;
+  }
+
+  // Process each window, using the correct occurrence date when available
+  const windowsToProcess =
+    windowOccurrences ||
+    windows.map((win) => ({ window: win, occurrenceDate: date }));
+
+  for (const occurrence of windowsToProcess) {
+    const win = occurrence.window;
+    const occurrenceDate = occurrence.occurrenceDate;
+
     const windowKind: WindowKind = win.window_kind ?? "DEFAULT";
     if (allowedWindowKindSet && !allowedWindowKindSet.has(windowKind)) {
       continue;
     }
     if (stagePassCounts) stagePassCounts["allowedWindowKinds"] += 1;
+    if (options?.horizonEnd) afterAllowedWindowKinds++;
     let energyRaw = win.energy ? String(win.energy).toUpperCase().trim() : "";
     if (restMode) {
       energyRaw = energyRaw === "NO" ? "NO" : "LOW";
@@ -5338,6 +5910,7 @@ async function fetchCompatibleWindowsForItem(
       continue;
     }
     if (stagePassCounts) stagePassCounts["energy match"] += 1;
+    if (options?.horizonEnd) afterEnergy++;
 
     const windowLocationId =
       typeof win.location_context_id === "string" &&
@@ -5367,15 +5940,17 @@ async function fetchCompatibleWindowsForItem(
       if (windowLocationValue !== desiredLocationValue) continue;
     }
     if (stagePassCounts) stagePassCounts["location match"] += 1;
+    if (options?.horizonEnd) afterLocation++;
 
-    const startLocal = resolveWindowStart(win, date, timeZone);
-    const endLocal = resolveWindowEnd(win, date, timeZone);
+    const startLocal = resolveWindowStart(win, occurrenceDate, timeZone);
+    const endLocal = resolveWindowEnd(win, occurrenceDate, timeZone);
     const key = windowKey(win.id, startLocal);
     const startMs = startLocal.getTime();
     const endMs = endLocal.getTime();
 
     if (typeof nowMs === "number" && endMs <= nowMs) continue;
     if (stagePassCounts) stagePassCounts["nowMs trim"] += 1;
+    if (options?.horizonEnd) afterNowTrim++;
 
     let frontBoundMs =
       typeof nowMs === "number" ? Math.max(startMs, nowMs) : startMs;
@@ -5413,8 +5988,8 @@ async function fetchCompatibleWindowsForItem(
         backBoundMs = Math.min(backBoundMs, nightSpan.end.getTime());
       } else {
         const thresholdBase = win.fromPrevDay
-          ? addDaysInTimeZone(date, -1, timeZone)
-          : date;
+          ? addDaysInTimeZone(occurrenceDate, -1, timeZone)
+          : occurrenceDate;
         const nightThreshold = setTimeInTimeZone(
           thresholdBase,
           timeZone,
@@ -5438,6 +6013,7 @@ async function fetchCompatibleWindowsForItem(
 
     if (frontBoundMs >= backBoundMs) continue;
     if (stagePassCounts) stagePassCounts["daylight/night constraints"] += 1;
+    if (options?.horizonEnd) afterDaylight++;
 
     const existingBounds = availability?.get(key) ?? null;
     if (existingBounds) {
@@ -5458,9 +6034,9 @@ async function fetchCompatibleWindowsForItem(
 
     if (frontBoundMs >= backBoundMs) continue;
     if (stagePassCounts) stagePassCounts["availability bounds"] += 1;
+    if (options?.horizonEnd) afterAvailability++;
 
     const endLimitMs = backBoundMs;
-    const endLimitLocal = new Date(endLimitMs);
 
     let candidateStartMs: number;
     if (anchorPreference === "BACK") {
@@ -5479,6 +6055,9 @@ async function fetchCompatibleWindowsForItem(
     const candidateEndMs = candidateStartMs + durationMs;
     if (candidateEndMs > backBoundMs) continue;
     if (stagePassCounts) stagePassCounts["duration fit"] += 1;
+    if (options?.horizonEnd) afterDuration++;
+
+    const endLimitLocal = new Date(endLimitMs);
 
     const availableStartLocal = new Date(candidateStartMs);
 
@@ -5517,6 +6096,42 @@ async function fetchCompatibleWindowsForItem(
       }
       auditZeroStageCallback(firstStage);
     }
+  }
+
+  if (options?.horizonEnd) {
+    console.log(
+      "[SCHEDULER_PROJECT_DEBUG] fetchCompatibleWindowsForItem BEFORE filtering",
+      { totalWindows }
+    );
+    console.log(
+      "[SCHEDULER_PROJECT_DEBUG] fetchCompatibleWindowsForItem AFTER filtering",
+      { totalAfter: compatible.length }
+    );
+    if (compatible.length === 0) {
+      const breakdown = {
+        energy_mismatch: totalWindows - afterEnergy,
+        duration_too_long: afterAvailability - afterDuration,
+        window_outside_horizon: afterEnergy - afterNowTrim,
+        window_already_occupied: afterNowTrim - afterAvailability,
+        blocked_by_habit_project: afterNowTrim - afterAvailability,
+        window_ownership_mismatch: totalWindows - afterAllowedWindowKinds,
+        timezone_daykey_mismatch: afterLocation - afterEnergy,
+      };
+      console.log(
+        "[SCHEDULER_PROJECT_DEBUG] fetchCompatibleWindowsForItem ZERO windows breakdown",
+        breakdown
+      );
+    }
+    (compatible as any).counters = {
+      total: totalWindows,
+      afterAllowedWindowKinds,
+      afterEnergy,
+      afterLocation,
+      afterNowTrim,
+      afterDaylight,
+      afterAvailability,
+      afterDuration,
+    };
   }
 
   return compatible.map((win) => ({
@@ -5579,6 +6194,7 @@ function findPlacementWindow(
     startLocal: Date;
     endLocal: Date;
     key?: string;
+    availableStartLocal?: Date;
   }>,
   placement: ScheduleInstance
 ) {
