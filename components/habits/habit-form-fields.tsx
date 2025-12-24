@@ -16,7 +16,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
 import type { CatRow } from "@/lib/types/cat";
-import type { HabitWindowSelectOption, HabitWindowKind } from "@/lib/hooks/useHabitWindows";
+import type {
+  HabitWindowSelectOption,
+  HabitWindowKind,
+} from "@/lib/hooks/useHabitWindows";
 import {
   DEFAULT_EVERY_X_DAYS_INTERVAL,
   ensureEveryXDaysInterval,
@@ -87,7 +90,7 @@ export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
   },
   {
     label: "Sync",
-    value: "ASYNC",
+    value: "SYNC",
     description: "Self-paced rituals you can do anytime.",
   },
   {
@@ -109,12 +112,28 @@ export const HABIT_RECURRENCE_OPTIONS: HabitRecurrenceOption[] = [
 ];
 
 export const HABIT_ENERGY_OPTIONS: HabitEnergySelectOption[] = [
-  { value: "NO", label: "No Energy", description: "Fits when energy is scarce." },
+  {
+    value: "NO",
+    label: "No Energy",
+    description: "Fits when energy is scarce.",
+  },
   { value: "LOW", label: "Low", description: "Great for gentle routines." },
   { value: "MEDIUM", label: "Medium", description: "Requires a bit of focus." },
-  { value: "HIGH", label: "High", description: "Needs momentum and intention." },
-  { value: "ULTRA", label: "Ultra", description: "Best when you're in full flow." },
-  { value: "EXTREME", label: "Extreme", description: "Reserve for peak energy." },
+  {
+    value: "HIGH",
+    label: "High",
+    description: "Needs momentum and intention.",
+  },
+  {
+    value: "ULTRA",
+    label: "Ultra",
+    description: "Best when you're in full flow.",
+  },
+  {
+    value: "EXTREME",
+    label: "Extreme",
+    description: "Reserve for peak energy.",
+  },
 ];
 
 interface HabitFormFieldsProps {
@@ -247,11 +266,17 @@ export function HabitFormFields({
     }
   }, [isPracticeHabit, normalizedRecurrence, onRecurrenceChange]);
 
-  const goalSelectOptions = (goalOptions && goalOptions.length > 0
-    ? goalOptions
-    : [{ value: "none", label: "No goals available", disabled: true }]) as HabitGoalSelectOption[];
-  const goalSelectDisabled = goalSelectOptions.every((option) => option.disabled);
-  const resolvedGoalValue = goalSelectOptions.some((option) => option.value === goalId)
+  const goalSelectOptions = (
+    goalOptions && goalOptions.length > 0
+      ? goalOptions
+      : [{ value: "none", label: "No goals available", disabled: true }]
+  ) as HabitGoalSelectOption[];
+  const goalSelectDisabled = goalSelectOptions.every(
+    (option) => option.disabled
+  );
+  const resolvedGoalValue = goalSelectOptions.some(
+    (option) => option.value === goalId
+  )
     ? goalId
     : goalSelectOptions[0]?.value ?? "none";
 
@@ -266,7 +291,7 @@ export function HabitFormFields({
   });
   const [customLocationName, setCustomLocationName] = useState("");
   const [customLocationError, setCustomLocationError] = useState<string | null>(
-    null,
+    null
   );
   const [savingCustomLocation, setSavingCustomLocation] = useState(false);
 
@@ -311,7 +336,7 @@ export function HabitFormFields({
   };
 
   const skillOptionsForGrouping = filteredSkillOptions.filter(
-    (option) => option.value !== "none",
+    (option) => option.value !== "none"
   );
 
   const groupedSkillOptions = useMemo(() => {
@@ -363,7 +388,7 @@ export function HabitFormFields({
   }, [skillOptionsForGrouping, skillCategories, categoryLookup]);
 
   const specialSkillOptions = filteredSkillOptions.filter(
-    (option) => option.value === "none",
+    (option) => option.value === "none"
   );
 
   const locationOptionsById = useMemo(() => {
@@ -399,15 +424,15 @@ export function HabitFormFields({
   const resolvedWindowOptions: HabitWindowSelectOption[] = hasWindowSelection
     ? filteredWindowOptions
     : normalizedWindowId !== "none"
-      ? [
-          ...filteredWindowOptions,
-          {
-            id: normalizedWindowId,
-            label: "Selected window (incompatible)",
-            kind: "DEFAULT" as HabitWindowKind,
-          },
-        ]
-      : filteredWindowOptions;
+    ? [
+        ...filteredWindowOptions,
+        {
+          id: normalizedWindowId,
+          label: "Selected window (incompatible)",
+          kind: "DEFAULT" as HabitWindowKind,
+        },
+      ]
+    : filteredWindowOptions;
 
   const handleAddCustomLocation = async () => {
     const name = customLocationName;
@@ -480,7 +505,7 @@ export function HabitFormFields({
         <div
           className={cn(
             "grid gap-4 sm:gap-6 max-[360px]:grid-cols-1",
-            !isPracticeHabit ? "grid-cols-2" : "grid-cols-1",
+            !isPracticeHabit ? "grid-cols-2" : "grid-cols-1"
           )}
         >
           <div className="space-y-3">
@@ -571,7 +596,9 @@ export function HabitFormFields({
                       <div className="flex flex-col">
                         <span>{option.label}</span>
                         {option.description ? (
-                          <span className="text-xs text-white/60">{option.description}</span>
+                          <span className="text-xs text-white/60">
+                            {option.description}
+                          </span>
                         ) : null}
                       </div>
                     </SelectItem>
@@ -592,12 +619,15 @@ export function HabitFormFields({
                 min={1}
                 step={1}
                 value={completionTarget}
-                onChange={(event) => onCompletionTargetChange?.(event.target.value)}
+                onChange={(event) =>
+                  onCompletionTargetChange?.(event.target.value)
+                }
                 placeholder="How many completions finish this habit?"
                 className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
               />
               <p className="text-xs text-white/60">
-                Once you log this many completions, the temporary habit will wrap up.
+                Once you log this many completions, the temporary habit will
+                wrap up.
               </p>
             </div>
           </div>
@@ -606,7 +636,7 @@ export function HabitFormFields({
         <div
           className={cn(
             "grid gap-4 sm:gap-6 max-[360px]:grid-cols-1",
-            !isPracticeHabit ? "grid-cols-2" : "grid-cols-1",
+            !isPracticeHabit ? "grid-cols-2" : "grid-cols-1"
           )}
         >
           <div className="space-y-3">
@@ -621,62 +651,64 @@ export function HabitFormFields({
               <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
                 <SelectValue placeholder="Choose the skill this habit grows" />
               </SelectTrigger>
-            <SelectContent className="bg-[#0b101b] text-sm text-white">
-              <div className="p-2">
-                <Input
-                  value={skillSearchQuery}
-                  onChange={(event) => setSkillSearchQuery(event.target.value)}
-                  placeholder="Search skills..."
-                  className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
-                />
-              </div>
-              {specialSkillOptions.map((option) => (
-                <SelectItem
-                  key={`${option.value}-${option.label}`}
-                  value={option.value}
-                  disabled={option.disabled}
-                >
-                  <div className="flex items-center gap-2">
-                    {option.icon ? <span>{option.icon}</span> : null}
-                    <span>{option.label}</span>
-                  </div>
-                </SelectItem>
-              ))}
-              {filteredSkillOptions.length === 0 ? (
-                <div className="px-3 pb-3 text-xs text-white/60">
-                  No skills found.
+              <SelectContent className="bg-[#0b101b] text-sm text-white">
+                <div className="p-2">
+                  <Input
+                    value={skillSearchQuery}
+                    onChange={(event) =>
+                      setSkillSearchQuery(event.target.value)
+                    }
+                    placeholder="Search skills..."
+                    className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                  />
                 </div>
-              ) : (
-                groupedSkillOptions.map((group, index) => (
-                  <div
-                    key={group.id}
-                    className={cn(
-                      "space-y-2 px-3 pb-3 pt-2 text-sm text-white",
-                      index === 0 ? "pt-0" : ""
-                    )}
+                {specialSkillOptions.map((option) => (
+                  <SelectItem
+                    key={`${option.value}-${option.label}`}
+                    value={option.value}
+                    disabled={option.disabled}
                   >
-                    <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
-                      {group.label}
-                    </p>
-                    <div className="grid gap-1">
-                      {group.options.map((option) => (
-                        <SelectItem
-                          key={`${option.value}-${option.label}`}
-                          value={option.value}
-                          disabled={option.disabled}
-                          className="px-0 text-sm"
-                        >
-                          <div className="flex items-center gap-2">
-                            {option.icon ? <span>{option.icon}</span> : null}
-                            <span>{option.label}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
+                    <div className="flex items-center gap-2">
+                      {option.icon ? <span>{option.icon}</span> : null}
+                      <span>{option.label}</span>
                     </div>
+                  </SelectItem>
+                ))}
+                {filteredSkillOptions.length === 0 ? (
+                  <div className="px-3 pb-3 text-xs text-white/60">
+                    No skills found.
                   </div>
-                ))
-              )}
-            </SelectContent>
+                ) : (
+                  groupedSkillOptions.map((group, index) => (
+                    <div
+                      key={group.id}
+                      className={cn(
+                        "space-y-2 px-3 pb-3 pt-2 text-sm text-white",
+                        index === 0 ? "pt-0" : ""
+                      )}
+                    >
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+                        {group.label}
+                      </p>
+                      <div className="grid gap-1">
+                        {group.options.map((option) => (
+                          <SelectItem
+                            key={`${option.value}-${option.label}`}
+                            value={option.value}
+                            disabled={option.disabled}
+                            className="px-0 text-sm"
+                          >
+                            <div className="flex items-center gap-2">
+                              {option.icon ? <span>{option.icon}</span> : null}
+                              <span>{option.label}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </SelectContent>
             </Select>
             {skillError ? (
               <p className="text-xs text-red-300">{skillError}</p>
@@ -694,13 +726,13 @@ export function HabitFormFields({
                     <span>{selectedSkillOption.monumentEmoji}</span>
                   ) : null}
                   <span>
-                    {selectedSkillOption.monumentLabel ??
-                      "Linked monument"}
+                    {selectedSkillOption.monumentLabel ?? "Linked monument"}
                   </span>
                 </div>
               ) : (
                 <p className="mt-2 text-xs text-white/60">
-                  Link this skill to a monument to anchor practice blocks to a context.
+                  Link this skill to a monument to anchor practice blocks to a
+                  context.
                 </p>
               )}
             </div>
@@ -725,7 +757,9 @@ export function HabitFormFields({
                       <div className="flex flex-col">
                         <span>{option.label}</span>
                         {option.description ? (
-                          <span className="text-xs text-white/60">{option.description}</span>
+                          <span className="text-xs text-white/60">
+                            {option.description}
+                          </span>
                         ) : null}
                       </div>
                     </SelectItem>
@@ -816,7 +850,8 @@ export function HabitFormFields({
                 </SelectContent>
               </Select>
               <p className="text-xs text-white/60">
-                Choose a location to keep this habit aligned with compatible schedule windows.
+                Choose a location to keep this habit aligned with compatible
+                schedule windows.
               </p>
               {locationOptionsError ? (
                 <p className="text-xs text-amber-300/90">
@@ -891,9 +926,7 @@ export function HabitFormFields({
               </Label>
               <Select
                 value={daylightValue || "ALL_DAY"}
-                onValueChange={(value) =>
-                  onDaylightPreferenceChange?.(value)
-                }
+                onValueChange={(value) => onDaylightPreferenceChange?.(value)}
               >
                 <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
                   <SelectValue placeholder="When should this habit run?" />
@@ -907,7 +940,8 @@ export function HabitFormFields({
                 </SelectContent>
               </Select>
               <p className="text-xs text-white/60">
-                Restrict this habit to daylight or night windows. We’ll respect your local sunrise and sunset when scheduling.
+                Restrict this habit to daylight or night windows. We’ll respect
+                your local sunrise and sunset when scheduling.
               </p>
             </div>
 
@@ -931,13 +965,13 @@ export function HabitFormFields({
                 </SelectContent>
               </Select>
               <p className="text-xs text-white/60">
-                Choose whether this habit should schedule from the beginning of a window or stack from the end instead.
+                Choose whether this habit should schedule from the beginning of
+                a window or stack from the end instead.
               </p>
             </div>
           </div>
         ) : null}
       </div>
-
     </div>
   );
 }

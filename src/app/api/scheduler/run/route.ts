@@ -1,25 +1,28 @@
-import { NextResponse } from 'next/server'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
-import { filterIllegalOverlapsForRender } from '@/lib/scheduler/overlapFilter'
+import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  markMissedAndQueue,
+  scheduleBacklog,
+} from "@/lib/scheduler/reschedule";
+
 import {
   normalizeSchedulerModePayload,
   type SchedulerModePayload,
-} from '@/lib/scheduler/modes'
-import type { Database } from '@/types/supabase'
-import type { Database } from '@/types/supabase'
+} from "@/lib/scheduler/modes";
+import type { Database } from "@/types/supabase";
+import type { Database } from "@/types/supabase";
 
-export const runtime = 'nodejs'
+export const runtime = "nodejs";
 
 type SchedulerRunContext = {
-  localNow: Date | null
-  timeZone: string | null
-  utcOffsetMinutes: number | null
-  mode: SchedulerModePayload
-  writeThroughDays: number | null
-}
+  localNow: Date | null;
+  timeZone: string | null;
+  utcOffsetMinutes: number | null;
+  mode: SchedulerModePayload;
+  writeThroughDays: number | null;
+};
 
 export async function POST(request: Request) {
   const {
@@ -28,56 +31,86 @@ export async function POST(request: Request) {
     utcOffsetMinutes,
     mode,
     writeThroughDays,
-  } = await readRunRequestContext(request)
-  const supabase = await createClient()
+  } = await readRunRequestContext(request);
+  const supabase = await createClient();
   if (!supabase) {
     return NextResponse.json(
-      { error: 'supabase client unavailable' },
+      { error: "supabase client unavailable" },
       { status: 500 }
-    )
+    );
   }
 
   const {
     data: { user },
     error: authError,
-  } = await supabase.auth.getUser()
+  } = await supabase.auth.getUser();
 
   if (authError) {
-    return NextResponse.json(
-      { error: authError.message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: authError.message }, { status: 500 });
   }
 
   if (!user) {
-    return NextResponse.json({ error: 'not authenticated' }, { status: 401 })
+    return NextResponse.json({ error: "not authenticated" }, { status: 401 });
   }
 
-  const now = localNow ?? new Date()
+  const now = localNow ?? new Date();
 
-  const adminSupabase = createAdminClient()
-  const schedulingClient = adminSupabase ?? supabase
+  const adminSupabase = createAdminClient();
+  const schedulingClient = adminSupabase ?? supabase;
 
-  if (!adminSupabase && process.env.NODE_ENV !== 'production') {
-    console.warn('Falling back to user-scoped Supabase client for scheduler run')
+  if (!adminSupabase && process.env.NODE_ENV !== "production") {
+    console.warn(
+      "Falling back to user-scoped Supabase client for scheduler run"
+    );
   }
 
-  const markResult = await markMissedAndQueue(user.id, now, schedulingClient)
+  // HARD RESET: clear scheduled unlocked PROJECTS BEFORE any queuing
+  // First, get the instance IDs
+  const { data: instancesToMiss, error: fetchError } = await schedulingClient
+    .from("schedule_instances")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("source_type", "PROJECT")
+    .eq("status", "scheduled")
+    .eq("locked", false);
+
+  if (fetchError) {
+    return NextResponse.json({ error: fetchError.message }, { status: 500 });
+  }
+
+  // Mark each instance as missed with temporal fields cleared
+  for (const instance of instancesToMiss ?? []) {
+    const { error: updateError } = await schedulingClient
+      .from("schedule_instances")
+      .update({
+        status: "missed",
+        start_utc: null,
+        end_utc: null,
+        duration_min: null,
+        window_id: null,
+      })
+      .eq("id", instance.id);
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+  }
+
+  const markResult = await markMissedAndQueue(user.id, now, schedulingClient);
   if (markResult.error) {
     return NextResponse.json(
-      { error: markResult.error.message ?? 'failed to mark missed instances' },
+      { error: markResult.error.message ?? "failed to mark missed instances" },
       { status: 500 }
-    )
+    );
   }
 
   const profileTimeZone = await resolveProfileTimeZone(
     schedulingClient,
-    user.id,
-  )
-  const metadataTimeZone = extractUserTimeZone(user)
-  const userTimeZone =
-    requestTimeZone ?? profileTimeZone ?? metadataTimeZone
-  const coordinates = extractUserCoordinates(user)
+    user.id
+  );
+  const metadataTimeZone = extractUserTimeZone(user);
+  const userTimeZone = requestTimeZone ?? profileTimeZone ?? metadataTimeZone;
+  const coordinates = extractUserCoordinates(user);
   let scheduleResult;
   try {
     scheduleResult = await scheduleBacklog(user.id, now, schedulingClient, {
@@ -86,39 +119,15 @@ export async function POST(request: Request) {
       utcOffsetMinutes,
       mode,
       writeThroughDays,
-    })
-    if (scheduleResult.placed?.length) {
-      const filtered = filterIllegalOverlapsForRender(scheduleResult.placed)
-      const droppedIds = filtered.droppedIds
-      if (droppedIds.length > 0) {
-        await schedulingClient
-          .from('schedule_instances')
-          .update({
-            status: 'canceled',
-            canceled_reason: 'ILLEGAL_OVERLAP_LEGACY',
-          } as Record<string, unknown>)
-          .in('id', droppedIds)
-        scheduleResult.placed = filtered.kept
-        scheduleResult.timeline = (scheduleResult.timeline ?? []).filter(entry => {
-          if (entry.type === 'PROJECT') {
-            const instanceId = entry.instance?.id ?? null
-            return !instanceId || !droppedIds.includes(instanceId)
-          }
-          if (entry.type === 'HABIT') {
-            const instanceId = entry.instanceId ?? null
-            return !instanceId || !droppedIds.includes(instanceId)
-          }
-          return true
-        })
-      }
-    }
-  } catch (_error) {
-    return NextResponse.json(
-      { error: 'SCHEDULER_SOFT_FAIL', skipped: true },
-      { status: 200 }
-    )
+    });
+  } catch (err) {
+    console.error("SCHEDULER_FATAL", err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
-  const status = scheduleResult.error ? 500 : 200
+  // 🚫 DISABLED: project overlap cancellation is illegal during rebuild
+  // Overlaps are resolved by strict rank + greedy placement
+  // Habit overlap handling already happens earlier — do NOT rely on this filter
+  const status = scheduleResult.error ? 500 : 200;
 
   return NextResponse.json(
     {
@@ -129,147 +138,174 @@ export async function POST(request: Request) {
       schedule: scheduleResult,
     },
     { status }
-  )
+  );
 }
 
-function extractUserTimeZone(user: { user_metadata?: Record<string, unknown> | null }) {
-  const metadata = user.user_metadata ?? {}
-  const candidates = [
-    metadata?.timezone,
-    metadata?.timeZone,
-    metadata?.tz,
-  ]
+function extractUserTimeZone(user: {
+  user_metadata?: Record<string, unknown> | null;
+}) {
+  const metadata = user.user_metadata ?? {};
+  const candidates = [metadata?.timezone, metadata?.timeZone, metadata?.tz];
   for (const value of candidates) {
-    if (typeof value === 'string' && value.trim()) {
-      return value
+    if (typeof value === "string" && value.trim()) {
+      return value;
     }
   }
-  return null
+  return null;
 }
 
-function extractUserCoordinates(user: { user_metadata?: Record<string, unknown> | null }) {
-  const metadata = user.user_metadata ?? {}
+function extractUserCoordinates(user: {
+  user_metadata?: Record<string, unknown> | null;
+}) {
+  const metadata = user.user_metadata ?? {};
   const latCandidates: unknown[] = [
     metadata?.latitude,
     metadata?.lat,
     metadata?.coords && (metadata.coords as { latitude?: unknown })?.latitude,
     metadata?.coords && (metadata.coords as { lat?: unknown })?.lat,
-    metadata?.location && (metadata.location as { latitude?: unknown })?.latitude,
-  ]
+    metadata?.location &&
+      (metadata.location as { latitude?: unknown })?.latitude,
+  ];
   const lonCandidates: unknown[] = [
     metadata?.longitude,
     metadata?.lng,
     metadata?.lon,
     metadata?.coords && (metadata.coords as { longitude?: unknown })?.longitude,
     metadata?.coords && (metadata.coords as { lng?: unknown })?.lng,
-    metadata?.location && (metadata.location as { longitude?: unknown })?.longitude,
-  ]
+    metadata?.location &&
+      (metadata.location as { longitude?: unknown })?.longitude,
+  ];
 
-  const latitude = pickNumericValue(latCandidates)
-  const longitude = pickNumericValue(lonCandidates)
-  if (latitude === null || longitude === null) return null
-  return { latitude, longitude }
+  const latitude = pickNumericValue(latCandidates);
+  const longitude = pickNumericValue(lonCandidates);
+  if (latitude === null || longitude === null) return null;
+  return { latitude, longitude };
 }
 
 function pickNumericValue(values: unknown[]): number | null {
   for (const value of values) {
-    const num = typeof value === 'string' ? Number.parseFloat(value) : value
-    if (typeof num === 'number' && Number.isFinite(num)) {
-      return num
+    const num = typeof value === "string" ? Number.parseFloat(value) : value;
+    if (typeof num === "number" && Number.isFinite(num)) {
+      return num;
     }
   }
-  return null
+  return null;
 }
 
-async function readRunRequestContext(request: Request): Promise<SchedulerRunContext> {
+async function readRunRequestContext(
+  request: Request
+): Promise<SchedulerRunContext> {
   if (!request) {
-    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' }, writeThroughDays: null }
+    return {
+      localNow: null,
+      timeZone: null,
+      mode: { type: "REGULAR" },
+      writeThroughDays: null,
+    };
   }
 
-  const contentType = request.headers.get('content-type') ?? ''
-  if (!contentType.toLowerCase().includes('application/json')) {
-    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' }, writeThroughDays: null }
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return {
+      localNow: null,
+      timeZone: null,
+      mode: { type: "REGULAR" },
+      writeThroughDays: null,
+    };
   }
 
   try {
     const payload = (await request.json()) as {
-      localTimeIso?: unknown
-      timeZone?: unknown
-      utcOffsetMinutes?: unknown
-      mode?: unknown
-      writeThroughDays?: unknown
-    }
+      localTimeIso?: unknown;
+      timeZone?: unknown;
+      utcOffsetMinutes?: unknown;
+      mode?: unknown;
+      writeThroughDays?: unknown;
+    };
 
-    let localNow: Date | null = null
-    if (payload && typeof payload.localTimeIso === 'string') {
-      const parsed = new Date(payload.localTimeIso)
+    let localNow: Date | null = null;
+    if (payload && typeof payload.localTimeIso === "string") {
+      const parsed = new Date(payload.localTimeIso);
       if (!Number.isNaN(parsed.getTime())) {
-        localNow = parsed
+        localNow = parsed;
       }
     }
 
-    let timeZone: string | null = null
-    if (payload && typeof payload.timeZone === 'string' && payload.timeZone.trim()) {
-      timeZone = payload.timeZone
+    let timeZone: string | null = null;
+    if (
+      payload &&
+      typeof payload.timeZone === "string" &&
+      payload.timeZone.trim()
+    ) {
+      timeZone = payload.timeZone;
     }
 
-    const mode = normalizeSchedulerModePayload(payload?.mode)
+    const mode = normalizeSchedulerModePayload(payload?.mode);
 
-    let writeThroughDays: number | null = null
-    const candidate = payload?.writeThroughDays
-    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
-      writeThroughDays = candidate
-    } else if (typeof candidate === 'string') {
-      const parsed = Number.parseFloat(candidate)
+    let writeThroughDays: number | null = null;
+    const candidate = payload?.writeThroughDays;
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      writeThroughDays = candidate;
+    } else if (typeof candidate === "string") {
+      const parsed = Number.parseFloat(candidate);
       if (Number.isFinite(parsed)) {
-        writeThroughDays = parsed
+        writeThroughDays = parsed;
       }
     }
 
-    let utcOffsetMinutes: number | null = null
-    const offsetCandidate = payload?.utcOffsetMinutes
-    if (typeof offsetCandidate === 'number' && Number.isFinite(offsetCandidate)) {
-      utcOffsetMinutes = offsetCandidate
-    } else if (typeof offsetCandidate === 'string') {
-      const parsed = Number.parseFloat(offsetCandidate)
+    let utcOffsetMinutes: number | null = null;
+    const offsetCandidate = payload?.utcOffsetMinutes;
+    if (
+      typeof offsetCandidate === "number" &&
+      Number.isFinite(offsetCandidate)
+    ) {
+      utcOffsetMinutes = offsetCandidate;
+    } else if (typeof offsetCandidate === "string") {
+      const parsed = Number.parseFloat(offsetCandidate);
       if (Number.isFinite(parsed)) {
-        utcOffsetMinutes = parsed
+        utcOffsetMinutes = parsed;
       }
     }
 
-    return { localNow, timeZone, utcOffsetMinutes, mode, writeThroughDays }
+    return { localNow, timeZone, utcOffsetMinutes, mode, writeThroughDays };
   } catch (error) {
-    console.warn('Failed to parse scheduler run payload', error)
-    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' }, writeThroughDays: null }
+    console.warn("Failed to parse scheduler run payload", error);
+    return {
+      localNow: null,
+      timeZone: null,
+      mode: { type: "REGULAR" },
+      writeThroughDays: null,
+    };
   }
 }
 
 export async function GET() {
   return NextResponse.json(
-    { error: 'method not allowed' },
-    { status: 405, headers: { Allow: 'POST' } }
-  )
+    { error: "method not allowed" },
+    { status: 405, headers: { Allow: "POST" } }
+  );
 }
 
 async function resolveProfileTimeZone(
   client: SupabaseClient<Database> | null,
-  userId: string,
+  userId: string
 ) {
-  if (!client) return null
+  if (!client) return null;
   try {
     const { data, error } = await client
-      .from('profiles')
-      .select('timezone')
-      .eq('user_id', userId)
-      .maybeSingle()
+      .from("profiles")
+      .select("timezone")
+      .eq("user_id", userId)
+      .maybeSingle();
     if (error) {
-      console.warn('Failed to resolve profile timezone', error)
-      return null
+      console.warn("Failed to resolve profile timezone", error);
+      return null;
     }
-    const timezone = typeof data?.timezone === 'string' ? data.timezone.trim() : ''
-    if (timezone) return timezone
+    const timezone =
+      typeof data?.timezone === "string" ? data.timezone.trim() : "";
+    if (timezone) return timezone;
   } catch (error) {
-    console.warn('Failed to resolve profile timezone', error)
+    console.warn("Failed to resolve profile timezone", error);
   }
-  return null
+  return null;
 }

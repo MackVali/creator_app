@@ -892,13 +892,13 @@ export interface Database {
           created_at: string;
           updated_at: string;
           user_id: string;
-          source_type: Database['public']['Enums']['schedule_instance_source_type'];
+          source_type: Database["public"]["Enums"]["schedule_instance_source_type"];
           source_id: string;
           window_id: string | null;
-          start_utc: string;
-          end_utc: string;
+          start_utc: string | null;
+          end_utc: string | null;
           duration_min: number;
-          status: Database['public']['Enums']['schedule_instance_status'];
+          status: Database["public"]["Enums"]["schedule_instance_status"];
           weight_snapshot: number;
           energy_resolved: string;
           completed_at: string | null;
@@ -911,13 +911,13 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           user_id: string;
-          source_type: Database['public']['Enums']['schedule_instance_source_type'];
+          source_type: Database["public"]["Enums"]["schedule_instance_source_type"];
           source_id: string;
           window_id?: string | null;
           start_utc: string;
           end_utc: string;
           duration_min: number;
-          status?: Database['public']['Enums']['schedule_instance_status'];
+          status?: Database["public"]["Enums"]["schedule_instance_status"];
           weight_snapshot: number;
           energy_resolved: string;
           completed_at?: string | null;
@@ -930,13 +930,13 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           user_id?: string;
-          source_type?: Database['public']['Enums']['schedule_instance_source_type'];
+          source_type?: Database["public"]["Enums"]["schedule_instance_source_type"];
           source_id?: string;
           window_id?: string | null;
-          start_utc?: string;
-          end_utc?: string;
+          start_utc?: string | null;
+          end_utc?: string | null;
           duration_min?: number;
-          status?: Database['public']['Enums']['schedule_instance_status'];
+          status?: Database["public"]["Enums"]["schedule_instance_status"];
           weight_snapshot?: number;
           energy_resolved?: string;
           completed_at?: string | null;
@@ -1016,7 +1016,10 @@ export interface Database {
         Row: {
           id: string;
           created_at: string;
-          badge_type: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
+          badge_type:
+            | "user_prestige_badge"
+            | "skill_prestige_badge"
+            | "skill_level_badge";
           level: number;
           emoji: string;
           label: string;
@@ -1026,7 +1029,10 @@ export interface Database {
         Insert: {
           id?: string;
           created_at?: string;
-          badge_type: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
+          badge_type:
+            | "user_prestige_badge"
+            | "skill_prestige_badge"
+            | "skill_level_badge";
           level: number;
           emoji: string;
           label: string;
@@ -1036,7 +1042,10 @@ export interface Database {
         Update: {
           id?: string;
           created_at?: string;
-          badge_type?: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
+          badge_type?:
+            | "user_prestige_badge"
+            | "skill_prestige_badge"
+            | "skill_level_badge";
           level?: number;
           emoji?: string;
           label?: string;
@@ -1147,9 +1156,13 @@ export interface Database {
       };
     };
     Enums: {
-      schedule_instance_source_type: 'PROJECT' | 'TASK' | 'HABIT';
-      schedule_instance_status: 'scheduled' | 'completed' | 'missed' | 'canceled';
-      xp_kind: 'task' | 'habit' | 'project' | 'goal' | 'manual';
+      schedule_instance_source_type: "PROJECT" | "TASK" | "HABIT";
+      schedule_instance_status:
+        | "scheduled"
+        | "completed"
+        | "missed"
+        | "canceled";
+      xp_kind: "task" | "habit" | "project" | "goal" | "manual";
     };
     CompositeTypes: Record<string, unknown>;
   };

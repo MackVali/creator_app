@@ -9,6 +9,7 @@ import type { ScheduleInstance } from "../../../src/lib/scheduler/instanceRepo";
 import type { ProjectLite } from "../../../src/lib/scheduler/weight";
 import * as habits from "../../../src/lib/scheduler/habits";
 import type { HabitScheduleItem } from "../../../src/lib/scheduler/habits";
+import * as reschedule from "../../../src/lib/scheduler/reschedule";
 
 const realPlaceItemInWindows = placement.placeItemInWindows;
 
@@ -4845,5 +4846,399 @@ describe("scheduleBacklog", () => {
     await scheduleBacklog(userId, baseDate, supabase);
 
     expect(canceledIds).toContain("inst-low");
+  });
+
+  it("sorts projects by global_rank, preferred, weight, id in base mode", async () => {
+    instances = [];
+
+    const backlogResponse: BacklogResponse = {
+      data: [
+        createInstanceRecord({
+          id: "inst-low-rank",
+          source_id: "proj-low-rank",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "LOW",
+        }),
+        createInstanceRecord({
+          id: "inst-high-rank",
+          source_id: "proj-high-rank",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "LOW",
+        }),
+        createInstanceRecord({
+          id: "inst-null-rank",
+          source_id: "proj-null-rank",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "LOW",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (
+      instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock
+    ).mockResolvedValue(backlogResponse);
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-low-rank": {
+        id: "proj-low-rank",
+        name: "Low Rank",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+        globalRank: 10,
+      },
+      "proj-high-rank": {
+        id: "proj-high-rank",
+        name: "High Rank",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+        globalRank: 1,
+      },
+      "proj-null-rank": {
+        id: "proj-null-rank",
+        name: "Null Rank",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+        globalRank: null,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-1",
+        label: "Morning",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+      },
+    ]);
+
+    const callOrder: string[] = [];
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async ({ item }) => {
+        callOrder.push(item.id);
+        if (item.id === "proj-high-rank") {
+          return {
+            data: createInstanceRecord({
+              id: "inst-high-rank",
+              source_id: "proj-high-rank",
+              status: "scheduled",
+              energy_resolved: "LOW",
+            }),
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          };
+        }
+        if (item.id === "proj-low-rank") {
+          return {
+            data: createInstanceRecord({
+              id: "inst-low-rank",
+              source_id: "proj-low-rank",
+              status: "scheduled",
+              energy_resolved: "LOW",
+            }),
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          };
+        }
+        return { error: "NO_FIT" as const };
+      }
+    );
+
+    const mockClient = {} as ScheduleBacklogClient;
+    await scheduleBacklog(userId, baseDate, mockClient);
+
+    expect(callOrder.length).toBeGreaterThanOrEqual(2);
+    expect(callOrder[0]).toBe("proj-high-rank"); // global_rank 1 first
+    expect(callOrder[1]).toBe("proj-low-rank"); // global_rank 10 second
+    // proj-null-rank should be last (null ranks go last)
+  });
+
+  it("rejects higher-ranked projects when they conflict with existing projects", async () => {
+    const { client } = createSupabaseMock();
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-low-rank",
+        source_id: "proj-low-rank",
+        start_utc: "2024-01-02T09:00:00Z",
+        end_utc: "2024-01-02T10:00:00Z",
+        window_id: "win-shared",
+        weight_snapshot: 10,
+      }),
+    ];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-low-rank": {
+        id: "proj-low-rank",
+        name: "Low Rank Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "NO",
+        duration_min: 60,
+        globalRank: 10,
+      },
+      "proj-high-rank": {
+        id: "proj-high-rank",
+        name: "High Rank Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "NO",
+        duration_min: 60,
+        globalRank: 1,
+      },
+    });
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (
+      repo.fetchProjectSkillsForProjects as unknown as vi.Mock
+    ).mockResolvedValue({});
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-shared",
+        label: "Shared Window",
+        energy: "NO",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [2],
+      },
+    ]);
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async (params) => {
+        // Higher-ranked project should be rejected due to overlap
+        return { error: "NO_FIT" as const };
+      }
+    );
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(result.placed).toHaveLength(0);
+    expect(result.failures).toContainEqual({
+      itemId: "proj-high-rank",
+      reason: "NO_FEASIBLE_SLOT_IN_HORIZON",
+    });
+  });
+
+  it("sorts projects by global_rank, preferred, weight, id in MONUMENTAL mode", async () => {
+    instances = [];
+
+    const backlogResponse: BacklogResponse = {
+      data: [
+        createInstanceRecord({
+          id: "inst-preferred",
+          source_id: "proj-preferred",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "LOW",
+        }),
+        createInstanceRecord({
+          id: "inst-not-preferred",
+          source_id: "proj-not-preferred",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "LOW",
+        }),
+        createInstanceRecord({
+          id: "inst-null-rank",
+          source_id: "proj-null-rank",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "LOW",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (
+      instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock
+    ).mockResolvedValue(backlogResponse);
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-preferred": {
+        id: "proj-preferred",
+        name: "Preferred",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+        globalRank: 5,
+      },
+      "proj-not-preferred": {
+        id: "proj-not-preferred",
+        name: "Not Preferred",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+        globalRank: 5,
+      },
+      "proj-null-rank": {
+        id: "proj-null-rank",
+        name: "Null Rank",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+        globalRank: null,
+      },
+    });
+
+    (repo.fetchGoalsForUser as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "goal-preferred",
+        name: "Preferred Goal",
+        weight: 0,
+        monumentId: "monument-keep",
+      },
+      {
+        id: "goal-not-preferred",
+        name: "Not Preferred Goal",
+        weight: 0,
+        monumentId: "monument-ignore",
+      },
+    ]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-1",
+        label: "Morning",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+      },
+    ]);
+
+    const callOrder: string[] = [];
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async ({ item }) => {
+        callOrder.push(item.id);
+        if (item.id === "proj-preferred") {
+          return {
+            data: createInstanceRecord({
+              id: "inst-preferred",
+              source_id: "proj-preferred",
+              status: "scheduled",
+              energy_resolved: "LOW",
+            }),
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          };
+        }
+        if (item.id === "proj-not-preferred") {
+          return {
+            data: createInstanceRecord({
+              id: "inst-not-preferred",
+              source_id: "proj-not-preferred",
+              status: "scheduled",
+              energy_resolved: "LOW",
+            }),
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+          };
+        }
+        return { error: "NO_FIT" as const };
+      }
+    );
+
+    const mockClient = {} as ScheduleBacklogClient;
+    await scheduleBacklog(userId, baseDate, mockClient, {
+      mode: { type: "MONUMENTAL", monumentId: "monument-keep" },
+    });
+
+    expect(callOrder.length).toBeGreaterThanOrEqual(2);
+    expect(callOrder[0]).toBe("proj-preferred"); // preferred first (same global_rank)
+    expect(callOrder[1]).toBe("proj-not-preferred"); // not preferred second
+    // proj-null-rank should be last (null ranks go last)
+  });
+
+  it("marks new projects with no compatible windows as missed", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-no-windows": {
+        id: "proj-no-windows",
+        name: "No Windows",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "HIGH",
+        duration_min: 120, // longer than window
+        globalRank: 1,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-small",
+        label: "Small",
+        energy: "HIGH",
+        start_local: "09:00",
+        end_local: "10:00", // 60 min
+        days: [2],
+      },
+    ]);
+
+    const { client, update } = createSupabaseMock();
+
+    const fetchCompatibleWindowsSpy = vi
+      .spyOn(reschedule, "fetchCompatibleWindowsForItem")
+      .mockResolvedValue([]);
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(fetchCompatibleWindowsSpy).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Date),
+      expect.objectContaining({
+        id: "proj-no-windows",
+        energy: "HIGH",
+        duration_min: 120,
+      }),
+      expect.any(String),
+      expect.any(Object)
+    );
+
+    expect(update).not.toHaveBeenCalled(); // no existing instance
+
+    // Check that insert was called with missed instance
+    const insertMock = client.from("schedule_instances").insert as vi.Mock;
+    expect(insertMock).toHaveBeenCalledTimes(1);
+    const inserted = insertMock.mock.calls[0][0];
+    expect(inserted.status).toBe("missed");
+    expect(inserted.missed_reason).toBe("NO_COMPATIBLE_WINDOWS");
+    expect(inserted.source_id).toBe("proj-no-windows");
+
+    expect(result.failures).toEqual([
+      {
+        itemId: "proj-no-windows",
+        reason: "NO_COMPATIBLE_WINDOWS",
+      },
+    ]);
   });
 });
