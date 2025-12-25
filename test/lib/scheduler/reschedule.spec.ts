@@ -230,6 +230,41 @@ describe("scheduleBacklog", () => {
         duration_min: 60,
       },
     });
+    vi.spyOn(repo, "fetchAllProjectsMap").mockResolvedValue({
+      "proj-1": {
+        id: "proj-1",
+        name: "Existing",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+      "proj-2": {
+        id: "proj-2",
+        name: "New",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+      "proj-non-locked": {
+        id: "proj-non-locked",
+        name: "Non Locked Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+      "proj-locked": {
+        id: "proj-locked",
+        name: "Locked Project",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+        globalRank: 1,
+      },
+    });
     vi.spyOn(repo, "fetchProjectSkillsForProjects").mockResolvedValue({});
     vi.spyOn(repo, "fetchGoalsForUser").mockResolvedValue([]);
     vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
@@ -5240,5 +5275,266 @@ describe("scheduleBacklog", () => {
         reason: "NO_COMPATIBLE_WINDOWS",
       },
     ]);
+  });
+
+  it("enforces habit-first scheduling: habit occupies slot before project", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-compete": {
+        id: "proj-compete",
+        name: "Competing Project",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+        globalRank: 1,
+      },
+    });
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-shared",
+        label: "Shared Window",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [2],
+      },
+    ]);
+
+    const habit: HabitScheduleItem = {
+      id: "habit-compete",
+      name: "Competing Habit",
+      durationMinutes: 60,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      currentStreakDays: 0,
+      longestStreakDays: 0,
+      habitType: "HABIT",
+      windowId: null,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: null,
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      if (params.item.sourceType === "HABIT") {
+        // Habit gets the slot first
+        return {
+          data: createInstanceRecord({
+            id: "inst-habit",
+            source_id: habit.id,
+            source_type: "HABIT",
+            start_utc: "2024-01-02T09:00:00Z",
+            end_utc: "2024-01-02T10:00:00Z",
+            duration_min: 60,
+            window_id: "win-shared",
+            energy_resolved: "LOW",
+          }),
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        };
+      } else if (params.item.sourceType === "PROJECT") {
+        // Project should see habit as blocker and fail or get different slot
+        // For test, let it fail
+        return { error: "NO_FIT" as const };
+      }
+      return { error: "NO_FIT" as const };
+    });
+
+    const { client: supabase } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, supabase);
+
+    // Habit should be placed
+    const habitInstances = result.placed.filter(
+      (inst) => inst.source_type === "HABIT"
+    );
+    expect(habitInstances).toHaveLength(1);
+    expect(habitInstances[0]?.start_utc).toBe("2024-01-02T09:00:00Z");
+
+    // Project should fail or be placed elsewhere
+    const projectInstances = result.placed.filter(
+      (inst) => inst.source_type === "PROJECT"
+    );
+    // In this test, it fails
+    expect(projectInstances).toHaveLength(0);
+    expect(result.failures).toContainEqual({
+      itemId: "proj-compete",
+      reason: "NO_FEASIBLE_SLOT_IN_HORIZON",
+    });
+  });
+
+  it("cancels non-locked PROJECT instances at HABIT_PASS_START to enforce habit-first scheduling", async () => {
+    const { client, update } = createSupabaseMock();
+
+    // Seed a non-locked scheduled PROJECT instance occupying an early slot today
+    instances = [
+      createInstanceRecord({
+        id: "inst-non-locked-proj",
+        source_id: "proj-non-locked",
+        source_type: "PROJECT",
+        status: "scheduled",
+        start_utc: "2024-01-02T09:00:00Z",
+        end_utc: "2024-01-02T10:00:00Z",
+        window_id: "win-shared",
+        duration_min: 60,
+        energy_resolved: "LOW",
+        weight_snapshot: 10,
+        locked: false,
+      }),
+      // Also seed a locked PROJECT instance that should remain
+      createInstanceRecord({
+        id: "inst-locked-proj",
+        source_id: "proj-locked",
+        source_type: "PROJECT",
+        status: "scheduled",
+        start_utc: "2024-01-02T10:00:00Z",
+        end_utc: "2024-01-02T11:00:00Z",
+        window_id: "win-shared",
+        duration_min: 60,
+        energy_resolved: "LOW",
+        weight_snapshot: 10,
+        locked: true,
+      }),
+    ];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-locked": {
+        id: "proj-locked",
+        name: "Locked Project",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+        globalRank: 1,
+      },
+    });
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-shared",
+        label: "Shared Window",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "12:00",
+        days: [2],
+      },
+    ]);
+
+    // Seed a due HABIT that fits the same slot
+    const habit: HabitScheduleItem = {
+      id: "habit-compete",
+      name: "Competing Habit",
+      durationMinutes: 60,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      currentStreakDays: 0,
+      longestStreakDays: 0,
+      habitType: "HABIT",
+      windowId: null,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: null,
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      if (params.item.sourceType === "HABIT") {
+        // Habit should take the slot that was occupied by the non-locked project
+        return {
+          data: createInstanceRecord({
+            id: "inst-habit",
+            source_id: habit.id,
+            source_type: "HABIT",
+            start_utc: "2024-01-02T09:00:00Z",
+            end_utc: "2024-01-02T10:00:00Z",
+            duration_min: 60,
+            window_id: "win-shared",
+            energy_resolved: "LOW",
+          }),
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        };
+      } else if (params.item.sourceType === "PROJECT") {
+        // Project should be able to place in the later slot (after habit and locked project)
+        return {
+          data: createInstanceRecord({
+            id: "inst-locked-proj-placed",
+            source_id: params.item.id,
+            source_type: "PROJECT",
+            start_utc: "2024-01-02T11:00:00Z",
+            end_utc: "2024-01-02T12:00:00Z",
+            duration_min: 60,
+            window_id: "win-shared",
+            energy_resolved: "LOW",
+          }),
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        };
+      }
+      return { error: "NO_FIT" as const };
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    // Verify non-locked PROJECT instance was canceled
+    expect(update).toHaveBeenCalled();
+    expect(
+      update.mock.calls.some((call) => call?.[0]?.status === "canceled")
+    ).toBe(true);
+    expect(
+      update.mock.calls.find((call) => call?.[0]?.status === "canceled")?.[1]
+        ?.eq?.mock.calls?.[0]?.[1]
+    ).toBe("inst-non-locked-proj");
+
+    // Verify HABIT took the slot
+    const habitInstances = result.placed.filter(
+      (inst) => inst.source_type === "HABIT"
+    );
+    expect(habitInstances).toHaveLength(1);
+    expect(habitInstances[0]?.start_utc).toBe("2024-01-02T09:00:00Z");
+
+    // Verify locked PROJECT was rescheduled (not canceled)
+    const projectInstances = result.placed.filter(
+      (inst) => inst.source_type === "PROJECT"
+    );
+    expect(projectInstances).toHaveLength(1);
+    expect(projectInstances[0]?.source_id).toBe("proj-locked");
   });
 });
