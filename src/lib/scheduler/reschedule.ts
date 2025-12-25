@@ -716,6 +716,27 @@ async function cancelInstancesAsIllegalOverlap(
   }
 }
 
+async function cancelInstancesAsRescheduleRebuild(
+  supabase: Client,
+  ids: string[]
+) {
+  if (ids.length === 0) return;
+  const payload = {
+    status: "canceled",
+    canceled_reason: "RESCHEDULE_REBUILD",
+  } as unknown as Database["public"]["Tables"]["schedule_instances"]["Update"];
+  const batches = chunkIds(ids, 1000);
+  for (const batch of batches) {
+    const { error } = await supabase
+      .from("schedule_instances")
+      .update(payload)
+      .in("id", batch);
+    if (error) {
+      throw error;
+    }
+  }
+}
+
 async function ensureClient(client?: Client): Promise<Client> {
   if (client) return client;
 
@@ -1460,6 +1481,26 @@ export async function scheduleBacklog(
   const keptInstances = [...dedupe.keepers].filter(
     (inst) => !invalidatedInstanceIds.has(inst.id)
   );
+
+  // Split kept instances: only locked PROJECT instances should be blockers before HABIT_PASS_START
+  const keptLockedProjects = keptInstances.filter(
+    (inst) => inst.source_type === "PROJECT" && inst.locked === true
+  );
+  const keptNonLockedProjects = keptInstances.filter(
+    (inst) => inst.source_type === "PROJECT" && inst.locked !== true
+  );
+  const keptNonProjectInstances = keptInstances.filter(
+    (inst) => inst.source_type !== "PROJECT"
+  );
+
+  // Cancel non-locked PROJECT instances to prevent them from remaining scheduled
+  if (keptNonLockedProjects.length > 0) {
+    const nonLockedProjectIds = keptNonLockedProjects
+      .map((inst) => inst.id)
+      .filter(Boolean) as string[];
+    await cancelInstancesAsRescheduleRebuild(supabase, nonLockedProjectIds);
+  }
+
   const keptInstancesByProject = new Map<string, ScheduleInstance>();
   const habitScheduledDatesById = new Map<string, Date[]>();
   for (const instance of dedupe.allInstances) {
@@ -1467,6 +1508,8 @@ export async function scheduleBacklog(
     if (invalidatedInstanceIds.has(instance.id)) continue;
     if (!instance.source_id) continue;
     if (!instance.start_utc) continue;
+    if (instance.status !== "scheduled" && instance.status !== "completed")
+      continue;
     const start = new Date(instance.start_utc);
     if (Number.isNaN(start.getTime())) continue;
     const normalized = startOfDayInTimeZone(start, timeZone);
@@ -1821,13 +1864,18 @@ export async function scheduleBacklog(
     }
   }
 
-  for (const inst of keptInstances) {
+  // Register only locked PROJECT instances and non-PROJECT instances as blockers before HABIT_PASS_START
+  for (const inst of keptLockedProjects) {
+    registerInstanceForOffsets(inst);
+  }
+  for (const inst of keptNonProjectInstances) {
+    registerInstanceForOffsets(inst);
+  }
+
+  for (const inst of keptLockedProjects) {
     const projectId = inst.source_id ?? "";
     if (!projectId) continue;
     keptInstancesByProject.set(projectId, inst);
-    if (inst.locked !== true) {
-      registerReuseInstance(projectId, inst.id);
-    }
   }
 
   for (const item of queue) {
@@ -2008,6 +2056,83 @@ export async function scheduleBacklog(
     item.instanceId = newInstance.id;
   }
 
+  // Build base blockers: locked instances that must remain
+  const baseBlockers: ScheduleInstance[] = dedupe.allInstances.filter(
+    (inst) => !invalidatedInstanceIds.has(inst.id) && inst.locked === true
+  );
+
+  // Register base blockers into day buckets
+  for (const blocker of baseBlockers) {
+    registerInstanceForOffsets(blocker);
+  }
+
+  // ===== HABIT PASS FIRST =====
+  const nonLockedProjectBlockersBeforeHabitPass = keptNonLockedProjects.length;
+  console.log(
+    "[SCHEDULER_SANITY] nonLockedProjectBlockersBeforeHabitPass:",
+    nonLockedProjectBlockersBeforeHabitPass
+  );
+  console.log("[SCHEDULER_ORDER] HABIT_PASS_START", {
+    horizonStart: baseStart.toISOString(),
+    horizonEnd: writeThroughEnd.toISOString(),
+  });
+
+  const habitBlockingInstances: ScheduleInstance[] = [];
+
+  for (let offset = 0; offset < maxOffset; offset += 1) {
+    const day =
+      offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
+    if (offset < habitWriteLookaheadDays) {
+      await prepareWindowsForDay(day);
+      const existingInstances = getDayInstances(offset);
+
+      const dayResult = await scheduleHabitsForDay({
+        userId,
+        habits,
+        day,
+        offset,
+        timeZone,
+        availability: new Map(),
+        baseDate,
+        windowCache,
+        client: supabase,
+        sunlightLocation: location,
+        timeZoneOffsetMinutes,
+        durationMultiplier,
+        restMode: isRestMode,
+        existingInstances,
+        registerInstance: registerInstanceForOffsets,
+        getWindowsForDay,
+        getLastScheduledHabitStart: getHabitLastScheduledStart,
+        recordHabitScheduledStart,
+        habitMap: habitById,
+        taskContextById,
+        contextTaskCounts,
+        practiceHistory,
+        getProjectGoalMonumentId,
+        reservedPlacements: undefined,
+        audit: habitAudit,
+      });
+
+      habitBlockingInstances.push(...dayResult.instances);
+      result.placed.push(...dayResult.instances);
+      result.timeline.push(...dayResult.placements);
+      if (dayResult.failures.length > 0) {
+        result.failures.push(...dayResult.failures);
+      }
+    }
+  }
+
+  console.log("[SCHEDULER_ORDER] HABIT_PASS_END", {
+    habitCount: habitBlockingInstances.length,
+    samples: habitBlockingInstances.slice(0, 5).map((inst) => ({
+      id: inst.id,
+      source_id: inst.source_id,
+      start_utc: inst.start_utc,
+      end_utc: inst.end_utc,
+    })),
+  });
+
   // Fetch all windows once for the entire run
   const allWindows = await fetchWindowsForRange(
     supabase,
@@ -2021,34 +2146,20 @@ export async function scheduleBacklog(
     runId: Math.random().toString(36).substring(7),
   });
 
-  // Build blocking instances for project placement: non-sync habits that should block projects
-  const projectsToReset = allProjectIds;
-  const projectBlockingInstances: ScheduleInstance[] = [];
-  for (const instance of dedupe.allInstances) {
-    if (!instance || instance.status !== "scheduled") continue;
-    if (instance.source_type === "HABIT") {
-      const habitId = instance.source_id ?? "";
-      const habitType = habitTypeById.get(habitId) ?? "HABIT";
-      const normalizedType = normalizeHabitTypeValue(habitType);
-      // Only include non-sync habits as blockers for projects
-      if (normalizedType !== "SYNC") {
-        projectBlockingInstances.push(instance);
-      }
-    } else if (
-      instance.source_type === "PROJECT" &&
-      projectsToReset.has(instance.source_id)
-    ) {
-      // ❌ skip — this project is being rescheduled
-      continue;
-    } else if (instance.source_type === "PROJECT") {
-      projectBlockingInstances.push(instance);
-    }
-  }
+  console.log("[SCHEDULER_BLOCKERS] PROJECT_PASS_START", {
+    lockedProjectCount: baseBlockers.filter((b) => b.source_type === "PROJECT")
+      .length,
+    habitBlockingCount: habitBlockingInstances.length,
+    syncHabitCount: habitBlockingInstances.filter(
+      (h) => habitTypeById.get(h.source_id ?? "") === "SYNC"
+    ).length,
+  });
 
-  // Add locked project instances as blockers
-  for (const inst of lockedProjectInstances.values()) {
-    projectBlockingInstances.push(inst);
-  }
+  // Build blocking instances for project placement: base blockers + habit blockers
+  const projectBlockingInstances: ScheduleInstance[] = [
+    ...baseBlockers,
+    ...habitBlockingInstances,
+  ];
 
   for (const item of dedupedProjectQueue) {
     // Create window availability for project placement (fresh per project)
@@ -3488,10 +3599,6 @@ async function reserveMandatoryHabitsForDay(params: {
         : defaultDueMs;
       let constraintLowerBound = startMs;
       const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart ?? null;
-      const dueStartMs = dueStart ? dueStart.getTime() : null;
-      if (typeof dueStartMs === "number" && Number.isFinite(dueStartMs)) {
-        constraintLowerBound = Math.max(constraintLowerBound, dueStartMs);
-      }
       if (
         typeof baseNowMs === "number" &&
         baseNowMs > constraintLowerBound &&
@@ -4172,21 +4279,32 @@ async function scheduleHabitsForDay(params: {
   for (const [habitId, bucket] of scheduledHabitBuckets) {
     bucket.sort((a, b) => startValueForInstance(a) - startValueForInstance(b));
     if (repeatablePracticeIds.has(habitId)) {
-      if (bucket.length > 0) {
-        existingByHabitId.set(habitId, bucket[0]);
-      }
+      // For repeatable practices, only keep locked instances
       for (const instance of bucket) {
-        carryoverInstances.push(instance);
+        if (instance.locked === true) {
+          existingByHabitId.set(habitId, instance);
+          carryoverInstances.push(instance);
+        } else {
+          duplicatesToCancel.push(instance);
+        }
       }
       continue;
     }
-    const keeper = bucket.shift();
-    if (keeper) {
+    // For non-repeatable habits, only keep the earliest locked instance
+    const lockedInstances = bucket.filter((inst) => inst.locked === true);
+    if (lockedInstances.length > 0) {
+      const keeper = lockedInstances[0];
       existingByHabitId.set(habitId, keeper);
       carryoverInstances.push(keeper);
-    }
-    for (const duplicate of bucket) {
-      duplicatesToCancel.push(duplicate);
+      // Cancel non-locked instances
+      for (const instance of bucket) {
+        if (instance !== keeper) {
+          duplicatesToCancel.push(instance);
+        }
+      }
+    } else {
+      // No locked instances, cancel all
+      duplicatesToCancel.push(...bucket);
     }
   }
 
@@ -4401,6 +4519,7 @@ async function scheduleHabitsForDay(params: {
 
   for (const inst of dayInstances) {
     if (!inst || inst.status !== "scheduled") continue;
+    if (inst.source_type === "PROJECT") continue;
     placedSoFar.push(inst);
   }
 
