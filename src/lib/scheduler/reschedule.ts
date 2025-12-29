@@ -5,6 +5,7 @@ import {
   fetchBacklogNeedingSchedule,
   cleanupTransientInstances,
   fetchInstancesForRange,
+  computeDurationMin,
   createInstance,
   markProjectMissed,
   type ScheduleInstance,
@@ -47,6 +48,7 @@ import {
   startOfDayInTimeZone,
 } from "./timezone";
 import { safeDate } from "./safeDate";
+import { computeSyncHabitDuration } from "./syncLayout";
 import {
   normalizeCoordinates,
   resolveSunlightBounds,
@@ -69,6 +71,7 @@ const HABIT_WRITE_LOOKAHEAD_DAYS = BASE_LOOKAHEAD_DAYS;
 const LOCATION_CLEANUP_DAYS = 7;
 const COMPLETED_RETENTION_DAYS = 3;
 const PRACTICE_LOOKAHEAD_DAYS = 7;
+const LOCATION_MISMATCH_REVALIDATION = "LOCATION_MISMATCH_REVALIDATION";
 
 const HABIT_TYPE_PRIORITY: Record<string, number> = {
   CHORE: 0,
@@ -79,11 +82,20 @@ const HABIT_TYPE_PRIORITY: Record<string, number> = {
   MEMO: 2,
   SYNC: 3,
 };
+const DAILY_RECURRENCES = new Set(["daily", "none", "everyday", ""]);
 
 function habitTypePriority(value?: string | null) {
   const normalized = (value ?? "HABIT").toUpperCase();
-  if (normalized === "ASYNC") return HABIT_TYPE_PRIORITY.SYNC;
   return HABIT_TYPE_PRIORITY[normalized] ?? Number.MAX_SAFE_INTEGER;
+}
+
+function normalizeRecurrenceValue(value: string | null | undefined) {
+  if (!value) return "daily";
+  return value.toLowerCase().trim();
+}
+
+function isDailyRecurrenceValue(value: string | null | undefined) {
+  return DAILY_RECURRENCES.has(normalizeRecurrenceValue(value));
 }
 
 type ScheduleFailure = {
@@ -142,6 +154,7 @@ type HabitReservation = {
   endLocal: Date;
   availableStartLocal: Date;
   clipped: boolean;
+  availabilitySnapshot?: { front: Date; back: Date } | null;
 };
 
 type HabitAuditSamples = {
@@ -214,6 +227,7 @@ type ScheduleBacklogResult = {
     windowId: string | null;
   }>;
   hasPastInstanceSkipped: boolean;
+  syncPairings?: Record<string, string[]>;
 };
 
 type WindowAvailabilityBounds = {
@@ -379,11 +393,17 @@ type CollectCancelsResult = {
 };
 
 const collectFinalInvariantCancels = (
-  instances: FinalInvariantInstance[]
+  instances: FinalInvariantInstance[],
+  options?: {
+    nonDailyHabitIds?: Set<string>;
+    replacementInstanceIds?: Set<string>;
+  }
 ): CollectCancelsResult => {
   const canceled = new Set<string>();
   const overlapPairs: OverlapPair[] = [];
   const active: FinalInvariantInstance[] = [];
+  const nonDailyHabitIds = options?.nonDailyHabitIds;
+  const replacementInstanceIds = options?.replacementInstanceIds;
 
   for (const current of instances) {
     const currentId = current.instance.id ?? "";
@@ -407,7 +427,33 @@ const collectFinalInvariantCancels = (
         continue;
       }
       if (isFinalInvariantOverlapAllowed(current, other)) continue;
-      const loser = pickFinalInvariantLoser(current, other);
+      let loser: FinalInvariantInstance;
+      const currentHabitId = current.instance.source_id ?? "";
+      const otherHabitId = other.instance.source_id ?? "";
+      const isSameHabit =
+        current.isHabit &&
+        other.isHabit &&
+        currentHabitId.length > 0 &&
+        currentHabitId === otherHabitId;
+      const isNonDailyHabit =
+        isSameHabit && Boolean(nonDailyHabitIds?.has(currentHabitId));
+      if (
+        isNonDailyHabit &&
+        replacementInstanceIds &&
+        replacementInstanceIds.size > 0
+      ) {
+        const currentIsReplacement = replacementInstanceIds.has(currentId);
+        const otherId = other.instance.id ?? "";
+        const otherIsReplacement =
+          otherId.length > 0 && replacementInstanceIds.has(otherId);
+        if (currentIsReplacement !== otherIsReplacement) {
+          loser = currentIsReplacement ? other : current;
+        } else {
+          loser = pickFinalInvariantLoser(current, other);
+        }
+      } else {
+        loser = pickFinalInvariantLoser(current, other);
+      }
       const loserId = loser.instance.id ?? "";
       if (!loserId) continue;
       canceled.add(loserId);
@@ -604,7 +650,11 @@ const chunkIds = (ids: string[], size: number) => {
 async function invalidateInstancesAsMissed(
   supabase: Client,
   ids: string[],
-  result: ScheduleBacklogResult
+  result: ScheduleBacklogResult,
+  options?: {
+    instancesById?: Map<string, ScheduleInstance>;
+    onInvalidateHabit?: (instance: ScheduleInstance) => void;
+  }
 ) {
   if (ids.length === 0) return;
 
@@ -624,13 +674,16 @@ async function invalidateInstancesAsMissed(
   }
 
   const projectIds: string[] = [];
-  const nonProjectIds: string[] = [];
+  const habitIds: string[] = [];
+  const otherIds: string[] = [];
 
   for (const instance of instances ?? []) {
     if (instance.source_type === "PROJECT") {
       projectIds.push(instance.id);
+    } else if (instance.source_type === "HABIT") {
+      habitIds.push(instance.id);
     } else {
-      nonProjectIds.push(instance.id);
+      otherIds.push(instance.id);
     }
   }
 
@@ -646,29 +699,25 @@ async function invalidateInstancesAsMissed(
     }
   }
 
-  // Use regular update for non-PROJECT instances
-  if (nonProjectIds.length > 0) {
-    const updatePayload: Database["public"]["Tables"]["schedule_instances"]["Update"] =
-      {
-        status: "missed",
-      };
-    if (
-      nonProjectIds.length > 0 &&
-      (process.env.NODE_ENV !== "production" ||
-        process.env.SCHEDULER_DEBUG === "true")
-    ) {
-      console.info(
-        "[OVERLAP] invalidating instances without missed_reason column",
-        { count: nonProjectIds.length }
-      );
+  // Restore in-memory state for HABIT instances before invalidation.
+  if (habitIds.length > 0 && options?.onInvalidateHabit) {
+    for (const id of habitIds) {
+      const instance = options.instancesById?.get(id);
+      if (instance) {
+        options.onInvalidateHabit(instance);
+      }
     }
-    const batches = chunkIds(nonProjectIds, 1000);
+  }
+
+  const updateMissedBatch = async (batchIds: string[], payload: any) => {
+    if (batchIds.length === 0) return;
+    const batches = chunkIds(batchIds, 1000);
     for (const batch of batches) {
       if (process.env.NODE_ENV === "test") {
         for (const id of batch) {
           const { error } = await supabase
             .from("schedule_instances")
-            .update(updatePayload)
+            .update(payload)
             .eq("id", id);
           if (error) {
             result.failures.push({
@@ -681,7 +730,7 @@ async function invalidateInstancesAsMissed(
       } else {
         const { error } = await supabase
           .from("schedule_instances")
-          .update(updatePayload)
+          .update(payload)
           .in("id", batch);
         if (error) {
           result.failures.push({
@@ -692,6 +741,31 @@ async function invalidateInstancesAsMissed(
         }
       }
     }
+  };
+
+  // Use regular update for non-PROJECT instances
+  if (
+    habitIds.length + otherIds.length > 0 &&
+    (process.env.NODE_ENV !== "production" ||
+      process.env.SCHEDULER_DEBUG === "true")
+  ) {
+    console.info("[OVERLAP] invalidating non-project instances", {
+      habitCount: habitIds.length,
+      otherCount: otherIds.length,
+    });
+  }
+
+  if (habitIds.length > 0) {
+    await updateMissedBatch(habitIds, {
+      status: "missed",
+      missed_reason: "ILLEGAL_OVERLAP",
+    });
+  }
+
+  if (otherIds.length > 0) {
+    await updateMissedBatch(otherIds, {
+      status: "missed",
+    });
   }
 }
 
@@ -751,6 +825,12 @@ async function ensureClient(client?: Client): Promise<Client> {
   throw new Error("Supabase client not available");
 }
 
+function parseNextDueOverride(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 const normalizeLocationContextValue = (value?: string | null) => {
   if (typeof value !== "string") return null;
   const normalized = value.toUpperCase().trim();
@@ -763,6 +843,7 @@ const doesWindowMatchHabitLocation = (
   windowRecord: WindowLite | null
 ) => {
   if (!windowRecord) return true;
+  if (!habit) return false;
   const windowLocationId =
     typeof windowRecord.location_context_id === "string" &&
     windowRecord.location_context_id.trim().length > 0
@@ -775,7 +856,6 @@ const doesWindowMatchHabitLocation = (
     windowLocationId || windowLocationValue
   );
   if (!windowRequiresLocation) return true;
-  if (!habit) return false;
   const habitLocationId =
     typeof habit.locationContextId === "string" &&
     habit.locationContextId.trim().length > 0
@@ -794,7 +874,7 @@ const doesWindowMatchHabitLocation = (
 
 const normalizeHabitTypeValue = (value?: string | null) => {
   const raw = (value ?? "HABIT").toUpperCase();
-  return raw === "ASYNC" ? "SYNC" : raw;
+  return raw;
 };
 
 const doesWindowAllowHabitType = (
@@ -945,6 +1025,8 @@ export async function scheduleBacklog(
     debug: [],
     hasPastInstanceSkipped: false,
   };
+  const cancelLogCounts = new Map<string, number>();
+  const canceledHabitIds: string[] = [];
 
   const timeZone = normalizeTimeZone(options?.timeZone);
   const location = normalizeCoordinates(options?.location ?? null);
@@ -994,6 +1076,13 @@ export async function scheduleBacklog(
     habitTypeById.set(habit.id, normalizedType);
     habitById.set(habit.id, habit);
   }
+  const dailyHabits = habits.filter((habit) =>
+    isDailyRecurrenceValue(habit.recurrence)
+  );
+  const nonDailyHabits = habits.filter(
+    (habit) => !isDailyRecurrenceValue(habit.recurrence)
+  );
+  const nonDailyHabitIds = new Set(nonDailyHabits.map((habit) => habit.id));
   const habitTypeCounts: Record<string, number> = {};
   for (const habit of habits) {
     const normalizedType =
@@ -1093,6 +1182,30 @@ export async function scheduleBacklog(
       practiceHistory = new Map();
     }
   }
+  const createdThisRun = new Set<string>();
+  const logCancel = (
+    reason: string,
+    instance: ScheduleInstance | null | undefined,
+    meta?: { dayKey?: string | null; dayOffset?: number | null }
+  ) => {
+    const id = instance?.id ?? null;
+    cancelLogCounts.set(reason, (cancelLogCounts.get(reason) ?? 0) + 1);
+    if (instance?.source_type === "HABIT" && id) {
+      canceledHabitIds.push(id);
+    }
+    console.log("[SCHEDULER_CANCEL]", {
+      cancel_reason: reason,
+      instance_id: id,
+      source_type: instance?.source_type ?? null,
+      source_id: instance?.source_id ?? null,
+      start_utc: instance?.start_utc ?? null,
+      end_utc: instance?.end_utc ?? null,
+      dayKey: meta?.dayKey ?? null,
+      dayOffset: meta?.dayOffset ?? null,
+      createdThisRun: id ? createdThisRun.has(id) : false,
+    });
+  };
+  const nowMs = baseDate.getTime();
   const habitLastScheduledStart = new Map<string, Date>();
   const recordHabitScheduledStart = (
     habitId: string | null | undefined,
@@ -1104,6 +1217,7 @@ export async function scheduleBacklog(
         ? new Date(startInput.getTime())
         : new Date(startInput ?? "");
     if (Number.isNaN(start.getTime())) return;
+    if (start.getTime() < nowMs) return;
     const normalized = startOfDayInTimeZone(start, timeZone);
     const previous = habitLastScheduledStart.get(habitId);
     if (!previous || normalized.getTime() > previous.getTime()) {
@@ -1264,7 +1378,6 @@ export async function scheduleBacklog(
     timeZone
   );
   const completedRetentionStartMs = completedRetentionStart.getTime();
-  const nowMs = baseDate.getTime();
   const dayOffsetFor = (startUTC: string): number | undefined => {
     const start = new Date(startUTC);
     if (Number.isNaN(start.getTime())) return undefined;
@@ -1432,9 +1545,13 @@ export async function scheduleBacklog(
   const overlapProjectIds = new Set<string>();
   const overlapProjectInstanceIds = new Map<string, string>();
   const overlapHabitInstanceIds: string[] = [];
+  const overlapInstancesById = new Map<string, ScheduleInstance>();
   for (const id of invalidatedInstanceIds) {
     const entry = timelineById.get(id);
     if (!entry) continue;
+    if (entry.instance?.id) {
+      overlapInstancesById.set(entry.instance.id, entry.instance);
+    }
     if (entry.isProject) {
       const projectId = entry.instance.source_id ?? "";
       if (projectId) {
@@ -1448,12 +1565,37 @@ export async function scheduleBacklog(
       overlapHabitInstanceIds.push(id);
     }
   }
+  const pendingOverlapRemovalIds = new Set<string>();
   if (overlapHabitInstanceIds.length > 0) {
     await invalidateInstancesAsMissed(
       supabase,
       overlapHabitInstanceIds,
-      result
+      result,
+      {
+        instancesById: overlapInstancesById,
+        onInvalidateHabit: (instance) => {
+          if (instance.id) {
+            pendingOverlapRemovalIds.add(instance.id);
+          }
+        },
+      }
     );
+  }
+  const overlapInvalidatedHabitsByOffset = new Map<
+    number,
+    ScheduleInstance[]
+  >();
+  for (const id of overlapHabitInstanceIds) {
+    const instance = overlapInstancesById.get(id);
+    if (!instance?.start_utc) continue;
+    const offset = dayOffsetFor(instance.start_utc);
+    if (typeof offset !== "number") continue;
+    const list = overlapInvalidatedHabitsByOffset.get(offset);
+    if (list) {
+      list.push(instance);
+    } else {
+      overlapInvalidatedHabitsByOffset.set(offset, [instance]);
+    }
   }
   if (
     (process.env.NODE_ENV !== "production" ||
@@ -1508,10 +1650,10 @@ export async function scheduleBacklog(
     if (invalidatedInstanceIds.has(instance.id)) continue;
     if (!instance.source_id) continue;
     if (!instance.start_utc) continue;
-    if (instance.status !== "scheduled" && instance.status !== "completed")
-      continue;
+    if (instance.status !== "scheduled") continue;
     const start = new Date(instance.start_utc);
     if (Number.isNaN(start.getTime())) continue;
+    if (start.getTime() < nowMs) continue;
     const normalized = startOfDayInTimeZone(start, timeZone);
     const list = habitScheduledDatesById.get(instance.source_id);
     if (list) {
@@ -1550,6 +1692,12 @@ export async function scheduleBacklog(
       }
     }
   };
+  if (pendingOverlapRemovalIds.size > 0) {
+    for (const id of pendingOverlapRemovalIds) {
+      removeInstanceFromBuckets(id);
+    }
+    pendingOverlapRemovalIds.clear();
+  }
 
   const overlaps = (a: ScheduleInstance, b: ScheduleInstance) => {
     const aStart = new Date(a.start_utc ?? "").getTime();
@@ -1688,13 +1836,8 @@ export async function scheduleBacklog(
     if (!projectId) return null;
     const def = projectItemMap[projectId];
     if (!def) return null;
-    let duration = Number(inst.duration_min ?? 0);
-    if (!Number.isFinite(duration) || duration <= 0) {
-      duration = Number(def.duration_min ?? 0);
-    }
-    if (!Number.isFinite(duration) || duration <= 0) {
-      duration = DEFAULT_PROJECT_DURATION_MIN;
-    }
+    let duration = Number(def.duration_min ?? 0);
+    if (!Number.isFinite(duration) || duration <= 0) return null;
     const energyResolved = (inst.energy_resolved ?? def.energy ?? "NO")
       .toString()
       .toUpperCase();
@@ -1950,6 +2093,7 @@ export async function scheduleBacklog(
     return [];
   };
   const habitPlacementsByOffset = new Map<number, HabitScheduleDayResult>();
+  let nonDailyReplacementInstanceIds = new Set<string>();
 
   const ensureHabitPlacementsForDay = async (
     offset: number,
@@ -1967,7 +2111,7 @@ export async function scheduleBacklog(
 
     const dayResult = await scheduleHabitsForDay({
       userId,
-      habits,
+      habits: dailyHabits,
       day,
       offset,
       timeZone,
@@ -1984,6 +2128,8 @@ export async function scheduleBacklog(
       getWindowsForDay,
       getLastScheduledHabitStart: getHabitLastScheduledStart,
       recordHabitScheduledStart,
+      createdThisRun,
+      logCancel,
       habitMap: habitById,
       taskContextById,
       contextTaskCounts,
@@ -1991,6 +2137,8 @@ export async function scheduleBacklog(
       getProjectGoalMonumentId,
       reservedPlacements,
       audit: habitAudit,
+      nonDailyHabitIds,
+      nonDailyReplacementInstanceIds,
     });
 
     if (dayResult.placements.length > 0) {
@@ -2005,6 +2153,443 @@ export async function scheduleBacklog(
 
     habitPlacementsByOffset.set(offset, dayResult);
     return dayResult;
+  };
+
+  const missedHabitIds = new Set<string>();
+  for (const inst of dedupe.allInstances) {
+    if (!inst || inst.source_type !== "HABIT") continue;
+    if (inst.status !== "missed") continue;
+    if (!inst.source_id) continue;
+    missedHabitIds.add(inst.source_id);
+  }
+  const createMissedHabitInstance = async (
+    habit: HabitScheduleItem,
+    reason: string
+  ) => {
+    if (missedHabitIds.has(habit.id)) return;
+    const energyResolved = (
+      habit.energy ??
+      habit.window?.energy ??
+      "NO"
+    ).toUpperCase();
+    const { error } = await supabase.from("schedule_instances").insert({
+      user_id: userId,
+      source_type: "HABIT",
+      source_id: habit.id,
+      status: "missed",
+      missed_reason: reason,
+      start_utc: null,
+      end_utc: null,
+      duration_min: null,
+      window_id: null,
+      energy_resolved: energyResolved,
+      weight_snapshot: 0,
+      locked: false,
+      event_name: habit.name ?? null,
+      practice_context_monument_id: habit.practiceContextId ?? null,
+    });
+    missedHabitIds.add(habit.id);
+    if (error) {
+      result.failures.push({
+        itemId: habit.id,
+        reason: "error",
+        detail: error,
+      });
+    }
+  };
+
+  const scheduleNonDailyHabitsAcrossHorizon = async (
+    nonDailyHabits: HabitScheduleItem[]
+  ): Promise<Set<string>> => {
+    if (nonDailyHabits.length === 0) return new Set<string>();
+    const formatPlacementError = (error: unknown) => {
+      if (!error) return null;
+      if (typeof error === "string") return error;
+      if (error instanceof Error) return error.message;
+      if (typeof error === "object") {
+        const maybeMessage =
+          "message" in error ? String((error as { message?: unknown }).message) : null;
+        const maybeCode =
+          "code" in error ? String((error as { code?: unknown }).code) : null;
+        if (maybeCode && maybeMessage) return `${maybeCode}: ${maybeMessage}`;
+        if (maybeMessage) return maybeMessage;
+      }
+      return String(error);
+    };
+    const logNonDailyPlacementAttempt = (payload: {
+      habitId: string;
+      durationMin: number;
+      resolvedEnergy: string;
+      compatibleWindowCount: number;
+      result: "SUCCESS" | "FAIL" | "SKIP";
+      reason?: string | null;
+      day: string;
+      alreadyScheduledInHorizon: boolean;
+      scheduledInstanceId?: string | null;
+      scheduledInstanceDay?: string | null;
+    }) => {
+      console.log("[SCHEDULER_NON_DAILY_PLACEMENT]", payload);
+    };
+    const scheduledNonDailyIds = new Set<string>();
+    const scheduledNonDailyFirstMatch = new Map<
+      string,
+      { instanceId: string; day: string; dayStartMs: number }
+    >();
+    const nonDailyReplacementInstanceIds = new Set<string>();
+    for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
+      const day =
+        offset === 0
+          ? baseStart
+          : addDaysInTimeZone(baseStart, offset, timeZone);
+      const existingInstances = getDayInstances(offset);
+      for (const inst of existingInstances) {
+        if (!inst) continue;
+        if (inst.source_type !== "HABIT") continue;
+        if (inst.status !== "scheduled") continue;
+        if (!inst.source_id) continue;
+        scheduledNonDailyIds.add(inst.source_id);
+        if (!scheduledNonDailyFirstMatch.has(inst.source_id) && inst.id) {
+          const dayStartMs = startOfDayInTimeZone(day, timeZone).getTime();
+          scheduledNonDailyFirstMatch.set(inst.source_id, {
+            instanceId: inst.id,
+            day: day.toISOString(),
+            dayStartMs,
+          });
+        }
+      }
+    }
+    const markNonDailyInstanceMissed = async (instanceId: string) => {
+      const payload = {
+        status: "missed",
+        missed_reason: "REPLACED_BY_EARLIER_SLOT",
+      } as Database["public"]["Tables"]["schedule_instances"]["Update"];
+      const { error } = await supabase
+        .from("schedule_instances")
+        .update(payload)
+        .eq("id", instanceId);
+      if (error) {
+        result.failures.push({
+          itemId: instanceId,
+          reason: "error",
+          detail: error,
+        });
+        return false;
+      }
+      removeInstanceFromBuckets(instanceId);
+      return true;
+    };
+    for (const habit of nonDailyHabits) {
+      const alreadyScheduledInHorizon = scheduledNonDailyIds.has(habit.id);
+      const scheduledMatch = scheduledNonDailyFirstMatch.get(habit.id) ?? null;
+      let placed = false;
+      for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
+        const day =
+          offset === 0
+            ? baseStart
+            : addDaysInTimeZone(baseStart, offset, timeZone);
+
+        if (alreadyScheduledInHorizon && scheduledMatch) {
+          const dayStartMs = startOfDayInTimeZone(day, timeZone).getTime();
+          if (dayStartMs >= scheduledMatch.dayStartMs) {
+            logNonDailyPlacementAttempt({
+              habitId: habit.id,
+              durationMin: Number(habit.durationMinutes ?? 0),
+              resolvedEnergy: (
+                habit.energy ??
+                habit.window?.energy ??
+                "NO"
+              ).toUpperCase(),
+              compatibleWindowCount: 0,
+              result: "SKIP",
+              reason: "SKIPPED_ALREADY_SCHEDULED",
+              day: day.toISOString(),
+              alreadyScheduledInHorizon,
+              scheduledInstanceId: scheduledMatch.instanceId,
+              scheduledInstanceDay: scheduledMatch.day,
+            });
+            placed = true;
+            break;
+          }
+        }
+
+        const normalizedType =
+          habitTypeById.get(habit.id) ??
+          normalizeHabitTypeValue(habit.habitType);
+        if (normalizedType === "SYNC") continue;
+
+        const windowDays = habit.window?.days ?? null;
+        const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
+        const dueInfo = evaluateHabitDueOnDate({
+          habit,
+          date: day,
+          timeZone,
+          windowDays,
+          lastScheduledStart: getHabitLastScheduledStart(habit.id),
+          nextDueOverride,
+        });
+        if (!dueInfo.isDue) continue;
+
+        await prepareWindowsForDay(day);
+        const existingInstances = getDayInstances(offset);
+        const alreadyScheduled = existingInstances.some(
+          (inst) =>
+            inst?.source_type === "HABIT" &&
+            inst.status === "scheduled" &&
+            inst.source_id === habit.id
+        );
+        if (alreadyScheduled) {
+          placed = true;
+          break;
+        }
+
+        const rawDuration = Number(habit.durationMinutes ?? 0);
+        let durationMin =
+          Number.isFinite(rawDuration) && rawDuration > 0
+            ? rawDuration
+            : DEFAULT_HABIT_DURATION_MIN;
+        if (durationMultiplier !== 1) {
+          durationMin = Math.max(
+            1,
+            Math.round(durationMin * durationMultiplier)
+          );
+        }
+        if (durationMin <= 0) continue;
+
+        const resolvedEnergy = (
+          habit.energy ??
+          habit.window?.energy ??
+          "NO"
+        ).toUpperCase();
+        const locationContextIdRaw = habit.locationContextId ?? null;
+        const locationContextId =
+          typeof locationContextIdRaw === "string" &&
+          locationContextIdRaw.trim().length > 0
+            ? locationContextIdRaw.trim()
+            : null;
+        const locationContextValueRaw = habit.locationContextValue ?? null;
+        const locationContextValue =
+          typeof locationContextValueRaw === "string"
+            ? normalizeLocationContextValue(locationContextValueRaw)
+            : null;
+        const daylightRaw = habit.daylightPreference
+          ? String(habit.daylightPreference).toUpperCase().trim()
+          : "ALL_DAY";
+        const daylightPreference =
+          daylightRaw === "DAY" || daylightRaw === "NIGHT"
+            ? daylightRaw
+            : "ALL_DAY";
+        const sunlightOptions =
+          typeof timeZoneOffsetMinutes === "number"
+            ? { offsetMinutes: timeZoneOffsetMinutes }
+            : undefined;
+        const sunlightToday = resolveSunlightBounds(
+          day,
+          timeZone,
+          location,
+          sunlightOptions
+        );
+        const sunlightPrevious = resolveSunlightBounds(
+          addDaysInTimeZone(day, -1, timeZone),
+          timeZone,
+          location,
+          sunlightOptions
+        );
+        const sunlightNext = resolveSunlightBounds(
+          addDaysInTimeZone(day, 1, timeZone),
+          timeZone,
+          location,
+          sunlightOptions
+        );
+        const daylightConstraint =
+          daylightPreference === "ALL_DAY"
+            ? null
+            : {
+                preference: daylightPreference as "DAY" | "NIGHT",
+                sunrise: sunlightToday.sunrise ?? null,
+                sunset: sunlightToday.sunset ?? null,
+                dawn: sunlightToday.dawn ?? null,
+                dusk: sunlightToday.dusk ?? null,
+                previousSunset: sunlightPrevious.sunset ?? null,
+                previousDusk: sunlightPrevious.dusk ?? null,
+                nextDawn: sunlightNext.dawn ?? sunlightNext.sunrise ?? null,
+                nextSunrise: sunlightNext.sunrise ?? null,
+              };
+        const nightSunlightBundle =
+          daylightConstraint?.preference === "NIGHT"
+            ? {
+                today: sunlightToday,
+                previous: sunlightPrevious,
+                next: sunlightNext,
+              }
+            : null;
+        const anchorRaw = habit.windowEdgePreference
+          ? String(habit.windowEdgePreference).toUpperCase().trim()
+          : "FRONT";
+        const anchorPreference = anchorRaw === "BACK" ? "BACK" : "FRONT";
+
+        const compatibleWindows = await fetchCompatibleWindowsForItem(
+          supabase,
+          day,
+          { energy: resolvedEnergy, duration_min: durationMin },
+          timeZone,
+          {
+            availability: new Map(),
+            now: baseDate,
+            cache: windowCache,
+            restMode: isRestMode,
+            userId,
+            locationContextId,
+            locationContextValue,
+            daylight: daylightConstraint,
+            enforceNightSpan: daylightConstraint?.preference === "NIGHT",
+            nightSunlight: nightSunlightBundle,
+            anchor: anchorPreference,
+            requireLocationContextMatch: true,
+            hasExplicitLocationContext:
+              Boolean(locationContextId) || Boolean(locationContextValue),
+            allowedWindowKinds: ["DEFAULT"],
+          }
+        );
+
+        if (compatibleWindows.length === 0) {
+          logNonDailyPlacementAttempt({
+            habitId: habit.id,
+            durationMin,
+            resolvedEnergy,
+            compatibleWindowCount: 0,
+            result: "FAIL",
+            reason: "NO_COMPATIBLE_WINDOWS",
+            day: day.toISOString(),
+            alreadyScheduledInHorizon,
+          });
+          continue;
+        }
+        const dayWindows = getWindowsForDay(day);
+
+        const placement = await placeItemInWindows({
+          userId,
+          item: {
+            id: habit.id,
+            sourceType: "HABIT",
+            duration_min: durationMin,
+            energy: resolvedEnergy,
+            weight: 0,
+            eventName: habit.name || "Habit",
+            practiceContextId:
+              normalizedType === "PRACTICE"
+                ? habit.skillMonumentId ?? null
+                : null,
+          },
+          windows: compatibleWindows,
+          date: day,
+          timeZone,
+          client: supabase,
+          existingInstances,
+          allowHabitOverlap: habitAllowsOverlap.get(habit.id) ?? false,
+          habitTypeById,
+          windowEdgePreference: habit.windowEdgePreference,
+        });
+
+        if (!("status" in placement)) {
+          logNonDailyPlacementAttempt({
+            habitId: habit.id,
+            durationMin,
+            resolvedEnergy,
+            compatibleWindowCount: compatibleWindows.length,
+            result: "FAIL",
+            reason: formatPlacementError(placement.error),
+            day: day.toISOString(),
+            alreadyScheduledInHorizon,
+          });
+          if (placement.error && placement.error !== "NO_FIT") {
+            result.failures.push({
+              itemId: habit.id,
+              reason: "error",
+              detail: placement.error,
+            });
+            break;
+          }
+          continue;
+        }
+
+        if (placement.error || !placement.data) {
+          logNonDailyPlacementAttempt({
+            habitId: habit.id,
+            durationMin,
+            resolvedEnergy,
+            compatibleWindowCount: compatibleWindows.length,
+            result: "FAIL",
+            reason: formatPlacementError(placement.error) ?? "NO_PLACEMENT_DATA",
+            day: day.toISOString(),
+            alreadyScheduledInHorizon,
+          });
+          if (placement.error && placement.error !== "NO_FIT") {
+            result.failures.push({
+              itemId: habit.id,
+              reason: "error",
+              detail: placement.error,
+            });
+            break;
+          }
+          continue;
+        }
+
+        const persisted = placement.data;
+        logNonDailyPlacementAttempt({
+          habitId: habit.id,
+          durationMin,
+          resolvedEnergy,
+          compatibleWindowCount: compatibleWindows.length,
+          result: "SUCCESS",
+          day: day.toISOString(),
+          alreadyScheduledInHorizon,
+        });
+        if (persisted?.id) {
+          createdThisRun.add(persisted.id);
+        }
+        if (alreadyScheduledInHorizon && scheduledMatch) {
+          const dayStartMs = startOfDayInTimeZone(day, timeZone).getTime();
+          if (dayStartMs < scheduledMatch.dayStartMs && persisted?.id) {
+            nonDailyReplacementInstanceIds.add(persisted.id);
+            await markNonDailyInstanceMissed(scheduledMatch.instanceId);
+          }
+        }
+        registerInstanceForOffsets(persisted);
+        recordHabitScheduledStart(habit.id, persisted.start_utc ?? "");
+        habitBlockingInstances.push(persisted);
+        result.placed.push(persisted);
+        const windowLabel =
+          dayWindows.find((win) => win.id === persisted.window_id)?.label ??
+          null;
+        result.timeline.push({
+          type: "HABIT",
+          habit: {
+            id: habit.id,
+            name: habit.name,
+            windowId: persisted.window_id ?? null,
+            windowLabel,
+            startUTC: persisted.start_utc ?? "",
+            endUTC: persisted.end_utc ?? "",
+            durationMin: durationMin,
+            energyResolved: persisted.energy_resolved ?? null,
+          },
+          decision: "new",
+          scheduledDayOffset: offset,
+        });
+        placed = true;
+        break;
+      }
+
+      if (!placed) {
+        await createMissedHabitInstance(habit, "NO_FEASIBLE_SLOT_IN_HORIZON");
+        result.failures.push({
+          itemId: habit.id,
+          reason: "NO_FEASIBLE_SLOT_IN_HORIZON",
+        });
+      }
+    }
+
+    return nonDailyReplacementInstanceIds;
   };
 
   const scheduledProjectIds = new Set<string>();
@@ -2042,7 +2627,7 @@ export async function scheduleBacklog(
         status: "missed",
         start_utc: null,
         end_utc: null,
-        duration_min: item.duration_min,
+        duration_min: null,
         energy_resolved: item.energy,
         locked: false,
         weight_snapshot: item.weight,
@@ -2078,6 +2663,31 @@ export async function scheduleBacklog(
   });
 
   const habitBlockingInstances: ScheduleInstance[] = [];
+  const dueNonDailyHabits = nonDailyHabits.filter((habit) => {
+    const normalizedType =
+      habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
+    if (normalizedType === "SYNC") return false;
+    const windowDays = habit.window?.days ?? null;
+    const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
+    const lastScheduledStart = getHabitLastScheduledStart(habit.id);
+    // Only enqueue non-daily habits that become due within the habit horizon.
+    for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
+      const day =
+        offset === 0
+          ? baseStart
+          : addDaysInTimeZone(baseStart, offset, timeZone);
+      const dueInfo = evaluateHabitDueOnDate({
+        habit,
+        date: day,
+        timeZone,
+        windowDays,
+        lastScheduledStart,
+        nextDueOverride,
+      });
+      if (dueInfo.isDue) return true;
+    }
+    return false;
+  });
 
   for (let offset = 0; offset < maxOffset; offset += 1) {
     const day =
@@ -2088,7 +2698,7 @@ export async function scheduleBacklog(
 
       const dayResult = await scheduleHabitsForDay({
         userId,
-        habits,
+        habits: dailyHabits,
         day,
         offset,
         timeZone,
@@ -2105,6 +2715,8 @@ export async function scheduleBacklog(
         getWindowsForDay,
         getLastScheduledHabitStart: getHabitLastScheduledStart,
         recordHabitScheduledStart,
+        createdThisRun,
+        logCancel,
         habitMap: habitById,
         taskContextById,
         contextTaskCounts,
@@ -2112,6 +2724,8 @@ export async function scheduleBacklog(
         getProjectGoalMonumentId,
         reservedPlacements: undefined,
         audit: habitAudit,
+        nonDailyHabitIds,
+        nonDailyReplacementInstanceIds,
       });
 
       habitBlockingInstances.push(...dayResult.instances);
@@ -2122,6 +2736,9 @@ export async function scheduleBacklog(
       }
     }
   }
+
+  nonDailyReplacementInstanceIds =
+    await scheduleNonDailyHabitsAcrossHorizon(dueNonDailyHabits);
 
   console.log("[SCHEDULER_ORDER] HABIT_PASS_END", {
     habitCount: habitBlockingInstances.length,
@@ -2162,6 +2779,30 @@ export async function scheduleBacklog(
   ];
 
   for (const item of dedupedProjectQueue) {
+    const canonicalProject = projectItemMap[item.id];
+    const durationMin = Number(canonicalProject?.duration_min ?? 0);
+    if (!Number.isFinite(durationMin) || durationMin <= 0) {
+      if (item.instanceId) {
+        const { error } = await markProjectMissed(
+          item.instanceId,
+          "INVALID_DURATION",
+          supabase
+        );
+        if (error) {
+          result.failures.push({
+            itemId: item.id,
+            reason: "error",
+            detail: error,
+          });
+        }
+      } else {
+        result.failures.push({ itemId: item.id, reason: "INVALID_DURATION" });
+      }
+      continue;
+    }
+    if (durationMin !== item.duration_min) {
+      item.duration_min = durationMin;
+    }
     // Create window availability for project placement (fresh per project)
     const projectWindowAvailability = new Map<
       string,
@@ -2324,6 +2965,7 @@ export async function scheduleBacklog(
       notBefore: baseDate,
       existingInstances: projectBlockingInstances,
       habitTypeById,
+      windowEdgePreference: null,
     });
 
     if (!("status" in placed)) {
@@ -2508,7 +3150,7 @@ export async function scheduleBacklog(
       // Reserve mandatory habit capacity before project placement.
       reservedPlacements = await reserveMandatoryHabitsForDay({
         userId,
-        habits,
+        habits: dailyHabits,
         day,
         offset,
         timeZone,
@@ -2526,6 +3168,24 @@ export async function scheduleBacklog(
         audit: habitAudit,
       });
     }
+    const overlapInvalidated = overlapInvalidatedHabitsByOffset.get(offset);
+    if (overlapInvalidated && overlapInvalidated.length > 0) {
+      for (const instance of overlapInvalidated) {
+        const habitId = instance.source_id ?? null;
+        if (!habitId) continue;
+        const reservation = reservedPlacements?.get(habitId) ?? null;
+        if (!reservation) continue;
+        if (reservation.availabilitySnapshot) {
+          windowAvailability.set(reservation.windowKey, {
+            front: new Date(reservation.availabilitySnapshot.front.getTime()),
+            back: new Date(reservation.availabilitySnapshot.back.getTime()),
+          });
+        } else {
+          windowAvailability.delete(reservation.windowKey);
+        }
+        reservedPlacements?.delete(habitId);
+      }
+    }
     const dayWindows = getWindowsForDay(day);
 
     if (shouldScheduleHabits) {
@@ -2542,7 +3202,7 @@ export async function scheduleBacklog(
       if (hasHabitInstances) {
         const cleanupResult = await scheduleHabitsForDay({
           userId,
-          habits,
+          habits: dailyHabits,
           day,
           offset,
           timeZone,
@@ -2559,6 +3219,8 @@ export async function scheduleBacklog(
           getWindowsForDay,
           getLastScheduledHabitStart: getHabitLastScheduledStart,
           recordHabitScheduledStart,
+          createdThisRun,
+          logCancel,
           habitMap: habitById,
           taskContextById,
           contextTaskCounts,
@@ -2566,6 +3228,8 @@ export async function scheduleBacklog(
           getProjectGoalMonumentId,
           allowScheduling: false,
           audit: habitAudit,
+          nonDailyHabitIds,
+          nonDailyReplacementInstanceIds,
         });
         if (cleanupResult.failures.length > 0) {
           result.failures.push(...cleanupResult.failures);
@@ -2639,13 +3303,28 @@ export async function scheduleBacklog(
     finalInstances,
     habitTypeById
   );
+  const finalInstanceById = new Map<string, ScheduleInstance>();
+  for (const entry of finalInvariantInstances) {
+    if (entry.instance.id) {
+      finalInstanceById.set(entry.instance.id, entry.instance);
+    }
+  }
   // During rebuild, don't cancel PROJECT instances for overlaps - they were just placed
   const nonProjectInstances = finalInvariantInstances.filter(
     (inst) => !inst.isProject
   );
   const { canceled: cancelIdSet, overlapPairs } =
-    collectFinalInvariantCancels(nonProjectInstances);
+    collectFinalInvariantCancels(nonProjectInstances, {
+      nonDailyHabitIds,
+      replacementInstanceIds: nonDailyReplacementInstanceIds,
+    });
   if (cancelIdSet.size > 0) {
+    for (const id of cancelIdSet) {
+      logCancel(
+        "FINAL_INVARIANT_CANCEL_BULK",
+        finalInstanceById.get(id) ?? null
+      );
+    }
     await cancelInstancesAsIllegalOverlap(supabase, Array.from(cancelIdSet));
   }
   const remainingInstances = finalInvariantInstances.filter((entry) => {
@@ -2653,7 +3332,10 @@ export async function scheduleBacklog(
     return id.length > 0 && !cancelIdSet.has(id);
   });
   const { canceled: remainingCancels, overlapPairs: remainingOverlapPairs } =
-    collectFinalInvariantCancels(remainingInstances);
+    collectFinalInvariantCancels(remainingInstances, {
+      nonDailyHabitIds,
+      replacementInstanceIds: nonDailyReplacementInstanceIds,
+    });
   if (remainingCancels.size > 0) {
     // Log structured summary of remaining cancels
     const cancelSummaries = Array.from(remainingCancels).map((id) => {
@@ -2741,11 +3423,30 @@ export async function scheduleBacklog(
 
     // Cancel non-PROJECT instances and continue
     for (const id of remainingCancels) {
+      logCancel("FINAL_INVARIANT_CANCEL", finalInstanceById.get(id) ?? null);
       await cancelScheduleInstance(id, {
         reason: "ILLEGAL_OVERLAP",
         fault: "SYSTEM",
       });
       removeInstanceFromBuckets(id);
+    }
+  }
+
+  if (result.failures.length === 0 && !result.error) {
+    // Run missed HABIT cleanup after successful reschedule
+    const { error: deleteError } = await supabase
+      .from("schedule_instances")
+      .delete()
+      .eq("user_id", userId)
+      .eq("source_type", "HABIT")
+      .eq("status", "missed");
+
+    if (deleteError) {
+      result.failures.push({
+        itemId: "cleanup-missed-habits",
+        reason: "error",
+        detail: deleteError,
+      });
     }
   }
 
@@ -2758,6 +3459,19 @@ export async function scheduleBacklog(
         detail: cleanupResult.error,
       });
     }
+  }
+
+  if (cancelLogCounts.size > 0) {
+    const summary = Array.from(cancelLogCounts.entries()).reduce<
+      Record<string, number>
+    >((acc, [reason, count]) => {
+      acc[reason] = count;
+      return acc;
+    }, {});
+    console.log("[SCHEDULER_CANCEL_SUMMARY]", {
+      counts: summary,
+      topHabitInstanceIds: canceledHabitIds.slice(0, 10),
+    });
   }
 
   if (
@@ -2774,6 +3488,220 @@ export async function scheduleBacklog(
       });
     }
   }
+
+  // ===== SYNC PAIRING POST-PASS =====
+  console.log("[SCHEDULER_ORDER] SYNC_PAIRING_POST_PASS_START");
+
+  const syncInstancesCreated: ScheduleInstance[] = [];
+  const syncPairingsByInstanceId: Record<string, string[]> = {};
+
+  // Get all scheduled instances from the final range (non-SYNC)
+  const allScheduledInstances = finalInstances.filter((inst) => {
+    if (inst.status !== "scheduled") return false;
+    if (inst.source_type !== "HABIT") return true;
+    const habitType = habitTypeById.get(inst.source_id ?? "") ?? "HABIT";
+    return habitType !== "SYNC";
+  });
+  const syncHabitsDue: Map<
+    string,
+    { habit: HabitScheduleItem; minOffset: number }
+  > = new Map();
+
+  // Find due SYNC habits across all days, tracking earliest due offset
+  for (let offset = 0; offset < maxOffset; offset += 1) {
+    const day =
+      offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
+
+    for (const habit of habits) {
+      const normalizedType =
+        habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
+      if (normalizedType !== "SYNC") continue;
+
+      const windowDays = habit.window?.days ?? null;
+      const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
+      const dueInfo = evaluateHabitDueOnDate({
+        habit,
+        date: day,
+        timeZone,
+        windowDays,
+        lastScheduledStart:
+          normalizedType === "SYNC"
+            ? null
+            : getHabitLastScheduledStart(habit.id),
+        nextDueOverride,
+      });
+      if (dueInfo.isDue) {
+        const existing = syncHabitsDue.get(habit.id);
+        if (!existing || offset < existing.minOffset) {
+          syncHabitsDue.set(habit.id, { habit, minOffset: offset });
+        }
+      }
+    }
+  }
+
+  const uniqueSyncHabits = Array.from(syncHabitsDue.values());
+
+  for (const syncEntry of uniqueSyncHabits) {
+    const habit = syncEntry.habit;
+    // Create sync window (full day for flexibility)
+    const syncWindow = {
+      start: startOfDayInTimeZone(baseStart, timeZone),
+      end: addDaysInTimeZone(
+        startOfDayInTimeZone(baseStart, timeZone),
+        persistedDayLimit,
+        timeZone
+      ),
+    };
+
+    const candidates = allScheduledInstances
+      .map((inst) => {
+        const start = new Date(inst.start_utc ?? "");
+        const end = new Date(inst.end_utc ?? "");
+        if (
+          !Number.isFinite(start.getTime()) ||
+          !Number.isFinite(end.getTime())
+        )
+          return null;
+        if (!inst.id) return null;
+        return {
+          start,
+          end,
+          id: inst.id,
+        };
+      })
+      .filter(
+        (candidate): candidate is { start: Date; end: Date; id: string } =>
+          candidate !== null
+      );
+
+    const minDurationMs =
+      Math.max(
+        1,
+        Number(habit.duration_minutes ?? habit.durationMinutes ?? 0)
+      ) * 60_000;
+
+    console.log("[SYNC_POST_PASS]", {
+      habitId: habit.id,
+      habitName: habit.name,
+      duration_minutes: habit.duration_minutes ?? null,
+      durationMinutes: habit.durationMinutes ?? null,
+      minDurationMs,
+      candidates: candidates.length,
+      syncWindow: {
+        start: syncWindow.start.toISOString(),
+        end: syncWindow.end.toISOString(),
+      },
+    });
+
+    const syncResult = computeSyncHabitDuration({
+      syncWindow,
+      minDurationMs,
+      candidates,
+    });
+
+    if (syncResult.finalStart && syncResult.finalEnd) {
+      if (syncResult.finalEnd.getTime() <= syncResult.finalStart.getTime()) {
+        continue;
+      }
+      const durationMin = computeDurationMin(
+        syncResult.finalStart,
+        syncResult.finalEnd
+      );
+      if (durationMin <= 0) {
+        throw new Error("Invalid duration_min computed for instance");
+      }
+      const startUtc = syncResult.finalStart.toISOString();
+      const endUtc = new Date(
+        syncResult.finalStart.getTime() + durationMin * 60000
+      ).toISOString();
+      // Create SYNC instance
+      const syncInstance = await createInstance(
+        {
+          userId,
+          sourceType: "HABIT",
+          sourceId: habit.id,
+          startUTC: startUtc,
+          endUTC: endUtc,
+          durationMin,
+          energyResolved: habit.energy ?? "NO",
+          windowId: null,
+          locked: false,
+          weightSnapshot: 0,
+        },
+        supabase
+      );
+
+      if (syncInstance) {
+        syncInstancesCreated.push(syncInstance);
+        syncPairingsByInstanceId[syncInstance.id] = syncResult.pairedInstances;
+        result.placed.push(syncInstance);
+        result.timeline.push({
+          type: "HABIT",
+          habit: {
+            id: habit.id,
+            name: habit.name,
+            windowId: null,
+            windowLabel: null,
+            startUTC: startUtc,
+            endUTC: endUtc,
+            durationMin,
+            energyResolved: habit.energy ?? "NO",
+            clipped: false,
+            practiceContextId: null,
+          },
+          decision: "new",
+          scheduledDayOffset: 0, // SYNC instances span days
+          availableStartLocal: syncResult.finalStart.toISOString(),
+          windowStartLocal: null,
+          instanceId: syncInstance.id,
+        });
+
+        // Register the SYNC instance for blocking
+        registerInstanceForOffsets(syncInstance);
+      }
+    }
+  }
+
+  if (syncInstancesCreated.length > 0) {
+    const pairingRows = syncInstancesCreated
+      .map((instance) => {
+        const instanceId = instance.id ?? null;
+        if (!instanceId) return null;
+        return {
+          user_id: userId,
+          sync_instance_id: instanceId,
+          partner_instance_ids: syncPairingsByInstanceId[instanceId] ?? [],
+        };
+      })
+      .filter(
+        (
+          value
+        ): value is {
+          user_id: string;
+          sync_instance_id: string;
+          partner_instance_ids: string[];
+        } => value !== null
+      );
+
+    if (pairingRows.length > 0) {
+      const { error: pairingError } = await supabase
+        .from("schedule_sync_pairings")
+        .upsert(pairingRows, { onConflict: "sync_instance_id" });
+      if (pairingError) {
+        result.failures.push({
+          itemId: "sync-pairings-persist",
+          reason: "error",
+          detail: pairingError,
+        });
+      }
+    }
+  }
+
+  result.syncPairings = syncPairingsByInstanceId;
+
+  console.log("[SCHEDULER_ORDER] SYNC_PAIRING_POST_PASS_END", {
+    syncInstancesCreated: syncInstancesCreated.length,
+  });
 
   if (habitAudit.enabled && habitAudit.report.inputs.offset === 0) {
     console.log("HABIT_AUDIT_TODAY", JSON.stringify(habitAudit.report));
@@ -2969,13 +3897,6 @@ async function reserveMandatoryHabitsForDay(params: {
 
   const reservations = new Map<string, HabitReservation>();
   if (!habits.length) return reservations;
-
-  const parseNextDueOverride = (value?: string | null) => {
-    if (!value) return null;
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed;
-  };
 
   const zone = timeZone || "UTC";
   const dayStart = startOfDayInTimeZone(day, zone);
@@ -3895,6 +4816,12 @@ async function reserveMandatoryHabitsForDay(params: {
         addSyncUsage(target.key, startDate.getTime(), endDate.getTime());
       }
 
+      const availabilitySnapshot = bounds
+        ? {
+            front: new Date(bounds.front.getTime()),
+            back: new Date(bounds.back.getTime()),
+          }
+        : null;
       reservations.set(habit.id, {
         habitId: habit.id,
         windowId: window.id,
@@ -3905,6 +4832,7 @@ async function reserveMandatoryHabitsForDay(params: {
         endLocal: target.endLocal,
         availableStartLocal: new Date(startDate),
         clipped,
+        availabilitySnapshot,
       });
       if (auditEnabled) {
         audit.report.scheduling.dueReservedSuccessfully += 1;
@@ -3939,6 +4867,12 @@ async function scheduleHabitsForDay(params: {
   getWindowsForDay: (day: Date) => WindowLite[];
   getLastScheduledHabitStart: (habitId: string) => Date | null;
   recordHabitScheduledStart: (habitId: string, start: Date | string) => void;
+  createdThisRun: Set<string>;
+  logCancel: (
+    reason: string,
+    instance: ScheduleInstance | null | undefined,
+    meta?: { dayKey?: string | null; dayOffset?: number | null }
+  ) => void;
   habitMap: Map<string, HabitScheduleItem>;
   taskContextById: Map<string, string | null>;
   contextTaskCounts: Map<string, number>;
@@ -3947,6 +4881,8 @@ async function scheduleHabitsForDay(params: {
   allowScheduling?: boolean;
   reservedPlacements?: Map<string, HabitReservation>;
   audit?: HabitAuditTracker;
+  nonDailyHabitIds?: Set<string>;
+  nonDailyReplacementInstanceIds?: Set<string>;
 }): Promise<HabitScheduleDayResult> {
   const {
     userId,
@@ -3967,6 +4903,8 @@ async function scheduleHabitsForDay(params: {
     getWindowsForDay,
     getLastScheduledHabitStart,
     recordHabitScheduledStart,
+    createdThisRun,
+    logCancel,
     habitMap,
     taskContextById,
     contextTaskCounts,
@@ -3975,6 +4913,8 @@ async function scheduleHabitsForDay(params: {
     allowScheduling = true,
     reservedPlacements,
     audit,
+    nonDailyHabitIds,
+    nonDailyReplacementInstanceIds,
   } = params;
 
   const result: HabitScheduleDayResult = {
@@ -3982,14 +4922,19 @@ async function scheduleHabitsForDay(params: {
     instances: [],
     failures: [],
   };
+  const reservedByInstanceId = new Map<
+    string,
+    {
+      windowId: string;
+      windowKey: string;
+      startUTC: string;
+      endUTC: string;
+      availabilitySnapshot: { front: Date; back: Date } | null;
+    }
+  >();
+  const locationMismatchRequeue = new Map<string, ScheduleInstance>();
   const placedSoFar: ScheduleInstance[] = [];
   const overridesToClear = new Set<string>();
-  const parseNextDueOverride = (value?: string | null) => {
-    if (!value) return null;
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed;
-  };
   const clearHabitOverrides = async () => {
     if (!client || overridesToClear.size === 0) return;
     const ids = Array.from(overridesToClear);
@@ -4011,6 +4956,36 @@ async function scheduleHabitsForDay(params: {
     return result;
   }
 
+  const registerReservationForInstance = (
+    instanceId: string | null | undefined,
+    reservation: HabitReservation | null | undefined
+  ) => {
+    if (!instanceId || !reservation) return;
+    reservedByInstanceId.set(instanceId, {
+      windowId: reservation.windowId,
+      windowKey: reservation.windowKey,
+      startUTC: new Date(reservation.startMs).toISOString(),
+      endUTC: new Date(reservation.endMs).toISOString(),
+      availabilitySnapshot: reservation.availabilitySnapshot ?? null,
+    });
+  };
+  const restoreAvailabilityForInstance = (
+    instanceId: string | null | undefined
+  ) => {
+    if (!instanceId) return;
+    const reservation = reservedByInstanceId.get(instanceId);
+    if (!reservation) return;
+    if (reservation.availabilitySnapshot) {
+      availability.set(reservation.windowKey, {
+        front: new Date(reservation.availabilitySnapshot.front.getTime()),
+        back: new Date(reservation.availabilitySnapshot.back.getTime()),
+      });
+    } else {
+      availability.delete(reservation.windowKey);
+    }
+    reservedByInstanceId.delete(instanceId);
+  };
+
   const canceledInstanceIds = new Set<string>();
   const cancelScheduledInstance = async (instance: ScheduleInstance) => {
     if (!instance?.id) return false;
@@ -4030,6 +5005,7 @@ async function scheduleHabitsForDay(params: {
         return false;
       }
       canceledInstanceIds.add(instance.id);
+      restoreAvailabilityForInstance(instance.id);
       return true;
     } catch (error) {
       console.error(
@@ -4044,12 +5020,19 @@ async function scheduleHabitsForDay(params: {
       return false;
     }
   };
-  const missScheduledInstance = async (instance: ScheduleInstance) => {
+  const missScheduledInstance = async (
+    instance: ScheduleInstance,
+    reason?: string
+  ) => {
     if (!instance?.id) return false;
     try {
+      const payload = {
+        status: "missed",
+        ...(reason ? { missed_reason: reason } : {}),
+      } as Database["public"]["Tables"]["schedule_instances"]["Update"];
       const miss = await client
         .from("schedule_instances")
-        .update({ status: "missed" })
+        .update(payload)
         .eq("id", instance.id)
         .select("id")
         .single();
@@ -4061,6 +5044,7 @@ async function scheduleHabitsForDay(params: {
         });
         return false;
       }
+      restoreAvailabilityForInstance(instance.id);
       return true;
     } catch (error) {
       console.error(
@@ -4081,6 +5065,18 @@ async function scheduleHabitsForDay(params: {
   const dayEnd = addDaysInTimeZone(dayStart, 1, zone);
   const dayStartMs = dayStart.getTime();
   const dayEndMs = dayEnd.getTime();
+  const dayKey = dateCacheKey(day);
+  const dayOffset = offset;
+  const loggedCancelIds = new Set<string>();
+  const logCancelOnce = (
+    reason: string,
+    instance: ScheduleInstance | null | undefined
+  ) => {
+    const id = instance?.id ?? null;
+    if (!id || loggedCancelIds.has(id)) return;
+    loggedCancelIds.add(id);
+    logCancel(reason, instance, { dayKey, dayOffset });
+  };
   const defaultDueMs = dayStart.getTime();
   const baseNowMs = offset === 0 ? baseDate.getTime() : null;
   const auditEnabled = Boolean(audit?.enabled && offset === 0);
@@ -4278,6 +5274,7 @@ async function scheduleHabitsForDay(params: {
 
   for (const [habitId, bucket] of scheduledHabitBuckets) {
     bucket.sort((a, b) => startValueForInstance(a) - startValueForInstance(b));
+    const isNonDailyHabit = Boolean(nonDailyHabitIds?.has(habitId));
     if (repeatablePracticeIds.has(habitId)) {
       // For repeatable practices, only keep locked instances
       for (const instance of bucket) {
@@ -4303,8 +5300,26 @@ async function scheduleHabitsForDay(params: {
         }
       }
     } else {
-      // No locked instances, cancel all
-      duplicatesToCancel.push(...bucket);
+      if (isNonDailyHabit && bucket.length > 0) {
+        const replacementInstances =
+          nonDailyReplacementInstanceIds && nonDailyReplacementInstanceIds.size
+            ? bucket.filter(
+                (inst) => inst.id && nonDailyReplacementInstanceIds.has(inst.id)
+              )
+            : [];
+        const keeper =
+          replacementInstances.length > 0 ? replacementInstances[0] : bucket[0];
+        existingByHabitId.set(habitId, keeper);
+        carryoverInstances.push(keeper);
+        for (const instance of bucket) {
+          if (instance !== keeper) {
+            duplicatesToCancel.push(instance);
+          }
+        }
+      } else {
+        // No locked instances, cancel all
+        duplicatesToCancel.push(...bucket);
+      }
     }
   }
 
@@ -4339,6 +5354,7 @@ async function scheduleHabitsForDay(params: {
     if (practiceOverflowInstances.length > 0) {
       for (const overflow of practiceOverflowInstances) {
         if (!overflow?.id) continue;
+        logCancelOnce("PRACTICE_OVERFLOW_CANCEL", overflow);
         const canceled = await cancelScheduledInstance(overflow);
         if (canceled) {
           overflow.status = "canceled";
@@ -4390,7 +5406,6 @@ async function scheduleHabitsForDay(params: {
   }
 
   const invalidHabitInstances: ScheduleInstance[] = [];
-  const locationMismatchInstances: ScheduleInstance[] = [];
   const typeMismatchInstances: ScheduleInstance[] = [];
   const seenInvalidIds = new Set<string>();
   for (let index = dayInstances.length - 1; index >= 0; index -= 1) {
@@ -4407,9 +5422,21 @@ async function scheduleHabitsForDay(params: {
       : null;
     const hasLocationMatch = doesWindowMatchHabitLocation(habit, windowRecord);
     if (!hasLocationMatch) {
-      if (!seenInvalidIds.has(instance.id ?? `${habitId}:location`)) {
-        locationMismatchInstances.push(instance);
-        seenInvalidIds.add(instance.id ?? `${habitId}:location`);
+      if (instance.id && createdThisRun.has(instance.id)) {
+        continue;
+      }
+      const reservation = reservedPlacements?.get(habitId) ?? null;
+      if (reservation && instance.id) {
+        registerReservationForInstance(instance.id, reservation);
+        reservedPlacements?.delete(habitId);
+      }
+      logCancelOnce("REVALIDATION_LOCATION_REQUEUE_CANCEL", instance);
+      const canceled = await cancelScheduledInstance(instance);
+      if (canceled) {
+        instance.status = "canceled";
+        if (!locationMismatchRequeue.has(habitId)) {
+          locationMismatchRequeue.set(habitId, instance);
+        }
       }
       dayInstances.splice(index, 1);
       if (existingByHabitId.get(habitId)?.id === instance.id) {
@@ -4419,6 +5446,9 @@ async function scheduleHabitsForDay(params: {
     }
     const hasWindowTypeMatch = doesWindowAllowHabitType(habit, windowRecord);
     if (!hasWindowTypeMatch) {
+      if (instance.id && createdThisRun.has(instance.id)) {
+        continue;
+      }
       if (!seenInvalidIds.has(instance.id ?? `${habitId}:window_kind`)) {
         typeMismatchInstances.push(instance);
         seenInvalidIds.add(instance.id ?? `${habitId}:window_kind`);
@@ -4435,15 +5465,36 @@ async function scheduleHabitsForDay(params: {
     const instanceDayStart = startOfDayInTimeZone(instanceStart, zone);
     if (instanceDayStart.getTime() !== dayStart.getTime()) continue;
     const windowDays = habit.window?.days ?? null;
+    const lastScheduledStart = getLastScheduledHabitStart(habitId);
     const dueInfo = evaluateHabitDueOnDate({
       habit,
       date: instanceDayStart,
       timeZone: zone,
       windowDays,
-      lastScheduledStart: getLastScheduledHabitStart(habitId),
+      lastScheduledStart,
       nextDueOverride,
     });
     if (!dueInfo.isDue) {
+      if (instance.id && createdThisRun.has(instance.id)) {
+        continue;
+      }
+      if (process.env.SCHEDULER_DEBUG === "true") {
+        console.log("[SCHEDULER_HABIT_REVALIDATION_CANCEL]", {
+          habit_id: habitId,
+          instance_id: instance.id ?? null,
+          instance_start_utc: instance.start_utc ?? null,
+          day_offset: offset,
+          day_start_utc: dayStart.toISOString(),
+          time_zone: zone,
+          due_info: dueInfo,
+          inputs: {
+            lastCompletedAt: habit.lastCompletedAt ?? null,
+            lastScheduledStart: lastScheduledStart?.toISOString?.() ?? null,
+            recurrence: habit.recurrence ?? null,
+            recurrenceDays: habit.recurrenceDays ?? null,
+          },
+        });
+      }
       if (!seenInvalidIds.has(instance.id ?? `${habitId}:${index}`)) {
         invalidHabitInstances.push(instance);
         seenInvalidIds.add(instance.id ?? `${habitId}:${index}`);
@@ -4458,15 +5509,22 @@ async function scheduleHabitsForDay(params: {
   }
 
   if (invalidHabitInstances.length > 0) {
+    for (const invalidInstance of invalidHabitInstances) {
+      logCancelOnce("REVALIDATION_DUE_INVALID", invalidInstance);
+    }
     duplicatesToCancel.push(...invalidHabitInstances);
   }
   if (typeMismatchInstances.length > 0) {
+    for (const mismatch of typeMismatchInstances) {
+      logCancelOnce("REVALIDATION_WINDOW_KIND", mismatch);
+    }
     duplicatesToCancel.push(...typeMismatchInstances);
   }
 
   if (duplicatesToCancel.length > 0) {
     for (const duplicate of duplicatesToCancel) {
       if (!duplicate?.id) continue;
+      logCancelOnce("REVALIDATION_DUPLICATE_CANCEL", duplicate);
       const cancel = await client
         .from("schedule_instances")
         .update({ status: "canceled" })
@@ -4486,35 +5544,22 @@ async function scheduleHabitsForDay(params: {
     }
   }
 
-  if (locationMismatchInstances.length > 0) {
-    for (const mismatch of locationMismatchInstances) {
-      if (!mismatch?.id) continue;
-      const marked = await missScheduledInstance(mismatch);
-      if (marked) {
-        mismatch.status = "missed";
-      }
+  if (!allowScheduling && auditEnabled) {
+    for (const habit of habits) {
+      const windowDays = habit.window?.days ?? null;
+      const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
+      const dueInfo = evaluateHabitDueOnDate({
+        habit,
+        date: day,
+        timeZone: zone,
+        windowDays,
+        lastScheduledStart: repeatablePracticeIds.has(habit.id)
+          ? null
+          : getLastScheduledHabitStart(habit.id),
+        nextDueOverride,
+      });
+      recordDueEvaluationForAudit(habit, dueInfo);
     }
-  }
-
-  if (!allowScheduling) {
-    if (auditEnabled) {
-      for (const habit of habits) {
-        const windowDays = habit.window?.days ?? null;
-        const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
-        const dueInfo = evaluateHabitDueOnDate({
-          habit,
-          date: day,
-          timeZone: zone,
-          windowDays,
-          lastScheduledStart: repeatablePracticeIds.has(habit.id)
-            ? null
-            : getLastScheduledHabitStart(habit.id),
-          nextDueOverride,
-        });
-        recordDueEvaluationForAudit(habit, dueInfo);
-      }
-    }
-    return result;
   }
 
   for (const inst of dayInstances) {
@@ -4568,6 +5613,10 @@ async function scheduleHabitsForDay(params: {
       }
       continue;
     }
+    // Exclude SYNC/ASYNC habits from regular habit scheduling - they get post-pass treatment
+    if (normalizedType === "SYNC") {
+      continue;
+    }
     const windowDays = habit.window?.days ?? null;
     const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
     const overrideDayStart = nextDueOverride
@@ -4592,8 +5641,12 @@ async function scheduleHabitsForDay(params: {
       console.log("practice due info", { offset, isDue: dueInfo.isDue });
     }
     if (!dueInfo.isDue) continue;
-    if (overrideDayStart && dayStart.getTime() >= overrideDayStart.getTime()) {
-      overridesToClear.add(habit.id);
+    if (overrideDayStart) {
+      const overrideMs = overrideDayStart.getTime();
+      const dayMs = dayStart.getTime();
+      if (dayMs > overrideMs || (dayMs === overrideMs && dueInfo.isDue)) {
+        overridesToClear.add(habit.id);
+      }
     }
     dueInfoByHabitId.set(habit.id, dueInfo);
     dueHabits.push(habit);
@@ -4741,10 +5794,12 @@ async function scheduleHabitsForDay(params: {
   });
 
   const practicePlacementCounts = new Map<string, number>();
+  const failedHabitIds = new Set<string>();
   const habitQueue = [...sortedHabits];
   while (habitQueue.length > 0) {
     const habit = habitQueue.shift();
     if (!habit) continue;
+    if (failedHabitIds.has(habit.id)) continue;
     const isRepeatablePractice = repeatablePracticeIds.has(habit.id);
     let existingInstance: ScheduleInstance | null = null;
     if (isRepeatablePractice) {
@@ -4818,11 +5873,21 @@ async function scheduleHabitsForDay(params: {
       existingInstance &&
       !doesWindowAllowHabitType(habit, existingWindowRecord);
     if (hasLocationMismatch || hasLocationlessMismatch) {
-      if (await missScheduledInstance(existingInstance)) {
+      const reservation = reservedPlacements?.get(habit.id) ?? null;
+      if (reservation && existingInstance?.id) {
+        registerReservationForInstance(existingInstance.id, reservation);
+        reservedPlacements?.delete(habit.id);
+      }
+      logCancelOnce("REVALIDATION_LOCATION_REQUEUE_CANCEL", existingInstance);
+      if (await cancelScheduledInstance(existingInstance)) {
         existingByHabitId.delete(habit.id);
+        if (!locationMismatchRequeue.has(habit.id)) {
+          locationMismatchRequeue.set(habit.id, existingInstance);
+        }
         existingInstance = null;
       }
     } else if (hasWindowTypeMismatch) {
+      logCancelOnce("REVALIDATION_EXISTING_WINDOW_KIND", existingInstance);
       if (await cancelScheduledInstance(existingInstance)) {
         existingByHabitId.delete(habit.id);
         existingInstance = null;
@@ -5042,6 +6107,7 @@ async function scheduleHabitsForDay(params: {
     }
 
     let placedInWindow = false;
+    let persistFailed = false;
     for (const target of compatibleWindows) {
       const window = windowsById.get(target.id);
       if (!window) {
@@ -5415,6 +6481,7 @@ async function scheduleHabitsForDay(params: {
           nightSunlightBundle
         );
         if (!withinDaylight) {
+          logCancelOnce("DAYLIGHT_REVALIDATION_CANCEL", existingInstance);
           if (await cancelScheduledInstance(existingInstance)) {
             existingByHabitId.delete(habit.id);
             existingInstance = null;
@@ -5495,6 +6562,7 @@ async function scheduleHabitsForDay(params: {
           existingInstances: placedSoFar,
           allowHabitOverlap: allowsHabitOverlap,
           habitTypeById,
+          windowEdgePreference: habit.windowEdgePreference,
         });
 
         if (!("status" in placement)) {
@@ -5509,16 +6577,63 @@ async function scheduleHabitsForDay(params: {
         }
 
         if (placement.error || !placement.data) {
+          const persistError =
+            placement.error ?? new Error("Failed to persist habit instance");
+          if (placement.error) {
+            const error = placement.error as Partial<{
+              message: string;
+              details: string;
+              hint: string;
+              code: string;
+            }>;
+            console.error("[HABIT_PERSIST_FAIL]", {
+              habitId: habit.id,
+              reuseInstanceId: existingInstance?.id ?? null,
+              error: {
+                message: error.message ?? null,
+                details: error.details ?? null,
+                hint: error.hint ?? null,
+                code: error.code ?? null,
+              },
+            });
+          }
           result.failures.push({
             itemId: habit.id,
-            reason: "error",
-            detail:
-              placement.error ?? new Error("Failed to persist habit instance"),
+            reason: "PERSIST_FAILED",
+            detail: persistError,
           });
-          continue;
+          failedHabitIds.add(habit.id);
+          existingByHabitId.delete(habit.id);
+          practiceInstanceQueues.delete(habit.id);
+          if (existingInstance?.id) {
+            const { error: missError } = await client
+              .from("schedule_instances")
+              .update({ status: "missed", missed_reason: "PERSIST_FAILED" })
+              .eq("id", existingInstance.id);
+            if (missError) {
+              result.failures.push({
+                itemId: habit.id,
+                reason: "error",
+                detail: missError,
+              });
+            }
+            const removeById = (list: ScheduleInstance[]) => {
+              const index = list.findIndex(
+                (inst) => inst?.id === existingInstance?.id
+              );
+              if (index >= 0) list.splice(index, 1);
+            };
+            removeById(placedSoFar);
+            removeById(dayInstances);
+          }
+          persistFailed = true;
+          break;
         }
 
         persisted = placement.data;
+        if (persisted?.id) {
+          createdThisRun.add(persisted.id);
+        }
         result.instances.push(persisted);
         existingByHabitId.set(habit.id, persisted);
         registerInstance(persisted);
@@ -5558,7 +6673,14 @@ async function scheduleHabitsForDay(params: {
         addSyncUsage(target.key, startDate.getTime(), endDate.getTime());
       }
       upsertInstance(dayInstances, persisted);
+      let availabilitySnapshot: { front: Date; back: Date } | null = null;
       if (!usedReservation && !allowsHabitOverlap) {
+        availabilitySnapshot = bounds
+          ? {
+              front: new Date(bounds.front.getTime()),
+              back: new Date(bounds.back.getTime()),
+            }
+          : null;
         if (bounds) {
           if (anchorPreference === "BACK") {
             bounds.back = new Date(startDate);
@@ -5586,6 +6708,22 @@ async function scheduleHabitsForDay(params: {
             endDate.getTime()
           );
         }
+      }
+      const reservationSnapshot = usedReservation
+        ? reservation?.availabilitySnapshot ?? null
+        : availabilitySnapshot;
+      if (
+        persisted?.id &&
+        !allowsHabitOverlap &&
+        typeof reservationSnapshot !== "undefined"
+      ) {
+        reservedByInstanceId.set(persisted.id, {
+          windowId: window.id,
+          windowKey: target.key,
+          startUTC,
+          endUTC,
+          availabilitySnapshot: reservationSnapshot ?? null,
+        });
       }
 
       const resolvedDuration = Number.isFinite(persisted.duration_min)
@@ -5623,12 +6761,34 @@ async function scheduleHabitsForDay(params: {
       placedInWindow = true;
       break;
     }
+    if (persistFailed) {
+      continue;
+    }
     if (!placedInWindow) {
       continue;
     }
 
     if (isRepeatablePractice) {
       habitQueue.push(habit);
+    }
+  }
+
+  if (locationMismatchRequeue.size > 0) {
+    for (const [habitId, instance] of locationMismatchRequeue) {
+      const stillScheduled = dayInstances.some(
+        (inst) =>
+          inst?.source_type === "HABIT" &&
+          inst.status === "scheduled" &&
+          inst.source_id === habitId
+      );
+      if (stillScheduled || !instance?.id) continue;
+      const marked = await missScheduledInstance(
+        instance,
+        LOCATION_MISMATCH_REVALIDATION
+      );
+      if (marked) {
+        instance.status = "missed";
+      }
     }
   }
 

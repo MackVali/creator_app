@@ -16,6 +16,7 @@ import {
   fetchScheduledProjectIds,
   type ScheduleInstance,
 } from "./instanceRepo";
+import { type SyncPairingsByInstanceId } from "./syncLayout";
 import {
   addDaysInTimeZone,
   normalizeTimeZone,
@@ -45,6 +46,7 @@ export type ScheduleEventDataset = {
   monuments: Monument[];
   scheduledProjectIds: string[];
   instances: ScheduleInstance[];
+  syncPairings: SyncPairingsByInstanceId;
   energyLookup: Record<string, (typeof ENERGY.LIST)[number]>;
   priorityLookup: Record<string, string>;
 };
@@ -93,6 +95,67 @@ function sample(
       dayKey,
     };
   });
+}
+
+function normalizeHabitType(value?: string | null) {
+  const raw = (value ?? "HABIT").toUpperCase();
+  return raw === "ASYNC" ? "SYNC" : raw;
+}
+
+async function fetchSyncPairingsForInstances({
+  userId,
+  instances,
+  habits,
+  client,
+}: {
+  userId: string;
+  instances: ScheduleInstance[];
+  habits: HabitScheduleItem[];
+  client: Client;
+}): Promise<SyncPairingsByInstanceId> {
+  if (instances.length === 0 || habits.length === 0) return {};
+
+  const habitTypeById = new Map<string, string>();
+  for (const habit of habits) {
+    habitTypeById.set(habit.id, normalizeHabitType(habit.habitType));
+  }
+
+  const syncInstanceIds = instances
+    .filter((inst) => {
+      if (inst.status !== "scheduled" && inst.status !== "completed") {
+        return false;
+      }
+      if (inst.source_type !== "HABIT") return false;
+      const habitType = habitTypeById.get(inst.source_id ?? "") ?? "HABIT";
+      return habitType === "SYNC";
+    })
+    .map((inst) => inst.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  if (syncInstanceIds.length === 0) return {};
+
+  const { data, error } = await client
+    .from("schedule_sync_pairings")
+    .select("sync_instance_id, partner_instance_ids")
+    .eq("user_id", userId)
+    .in("sync_instance_id", syncInstanceIds);
+
+  if (error || !data) return {};
+
+  const pairings: SyncPairingsByInstanceId = {};
+  for (const row of data) {
+    const syncInstanceId = row.sync_instance_id;
+    if (!syncInstanceId) continue;
+    const partnerIds = Array.isArray(row.partner_instance_ids)
+      ? row.partner_instance_ids.filter(
+          (id: unknown): id is string =>
+            typeof id === "string" && id.length > 0
+        )
+      : [];
+    pairings[syncInstanceId] = partnerIds;
+  }
+
+  return pairings;
 }
 
 export async function buildScheduleEventDataset({
@@ -244,6 +307,12 @@ export async function buildScheduleEventDataset({
     energyLookup,
     projectMap
   );
+  const syncPairings = await fetchSyncPairingsForInstances({
+    userId,
+    instances: normalizedInstances,
+    habits,
+    client,
+  });
 
   if (process.env.NODE_ENV !== "production") {
     const inst = normalizedInstances[0];
@@ -289,6 +358,7 @@ export async function buildScheduleEventDataset({
     monuments,
     scheduledProjectIds,
     instances: normalizedInstances,
+    syncPairings,
     energyLookup,
     priorityLookup,
   };

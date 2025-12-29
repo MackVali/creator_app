@@ -78,6 +78,7 @@ import {
 import { mergeHabitCompletionStateFromInstances } from "@/lib/scheduler/habitCompletionState";
 import {
   computeTimelineLayoutForSyncHabits,
+  type SyncPairingsByInstanceId,
   type TimelineCardLayoutMode,
 } from "@/lib/scheduler/syncLayout";
 import type { ScheduleEventDataset } from "@/lib/scheduler/dataset";
@@ -2124,6 +2125,8 @@ export default function SchedulePage() {
     ScheduleEventDataset["projectGoalRelations"]
   >({});
   const [habits, setHabits_REAL] = useState<HabitScheduleItem[]>([]);
+  const [syncPairings, setSyncPairings_REAL] =
+    useState<SyncPairingsByInstanceId>({});
   const [habitCompletionByDate, setHabitCompletionByDate_REAL] = useState<
     Record<string, Record<string, HabitCompletionStatus>>
   >({});
@@ -2163,6 +2166,11 @@ export default function SchedulePage() {
   function setHabits(next) {
     debugger;
     setHabits_REAL(next);
+  }
+
+  function setSyncPairings(next) {
+    debugger;
+    setSyncPairings_REAL(next);
   }
 
   function setHabitCompletionByDate(next) {
@@ -2459,6 +2467,7 @@ export default function SchedulePage() {
     setProjectSkillIds({});
     setProjectGoalRelations({});
     setHabits([]);
+    setSyncPairings({});
     setScheduledProjectIds(new Set());
     setPendingInstanceStatuses(new Map());
     setPendingBacklogTaskIds(new Set());
@@ -2979,6 +2988,7 @@ export default function SchedulePage() {
       setProjectSkillIds(payload.projectSkillIds);
       setProjectGoalRelations(payload.projectGoalRelations);
       setHabits(payload.habits);
+      setSyncPairings(payload.syncPairings ?? {});
       const nextInstances = payload.instances ?? [];
       const filtered = filterIllegalOverlapsForRender(nextInstances);
       setAllInstances(nextInstances);
@@ -5321,6 +5331,7 @@ export default function SchedulePage() {
         computeTimelineLayoutForSyncHabits({
           habitPlacements: modelHabitPlacements,
           projectInstances: modelProjectInstances,
+          syncPairingsByInstanceId: syncPairings,
         });
 
       return (

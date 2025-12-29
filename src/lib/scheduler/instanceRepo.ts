@@ -36,6 +36,12 @@ export type ScheduleInstanceStatus =
 
 type Client = SupabaseClient<Database>;
 
+export function computeDurationMin(start: Date, end: Date): number {
+  const ms = end.getTime() - start.getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return 0;
+  return Math.floor(ms / 60000);
+}
+
 async function ensureClient(client?: Client): Promise<Client> {
   if (client) return client;
 
@@ -118,8 +124,15 @@ export async function createInstance(
   },
   client?: Client
 ) {
+  const hasStart = typeof input.startUTC === "string" && input.startUTC.length > 0;
+  const hasEnd = typeof input.endUTC === "string" && input.endUTC.length > 0;
+  const hasDuration =
+    typeof input.durationMin === "number" && Number.isFinite(input.durationMin);
+  if ((hasStart || hasEnd || hasDuration) && !(hasStart && hasEnd && hasDuration)) {
+    throw new Error("createInstance payload missing startUTC/endUTC/durationMin");
+  }
   const supabase = await ensureClient(client);
-  return await supabase
+  const { data, error } = await supabase
     .from("schedule_instances")
     .insert({
       user_id: input.userId,
@@ -138,6 +151,32 @@ export async function createInstance(
     })
     .select("*")
     .single();
+  if (error) {
+    const payload = {
+      user_id: input.userId,
+      source_type: input.sourceType,
+      source_id: input.sourceId,
+      start_utc: input.startUTC,
+      end_utc: input.endUTC,
+      duration_min: input.durationMin,
+      status: "scheduled",
+      weight_snapshot: input.weightSnapshot ?? 0,
+      energy_resolved: input.energyResolved,
+      locked: input.locked ?? false,
+      scheduled_at: null,
+    };
+    console.log("[CREATE_INSTANCE_FAIL]", {
+      payload,
+      error: {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      },
+    });
+    throw error;
+  }
+  return data;
 }
 
 export async function rescheduleInstance(

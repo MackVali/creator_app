@@ -222,9 +222,13 @@ function normalizeWindowKind(value?: string | null): WindowKind {
 }
 
 function mapWindowRecord(record: WindowRecord): WindowLite {
-  const value = record.location_context?.value
-    ? String(record.location_context.value).toUpperCase().trim()
-    : null;
+  const hasLocationContextId =
+    typeof record.location_context_id === "string" &&
+    record.location_context_id.trim().length > 0;
+  const value =
+    hasLocationContextId && record.location_context?.value
+      ? String(record.location_context.value).toUpperCase().trim()
+      : null;
   const label = record.location_context?.label ?? (value ? value : null);
 
   return {

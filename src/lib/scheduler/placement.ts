@@ -3,6 +3,7 @@ import type { PostgrestSingleResponse } from "@supabase/postgrest-js";
 import type { Database } from "../../../types/supabase";
 import {
   fetchInstancesForRange,
+  computeDurationMin,
   createInstance,
   rescheduleInstance,
   markProjectMissed,
@@ -52,7 +53,11 @@ export async function fetchWindowsForRange(
     end_local: record.end_local ?? "00:00",
     days: record.days ?? null,
     location_context_id: record.location_context_id ?? null,
-    location_context_value: record.location_context?.value ?? null,
+    location_context_value:
+      typeof record.location_context_id === "string" &&
+      record.location_context_id.trim().length > 0
+        ? record.location_context?.value ?? null
+        : null,
     location_context_name: record.location_context?.label ?? null,
     window_kind: record.window_kind ?? "DEFAULT",
   })) as WindowLite[];
@@ -120,12 +125,35 @@ type PlaceParams = {
   allowHabitOverlap?: boolean;
   habitTypeById?: Map<string, string>;
   projectGlobalRankMap?: Map<string, number | null>;
+  windowEdgePreference?: string | null;
 };
 
 const normalizeHabitTypeValue = (value?: string | null) => {
   const raw = (value ?? "HABIT").toUpperCase();
   return raw;
 };
+
+function logPlacementFailure(params: {
+  item: PlaceParams["item"];
+  habitType?: string;
+  windowIdsAttempted: string[];
+  finalAvailabilityBounds?: { startMs: number; endMs: number } | null;
+  windowEdgePreference?: string | null;
+  failureReason: string;
+}) {
+  if (params.item.sourceType !== "HABIT") return; // Suppress PROJECT failures
+  console.log(
+    JSON.stringify({
+      habit_id: params.item.id,
+      habit_type: params.habitType,
+      duration_minutes: params.item.duration_min,
+      window_ids_attempted: params.windowIdsAttempted,
+      final_availability_bounds: params.finalAvailabilityBounds,
+      window_edge_preference: params.windowEdgePreference,
+      exact_check_failed: params.failureReason,
+    })
+  );
+}
 
 function rankOrInf(
   p: { globalRank?: number | null } | null | undefined
@@ -301,6 +329,7 @@ export async function placeItemInWindows(
     existingInstances,
     habitTypeById,
     projectGlobalRankMap,
+    windowEdgePreference,
   } = params;
   let best: null | {
     window: (typeof windows)[number];
@@ -602,15 +631,45 @@ export async function placeItemInWindows(
   }
 
   if (!best) {
+    logPlacementFailure({
+      item,
+      habitType: habitTypeById?.get(item.id),
+      windowIdsAttempted: windows.map((w) => w.id),
+      finalAvailabilityBounds:
+        windows.length > 0
+          ? {
+              startMs: windows[0].availableStartLocal?.getTime() ?? null,
+              endMs: windows[0].endLocal?.getTime() ?? null,
+            }
+          : null,
+      windowEdgePreference,
+      failureReason: "no_compatible_window_found",
+    });
     return { error: "NO_FIT" };
   }
 
   let startUtc = safeDate(best.start);
   if (!startUtc) {
+    logPlacementFailure({
+      item,
+      habitType: habitTypeById?.get(item.id),
+      windowIdsAttempted: [],
+      finalAvailabilityBounds: null,
+      windowEdgePreference,
+      failureReason: "invalid_start_date",
+    });
     return { error: "NO_FIT" };
   }
   let endUtc = safeDate(addMin(best.start, item.duration_min));
   if (!endUtc) {
+    logPlacementFailure({
+      item,
+      habitType: habitTypeById?.get(item.id),
+      windowIdsAttempted: [],
+      finalAvailabilityBounds: null,
+      windowEdgePreference,
+      failureReason: "invalid_end_date",
+    });
     return { error: "NO_FIT" };
   }
   let durationMin = item.duration_min;
@@ -640,6 +699,14 @@ export async function placeItemInWindows(
       }
       const durationMs = endUtc.getTime() - startUtc.getTime();
       if (durationMs <= 0) {
+        logPlacementFailure({
+          item,
+          habitType: habitTypeById?.get(item.id),
+          windowIdsAttempted: [],
+          finalAvailabilityBounds: null,
+          windowEdgePreference,
+          failureReason: "day_boundary_clamp_exceeded",
+        });
         return { error: "NO_FIT" };
       }
       durationMin = Math.max(1, Math.round(durationMs / 60000));
@@ -716,10 +783,16 @@ async function persistPlacement(
     windowId,
     startUTC,
     endUTC,
-    durationMin,
     reuseInstanceId,
     eventName,
   } = params;
+  const computedDurationMin = computeDurationMin(
+    new Date(startUTC),
+    new Date(endUTC)
+  );
+  if (computedDurationMin <= 0) {
+    throw new Error("Invalid duration_min computed for instance");
+  }
   if (reuseInstanceId) {
     return await rescheduleInstance(
       reuseInstanceId,
@@ -727,7 +800,7 @@ async function persistPlacement(
         windowId,
         startUTC,
         endUTC,
-        durationMin,
+        durationMin: computedDurationMin,
         weightSnapshot: item.weight,
         energyResolved: item.energy,
         eventName,
@@ -736,21 +809,37 @@ async function persistPlacement(
       client
     );
   }
-
-  return await createInstance(
-    {
-      userId,
-      sourceId: item.id,
-      sourceType: item.sourceType,
-      windowId,
-      startUTC,
-      endUTC,
-      durationMin,
-      weightSnapshot: item.weight,
-      energyResolved: item.energy,
-      eventName,
-      practiceContextId: item.practiceContextId,
-    },
-    client
-  );
+  try {
+    const created = await createInstance(
+      {
+        userId,
+        sourceId: item.id,
+        sourceType: item.sourceType,
+        windowId,
+        startUTC,
+        endUTC,
+        durationMin: computedDurationMin,
+        weightSnapshot: item.weight,
+        energyResolved: item.energy,
+        eventName,
+        practiceContextId: item.practiceContextId,
+      },
+      client
+    );
+    return {
+      data: created,
+      error: null,
+      status: 201,
+      statusText: "Created",
+      count: null,
+    };
+  } catch (error) {
+    return {
+      data: null,
+      error: error as PostgrestSingleResponse<ScheduleInstance>["error"],
+      status: 400,
+      statusText: "Error",
+      count: null,
+    };
+  }
 }

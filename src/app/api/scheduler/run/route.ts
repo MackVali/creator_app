@@ -98,10 +98,8 @@ export async function POST(request: Request) {
 
   const markResult = await markMissedAndQueue(user.id, now, schedulingClient);
   if (markResult.error) {
-    return NextResponse.json(
-      { error: markResult.error.message ?? "failed to mark missed instances" },
-      { status: 500 }
-    );
+    // warn but do NOT exit
+    console.warn("[SCHEDULER] markMissedAndQueue failed", markResult.error);
   }
 
   const profileTimeZone = await resolveProfileTimeZone(
