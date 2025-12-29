@@ -10,16 +10,9 @@ import type { ProjectLite } from "../../../src/lib/scheduler/weight";
 import * as habits from "../../../src/lib/scheduler/habits";
 import type { HabitScheduleItem } from "../../../src/lib/scheduler/habits";
 import * as reschedule from "../../../src/lib/scheduler/reschedule";
+import { createSupabaseMock } from "../../utils/supabaseMock";
 
 const realPlaceItemInWindows = placement.placeItemInWindows;
-
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: vi.fn(async () => null),
-}));
-
-vi.mock("@/lib/supabase", () => ({
-  getSupabaseBrowser: vi.fn(() => null),
-}));
 
 describe("scheduleBacklog", () => {
   const userId = "user-1";
@@ -88,93 +81,6 @@ describe("scheduleBacklog", () => {
   let fetchInstancesForRangeSpy: ReturnType<typeof vi.spyOn>;
   let attemptedProjectIds: string[];
   let fetchHabitsForScheduleSpy: ReturnType<typeof vi.spyOn>;
-
-  const createSupabaseMock = (options?: {
-    skills?: Array<{ id: string; monument_id: string | null }>;
-  }) => {
-    let lastEqValue: string | null = null;
-    let lastUpdatePayload: Record<string, unknown> | null = null;
-    const canceledIds: string[] = [];
-    const skillsResponse = {
-      data: options?.skills ?? [],
-      error: null,
-      count: null,
-      status: 200,
-      statusText: "OK",
-    };
-    const single = vi.fn(async () => ({
-      data: { id: lastEqValue },
-      error: null,
-      count: null,
-      status: 200,
-      statusText: "OK",
-    }));
-    const select = vi.fn(() => ({ single }));
-    const eq = vi.fn((column: string, value: string) => {
-      lastEqValue = value;
-      if (column === "id" && lastUpdatePayload?.status === "canceled") {
-        canceledIds.push(value);
-      }
-      return { select };
-    });
-    const inFn = vi.fn((column: string, values: string[]) => {
-      if (column === "id" && lastUpdatePayload?.status === "canceled") {
-        for (const value of values) {
-          canceledIds.push(value);
-        }
-      }
-      return { select };
-    });
-    const update = vi.fn((payload: Record<string, unknown>) => {
-      lastUpdatePayload = payload ?? null;
-      return { eq, in: inFn };
-    });
-    const buildQueryChain = () => {
-      const chain = {
-        eq: vi.fn(() => chain),
-        not: vi.fn(() => chain),
-        order: vi.fn(() => chain),
-        limit: vi.fn(async () => ({
-          data: [],
-          error: null,
-          count: null,
-          status: 200,
-          statusText: "OK",
-        })),
-      };
-      return chain;
-    };
-    const insert = vi.fn((input: unknown) => ({
-      select: vi.fn(() => ({
-        single: vi.fn(async () => ({
-          data: input ?? null,
-          error: null,
-          count: null,
-          status: 201,
-          statusText: "Created",
-        })),
-      })),
-    }));
-    const from = vi.fn((table: string) => {
-      if (table === "skills") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(async () => skillsResponse),
-          })),
-        };
-      }
-      if (table === "schedule_instances") {
-        return {
-          update,
-          insert,
-          select: vi.fn(() => buildQueryChain()),
-        };
-      }
-      return { update, insert };
-    });
-    const client = { from } as unknown as ScheduleBacklogClient;
-    return { client, update, canceledIds };
-  };
 
   beforeEach(() => {
     instances = [
@@ -4384,7 +4290,7 @@ describe("scheduleBacklog", () => {
     fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
 
     const placeMock = placement.placeItemInWindows as unknown as vi.Mock;
-    placeMock.mockReset();
+    placeMock.mockImplementation(async () => ({ error: "NO_FIT" as const }));
     const placedInstance = createInstanceRecord({
       id: "inst-habit-2",
       source_id: habit.id,
@@ -4414,6 +4320,274 @@ describe("scheduleBacklog", () => {
       (entry) => entry.type === "HABIT"
     );
     expect(habitEntries.length).toBeGreaterThan(0);
+  });
+
+  it("requeues location-mismatched habits instead of silently missing them", async () => {
+    instances = [
+      createInstanceRecord({
+        id: "inst-habit-location",
+        source_id: "habit-location",
+        source_type: "HABIT",
+        start_utc: "2024-01-02T09:00:00Z",
+        end_utc: "2024-01-02T09:30:00Z",
+        window_id: "win-home",
+        duration_min: 30,
+      }),
+    ];
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-home",
+        label: "Home",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+        location_context_id: "ctx-home",
+        location_context_value: "HOME",
+        location_context_name: "Home",
+      },
+      {
+        id: "win-office",
+        label: "Office",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+        location_context_id: "ctx-office",
+        location_context_value: "OFFICE",
+        location_context_name: "Office",
+      },
+    ]);
+
+    const habit: HabitScheduleItem = {
+      id: "habit-location",
+      name: "Office habit",
+      durationMinutes: 30,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "HABIT",
+      windowId: null,
+      window: null,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: "ctx-office",
+      locationContextValue: "OFFICE",
+      locationContextName: "Office",
+      daylightPreference: null,
+      windowEdgePreference: null,
+    };
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+    const placeMock = placement.placeItemInWindows as unknown as vi.Mock;
+    placeMock.mockResolvedValue({
+      data: createInstanceRecord({
+        id: "inst-habit-requeued",
+        source_id: habit.id,
+        source_type: "HABIT",
+        start_utc: "2024-01-02T09:00:00Z",
+        end_utc: "2024-01-02T09:30:00Z",
+        window_id: "win-office",
+        duration_min: 30,
+        energy_resolved: "LOW",
+      }),
+      error: null,
+      count: null,
+      status: 201,
+      statusText: "Created",
+    });
+
+    const { client: supabase, updateCalls } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, supabase);
+
+    expect(
+      updateCalls.some(
+        (call) => call.id === "inst-habit-location" && call.payload?.status === "canceled"
+      )
+    ).toBe(true);
+    expect(
+      updateCalls.some(
+        (call) => call.id === "inst-habit-location" && call.payload?.status === "missed"
+      )
+    ).toBe(false);
+    const habitEntries = result.timeline.filter(
+      (entry) => entry.type === "HABIT" && entry.habit.id === habit.id
+    );
+    expect(habitEntries.length).toBeGreaterThan(0);
+  });
+
+  it("marks location-mismatched requeues as missed with a reason when placement fails", async () => {
+    instances = [
+      createInstanceRecord({
+        id: "inst-habit-miss",
+        source_id: "habit-miss",
+        source_type: "HABIT",
+        start_utc: "2024-01-02T09:00:00Z",
+        end_utc: "2024-01-02T09:30:00Z",
+        window_id: "win-home",
+        duration_min: 30,
+      }),
+    ];
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-home",
+        label: "Home",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+        location_context_id: "ctx-home",
+        location_context_value: "HOME",
+        location_context_name: "Home",
+      },
+    ]);
+
+    const habit: HabitScheduleItem = {
+      id: "habit-miss",
+      name: "Office habit",
+      durationMinutes: 30,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "HABIT",
+      windowId: null,
+      window: null,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: "ctx-office",
+      locationContextValue: "OFFICE",
+      locationContextName: "Office",
+      daylightPreference: null,
+      windowEdgePreference: null,
+    };
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+    const placeMock = placement.placeItemInWindows as unknown as vi.Mock;
+    placeMock.mockReset();
+
+    const { client: supabase, updateCalls } = createSupabaseMock();
+    await scheduleBacklog(userId, baseDate, supabase);
+
+    expect(
+      updateCalls.some(
+        (call) =>
+          call.id === "inst-habit-miss" &&
+          call.payload?.status === "missed" &&
+          call.payload?.missed_reason === "LOCATION_MISMATCH_REVALIDATION"
+      )
+    ).toBe(true);
+  });
+
+  it("restores window availability after location-mismatch cancel so another habit can place", async () => {
+    instances = [
+      createInstanceRecord({
+        id: "inst-habit-a",
+        source_id: "habit-a",
+        source_type: "HABIT",
+        start_utc: "2024-01-02T09:00:00Z",
+        end_utc: "2024-01-02T10:00:00Z",
+        window_id: "win-home",
+        duration_min: 60,
+      }),
+    ];
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-home",
+        label: "Home",
+        energy: "LOW",
+        start_local: "08:00",
+        end_local: "09:00",
+        days: [2],
+        location_context_id: "ctx-home",
+        location_context_value: "HOME",
+        location_context_name: "Home",
+      },
+      {
+        id: "win-office",
+        label: "Office",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+        location_context_id: "ctx-office",
+        location_context_value: "OFFICE",
+        location_context_name: "Office",
+      },
+    ]);
+
+    const habitA: HabitScheduleItem = {
+      id: "habit-a",
+      name: "Office habit A",
+      durationMinutes: 60,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "HABIT",
+      windowId: null,
+      window: null,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: "ctx-office",
+      locationContextValue: "OFFICE",
+      locationContextName: "Office",
+      daylightPreference: null,
+      windowEdgePreference: null,
+    };
+    const habitB: HabitScheduleItem = {
+      ...habitA,
+      id: "habit-b",
+      name: "Office habit B",
+      durationMinutes: 30,
+      createdAt: "2024-01-01T01:00:00Z",
+    };
+    fetchHabitsForScheduleSpy.mockResolvedValue([habitA, habitB]);
+
+    const placeMock = placement.placeItemInWindows as unknown as vi.Mock;
+    placeMock.mockImplementation(async ({ item }) => {
+      if (item.id === habitA.id) {
+        return { error: "NO_FIT" as const };
+      }
+      return {
+        data: createInstanceRecord({
+          id: "inst-habit-b",
+          source_id: habitB.id,
+          source_type: "HABIT",
+          start_utc: "2024-01-02T09:00:00Z",
+          end_utc: "2024-01-02T09:30:00Z",
+          window_id: "win-office",
+          duration_min: 30,
+          energy_resolved: "LOW",
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      };
+    });
+
+    const { client: supabase } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, supabase);
+
+    const habitBEntry = result.timeline.find(
+      (entry) => entry.type === "HABIT" && entry.habit.id === habitB.id
+    );
+    expect(habitBEntry).toBeDefined();
+    expect(habitBEntry?.habit.windowId).toBe("win-office");
   });
 
   it("schedules practice habits without a recurrence multiple times in practice windows", async () => {

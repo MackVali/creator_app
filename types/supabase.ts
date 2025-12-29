@@ -945,6 +945,32 @@ export interface Database {
           practice_context_monument_id?: string | null;
         };
       };
+      schedule_sync_pairings: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          sync_instance_id: string;
+          partner_instance_ids: string[];
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          sync_instance_id: string;
+          partner_instance_ids?: string[];
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          sync_instance_id?: string;
+          partner_instance_ids?: string[];
+        };
+      };
       xp_events: {
         Row: {
           id: string;

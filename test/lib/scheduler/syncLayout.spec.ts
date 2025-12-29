@@ -1,92 +1,210 @@
-import { describe, expect, it } from 'vitest'
+import { describe, it, expect } from "vitest";
+import { computeSyncHabitDuration } from "@/lib/scheduler/syncLayout";
 
-import { computeTimelineLayoutForSyncHabits } from '@/lib/scheduler/syncLayout'
+describe("computeSyncHabitDuration", () => {
+  const minDurationMs = 30 * 60 * 1000; // 30 minutes
 
-function minutesFromStart(minutes: number) {
-  const base = new Date(Date.UTC(2024, 0, 1, 0, 0, 0))
-  return new Date(base.getTime() + minutes * 60000)
-}
+  it("returns null when no contiguous coverage reaches minDuration", () => {
+    const syncWindow = {
+      start: new Date("2025-01-01T10:00:00Z"),
+      end: new Date("2025-01-01T12:00:00Z"),
+    };
+    const candidates = [
+      {
+        start: new Date("2025-01-01T10:00:00Z"),
+        end: new Date("2025-01-01T10:15:00Z"),
+        id: "1",
+      },
+      {
+        start: new Date("2025-01-01T11:00:00Z"),
+        end: new Date("2025-01-01T11:15:00Z"),
+        id: "2",
+      },
+    ];
 
-function buildHabit({
-  startMinutes,
-  endMinutes,
-  habitType = 'HABIT',
-}: {
-  startMinutes: number
-  endMinutes: number
-  habitType?: 'HABIT' | 'SYNC'
-}) {
-  return {
-    start: minutesFromStart(startMinutes),
-    end: minutesFromStart(endMinutes),
-    habitType,
-  }
-}
+    const result = computeSyncHabitDuration({
+      syncWindow,
+      minDurationMs,
+      candidates,
+    });
 
-function buildProject({
-  startMinutes,
-  endMinutes,
-}: {
-  startMinutes: number
-  endMinutes: number
-}) {
-  return {
-    start: minutesFromStart(startMinutes),
-    end: minutesFromStart(endMinutes),
-  }
-}
+    expect(result.finalStart).toBeNull();
+    expect(result.finalEnd).toBeNull();
+    expect(result.pairedInstances).toEqual([]);
+  });
 
-describe('computeTimelineLayoutForSyncHabits', () => {
-  it('reserves only one partner per sync habit and keeps others available', () => {
-    const habitPlacements = [
-      buildHabit({ startMinutes: 9 * 60, endMinutes: 9 * 60 + 30 }),
-      buildHabit({ startMinutes: 9 * 60 + 20, endMinutes: 9 * 60 + 50 }),
-      buildHabit({ startMinutes: 9 * 60 + 5, endMinutes: 9 * 60 + 40, habitType: 'SYNC' }),
-      buildHabit({ startMinutes: 9 * 60 + 45, endMinutes: 10 * 60 + 15, habitType: 'SYNC' }),
-    ]
+  it("returns overlap segment when first candidate alone exceeds minDuration", () => {
+    const syncWindow = {
+      start: new Date("2025-01-01T10:00:00Z"),
+      end: new Date("2025-01-01T12:00:00Z"),
+    };
+    const candidates = [
+      {
+        start: new Date("2025-01-01T10:00:00Z"),
+        end: new Date("2025-01-01T10:45:00Z"),
+        id: "1",
+      },
+    ];
 
-    const { habitLayouts } = computeTimelineLayoutForSyncHabits({
-      habitPlacements,
-      projectInstances: [],
-    })
+    const result = computeSyncHabitDuration({
+      syncWindow,
+      minDurationMs,
+      candidates,
+    });
 
-    expect(habitLayouts).toEqual([
-      'paired-left',
-      'paired-left',
-      'paired-right',
-      'paired-right',
-    ])
-  })
+    expect(result.finalStart).toEqual(new Date("2025-01-01T10:00:00Z"));
+    expect(result.finalEnd).toEqual(new Date("2025-01-01T10:45:00Z"));
+    expect(result.pairedInstances).toEqual(["1"]);
+  });
 
-  it('prefers candidates with the smallest start gap when overlaps begin together', () => {
-    const habitPlacements = [
-      buildHabit({ startMinutes: 9 * 60 - 60, endMinutes: 9 * 60 + 30 }),
-      buildHabit({ startMinutes: 9 * 60 - 10, endMinutes: 9 * 60 + 20 }),
-      buildHabit({ startMinutes: 9 * 60, endMinutes: 9 * 60 + 40, habitType: 'SYNC' }),
-    ]
+  it("accumulates contiguous segments until minDuration is met", () => {
+    const syncWindow = {
+      start: new Date("2025-01-01T10:00:00Z"),
+      end: new Date("2025-01-01T12:00:00Z"),
+    };
+    const candidates = [
+      {
+        start: new Date("2025-01-01T10:00:00Z"),
+        end: new Date("2025-01-01T10:15:00Z"),
+        id: "1",
+      },
+      {
+        start: new Date("2025-01-01T10:15:00Z"), // Touching edge
+        end: new Date("2025-01-01T10:30:00Z"),
+        id: "2",
+      },
+      {
+        start: new Date("2025-01-01T10:30:00Z"),
+        end: new Date("2025-01-01T10:45:00Z"),
+        id: "3",
+      },
+    ];
 
-    const { habitLayouts } = computeTimelineLayoutForSyncHabits({
-      habitPlacements,
-      projectInstances: [],
-    })
+    const result = computeSyncHabitDuration({
+      syncWindow,
+      minDurationMs,
+      candidates,
+    });
 
-    expect(habitLayouts).toEqual(['full', 'paired-left', 'paired-right'])
-  })
+    expect(result.finalStart).toEqual(new Date("2025-01-01T10:00:00Z"));
+    expect(result.finalEnd).toEqual(new Date("2025-01-01T10:30:00Z"));
+    expect(result.pairedInstances).toEqual(["1", "2"]);
+  });
 
-  it('pairs sync habits with overlapping project instances when no habit is available', () => {
-    const habitPlacements = [
-      buildHabit({ startMinutes: 9 * 60, endMinutes: 9 * 60 + 45, habitType: 'SYNC' }),
-    ]
-    const projectInstances = [
-      buildProject({ startMinutes: 9 * 60 + 5, endMinutes: 9 * 60 + 35 }),
-    ]
+  it("resets accumulation on gaps and finds new contiguous span", () => {
+    const syncWindow = {
+      start: new Date("2025-01-01T10:00:00Z"),
+      end: new Date("2025-01-01T12:00:00Z"),
+    };
+    const candidates = [
+      {
+        start: new Date("2025-01-01T10:00:00Z"),
+        end: new Date("2025-01-01T10:10:00Z"),
+        id: "1",
+      },
+      // Gap here
+      {
+        start: new Date("2025-01-01T10:30:00Z"),
+        end: new Date("2025-01-01T10:45:00Z"),
+        id: "2",
+      },
+      {
+        start: new Date("2025-01-01T10:45:00Z"),
+        end: new Date("2025-01-01T11:00:00Z"),
+        id: "3",
+      },
+    ];
 
-    const { habitLayouts, projectLayouts } = computeTimelineLayoutForSyncHabits({
-      habitPlacements,
-      projectInstances,
-    })
+    const result = computeSyncHabitDuration({
+      syncWindow,
+      minDurationMs,
+      candidates,
+    });
 
-    expect(habitLayouts).toEqual(['paired-right'])
-    expect(projectLayouts).toEqual(['paired-left'])
-  })
-})
+    expect(result.finalStart).toEqual(new Date("2025-01-01T10:30:00Z"));
+    expect(result.finalEnd).toEqual(new Date("2025-01-01T11:00:00Z"));
+    expect(result.pairedInstances).toEqual(["2", "3"]);
+  });
+
+  it("handles equality at boundaries (touching edges) as contiguous", () => {
+    const syncWindow = {
+      start: new Date("2025-01-01T10:00:00Z"),
+      end: new Date("2025-01-01T12:00:00Z"),
+    };
+    const candidates = [
+      {
+        start: new Date("2025-01-01T10:00:00Z"),
+        end: new Date("2025-01-01T10:15:00Z"),
+        id: "1",
+      },
+      {
+        start: new Date("2025-01-01T10:15:00Z"), // Exactly touching
+        end: new Date("2025-01-01T10:45:00Z"),
+        id: "2",
+      },
+    ];
+
+    const result = computeSyncHabitDuration({
+      syncWindow,
+      minDurationMs,
+      candidates,
+    });
+
+    expect(result.finalStart).toEqual(new Date("2025-01-01T10:00:00Z"));
+    expect(result.finalEnd).toEqual(new Date("2025-01-01T10:45:00Z"));
+    expect(result.pairedInstances).toEqual(["1", "2"]);
+  });
+
+  it("ignores candidates with no overlap", () => {
+    const syncWindow = {
+      start: new Date("2025-01-01T10:00:00Z"),
+      end: new Date("2025-01-01T11:00:00Z"),
+    };
+    const candidates = [
+      {
+        start: new Date("2025-01-01T09:00:00Z"),
+        end: new Date("2025-01-01T09:30:00Z"),
+        id: "1",
+      },
+      {
+        start: new Date("2025-01-01T11:00:00Z"),
+        end: new Date("2025-01-01T11:30:00Z"),
+        id: "2",
+      },
+    ];
+
+    const result = computeSyncHabitDuration({
+      syncWindow,
+      minDurationMs,
+      candidates,
+    });
+
+    expect(result.finalStart).toBeNull();
+    expect(result.finalEnd).toBeNull();
+    expect(result.pairedInstances).toEqual([]);
+  });
+
+  it("handles invalid sync window", () => {
+    const syncWindow = {
+      start: new Date("2025-01-01T12:00:00Z"),
+      end: new Date("2025-01-01T10:00:00Z"), // end before start
+    };
+    const candidates = [
+      {
+        start: new Date("2025-01-01T10:00:00Z"),
+        end: new Date("2025-01-01T11:00:00Z"),
+        id: "1",
+      },
+    ];
+
+    const result = computeSyncHabitDuration({
+      syncWindow,
+      minDurationMs,
+      candidates,
+    });
+
+    expect(result.finalStart).toBeNull();
+    expect(result.finalEnd).toBeNull();
+    expect(result.pairedInstances).toEqual([]);
+  });
+});

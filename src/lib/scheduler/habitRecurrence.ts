@@ -2,9 +2,6 @@ import type { HabitScheduleItem } from "./habits";
 import {
   addDaysInTimeZone,
   addMonthsInTimeZone,
-  differenceInCalendarDaysInTimeZone,
-  differenceInCalendarMonthsInTimeZone,
-  getDatePartsInTimeZone,
   startOfDayInTimeZone,
   weekdayInTimeZone,
 } from "./timezone";
@@ -86,27 +83,28 @@ function isDailyRecurrence(recurrence: string) {
   return DAILY_RECURRENCES.has(recurrence);
 }
 
-function computeChoreDueStart(
-  lastCompletedStart: Date,
-  recurrence: string,
-  timeZone: string,
-  recurrenceDays?: number[] | null
-) {
-  const dayInterval =
-    DAY_INTERVALS[recurrence] ??
-    resolveCustomDayInterval(recurrence, recurrenceDays);
-  if (typeof dayInterval === "number" && dayInterval > 0) {
-    return addDaysInTimeZone(lastCompletedStart, dayInterval, timeZone);
+function resolveDueStartForRecurrence(params: {
+  recurrence: string;
+  habit: HabitScheduleItem;
+  lastStart: Date;
+  timeZone: string;
+}): Date | null {
+  const { recurrence, habit, lastStart, timeZone } = params;
+  if (recurrence in DAY_INTERVALS) {
+    return addDaysInTimeZone(lastStart, DAY_INTERVALS[recurrence], timeZone);
   }
-  const monthInterval = MONTH_INTERVALS[recurrence];
-  if (typeof monthInterval === "number" && monthInterval > 0) {
-    return addMonthsInTimeZone(lastCompletedStart, monthInterval, timeZone);
+  if (recurrence in MONTH_INTERVALS) {
+    return addMonthsInTimeZone(
+      lastStart,
+      MONTH_INTERVALS[recurrence],
+      timeZone
+    );
   }
-  return addDaysInTimeZone(lastCompletedStart, 1, timeZone);
-}
-
-function daysInMonth(year: number, month: number) {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const everyDays = resolveCustomDayInterval(recurrence, habit.recurrenceDays);
+  if (typeof everyDays === "number" && everyDays > 0) {
+    return addDaysInTimeZone(lastStart, everyDays, timeZone);
+  }
+  return null;
 }
 
 export function evaluateHabitDueOnDate(
@@ -127,18 +125,22 @@ export function evaluateHabitDueOnDate(
     ? startOfDayInTimeZone(nextDueOverride, zone)
     : null;
   if (nextDueOverrideStart) {
-    if (nextDueOverrideStart.getTime() > dayStart.getTime()) {
+    const overrideMs = nextDueOverrideStart.getTime();
+    const dayMs = dayStart.getTime();
+    if (overrideMs === dayMs) {
+      return {
+        isDue: true,
+        dueStart: nextDueOverrideStart,
+        debugTag: "NEXT_DUE_OVERRIDE_SLOT",
+      };
+    }
+    if (overrideMs > dayMs) {
       return {
         isDue: false,
         dueStart: nextDueOverrideStart,
         debugTag: "NEXT_DUE_OVERRIDE_FUTURE",
       };
     }
-    return {
-      isDue: true,
-      dueStart: nextDueOverrideStart,
-      debugTag: "NEXT_DUE_OVERRIDE_REACHED",
-    };
   }
   const lastCompletionRaw = habit.lastCompletedAt ?? null;
   const lastCompletionDate = parseIsoDate(lastCompletionRaw);
@@ -166,205 +168,60 @@ export function evaluateHabitDueOnDate(
     : null;
   // Recurrence anchor must advance ONLY on completion
   const lastStart = lastCompletionStart ?? anchorStart;
-  const habitType = (habit.habitType ?? "HABIT").toUpperCase();
-  const resolvedRecurrenceDays = normalizeDayList(habit.recurrenceDays ?? null);
-  const resolvedWindowDays = normalizeDayList(
-    windowDays ?? habit.window?.days ?? null
-  );
-  const activeDayList =
-    resolvedRecurrenceDays && resolvedRecurrenceDays.length > 0
-      ? resolvedRecurrenceDays
-      : resolvedWindowDays;
-
-  const dayInterval =
-    DAY_INTERVALS[recurrence] ??
-    resolveCustomDayInterval(recurrence, habit.recurrenceDays);
-  const monthInterval = MONTH_INTERVALS[recurrence];
-  const requiresCompletionInterval =
-    habitType === "CHORE" &&
-    !isDailyRecurrence(recurrence) &&
-    ((typeof dayInterval === "number" && dayInterval > 1) ||
-      typeof monthInterval === "number");
-
-  if (requiresCompletionInterval) {
-    if (!lastStart) {
-      return { isDue: true, dueStart: dayStart, debugTag: "CHORE_NO_ANCHOR" };
-    }
-
-    const dueStart = computeChoreDueStart(
-      lastStart,
-      recurrence,
-      zone,
-      habit.recurrenceDays
-    );
-    if (!dueStart) {
-      return {
-        isDue: true,
-        dueStart: dayStart,
-        debugTag: "CHORE_NO_DUE_START",
-      };
-    }
-
-    const isDue = dayStart.getTime() >= dueStart.getTime();
-    return {
-      isDue,
-      dueStart,
-      debugTag: isDue ? "CHORE_INTERVAL_REACHED" : "CHORE_INTERVAL_NOT_REACHED",
-    };
-  }
-
-  if (activeDayList && activeDayList.length > 0) {
-    const weekday = weekdayInTimeZone(dayStart, zone);
-    if (!activeDayList.includes(weekday)) {
-      return {
-        isDue: false,
-        dueStart: null,
-        debugTag: "RECURRENCE_DAY_MISMATCH",
-      };
-    }
-  }
-
+  const hasCompletion = lastCompletionStart !== null;
   if (isDailyRecurrence(recurrence)) {
+    const resolvedRecurrenceDays = normalizeDayList(
+      habit.recurrenceDays ?? null
+    );
+    const resolvedWindowDays = normalizeDayList(
+      windowDays ?? habit.window?.days ?? null
+    );
+    const activeDayList =
+      resolvedRecurrenceDays && resolvedRecurrenceDays.length > 0
+        ? resolvedRecurrenceDays
+        : resolvedWindowDays;
+    if (activeDayList && activeDayList.length > 0) {
+      const weekday = weekdayInTimeZone(dayStart, zone);
+      if (!activeDayList.includes(weekday)) {
+        return {
+          isDue: false,
+          dueStart: null,
+          debugTag: "RECURRENCE_DAY_MISMATCH",
+        };
+      }
+    }
     return { isDue: true, dueStart: dayStart, debugTag: "DUE_DAILY" };
   }
 
+  const resolvedDueStart = hasCompletion
+    ? lastStart
+      ? resolveDueStartForRecurrence({
+          recurrence,
+          habit,
+          lastStart,
+          timeZone: zone,
+        }) ?? lastStart
+      : dayStart
+    : dayStart;
+  if (dayStart.getTime() < resolvedDueStart.getTime()) {
+    return {
+      isDue: false,
+      dueStart: resolvedDueStart,
+      debugTag: "INTERVAL_NOT_REACHED",
+    };
+  }
+  if (lastScheduledStart) {
+    const lastScheduledDay = startOfDayInTimeZone(lastScheduledStart, zone);
+    if (lastScheduledDay.getTime() === dayStart.getTime()) {
+      return {
+        isDue: false,
+        dueStart: resolvedDueStart,
+        debugTag: "ALREADY_SCHEDULED_TODAY",
+      };
+    }
+  }
   if (!lastStart) {
     return { isDue: true, dueStart: dayStart, debugTag: "DUE_NO_ANCHOR" };
   }
-
-  switch (recurrence) {
-    case "weekly": {
-      const diffDays = differenceInCalendarDaysInTimeZone(
-        lastStart!,
-        dayStart,
-        zone
-      );
-      if (diffDays < 0 || diffDays % 7 !== 0) {
-        return {
-          isDue: false,
-          dueStart: null,
-          debugTag: "WEEKLY_INTERVAL_NOT_REACHED",
-        };
-      }
-      const weekday = weekdayInTimeZone(dayStart, zone);
-      if (activeDayList && activeDayList.length > 0) {
-        if (!activeDayList.includes(weekday)) {
-          return {
-            isDue: false,
-            dueStart: null,
-            debugTag: "WEEKLY_DAY_MISMATCH",
-          };
-        }
-      } else {
-        const anchorWeekday = weekdayInTimeZone(lastStart!, zone);
-        if (weekday !== anchorWeekday) {
-          return {
-            isDue: false,
-            dueStart: null,
-            debugTag: "WEEKLY_DAY_MISMATCH",
-          };
-        }
-      }
-      return { isDue: true, dueStart: dayStart, debugTag: "DUE_WEEKLY" };
-    }
-    case "bi-weekly": {
-      const diffDays = differenceInCalendarDaysInTimeZone(
-        lastStart!,
-        dayStart,
-        zone
-      );
-      if (diffDays < 0 || diffDays % 14 !== 0) {
-        return {
-          isDue: false,
-          dueStart: null,
-          debugTag: "BIWEEKLY_INTERVAL_NOT_REACHED",
-        };
-      }
-      const weekday = weekdayInTimeZone(dayStart, zone);
-      if (activeDayList && activeDayList.length > 0) {
-        if (!activeDayList.includes(weekday)) {
-          return {
-            isDue: false,
-            dueStart: null,
-            debugTag: "BIWEEKLY_DAY_MISMATCH",
-          };
-        }
-      } else {
-        const anchorWeekday = weekdayInTimeZone(lastStart!, zone);
-        if (weekday !== anchorWeekday) {
-          return {
-            isDue: false,
-            dueStart: null,
-            debugTag: "BIWEEKLY_DAY_MISMATCH",
-          };
-        }
-      }
-      return { isDue: true, dueStart: dayStart, debugTag: "DUE_BIWEEKLY" };
-    }
-    case "monthly":
-    case "bi-monthly":
-    case "every 6 months":
-    case "yearly": {
-      const monthsDiff = differenceInCalendarMonthsInTimeZone(
-        lastStart!,
-        dayStart,
-        zone
-      );
-      if (monthsDiff < 0) {
-        return {
-          isDue: false,
-          dueStart: null,
-          debugTag: "MONTHLY_INTERVAL_NOT_REACHED",
-        };
-      }
-      const interval = MONTH_INTERVALS[recurrence] ?? 12;
-      if (monthsDiff % interval !== 0) {
-        return {
-          isDue: false,
-          dueStart: null,
-          debugTag: "MONTHLY_INTERVAL_NOT_REACHED",
-        };
-      }
-      const anchorParts = getDatePartsInTimeZone(lastStart!, zone);
-      const targetParts = getDatePartsInTimeZone(dayStart, zone);
-      const expectedDay = Math.min(
-        anchorParts.day,
-        daysInMonth(targetParts.year, targetParts.month)
-      );
-      if (targetParts.day !== expectedDay) {
-        return {
-          isDue: false,
-          dueStart: null,
-          debugTag: "MONTHLY_DAY_MISMATCH",
-        };
-      }
-      return { isDue: true, dueStart: dayStart, debugTag: "DUE_MONTHLY" };
-    }
-    default: {
-      const everyDays = resolveCustomDayInterval(
-        recurrence,
-        habit.recurrenceDays
-      );
-      if (typeof everyDays === "number" && everyDays > 1) {
-        const diffDays = differenceInCalendarDaysInTimeZone(
-          lastStart!,
-          dayStart,
-          zone
-        );
-        if (diffDays < 0 || diffDays % everyDays !== 0) {
-          return {
-            isDue: false,
-            dueStart: null,
-            debugTag: "EVERY_X_DAYS_INTERVAL_NOT_REACHED",
-          };
-        }
-        return {
-          isDue: true,
-          dueStart: dayStart,
-          debugTag: "DUE_EVERY_X_DAYS",
-        };
-      }
-      return { isDue: true, dueStart: dayStart, debugTag: "DUE_FALLBACK" };
-    }
-  }
+  return { isDue: true, dueStart: resolvedDueStart, debugTag: "DUE_OVERDUE" };
 }
