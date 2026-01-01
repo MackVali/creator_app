@@ -2208,7 +2208,9 @@ export async function scheduleBacklog(
       if (error instanceof Error) return error.message;
       if (typeof error === "object") {
         const maybeMessage =
-          "message" in error ? String((error as { message?: unknown }).message) : null;
+          "message" in error
+            ? String((error as { message?: unknown }).message)
+            : null;
         const maybeCode =
           "code" in error ? String((error as { code?: unknown }).code) : null;
         if (maybeCode && maybeMessage) return `${maybeCode}: ${maybeMessage}`;
@@ -2282,7 +2284,35 @@ export async function scheduleBacklog(
       const alreadyScheduledInHorizon = scheduledNonDailyIds.has(habit.id);
       const scheduledMatch = scheduledNonDailyFirstMatch.get(habit.id) ?? null;
       let placed = false;
-      for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
+      const windowDays = habit.window?.days ?? null;
+      const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
+      const dueInfoToday = evaluateHabitDueOnDate({
+        habit,
+        date: baseStart,
+        timeZone,
+        windowDays,
+        lastScheduledStart: getHabitLastScheduledStart(habit.id),
+        nextDueOverride,
+      });
+      const pastDue = dueInfoToday.dueStart < baseStart;
+      const dueDayOffset = Math.max(
+        0,
+        differenceInCalendarDaysInTimeZone(
+          baseStart,
+          dueInfoToday.dueStart ?? baseStart,
+          timeZone
+        )
+      );
+      const startOffset = pastDue
+        ? 0
+        : Math.max(
+            0,
+            Math.min(dueDayOffset, Math.max(habitWriteLookaheadDays - 1, 0))
+          );
+      const endOffset = pastDue
+        ? habitWriteLookaheadDays
+        : Math.min(startOffset + 1, habitWriteLookaheadDays);
+      for (let offset = startOffset; offset < endOffset; offset += 1) {
         const day =
           offset === 0
             ? baseStart
@@ -2317,8 +2347,6 @@ export async function scheduleBacklog(
           normalizeHabitTypeValue(habit.habitType);
         if (normalizedType === "SYNC") continue;
 
-        const windowDays = habit.window?.days ?? null;
-        const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
         const dueInfo = evaluateHabitDueOnDate({
           habit,
           date: day,
@@ -2327,7 +2355,7 @@ export async function scheduleBacklog(
           lastScheduledStart: getHabitLastScheduledStart(habit.id),
           nextDueOverride,
         });
-        if (!dueInfo.isDue) continue;
+        if (!pastDue && !dueInfo.isDue) continue;
 
         await prepareWindowsForDay(day);
         const existingInstances = getDayInstances(offset);
@@ -2519,7 +2547,8 @@ export async function scheduleBacklog(
             resolvedEnergy,
             compatibleWindowCount: compatibleWindows.length,
             result: "FAIL",
-            reason: formatPlacementError(placement.error) ?? "NO_PLACEMENT_DATA",
+            reason:
+              formatPlacementError(placement.error) ?? "NO_PLACEMENT_DATA",
             day: day.toISOString(),
             alreadyScheduledInHorizon,
           });
@@ -2737,8 +2766,9 @@ export async function scheduleBacklog(
     }
   }
 
-  nonDailyReplacementInstanceIds =
-    await scheduleNonDailyHabitsAcrossHorizon(dueNonDailyHabits);
+  nonDailyReplacementInstanceIds = await scheduleNonDailyHabitsAcrossHorizon(
+    dueNonDailyHabits
+  );
 
   console.log("[SCHEDULER_ORDER] HABIT_PASS_END", {
     habitCount: habitBlockingInstances.length,
@@ -3313,11 +3343,13 @@ export async function scheduleBacklog(
   const nonProjectInstances = finalInvariantInstances.filter(
     (inst) => !inst.isProject
   );
-  const { canceled: cancelIdSet, overlapPairs } =
-    collectFinalInvariantCancels(nonProjectInstances, {
+  const { canceled: cancelIdSet, overlapPairs } = collectFinalInvariantCancels(
+    nonProjectInstances,
+    {
       nonDailyHabitIds,
       replacementInstanceIds: nonDailyReplacementInstanceIds,
-    });
+    }
+  );
   if (cancelIdSet.size > 0) {
     for (const id of cancelIdSet) {
       logCancel(
@@ -6126,7 +6158,11 @@ async function scheduleHabitsForDay(params: {
       let constraintLowerBound = startMs;
       const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart ?? null;
       const dueStartMs = dueStart ? dueStart.getTime() : null;
-      if (typeof dueStartMs === "number" && Number.isFinite(dueStartMs)) {
+      if (
+        typeof dueStartMs === "number" &&
+        Number.isFinite(dueStartMs) &&
+        isDailyRecurrenceValue(habit.recurrence ?? null)
+      ) {
         constraintLowerBound = Math.max(constraintLowerBound, dueStartMs);
       }
       if (

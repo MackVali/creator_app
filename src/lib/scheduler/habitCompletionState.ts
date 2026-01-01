@@ -85,10 +85,10 @@ export function mergeHabitCompletionStateFromInstances(
           nextDay[habitId] = "completed";
           dayChanged = true;
         }
-      } else if (habitId in nextDay) {
-        delete nextDay[habitId];
-        dayChanged = true;
       }
+      // Intentionally do not remove completions - user-confirmed habit completion
+      // must never be undone by merge/reconciliation logic. Only explicit undo
+      // actions may remove completions.
       const meta = instanceMetaByDate.get(dateKey)?.get(habitId);
       console.log("[HABIT_COMPLETION][MERGE_INSTANCE]", {
         instanceId: meta?.instanceId ?? null,
