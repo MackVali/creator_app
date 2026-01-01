@@ -21,16 +21,20 @@ const FALLBACK_COLOR = "#6366f1";
 
 // Carousel tuning constants - adjust for iOS vs desktop trackpads
 const CAROUSEL_CONFIG = {
-  // Swipe velocity threshold for direction-aware snapping (pixels per ms)
-  VELOCITY_THRESHOLD: 0.5,
+  // Swipe velocity thresholds (pixels per ms)
+  VELOCITY_THRESHOLD_TOUCH: 0.15, // Lower for mobile touch gestures
+  VELOCITY_THRESHOLD_MOUSE: 0.8, // Higher for mouse/trackpad
+
+  // Minimum swipe distance to trigger snapping (pixels)
+  MIN_SWIPE_DISTANCE: 30,
 
   // Spring animation parameters
-  SPRING_STIFFNESS: 100,
-  SPRING_DAMPING: 20,
+  SPRING_STIFFNESS: 120, // Increased for snappier feel
+  SPRING_DAMPING: 25, // Adjusted for better bounce
   SPRING_MASS: 1,
 
   // Overshoot distance in pixels before settling
-  SPRING_OVERSHOOT: 3,
+  SPRING_OVERSHOOT: 4, // Slightly more bounce
 
   // Precision for stopping animation (pixels)
   SPRING_PRECISION: 0.1,
@@ -99,6 +103,7 @@ export default function SkillsCarousel() {
     null
   );
   const [isSwiping, setIsSwiping] = useState(false);
+  const [isUsingMouse, setIsUsingMouse] = useState(false);
 
   const skeletonCategoryPlaceholders = [0, 1, 2];
   const skeletonChipPlaceholders = [0, 1, 2, 3];
@@ -344,11 +349,12 @@ export default function SkillsCarousel() {
 
       let targetIndex = activeIndexRef.current;
 
-      // Velocity-aware target selection
-      if (
-        Math.abs(velocity) > CAROUSEL_CONFIG.VELOCITY_THRESHOLD &&
-        categories.length > 1
-      ) {
+      // Velocity-aware target selection - use different thresholds for touch vs mouse
+      const velocityThreshold = isUsingMouse
+        ? CAROUSEL_CONFIG.VELOCITY_THRESHOLD_MOUSE
+        : CAROUSEL_CONFIG.VELOCITY_THRESHOLD_TOUCH;
+
+      if (Math.abs(velocity) > velocityThreshold && categories.length > 1) {
         // High velocity: snap to next/previous based on swipe direction
         const swipeDirection = velocity > 0 ? -1 : 1; // Negative velocity = right swipe (previous), positive = left swipe (next)
 
@@ -715,6 +721,47 @@ export default function SkillsCarousel() {
             // Update tracking during move if needed for velocity calculation
             // For now, we just maintain the start position
           }}
+          onMouseDown={(e) => {
+            if (skillDragging) return; // Don't track if skills are being dragged
+            setIsUsingMouse(true); // Mark as mouse interaction
+            touchStartRef.current = {
+              x: e.clientX,
+              time: Date.now(),
+            };
+            setIsSwiping(true); // Start swipe state
+          }}
+          onMouseUp={(e) => {
+            if (skillDragging || !touchStartRef.current) return;
+
+            const deltaX = e.clientX - touchStartRef.current.x;
+            const deltaTime = Date.now() - touchStartRef.current.time;
+
+            // Check minimum swipe distance to avoid accidental triggers
+            if (
+              Math.abs(deltaX) >= CAROUSEL_CONFIG.MIN_SWIPE_DISTANCE &&
+              deltaTime > 0
+            ) {
+              // Calculate pixels per millisecond (negative = left swipe, positive = right swipe)
+              const velocity = deltaX / deltaTime;
+              touchVelocityRef.current = velocity;
+
+              console.log(
+                `🎯 Mouse end: velocity=${velocity.toFixed(
+                  3
+                )} px/ms, deltaX=${deltaX}px, deltaTime=${deltaTime}ms, threshold=${
+                  CAROUSEL_CONFIG.VELOCITY_THRESHOLD_MOUSE
+                }`
+              );
+
+              // Trigger snapping decision only on gesture end
+              syncToNearestCard(velocity);
+            }
+
+            // Reset tracking
+            touchStartRef.current = null;
+            setIsUsingMouse(false);
+            setIsSwiping(false); // Clear swipe state
+          }}
           onTouchEnd={(e) => {
             if (skillDragging || !touchStartRef.current) return;
 
@@ -723,7 +770,11 @@ export default function SkillsCarousel() {
               const deltaX = touch.clientX - touchStartRef.current.x;
               const deltaTime = Date.now() - touchStartRef.current.time;
 
-              if (deltaTime > 0) {
+              // Check minimum swipe distance to avoid accidental triggers
+              if (
+                Math.abs(deltaX) >= CAROUSEL_CONFIG.MIN_SWIPE_DISTANCE &&
+                deltaTime > 0
+              ) {
                 // Calculate pixels per millisecond (negative = left swipe, positive = right swipe)
                 const velocity = deltaX / deltaTime;
                 touchVelocityRef.current = velocity;
@@ -732,7 +783,7 @@ export default function SkillsCarousel() {
                   `🎯 Touch end: velocity=${velocity.toFixed(
                     3
                   )} px/ms, deltaX=${deltaX}px, deltaTime=${deltaTime}ms, threshold=${
-                    CAROUSEL_CONFIG.VELOCITY_THRESHOLD
+                    CAROUSEL_CONFIG.VELOCITY_THRESHOLD_TOUCH
                   }`
                 );
 
