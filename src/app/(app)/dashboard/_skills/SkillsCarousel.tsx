@@ -19,28 +19,11 @@ import { updateCatOrder } from "@/lib/data/cats";
 
 const FALLBACK_COLOR = "#6366f1";
 
-// Carousel tuning constants - adjust for iOS vs desktop trackpads
 const CAROUSEL_CONFIG = {
-  // Swipe velocity thresholds (pixels per ms)
-  VELOCITY_THRESHOLD_TOUCH: 0.15, // Lower for mobile touch gestures
-  VELOCITY_THRESHOLD_MOUSE: 0.8, // Higher for mouse/trackpad
-
-  // Minimum swipe distance to trigger snapping (pixels)
-  MIN_SWIPE_DISTANCE: 30,
-
-  // Spring animation parameters
-  SPRING_STIFFNESS: 120, // Increased for snappier feel
-  SPRING_DAMPING: 25, // Adjusted for better bounce
+  SPRING_STIFFNESS: 120,
+  SPRING_DAMPING: 25,
   SPRING_MASS: 1,
-
-  // Overshoot distance in pixels before settling
-  SPRING_OVERSHOOT: 4, // Slightly more bounce
-
-  // Precision for stopping animation (pixels)
   SPRING_PRECISION: 0.1,
-
-  // Transition duration for emphasis animations (ms)
-  EMPHASIS_DURATION: 300,
 } as const;
 
 function parseHex(hex?: string | null) {
@@ -82,11 +65,14 @@ export default function SkillsCarousel() {
   const trackRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
   const activeIndexRef = useRef(0);
-  const scrollFrame = useRef<number | null>(null);
-
-  // Touch tracking for swipe velocity
-  const touchStartRef = useRef<{ x: number; time: number } | null>(null);
-  const touchVelocityRef = useRef<number>(0);
+  const springFrameRef = useRef<number | null>(null);
+  const scrollEndTimeoutRef = useRef<number | null>(null);
+  const springStateRef = useRef<{
+    target: number;
+    velocity: number;
+    lastTime: number | null;
+    onComplete?: () => void;
+  } | null>(null);
 
   // Prevent scroll → state feedback loops during programmatic animations
   const isAnimatingScrollRef = useRef<boolean>(false);
@@ -102,13 +88,123 @@ export default function SkillsCarousel() {
   const [emphasizedCardIndex, setEmphasizedCardIndex] = useState<number | null>(
     null
   );
-  const [isSwiping, setIsSwiping] = useState(false);
-  const [isUsingMouse, setIsUsingMouse] = useState(false);
-  const [dragOffset, setDragOffset] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-
   const skeletonCategoryPlaceholders = [0, 1, 2];
   const skeletonChipPlaceholders = [0, 1, 2, 3];
+
+  const stopSpring = useCallback(() => {
+    if (springFrameRef.current !== null) {
+      cancelAnimationFrame(springFrameRef.current);
+      springFrameRef.current = null;
+    }
+    springStateRef.current = null;
+    isAnimatingScrollRef.current = false;
+  }, []);
+
+  const getCenteredScrollLeft = useCallback(
+    (index: number) => {
+      const track = trackRef.current;
+      const card = cardRefs.current[index];
+      if (!track || !card) return null;
+
+      const offset = card.offsetLeft;
+      const target =
+        offset - (track.clientWidth - card.clientWidth) / 2;
+      const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+      return Math.max(0, Math.min(target, maxScroll));
+    },
+    []
+  );
+
+  const startSpringToScroll = useCallback(
+    (
+      targetScrollLeft: number,
+      options: {
+        initialVelocity?: number; // px/ms
+        stiffness?: number;
+        damping?: number;
+        mass?: number;
+        precision?: number;
+        onComplete?: () => void;
+      } = {}
+    ) => {
+      const {
+        initialVelocity = 0,
+        stiffness = CAROUSEL_CONFIG.SPRING_STIFFNESS,
+        damping = CAROUSEL_CONFIG.SPRING_DAMPING,
+        mass = CAROUSEL_CONFIG.SPRING_MASS,
+        precision = CAROUSEL_CONFIG.SPRING_PRECISION,
+        onComplete,
+      } = options;
+
+      stopSpring();
+
+      const track = trackRef.current;
+      if (!track) return;
+
+      springStateRef.current = {
+        target: targetScrollLeft,
+        velocity: initialVelocity * 1000, // convert px/ms -> px/s for integration
+        lastTime: null,
+        onComplete,
+      };
+      isAnimatingScrollRef.current = true;
+
+      const step = (timestamp: number) => {
+        const state = springStateRef.current;
+        if (!state) return;
+
+        if (state.lastTime === null) {
+          state.lastTime = timestamp;
+          springFrameRef.current = requestAnimationFrame(step);
+          return;
+        }
+
+        const dtRaw = (timestamp - state.lastTime) / 1000; // seconds
+        const dt = Math.min(dtRaw, 1 / 30); // Clamp to avoid explosions on dropped frames
+        if (dt <= 0) {
+          springFrameRef.current = requestAnimationFrame(step);
+          return;
+        }
+        const track = trackRef.current;
+        if (!track) {
+          stopSpring();
+          return;
+        }
+
+        const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+        const position = track.scrollLeft;
+        const displacement = position - state.target;
+        const springForce = -stiffness * displacement;
+        const dampingForce = -damping * state.velocity;
+        const acceleration = (springForce + dampingForce) / mass;
+
+        state.velocity += acceleration * dt;
+        const unclampedNext = position + state.velocity * dt;
+        const nextPosition = Math.max(0, Math.min(maxScroll, unclampedNext));
+
+        track.scrollLeft = nextPosition;
+
+        const distanceToTarget = Math.abs(nextPosition - state.target);
+        const velocityEpsilon = precision * 60;
+
+        if (distanceToTarget < precision && Math.abs(state.velocity) < velocityEpsilon) {
+          track.scrollLeft = state.target;
+
+          const completion = state.onComplete;
+          stopSpring();
+          isAnimatingScrollRef.current = false;
+          completion?.();
+          return;
+        }
+
+        state.lastTime = timestamp;
+        springFrameRef.current = requestAnimationFrame(step);
+      };
+
+      springFrameRef.current = requestAnimationFrame(step);
+    },
+    [stopSpring]
+  );
 
   const getCategoryColor = (category: (typeof categories)[number]) =>
     catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
@@ -195,251 +291,112 @@ export default function SkillsCarousel() {
     });
   }, [categories]);
 
-  // Transform-based spring animation with initial velocity injection
-  const springTransformTo = useCallback(
-    (
-      targetOffset: number,
-      options: {
-        initialVelocity?: number; // Initial velocity from swipe (pixels per ms)
-        stiffness?: number; // Spring stiffness (default: 120)
-        damping?: number; // Damping coefficient (default: 25)
-        mass?: number; // Mass (default: 1)
-        overshoot?: number; // Overshoot amount in pixels (default: 4)
-        precision?: number; // Precision for stopping (default: 0.1)
-        onComplete?: () => void; // Callback when animation finishes
-      } = {}
-    ) => {
-      const {
-        initialVelocity = 0, // Start with user's swipe velocity
-        stiffness = CAROUSEL_CONFIG.SPRING_STIFFNESS,
-        damping = CAROUSEL_CONFIG.SPRING_DAMPING,
-        mass = CAROUSEL_CONFIG.SPRING_MASS,
-        overshoot = CAROUSEL_CONFIG.SPRING_OVERSHOOT,
-        precision = CAROUSEL_CONFIG.SPRING_PRECISION,
-        onComplete,
-      } = options;
-
-      // Log spring configuration for testing
-      console.log(
-        `🎯 Spring animation: target=${targetOffset}px, initialVelocity=${initialVelocity.toFixed(
-          3
-        )} px/ms, stiffness=${stiffness}, damping=${damping}`
-      );
-
-      let position = dragOffset; // Start from current drag position
-      let velocity = initialVelocity; // Start with user's velocity
-      let isAnimating = true;
-
-      // Apply overshoot to target for bouncy feel
-      const overshootTarget = targetOffset + overshoot;
-
-      const animate = () => {
-        if (!isAnimating) return;
-
-        // Spring force: F = -k * (x - target)
-        const displacement = position - overshootTarget;
-        const springForce = -stiffness * displacement;
-
-        // Damping force: F = -c * v
-        const dampingForce = -damping * velocity;
-
-        // Total force and acceleration: F = m*a => a = F/m
-        const totalForce = springForce + dampingForce;
-        const acceleration = totalForce / mass;
-
-        // Update velocity and position (Euler integration)
-        velocity += acceleration * 0.016; // Assume ~60fps (16ms per frame)
-        position += velocity * 0.016;
-
-        // Apply transform to drag container
-        setDragOffset(position);
-
-        // Check if animation should stop (close to target with low velocity)
-        const distanceToTarget = Math.abs(position - targetOffset);
-        if (distanceToTarget < precision && Math.abs(velocity) < precision) {
-          // Snap to exact target and stop
-          setDragOffset(targetOffset);
-          isAnimating = false;
-
-          // Only commit state after spring settles
-          onComplete?.();
-        } else {
-          requestAnimationFrame(animate);
-        }
-      };
-
-      // Set animation flag to prevent feedback loops
-      isAnimatingScrollRef.current = true;
-
-      requestAnimationFrame(animate);
-    },
-    [dragOffset]
-  );
-
   const scrollToIndex = useCallback(
     (index: number, options: { instant?: boolean; skipUrl?: boolean } = {}) => {
       if (categories.length === 0) return;
 
       const bounded = Math.max(0, Math.min(index, categories.length - 1));
-      const track = trackRef.current;
-      const card = cardRefs.current[bounded];
+      const targetScrollLeft = getCenteredScrollLeft(bounded);
 
-      if (track && card) {
-        const trackRect = track.getBoundingClientRect();
-        const cardRect = card.getBoundingClientRect();
-        const offset = cardRect.left - trackRect.left;
-        const target =
-          track.scrollLeft + offset - (trackRect.width - cardRect.width) / 2;
-        const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
-        const nextScroll = Math.max(0, Math.min(target, maxScroll));
-
-        if (options.instant) {
-          track.scrollLeft = nextScroll;
-          // For instant scrolls, update state immediately
-          activeIndexRef.current = bounded;
-          setActiveIndex((prev) => (prev === bounded ? prev : bounded));
-
-          if (!options.skipUrl && categories[bounded]) {
-            const nextId = categories[bounded].id;
-            if (search.get("cat") !== nextId) {
-              const params = new URLSearchParams(search);
-              params.set("cat", nextId);
-              startTransition(() => {
-                router.replace(`?${params.toString()}`, { scroll: false });
-              });
-            }
-          }
-        } else {
-          // For animated scrolls, delay state updates until animation completes
-          // Convert scroll position to transform offset for new system
-          const targetOffset = nextScroll - track.scrollLeft;
-          springTransformTo(targetOffset, {
-            onComplete: () => {
-              // Clear animation flag
-              isAnimatingScrollRef.current = false;
-
-              // Update active state after animation finishes settling
-              activeIndexRef.current = bounded;
-              setActiveIndex((prev) => (prev === bounded ? prev : bounded));
-
-              // Apply emphasis animation to the settled card
-              setEmphasizedCardIndex(bounded);
-
-              // Reset drag offset after settling
-              setDragOffset(0);
-
-              if (!options.skipUrl && categories[bounded]) {
-                const nextId = categories[bounded].id;
-                if (search.get("cat") !== nextId) {
-                  const params = new URLSearchParams(search);
-                  params.set("cat", nextId);
-                  startTransition(() => {
-                    router.replace(`?${params.toString()}`, { scroll: false });
-                  });
-                }
-              }
-            },
-          });
-        }
+      if (targetScrollLeft === null) return;
+      if (scrollEndTimeoutRef.current !== null) {
+        window.clearTimeout(scrollEndTimeoutRef.current);
+        scrollEndTimeoutRef.current = null;
       }
-    },
-    [categories, router, search, springTransformTo]
-  );
 
-  const syncToNearestCard = useCallback(
-    (velocityOverride?: number) => {
-      const track = trackRef.current;
-      if (!track || categories.length === 0) return;
-
-      // Prevent running during programmatic animations to avoid feedback loops
-      if (isAnimatingScrollRef.current) return;
-
-      const trackRect = track.getBoundingClientRect();
-      const center = trackRect.left + trackRect.width / 2;
-      const velocity = velocityOverride ?? touchVelocityRef.current;
-
-      let targetIndex = activeIndexRef.current;
-
-      // Velocity-aware target selection - use different thresholds for touch vs mouse
-      const velocityThreshold = isUsingMouse
-        ? CAROUSEL_CONFIG.VELOCITY_THRESHOLD_MOUSE
-        : CAROUSEL_CONFIG.VELOCITY_THRESHOLD_TOUCH;
-
-      if (Math.abs(velocity) > velocityThreshold && categories.length > 1) {
-        // High velocity: snap to next/previous based on swipe direction
-        const swipeDirection = velocity > 0 ? -1 : 1; // Negative velocity = right swipe (previous), positive = left swipe (next)
-
-        if (swipeDirection > 0 && targetIndex > 0) {
-          targetIndex = targetIndex - 1; // Swipe right: go to previous
-        } else if (swipeDirection < 0 && targetIndex < categories.length - 1) {
-          targetIndex = targetIndex + 1; // Swipe left: go to next
+      if (options.instant) {
+        stopSpring();
+        const track = trackRef.current;
+        if (track) {
+          track.scrollLeft = targetScrollLeft;
         }
 
-        console.log(
-          `High velocity (${velocity.toFixed(3)} px/ms) detected, direction: ${
-            swipeDirection > 0 ? "right" : "left"
-          }, snapping to: ${targetIndex}`
-        );
+        activeIndexRef.current = bounded;
+        setActiveIndex((prev) => (prev === bounded ? prev : bounded));
+        setEmphasizedCardIndex(bounded);
+
+        if (!options.skipUrl && categories[bounded]) {
+          const nextId = categories[bounded].id;
+          if (search.get("cat") !== nextId) {
+            const params = new URLSearchParams(search);
+            params.set("cat", nextId);
+            startTransition(() => {
+              router.replace(`?${params.toString()}`, { scroll: false });
+            });
+          }
+        }
       } else {
-        // Low velocity: snap to nearest by distance
-        let minDistance = Number.POSITIVE_INFINITY;
-
-        cardRefs.current.forEach((card, idx) => {
-          if (!card) return;
-
-          const rect = card.getBoundingClientRect();
-          const cardCenter = rect.left + rect.width / 2;
-          const distance = Math.abs(cardCenter - center);
-
-          if (distance < minDistance) {
-            targetIndex = idx;
-            minDistance = distance;
-          }
-        });
-      }
-
-      // Calculate target offset for spring animation
-      const targetCard = cardRefs.current[targetIndex];
-      if (targetCard) {
-        const targetRect = targetCard.getBoundingClientRect();
-        const currentOffset = dragOffset;
-        const targetOffset = -(
-          targetRect.left -
-          trackRect.left -
-          (trackRect.width - targetRect.width) / 2
-        );
-
-        // Inject velocity into spring and commit state only after settling
-        springTransformTo(targetOffset, {
-          initialVelocity: velocity,
+        startSpringToScroll(targetScrollLeft, {
           onComplete: () => {
-            // Only commit state after spring settles
-            activeIndexRef.current = targetIndex;
-            setActiveIndex((prev) =>
-              prev === targetIndex ? prev : targetIndex
-            );
-            setEmphasizedCardIndex(targetIndex);
+            activeIndexRef.current = bounded;
+            setActiveIndex((prev) => (prev === bounded ? prev : bounded));
+            setEmphasizedCardIndex(bounded);
 
-            const nextId = categories[targetIndex]?.id;
-            if (nextId && search.get("cat") !== nextId) {
-              const params = new URLSearchParams(search);
-              params.set("cat", nextId);
-              startTransition(() => {
-                router.replace(`?${params.toString()}`, { scroll: false });
-              });
+            if (!options.skipUrl && categories[bounded]) {
+              const nextId = categories[bounded].id;
+              if (search.get("cat") !== nextId) {
+                const params = new URLSearchParams(search);
+                params.set("cat", nextId);
+                startTransition(() => {
+                  router.replace(`?${params.toString()}`, { scroll: false });
+                });
+              }
             }
-
-            // Clear dragging state
-            setIsDragging(false);
           },
         });
       }
-
-      // Reset velocity after use
-      touchVelocityRef.current = 0;
     },
-    [categories, router, search, dragOffset, springTransformTo, isUsingMouse]
+    [categories, getCenteredScrollLeft, router, search, startSpringToScroll, stopSpring]
   );
+
+  useEffect(() => {
+    cardRefs.current = cardRefs.current.slice(0, categories.length);
+    if (categories.length === 0) {
+      return;
+    }
+
+    if (activeIndexRef.current >= categories.length) {
+      const fallback = Math.max(0, categories.length - 1);
+      scrollToIndex(fallback, { instant: true });
+    } else {
+      scrollToIndex(activeIndexRef.current, { instant: true, skipUrl: true });
+    }
+  }, [categories.length, scrollToIndex]);
+
+  const snapToNearestCard = useCallback(() => {
+    const track = trackRef.current;
+    if (!track || categories.length === 0) return;
+    if (isAnimatingScrollRef.current) return;
+
+    const trackCenter = track.scrollLeft + track.clientWidth / 2;
+    let targetIndex = activeIndexRef.current;
+    let minDistance = Number.POSITIVE_INFINITY;
+
+    cardRefs.current.forEach((card, idx) => {
+      if (!card) return;
+      const cardCenter = card.offsetLeft + card.clientWidth / 2;
+      const distance = Math.abs(cardCenter - trackCenter);
+      if (distance < minDistance) {
+        minDistance = distance;
+        targetIndex = idx;
+      }
+    });
+
+    scrollToIndex(targetIndex);
+  }, [categories.length, scrollToIndex]);
+
+  const handleScroll = useCallback(() => {
+    if (isAnimatingScrollRef.current) return;
+
+    if (scrollEndTimeoutRef.current !== null) {
+      window.clearTimeout(scrollEndTimeoutRef.current);
+    }
+
+    scrollEndTimeoutRef.current = window.setTimeout(() => {
+      scrollEndTimeoutRef.current = null;
+      snapToNearestCard();
+    }, 120);
+  }, [snapToNearestCard]);
 
   useEffect(() => {
     cardRefs.current = cardRefs.current.slice(0, categories.length);
@@ -479,17 +436,25 @@ export default function SkillsCarousel() {
     return () => cancelAnimationFrame(frame);
   }, [categories, scrollToIndex, search]);
 
-  // Removed scroll-based snapping - now only snaps on gesture end
-
   useEffect(() => {
     const handleResize = () => {
       scrollToIndex(activeIndexRef.current, { instant: true, skipUrl: true });
-      requestAnimationFrame(syncToNearestCard);
+      requestAnimationFrame(snapToNearestCard);
     };
 
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [scrollToIndex, syncToNearestCard]);
+  }, [scrollToIndex, snapToNearestCard]);
+
+  useEffect(
+    () => () => {
+      stopSpring();
+      if (scrollEndTimeoutRef.current !== null) {
+        window.clearTimeout(scrollEndTimeoutRef.current);
+      }
+    },
+    [stopSpring]
+  );
 
   const persistCategoryOrder = useCallback(
     async (nextCategories: Category[]) => {
@@ -707,7 +672,7 @@ export default function SkillsCarousel() {
               aria-label="Previous category"
               onClick={() => scrollToIndex(activeIndexRef.current - 1)}
               disabled={!canGoPrev}
-              className="absolute left-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border text-slate-100 shadow-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-35 sm:flex"
+              className="absolute left-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border text-slate-100 shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-35 sm:flex"
               style={{
                 backgroundColor: withAlpha(activeColor, 0.18),
                 borderColor: withAlpha(activeColor, 0.35),
@@ -721,7 +686,7 @@ export default function SkillsCarousel() {
               aria-label="Next category"
               onClick={() => scrollToIndex(activeIndexRef.current + 1)}
               disabled={!canGoNext}
-              className="absolute right-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border text-slate-100 shadow-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-35 sm:flex"
+              className="absolute right-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border text-slate-100 shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-35 sm:flex"
               style={{
                 backgroundColor: withAlpha(activeColor, 0.18),
                 borderColor: withAlpha(activeColor, 0.35),
@@ -734,126 +699,10 @@ export default function SkillsCarousel() {
         )}
         <div
           ref={trackRef}
-          className={`relative flex snap-x gap-5 overflow-x-hidden px-2 sm:px-3 ${
+          className={`relative flex gap-5 overflow-x-auto px-2 sm:px-3 ${
             skillDragging ? "touch-none" : ""
           }`}
-          style={{
-            // Kill native momentum and scrolling
-            touchAction: "none",
-            transform: `translateX(${dragOffset}px)`,
-            transition: isDragging ? "none" : "transform 0.3s ease-out",
-          }}
-          onTouchStart={(e) => {
-            if (skillDragging) return; // Don't track if skills are being dragged
-            const touch = e.touches[0];
-            if (touch) {
-              touchStartRef.current = {
-                x: touch.clientX,
-                time: Date.now(),
-              };
-              setIsDragging(true);
-              setIsSwiping(true); // Start swipe state
-            }
-          }}
-          onTouchMove={(e) => {
-            if (skillDragging || !touchStartRef.current) return;
-
-            // Kill native momentum - prevent default scrolling
-            e.preventDefault();
-
-            const touch = e.touches[0];
-            if (touch) {
-              const deltaX = touch.clientX - touchStartRef.current.x;
-              // Pure transform dragging - update position directly
-              setDragOffset(deltaX);
-            }
-          }}
-          onMouseDown={(e) => {
-            if (skillDragging) return; // Don't track if skills are being dragged
-            setIsUsingMouse(true); // Mark as mouse interaction
-            setIsDragging(true);
-            touchStartRef.current = {
-              x: e.clientX,
-              time: Date.now(),
-            };
-            setIsSwiping(true); // Start swipe state
-          }}
-          onMouseMove={(e) => {
-            if (skillDragging || !touchStartRef.current || !isDragging) return;
-
-            // Kill native momentum - prevent default scrolling
-            e.preventDefault();
-
-            const deltaX = e.clientX - touchStartRef.current.x;
-            // Pure transform dragging - update position directly
-            setDragOffset(deltaX);
-          }}
-          onMouseUp={(e) => {
-            if (skillDragging || !touchStartRef.current) return;
-
-            const deltaX = e.clientX - touchStartRef.current.x;
-            const deltaTime = Date.now() - touchStartRef.current.time;
-
-            // Check minimum swipe distance to avoid accidental triggers
-            if (
-              Math.abs(deltaX) >= CAROUSEL_CONFIG.MIN_SWIPE_DISTANCE &&
-              deltaTime > 0
-            ) {
-              // Calculate pixels per millisecond (negative = left swipe, positive = right swipe)
-              const velocity = deltaX / deltaTime;
-              touchVelocityRef.current = velocity;
-
-              console.log(
-                `🎯 Mouse end: velocity=${velocity.toFixed(
-                  3
-                )} px/ms, deltaX=${deltaX}px, deltaTime=${deltaTime}ms, threshold=${
-                  CAROUSEL_CONFIG.VELOCITY_THRESHOLD_MOUSE
-                }`
-              );
-
-              // Trigger snapping decision only on gesture end
-              syncToNearestCard(velocity);
-            }
-
-            // Reset tracking
-            touchStartRef.current = null;
-            setIsUsingMouse(false);
-            setIsSwiping(false); // Clear swipe state
-          }}
-          onTouchEnd={(e) => {
-            if (skillDragging || !touchStartRef.current) return;
-
-            const touch = e.changedTouches[0];
-            if (touch) {
-              const deltaX = touch.clientX - touchStartRef.current.x;
-              const deltaTime = Date.now() - touchStartRef.current.time;
-
-              // Check minimum swipe distance to avoid accidental triggers
-              if (
-                Math.abs(deltaX) >= CAROUSEL_CONFIG.MIN_SWIPE_DISTANCE &&
-                deltaTime > 0
-              ) {
-                // Calculate pixels per millisecond (negative = left swipe, positive = right swipe)
-                const velocity = deltaX / deltaTime;
-                touchVelocityRef.current = velocity;
-
-                console.log(
-                  `🎯 Touch end: velocity=${velocity.toFixed(
-                    3
-                  )} px/ms, deltaX=${deltaX}px, deltaTime=${deltaTime}ms, threshold=${
-                    CAROUSEL_CONFIG.VELOCITY_THRESHOLD_TOUCH
-                  }`
-                );
-
-                // Trigger snapping decision only on gesture end
-                syncToNearestCard(velocity);
-              }
-            }
-
-            // Reset touch tracking
-            touchStartRef.current = null;
-            setIsSwiping(false); // Clear swipe state
-          }}
+          onScroll={handleScroll}
         >
           {categories.map((category, idx) => {
             const isActive = idx === activeIndex;
@@ -874,9 +723,7 @@ export default function SkillsCarousel() {
                 }}
                 role="group"
                 aria-label={`Category ${idx + 1} of ${categories.length}`}
-                className={`w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[52vw] xl:w-[44vw] ${
-                  isSwiping ? "" : "transition-all duration-300 ease-out"
-                }`}
+                className="w-[85vw] shrink-0 sm:w-[70vw] lg:w-[52vw] xl:w-[44vw]"
                 style={{
                   scrollMarginInline: "12px",
                   transform:
@@ -971,7 +818,7 @@ export default function SkillsCarousel() {
                   return current === category.id ? null : category.id;
                 });
               }}
-              className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
+              className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
                 isActive
                   ? "text-slate-100"
                   : "text-slate-300/85 hover:text-slate-100"
