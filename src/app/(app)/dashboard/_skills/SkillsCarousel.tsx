@@ -772,7 +772,7 @@ export default function SkillsCarousel() {
                   scrollMarginInline: "12px",
                   transform:
                     emphasizedCardIndex === idx ? "scale(1)" : "scale(0.96)",
-                  opacity: emphasizedCardIndex === idx ? 1 : 0.7,
+                  opacity: 1,
                 }}
               >
                 <CategoryCard
