@@ -177,7 +177,7 @@ const NORMALIZED_ENERGY_VALUES = new Set([
   "EXTREME",
 ]);
 const GOAL_GRID_CLASS =
-  "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-2 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-3 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
+  "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
 
 const normalizePriorityCode = (value?: string | null): string => {
   if (typeof value !== "string") return "NO";
@@ -972,7 +972,7 @@ export function MonumentGoalsList({
           return (
             <div
               key={roadmap.id}
-              className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-[22px]"
+              className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-0"
             >
               <RoadmapCard
                 roadmap={roadmap}
@@ -988,7 +988,7 @@ export function MonumentGoalsList({
         {standaloneGoals.map((goal) => (
           <div
             key={goal.id}
-            className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-[22px]"
+            className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-0"
           >
             <GoalCard
               goal={goal}
