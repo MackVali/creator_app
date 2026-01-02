@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, GripVertical } from "lucide-react";
+import { GripVertical } from "lucide-react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -377,7 +377,7 @@ function RoadmapCardImpl({
   }
 
   return (
-    <div className="group relative h-full rounded-[30px] border-2 border-amber-500 bg-white/[0.03] p-4 text-white transition hover:-translate-y-1 hover:border-amber-500/50">
+    <div className="group relative h-full rounded-[30px] border-2 border-amber-500 bg-white/[0.02] p-4 text-white transition hover:border-amber-500/50">
       <div className="relative flex h-full flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
           <button
@@ -399,13 +399,8 @@ function RoadmapCardImpl({
                     </span>
                   </span>
                 </div>
-                <h3 className="mt-2 text-xl font-semibold">{roadmap.title}</h3>
+                <h3 className="mt-2 text-2xl font-semibold">{roadmap.title}</h3>
               </div>
-              <ChevronDown
-                className={`mt-1 h-5 w-5 text-white/60 transition-transform ${
-                  open ? "rotate-180" : ""
-                }`}
-              />
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
               <div className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
@@ -413,75 +408,23 @@ function RoadmapCardImpl({
                   className="h-1.5 w-1.5 rounded-full bg-white/60"
                   aria-hidden="true"
                 />
-                <span>
-                  {goalCount} {goalCount === 1 ? "goal" : "goals"}
-                </span>
+                <span>{goalCount} Active Goals</span>
               </div>
+              <div className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-white/60"
+                  aria-hidden="true"
+                />
+                <span>0 Completed</span>
+              </div>
+            </div>
+            <div className="mt-2">
+              <span className="inline-flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/90">
+                View Roadmap →
+              </span>
             </div>
           </button>
         </div>
-
-        {open && (
-          <div className="flex-1">
-            {hasGoals ? (
-              <DndContext
-                sensors={dragSensors}
-                collisionDetection={closestCenter}
-                onDragStart={(event) => {
-                  console.log("🎯 Drag started:", event.active.id);
-                }}
-                onDragEnd={(event) => {
-                  console.log("🎯 Drag ended:", event);
-                  const { active, over } = event;
-                  if (over && active.id !== over.id) {
-                    const oldIndex = localGoals.findIndex(
-                      (g) => g.id === active.id
-                    );
-                    const newIndex = localGoals.findIndex(
-                      (g) => g.id === over.id
-                    );
-                    console.log(`Moving from index ${oldIndex} to ${newIndex}`);
-                    const reordered = arrayMove(localGoals, oldIndex, newIndex);
-                    setLocalGoals(reordered);
-                  }
-                }}
-              >
-                <SortableContext items={localGoals.map((g) => g.id)}>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                    }}
-                  >
-                    {localGoals.map((goal, index) => (
-                      <DraggableGoalCard
-                        key={goal.id}
-                        goal={goal}
-                        index={index}
-                        isOpen={openGoalId === goal.id}
-                        onOpenChange={(isOpen) => {
-                          if (isOpen) {
-                            setOpenGoalId(goal.id);
-                          } else if (openGoalId === goal.id) {
-                            setOpenGoalId(null);
-                          }
-                        }}
-                        onGoalEdit={onGoalEdit}
-                        onGoalToggleActive={onGoalToggleActive}
-                        onGoalDelete={onGoalDelete}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-white/20 bg-white/[0.02] px-4 py-6 text-center text-sm text-white/60">
-                No goals yet
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
