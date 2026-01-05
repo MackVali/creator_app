@@ -3666,7 +3666,7 @@ export function Fab({
               }}
               layout
               className={cn(
-                "absolute bottom-20 mb-2 z-[2147483646] border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
+                "absolute bottom-20 mb-2 z-[2147483650] border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
                 expanded ? "overflow-visible" : "overflow-hidden",
                 expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
                 menuClassName
