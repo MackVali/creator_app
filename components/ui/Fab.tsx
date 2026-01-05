@@ -2590,16 +2590,6 @@ export function Fab({
     }
   };
 
-  // Prevent background scrolling/interaction while expanded.
-  useEffect(() => {
-    if (!expanded) return;
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
-  }, [expanded]);
-
   useEffect(() => {
     if (selected !== "PROJECT") return;
     let cancelled = false;
