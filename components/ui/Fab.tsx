@@ -3650,8 +3650,11 @@ export function Fab({
                 transition: "border-color 0.1s linear",
                 transformOrigin:
                   menuVariant === "timeline" ? "bottom right" : "bottom center",
-                minHeight: expanded ? "52vh" : menuContainerHeight,
-                height: !expanded ? menuContainerHeight : undefined,
+                minHeight: expanded ? "60dvh" : menuContainerHeight,
+                maxHeight: expanded
+                  ? "calc(90dvh - env(safe-area-inset-bottom, 0px) - 8px)"
+                  : menuContainerHeight,
+                height: expanded ? undefined : menuContainerHeight,
                 maxHeight: !expanded ? menuContainerHeight : undefined,
                 minWidth: expanded ? undefined : menuWidth ?? undefined,
                 width: expanded ? undefined : menuWidth ?? undefined,
@@ -3740,18 +3743,19 @@ export function Fab({
               </>
             </motion.div>
             {expanded && overhangPos
-              ? createPortal(
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, y: 6 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.92, y: 4 }}
-                    transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
-                    className="pointer-events-auto fixed z-[120] flex w-[108px] items-center gap-3"
-                    style={{
-                      left: overhangPos.left,
-                      top: overhangPos.top,
-                    }}
-                  >
+                ? createPortal(
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.92, y: 4 }}
+                      transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
+                      className="pointer-events-auto fixed flex w-[108px] items-center gap-3"
+                      style={{
+                        left: overhangPos.left,
+                        top: overhangPos.top,
+                        zIndex: 2147483650,
+                      }}
+                    >
                     <Button
                       type="button"
                       aria-label="Discard"
