@@ -3969,13 +3969,12 @@ async function reserveMandatoryHabitsForDay(params: {
     if (inst.status !== "scheduled" && inst.status !== "completed") continue;
     const habitId = inst.source_id ?? null;
     if (!habitId) continue;
-    const bucket = scheduledHabitBuckets.get(habitId);
+    const bucket = scheduledInstancesByHabitId.get(habitId);
     if (bucket) {
       bucket.push(inst);
     } else {
-      scheduledHabitBuckets.set(habitId, [inst]);
+      scheduledInstancesByHabitId.set(habitId, [inst]);
     }
-  }
   }
 
   const hasValidScheduledInstance = (habit: HabitScheduleItem) => {
