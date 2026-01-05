@@ -13,6 +13,24 @@ const buttonVariants = cva(
           "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
         destructive:
           "bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+        confirmSquare:
+          [
+            "btn-3d btn-3d--emerald",
+            "rounded-lg",
+            "bg-gradient-to-b from-emerald-500 to-emerald-700",
+            "hover:from-emerald-500 hover:to-emerald-800",
+            "active:from-emerald-600 active:to-emerald-800",
+            "text-white",
+          ].join(" "),
+        cancelSquare:
+          [
+            "btn-3d btn-3d--red",
+            "rounded-lg",
+            "bg-gradient-to-b from-red-500 to-red-700",
+            "hover:from-red-500 hover:to-red-800",
+            "active:from-red-600 active:to-red-800",
+            "text-white",
+          ].join(" "),
         outline:
           "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50",
         secondary:
@@ -26,6 +44,7 @@ const buttonVariants = cva(
         sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
         lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
         icon: "size-9",
+        iconSquare: "h-12 w-12 p-0",
       },
     },
     defaultVariants: {

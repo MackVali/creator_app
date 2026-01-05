@@ -3894,7 +3894,9 @@ export default function SchedulePage() {
                 ? completionIso ?? new Date().toISOString()
                 : null,
             end_utc:
-              !isHabitInstance && nextStatus === "completed" && trimResult?.endUTC
+              !isHabitInstance &&
+              nextStatus === "completed" &&
+              trimResult?.endUTC
                 ? trimResult.endUTC
                 : inst.end_utc,
             duration_min:
@@ -5554,6 +5556,8 @@ export default function SchedulePage() {
                 "radial-gradient(circle at 10% -18%, rgba(216, 180, 254, 0.4), transparent 60%), linear-gradient(138deg, rgba(76, 29, 149, 0.95) 0%, rgba(124, 58, 237, 0.88) 48%, rgba(192, 132, 252, 0.78) 100%)";
               const completedCardBackground =
                 "radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)";
+              const choreCompletedCardBackground =
+                "radial-gradient(circle at 2% 0%, rgba(12, 137, 96, 0.28), transparent 58%), linear-gradient(140deg, rgba(4, 56, 43, 0.95) 0%, rgba(2, 89, 64, 0.92) 44%, rgba(12, 137, 96, 0.88) 100%)";
               const scheduledShadow = [
                 "0 28px 58px rgba(3, 3, 6, 0.66)",
                 "0 10px 24px rgba(0, 0, 0, 0.45)",
@@ -5611,6 +5615,11 @@ export default function SchedulePage() {
                   cardOutline = "1px solid rgba(147, 51, 234, 0.5)";
                   habitBorderClass = "border-purple-300/55";
                 }
+              } else if (normalizedHabitType === "CHORE" && isHabitCompleted) {
+                cardBackground = choreCompletedCardBackground;
+                cardShadow = completedShadow;
+                cardOutline = "1px solid rgba(12, 137, 96, 0.55)";
+                habitBorderClass = "border-emerald-500/60";
               } else if (isHabitCompleted) {
                 cardBackground = completedCardBackground;
                 cardShadow = completedShadow;

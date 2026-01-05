@@ -9,9 +9,11 @@ export interface Goal {
   energy_code?: string | null;
   why?: string;
   created_at: string;
+  emoji?: string | null;
   active?: boolean;
   status?: string;
   monument_id?: string | null;
+  monumentEmoji?: string | null;
   roadmap_id?: string | null;
   weight?: number | null;
   weight_boost?: number | null;
@@ -27,7 +29,7 @@ export async function getGoalsForUser(userId: string): Promise<Goal[]> {
   const { data, error } = await supabase
     .from("goals")
     .select(
-      "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, weight, weight_boost, due_date"
+      "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, weight, weight_boost, due_date, monument:monuments(emoji)"
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -37,7 +39,12 @@ export async function getGoalsForUser(userId: string): Promise<Goal[]> {
     throw error;
   }
 
-  return data || [];
+  return (
+    data?.map((goal: any) => ({
+      ...goal,
+      monumentEmoji: goal?.monument?.emoji ?? null,
+    })) ?? []
+  );
 }
 
 export async function getGoalById(goalId: string): Promise<Goal | null> {
@@ -49,7 +56,7 @@ export async function getGoalById(goalId: string): Promise<Goal | null> {
   const { data, error } = await supabase
     .from("goals")
     .select(
-      "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, due_date"
+      "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, due_date, monument:monuments(emoji)"
     )
     .eq("id", goalId)
     .single();
@@ -59,5 +66,7 @@ export async function getGoalById(goalId: string): Promise<Goal | null> {
     return null;
   }
 
-  return data;
+  return data
+    ? { ...data, monumentEmoji: (data as any)?.monument?.emoji ?? null }
+    : null;
 }
