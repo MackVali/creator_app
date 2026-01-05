@@ -1172,6 +1172,7 @@ export function Fab({
                           value={goalPriority}
                           onValueChange={setGoalPriority}
                           triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
                           placeholder="Priority"
                         >
                           <SelectContent>
@@ -1501,6 +1502,7 @@ export function Fab({
                           value={projectPriority}
                           onValueChange={setProjectPriority}
                           triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
                           placeholder="Priority"
                         >
                           <SelectContent>
@@ -1942,6 +1944,7 @@ export function Fab({
                           value={taskPriority}
                           onValueChange={setTaskPriority}
                           triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
                           placeholder="Priority"
                         >
                           <SelectContent>
@@ -2586,6 +2589,16 @@ export function Fab({
       event.stopPropagation();
     }
   };
+
+  // Prevent background scrolling/interaction while expanded.
+  useEffect(() => {
+    if (!expanded) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [expanded]);
 
   useEffect(() => {
     if (selected !== "PROJECT") return;
@@ -3631,6 +3644,21 @@ export function Fab({
       <AnimatePresence>
         {isOpen && (
           <>
+            {expanded
+              ? createPortal(
+                  <div
+                    className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm touch-none"
+                    onWheel={(event) => event.preventDefault()}
+                    onTouchMove={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onPointerMove={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => event.stopPropagation()}
+                  />,
+                  document.body
+                )
+              : null}
             <motion.div
               ref={(node) => {
                 menuRef.current = node;
