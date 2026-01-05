@@ -3637,7 +3637,7 @@ export function Fab({
             {expanded
               ? createPortal(
                   <div
-                    className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm touch-none"
+                    className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
                     onWheel={(event) => event.preventDefault()}
                     onTouchMove={(event) => {
                       event.preventDefault();
@@ -3678,6 +3678,7 @@ export function Fab({
                 minWidth: expanded ? undefined : menuWidth ?? undefined,
                 width: expanded ? undefined : menuWidth ?? undefined,
                 maxWidth: expanded ? undefined : menuWidth ?? undefined,
+                touchAction: expanded ? "manipulation" : undefined,
               }}
               initial={{ opacity: 0, y: 8 }}
               animate={{
