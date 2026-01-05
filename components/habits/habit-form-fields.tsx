@@ -5,6 +5,7 @@ import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import {
   Select,
   SelectContent,
@@ -477,9 +478,9 @@ export function HabitFormFields({
           id="habit-name"
           value={name}
           onChange={(event) => onNameChange(event.target.value)}
-          placeholder="e.g. Morning meditation"
+          placeholder="Name your HABIT"
           required
-          className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+          className="h-14 rounded-lg !border-white/10 bg-white/[0.05] text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
         />
       </div>
 
@@ -743,24 +744,33 @@ export function HabitFormFields({
               <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                 Energy
               </Label>
-              <Select value={energy} onValueChange={onEnergyChange}>
-                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                  <SelectValue placeholder="Choose the energy this habit needs" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#0b101b] text-sm text-white">
+              <Select
+                value={energy}
+                onValueChange={onEnergyChange}
+                triggerClassName="!h-14 !items-center !justify-center rounded-lg border-white/15 bg-white/[0.06] !overflow-visible"
+                hideChevron
+                trigger={
+                  <div className="flex h-full w-full items-center justify-center leading-none">
+                    {energy ? (
+                      <FlameEmber
+                        level={energy as FlameLevel}
+                        size="md"
+                        className="-translate-y-[3px]"
+                      />
+                    ) : (
+                      <span className="text-zinc-400">Energy</span>
+                    )}
+                  </div>
+                }
+              >
+                <SelectContent>
                   {energyOptions.map((option) => (
-                    <SelectItem
-                      key={`${option.value}-${option.label}`}
-                      value={option.value}
-                      disabled={option.disabled}
-                    >
-                      <div className="flex flex-col">
-                        <span>{option.label}</span>
-                        {option.description ? (
-                          <span className="text-xs text-white/60">
-                            {option.description}
-                          </span>
-                        ) : null}
+                    <SelectItem key={option.value} value={option.value}>
+                      <div className="flex items-center justify-center py-2">
+                        <FlameEmber
+                          level={option.value as FlameLevel}
+                          size="md"
+                        />
                       </div>
                     </SelectItem>
                   ))}

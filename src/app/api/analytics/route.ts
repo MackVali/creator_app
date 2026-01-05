@@ -182,10 +182,7 @@ export async function GET(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (userError) {
-    return NextResponse.json(
-      { error: userError.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: userError.message }, { status: 500 });
   }
 
   if (!user) {
@@ -231,7 +228,7 @@ export async function GET(request: NextRequest) {
       () =>
         supabase
           .from("tasks")
-          .select("id, created_at, project_id, stage_id, title")
+          .select("id, created_at, project_id, stage_id, name")
           .eq("user_id", user.id)
           .gte("created_at", combinedStartIso)
           .order("created_at", { ascending: false })
@@ -246,7 +243,7 @@ export async function GET(request: NextRequest) {
       () =>
         supabase
           .from("projects")
-          .select("id, created_at, title")
+          .select("id, created_at, name")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
     ),
@@ -268,7 +265,7 @@ export async function GET(request: NextRequest) {
       () =>
         supabase
           .from("monuments")
-          .select("id, created_at, updated_at, title, name")
+          .select("id, created_at, updated_at, title")
           .eq("user_id", user.id)
           .order("updated_at", { ascending: false }),
       () =>
@@ -354,10 +351,7 @@ export async function GET(request: NextRequest) {
     recentScheduleInstancesRes.error;
 
   if (queryError) {
-    return NextResponse.json(
-      { error: queryError.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: queryError.message }, { status: 500 });
   }
 
   const xpEvents = (xpEventsRes.data ?? []) as RawXpEventRow[];
@@ -375,8 +369,7 @@ export async function GET(request: NextRequest) {
     habitCompletionRes.data ?? []
   );
   const recentScheduleInstances = normalizeScheduleInstanceRows(
-    (recentScheduleInstancesRes.data ??
-      []) as RawScheduleInstanceRow[]
+    (recentScheduleInstancesRes.data ?? []) as RawScheduleInstanceRow[]
   );
 
   const xpSplit = splitByPeriod(
@@ -466,7 +459,12 @@ export async function GET(request: NextRequest) {
 
   const kpis: AnalyticsKpi[] = [
     makeKpi("skill_xp", "Skill XP", currentXp, previousXp),
-    makeKpi("tasks", "Tasks", taskSplit.current.length, taskSplit.previous.length),
+    makeKpi(
+      "tasks",
+      "Tasks",
+      taskSplit.current.length,
+      taskSplit.previous.length
+    ),
     makeKpi(
       "projects",
       "Projects",
@@ -517,7 +515,9 @@ export async function GET(request: NextRequest) {
 
       const cost = skillCost(progress.level ?? 1, progress.prestige ?? 0);
       const percent =
-        cost === 0 ? 0 : Math.round(((progress.xp_into_level ?? 0) / cost) * 100);
+        cost === 0
+          ? 0
+          : Math.round(((progress.xp_into_level ?? 0) / cost) * 100);
 
       return {
         id: skill.id,
@@ -548,7 +548,12 @@ export async function GET(request: NextRequest) {
             .eq("user_id", user.id)
             .in("project_id", projectIds)
       )
-    : ({ data: [], error: null, status: 200, statusText: "OK" } as PostgrestResponse<RawTaskRow>);
+    : ({
+        data: [],
+        error: null,
+        status: 200,
+        statusText: "OK",
+      } as PostgrestResponse<RawTaskRow>);
 
   if (projectTasksRes.error) {
     return NextResponse.json(
@@ -676,13 +681,13 @@ export async function GET(request: NextRequest) {
               () =>
                 supabase
                   .from("projects")
-                  .select("id, name, title")
+                  .select("id, name")
                   .eq("user_id", user.id)
                   .in("id", projectIds),
               () =>
                 supabase
                   .from("projects")
-                  .select("id, title")
+                  .select("id, name")
                   .eq("user_id", user.id)
                   .in("id", projectIds)
             )
@@ -700,7 +705,7 @@ export async function GET(request: NextRequest) {
               () =>
                 supabase
                   .from("tasks")
-                  .select("id, title")
+                  .select("id, name")
                   .eq("user_id", user.id)
                   .in("id", taskIds)
             )
@@ -728,8 +733,7 @@ export async function GET(request: NextRequest) {
       }
 
       const projectNameById = new Map<string, string>();
-      for (const record of (projectLookupRes?.data ??
-        []) as RawProjectRow[]) {
+      for (const record of (projectLookupRes?.data ?? []) as RawProjectRow[]) {
         projectNameById.set(
           record.id,
           normalizeText(record.name, record.title) ?? "Untitled project"
@@ -765,8 +769,7 @@ export async function GET(request: NextRequest) {
 
         return {
           id: instance.id,
-          title:
-            resolvedTitle ?? fallbackScheduleLabel(instance.sourceType),
+          title: resolvedTitle ?? fallbackScheduleLabel(instance.sourceType),
           type: SCHEDULE_SOURCE_TYPE_MAP[instance.sourceType],
           completedAt: instance.completedAt,
           startUtc: instance.startUtc,
@@ -1019,8 +1022,7 @@ function normalizeScheduleInstanceRows(
       if (typeof row.id !== "string") {
         return null;
       }
-      const sourceId =
-        typeof row.source_id === "string" ? row.source_id : null;
+      const sourceId = typeof row.source_id === "string" ? row.source_id : null;
       const sourceType = normalizeScheduleSourceType(row.source_type);
       const startUtc = normalizeIsoString(row.start_utc);
       const endUtc = normalizeIsoString(row.end_utc);
@@ -1041,15 +1043,11 @@ function normalizeScheduleInstanceRows(
         endUtc,
         durationMinutes,
         energy:
-          typeof row.energy_resolved === "string"
-            ? row.energy_resolved
-            : null,
+          typeof row.energy_resolved === "string" ? row.energy_resolved : null,
         completedAt,
       } satisfies NormalizedScheduleInstanceRow;
     })
-    .filter(
-      (row): row is NormalizedScheduleInstanceRow => row !== null
-    );
+    .filter((row): row is NormalizedScheduleInstanceRow => row !== null);
 }
 
 function normalizeScheduleSourceType(
@@ -1072,7 +1070,11 @@ function deriveDurationMinutes(
   startUtc: string,
   endUtc: string
 ) {
-  if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) {
+  if (
+    typeof duration === "number" &&
+    Number.isFinite(duration) &&
+    duration > 0
+  ) {
     return Math.max(1, Math.round(duration));
   }
   const start = parseDate(startUtc);
@@ -1189,11 +1191,13 @@ function clampPercent(value: number) {
   return value;
 }
 
-function buildWindowHeatmap(windows: Array<{
-  days?: number[] | null;
-  start_local?: string | null;
-  end_local?: string | null;
-}>) {
+function buildWindowHeatmap(
+  windows: Array<{
+    days?: number[] | null;
+    start_local?: string | null;
+    end_local?: string | null;
+  }>
+) {
   const rows = 7;
   const columns = 4;
   const heatmap = Array.from({ length: rows }, () =>
@@ -1258,9 +1262,7 @@ function normalizeDayIndex(value: number) {
   return normalized;
 }
 
-function buildEnergyBreakdown(
-  windows: Array<{ energy?: string | null }>
-) {
+function buildEnergyBreakdown(windows: Array<{ energy?: string | null }>) {
   const counts = new Map<string, number>();
   for (const window of windows) {
     const key = (window.energy ?? "Unknown").toString();
@@ -1274,12 +1276,34 @@ function buildEnergyBreakdown(
 }
 
 function buildActivityFeed(input: {
-  xpEvents: Array<{ id: string; created_at: string | null; amount?: number | null; kind?: string | null }>;
+  xpEvents: Array<{
+    id: string;
+    created_at: string | null;
+    amount?: number | null;
+    kind?: string | null;
+  }>;
   tasks: Array<{ id: string; created_at: string | null; name?: string | null }>;
-  projects: Array<{ id: string; created_at: string | null; name?: string | null }>;
-  habits: Array<{ id: string; created_at: string | null; name?: string | null }>;
-  monuments: Array<{ id: string; created_at: string | null; title?: string | null; name?: string | null }>;
-  windows: Array<{ id: string; created_at: string | null; label?: string | null }>;
+  projects: Array<{
+    id: string;
+    created_at: string | null;
+    name?: string | null;
+  }>;
+  habits: Array<{
+    id: string;
+    created_at: string | null;
+    name?: string | null;
+  }>;
+  monuments: Array<{
+    id: string;
+    created_at: string | null;
+    title?: string | null;
+    name?: string | null;
+  }>;
+  windows: Array<{
+    id: string;
+    created_at: string | null;
+    label?: string | null;
+  }>;
   goals: Array<{ id: string; created_at: string | null; name?: string | null }>;
 }): AnalyticsActivityEvent[] {
   const events: AnalyticsActivityEvent[] = [];
@@ -1296,9 +1320,7 @@ function buildActivityFeed(input: {
     pushEvent(
       `xp-${event.id}`,
       event.created_at,
-      amount
-        ? `Gained ${amount} XP from ${kind}`
-        : `Logged ${kind} activity`
+      amount ? `Gained ${amount} XP from ${kind}` : `Logged ${kind} activity`
     );
   }
 
@@ -1340,11 +1362,7 @@ function buildActivityFeed(input: {
 
   for (const window of input.windows) {
     const label = window.label?.trim() || "Focus window";
-    pushEvent(
-      `window-${window.id}`,
-      window.created_at,
-      `Scheduled ${label}`
-    );
+    pushEvent(`window-${window.id}`, window.created_at, `Scheduled ${label}`);
   }
 
   for (const goal of input.goals) {
@@ -1356,9 +1374,7 @@ function buildActivityFeed(input: {
     );
   }
 
-  return events
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 12);
+  return events.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12);
 }
 
 type HabitCompletionEntry = {
@@ -1487,7 +1503,8 @@ function buildHabitSummary({
       return diff + 1;
     })
     .filter(
-      (value): value is number => value !== null && value >= 1 && value <= calendarDays
+      (value): value is number =>
+        value !== null && value >= 1 && value <= calendarDays
     )
     .sort((a, b) => a - b);
 
@@ -1602,7 +1619,9 @@ function buildRoutineHeatmap({
   weeks: number;
 }): AnalyticsHabitRoutine[] {
   if (entries.length === 0) return [];
-  const routineNames = new Map(routines.map((routine) => [routine.id, routine.name]));
+  const routineNames = new Map(
+    routines.map((routine) => [routine.id, routine.name])
+  );
   const habitsByRoutine = new Map<string, string[]>();
   for (const habit of habits) {
     if (!habit.routine_id || !routineNames.has(habit.routine_id)) continue;
@@ -1644,8 +1663,7 @@ function buildRoutineHeatmap({
           continue;
         }
         const dayKey = startOfDay(date).toISOString();
-        const routineSet =
-          completionsByDay.get(dayKey)?.get(routineId) ?? null;
+        const routineSet = completionsByDay.get(dayKey)?.get(routineId) ?? null;
         const matched = routineSet ? routineSet.size : 0;
         const ratio =
           routineHabitIds.length === 0 ? 0 : matched / routineHabitIds.length;
@@ -1694,7 +1712,7 @@ function buildBestTimes(
         ({
           label: bucket.label,
           successRate: bucket.count / total,
-        }) satisfies AnalyticsHabitPerformance
+        } satisfies AnalyticsHabitPerformance)
     );
 }
 
@@ -1722,7 +1740,7 @@ function buildBestDays(
         ({
           label: item.label,
           successRate: item.successRate,
-        }) satisfies AnalyticsHabitPerformance
+        } satisfies AnalyticsHabitPerformance)
     );
 }
 
@@ -1770,8 +1788,13 @@ function buildWeeklyReflections(
       (best, value, index) => (value > dayCounts[best] ? index : best),
       0
     );
-    const bestDayLabel = dayCounts[bestDayIndex] > 0 ? DAY_LABELS[bestDayIndex] : "—";
-    const lesson = buildReflectionLesson(weekStreak, bestDayLabel, weekEntries.length);
+    const bestDayLabel =
+      dayCounts[bestDayIndex] > 0 ? DAY_LABELS[bestDayIndex] : "—";
+    const lesson = buildReflectionLesson(
+      weekStreak,
+      bestDayLabel,
+      weekEntries.length
+    );
     const recommendation = buildReflectionRecommendation(weekStreak);
 
     reflections.push({
@@ -1806,11 +1829,7 @@ function formatWeekRange(start: Date) {
   return `${startLabel} – ${endLabel}`;
 }
 
-function buildReflectionLesson(
-  streak: number,
-  bestDay: string,
-  total: number
-) {
+function buildReflectionLesson(streak: number, bestDay: string, total: number) {
   if (streak >= 6) {
     return `Locked in a ${streak}-day streak. Keep the chain going.`;
   }

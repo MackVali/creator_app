@@ -36,6 +36,7 @@
     #0c0d11 48%,
     #020203 100%
   );
+  --sat-safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 html,
 body {
@@ -284,4 +285,67 @@ body.modal-open [data-bottom-nav] {
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.25);
   pointer-events: none;
+}
+
+@layer components {
+  /* Base 3D treatment for square icon buttons */
+  .btn-3d {
+    position: relative;
+    border-radius: var(--radius-sm, 12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow:
+      0 10px 24px rgba(0, 0, 0, 0.35),
+      0 4px 10px rgba(0, 0, 0, 0.25);
+    transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+    will-change: transform, box-shadow;
+  }
+  .btn-3d::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    top: 2px;
+    height: 42%;
+    border-radius: inherit;
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.28),
+      rgba(255, 255, 255, 0.06)
+    );
+    filter: blur(0.2px);
+  }
+  .btn-3d::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25);
+  }
+  .btn-3d:focus-visible {
+    outline: none;
+    box-shadow:
+      0 12px 28px rgba(0, 0, 0, 0.38),
+      0 6px 14px rgba(0, 0, 0, 0.28),
+      0 0 0 3px rgba(255, 255, 255, 0.08),
+      0 0 0 5px var(--btn-3d-ring, #34d399);
+  }
+  .btn-3d:active {
+    transform: translateY(1px);
+    box-shadow:
+      0 6px 16px rgba(0, 0, 0, 0.35),
+      0 3px 8px rgba(0, 0, 0, 0.25);
+  }
+  .btn-3d--emerald {
+    --btn-3d-ring: #34d399;
+  }
+  .btn-3d--red {
+    --btn-3d-ring: #ef4444;
+  }
+  .btn-3d--amber {
+    --btn-3d-ring: #f59e0b;
+  }
 }

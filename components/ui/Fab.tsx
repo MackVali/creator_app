@@ -1,10 +1,13 @@
 "use client";
 
+import * as React from "react";
 import {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useCallback,
+  useMemo,
   type HTMLAttributes,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
@@ -23,13 +26,91 @@ import {
   useReducedMotion,
   type PanInfo,
 } from "framer-motion";
-import { Loader2, Plus, Search, X } from "lucide-react";
+import { Check, Clock, Filter, Loader2, Plus, Search, X } from "lucide-react";
+import FlameEmber, { type FlameEmberProps } from "@/components/FlameEmber";
 import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
 import { ComingSoonModal } from "./ComingSoonModal";
 import { PostModal } from "./PostModal";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  useSelectContext,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { getSupabaseBrowser } from "@/lib/supabase";
+import { getGoalsForUser, type Goal } from "@/lib/queries/goals";
+import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
+import { getProjectsForUser, type Project } from "@/lib/queries/projects";
+import {
+  getMonumentsForUser,
+  type Monument,
+} from "@/lib/queries/monuments";
+import { getCatsForUser } from "@/lib/data/cats";
+import type { CatRow } from "@/lib/types/cat";
+import { useProjectedGlobalRank } from "@/lib/hooks/useProjectedGlobalRank";
+import {
+  HABIT_RECURRENCE_OPTIONS,
+  HABIT_TYPE_OPTIONS,
+} from "@/components/habits/habit-form-fields";
+
+function ErrorBoundary({ children }: { children: React.ReactNode }) {
+  const [err, setErr] = React.useState<Error | null>(null);
+  if (err) {
+    return (
+      <div className="mt-2 rounded-md border border-red-500/50 bg-red-500/10 p-2 text-xs">
+        <div className="font-semibold">Render error:</div>
+        <pre className="whitespace-pre-wrap break-words">
+          {String(err?.message || err)}
+        </pre>
+      </div>
+    );
+  }
+  return (
+    <React.Suspense
+      fallback={<div className="text-xs opacity-60">Loading…</div>}
+    >
+      <BoundarySetter onError={setErr}>{children}</BoundarySetter>
+    </React.Suspense>
+  );
+}
+
+function BoundarySetter({
+  onError,
+  children,
+}: {
+  onError: (e: Error) => void;
+  children: React.ReactNode;
+}) {
+  try {
+    return <>{children}</>;
+  } catch (e: any) {
+    onError(e);
+    return null;
+  }
+}
+
+function DebugPanel({
+  expanded,
+  selected,
+}: {
+  expanded: boolean;
+  selected: string | null;
+}) {
+  return (
+    <div className="pointer-events-none absolute right-2 top-2 rounded bg-black/50 px-2 py-1 text-[10px] leading-none">
+      <span>expanded:</span> {String(expanded)}{" "}
+      <span className="ml-2">selected:</span> {selected ?? "null"}
+    </div>
+  );
+}
 
 interface FabProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
@@ -58,6 +139,59 @@ type FabSearchCursor = {
 
 const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
 
+function useOverhangLT(ref: React.RefObject<HTMLElement>, deps: any[] = []) {
+  const [pos, setPos] = React.useState<{ left: number; top: number } | null>(
+    null
+  );
+
+  useLayoutEffect(() => {
+    const update = () => {
+      const el = ref.current;
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
+
+      const OVERHANG = 12; // vertical overhang only
+      const BTN = 48;
+      const GAP = 12;
+      const GROUP_W = BTN * 2 + GAP;
+      const GROUP_H = BTN;
+      const SHIFT_LEFT = 0; // keep right edge flush to panel
+
+      const safeBottom =
+        Number.parseFloat(
+          getComputedStyle(document.documentElement)
+            .getPropertyValue("--sat-safe-bottom")
+            .trim() || "0"
+        ) || 0;
+
+      // Align group's right edge to panel's right (no horizontal overhang).
+      let left = Math.round(rect.right - GROUP_W - SHIFT_LEFT);
+      const minLeft = 8;
+      const maxLeft = window.innerWidth - GROUP_W - 8;
+      left = Math.min(Math.max(left, minLeft), maxLeft);
+
+      let top = Math.round(rect.bottom + OVERHANG - GROUP_H);
+      const maxTop = window.innerHeight - safeBottom - GROUP_H - 8;
+      top = Math.min(top, maxTop);
+      top = Math.max(top, 8);
+
+      setPos({ left, top });
+    };
+
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, { passive: true });
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  return pos;
+}
+
 export function Fab({
   className = "",
   menuVariant = "default",
@@ -65,6 +199,436 @@ export function Fab({
   ...wrapperProps
 }: FabProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [selected, setSelected] = useState<
+    "GOAL" | "PROJECT" | "TASK" | "HABIT" | null
+  >(null);
+  const PROJECT_STAGE_OPTIONS_LOCAL = [
+    { value: "RESEARCH", label: "RESEARCH" },
+    { value: "TEST", label: "TEST" },
+    { value: "BUILD", label: "BUILD" },
+    { value: "REFINE", label: "REFINE" },
+    { value: "RELEASE", label: "RELEASE" },
+  ];
+  const PRIORITY_OPTIONS_LOCAL = [
+    { value: "NO", label: "NO" },
+    { value: "LOW", label: "LOW" },
+    { value: "MEDIUM", label: "MEDIUM" },
+    { value: "HIGH", label: "HIGH" },
+    { value: "CRITICAL", label: "CRITICAL" },
+    { value: "ULTRA-CRITICAL", label: "ULTRA-CRITICAL" },
+  ];
+  const PRIORITY_ICON_MAP: Record<string, string | null> = {
+    NO: null,
+    LOW: null,
+    MEDIUM: "!",
+    HIGH: "!!",
+    CRITICAL: "!!!",
+    "ULTRA-CRITICAL": "⚠️",
+  };
+  const ENERGY_OPTIONS_LOCAL = [
+    { value: "NO", label: "No" },
+    { value: "LOW", label: "Low" },
+    { value: "MEDIUM", label: "Medium" },
+    { value: "HIGH", label: "High" },
+    { value: "ULTRA", label: "Ultra" },
+    { value: "EXTREME", label: "Extreme" },
+  ];
+  const TASK_STAGE_OPTIONS_LOCAL = [
+    { value: "RESEARCH", label: "Research" },
+    { value: "PLAN", label: "Plan" },
+    { value: "PRODUCE", label: "Produce" },
+    { value: "QA", label: "QA" },
+    { value: "SHIP", label: "Ship" },
+  ];
+  const [projectName, setProjectName] = useState("");
+  const [projectStage, setProjectStage] = useState<string>("RESEARCH");
+  const [projectDuration, setProjectDuration] = useState<number | "">("");
+  const [projectPriority, setProjectPriority] = useState<string>("MEDIUM");
+  const [projectEnergy, setProjectEnergy] = useState<string>("MEDIUM");
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [monumentEmojiMap, setMonumentEmojiMap] = useState<
+    Map<string, string | null>
+  >(new Map());
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const styleId = "goal-link-pulse-style";
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      @keyframes goalLinkPulse {
+        0%, 100% { opacity: 0.8; }
+        50% { opacity: 0.72; }
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
+  const [goalsLoading, setGoalsLoading] = useState(false);
+  const [goalFilterSkillId, setGoalFilterSkillId] = useState("");
+  const [goalFilterMonumentId, setGoalFilterMonumentId] = useState("");
+  const [goalFilterEnergy, setGoalFilterEnergy] = useState("");
+  const [goalFilterPriority, setGoalFilterPriority] = useState("");
+  const [goalSort, setGoalSort] = useState<"recent" | "oldest" | "weight">(
+    "recent"
+  );
+  const [goalSearch, setGoalSearch] = useState("");
+  const [skillSearch, setSkillSearch] = useState("");
+  const [skillFilterMonumentId, setSkillFilterMonumentId] = useState("");
+  const [showSkillFilters, setShowSkillFilters] = useState(false);
+  const [taskProjectSearch, setTaskProjectSearch] = useState("");
+  const [taskProjectFilterStage, setTaskProjectFilterStage] = useState("");
+  const [taskProjectFilterPriority, setTaskProjectFilterPriority] =
+    useState("");
+  const [showTaskProjectFilters, setShowTaskProjectFilters] = useState(false);
+  const [taskProjects, setTaskProjects] = useState<Project[]>([]);
+  const [taskProjectsLoading, setTaskProjectsLoading] = useState(false);
+  const filteredGoals = useMemo(() => {
+    const query = goalSearch.trim().toLowerCase();
+    let list = goals;
+    if (query) {
+      list = list.filter((goal) =>
+        (goal.name ?? "").toLowerCase().includes(query)
+      );
+    }
+    if (goalFilterEnergy) {
+      list = list.filter(
+        (goal) =>
+          (goal.energy_code ?? goal.energy ?? "").toLowerCase() ===
+          goalFilterEnergy.toLowerCase()
+      );
+    }
+    if (goalFilterPriority) {
+      list = list.filter(
+        (goal) =>
+          (goal.priority ?? "").toLowerCase() ===
+          goalFilterPriority.toLowerCase()
+      );
+    }
+    if (goalFilterMonumentId) {
+      list = list.filter(
+        (goal) => (goal.monument_id ?? "") === goalFilterMonumentId
+      );
+    }
+    if (goalFilterSkillId) {
+      const skillName =
+        skills.find((s) => s.id === goalFilterSkillId)?.name?.toLowerCase() ??
+        "";
+      list = list.filter((goal) => {
+        const goalAny = goal as any;
+        const skillIds: string[] | undefined = goalAny.skills;
+        const matchesId = Array.isArray(skillIds)
+          ? skillIds.includes(goalFilterSkillId)
+          : false;
+        const matchesName =
+          skillName.length > 0 &&
+          (goal.name ?? "").toLowerCase().includes(skillName);
+        return matchesId || matchesName;
+      });
+    }
+    const sorter =
+      goalSort === "recent"
+        ? (a: Goal, b: Goal) =>
+            new Date(b.created_at).getTime() -
+            new Date(a.created_at).getTime()
+        : goalSort === "oldest"
+          ? (a: Goal, b: Goal) =>
+              new Date(a.created_at).getTime() -
+              new Date(b.created_at).getTime()
+          : (a: Goal, b: Goal) => (b.weight ?? 0) - (a.weight ?? 0);
+    return [...list].sort(sorter);
+  }, [
+    goalFilterEnergy,
+    goalFilterMonumentId,
+    goalFilterPriority,
+    goalFilterSkillId,
+    goalSearch,
+    goalSort,
+    goals,
+    skills,
+  ]);
+  const filteredSkills = useMemo(() => {
+    const term = skillSearch.trim().toLowerCase();
+    let list = skills;
+    if (term) {
+      list = list.filter((skill) =>
+        (skill.name ?? "").toLowerCase().includes(term)
+      );
+    }
+    if (skillFilterMonumentId) {
+      list = list.filter(
+        (skill) => (skill.monument_id ?? "") === skillFilterMonumentId
+      );
+    }
+    const categoryOrder = new Map(
+      skillCategories.map((cat, index) => [cat.id, index])
+    );
+    const getCategoryIndex = (catId?: string | null) =>
+      catId && categoryOrder.has(catId)
+        ? categoryOrder.get(catId) ?? Number.MAX_SAFE_INTEGER
+        : Number.MAX_SAFE_INTEGER;
+    return [...list].sort((a, b) => {
+      const catA = getCategoryIndex(a.cat_id ?? null);
+      const catB = getCategoryIndex(b.cat_id ?? null);
+      if (catA !== catB) return catA - catB;
+      const nameA = (a.name ?? "").toLowerCase();
+      const nameB = (b.name ?? "").toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }, [skillCategories, skillFilterMonumentId, skillSearch, skills]);
+  const filteredTaskProjects = useMemo(() => {
+    let list = taskProjects;
+    if (taskProjectFilterStage) {
+      const stage = taskProjectFilterStage.toLowerCase();
+      list = list.filter(
+        (project) => (project.stage ?? "").toLowerCase() === stage
+      );
+    }
+    if (taskProjectFilterPriority) {
+      const priority = taskProjectFilterPriority.toLowerCase();
+      list = list.filter(
+        (project) => (project.priority ?? "").toLowerCase() === priority
+      );
+    }
+    const term = taskProjectSearch.trim().toLowerCase();
+    if (!term) return list;
+    return list.filter((project) =>
+      (project.name ?? "").toLowerCase().includes(term)
+    );
+  }, [
+    taskProjectFilterPriority,
+    taskProjectFilterStage,
+    taskProjectSearch,
+    taskProjects,
+  ]);
+  const resetSkillLookupState = useCallback(() => {
+    setSkillSearch("");
+    setSkillFilterMonumentId("");
+    setShowSkillFilters(false);
+  }, []);
+  const handleSkillDropdownOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) return;
+      if (skillSearch || skillFilterMonumentId || filteredSkills.length === 0) {
+        resetSkillLookupState();
+      }
+    },
+    [
+      filteredSkills.length,
+      resetSkillLookupState,
+      skillFilterMonumentId,
+      skillSearch,
+    ]
+  );
+  useEffect(() => {
+    resetSkillLookupState();
+  }, [resetSkillLookupState, selected]);
+  useEffect(() => {
+    if (selected !== "TASK") {
+      setTaskProjectSearch("");
+      setTaskProjectFilterStage("");
+      setTaskProjectFilterPriority("");
+      setShowTaskProjectFilters(false);
+    }
+  }, [selected]);
+  const [showDurationPicker, setShowDurationPicker] = useState(false);
+  const durationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [durationPosition, setDurationPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+  const normalizedProjectDuration =
+    typeof projectDuration === "number" && Number.isFinite(projectDuration)
+      ? projectDuration
+      : 0;
+  const updateDurationPosition = useCallback(() => {
+    if (!showDurationPicker) return;
+    const trigger = durationTriggerRef.current;
+    if (
+      !trigger ||
+      typeof window === "undefined" ||
+      typeof document === "undefined"
+    ) {
+      return;
+    }
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const estimatedHeight = 150;
+    const margin = 8;
+    const spaceBelow = viewportHeight - rect.bottom;
+    const placeBelow =
+      spaceBelow > estimatedHeight + margin || rect.top < estimatedHeight;
+    const top = placeBelow
+      ? rect.bottom + margin + window.scrollY
+      : Math.max(margin, rect.top - estimatedHeight) + window.scrollY;
+    const width = rect.width;
+    let left = rect.left;
+    if (left + width > viewportWidth - margin) {
+      left = viewportWidth - width - margin;
+    }
+    if (left < margin) left = margin;
+    setDurationPosition({ top, left: left + window.scrollX, width });
+  }, [showDurationPicker]);
+  useEffect(() => {
+    if (!showDurationPicker) return;
+    updateDurationPosition();
+    const handle = () => updateDurationPosition();
+    window.addEventListener("resize", handle);
+    window.addEventListener("scroll", handle, true);
+    return () => {
+      window.removeEventListener("resize", handle);
+      window.removeEventListener("scroll", handle, true);
+    };
+  }, [showDurationPicker, updateDurationPosition]);
+  const toggleDurationPicker = () => {
+    setShowDurationPicker((prev) => {
+      const next = !prev;
+      if (
+        next &&
+        (projectDuration === "" || !Number.isFinite(projectDuration))
+      ) {
+        setProjectDuration(30);
+      }
+      // Defer position calculation to allow layout to settle.
+      requestAnimationFrame(() => updateDurationPosition());
+      return next;
+    });
+  };
+
+  const adjustProjectDuration = (delta: number) => {
+    const next = Math.max(0, normalizedProjectDuration + delta);
+    setProjectDuration(next);
+  };
+  const [projectSkillIds, setProjectSkillIds] = useState<string[]>([]);
+  const [projectGoalId, setProjectGoalId] = useState<string | null>(null);
+  const [showGoalFilters, setShowGoalFilters] = useState(false);
+  const projectedRankState = useProjectedGlobalRank({
+    goalId: projectGoalId,
+    priority: projectPriority,
+    stage: projectStage,
+  });
+  const [projectWhy, setProjectWhy] = useState("");
+  const [goalName, setGoalName] = useState("");
+  const [goalMonumentId, setGoalMonumentId] = useState<string | "">("");
+  const [goalPriority, setGoalPriority] = useState("MEDIUM");
+  const [goalEnergy, setGoalEnergy] = useState("MEDIUM");
+  const [goalWhy, setGoalWhy] = useState("");
+  const [goalDue, setGoalDue] = useState<string | null>(null);
+  const [monuments, setMonuments] = useState<Monument[]>([]);
+  const [monumentsLoading, setMonumentsLoading] = useState(false);
+  const [taskName, setTaskName] = useState("");
+  const [taskStage, setTaskStage] = useState("PRODUCE");
+  const [taskDuration, setTaskDuration] = useState<string>("");
+  const [taskPriority, setTaskPriority] = useState("MEDIUM");
+  const [taskEnergy, setTaskEnergy] = useState("MEDIUM");
+  const [taskProjectId, setTaskProjectId] = useState<string | "">("");
+  const [taskSkillId, setTaskSkillId] = useState<string | "">("");
+  const [taskNotes, setTaskNotes] = useState("");
+  const [habitName, setHabitName] = useState("");
+  const [habitType, setHabitType] = useState(HABIT_TYPE_OPTIONS[0].value);
+  const [habitRecurrence, setHabitRecurrence] = useState(
+    HABIT_RECURRENCE_OPTIONS.find((option) => option.value === "weekly")
+      ?.value ?? HABIT_RECURRENCE_OPTIONS[0].value
+  );
+  const [habitDuration, setHabitDuration] = useState<string>("15");
+  const [habitEnergy, setHabitEnergy] = useState("LOW");
+  const [habitGoalId, setHabitGoalId] = useState<string | "">("");
+  const [habitSkillId, setHabitSkillId] = useState<string | "">("");
+  const [habitWhy, setHabitWhy] = useState("");
+  const [habitRoutineId, setHabitRoutineId] = useState<string | "">("");
+  const [habitRoutines, setHabitRoutines] = useState<
+    { id: string; name: string; description?: string | null }[]
+  >([]);
+  const [habitRoutinesLoading, setHabitRoutinesLoading] = useState(false);
+  const findSkillById = useCallback(
+    (id: string | null | undefined) =>
+      id ? skills.find((s) => s.id === id) ?? null : null,
+    [skills]
+  );
+
+  function SkillTrigger({
+    selectedId,
+    onClearSelection,
+  }: {
+    selectedId: string | null;
+    onClearSelection?: () => void;
+  }) {
+    const { isOpen, setIsOpen } = useSelectContext();
+    const selectedSkill = findSkillById(selectedId);
+    const backspaceTapRef = React.useRef<{ count: number; last: number }>({
+      count: 0,
+      last: 0,
+    });
+    const handlePointerDown = (event: React.PointerEvent<HTMLInputElement>) => {
+      if (!isOpen) {
+        event.preventDefault();
+        setIsOpen?.(true);
+      }
+    };
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+      event.stopPropagation();
+      setIsOpen?.(true);
+      if (event.key !== "Backspace") {
+        backspaceTapRef.current = { count: 0, last: 0 };
+        return;
+      }
+      const now = Date.now();
+      const { last, count } = backspaceTapRef.current;
+      const isRapidBackspace = now - last < 600;
+      const nextCount = isRapidBackspace ? count + 1 : 1;
+      backspaceTapRef.current = { count: nextCount, last: now };
+      if (skillSearch.length > 0 && nextCount >= 2) {
+        event.preventDefault();
+        setSkillSearch("");
+        backspaceTapRef.current = { count: 0, last: now };
+        return;
+      }
+      if (
+        event.key === "Backspace" &&
+        skillSearch.trim().length === 0 &&
+        selectedId
+      ) {
+        onClearSelection?.();
+        setSkillSearch("");
+      }
+    };
+    return (
+      <div className="flex h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition focus-within:border-blue-400/60">
+        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-white/[0.08] text-lg">
+          {selectedSkill?.icon ?? "🎯"}
+        </span>
+        <Input
+          value={skillSearch}
+          readOnly={false}
+          onPointerDown={handlePointerDown}
+          onFocus={() => setIsOpen?.(true)}
+          onChange={(e) => setSkillSearch(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={selectedSkill?.name ?? "Search skills…"}
+          className="h-full flex-1 border-none bg-transparent p-0 text-base font-semibold text-white placeholder:text-white/60 focus-visible:ring-0"
+        />
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowSkillFilters((v) => !v);
+          }}
+          className={cn(
+            "flex h-9 w-9 items-center justify-center rounded-md text-white/70 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20",
+            showSkillFilters && "text-white"
+          )}
+          aria-label="Filter skills"
+        >
+          <Filter className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  }
   const [modalEventType, setModalEventType] = useState<
     "GOAL" | "PROJECT" | "TASK" | "HABIT" | null
   >(null);
@@ -95,10 +659,17 @@ export function Fab({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isSavingReschedule, setIsSavingReschedule] = useState(false);
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSavingFab, setIsSavingFab] = useState(false);
+
   const menuRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const skipClickRef = useRef(false);
   const searchAbortRef = useRef<AbortController | null>(null);
+  const goalFilterMenuRef = useRef<HTMLDivElement | null>(null);
+  const skillFilterMenuRef = useRef<HTMLDivElement | null>(null);
+  const taskProjectFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const [menuWidth, setMenuWidth] = useState<number | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageWidth, setStageWidth] = useState(0);
@@ -110,6 +681,63 @@ export function Fab({
   const DRAG_THRESHOLD_PX = 80;
   const EDGE_SWIPE_ZONE_RATIO = 0.12;
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
+  const overhangPos = useOverhangLT(panelRef, [expanded, selected]);
+
+  useEffect(() => {
+    if (!expanded) {
+      setGoalSearch("");
+      setGoalFilterEnergy("");
+      setGoalFilterMonumentId("");
+      setGoalFilterPriority("");
+      setGoalFilterSkillId("");
+      setGoalSort("recent");
+      setShowGoalFilters(false);
+      setSkillSearch("");
+      setSkillFilterMonumentId("");
+      setShowSkillFilters(false);
+    }
+  }, [expanded]);
+
+  useEffect(() => {
+    if (!showGoalFilters) return;
+    const handleClick = (event: MouseEvent) => {
+      if (
+        goalFilterMenuRef.current &&
+        !goalFilterMenuRef.current.contains(event.target as Node)
+      ) {
+        setShowGoalFilters(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showGoalFilters]);
+
+  useEffect(() => {
+    if (!showSkillFilters) return;
+    const handleClick = (event: MouseEvent) => {
+      if (
+        skillFilterMenuRef.current &&
+        !skillFilterMenuRef.current.contains(event.target as Node)
+      ) {
+        setShowSkillFilters(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showSkillFilters]);
+  useEffect(() => {
+    if (!showTaskProjectFilters) return;
+    const handleClick = (event: MouseEvent) => {
+      if (
+        taskProjectFilterMenuRef.current &&
+        !taskProjectFilterMenuRef.current.contains(event.target as Node)
+      ) {
+        setShowTaskProjectFilters(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showTaskProjectFilters]);
 
   const formatDateInput = (date: Date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
@@ -409,22 +1037,1388 @@ export function Fab({
   });
 
   const renderPrimaryPage = () => (
-    <div className="flex w-full flex-col px-4 py-2">
-      {primary.map((event) => (
-        <motion.button
-          key={event.label}
-          variants={itemVariants}
-          onClick={() => handleEventClick(event.eventType)}
-          className={cn(
-            "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
-            itemAlignmentClass,
-            event.color
-          )}
-        >
-          <span className="text-sm opacity-80">add</span>{" "}
-          <span className="text-lg font-bold">{event.label}</span>
-        </motion.button>
-      ))}
+    <div className={cn("flex w-full flex-col", expanded ? "p-0" : "px-4 py-2")}>
+      {!expanded &&
+        primary.map((event) => (
+          <motion.button
+            key={event.label}
+            variants={itemVariants}
+            onClick={() => handleEventClick(event.eventType)}
+            className={cn(
+              "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
+              itemAlignmentClass,
+              event.color
+            )}
+          >
+            <span className="text-sm opacity-80">add</span>{" "}
+            <span className="text-lg font-bold">{event.label}</span>
+          </motion.button>
+        ))}
+      <AnimatePresence>
+        {expanded ? (
+          <motion.div
+            key="fab-expanded-placeholder"
+            className="relative mt-0 bg-black/80"
+            aria-label="Expanded placeholder"
+          >
+            <div className="relative grid gap-4 p-4 md:p-8">
+                {selected === "GOAL" && (
+                  <>
+                    <div className="grid gap-2">
+                      <Select
+                        value={goalMonumentId ?? ""}
+                        onValueChange={setGoalMonumentId}
+                        hideChevron
+                        triggerClassName={cn(
+                          "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
+                          goalMonumentId
+                            ? "text-white/80 hover:text-blue-200"
+                            : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
+                        )}
+                        trigger={
+                          <span>
+                            {goalMonumentId
+                              ? monuments.find((m) => m.id === goalMonumentId)
+                                  ?.title ?? "Link to existing MONUMENT +"
+                              : "Link to existing MONUMENT +"}
+                          </span>
+                        }
+                      >
+                        <SelectContent className="min-w-[220px]">
+                          <SelectItem value="">No monument</SelectItem>
+                          {monumentsLoading ? (
+                            <SelectItem value="__loading" disabled>
+                              Loading monuments…
+                            </SelectItem>
+                          ) : monuments.length > 0 ? (
+                            monuments.map((monument) => (
+                              <SelectItem key={monument.id} value={monument.id}>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg">
+                                    {monument.emoji ?? "🏛️"}
+                                  </span>
+                                  <span>{monument.title}</span>
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="__empty" disabled>
+                              No monuments yet
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
+                      <div className="grid gap-2 col-span-3">
+                        <Label htmlFor="goal-name" className="sr-only">
+                          Goal name
+                        </Label>
+                        <Input
+                          id="goal-name"
+                          value={goalName}
+                          onChange={(e) => setGoalName(e.target.value)}
+                          placeholder="Name your GOAL"
+                          className="h-14 rounded-md !border-white/10 bg-white/[0.05] text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                        />
+                      </div>
+                      <div className="grid gap-2 col-span-1">
+                        <Label className="sr-only">Energy</Label>
+                        <Select
+                          value={goalEnergy}
+                          onValueChange={setGoalEnergy}
+                          triggerClassName="!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
+                          hideChevron
+                          trigger={
+                            <div className="flex h-full w-full items-center justify-center leading-none">
+                              {goalEnergy ? (
+                                <FlameEmber
+                                  level={goalEnergy as FlameEmberProps["level"]}
+                                  size="md"
+                                  className="-translate-y-[3px]"
+                                />
+                              ) : (
+                                <span className="text-zinc-400">Energy</span>
+                              )}
+                            </div>
+                          }
+                        >
+                          <SelectContent>
+                            {ENERGY_OPTIONS_LOCAL.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                <div className="flex items-center justify-center py-2">
+                                  <FlameEmber
+                                    level={o.value as FlameEmberProps["level"]}
+                                    size="md"
+                                  />
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div className="grid gap-2">
+                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                          PRIORITY
+                        </Label>
+                        <Select
+                          value={goalPriority}
+                          onValueChange={setGoalPriority}
+                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          placeholder="Priority"
+                        >
+                          <SelectContent>
+                            {PRIORITY_OPTIONS_LOCAL.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                          DUE
+                        </Label>
+                        <input
+                          id="goal-due"
+                          type="datetime-local"
+                          className="h-14 w-full rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 focus:!border-blue-400/60 focus-visible:ring-0"
+                          value={goalDue ?? ""}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setGoalDue(value === "" ? null : value);
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="goal-why" className="text-zinc-500">
+                        WHY (optional)
+                      </Label>
+                      <Textarea
+                        id="goal-why"
+                        value={goalWhy}
+                        onChange={(e) => setGoalWhy(e.target.value)}
+                        placeholder="Motivation…"
+                        className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {selected === "PROJECT" && (
+                  <>
+                    <div className="grid grid-cols-[2fr_1fr] gap-4">
+                      <div className="grid gap-2">
+                        <Label className="sr-only">Goal</Label>
+                        <Select
+                          value={projectGoalId ?? ""}
+                          onValueChange={(v) => setProjectGoalId(v)}
+                          hideChevron
+                          triggerClassName={cn(
+                            "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
+                            projectGoalId
+                              ? "text-white/80 hover:text-blue-200"
+                              : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
+                          )}
+                          trigger={
+                            <span>
+                              {projectGoalId
+                                ? goals.find((g) => g.id === projectGoalId)
+                                    ?.name ?? "Link to existing GOAL +"
+                                : "Link to existing GOAL +"}
+                            </span>
+                          }
+                        >
+                          <SelectContent className="relative min-w-[220px]">
+                            <div className="sticky top-0 z-10 bg-black/80 p-2 backdrop-blur border-b border-white/5">
+                              <div className="relative flex items-center gap-2">
+                                <Input
+                                  value={goalSearch}
+                                  onChange={(e) => setGoalSearch(e.target.value)}
+                                  placeholder="Search goals…"
+                                  className="h-9 text-sm border-white/10 bg-white/[0.05] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowGoalFilters((v) => !v)}
+                                  className={cn(
+                                    "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
+                                    showGoalFilters && "border-blue-400/60 text-white"
+                                  )}
+                                  aria-label="Filter goals"
+                                >
+                                  <Filter className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                            {showGoalFilters ? (
+                              <div
+                                ref={goalFilterMenuRef}
+                                className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                              >
+                                <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                                  <span className="text-sm font-semibold">
+                                    Filter & Sort Goals
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowGoalFilters(false)}
+                                    className="text-xs text-white/80 underline-offset-4 hover:underline"
+                                  >
+                                    Close
+                                  </button>
+                                </div>
+                                <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-3">
+                                      <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                        Filter
+                                      </div>
+                                      <div className="space-y-2">
+                                        <select
+                                          value={goalFilterSkillId}
+                                          onChange={(e) => setGoalFilterSkillId(e.target.value)}
+                                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                        >
+                                          <option value="">
+                                            {goalFilterSkillId ? "Skill (clear)" : "Skill (any)"}
+                                          </option>
+                                          {skills.map((skill) => (
+                                            <option key={skill.id} value={skill.id}>
+                                              {skill.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <select
+                                          value={goalFilterMonumentId}
+                                          onChange={(e) => setGoalFilterMonumentId(e.target.value)}
+                                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                        >
+                                          <option value="">
+                                            {goalFilterMonumentId ? "Monument (clear)" : "Monument (any)"}
+                                          </option>
+                                          {monuments.map((m) => (
+                                            <option key={m.id} value={m.id}>
+                                              {(m.emoji ?? "✨") + " " + (m.title ?? "Monument")}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <select
+                                          value={goalFilterEnergy}
+                                          onChange={(e) => setGoalFilterEnergy(e.target.value)}
+                                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                        >
+                                          <option value="">
+                                            {goalFilterEnergy ? "Energy (clear)" : "Energy (any)"}
+                                          </option>
+                                          {ENERGY_OPTIONS_LOCAL.map((o) => (
+                                            <option key={o.value} value={o.value}>
+                                              {o.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <select
+                                          value={goalFilterPriority}
+                                          onChange={(e) => setGoalFilterPriority(e.target.value)}
+                                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                        >
+                                          <option value="">
+                                            {goalFilterPriority ? "Priority (clear)" : "Priority (any)"}
+                                          </option>
+                                          {PRIORITY_OPTIONS_LOCAL.map((o) => (
+                                            <option key={o.value} value={o.value}>
+                                              {o.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                      <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                        Sort
+                                      </div>
+                                      <div className="grid grid-cols-1 gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => setGoalSort("recent")}
+                                          className={cn(
+                                            "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
+                                            goalSort === "recent" && "border-blue-400/60 bg-blue-500/10 text-white"
+                                          )}
+                                        >
+                                          Recently updated
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setGoalSort("oldest")}
+                                          className={cn(
+                                            "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
+                                            goalSort === "oldest" && "border-blue-400/60 bg-blue-500/10 text-white"
+                                          )}
+                                        >
+                                          Oldest updated
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setGoalSort("weight")}
+                                          className={cn(
+                                            "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
+                                            goalSort === "weight" && "border-blue-400/60 bg-blue-500/10 text-white"
+                                          )}
+                                        >
+                                          Highest weight
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
+                            {goalsLoading ? (
+                              <SelectItem value="" disabled>
+                                Loading goals…
+                              </SelectItem>
+                            ) : goals.length > 0 ? (
+                              filteredGoals.length > 0 ? (
+                                filteredGoals.map((goal) => (
+                                  <SelectItem key={goal.id} value={goal.id}>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-lg">
+                                        {goal.emoji ??
+                                          goal.monumentEmoji ??
+                                          monumentEmojiMap.get(
+                                            (goal as any).monument_id ??
+                                              (goal as any).monumentId ??
+                                              ""
+                                          ) ??
+                                          "✨"}
+                                      </span>
+                                      <span>{goal.name}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem value="" disabled>
+                                  No goals match your search
+                                </SelectItem>
+                              )
+                            ) : (
+                              <SelectItem value="" disabled>
+                                No goals yet
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-start justify-end text-right">
+                        {projectedRankState.status === "incomplete" ? (
+                          <p className="text-sm font-semibold tracking-wide text-zinc-500">
+                            ∞
+                          </p>
+                        ) : projectedRankState.status === "loading" ? (
+                          <div className="flex items-center gap-2 text-[10px] text-white/70">
+                            <Loader2 className="h-3 w-3 animate-spin text-white/70" />
+                            <span>Calculating…</span>
+                          </div>
+                        ) : projectedRankState.status === "error" ? (
+                          <p className="text-[10px] text-red-300">
+                            Couldn&apos;t calculate rank:{" "}
+                            {projectedRankState.message}
+                          </p>
+                        ) : (
+                          <p className="text-sm font-semibold tracking-wide text-zinc-500">
+                            #{projectedRankState.data.rank}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
+                      <div className="grid gap-2 col-span-3">
+                        <Label htmlFor="project-name" className="sr-only">
+                          Project name
+                        </Label>
+                        <Input
+                          id="project-name"
+                          value={projectName}
+                          onChange={(e) => setProjectName(e.target.value)}
+                          placeholder="Name your PROJECT"
+                          className="h-14 rounded-md !border-white/10 bg-white/[0.05] text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                        />
+                      </div>
+                      <div className="grid gap-2 col-span-1">
+                        <Label className="sr-only">Energy</Label>
+                        <Select
+                          value={projectEnergy}
+                          onValueChange={setProjectEnergy}
+                          triggerClassName="!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
+                          hideChevron
+                          trigger={
+                            <div className="flex h-full w-full items-center justify-center leading-none">
+                              {projectEnergy ? (
+                                <FlameEmber
+                                  level={
+                                    projectEnergy as FlameEmberProps["level"]
+                                  }
+                                  size="md"
+                                  className="-translate-y-[3px]"
+                                />
+                              ) : (
+                                <span className="text-zinc-400">Energy</span>
+                              )}
+                            </div>
+                          }
+                        >
+                          <SelectContent>
+                            {ENERGY_OPTIONS_LOCAL.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                <div className="flex items-center justify-center py-2">
+                                  <FlameEmber
+                                    level={o.value as FlameEmberProps["level"]}
+                                    size="md"
+                                  />
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
+                      <div className="grid gap-2">
+                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                          PRIORITY
+                        </Label>
+                        <Select
+                          value={projectPriority}
+                          onValueChange={setProjectPriority}
+                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          placeholder="Priority"
+                        >
+                          <SelectContent>
+                            {PRIORITY_OPTIONS_LOCAL.map((o) => (
+                              <SelectItem
+                                key={o.value}
+                                value={o.value}
+                                label={o.label}
+                              >
+                                <div className="flex w-full items-center justify-between gap-3">
+                                  <span>{o.label}</span>
+                                  <span className="w-10 text-right text-red-400">
+                                    {PRIORITY_ICON_MAP[o.value] ?? ""}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                          STAGE
+                        </Label>
+                        <Select
+                          value={projectStage}
+                          onValueChange={setProjectStage}
+                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          placeholder="Stage"
+                        >
+                          <SelectContent>
+                            {PROJECT_STAGE_OPTIONS_LOCAL.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2 items-end">
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={toggleDurationPicker}
+                            ref={durationTriggerRef}
+                            className="flex h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                            aria-haspopup="dialog"
+                            aria-expanded={showDurationPicker}
+                            aria-controls="project-duration-picker"
+                          >
+                            <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
+                              <Clock className="h-6 w-6 text-white/80" />
+                              <span className="mt-1 text-[10px] font-semibold leading-none text-white/80">
+                                {normalizedProjectDuration || 30}m
+                              </span>
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    {showDurationPicker && durationPosition
+                      ? createPortal(
+                          <div
+                            id="project-duration-picker"
+                            className="z-[2147483000] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
+                            style={{
+                              position: "absolute",
+                              top: durationPosition.top,
+                              left: durationPosition.left,
+                              width: durationPosition.width,
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <button
+                                type="button"
+                                onClick={() => adjustProjectDuration(-5)}
+                                className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              >
+                                -
+                              </button>
+                              <div className="text-lg font-semibold text-white">
+                                {normalizedProjectDuration || 30} min
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => adjustProjectDuration(5)}
+                                className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              >
+                                +
+                              </button>
+                            </div>
+                            <p className="mt-2 text-xs text-white/60">
+                              Adjust in 5-minute steps. Default starts at 30.
+                            </p>
+                          </div>,
+                          document.body
+                        )
+                      : null}
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        SKILL
+                      </Label>
+                      <Select
+                        value={projectSkillIds[0] ?? ""}
+                        onOpenChange={handleSkillDropdownOpenChange}
+                        onValueChange={(value) => {
+                          setProjectSkillIds(value ? [value] : []);
+                          const skill = findSkillById(value);
+                          setSkillSearch(skill?.name ?? "");
+                          setShowSkillFilters(false);
+                        }}
+                        placeholder="Link a skill"
+                        triggerClassName="!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                        contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                        maxHeight={150}
+                        openOnTriggerFocus
+                        trigger={
+                          <SkillTrigger
+                            selectedId={projectSkillIds[0] ?? null}
+                            onClearSelection={() => {
+                              setProjectSkillIds([]);
+                              setSkillSearch("");
+                            }}
+                          />
+                        }
+                      >
+                        <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                          {showSkillFilters ? (
+                            <div
+                              ref={skillFilterMenuRef}
+                              className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                            >
+                              <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                                <span className="text-sm font-semibold">
+                                  Filter Skills
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSkillFilters(false)}
+                                  className="text-xs text-white/80 underline-offset-4 hover:underline"
+                                >
+                                  Close
+                                </button>
+                              </div>
+                              <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-3">
+                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                      Filter
+                                    </div>
+                                    <div className="space-y-2">
+                                      <select
+                                        value={skillFilterMonumentId}
+                                        onChange={(e) => setSkillFilterMonumentId(e.target.value)}
+                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                      >
+                                        <option value="">
+                                          {skillFilterMonumentId ? "Monument (clear)" : "Monument (any)"}
+                                        </option>
+                                        {monuments.map((m) => (
+                                          <option key={m.id} value={m.id}>
+                                            {(m.emoji ?? "✨") + " " + (m.title ?? "Monument")}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-3">
+                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                      Sort
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSkillSearch("")}
+                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                      >
+                                        Reset search
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSkillFilterMonumentId("")}
+                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                      >
+                                        Clear filters
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                          {skillsLoading ? (
+                            <SelectItem value="__loading" disabled>
+                              Loading skills…
+                            </SelectItem>
+                          ) : filteredSkills.length > 0 ? (
+                            filteredSkills.map((skill) => (
+                              <SelectItem key={skill.id} value={skill.id}>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg">
+                                    {skill.icon ?? "🎯"}
+                                  </span>
+                                  <span>{skill.name}</span>
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="__empty" disabled>
+                              No skills found
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="project-why" className="text-zinc-500">
+                        WHY (optional)
+                      </Label>
+                      <Textarea
+                        id="project-why"
+                        value={projectWhy}
+                        onChange={(e) => setProjectWhy(e.target.value)}
+                        placeholder="Add context…"
+                        className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {selected === "TASK" && (
+                  <>
+                    <div className="grid gap-2">
+                      <Select
+                        value={taskProjectId ?? ""}
+                        onValueChange={setTaskProjectId}
+                        onOpenChange={(open) => {
+                          if (!open) {
+                            setShowTaskProjectFilters(false);
+                          }
+                        }}
+                        hideChevron
+                        triggerClassName={cn(
+                          "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
+                          taskProjectId
+                            ? "text-white/80 hover:text-blue-200"
+                            : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
+                        )}
+                        trigger={
+                          <span>
+                            {taskProjectId
+                              ? taskProjects.find((p) => p.id === taskProjectId)
+                                  ?.name ?? "Link to existing PROJECT +"
+                              : "Link to existing PROJECT +"}
+                          </span>
+                        }
+                      >
+                        <SelectContent className="relative min-w-[220px]">
+                          <div className="sticky top-0 z-10 bg-black/80 p-2 backdrop-blur border-b border-white/5">
+                            <div className="relative flex items-center gap-2">
+                              <Input
+                                value={taskProjectSearch}
+                                onChange={(e) => setTaskProjectSearch(e.target.value)}
+                                placeholder="Search projects…"
+                                className="h-9 text-sm border-white/10 bg-white/[0.05] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowTaskProjectFilters((v) => !v)}
+                                className={cn(
+                                  "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
+                                  showTaskProjectFilters && "border-blue-400/60 text-white"
+                                )}
+                                aria-label="Filter projects"
+                              >
+                                <Filter className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                          {showTaskProjectFilters ? (
+                            <div
+                              ref={taskProjectFilterMenuRef}
+                              className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                            >
+                              <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                                <span className="text-sm font-semibold">
+                                  Filter Projects
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowTaskProjectFilters(false)}
+                                  className="text-xs text-white/80 underline-offset-4 hover:underline"
+                                >
+                                  Close
+                                </button>
+                              </div>
+                              <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-3">
+                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                      Filter
+                                    </div>
+                                    <div className="space-y-2">
+                                      <select
+                                        value={taskProjectFilterStage}
+                                        onChange={(e) => setTaskProjectFilterStage(e.target.value)}
+                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                      >
+                                        <option value="">
+                                          {taskProjectFilterStage ? "Stage (clear)" : "Stage (any)"}
+                                        </option>
+                                        {PROJECT_STAGE_OPTIONS_LOCAL.map((stage) => (
+                                          <option key={stage.value} value={stage.value}>
+                                            {stage.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <select
+                                        value={taskProjectFilterPriority}
+                                        onChange={(e) => setTaskProjectFilterPriority(e.target.value)}
+                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                      >
+                                        <option value="">
+                                          {taskProjectFilterPriority
+                                            ? "Priority (clear)"
+                                            : "Priority (any)"}
+                                        </option>
+                                        {PRIORITY_OPTIONS_LOCAL.map((p) => (
+                                          <option key={p.value} value={p.value}>
+                                            {p.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-3">
+                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                      Quick actions
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setTaskProjectSearch("")}
+                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                      >
+                                        Reset search
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setTaskProjectFilterStage("");
+                                          setTaskProjectFilterPriority("");
+                                        }}
+                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                      >
+                                        Clear filters
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                          {taskProjectsLoading ? (
+                            <SelectItem value="__loading" disabled>
+                              Loading projects…
+                            </SelectItem>
+                          ) : filteredTaskProjects.length > 0 ? (
+                            filteredTaskProjects.map((project) => (
+                              <SelectItem key={project.id} value={project.id}>
+                                {project.name}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="__empty" disabled>
+                              {taskProjectSearch.trim().length > 0
+                                ? "No projects found"
+                                : "No projects yet"}
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
+                      <div className="grid gap-2 col-span-3">
+                        <Label htmlFor="task-name" className="sr-only">
+                          Task name
+                        </Label>
+                        <Input
+                          id="task-name"
+                          value={taskName}
+                          onChange={(e) => setTaskName(e.target.value)}
+                          placeholder="Name your TASK"
+                          className="h-14 rounded-md !border-white/10 bg-white/[0.05] text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                        />
+                      </div>
+                      <div className="grid gap-2 col-span-1">
+                        <Label className="sr-only">Energy</Label>
+                        <Select
+                          value={taskEnergy}
+                          onValueChange={setTaskEnergy}
+                          triggerClassName="!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
+                          hideChevron
+                          trigger={
+                            <div className="flex h-full w-full items-center justify-center leading-none">
+                              {taskEnergy ? (
+                                <FlameEmber
+                                  level={taskEnergy as FlameEmberProps["level"]}
+                                  size="md"
+                                  className="-translate-y-[3px]"
+                                />
+                              ) : (
+                                <span className="text-zinc-400">Energy</span>
+                              )}
+                            </div>
+                          }
+                        >
+                          <SelectContent>
+                            {ENERGY_OPTIONS_LOCAL.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                <div className="flex items-center justify-center py-2">
+                                  <FlameEmber
+                                    level={o.value as FlameEmberProps["level"]}
+                                    size="md"
+                                  />
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
+                      <div className="grid gap-2">
+                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                          PRIORITY
+                        </Label>
+                        <Select
+                          value={taskPriority}
+                          onValueChange={setTaskPriority}
+                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          placeholder="Priority"
+                        >
+                          <SelectContent>
+                            {PRIORITY_OPTIONS_LOCAL.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                          STAGE
+                        </Label>
+                        <Select
+                          value={taskStage}
+                          onValueChange={setTaskStage}
+                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          placeholder="Stage"
+                        >
+                          <SelectContent>
+                            {TASK_STAGE_OPTIONS_LOCAL.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                          DURATION
+                        </Label>
+                        <button
+                          type="button"
+                          className="flex h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                        >
+                          <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
+                            <Clock className="h-6 w-6 text-white/80" />
+                            <span className="mt-1 text-[10px] font-semibold leading-none text-white/80">
+                              {taskDuration || 30}m
+                            </span>
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div className="grid gap-2">
+                        <Label>Skill</Label>
+                        <Select
+                        value={taskSkillId ?? ""}
+                        onOpenChange={handleSkillDropdownOpenChange}
+                        onValueChange={(value) => {
+                          setTaskSkillId(value);
+                          const skill = findSkillById(value);
+                          setSkillSearch(skill?.name ?? "");
+                          setShowSkillFilters(false);
+                        }}
+                        placeholder="Link a skill"
+                        triggerClassName="!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                        contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                        maxHeight={150}
+                        openOnTriggerFocus
+                        trigger={
+                          <SkillTrigger
+                            selectedId={taskSkillId ?? null}
+                            onClearSelection={() => {
+                              setTaskSkillId("");
+                              setSkillSearch("");
+                            }}
+                          />
+                        }
+                      >
+                        <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                          {showSkillFilters ? (
+                            <div
+                              ref={skillFilterMenuRef}
+                              className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                            >
+                                <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                                  <span className="text-sm font-semibold">
+                                    Filter Skills
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowSkillFilters(false)}
+                                    className="text-xs text-white/80 underline-offset-4 hover:underline"
+                                  >
+                                    Close
+                                  </button>
+                                </div>
+                                <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-3">
+                                      <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                        Filter
+                                      </div>
+                                      <div className="space-y-2">
+                                        <select
+                                          value={skillFilterMonumentId}
+                                          onChange={(e) => setSkillFilterMonumentId(e.target.value)}
+                                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                        >
+                                          <option value="">
+                                            {skillFilterMonumentId ? "Monument (clear)" : "Monument (any)"}
+                                          </option>
+                                          {monuments.map((m) => (
+                                            <option key={m.id} value={m.id}>
+                                              {(m.emoji ?? "✨") + " " + (m.title ?? "Monument")}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                      <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                        Quick actions
+                                      </div>
+                                      <div className="grid grid-cols-1 gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSkillSearch("")}
+                                          className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                        >
+                                          Reset search
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setSkillFilterMonumentId("")}
+                                          className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                        >
+                                          Clear filters
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
+                          {skillsLoading ? (
+                            <SelectItem value="__loading" disabled>
+                              Loading skills…
+                            </SelectItem>
+                          ) : filteredSkills.length > 0 ? (
+                              filteredSkills.map((skill) => (
+                                <SelectItem key={skill.id} value={skill.id}>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-lg">
+                                      {skill.icon ?? "🎯"}
+                                    </span>
+                                    <span>{skill.name}</span>
+                                  </div>
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="__empty" disabled>
+                                No skills found
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2 md:col-span-2">
+                        <Label htmlFor="task-notes">Notes (optional)</Label>
+                        <Textarea
+                          id="task-notes"
+                          value={taskNotes}
+                          onChange={(e) => setTaskNotes(e.target.value)}
+                          placeholder="Context…"
+                          className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {selected === "HABIT" && (
+                  <>
+                    <div className="grid gap-2">
+                      <Select
+                        value={habitRoutineId ?? ""}
+                        onValueChange={(value) => {
+                          if (value === "__create__") {
+                            router.push("/habits/new");
+                            return;
+                          }
+                          setHabitRoutineId(value);
+                        }}
+                        hideChevron
+                        triggerClassName={cn(
+                          "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
+                          habitRoutineId
+                            ? "text-white/80 hover:text-blue-200"
+                            : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
+                        )}
+                        trigger={
+                          <span>
+                            {habitRoutineId
+                              ? habitRoutines.find((r) => r.id === habitRoutineId)
+                                  ?.name ?? "Link to existing ROUTINE +"
+                              : "Link to existing ROUTINE +"}
+                          </span>
+                        }
+                      >
+                        <SelectContent className="min-w-[220px]">
+                          <SelectItem value="__create__">
+                            <div className="flex items-center gap-2 text-white">
+                              <Plus className="h-4 w-4" />
+                              <span>Create new routine</span>
+                            </div>
+                          </SelectItem>
+                          {habitRoutinesLoading ? (
+                            <SelectItem value="__loading" disabled>
+                              Loading routines…
+                            </SelectItem>
+                          ) : habitRoutines.length > 0 ? (
+                            habitRoutines.map((routine) => (
+                              <SelectItem key={routine.id} value={routine.id}>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">
+                                    {routine.name}
+                                  </span>
+                                  {routine.description ? (
+                                    <span className="text-xs text-white/60">
+                                      {routine.description}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="__empty" disabled>
+                              No routines yet
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
+                      <div className="grid gap-2 col-span-3">
+                        <Label htmlFor="habit-name" className="sr-only">
+                          Habit name
+                        </Label>
+                        <Input
+                          id="habit-name"
+                          value={habitName}
+                          onChange={(e) => setHabitName(e.target.value)}
+                          placeholder="Name your HABIT"
+                          className="h-14 rounded-md !border-white/10 bg-white/[0.05] text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                        />
+                      </div>
+                      <div className="grid gap-2 col-span-1">
+                        <Label className="sr-only">Energy</Label>
+                        <Select
+                          value={habitEnergy}
+                          onValueChange={setHabitEnergy}
+                          triggerClassName="!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
+                          hideChevron
+                          trigger={
+                            <div className="flex h-full w-full items-center justify-center leading-none">
+                              {habitEnergy ? (
+                                <FlameEmber
+                                  level={habitEnergy as FlameEmberProps["level"]}
+                                  size="md"
+                                  className="-translate-y-[3px]"
+                                />
+                              ) : (
+                                <span className="text-zinc-400">Energy</span>
+                              )}
+                            </div>
+                          }
+                        >
+                          <SelectContent>
+                            {ENERGY_OPTIONS_LOCAL.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                <div className="flex items-center justify-center py-2">
+                                  <FlameEmber
+                                    level={o.value as FlameEmberProps["level"]}
+                                    size="md"
+                                  />
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
+                      <div className="grid gap-2">
+                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                          TYPE
+                        </Label>
+                        <Select
+                          value={habitType}
+                          onValueChange={setHabitType}
+                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          placeholder="Type"
+                        >
+                          <SelectContent>
+                            {HABIT_TYPE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                          RECURRENCE
+                        </Label>
+                        <Select
+                          value={habitRecurrence}
+                          onValueChange={setHabitRecurrence}
+                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          placeholder="Recurrence"
+                        >
+                          <SelectContent>
+                            {HABIT_RECURRENCE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2 items-end">
+                        <div className="relative">
+                        <button
+                          type="button"
+                          className="flex h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                        >
+                            <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
+                              <Clock className="h-6 w-6 text-white/80" />
+                              <span className="mt-1 text-[10px] font-semibold leading-none text-white/80">
+                                {habitDuration || 15}m
+                              </span>
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        SKILL
+                      </Label>
+                      <Select
+                        value={habitSkillId ?? ""}
+                        onOpenChange={handleSkillDropdownOpenChange}
+                        onValueChange={(value) => {
+                          setHabitSkillId(value);
+                          const skill = findSkillById(value);
+                          setSkillSearch(skill?.name ?? "");
+                          setShowSkillFilters(false);
+                        }}
+                        placeholder="Link a skill"
+                        triggerClassName="!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                        contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                        maxHeight={150}
+                        openOnTriggerFocus
+                        trigger={
+                          <SkillTrigger
+                            selectedId={habitSkillId ?? null}
+                            onClearSelection={() => {
+                              setHabitSkillId("");
+                              setSkillSearch("");
+                            }}
+                          />
+                        }
+                      >
+                        <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                          {showSkillFilters ? (
+                            <div
+                              ref={skillFilterMenuRef}
+                              className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                            >
+                              <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                                <span className="text-sm font-semibold">
+                                  Filter Skills
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSkillFilters(false)}
+                                  className="text-xs text-white/80 underline-offset-4 hover:underline"
+                                >
+                                  Close
+                                </button>
+                              </div>
+                              <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-3">
+                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                      Filter
+                                    </div>
+                                    <div className="space-y-2">
+                                      <select
+                                        value={skillFilterMonumentId}
+                                        onChange={(e) => setSkillFilterMonumentId(e.target.value)}
+                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                      >
+                                        <option value="">
+                                          {skillFilterMonumentId ? "Monument (clear)" : "Monument (any)"}
+                                        </option>
+                                        {monuments.map((m) => (
+                                          <option key={m.id} value={m.id}>
+                                            {(m.emoji ?? "✨") + " " + (m.title ?? "Monument")}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-3">
+                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                      Quick actions
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSkillSearch("")}
+                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                      >
+                                        Reset search
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSkillFilterMonumentId("")}
+                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                      >
+                                        Clear filters
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                          {skillsLoading ? (
+                            <SelectItem value="__loading" disabled>
+                              Loading skills…
+                            </SelectItem>
+                          ) : filteredSkills.length > 0 ? (
+                            filteredSkills.map((skill) => (
+                              <SelectItem key={skill.id} value={skill.id}>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg">
+                                    {skill.icon ?? "🎯"}
+                                  </span>
+                                  <span>{skill.name}</span>
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="__empty" disabled>
+                              No skills found
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="habit-why" className="text-zinc-500">
+                        WHY (optional)
+                      </Label>
+                      <Textarea
+                        id="habit-why"
+                        value={habitWhy}
+                        onChange={(e) => setHabitWhy(e.target.value)}
+                        placeholder="Add context…"
+                        className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {saveError ? (
+                <p className="text-xs text-red-300">{saveError}</p>
+              ) : null}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 
@@ -476,8 +2470,18 @@ export function Fab({
   const handleEventClick = (
     eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT"
   ) => {
-    setIsOpen(false);
-    setModalEventType(eventType);
+    // Ensure any in-progress drag state cannot leave the neighbor overlay visible.
+    setIsDragging(false);
+    setDragTargetPage(null);
+    setDragDirection(null);
+    pageX.set(0);
+
+    if (expanded) {
+      setSelected(eventType);
+      return;
+    }
+    setExpanded(true);
+    setSelected(eventType);
   };
 
   const handleExtraClick = (label: string) => {
@@ -577,6 +2581,244 @@ export function Fab({
       event.stopPropagation();
     }
   };
+
+  useEffect(() => {
+    if (selected !== "PROJECT") return;
+    let cancelled = false;
+    const loadGoals = async () => {
+      try {
+        setGoalsLoading(true);
+        const supabase = getSupabaseBrowser();
+        if (!supabase) return;
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+        const [goalsData, monumentsResp] = await Promise.all([
+          getGoalsForUser(user.id),
+          supabase
+            .from("monuments")
+            .select("id, emoji")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false }),
+        ]);
+        if (!cancelled) {
+          const map = new Map<string, string | null>();
+          monumentsResp.data?.forEach((m) => {
+            if (m.id) {
+              map.set(m.id, m.emoji ?? null);
+            }
+          });
+          setMonumentEmojiMap(map);
+          setGoals(
+            goalsData.map((goal) => ({
+              ...goal,
+              monumentEmoji:
+                goal.monumentEmoji ??
+                map.get(
+                  (goal as any).monument_id ?? (goal as any).monumentId ?? ""
+                ) ??
+                null,
+            }))
+          );
+        }
+      } catch (error) {
+        console.error("Failed to load goals", error);
+        if (!cancelled) {
+          setGoals([]);
+          setMonumentEmojiMap(new Map());
+        }
+      } finally {
+        if (!cancelled) {
+          setGoalsLoading(false);
+        }
+      }
+    };
+    void loadGoals();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
+
+  useEffect(() => {
+    if (selected !== "GOAL") return;
+    let cancelled = false;
+    const loadMonuments = async () => {
+      try {
+        setMonumentsLoading(true);
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+          setMonumentsLoading(false);
+          return;
+        }
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          setMonumentsLoading(false);
+          return;
+        }
+        const monumentsData = await getMonumentsForUser(user.id);
+        if (!cancelled) {
+          setMonuments(monumentsData);
+          setGoalMonumentId((current) =>
+            current && monumentsData.some((m) => m.id === current)
+              ? current
+              : ""
+          );
+        }
+      } catch (error) {
+        console.error("Failed to load monuments", error);
+        if (!cancelled) {
+          setMonuments([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setMonumentsLoading(false);
+        }
+      }
+    };
+    void loadMonuments();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
+
+  useEffect(() => {
+    if (selected !== "TASK") return;
+    let cancelled = false;
+    const loadProjects = async () => {
+      try {
+        setTaskProjectsLoading(true);
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+          setTaskProjectsLoading(false);
+          return;
+        }
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          setTaskProjectsLoading(false);
+          return;
+        }
+        const projectsData = await getProjectsForUser(user.id);
+        if (!cancelled) {
+          setTaskProjects(projectsData ?? []);
+          setTaskProjectId((current) =>
+            current && projectsData.some((p) => p.id === current) ? current : ""
+          );
+        }
+      } catch (error) {
+        console.error("Failed to load projects for tasks", error);
+        if (!cancelled) {
+          setTaskProjects([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setTaskProjectsLoading(false);
+        }
+      }
+    };
+    void loadProjects();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
+
+  useEffect(() => {
+    if (selected !== "HABIT" && selected !== "PROJECT" && selected !== "TASK")
+      return;
+    let cancelled = false;
+    const loadSkills = async () => {
+      try {
+        setSkillsLoading(true);
+        const supabase = getSupabaseBrowser();
+        if (!supabase) return;
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          if (!cancelled) {
+            setSkillCategories([]);
+          }
+          return;
+        }
+        const [skillsData, categoriesData] = await Promise.all([
+          getSkillsForUser(user.id),
+          getCatsForUser(user.id, supabase).catch((err) => {
+            console.error("Failed to load skill categories", err);
+            return [] as CatRow[];
+          }),
+        ]);
+        if (!cancelled) {
+          setSkills(skillsData);
+          setSkillCategories(categoriesData);
+        }
+      } catch (error) {
+        console.error("Failed to load skills", error);
+        if (!cancelled) {
+          setSkills([]);
+          setSkillCategories([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setSkillsLoading(false);
+        }
+      }
+    };
+    void loadSkills();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
+
+  useEffect(() => {
+    if (selected !== "HABIT") return;
+    let cancelled = false;
+    const loadRoutines = async () => {
+      try {
+        setHabitRoutinesLoading(true);
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+          setHabitRoutinesLoading(false);
+          return;
+        }
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          setHabitRoutinesLoading(false);
+          return;
+        }
+        const { data, error } = await supabase
+          .from("habit_routines")
+          .select("id, name, description")
+          .eq("user_id", user.id)
+          .order("name", { ascending: true });
+        if (error) throw error;
+        if (cancelled) return;
+        const routines = data ?? [];
+        setHabitRoutines(routines);
+        setHabitRoutineId((current) =>
+          current && routines.some((r) => r.id === current) ? current : ""
+        );
+      } catch (error) {
+        console.error("Failed to load habit routines", error);
+        if (!cancelled) {
+          setHabitRoutines([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setHabitRoutinesLoading(false);
+        }
+      }
+    };
+    void loadRoutines();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
 
   const getNextIndex = useCallback(
     (index: number) => (index + 1) % pageCount,
@@ -981,8 +3223,7 @@ export function Fab({
 
       setSearchResults((prev) =>
         prev.map((item) =>
-          item.id === rescheduleTarget.id &&
-          item.type === rescheduleTarget.type
+          item.id === rescheduleTarget.id && item.type === rescheduleTarget.type
             ? {
                 ...item,
                 nextScheduledAt: nextStart,
@@ -1012,6 +3253,252 @@ export function Fab({
     notifySchedulerOfChange,
   ]);
 
+  const isSaveDisabled = useMemo(() => {
+    if (isSavingFab || !selected) return true;
+    if (selected === "GOAL") {
+      if (goalName.trim().length === 0) return true;
+      if (!goalMonumentId) return true;
+      if (!goalEnergy) return true;
+      if (!goalPriority) return true;
+      return false;
+    }
+    if (selected === "PROJECT") {
+      if (projectName.trim().length === 0) return true;
+      if (!projectGoalId) return true;
+      if (projectSkillIds.length === 0) return true;
+      return false;
+    }
+    if (selected === "TASK") {
+      if (taskName.trim().length === 0) return true;
+      if (!taskProjectId) return true;
+      if (!taskSkillId) return true;
+      return false;
+    }
+    if (selected === "HABIT") {
+      if (habitName.trim().length === 0) return true;
+      if (!habitEnergy) return true;
+      if (!habitRecurrence) return true;
+      if (!habitType) return true;
+      if (!habitSkillId) return true;
+      return false;
+    }
+    return habitName.trim().length === 0;
+  }, [
+    goalEnergy,
+    goalMonumentId,
+    goalName,
+    goalPriority,
+    habitName,
+    habitRecurrence,
+    habitSkillId,
+    habitType,
+    isSavingFab,
+    projectGoalId,
+    projectName,
+    projectSkillIds,
+    selected,
+    taskName,
+    taskProjectId,
+    taskSkillId,
+  ]);
+
+  const handleFabSave = useCallback(async () => {
+    if (isSavingFab || !selected) return;
+    setSaveError(null);
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      setSaveError("Supabase client not available.");
+      return;
+    }
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+    if (userError) {
+      setSaveError("Unable to resolve user.");
+      return;
+    }
+    if (!user) {
+      setSaveError("You need to be signed in to save.");
+      return;
+    }
+    const trimmedName =
+      selected === "GOAL"
+        ? goalName.trim()
+        : selected === "PROJECT"
+          ? projectName.trim()
+          : selected === "TASK"
+            ? taskName.trim()
+            : habitName.trim();
+    if (trimmedName.length === 0) {
+      setSaveError("Please enter a name.");
+      return;
+    }
+    if (selected === "GOAL") {
+      if (!goalMonumentId) {
+        setSaveError("Link this goal to a monument before saving.");
+        return;
+      }
+      if (!goalEnergy) {
+        setSaveError("Select an energy level before saving.");
+        return;
+      }
+      if (!goalPriority) {
+        setSaveError("Select a priority before saving.");
+        return;
+      }
+    }
+    if (selected === "PROJECT") {
+      if (!projectGoalId) {
+        setSaveError("Link this project to a goal before saving.");
+        return;
+      }
+      if (projectSkillIds.length === 0) {
+        setSaveError("Link at least one skill before saving.");
+        return;
+      }
+    }
+    if (selected === "TASK") {
+      if (!taskProjectId) {
+        setSaveError("Link this task to a project before saving.");
+        return;
+      }
+      if (!taskSkillId) {
+        setSaveError("Link this task to a skill before saving.");
+        return;
+      }
+    }
+    if (selected === "HABIT") {
+      if (!habitEnergy) {
+        setSaveError("Select an energy level before saving.");
+        return;
+      }
+      if (!habitRecurrence) {
+        setSaveError("Select a recurrence before saving.");
+        return;
+      }
+      if (!habitType) {
+        setSaveError("Select a habit type before saving.");
+        return;
+      }
+      if (!habitSkillId) {
+        setSaveError("Link this habit to a skill before saving.");
+        return;
+      }
+    }
+    setIsSavingFab(true);
+    try {
+      if (selected === "GOAL") {
+        const { error } = await supabase.from("goals").insert({
+          user_id: user.id,
+          name: trimmedName,
+          priority: goalPriority,
+          energy: goalEnergy,
+          why: goalWhy?.trim() || null,
+          monument_id: goalMonumentId || null,
+          due_date: goalDue ?? null,
+        });
+        if (error) throw error;
+      } else if (selected === "PROJECT") {
+        const { data: projectData, error } = await supabase
+          .from("projects")
+          .insert({
+            user_id: user.id,
+            name: trimmedName,
+            goal_id: projectGoalId || null,
+            priority: projectPriority,
+            energy: projectEnergy,
+            stage: projectStage,
+            why: projectWhy?.trim() || null,
+            duration_min:
+              typeof projectDuration === "number" &&
+              Number.isFinite(projectDuration)
+                ? projectDuration
+                : normalizedProjectDuration || null,
+          })
+          .select("id")
+          .single();
+        if (error) throw error;
+        if (projectData?.id && projectSkillIds.length > 0) {
+          const { error: projectSkillsError } = await supabase
+            .from("project_skills")
+            .insert(
+              projectSkillIds.map((skillId) => ({
+                project_id: projectData.id,
+                skill_id: skillId,
+              }))
+            );
+          if (projectSkillsError) throw projectSkillsError;
+        }
+      } else if (selected === "TASK") {
+        const { error } = await supabase.from("tasks").insert({
+          user_id: user.id,
+          name: trimmedName,
+          project_id: taskProjectId || null,
+          stage: taskStage,
+          skill_id: taskSkillId || null,
+        });
+        if (error) throw error;
+      } else if (selected === "HABIT") {
+        const parsedDuration = Number.parseInt(habitDuration || "0", 10);
+        const duration = Number.isFinite(parsedDuration) ? parsedDuration : null;
+        const { error } = await supabase.from("habits").insert({
+          user_id: user.id,
+          name: trimmedName,
+          habit_type: habitType,
+          recurrence: habitRecurrence,
+          duration_minutes: duration,
+          energy: habitEnergy,
+          skill_id: habitSkillId || null,
+          routine_id: habitRoutineId || null,
+          goal_id: habitGoalId || null,
+          why: habitWhy?.trim() || null,
+        });
+        if (error) throw error;
+        await notifySchedulerOfChange();
+      }
+      setExpanded(false);
+      setSelected(null);
+    } catch (error) {
+      console.error("Failed to save item", error);
+      setSaveError(
+        error instanceof Error ? error.message : "Unable to save right now."
+      );
+    } finally {
+      setIsSavingFab(false);
+    }
+  }, [
+    habitDuration,
+    habitEnergy,
+    habitGoalId,
+    habitRecurrence,
+    habitSkillId,
+    habitType,
+    habitWhy,
+    habitName,
+    isSavingFab,
+    goalDue,
+    goalEnergy,
+    goalMonumentId,
+    goalName,
+    goalPriority,
+    goalWhy,
+    normalizedProjectDuration,
+    notifySchedulerOfChange,
+    projectDuration,
+    projectEnergy,
+    projectGoalId,
+    projectName,
+    projectPriority,
+    projectSkillIds,
+    projectStage,
+    projectWhy,
+    selected,
+    taskName,
+    taskProjectId,
+    taskSkillId,
+    taskStage,
+  ]);
   const handleDeleteEvent = useCallback(async () => {
     if (isDeletingEvent) {
       return;
@@ -1064,6 +3551,7 @@ export function Fab({
         buttonRef.current &&
         !buttonRef.current.contains(event.target as Node)
       ) {
+        if (expanded) return;
         setIsOpen(false);
       }
     };
@@ -1072,7 +3560,14 @@ export function Fab({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [isOpen, rescheduleTarget]);
+  }, [expanded, isOpen, rescheduleTarget]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setExpanded(false);
+      setSelected(null);
+    }
+  }, [isOpen]);
 
   const shouldRenderNeighbor = isDragging && dragTargetPage !== null;
   const neighborPage = shouldRenderNeighbor ? dragTargetPage : null;
@@ -1130,100 +3625,169 @@ export function Fab({
       {/* AddEvents Menu */}
       <AnimatePresence>
         {isOpen && (
-          <motion.div
-            ref={menuRef}
-            className={cn(
-              "absolute bottom-20 mb-2 z-50 min-w-[200px] border rounded-lg shadow-2xl overflow-hidden",
-              menuClassName
-            )}
-            style={{
-              boxShadow: MENU_BOX_SHADOW,
-              borderColor: isBlendingGradient
-                ? blendedBorderColor
-                : staticBorderColor,
-              transition: "border-color 0.1s linear",
-              transformOrigin:
-                menuVariant === "timeline" ? "bottom right" : "bottom center",
-              minHeight: menuContainerHeight,
-              height: menuContainerHeight,
-              maxHeight: menuContainerHeight,
-              minWidth: menuWidth ?? undefined,
-              width: menuWidth ?? undefined,
-              maxWidth: menuWidth ?? undefined,
-            }}
-            variants={menuVariants}
-            initial="closed"
-            animate="open"
-            exit="closed"
-            onWheel={handleMenuWheel}
-          >
-            <>
-              <motion.div
-                className="relative h-full w-full"
-                style={{
-                  backgroundImage: isBlendingGradient
-                    ? blendedBackgroundImage
-                    : staticBackgroundImage,
-                  borderRadius: "inherit",
-                }}
-              >
-                <div
-                  ref={stageRef}
-                  className="relative h-full w-full overflow-hidden rounded-[inherit]"
+          <>
+            <motion.div
+              ref={(node) => {
+                menuRef.current = node;
+                panelRef.current = node;
+              }}
+              layout
+              className={cn(
+                "absolute bottom-20 mb-2 z-50 border rounded-lg shadow-2xl overflow-hidden bg-[var(--surface-elevated)]",
+                expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
+                menuClassName
+              )}
+              style={{
+                boxShadow: MENU_BOX_SHADOW,
+                borderColor: isBlendingGradient
+                  ? blendedBorderColor
+                  : staticBorderColor,
+                transition: "border-color 0.1s linear",
+                transformOrigin:
+                  menuVariant === "timeline" ? "bottom right" : "bottom center",
+                minHeight: expanded ? "48vh" : menuContainerHeight,
+                height: !expanded ? menuContainerHeight : undefined,
+                maxHeight: !expanded ? menuContainerHeight : undefined,
+                minWidth: expanded ? undefined : menuWidth ?? undefined,
+                width: expanded ? undefined : menuWidth ?? undefined,
+                maxWidth: expanded ? undefined : menuWidth ?? undefined,
+              }}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                transition: { type: "tween", ease: "easeOut", duration: 0.2 },
+              }}
+              exit={{
+                opacity: 0,
+                y: 8,
+                transition: { type: "tween", ease: "easeIn", duration: 0.2 },
+              }}
+              onWheel={handleMenuWheel}
+            >
+              <>
+                <motion.div
+                  className="relative h-full w-full"
+                  style={{
+                    backgroundImage: isBlendingGradient
+                      ? blendedBackgroundImage
+                      : staticBackgroundImage,
+                    borderRadius: "inherit",
+                  }}
                 >
-                  <motion.div
-                    className="absolute inset-0 flex"
-                    drag="x"
-                    dragListener={false}
-                    dragControls={pageDragControls}
-                    dragElastic={0}
-                    dragMomentum={false}
-                    dragConstraints={{
-                      left: dragConstraintLeft,
-                      right: dragConstraintRight,
-                    }}
-                    style={{ x: pageX }}
-                    onPointerDown={handlePagePointerDown}
-                    onDragStart={handlePageDragStart}
-                    onDrag={handlePageDrag}
-                    onDragEnd={handlePageDragEnd}
-                    dragPropagation
+                  <div
+                    ref={stageRef}
+                    className="relative h-full w-full rounded-[inherit]"
                   >
                     <motion.div
-                      className="absolute inset-0 flex overflow-hidden"
-                      variants={pageVariants}
-                      initial="open"
-                      animate="open"
-                      style={{ borderRadius: "inherit" }}
-                    >
-                      {renderPage(activeFabPage)}
-                    </motion.div>
-                  </motion.div>
-                  {neighborPage !== null && neighborDirection !== null && (
-                    <motion.div
-                      className="pointer-events-none absolute inset-0 flex"
-                      style={{
-                        x:
-                          neighborDirection === 1
-                            ? incomingFromRight
-                            : incomingFromLeft,
+                      className="absolute inset-0 flex"
+                      drag="x"
+                      dragListener={false}
+                      dragControls={pageDragControls}
+                      dragElastic={0}
+                      dragMomentum={false}
+                      dragConstraints={{
+                        left: dragConstraintLeft,
+                        right: dragConstraintRight,
                       }}
+                      style={{ x: pageX }}
+                      onPointerDown={!expanded ? handlePagePointerDown : undefined}
+                      onDragStart={handlePageDragStart}
+                      onDrag={handlePageDrag}
+                      onDragEnd={handlePageDragEnd}
+                      dragPropagation
                     >
                       <motion.div
-                        className="absolute inset-0 flex overflow-hidden"
+                        className="absolute inset-0 z-10 flex"
                         variants={pageVariants}
                         initial="open"
                         animate="open"
                         style={{ borderRadius: "inherit" }}
                       >
-                        {renderPage(neighborPage)}
+                        {renderPage(activeFabPage)}
                       </motion.div>
                     </motion.div>
-                  )}
-                </div>
-              </motion.div>
-            </>
-          </motion.div>
+                    {neighborPage !== null &&
+                      neighborDirection !== null &&
+                      !expanded && (
+                        <motion.div
+                          className="pointer-events-none absolute inset-0 z-0 flex"
+                          style={{
+                            x:
+                              neighborDirection === 1
+                                ? incomingFromRight
+                                : incomingFromLeft,
+                          }}
+                        >
+                          <motion.div
+                            className="absolute inset-0 flex overflow-hidden"
+                            variants={pageVariants}
+                            initial="open"
+                            animate="open"
+                            style={{ borderRadius: "inherit" }}
+                          >
+                            {renderPage(neighborPage)}
+                          </motion.div>
+                        </motion.div>
+                      )}
+                  </div>
+                </motion.div>
+              </>
+            </motion.div>
+            {expanded && overhangPos
+              ? createPortal(
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, y: 6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.92, y: 4 }}
+                    transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
+                    className="pointer-events-auto fixed z-[120] flex w-[108px] items-center gap-3"
+                    style={{
+                      left: overhangPos.left,
+                      top: overhangPos.top,
+                    }}
+                  >
+                    <Button
+                      type="button"
+                      aria-label="Discard"
+                      variant="cancelSquare"
+                      size="iconSquare"
+                      className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none"
+                      onClick={() => {
+                        setExpanded(false);
+                        setSelected(null);
+                      }}
+                    >
+                      <X
+                        className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+                        aria-hidden="true"
+                      />
+                    </Button>
+
+                    <Button
+                      type="button"
+                      aria-label="Save"
+                      variant="confirmSquare"
+                      size="iconSquare"
+                      disabled={isSaveDisabled}
+                      onClick={handleFabSave}
+                      className={cn(
+                        "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none",
+                        isSaveDisabled
+                          ? "btn-3d--amber bg-gradient-to-b from-amber-500 to-amber-700 hover:from-amber-500 hover:to-amber-800 active:from-amber-600 active:to-amber-800 disabled:opacity-100"
+                          : ""
+                      )}
+                    >
+                      <Check
+                        className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+                        aria-hidden="true"
+                      />
+                    </Button>
+                  </motion.div>,
+                  document.body
+                )
+              : null}
+          </>
         )}
       </AnimatePresence>
 
@@ -1297,7 +3861,7 @@ type FabNexusProps = {
   hasMore: boolean;
   onLoadMore: () => void;
   onSelectResult: (result: FabSearchResult) => void;
-  inputRef?: RefObject<HTMLInputElement>;
+  inputRef?: RefObject<HTMLInputElement | null>;
 };
 
 function FabNexus({
@@ -1316,7 +3880,8 @@ function FabNexus({
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (!hasMore || isLoadingMore) return;
     const target = event.currentTarget;
-    const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
+    const remaining =
+      target.scrollHeight - target.scrollTop - target.clientHeight;
     if (remaining < 120) {
       onLoadMore();
     }

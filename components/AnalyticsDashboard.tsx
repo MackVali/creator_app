@@ -22,6 +22,8 @@ import {
   Share2,
   Sparkles,
 } from "lucide-react";
+import { CircularProgress } from "@/components/visuals/CircularProgress";
+import { SkillMasterySection } from "@/app/analytics/_sections/SkillMasterySection";
 import type {
   AnalyticsResponse,
   AnalyticsKpiId,
@@ -117,9 +119,7 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
     return rounded > 0 ? rounded : fallback;
   };
 
-  const toPerformanceList = (
-    value: unknown
-  ): AnalyticsHabitPerformance[] => {
+  const toPerformanceList = (value: unknown): AnalyticsHabitPerformance[] => {
     if (!Array.isArray(value)) {
       return [];
     }
@@ -148,9 +148,7 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
 
   const calendarCompleted = Array.isArray(record.calendarCompleted)
     ? record.calendarCompleted
-        .map((value) =>
-          isFiniteNumber(value) ? Math.round(value) : null
-        )
+        .map((value) => (isFiniteNumber(value) ? Math.round(value) : null))
         .filter(
           (value): value is number =>
             value != null && value >= 1 && value <= calendarDays
@@ -169,9 +167,7 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
           const heatmap = Array.isArray(rawHeatmap)
             ? rawHeatmap.map((week) =>
                 Array.isArray(week)
-                  ? week.map((value) =>
-                      isFiniteNumber(value) ? value : 0
-                    )
+                  ? week.map((value) => (isFiniteNumber(value) ? value : 0))
                   : Array(7).fill(0)
               )
             : [];
@@ -207,9 +203,7 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
 
           return { label, value } satisfies AnalyticsHabitStreakPoint;
         })
-        .filter(
-          (point): point is AnalyticsHabitStreakPoint => point !== null
-        )
+        .filter((point): point is AnalyticsHabitStreakPoint => point !== null)
     : base.streakHistory;
 
   const weeklyReflections = Array.isArray(record.weeklyReflections)
@@ -232,9 +226,7 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
             ? Math.max(0, Math.round(reflection.streak))
             : 0;
           const bestDay =
-            typeof reflection.bestDay === "string"
-              ? reflection.bestDay
-              : "—";
+            typeof reflection.bestDay === "string" ? reflection.bestDay : "—";
           const lesson =
             typeof reflection.lesson === "string"
               ? reflection.lesson
@@ -262,14 +254,8 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
     : base.weeklyReflections;
 
   return {
-    currentStreak: toNonNegativeInt(
-      record.currentStreak,
-      base.currentStreak
-    ),
-    longestStreak: toNonNegativeInt(
-      record.longestStreak,
-      base.longestStreak
-    ),
+    currentStreak: toNonNegativeInt(record.currentStreak, base.currentStreak),
+    longestStreak: toNonNegativeInt(record.longestStreak, base.longestStreak),
     calendarDays,
     calendarCompleted,
     routines,
@@ -310,9 +296,9 @@ interface ActivityEvent {
 }
 
 export default function AnalyticsDashboard() {
-  const [dateRange, setDateRange] = useState<
-    "7d" | "30d" | "90d" | "custom"
-  >("30d");
+  const [dateRange, setDateRange] = useState<"7d" | "30d" | "90d" | "custom">(
+    "30d"
+  );
   const [skillsView, setSkillsView] = useState<"grid" | "list">("grid");
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -466,9 +452,7 @@ export default function AnalyticsDashboard() {
     },
   ];
   const tickerInsights =
-    focusInsights.length > 0
-      ? [...focusInsights, ...focusInsights]
-      : [];
+    focusInsights.length > 0 ? [...focusInsights, ...focusInsights] : [];
 
   useEffect(() => {
     const track = focusInsightsRef.current;
@@ -480,7 +464,9 @@ export default function AnalyticsDashboard() {
     const containerWidth = container?.clientWidth ?? track.clientWidth;
     const perSetCount = focusInsights.length;
     const markerChild =
-      perSetCount > 0 ? (track.children.item(perSetCount) as HTMLElement | null) : null;
+      perSetCount > 0
+        ? (track.children.item(perSetCount) as HTMLElement | null)
+        : null;
     const loopWidth = markerChild?.offsetLeft ?? track.scrollWidth / 2;
 
     if (!loopWidth || loopWidth <= containerWidth + 8) {
@@ -564,6 +550,8 @@ export default function AnalyticsDashboard() {
         <SectionCard
           title="Focus insights"
           description="Quick cues for where to lean in next."
+          className="scroll-mt-8"
+          id="planning"
         >
           {loading ? (
             <Skeleton className="h-48" />
@@ -593,7 +581,9 @@ export default function AnalyticsDashboard() {
                     <div className="mt-2 text-lg font-semibold text-white">
                       {insight.metric}
                     </div>
-                    <p className="mt-1 text-sm text-[#99A4BD]">{insight.helper}</p>
+                    <p className="mt-1 text-sm text-[#99A4BD]">
+                      {insight.helper}
+                    </p>
                   </li>
                 ))}
               </ul>
@@ -603,59 +593,12 @@ export default function AnalyticsDashboard() {
 
         <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
           <div className="space-y-6">
-            <SectionCard
-              title="Skill mastery"
-              description="Track progress toward your next level-up across key disciplines."
-              action={
-                <div className="flex items-center gap-3">
-                  <button
-                    className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#7E8AA6]"
-                    type="button"
-                    onClick={() =>
-                      setSkillsView(skillsView === "grid" ? "list" : "grid")
-                    }
-                  >
-                    {skillsView === "grid" ? "List view" : "Grid view"}
-                  </button>
-                </div>
-              }
-            >
-              {loading ? (
-                <Skeleton className="h-56" />
-              ) : error ? (
-                <ErrorState message={error} />
-              ) : skills.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
-                  No skills gained XP in this range yet.
-                  <p className="mt-2 text-xs text-[#4E5A73]">
-                    Complete skill-linked rituals to see progress here.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  <div
-                    className={classNames(
-                      "gap-4",
-                      skillsView === "grid"
-                        ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
-                        : "grid gap-4"
-                    )}
-                  >
-                    {skills.map((skill) => (
-                      <SkillCard key={skill.id} skill={skill} view={skillsView} />
-                    ))}
-                  </div>
-                  <div className="flex justify-end">
-                    <Link
-                      href="#"
-                      className="inline-flex items-center gap-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
-                    >
-                      View all skills<span aria-hidden="true">→</span>
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </SectionCard>
+            <SkillMasterySection
+              skills={skills}
+              loading={loading}
+              error={error}
+              defaultExpanded={false}
+            />
 
             <SectionCard
               title="Recently completed"
@@ -667,7 +610,8 @@ export default function AnalyticsDashboard() {
                 <ErrorState message={error} />
               ) : recentSchedules.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
-                  Wrap a scheduled task, project, or habit to see it showcased here.
+                  Wrap a scheduled task, project, or habit to see it showcased
+                  here.
                 </div>
               ) : (
                 <RecentScheduleShowcase items={recentSchedules} />
@@ -794,6 +738,7 @@ export default function AnalyticsDashboard() {
           <SectionCard
             title="Activity feed"
             description="Highlights from tasks, projects, and rituals."
+            id="logs"
           >
             {loading ? (
               <Skeleton className="h-56" />
@@ -858,7 +803,8 @@ function Header({
               Systems nominal
             </span>
             <span className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-3 py-1">
-              Updated {new Intl.DateTimeFormat("en-US", {
+              Updated{" "}
+              {new Intl.DateTimeFormat("en-US", {
                 month: "long",
                 day: "numeric",
               }).format(updatedAt)}
@@ -910,13 +856,7 @@ function DateRangeSelector({
   );
 }
 
-function SkillCard({
-  skill,
-  view,
-}: {
-  skill: Skill;
-  view: "grid" | "list";
-}) {
+function SkillCard({ skill, view }: { skill: Skill; view: "grid" | "list" }) {
   const size = view === "grid" ? 88 : 68;
   const strokeWidth = 6;
   const radius = (size - strokeWidth) / 2;
@@ -976,22 +916,22 @@ function SkillCard({
           view === "grid" ? "w-full max-w-[180px]" : "w-full"
         )}
       >
-      <div
-        className={classNames(
-          "text-sm font-semibold text-white",
-          view === "grid" ? "text-center" : "text-left"
-        )}
-      >
-        {skill.name}
-      </div>
-      <div
-        className={classNames(
-          "mt-1 text-xs text-[#6E7A96]",
-          view === "grid" ? "text-center" : "text-left"
-        )}
-      >
-        Level {skill.level} · +{formatNumber(skill.xpGained)} XP
-      </div>
+        <div
+          className={classNames(
+            "text-sm font-semibold text-white",
+            view === "grid" ? "text-center" : "text-left"
+          )}
+        >
+          {skill.name}
+        </div>
+        <div
+          className={classNames(
+            "mt-1 text-xs text-[#6E7A96]",
+            view === "grid" ? "text-center" : "text-left"
+          )}
+        >
+          Level {skill.level} · +{formatNumber(skill.xpGained)} XP
+        </div>
         <div
           className={classNames(
             "mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#222222]",
@@ -1033,9 +973,7 @@ function RecentScheduleShowcase({
           start && end
             ? `${timeFormatter.format(start)} – ${timeFormatter.format(end)}`
             : "Scheduled block";
-        const completedLabel = completed
-          ? dayFormatter.format(completed)
-          : "—";
+        const completedLabel = completed ? dayFormatter.format(completed) : "—";
         return (
           <li
             key={item.id}
@@ -1116,7 +1054,7 @@ function formatEnergyLabel(value: string | null) {
 function BarChart({ data }: { data: number[] }) {
   if (data.length === 0) {
     return (
-        <div className="rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 text-sm text-[#99A4BD] shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
+      <div className="rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 text-sm text-[#99A4BD] shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
         No recent throughput recorded.
       </div>
     );
@@ -1220,7 +1158,9 @@ function ProjectCard({ project }: { project: Project }) {
     >
       <div className="flex items-start justify-between">
         <div>
-          <div className="text-sm font-semibold text-white">{project.title}</div>
+          <div className="text-sm font-semibold text-white">
+            {project.title}
+          </div>
           <div className="mt-1 text-xs text-[#6E7A96]">
             {project.tasksDone}/{project.tasksTotal} tasks complete
           </div>
@@ -1240,47 +1180,18 @@ function ProjectCard({ project }: { project: Project }) {
 }
 
 function MonumentCard({ monument }: { monument: Monument }) {
-  const size = 76;
-  const strokeWidth = 6;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (monument.progress / 100) * circumference;
   return (
     <div
       className="flex flex-col items-center gap-4 rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 text-center shadow-[0_12px_32px_rgba(8,10,16,0.4)]"
       aria-label={`${monument.title} progress`}
     >
-      <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-[#080808]">
-        <svg
-          width={size}
-          height={size}
-          viewBox={`0 0 ${size} ${size}`}
-          aria-hidden="true"
-        >
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke="#222222"
-            strokeWidth={strokeWidth}
-            fill="none"
-          />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke="#6DD3A8"
-            strokeWidth={strokeWidth}
-            fill="none"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-          />
-        </svg>
-        <span className="absolute text-sm font-semibold text-white">
-          {monument.progress}%
-        </span>
-      </div>
+      <CircularProgress
+        size={76}
+        progress={monument.progress}
+        trackClassName="stroke-gray-700"
+        progressClassName="stroke-green-400"
+        label={`${monument.progress}%`}
+      />
       <div>
         <div className="text-sm font-semibold text-white">{monument.title}</div>
         <div className="mt-1 text-xs text-[#6E7A96]">
@@ -1291,11 +1202,7 @@ function MonumentCard({ monument }: { monument: Monument }) {
   );
 }
 
-function DonutChart({
-  data,
-}: {
-  data: { label: string; value: number }[];
-}) {
+function DonutChart({ data }: { data: { label: string; value: number }[] }) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
   const colors = ["#FB7185", "#7C838A", "#6DD3A8", "#E8C268", "#22262A"];
   let current = 0;
@@ -1312,9 +1219,7 @@ function DonutChart({
         className="relative h-36 w-36 rounded-full border border-[#2B2B2B] bg-[#0A0A0A]"
         style={{
           background:
-            total === 0
-              ? "#151515"
-              : `conic-gradient(${segments.join(",")})`,
+            total === 0 ? "#151515" : `conic-gradient(${segments.join(",")})`,
         }}
         aria-label="Energy distribution"
       >
@@ -1354,8 +1259,8 @@ function DonutChart({
 function ActivityTimeline({ events }: { events: ActivityEvent[] }) {
   return (
     <ul className="relative space-y-6" aria-label="Activity feed">
-        {events.map((event, index) => {
-          const formattedDate = new Date(event.date);
+      {events.map((event, index) => {
+        const formattedDate = new Date(event.date);
         const dateLabel = new Intl.DateTimeFormat("en-US", {
           month: "short",
           day: "numeric",
@@ -1454,19 +1359,17 @@ function StreakSparkline({
   const range = maxValue - minValue || 1;
   const points = data.map((point, index) => {
     const x =
-      data.length === 1
-        ? width / 2
-        : (index / (data.length - 1)) * width;
+      data.length === 1 ? width / 2 : (index / (data.length - 1)) * width;
     const normalized = (point.value - minValue) / range;
     const y =
-      height -
-      (normalized * (height - verticalPadding * 2) + verticalPadding);
+      height - (normalized * (height - verticalPadding * 2) + verticalPadding);
     return { x, y };
   });
 
   const linePath = points
-    .map((point, index) =>
-      `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`
+    .map(
+      (point, index) =>
+        `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`
     )
     .join(" ");
 
@@ -1546,9 +1449,7 @@ function RoutineHeatmap({
           const totalDays = flattened.length;
           const total = flattened.reduce((sum, value) => sum + value, 0);
           const average =
-            totalDays === 0
-              ? 0
-              : Math.round((total / totalDays) * 100);
+            totalDays === 0 ? 0 : Math.round((total / totalDays) * 100);
 
           return (
             <div key={routine.id} className="space-y-3">
@@ -1577,7 +1478,8 @@ function RoutineHeatmap({
                           value > 1
                             ? Math.min(value / 100, 1)
                             : Math.max(0, Math.min(value, 1));
-                        const opacity = ratio === 0 ? 0.12 : 0.25 + ratio * 0.55;
+                        const opacity =
+                          ratio === 0 ? 0.12 : 0.25 + ratio * 0.55;
                         const backgroundColor =
                           ratio === 0
                             ? "#080808"
@@ -1853,13 +1755,21 @@ function WeeklyReflectionPanel({
                   </button>
                   <div className="flex items-center text-xs text-[#6E7A96]">
                     {saved === "saved" ? (
-                      <span className="text-[#6DD3A8]">Saved! We’ll tailor future nudges.</span>
+                      <span className="text-[#6DD3A8]">
+                        Saved! We’ll tailor future nudges.
+                      </span>
                     ) : shared === "copied" ? (
-                      <span className="text-[#FECACA]">Copied summary to clipboard.</span>
+                      <span className="text-[#FECACA]">
+                        Copied summary to clipboard.
+                      </span>
                     ) : shared === "error" ? (
-                      <span className="text-[#FFB4A2]">Clipboard unavailable—share manually.</span>
+                      <span className="text-[#FFB4A2]">
+                        Clipboard unavailable—share manually.
+                      </span>
                     ) : pinned ? (
-                      <span>Pinned weeks guide your habit recommendations.</span>
+                      <span>
+                        Pinned weeks guide your habit recommendations.
+                      </span>
                     ) : null}
                   </div>
                 </div>
@@ -1926,12 +1836,14 @@ function SectionCard({
   action,
   children,
   className,
+  id,
 }: {
   title: string;
   description?: string;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
+  id?: string;
 }) {
   return (
     <section
@@ -1954,13 +1866,7 @@ function SectionCard({
   );
 }
 
-function EmptyState({
-  title,
-  cta,
-}: {
-  title: string;
-  cta: string;
-}) {
+function EmptyState({ title, cta }: { title: string; cta: string }) {
   return (
     <div
       className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-[#2B2B2B] bg-[#080808] px-6 py-8 text-center text-sm text-[#9DA6BB]"
