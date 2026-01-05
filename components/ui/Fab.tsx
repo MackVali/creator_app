@@ -2590,6 +2590,19 @@ export function Fab({
     }
   };
 
+  const handleExpandedPointerDownCapture = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!expanded) return;
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      const focusableTags = ["INPUT", "TEXTAREA", "SELECT", "BUTTON"];
+      if (focusableTags.includes(target.tagName)) {
+        target.focus({ preventScroll: true });
+      }
+    },
+    [expanded]
+  );
+
   useEffect(() => {
     if (selected !== "PROJECT") return;
     let cancelled = false;
@@ -3661,6 +3674,7 @@ export function Fab({
                 expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
                 menuClassName
               )}
+              onPointerDownCapture={handleExpandedPointerDownCapture}
               style={{
                 boxShadow: MENU_BOX_SHADOW,
                 borderColor: isBlendingGradient
