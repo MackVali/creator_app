@@ -249,7 +249,8 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
                 <div
                   ref={contentRef}
                   className={cn(
-                    "fixed z-[2147483000] overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40",
+                    "fixed z-[2147483651] overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40",
+                    "overscroll-contain overflow-y-auto overflow-x-hidden",
                     contentWrapperClassName
                   )}
                   style={{
@@ -280,7 +281,8 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
             <div
               ref={contentRef}
               className={cn(
-                "absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40",
+                "absolute z-[2147483651] mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40",
+                "overscroll-contain overflow-y-auto overflow-x-hidden",
                 contentWrapperClassName
               )}
             >
@@ -335,7 +337,13 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
     const onSelectFn = onSelect ?? ctx.onSelect;
     const selectedVal = selectedValue ?? ctx.selectedValue;
     return (
-      <div ref={ref} className={cn("max-h-60 overflow-auto p-1", className)}>
+      <div
+        ref={ref}
+        className={cn(
+          "max-h-60 overflow-y-auto overflow-x-hidden overscroll-contain p-1",
+          className
+        )}
+      >
         {React.Children.map(children, (child) => {
           if (!React.isValidElement(child)) return child;
           return React.cloneElement(child, {

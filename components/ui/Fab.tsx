@@ -1565,7 +1565,7 @@ export function Fab({
                       ? createPortal(
                           <div
                             id="project-duration-picker"
-                            className="z-[2147483000] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
+                            className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
                             style={{
                               position: "absolute",
                               top: durationPosition.top,
@@ -3638,7 +3638,8 @@ export function Fab({
               }}
               layout
               className={cn(
-                "absolute bottom-20 mb-2 z-50 border rounded-lg shadow-2xl overflow-hidden bg-[var(--surface-elevated)]",
+                "absolute bottom-20 mb-2 z-[2147483646] border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
+                expanded ? "overflow-visible" : "overflow-hidden",
                 expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
                 menuClassName
               )}
