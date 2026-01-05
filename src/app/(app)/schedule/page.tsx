@@ -2134,57 +2134,46 @@ export default function SchedulePage() {
   const [windows, setWindows_REAL] = useState<RepoWindow[]>([]);
 
   function setTasks(next) {
-    debugger;
     setTasks_REAL(next);
   }
 
   function setProjects(next) {
-    debugger;
     setProjects_REAL(next);
   }
 
   function setSkills(next) {
-    debugger;
     setSkills_REAL(next);
   }
 
   function setMonuments(next) {
-    debugger;
     setMonuments_REAL(next);
   }
 
   function setProjectSkillIds(next) {
-    debugger;
     setProjectSkillIds_REAL(next);
   }
 
   function setProjectGoalRelations(next) {
-    debugger;
     setProjectGoalRelations_REAL(next);
   }
 
   function setHabits(next) {
-    debugger;
     setHabits_REAL(next);
   }
 
   function setSyncPairings(next) {
-    debugger;
     setSyncPairings_REAL(next);
   }
 
   function setHabitCompletionByDate(next) {
-    debugger;
     setHabitCompletionByDate_REAL(next);
   }
 
   function setWindowSnapshot(next) {
-    debugger;
     setWindowSnapshot_REAL(next);
   }
 
   function setWindows(next) {
-    debugger;
     setWindows_REAL(next);
   }
   const [allInstances, setAllInstances_REAL] = useState<ScheduleInstance[]>([]);
@@ -2220,17 +2209,10 @@ export default function SchedulePage() {
   );
 
   function setAllInstances(next) {
-    debugger;
     setAllInstances_REAL(next);
   }
 
   function setInstances(next) {
-    debugger;
-    setInstances_REAL(next);
-  }
-
-  function setInstances(next) {
-    debugger;
     setInstances_REAL(next);
   }
 
@@ -2261,27 +2243,22 @@ export default function SchedulePage() {
   );
 
   function setScheduledProjectIds(next) {
-    debugger;
     setScheduledProjectIds_REAL(next);
   }
 
   function setSchedulerDebug(next) {
-    debugger;
     setSchedulerDebug_REAL(next);
   }
 
   function setPendingInstanceStatuses(next) {
-    debugger;
     setPendingInstanceStatuses_REAL(next);
   }
 
   function setPendingBacklogTaskIds(next) {
-    debugger;
     setPendingBacklogTaskIds_REAL(next);
   }
 
   function setExpandedProjects(next) {
-    debugger;
     setExpandedProjects_REAL(next);
   }
   const [hasInteractedWithProjects, setHasInteractedWithProjects] =
@@ -3801,6 +3778,58 @@ export default function SchedulePage() {
           nextStatus === "completed"
             ? trimResult?.completionIso ?? new Date().toISOString()
             : undefined;
+        const previousSnapshot = instance
+          ? {
+              status: instance.status ?? null,
+              completedAt: instance.completed_at ?? null,
+              endUTC: instance.end_utc ?? null,
+              durationMin: instance.duration_min ?? null,
+            }
+          : null;
+
+        let hasLoggedOptimisticUpdate = false;
+        const applyOptimisticInstanceUpdate = (inst: ScheduleInstance) => {
+          if (inst.id !== instanceId) {
+            return inst;
+          }
+          const isHabitInstance = inst.source_type === "HABIT";
+          const nextInstance = {
+            ...inst,
+            status: nextStatus,
+            completed_at:
+              nextStatus === "completed"
+                ? completionIso ?? new Date().toISOString()
+                : null,
+            end_utc:
+              !isHabitInstance &&
+              nextStatus === "completed" &&
+              trimResult?.endUTC
+                ? trimResult.endUTC
+                : inst.end_utc,
+            duration_min:
+              !isHabitInstance &&
+              nextStatus === "completed" &&
+              typeof trimResult?.durationMin === "number"
+                ? trimResult.durationMin
+                : inst.duration_min,
+          };
+          console.log("[HABIT_COMPLETION][OPTIMISTIC_UPDATE]", {
+            instanceId,
+            sourceType: inst.source_type,
+            previousCompletedAt: inst.completed_at ?? null,
+            nextCompletedAt: nextInstance.completed_at ?? null,
+            nextStatus: nextInstance.status,
+            startUTC: nextInstance.start_utc,
+            endUTC: nextInstance.end_utc,
+          });
+          if (!hasLoggedOptimisticUpdate) {
+            logInstanceStatusChange("USER_TAP_LOCAL", instanceId, nextStatus);
+            hasLoggedOptimisticUpdate = true;
+          }
+          return nextInstance;
+        };
+        setInstances((prev) => prev.map(applyOptimisticInstanceUpdate));
+        setAllInstances((prev) => prev.map(applyOptimisticInstanceUpdate));
 
         const { error } = await updateInstanceStatus(
           instanceId,
@@ -3819,6 +3848,22 @@ export default function SchedulePage() {
         );
         if (error) {
           console.error(error);
+          if (previousSnapshot) {
+            const rollback = (inst: ScheduleInstance) => {
+              if (inst.id !== instanceId) {
+                return inst;
+              }
+              return {
+                ...inst,
+                status: previousSnapshot.status,
+                completed_at: previousSnapshot.completedAt,
+                end_utc: previousSnapshot.endUTC,
+                duration_min: previousSnapshot.durationMin,
+              };
+            };
+            setInstances((prev) => prev.map(rollback));
+            setAllInstances((prev) => prev.map(rollback));
+          }
           return;
         }
 
@@ -3880,49 +3925,6 @@ export default function SchedulePage() {
           });
         }
 
-        let hasLoggedOptimisticUpdate = false;
-        const applyOptimisticInstanceUpdate = (inst: ScheduleInstance) => {
-          if (inst.id !== instanceId) {
-            return inst;
-          }
-          const isHabitInstance = inst.source_type === "HABIT";
-          const nextInstance = {
-            ...inst,
-            status: nextStatus,
-            completed_at:
-              nextStatus === "completed"
-                ? completionIso ?? new Date().toISOString()
-                : null,
-            end_utc:
-              !isHabitInstance &&
-              nextStatus === "completed" &&
-              trimResult?.endUTC
-                ? trimResult.endUTC
-                : inst.end_utc,
-            duration_min:
-              !isHabitInstance &&
-              nextStatus === "completed" &&
-              typeof trimResult?.durationMin === "number"
-                ? trimResult.durationMin
-                : inst.duration_min,
-          };
-          console.log("[HABIT_COMPLETION][OPTIMISTIC_UPDATE]", {
-            instanceId,
-            sourceType: inst.source_type,
-            previousCompletedAt: inst.completed_at ?? null,
-            nextCompletedAt: nextInstance.completed_at ?? null,
-            nextStatus: nextInstance.status,
-            startUTC: nextInstance.start_utc,
-            endUTC: nextInstance.end_utc,
-          });
-          if (!hasLoggedOptimisticUpdate) {
-            logInstanceStatusChange("USER_TAP_LOCAL", instanceId, nextStatus);
-            hasLoggedOptimisticUpdate = true;
-          }
-          return nextInstance;
-        };
-        setInstances((prev) => prev.map(applyOptimisticInstanceUpdate));
-        setAllInstances((prev) => prev.map(applyOptimisticInstanceUpdate));
       } catch (error) {
         console.error(error);
       } finally {
