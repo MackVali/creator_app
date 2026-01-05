@@ -74,29 +74,23 @@ export function mergeHabitCompletionStateFromInstances(
     habitIds.forEach((habitId) => {
       const wasCompleted = prevDay?.[habitId] === "completed";
       const isCompleted = completedIds.has(habitId);
-      let action: "add" | "remove" | "noop" = "noop";
-      if (isCompleted && !wasCompleted) {
-        action = "add";
-      } else if (!isCompleted && wasCompleted) {
-        action = "remove";
-      }
-      if (completedIds.has(habitId)) {
+      const meta = instanceMetaByDate.get(dateKey)?.get(habitId);
+      if (isCompleted) {
         if (nextDay[habitId] !== "completed") {
           nextDay[habitId] = "completed";
           dayChanged = true;
         }
+      } else if (wasCompleted) {
+        delete nextDay[habitId];
+        dayChanged = true;
       }
-      // Intentionally do not remove completions - user-confirmed habit completion
-      // must never be undone by merge/reconciliation logic. Only explicit undo
-      // actions may remove completions.
-      const meta = instanceMetaByDate.get(dateKey)?.get(habitId);
       console.log("[HABIT_COMPLETION][MERGE_INSTANCE]", {
         instanceId: meta?.instanceId ?? null,
         habitId,
         status: meta?.status ?? null,
         completedAt: meta?.completedAt ?? null,
         dayKey: dateKey,
-        action,
+        action: isCompleted ? "add" : wasCompleted ? "remove" : "noop",
       });
     });
     if (dayChanged) {

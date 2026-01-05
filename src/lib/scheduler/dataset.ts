@@ -59,7 +59,7 @@ export type ProjectGoalRelations = Record<
   }
 >;
 
-const COMPLETED_LOOKBACK_DAYS = 3;
+const COMPLETED_LOOKBACK_DAYS = 30;
 
 function throwDatasetViolation(
   kind: "FETCH" | "CONTRACT",

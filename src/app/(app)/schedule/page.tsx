@@ -2769,6 +2769,7 @@ export default function SchedulePage() {
       habitId: string;
       completedAt: string;
       action: "complete" | "undo";
+      instanceId?: string | null;
     }) => {
       if (!userId) return;
       const completionDate = new Date(params.completedAt);
@@ -2784,6 +2785,7 @@ export default function SchedulePage() {
             completedAt: completedAtISO,
             timeZone: effectiveTimeZone,
             action: params.action,
+            instanceId: params.instanceId ?? null,
           }),
         });
         if (!response.ok) {
@@ -2796,7 +2798,7 @@ export default function SchedulePage() {
         console.error("Failed to sync habit completion metadata", error);
       }
     },
-    [localTimeZone, userId]
+    [effectiveTimeZone, userId]
   );
   const completionTimestampForDateKey = useCallback(
     (dateKey: string) => {
@@ -3877,6 +3879,7 @@ export default function SchedulePage() {
             habitId: instance.source_id,
             completedAt: completionTimestamp,
             action,
+            instanceId: instance.id ?? null,
           });
         }
 

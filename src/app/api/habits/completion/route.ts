@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { normalizeTimeZone, formatDateKeyInTimeZone } from '@/lib/scheduler/timezone'
+import {
+  normalizeTimeZone,
+  formatDateKeyInTimeZone,
+  startOfDayInTimeZone,
+  addDaysInTimeZone,
+} from '@/lib/scheduler/timezone'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { refreshHabitStreak } from '@/lib/streaks'
 
@@ -10,6 +15,7 @@ const completionRequestSchema = z.object({
   completedAt: z.string().datetime().optional(),
   timeZone: z.string().optional(),
   action: z.enum(['complete', 'undo']),
+  instanceId: z.string().uuid().optional().nullable(),
 })
 
 export async function POST(request: NextRequest) {
@@ -37,7 +43,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { habitId, completedAt, timeZone, action } = parsed.data
+    const { habitId, completedAt, timeZone, action, instanceId } = parsed.data
     const resolvedTimeZone = normalizeTimeZone(timeZone)
     const completedAtDate = completedAt ? new Date(completedAt) : new Date()
     if (Number.isNaN(completedAtDate.getTime())) {
@@ -45,6 +51,10 @@ export async function POST(request: NextRequest) {
     }
     const completionDay = formatDateKeyInTimeZone(completedAtDate, resolvedTimeZone)
     const completionTimestamp = completedAtDate.toISOString()
+    const scheduleUpdatePayload =
+      action === 'complete'
+        ? { status: 'completed', completed_at: completionTimestamp }
+        : { status: 'scheduled', completed_at: null }
 
     if (action === 'complete') {
       const { error } = await supabase
@@ -83,6 +93,46 @@ export async function POST(request: NextRequest) {
 
       if (error) {
         return NextResponse.json({ error: error.message ?? 'Failed to remove completion' }, { status: 500 })
+      }
+    }
+
+    // Keep schedule_instances in sync with completion toggles when possible
+    const syncTargets: string[] = []
+    if (instanceId) {
+      syncTargets.push(instanceId)
+    } else {
+      const dayStart = startOfDayInTimeZone(completedAtDate, resolvedTimeZone)
+      const dayEnd = addDaysInTimeZone(dayStart, 1, resolvedTimeZone)
+      const { data: instances, error: fetchError } = await supabase
+        .from('schedule_instances')
+        .select('id, status')
+        .eq('user_id', user.id)
+        .eq('source_type', 'HABIT')
+        .eq('source_id', habitId)
+        .gte('start_utc', dayStart.toISOString())
+        .lt('start_utc', dayEnd.toISOString())
+
+      if (!fetchError) {
+        for (const instance of instances ?? []) {
+          if (
+            instance?.id &&
+            (instance.status === 'scheduled' || instance.status === 'completed' || instance.status === 'in_progress')
+          ) {
+            syncTargets.push(instance.id)
+          }
+        }
+      }
+    }
+
+    if (syncTargets.length > 0) {
+      const { error: syncError } = await supabase
+        .from('schedule_instances')
+        .update(scheduleUpdatePayload)
+        .in('id', syncTargets)
+        .eq('user_id', user.id)
+
+      if (syncError) {
+        return NextResponse.json({ error: syncError.message ?? 'Failed to sync instance status' }, { status: 500 })
       }
     }
 

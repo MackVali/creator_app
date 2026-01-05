@@ -69,7 +69,7 @@ const LOOKAHEAD_PER_ITEM_DAYS = 7;
 const MAX_LOOKAHEAD_DAYS = 365;
 const HABIT_WRITE_LOOKAHEAD_DAYS = BASE_LOOKAHEAD_DAYS;
 const LOCATION_CLEANUP_DAYS = 7;
-const COMPLETED_RETENTION_DAYS = 3;
+const COMPLETED_RETENTION_DAYS = 30;
 const PRACTICE_LOOKAHEAD_DAYS = 7;
 const LOCATION_MISMATCH_REVALIDATION = "LOCATION_MISMATCH_REVALIDATION";
 
@@ -272,7 +272,11 @@ const hasBlockingHabitOverlap = (params: {
     params;
   let syncOverlapCount = 0;
   for (const inst of existingInstances) {
-    if (!inst || inst.status !== "scheduled") continue;
+    if (
+      !inst ||
+      (inst.status !== "scheduled" && inst.status !== "completed")
+    )
+      continue;
     if (candidateId && inst.id === candidateId) continue;
     const instStart = safeDate(inst.start_utc);
     const instEnd = safeDate(inst.end_utc);
@@ -3961,15 +3965,17 @@ async function reserveMandatoryHabitsForDay(params: {
   for (const inst of existingInstances) {
     if (!inst) continue;
     if (inst.source_type !== "HABIT") continue;
-    if (inst.status !== "scheduled") continue;
-    const habitId = inst.source_id ?? "";
+    // Include both scheduled AND completed habit instances to preserve their positions
+    if (inst.status !== "scheduled" && inst.status !== "completed") continue;
+    const habitId = inst.source_id ?? null;
     if (!habitId) continue;
-    const bucket = scheduledInstancesByHabitId.get(habitId);
+    const bucket = scheduledHabitBuckets.get(habitId);
     if (bucket) {
       bucket.push(inst);
     } else {
-      scheduledInstancesByHabitId.set(habitId, [inst]);
+      scheduledHabitBuckets.set(habitId, [inst]);
     }
+  }
   }
 
   const hasValidScheduledInstance = (habit: HabitScheduleItem) => {
@@ -5115,7 +5121,7 @@ async function scheduleHabitsForDay(params: {
   const anchorStartsByWindowKey = new Map<string, number[]>();
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>();
   const existingByHabitId = new Map<string, ScheduleInstance>();
-  const scheduledHabitBuckets = new Map<string, ScheduleInstance[]>();
+  const habitInstanceBuckets = new Map<string, ScheduleInstance[]>();
   const carryoverInstances: ScheduleInstance[] = [];
   const duplicatesToCancel: ScheduleInstance[] = [];
   const syncUsageByWindow = new Map<string, { start: number; end: number }[]>();
@@ -5282,7 +5288,14 @@ async function scheduleHabitsForDay(params: {
 
   for (const inst of existingInstances) {
     if (!inst) continue;
-    if (inst.source_type !== "HABIT" || inst.status !== "scheduled") {
+    if (inst.source_type !== "HABIT") {
+      carryoverInstances.push(inst);
+      continue;
+    }
+    const status = inst.status ?? "";
+    const isScheduled = status === "scheduled";
+    const isCompleted = status === "completed";
+    if (!isScheduled && !isCompleted) {
       carryoverInstances.push(inst);
       continue;
     }
@@ -5291,11 +5304,11 @@ async function scheduleHabitsForDay(params: {
       carryoverInstances.push(inst);
       continue;
     }
-    const bucket = scheduledHabitBuckets.get(habitId);
+    const bucket = habitInstanceBuckets.get(habitId);
     if (bucket) {
       bucket.push(inst);
     } else {
-      scheduledHabitBuckets.set(habitId, [inst]);
+      habitInstanceBuckets.set(habitId, [inst]);
     }
   }
 
@@ -5304,12 +5317,35 @@ async function scheduleHabitsForDay(params: {
     return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
   };
 
-  for (const [habitId, bucket] of scheduledHabitBuckets) {
+  for (const [habitId, bucket] of habitInstanceBuckets) {
     bucket.sort((a, b) => startValueForInstance(a) - startValueForInstance(b));
+    const completedInstances = bucket.filter(
+      (instance) => instance.status === "completed"
+    );
+    if (completedInstances.length > 0) {
+      const keeper = completedInstances[0];
+      existingByHabitId.set(habitId, keeper);
+      carryoverInstances.push(...completedInstances);
+      for (const instance of bucket) {
+        if (instance === keeper) continue;
+        if (instance.status === "scheduled") {
+          duplicatesToCancel.push(instance);
+        } else if (instance.status !== "completed") {
+          carryoverInstances.push(instance);
+        }
+      }
+      continue;
+    }
+    const scheduledInstances = bucket.filter(
+      (instance) => instance.status === "scheduled"
+    );
+    if (scheduledInstances.length === 0) {
+      continue;
+    }
     const isNonDailyHabit = Boolean(nonDailyHabitIds?.has(habitId));
     if (repeatablePracticeIds.has(habitId)) {
       // For repeatable practices, only keep locked instances
-      for (const instance of bucket) {
+      for (const instance of scheduledInstances) {
         if (instance.locked === true) {
           existingByHabitId.set(habitId, instance);
           carryoverInstances.push(instance);
@@ -5320,30 +5356,34 @@ async function scheduleHabitsForDay(params: {
       continue;
     }
     // For non-repeatable habits, only keep the earliest locked instance
-    const lockedInstances = bucket.filter((inst) => inst.locked === true);
+    const lockedInstances = scheduledInstances.filter(
+      (inst) => inst.locked === true
+    );
     if (lockedInstances.length > 0) {
       const keeper = lockedInstances[0];
       existingByHabitId.set(habitId, keeper);
       carryoverInstances.push(keeper);
       // Cancel non-locked instances
-      for (const instance of bucket) {
+      for (const instance of scheduledInstances) {
         if (instance !== keeper) {
           duplicatesToCancel.push(instance);
         }
       }
     } else {
-      if (isNonDailyHabit && bucket.length > 0) {
+      if (isNonDailyHabit && scheduledInstances.length > 0) {
         const replacementInstances =
           nonDailyReplacementInstanceIds && nonDailyReplacementInstanceIds.size
-            ? bucket.filter(
+            ? scheduledInstances.filter(
                 (inst) => inst.id && nonDailyReplacementInstanceIds.has(inst.id)
               )
             : [];
         const keeper =
-          replacementInstances.length > 0 ? replacementInstances[0] : bucket[0];
+          replacementInstances.length > 0
+            ? replacementInstances[0]
+            : scheduledInstances[0];
         existingByHabitId.set(habitId, keeper);
         carryoverInstances.push(keeper);
-        for (const instance of bucket) {
+        for (const instance of scheduledInstances) {
           if (instance !== keeper) {
             duplicatesToCancel.push(instance);
           }
@@ -5595,8 +5635,9 @@ async function scheduleHabitsForDay(params: {
   }
 
   for (const inst of dayInstances) {
-    if (!inst || inst.status !== "scheduled") continue;
+    if (!inst) continue;
     if (inst.source_type === "PROJECT") continue;
+    if (inst.status !== "scheduled" && inst.status !== "completed") continue;
     placedSoFar.push(inst);
   }
 
@@ -5904,7 +5945,20 @@ async function scheduleHabitsForDay(params: {
     const hasWindowTypeMismatch =
       existingInstance &&
       !doesWindowAllowHabitType(habit, existingWindowRecord);
+    const isExistingCompleted = existingInstance?.status === "completed";
     if (hasLocationMismatch || hasLocationlessMismatch) {
+      if (isExistingCompleted) {
+        if (existingInstance?.id) {
+          const reservation = reservedPlacements?.get(habit.id) ?? null;
+          if (reservation) {
+            registerReservationForInstance(existingInstance.id, reservation);
+            reservedPlacements?.delete(habit.id);
+          }
+        }
+      }
+      if (isExistingCompleted) {
+        continue;
+      }
       const reservation = reservedPlacements?.get(habit.id) ?? null;
       if (reservation && existingInstance?.id) {
         registerReservationForInstance(existingInstance.id, reservation);
@@ -5918,7 +5972,7 @@ async function scheduleHabitsForDay(params: {
         }
         existingInstance = null;
       }
-    } else if (hasWindowTypeMismatch) {
+    } else if (hasWindowTypeMismatch && !isExistingCompleted) {
       logCancelOnce("REVALIDATION_EXISTING_WINDOW_KIND", existingInstance);
       if (await cancelScheduledInstance(existingInstance)) {
         existingByHabitId.delete(habit.id);
@@ -6504,7 +6558,7 @@ async function scheduleHabitsForDay(params: {
       if (!isRepeatablePractice) {
         existingInstance = existingByHabitId.get(habit.id) ?? null;
       }
-      if (existingInstance && daylightConstraint) {
+      if (existingInstance && daylightConstraint && !isExistingCompleted) {
         const existingWindow = existingInstance.window_id
           ? windowsById.get(existingInstance.window_id) ?? null
           : null;
@@ -6525,6 +6579,7 @@ async function scheduleHabitsForDay(params: {
         }
       }
 
+      const existingIsCompleted = existingInstance?.status === "completed";
       let needsUpdate = existingInstance
         ? existingInstance.window_id !== window.id ||
           existingInstance.start_utc !== candidateStartUTC ||
@@ -6533,6 +6588,10 @@ async function scheduleHabitsForDay(params: {
           (existingInstance.energy_resolved ?? "").toUpperCase() !==
             energyResolved
         : true;
+
+      if (existingIsCompleted) {
+        needsUpdate = false;
+      }
 
       if (normalizedType === "PRACTICE") {
         const existingContext =
@@ -6543,7 +6602,7 @@ async function scheduleHabitsForDay(params: {
         }
       }
 
-      if (!needsUpdate && existingInstance) {
+      if (!needsUpdate && existingInstance && !existingIsCompleted) {
         const overlapsExisting = hasBlockingHabitOverlap({
           candidateIsSync: isSyncHabit,
           candidateId: existingInstance.id ?? null,
@@ -6566,6 +6625,7 @@ async function scheduleHabitsForDay(params: {
         instanceId = existingInstance.id;
         persisted = existingInstance;
         registerInstance(existingInstance);
+        placedSoFar.push(existingInstance);
       } else {
         const placement = await placeItemInWindows({
           userId,
