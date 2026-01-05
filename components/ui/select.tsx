@@ -159,6 +159,15 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       onValueChange?.(nextValue);
     };
 
+    const handleTriggerPointerDown = (
+      event: React.PointerEvent<HTMLButtonElement>
+    ) => {
+      if (event.pointerType !== "touch") return;
+      // Toggle immediately on touch to avoid synthesized click delays/double taps.
+      event.preventDefault();
+      updateOpen(!isOpen);
+    };
+
     React.useEffect(() => {
       setSelectedValue(value || "");
     }, [value]);
@@ -212,6 +221,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
         >
           <button
             type="button"
+            onPointerDown={handleTriggerPointerDown}
             onClick={() =>
               openOnTriggerFocus ? updateOpen(true) : updateOpen(!isOpen)
             }
