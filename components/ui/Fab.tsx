@@ -598,7 +598,7 @@ export function Fab({
       }
     };
     return (
-      <div className="flex h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition focus-within:border-blue-400/60">
+      <div className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition focus-within:border-blue-400/60">
         <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-white/[0.08] text-lg">
           {selectedSkill?.icon ?? "🎯"}
         </span>
@@ -1061,7 +1061,12 @@ export function Fab({
             className="relative mt-0 bg-black/80"
             aria-label="Expanded placeholder"
           >
-            <div className="relative grid gap-4 p-4 md:p-8">
+            <div
+              className="relative grid gap-4 p-4 pb-6 md:p-8 md:pb-10"
+              style={{
+                paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))",
+              }}
+            >
                 {selected === "GOAL" && (
                   <>
                     <div className="grid gap-2">
@@ -1119,7 +1124,7 @@ export function Fab({
                           value={goalName}
                           onChange={(e) => setGoalName(e.target.value)}
                           placeholder="Name your GOAL"
-                          className="h-14 rounded-md !border-white/10 bg-white/[0.05] text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                          className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                         />
                       </div>
                       <div className="grid gap-2 col-span-1">
@@ -1127,7 +1132,7 @@ export function Fab({
                         <Select
                           value={goalEnergy}
                           onValueChange={setGoalEnergy}
-                          triggerClassName="!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
+                          triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
                           hideChevron
                           trigger={
                             <div className="flex h-full w-full items-center justify-center leading-none">
@@ -1166,7 +1171,7 @@ export function Fab({
                         <Select
                           value={goalPriority}
                           onValueChange={setGoalPriority}
-                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
                           placeholder="Priority"
                         >
                           <SelectContent>
@@ -1185,7 +1190,7 @@ export function Fab({
                         <input
                           id="goal-due"
                           type="datetime-local"
-                          className="h-14 w-full rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 focus:!border-blue-400/60 focus-visible:ring-0"
+                          className="h-12 md:h-14 w-full rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 focus:!border-blue-400/60 focus-visible:ring-0"
                           value={goalDue ?? ""}
                           onChange={(e) => {
                             const value = e.target.value;
@@ -1446,7 +1451,7 @@ export function Fab({
                           value={projectName}
                           onChange={(e) => setProjectName(e.target.value)}
                           placeholder="Name your PROJECT"
-                          className="h-14 rounded-md !border-white/10 bg-white/[0.05] text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                          className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                         />
                       </div>
                       <div className="grid gap-2 col-span-1">
@@ -1454,7 +1459,7 @@ export function Fab({
                         <Select
                           value={projectEnergy}
                           onValueChange={setProjectEnergy}
-                          triggerClassName="!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
+                          triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
                           hideChevron
                           trigger={
                             <div className="flex h-full w-full items-center justify-center leading-none">
@@ -1495,7 +1500,7 @@ export function Fab({
                         <Select
                           value={projectPriority}
                           onValueChange={setProjectPriority}
-                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
                           placeholder="Priority"
                         >
                           <SelectContent>
@@ -1523,7 +1528,7 @@ export function Fab({
                         <Select
                           value={projectStage}
                           onValueChange={setProjectStage}
-                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
                           placeholder="Stage"
                         >
                           <SelectContent>
@@ -1541,7 +1546,7 @@ export function Fab({
                             type="button"
                             onClick={toggleDurationPicker}
                             ref={durationTriggerRef}
-                            className="flex h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                            className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
                             aria-haspopup="dialog"
                             aria-expanded={showDurationPicker}
                             aria-controls="project-duration-picker"
@@ -1608,7 +1613,7 @@ export function Fab({
                           setShowSkillFilters(false);
                         }}
                         placeholder="Link a skill"
-                        triggerClassName="!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                        triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
                         contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
                         maxHeight={150}
                         openOnTriggerFocus
@@ -1889,7 +1894,7 @@ export function Fab({
                           value={taskName}
                           onChange={(e) => setTaskName(e.target.value)}
                           placeholder="Name your TASK"
-                          className="h-14 rounded-md !border-white/10 bg-white/[0.05] text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                          className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                         />
                       </div>
                       <div className="grid gap-2 col-span-1">
@@ -1897,7 +1902,7 @@ export function Fab({
                         <Select
                           value={taskEnergy}
                           onValueChange={setTaskEnergy}
-                          triggerClassName="!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
+                          triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
                           hideChevron
                           trigger={
                             <div className="flex h-full w-full items-center justify-center leading-none">
@@ -1936,7 +1941,7 @@ export function Fab({
                         <Select
                           value={taskPriority}
                           onValueChange={setTaskPriority}
-                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
                           placeholder="Priority"
                         >
                           <SelectContent>
@@ -1955,7 +1960,7 @@ export function Fab({
                         <Select
                           value={taskStage}
                           onValueChange={setTaskStage}
-                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
                           placeholder="Stage"
                         >
                           <SelectContent>
@@ -1973,7 +1978,7 @@ export function Fab({
                         </Label>
                         <button
                           type="button"
-                          className="flex h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
                         >
                           <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
                             <Clock className="h-6 w-6 text-white/80" />
@@ -1997,7 +2002,7 @@ export function Fab({
                           setShowSkillFilters(false);
                         }}
                         placeholder="Link a skill"
-                        triggerClassName="!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                        triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
                         contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
                         maxHeight={150}
                         openOnTriggerFocus
@@ -2186,7 +2191,7 @@ export function Fab({
                           value={habitName}
                           onChange={(e) => setHabitName(e.target.value)}
                           placeholder="Name your HABIT"
-                          className="h-14 rounded-md !border-white/10 bg-white/[0.05] text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                          className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                         />
                       </div>
                       <div className="grid gap-2 col-span-1">
@@ -2194,7 +2199,7 @@ export function Fab({
                         <Select
                           value={habitEnergy}
                           onValueChange={setHabitEnergy}
-                          triggerClassName="!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
+                          triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
                           hideChevron
                           trigger={
                             <div className="flex h-full w-full items-center justify-center leading-none">
@@ -2233,7 +2238,7 @@ export function Fab({
                         <Select
                           value={habitType}
                           onValueChange={setHabitType}
-                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
                           placeholder="Type"
                         >
                           <SelectContent>
@@ -2252,7 +2257,7 @@ export function Fab({
                         <Select
                           value={habitRecurrence}
                           onValueChange={setHabitRecurrence}
-                          triggerClassName="h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
                           placeholder="Recurrence"
                         >
                           <SelectContent>
@@ -2268,7 +2273,7 @@ export function Fab({
                         <div className="relative">
                         <button
                           type="button"
-                          className="flex h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
                         >
                             <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
                               <Clock className="h-6 w-6 text-white/80" />
@@ -2294,7 +2299,7 @@ export function Fab({
                           setShowSkillFilters(false);
                         }}
                         placeholder="Link a skill"
-                        triggerClassName="!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                        triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
                         contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
                         maxHeight={150}
                         openOnTriggerFocus
@@ -3645,7 +3650,7 @@ export function Fab({
                 transition: "border-color 0.1s linear",
                 transformOrigin:
                   menuVariant === "timeline" ? "bottom right" : "bottom center",
-                minHeight: expanded ? "48vh" : menuContainerHeight,
+                minHeight: expanded ? "52vh" : menuContainerHeight,
                 height: !expanded ? menuContainerHeight : undefined,
                 maxHeight: !expanded ? menuContainerHeight : undefined,
                 minWidth: expanded ? undefined : menuWidth ?? undefined,
