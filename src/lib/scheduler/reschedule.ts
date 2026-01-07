@@ -71,6 +71,7 @@ const HABIT_WRITE_LOOKAHEAD_DAYS = BASE_LOOKAHEAD_DAYS;
 const LOCATION_CLEANUP_DAYS = 7;
 const COMPLETED_RETENTION_DAYS = 3;
 const PRACTICE_LOOKAHEAD_DAYS = 7;
+const HABIT_MISSED_RETENTION_DAYS = 7;
 const LOCATION_MISMATCH_REVALIDATION = "LOCATION_MISMATCH_REVALIDATION";
 
 const HABIT_TYPE_PRIORITY: Record<string, number> = {
@@ -2172,15 +2173,22 @@ export async function scheduleBacklog(
       habit.window?.energy ??
       "NO"
     ).toUpperCase();
+    const missedStart = startOfDayInTimeZone(baseStart, timeZone);
+    const missedEnd = addDaysInTimeZone(missedStart, 1, timeZone);
+    const rawDuration = Number(habit.durationMinutes ?? 0);
+    const durationMin =
+      Number.isFinite(rawDuration) && rawDuration > 0
+        ? Math.round(rawDuration)
+        : DEFAULT_HABIT_DURATION_MIN;
     const { error } = await supabase.from("schedule_instances").insert({
       user_id: userId,
       source_type: "HABIT",
       source_id: habit.id,
       status: "missed",
       missed_reason: reason,
-      start_utc: null,
-      end_utc: null,
-      duration_min: null,
+      start_utc: missedStart.toISOString(),
+      end_utc: missedEnd.toISOString(),
+      duration_min: durationMin,
       window_id: null,
       energy_resolved: energyResolved,
       weight_snapshot: 0,
@@ -3464,22 +3472,26 @@ export async function scheduleBacklog(
     }
   }
 
-  if (result.failures.length === 0 && !result.error) {
-    // Run missed HABIT cleanup after successful reschedule
-    const { error: deleteError } = await supabase
-      .from("schedule_instances")
-      .delete()
-      .eq("user_id", userId)
-      .eq("source_type", "HABIT")
-      .eq("status", "missed");
+  // Always clean up old missed HABIT instances so accumulation doesn't depend on a perfect run
+  const missedCleanupCutoff = addDaysInTimeZone(
+    baseStart,
+    -HABIT_MISSED_RETENTION_DAYS,
+    timeZone
+  );
+  const { error: missedCleanupError } = await supabase
+    .from("schedule_instances")
+    .delete()
+    .eq("user_id", userId)
+    .eq("source_type", "HABIT")
+    .eq("status", "missed")
+    .lt("start_utc", missedCleanupCutoff.toISOString());
 
-    if (deleteError) {
-      result.failures.push({
-        itemId: "cleanup-missed-habits",
-        reason: "error",
-        detail: deleteError,
-      });
-    }
+  if (missedCleanupError) {
+    result.failures.push({
+      itemId: "cleanup-missed-habits",
+      reason: "error",
+      detail: missedCleanupError,
+    });
   }
 
   if (typeof supabase.from === "function") {
