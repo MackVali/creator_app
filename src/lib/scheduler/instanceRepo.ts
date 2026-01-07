@@ -77,11 +77,19 @@ export async function fetchInstancesForRange(
   const startParam = safeStart.toISOString();
   const endParam = safeEnd.toISOString();
 
-  return await base
-    .or(
-      `and(start_utc.gte.${startParam},start_utc.lt.${endParam}),and(start_utc.lt.${startParam},end_utc.gt.${startParam})`
-    )
+  const overlapClause = `and(start_utc.gte.${startParam},start_utc.lt.${endParam}),and(start_utc.lt.${startParam},end_utc.gt.${startParam})`;
+  console.log(
+    "[QUERY] range=%s..%s where=%s",
+    startParam,
+    endParam,
+    overlapClause
+  );
+
+  const query = base
+    .or(overlapClause)
     .order("start_utc", { ascending: true });
+
+  return await query;
 }
 
 export async function fetchScheduledProjectIds(
@@ -238,6 +246,7 @@ export async function updateInstanceStatus(
       endUTC?: string;
       durationMin?: number;
     };
+    allowPast?: boolean;
   },
   client?: Client
 ) {
@@ -264,7 +273,55 @@ export async function updateInstanceStatus(
   ) {
     payload.duration_min = options.updates.durationMin;
   }
-  return await supabase.from("schedule_instances").update(payload).eq("id", id);
+  const response = await supabase
+    .from("schedule_instances")
+    .update(payload)
+    .eq("id", id)
+    .select(
+      "id, user_id, source_type, status, completed_at, start_utc, end_utc, duration_min"
+    )
+    .maybeSingle();
+
+  if (!response.data) {
+    console.log("[WRITE] id=%s matched=0 filter={id:%s}", id, id);
+  } else {
+    const row = response.data;
+    console.log(
+      "[WRITE] id=%s matched=1 status=%s completed_at=%s src=%s start=%s end=%s duration=%s user=%s",
+      row.id,
+      row.status,
+      row.completed_at,
+      row.source_type,
+      row.start_utc,
+      row.end_utc,
+      row.duration_min,
+      row.user_id
+    );
+  }
+
+  return response;
+}
+
+export async function updateInstanceStatusBatch(
+  updates: Array<{
+    id: string;
+    status: "completed" | "scheduled";
+    completedAtUTC?: string | null;
+    allowPast?: boolean;
+  }>
+) {
+  const response = await fetch("/api/schedule/instances/batchStatus", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ updates }),
+  });
+  let bodyText = "";
+  try {
+    bodyText = await response.text();
+  } catch {
+    bodyText = "";
+  }
+  return { status: response.status, ok: response.ok, body: bodyText };
 }
 
 export async function markProjectMissed(

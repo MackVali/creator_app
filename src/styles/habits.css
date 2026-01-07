@@ -1,0 +1,152 @@
+.habit-card {
+  --habit-card-scheduled-bg: radial-gradient(
+      circle at 0% 0%,
+      rgba(120, 126, 138, 0.28),
+      transparent 58%
+    ),
+    linear-gradient(
+      140deg,
+      rgba(8, 8, 10, 0.96) 0%,
+      rgba(22, 22, 26, 0.94) 42%,
+      rgba(88, 90, 104, 0.6) 100%
+    );
+  --habit-card-completed-bg: radial-gradient(
+      circle at 2% 0%,
+      rgba(16, 185, 129, 0.28),
+      transparent 58%
+    ),
+    linear-gradient(
+      140deg,
+      rgba(6, 78, 59, 0.95) 0%,
+      rgba(4, 120, 87, 0.92) 44%,
+      rgba(16, 185, 129, 0.88) 100%
+    );
+  transition: background 200ms ease, color 150ms ease, border-color 150ms ease,
+    box-shadow 200ms ease;
+  background: var(--habit-card-scheduled-bg);
+}
+
+.habit-card--scheduled {
+  background: var(--habit-card-scheduled-bg);
+}
+
+.habit-card--completed {
+  background: var(--habit-card-completed-bg);
+}
+
+.habit-card--type-default {
+  --habit-card-scheduled-bg: radial-gradient(
+      circle at 0% 0%,
+      rgba(120, 126, 138, 0.28),
+      transparent 58%
+    ),
+    linear-gradient(
+      140deg,
+      rgba(8, 8, 10, 0.96) 0%,
+      rgba(22, 22, 26, 0.94) 42%,
+      rgba(88, 90, 104, 0.6) 100%
+    );
+  --habit-card-completed-bg: radial-gradient(
+      circle at 2% 0%,
+      rgba(16, 185, 129, 0.28),
+      transparent 58%
+    ),
+    linear-gradient(
+      140deg,
+      rgba(6, 78, 59, 0.95) 0%,
+      rgba(4, 120, 87, 0.92) 44%,
+      rgba(16, 185, 129, 0.88) 100%
+    );
+}
+
+.habit-card--type-chore {
+  --habit-card-scheduled-bg: radial-gradient(
+      circle at 10% -25%,
+      rgba(248, 113, 113, 0.32),
+      transparent 58%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(67, 26, 26, 0.9) 0%,
+      rgba(127, 29, 29, 0.85) 45%,
+      rgba(220, 38, 38, 0.72) 100%
+    );
+  --habit-card-completed-bg: radial-gradient(
+      circle at 2% 0%,
+      rgba(12, 137, 96, 0.28),
+      transparent 58%
+    ),
+    linear-gradient(
+      140deg,
+      rgba(4, 56, 43, 0.95) 0%,
+      rgba(2, 89, 64, 0.92) 44%,
+      rgba(12, 137, 96, 0.88) 100%
+    );
+}
+
+.habit-card--type-relaxer {
+  --habit-card-scheduled-bg: radial-gradient(
+      circle at 8% -18%,
+      rgba(16, 185, 129, 0.32),
+      transparent 60%
+    ),
+    linear-gradient(
+      138deg,
+      rgba(4, 56, 33, 0.94) 0%,
+      rgba(4, 120, 87, 0.88) 46%,
+      rgba(16, 185, 129, 0.78) 100%
+    );
+}
+
+.habit-card--type-sync {
+  --habit-card-scheduled-bg: radial-gradient(
+      circle at 12% -20%,
+      rgba(209, 213, 219, 0.32),
+      transparent 58%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(39, 42, 48, 0.92) 0%,
+      rgba(107, 114, 128, 0.82) 45%,
+      rgba(209, 213, 219, 0.7) 100%
+    );
+}
+
+.habit-card--type-practice {
+  --habit-card-scheduled-bg: radial-gradient(
+      circle at 6% -14%,
+      rgba(54, 57, 66, 0.38),
+      transparent 60%
+    ),
+    linear-gradient(
+      142deg,
+      rgba(4, 4, 6, 0.98) 0%,
+      rgba(18, 18, 22, 0.95) 44%,
+      rgba(68, 72, 92, 0.72) 100%
+    );
+}
+
+.habit-card--type-memo {
+  --habit-card-scheduled-bg: radial-gradient(
+      circle at 8% -18%,
+      rgba(192, 132, 252, 0.34),
+      transparent 60%
+    ),
+    linear-gradient(
+      138deg,
+      rgba(59, 7, 100, 0.94) 0%,
+      rgba(99, 37, 141, 0.88) 46%,
+      rgba(168, 85, 247, 0.74) 100%
+    );
+  --habit-card-completed-bg: radial-gradient(
+      circle at 10% -18%,
+      rgba(216, 180, 254, 0.4),
+      transparent 60%
+    ),
+    linear-gradient(
+      138deg,
+      rgba(76, 29, 149, 0.95) 0%,
+      rgba(124, 58, 237, 0.88) 48%,
+      rgba(192, 132, 252, 0.78) 100%
+    );
+}

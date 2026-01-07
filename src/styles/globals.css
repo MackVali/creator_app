@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./tokens.css";
+@import "./habits.css";
 
 /* custom layers/utilities can go below */
 @layer utilities {

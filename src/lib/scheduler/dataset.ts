@@ -261,13 +261,18 @@ export async function buildScheduleEventDataset({
 
   const filteredInstances = (instanceRows ?? []).filter((instance) => {
     if (instance.status !== "completed") return true;
-    const startMs = new Date(instance.start_utc ?? "").getTime();
-    const endMs = new Date(instance.end_utc ?? "").getTime();
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    const startMs = Date.parse(
+      instance.start_utc ?? instance.completed_at ?? ""
+    );
+    const endMs = Date.parse(
+      instance.end_utc ?? instance.completed_at ?? instance.start_utc ?? ""
+    );
+    if (!Number.isFinite(startMs) && !Number.isFinite(endMs)) {
       return false;
     }
 
-    if (endMs < retentionCutoffMs) {
+    const effectiveEndMs = Number.isFinite(endMs) ? endMs : startMs;
+    if (Number.isFinite(effectiveEndMs) && effectiveEndMs < retentionCutoffMs) {
       return false;
     }
     return true;
@@ -313,6 +318,26 @@ export async function buildScheduleEventDataset({
     habits,
     client,
   });
+
+  const loadDay = dayKeyFromUtc(baseDate.toISOString(), normalizedTz);
+  const habitCount = normalizedInstances.filter(
+    (inst) => inst.source_type === "HABIT"
+  ).length;
+  const completedCount = normalizedInstances.filter(
+    (inst) => inst.status === "completed"
+  ).length;
+  const scheduledCount = normalizedInstances.filter(
+    (inst) => inst.status === "scheduled"
+  ).length;
+  console.log(
+    "[LOAD] day=%s total=%s habit=%s nonhabit=%s completed=%s scheduled=%s",
+    loadDay,
+    normalizedInstances.length,
+    habitCount,
+    normalizedInstances.length - habitCount,
+    completedCount,
+    scheduledCount
+  );
 
   if (process.env.NODE_ENV !== "production") {
     const inst = normalizedInstances[0];

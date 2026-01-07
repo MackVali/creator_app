@@ -3526,6 +3526,17 @@ export async function scheduleBacklog(
 
   const syncInstancesCreated: ScheduleInstance[] = [];
   const syncPairingsByInstanceId: Record<string, string[]> = {};
+  // Track partner instances already paired to a SYNC during this run to avoid reusing them
+  const claimedPartnerInstanceIds = new Set<string>();
+  const finalInstanceLookup = finalInstances.reduce<Map<string, ScheduleInstance>>(
+    (map, inst) => {
+      if (inst.id) {
+        map.set(inst.id, inst);
+      }
+      return map;
+    },
+    new Map<string, ScheduleInstance>()
+  );
 
   // Get all scheduled instances from the final range (non-SYNC)
   const allScheduledInstances = finalInstances.filter((inst) => {
@@ -3625,10 +3636,16 @@ export async function scheduleBacklog(
       },
     });
 
+    const unclaimedCandidates = candidates.filter(
+      (candidate) => !claimedPartnerInstanceIds.has(candidate.id)
+    );
+    const effectiveCandidates =
+      unclaimedCandidates.length > 0 ? unclaimedCandidates : candidates;
+
     const syncResult = computeSyncHabitDuration({
       syncWindow,
       minDurationMs,
-      candidates,
+      candidates: effectiveCandidates,
     });
 
     if (syncResult.finalStart && syncResult.finalEnd) {
@@ -3659,13 +3676,36 @@ export async function scheduleBacklog(
           windowId: null,
           locked: false,
           weightSnapshot: 0,
+          eventName: habit.name ?? null,
+          practiceContextId: habit.skillMonumentId ?? null,
         },
         supabase
       );
 
       if (syncInstance) {
         syncInstancesCreated.push(syncInstance);
-        syncPairingsByInstanceId[syncInstance.id] = syncResult.pairedInstances;
+        const filterValidPartnerIds = (ids: string[] | null | undefined) =>
+          (ids ?? []).filter((id) => {
+            const partner = id ? finalInstanceLookup.get(id) : null;
+            if (!partner || !partner.start_utc || !partner.end_utc) return false;
+            const partnerStart = new Date(partner.start_utc).getTime();
+            const partnerEnd = new Date(partner.end_utc).getTime();
+            if (!Number.isFinite(partnerStart) || !Number.isFinite(partnerEnd))
+              return false;
+            return partnerEnd > syncStartMs && partnerStart < syncEndMs;
+          });
+
+        const syncStartMs = new Date(startUtc).getTime();
+        const syncEndMs = new Date(endUtc).getTime();
+        const pairedValid = filterValidPartnerIds(syncResult.pairedInstances);
+        const validatedPartners = pairedValid.filter(
+          (id) => !claimedPartnerInstanceIds.has(id)
+        );
+
+        syncPairingsByInstanceId[syncInstance.id] = validatedPartners;
+        for (const id of validatedPartners) {
+          claimedPartnerInstanceIds.add(id);
+        }
         result.placed.push(syncInstance);
         result.timeline.push({
           type: "HABIT",
