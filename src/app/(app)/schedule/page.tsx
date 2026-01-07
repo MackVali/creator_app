@@ -26,6 +26,7 @@ import {
   useReducedMotion,
 } from "framer-motion";
 import type { AnimationPlaybackControls } from "framer-motion";
+import clsx from "clsx";
 import { Lock } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -60,7 +61,6 @@ import {
   windowsForDateFromSnapshot,
   type WindowLite as RepoWindow,
 } from "@/lib/scheduler/repo";
-import { filterIllegalOverlapsForRender } from "@/lib/scheduler/overlapFilter";
 import {
   fetchScheduledProjectIds,
   updateInstanceStatus,
@@ -108,6 +108,15 @@ import {
 import { createMemoNoteForHabit } from "@/lib/notesStorage";
 import { MemoNoteSheet } from "@/components/schedule/MemoNoteSheet";
 import { useProfile } from "@/lib/hooks/useProfile";
+import {
+  applyStatusTargets,
+  type StatusTarget,
+} from "./statusMutations";
+import {
+  type HabitCompletionByDate,
+  type HabitCompletionStatus,
+  resolveHabitCompletionStatus,
+} from "./habitCompletion";
 
 function safeDateTimeFormat(
   locale: string | undefined,
@@ -124,8 +133,6 @@ type PeekState = {
   direction: DayTransitionDirection;
   offset: number;
 };
-
-type HabitCompletionStatus = "scheduled" | "completed";
 
 const HABIT_COMPLETION_STORAGE_PREFIX = "schedule-habit-completions";
 const DAY_PEEK_SAFE_GAP_PX = 24;
@@ -625,6 +632,17 @@ function computeTimelineStackingIndex(startOffsetMinutes: number) {
   return Math.round(
     TIMELINE_STACK_BASE_Z_INDEX + safeOffset * TIMELINE_STACK_SCALE
   );
+}
+
+function isInstancePastDay(
+  instance: ScheduleInstance | undefined,
+  completionIso: string | null | undefined,
+  todayKey: string,
+  timeZone: string
+) {
+  if (!instance || !completionIso) return false;
+  const completionKey = formatLocalDateKey(new Date(completionIso), timeZone);
+  return completionKey.localeCompare(todayKey) < 0;
 }
 
 function taskMatchesProjectInstance(
@@ -2127,9 +2145,8 @@ export default function SchedulePage() {
   const [habits, setHabits_REAL] = useState<HabitScheduleItem[]>([]);
   const [syncPairings, setSyncPairings_REAL] =
     useState<SyncPairingsByInstanceId>({});
-  const [habitCompletionByDate, setHabitCompletionByDate_REAL] = useState<
-    Record<string, Record<string, HabitCompletionStatus>>
-  >({});
+  const [habitCompletionByDate, setHabitCompletionByDate_REAL] =
+    useState<HabitCompletionByDate>({});
   const [windowSnapshot, setWindowSnapshot_REAL] = useState<RepoWindow[]>([]);
   const [windows, setWindows_REAL] = useState<RepoWindow[]>([]);
 
@@ -2192,6 +2209,16 @@ export default function SchedulePage() {
   const instanceStatusLogRef = useRef<Map<string, ScheduleInstance["status"]>>(
     new Map()
   );
+  const habitStatusFlipRef = useRef<
+    Map<
+      string,
+      {
+        lastStatus: ScheduleInstance["status"] | null;
+        lastChange: number;
+        flipCount: number;
+      }
+    >
+  >(new Map());
   const logInstanceStatusChange = useCallback(
     (
       source: string,
@@ -2611,7 +2638,7 @@ export default function SchedulePage() {
         hasLoadedHabitCompletionState.current = true;
         return;
       }
-      const next: Record<string, Record<string, HabitCompletionStatus>> = {};
+      const next: HabitCompletionByDate = {};
       for (const [dateKey, value] of Object.entries(
         parsed as Record<string, unknown>
       )) {
@@ -2990,9 +3017,8 @@ export default function SchedulePage() {
       setHabits(payload.habits);
       setSyncPairings(payload.syncPairings ?? {});
       const nextInstances = payload.instances ?? [];
-      const filtered = filterIllegalOverlapsForRender(nextInstances);
       setAllInstances(nextInstances);
-      setInstances(filtered.kept);
+      setInstances(nextInstances);
       nextInstances.forEach((instance) => {
         if (!instance?.id) return;
         logInstanceStatusChange("REFRESH_LOAD", instance.id, instance.status);
@@ -3674,6 +3700,44 @@ export default function SchedulePage() {
     return map;
   }, [instances]);
 
+  useEffect(() => {
+    const flipState = habitStatusFlipRef.current;
+    const now = Date.now();
+    for (const key of Array.from(flipState.keys())) {
+      if (!(key in instanceStatusById)) {
+        flipState.delete(key);
+      }
+    }
+    for (const [instanceId, status] of Object.entries(instanceStatusById)) {
+      const normalizedStatus =
+        typeof status === "string" && status.length > 0 ? status : null;
+      const prev = flipState.get(instanceId);
+      if (prev?.lastStatus === normalizedStatus) {
+        continue;
+      }
+      const flipCount =
+        prev && now - prev.lastChange <= 300 ? prev.flipCount + 1 : 1;
+      flipState.set(instanceId, {
+        lastStatus: normalizedStatus,
+        lastChange: now,
+        flipCount,
+      });
+      if (flipCount > 1 && typeof window !== "undefined") {
+        const detail = {
+          metric: "schedule.card_flicker_detected",
+          instanceId,
+          lastStatus: prev?.lastStatus ?? null,
+          nextStatus: normalizedStatus,
+          timestamp: now,
+        };
+        window.dispatchEvent(
+          new CustomEvent("schedule-telemetry", { detail })
+        );
+        console.warn("[schedule.card_flicker_detected]", detail);
+      }
+    }
+  }, [instanceStatusById]);
+
   const buildXpAwardPayload = useCallback(
     (instance: ScheduleInstance) => {
       const collectSkillIds = (ids: (string | null | undefined)[]) =>
@@ -3779,47 +3843,103 @@ export default function SchedulePage() {
 
       const instance = instancesById.get(instanceId);
       const previousStatus = instance?.status ?? null;
+      const pending = pendingInstanceStatuses.has(instanceId);
+      const dayKey =
+        instance?.start_utc && stableTimeZone
+          ? formatLocalDateKey(new Date(instance.start_utc), stableTimeZone)
+          : canonicalTodayDateKey;
+      if (pending) {
+        console.log(`[SKIP] reason=pending instanceId=${instanceId}`);
+        return;
+      }
       console.log("[INSTANCE WRITE][USER_TAP]", {
         instanceId,
         previousStatus,
         nextStatus,
         timestamp: new Date().toISOString(),
       });
+      console.log(
+        `[TAP] instanceId=${instanceId} habitId=${instance?.source_id ?? "null"} day=${dayKey} sourceType=${instance?.source_type ?? "UNKNOWN"} pending=${pending} nextStatus=${nextStatus}`
+      );
 
+      const mutationTargetIds = [instanceId];
       setPendingInstanceStatuses((prev) => {
         const next = new Map(prev);
-        next.set(instanceId, nextStatus);
+        mutationTargetIds.forEach((id) => next.set(id, nextStatus));
         return next;
       });
 
-      try {
-        const trimResult =
-          nextStatus === "completed"
-            ? computeTrimmedHabitTiming(instance)
-            : null;
-        const completionIso =
-          nextStatus === "completed"
-            ? trimResult?.completionIso ?? new Date().toISOString()
-            : undefined;
+      const trimCandidate =
+        nextStatus === "completed" && instance
+          ? computeTrimmedHabitTiming(instance)
+          : null;
+      const completionIso =
+        nextStatus === "completed"
+          ? trimCandidate?.completionIso ?? new Date().toISOString()
+          : undefined;
+      const allowPastCompletion =
+        instance?.source_type === "HABIT" &&
+        isInstancePastDay(instance, completionIso, stableTimeZone ?? "UTC");
+      const trimResult =
+        nextStatus === "completed" && instance
+          ? instance.source_type === "HABIT" && allowPastCompletion
+            ? null
+            : trimCandidate
+          : null;
+      const targets: StatusTarget[] = mutationTargetIds.map((id) => ({
+        id,
+        status: nextStatus,
+        completedAt: nextStatus === "completed" ? completionIso : null,
+      }));
+      let previousInstances: ScheduleInstance[] | null = null;
+      let previousAllInstances: ScheduleInstance[] | null = null;
+      let hasLoggedOptimisticUpdate = false;
+      const applyOptimisticInstanceUpdate = () => {
+        setInstances((prev) => {
+          previousInstances = prev;
+          const next = applyStatusTargets(prev, targets);
+          if (!hasLoggedOptimisticUpdate) {
+            logInstanceStatusChange("USER_TAP_LOCAL", instanceId, nextStatus);
+            hasLoggedOptimisticUpdate = true;
+          }
+          return next;
+        });
+        setAllInstances((prev) => {
+          previousAllInstances = prev;
+          return applyStatusTargets(prev, targets);
+        });
+      };
+      applyOptimisticInstanceUpdate();
 
-        const { error } = await updateInstanceStatus(
+      try {
+        console.log(
+          `[MUTATE] instanceId=${instanceId} next=${nextStatus} completed_at=${completionIso ?? "null"}`
+        );
+        let ok = false;
+        const result = await updateInstanceStatus(
           instanceId,
           nextStatus,
           nextStatus === "completed"
             ? {
                 completedAtUTC: completionIso,
-                updates: trimResult
-                  ? {
-                      endUTC: trimResult.endUTC,
-                      durationMin: trimResult.durationMin,
-                    }
-                  : undefined,
+                updates:
+                  trimResult && !allowPastCompletion
+                    ? {
+                        endUTC: trimResult.endUTC,
+                        durationMin: trimResult.durationMin,
+                      }
+                    : undefined,
+                allowPast: allowPastCompletion,
               }
             : undefined
         );
-        if (error) {
-          console.error(error);
-          return;
+        const okResult = !result.error && (result.status ?? 500) < 400;
+        console.log(
+          `[RESULT] instanceId=${instanceId} http=${result.status ?? "n/a"} ok=${okResult} body=${result.error?.message ?? result.statusText ?? ""}`
+        );
+        ok = okResult;
+        if (result.error) {
+          throw result.error;
         }
 
         const previousStatus = instance?.status ?? null;
@@ -3880,55 +4000,18 @@ export default function SchedulePage() {
           });
         }
 
-        let hasLoggedOptimisticUpdate = false;
-        const applyOptimisticInstanceUpdate = (inst: ScheduleInstance) => {
-          if (inst.id !== instanceId) {
-            return inst;
-          }
-          const isHabitInstance = inst.source_type === "HABIT";
-          const nextInstance = {
-            ...inst,
-            status: nextStatus,
-            completed_at:
-              nextStatus === "completed"
-                ? completionIso ?? new Date().toISOString()
-                : null,
-            end_utc:
-              !isHabitInstance &&
-              nextStatus === "completed" &&
-              trimResult?.endUTC
-                ? trimResult.endUTC
-                : inst.end_utc,
-            duration_min:
-              !isHabitInstance &&
-              nextStatus === "completed" &&
-              typeof trimResult?.durationMin === "number"
-                ? trimResult.durationMin
-                : inst.duration_min,
-          };
-          console.log("[HABIT_COMPLETION][OPTIMISTIC_UPDATE]", {
-            instanceId,
-            sourceType: inst.source_type,
-            previousCompletedAt: inst.completed_at ?? null,
-            nextCompletedAt: nextInstance.completed_at ?? null,
-            nextStatus: nextInstance.status,
-            startUTC: nextInstance.start_utc,
-            endUTC: nextInstance.end_utc,
-          });
-          if (!hasLoggedOptimisticUpdate) {
-            logInstanceStatusChange("USER_TAP_LOCAL", instanceId, nextStatus);
-            hasLoggedOptimisticUpdate = true;
-          }
-          return nextInstance;
-        };
-        setInstances((prev) => prev.map(applyOptimisticInstanceUpdate));
-        setAllInstances((prev) => prev.map(applyOptimisticInstanceUpdate));
       } catch (error) {
         console.error(error);
+        if (previousInstances) {
+          setInstances(previousInstances);
+        }
+        if (previousAllInstances) {
+          setAllInstances(previousAllInstances);
+        }
       } finally {
         setPendingInstanceStatuses((prev) => {
           const next = new Map(prev);
-          next.delete(instanceId);
+          mutationTargetIds.forEach((id) => next.delete(id));
           return next;
         });
       }
@@ -3941,6 +4024,12 @@ export default function SchedulePage() {
       recordHabitCompletionRemote,
       computeTrimmedHabitTiming,
       logInstanceStatusChange,
+      setAllInstances,
+      setPendingInstanceStatuses,
+      pendingInstanceStatuses,
+      stableTimeZone,
+      canonicalTodayDateKey,
+      applyStatusTargets,
     ]
   );
 
@@ -4008,6 +4097,23 @@ export default function SchedulePage() {
 
   const handleHabitCardActivation = useCallback(
     (placement: HabitTimelinePlacement, dateKey: string) => {
+      const isPending = placement.instanceId
+        ? pendingInstanceStatuses.has(placement.instanceId)
+        : false;
+      const currentStatus = getHabitCompletionStatus(
+        dateKey,
+        placement.habitId
+      );
+      const plannedNextStatus: HabitCompletionStatus =
+        currentStatus === "completed" ? "scheduled" : "completed";
+      if (isPending) {
+        console.log(
+          `[SKIP] reason=pending instanceId=${placement.instanceId ?? "null"}`
+        );
+      }
+      console.log(
+        `[TAP] instanceId=${placement.instanceId ?? "null"} habitId=${placement.habitId} day=${dateKey} sourceType=${placement.habitType ?? "HABIT"} pending=${isPending} nextStatus=${plannedNextStatus}`
+      );
       if (placement.habitType === "MEMO") {
         setMemoNoteError(null);
         setMemoNoteState({
@@ -4016,6 +4122,9 @@ export default function SchedulePage() {
           skillId: placement.skillId,
           dateKey,
         });
+        return;
+      }
+      if (placement.instanceId && isPending) {
         return;
       }
       const nextStatus = toggleHabitCompletionStatus(
@@ -4046,6 +4155,8 @@ export default function SchedulePage() {
       handleToggleInstanceCompletion,
       completionTimestampForDateKey,
       recordHabitCompletionRemote,
+      getHabitCompletionStatus,
+      pendingInstanceStatuses,
     ]
   );
 
@@ -5472,14 +5583,17 @@ export default function SchedulePage() {
               const habitTitleClass = shouldWrapHabitTitle
                 ? "pr-8 text-sm font-medium leading-snug line-clamp-2 sm:line-clamp-1 sm:truncate"
                 : "truncate pr-8 text-sm font-medium leading-snug";
-              const habitStatus = getHabitCompletionStatus(
+              const pendingStatus = placement.instanceId
+                ? pendingInstanceStatuses.get(placement.instanceId)
+                : undefined;
+              const isHabitCompleted = resolveHabitCompletionStatus({
+                placement,
                 dayViewDateKey,
-                placement.habitId
-              );
-              // Schedule rendering is day-based, not time-based
-              // Instances must never be hidden based on "now"
-              // Completion affects styling, not existence
-              const isHabitCompleted = habitStatus === "completed";
+                instanceStatusById,
+                getHabitCompletionStatus,
+              });
+              const disableHabitInteractions =
+                options?.disableInteractions || Boolean(pendingStatus);
               const shouldHideHabit = false;
               // TEMP: disabled habit hiding for isolation test
               // if (isHabitCompleted && viewIsFutureDay) {
@@ -5540,24 +5654,6 @@ export default function SchedulePage() {
                   transformOrigin: "top right",
                 };
               }
-              const scheduledCardBackground =
-                "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)";
-              const choreCardBackground =
-                "radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)";
-              const relaxerCardBackground =
-                "radial-gradient(circle at 8% -18%, rgba(16, 185, 129, 0.32), transparent 60%), linear-gradient(138deg, rgba(4, 56, 33, 0.94) 0%, rgba(4, 120, 87, 0.88) 46%, rgba(16, 185, 129, 0.78) 100%)";
-              const syncCardBackground =
-                "radial-gradient(circle at 12% -20%, rgba(209, 213, 219, 0.32), transparent 58%), linear-gradient(135deg, rgba(39, 42, 48, 0.92) 0%, rgba(107, 114, 128, 0.82) 45%, rgba(209, 213, 219, 0.7) 100%)";
-              const practiceCardBackground =
-                "radial-gradient(circle at 6% -14%, rgba(54, 57, 66, 0.38), transparent 60%), linear-gradient(142deg, rgba(4, 4, 6, 0.98) 0%, rgba(18, 18, 22, 0.95) 44%, rgba(68, 72, 92, 0.72) 100%)";
-              const memoCardBackground =
-                "radial-gradient(circle at 8% -18%, rgba(192, 132, 252, 0.34), transparent 60%), linear-gradient(138deg, rgba(59, 7, 100, 0.94) 0%, rgba(99, 37, 141, 0.88) 46%, rgba(168, 85, 247, 0.74) 100%)";
-              const memoCompletedBackground =
-                "radial-gradient(circle at 10% -18%, rgba(216, 180, 254, 0.4), transparent 60%), linear-gradient(138deg, rgba(76, 29, 149, 0.95) 0%, rgba(124, 58, 237, 0.88) 48%, rgba(192, 132, 252, 0.78) 100%)";
-              const completedCardBackground =
-                "radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)";
-              const choreCompletedCardBackground =
-                "radial-gradient(circle at 2% 0%, rgba(12, 137, 96, 0.28), transparent 58%), linear-gradient(140deg, rgba(4, 56, 43, 0.95) 0%, rgba(2, 89, 64, 0.92) 44%, rgba(12, 137, 96, 0.88) 100%)";
               const scheduledShadow = [
                 "0 28px 58px rgba(3, 3, 6, 0.66)",
                 "0 10px 24px rgba(0, 0, 0, 0.45)",
@@ -5598,50 +5694,54 @@ export default function SchedulePage() {
                 "0 12px 28px rgba(1, 55, 34, 0.45)",
                 "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
               ].join(", ");
-              let cardBackground = scheduledCardBackground;
               let cardShadow = scheduledShadow;
               let cardOutline = "1px solid rgba(10, 10, 12, 0.85)";
               let habitBorderClass = "border-black/70";
+              let habitTypeClass = "habit-card--type-default";
+
+              if (normalizedHabitType === "MEMO") {
+                habitTypeClass = "habit-card--type-memo";
+              } else if (normalizedHabitType === "CHORE") {
+                habitTypeClass = "habit-card--type-chore";
+              } else if (normalizedHabitType === "RELAXER") {
+                habitTypeClass = "habit-card--type-relaxer";
+              } else if (normalizedHabitType === "PRACTICE") {
+                habitTypeClass = "habit-card--type-practice";
+              } else if (normalizedHabitType === "SYNC") {
+                habitTypeClass = "habit-card--type-sync";
+              }
 
               if (normalizedHabitType === "MEMO") {
                 if (isHabitCompleted) {
-                  cardBackground = memoCompletedBackground;
                   cardShadow = memoCompletedShadow;
                   cardOutline = "1px solid rgba(216, 180, 254, 0.55)";
                   habitBorderClass = "border-purple-200/65";
                 } else {
-                  cardBackground = memoCardBackground;
                   cardShadow = memoShadow;
                   cardOutline = "1px solid rgba(147, 51, 234, 0.5)";
                   habitBorderClass = "border-purple-300/55";
                 }
               } else if (normalizedHabitType === "CHORE" && isHabitCompleted) {
-                cardBackground = choreCompletedCardBackground;
                 cardShadow = completedShadow;
                 cardOutline = "1px solid rgba(12, 137, 96, 0.55)";
                 habitBorderClass = "border-emerald-500/60";
               } else if (isHabitCompleted) {
-                cardBackground = completedCardBackground;
                 cardShadow = completedShadow;
                 cardOutline = "1px solid rgba(16, 185, 129, 0.55)";
                 habitBorderClass = "border-emerald-400/60";
               } else if (normalizedHabitType === "CHORE") {
-                cardBackground = choreCardBackground;
                 cardShadow = choreShadow;
                 cardOutline = "1px solid rgba(0, 0, 0, 0.85)";
                 habitBorderClass = "border-rose-200/45";
               } else if (normalizedHabitType === "RELAXER") {
-                cardBackground = relaxerCardBackground;
                 cardShadow = relaxerShadow;
                 cardOutline = "1px solid rgba(52, 211, 153, 0.55)";
                 habitBorderClass = "border-emerald-200/60";
               } else if (normalizedHabitType === "PRACTICE") {
-                cardBackground = practiceCardBackground;
                 cardShadow = practiceShadow;
                 cardOutline = "1px solid rgba(8, 8, 12, 0.92)";
                 habitBorderClass = "border-slate-500/50";
               } else if (normalizedHabitType === "SYNC") {
-                cardBackground = syncCardBackground;
                 cardShadow = syncShadow;
                 cardOutline = "1px solid rgba(0, 0, 0, 0.85)";
                 habitBorderClass = "border-amber-200/45";
@@ -5675,7 +5775,6 @@ export default function SchedulePage() {
                   boxShadow: habitCardShadow,
                   outline: cardOutline,
                   outlineOffset: "-1px",
-                  background: cardBackground,
                 },
                 layoutMode,
                 { animate: !prefersReducedMotion }
@@ -5686,13 +5785,18 @@ export default function SchedulePage() {
                   ? longPressBounceId === placement.instanceId
                   : false;
               const handleHabitPrimaryAction = () => {
-                if (options?.disableInteractions) return;
+                if (disableHabitInteractions) {
+                  console.log(
+                    `[SKIP] reason=disabled instanceId=${placement.instanceId ?? "null"}`
+                  );
+                  return;
+                }
                 handleHabitCardActivation(placement, dayViewDateKey);
               };
               const habitPointerHandlers = hasHabitInstance
                 ? {
                     onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
-                      if (options?.disableInteractions) return;
+                      if (disableHabitInteractions) return;
                       handleInstancePointerDown(
                         event,
                         null,
@@ -5794,14 +5898,26 @@ export default function SchedulePage() {
 
               return (
                 <motion.div
-                  key={placement.instanceId}
+                  key={`habit-${placement.habitId}-${dayViewDateKey}`}
                   layout="position"
                   layoutId={habitLayoutTokens?.card}
-                  className={`absolute flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 ${habitPaddingClass} text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer select-none`}
+                  className={clsx(
+                    "habit-card absolute flex h-full items-center justify-between gap-3 border px-3 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
+                    habitCornerClass,
+                    habitPaddingClass,
+                    habitBorderClass,
+                    habitTypeClass,
+                    isHabitCompleted
+                      ? "habit-card--completed"
+                      : "habit-card--scheduled",
+                    disableHabitInteractions
+                      ? "pointer-events-none cursor-default opacity-90"
+                      : "cursor-pointer"
+                  )}
                   role="button"
-                  tabIndex={options?.disableInteractions ? -1 : 0}
+                  tabIndex={disableHabitInteractions ? -1 : 0}
                   aria-pressed={isHabitCompleted}
-                  aria-disabled={options?.disableInteractions ?? false}
+                  aria-disabled={disableHabitInteractions}
                   style={layeredCardStyle}
                   onContextMenu={() => console.log("[LONGPRESS] contextmenu")}
                   onClick={() => {
@@ -5809,7 +5925,7 @@ export default function SchedulePage() {
                       shouldBlock: shouldBlockClickFromLongPress(),
                       longPressTriggered: longPressTriggeredRef.current,
                       shortPressHandled: shortPressHandledRef.current,
-                      disableInteractions: options?.disableInteractions,
+                      disableInteractions: disableHabitInteractions,
                     });
                     if (shouldBlockClickFromLongPress()) return;
                     handleHabitPrimaryAction();

@@ -206,16 +206,13 @@ export function computeTimelineLayoutForSyncHabits({
     const pairingIds = instanceId ? pairingLookup?.[instanceId] : null;
     const pairingSet =
       pairingIds && pairingIds.length > 0 ? new Set(pairingIds) : null;
-    if (pairingLookup && !pairingSet) return;
+    // If we have no pairing entry for this instance, fall back to overlap-based pairing
+    // instead of bailing. Only restrict to explicit pairings when we actually have them.
 
     const overlapping: ScoredCandidate[] = [];
 
     for (const candidate of sortedCandidates) {
       const candidateKey = `${candidate.kind}:${candidate.index}`;
-      if (pairingSet) {
-        const candidateId = candidate.instanceId ?? null;
-        if (!candidateId || !pairingSet.has(candidateId)) continue;
-      }
       if (candidate.kind === "habit" && candidate.index === habitIndex)
         continue;
       if (candidate.kind === "habit") {
@@ -243,7 +240,18 @@ export function computeTimelineLayoutForSyncHabits({
 
     if (overlapping.length === 0) return;
 
-    overlapping.sort((a, b) => {
+    // Prefer explicit pairings when present; otherwise use any overlap
+    const explicitMatches =
+      pairingSet && pairingSet.size > 0
+        ? overlapping.filter(
+            (candidate) =>
+              candidate.instanceId && pairingSet.has(candidate.instanceId)
+          )
+        : [];
+    const targetCandidates =
+      explicitMatches.length > 0 ? explicitMatches : overlapping;
+
+    targetCandidates.sort((a, b) => {
       if (a.overlapStart !== b.overlapStart)
         return a.overlapStart - b.overlapStart;
       if (a.startGap !== b.startGap) return a.startGap - b.startGap;
@@ -254,18 +262,25 @@ export function computeTimelineLayoutForSyncHabits({
       return a.endMs - b.endMs;
     });
 
-    const winner = overlapping[0];
-    const winnerKey = `${winner.kind}:${winner.index}`;
-    usedCandidates.add(winnerKey);
+    const winners =
+      explicitMatches.length > 0 && targetCandidates.length > 1
+        ? targetCandidates // pair with all explicit partners that overlap
+        : [targetCandidates[0]]; // fall back to best overlap
+
     habitLayouts[habitIndex] = "paired-right";
     syncHabitAlignment.set(habitIndex, {
-      startMs: winner.startMs,
-      endMs: winner.endMs,
+      startMs: winners[0].startMs,
+      endMs: winners[0].endMs,
     });
-    if (winner.kind === "habit") {
-      habitLayouts[winner.index] = "paired-left";
-    } else {
-      projectLayouts[winner.index] = "paired-left";
+
+    for (const winner of winners) {
+      const winnerKey = `${winner.kind}:${winner.index}`;
+      usedCandidates.add(winnerKey);
+      if (winner.kind === "habit") {
+        habitLayouts[winner.index] = "paired-left";
+      } else {
+        projectLayouts[winner.index] = "paired-left";
+      }
     }
   });
 
