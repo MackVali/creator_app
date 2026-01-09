@@ -70,6 +70,7 @@ export interface Database {
           user_id: string;
           name: string;
           description?: string | null;
+          type?: string;
           habit_type?: string;
           recurrence?: string | null;
           recurrence_days?: number[] | null;

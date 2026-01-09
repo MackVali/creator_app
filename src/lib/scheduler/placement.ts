@@ -252,23 +252,20 @@ export async function findEarliestHighSlot(
 
     let taken: ScheduleInstance[] = [];
     const isBlockingStatus = (status?: ScheduleInstance["status"] | null) =>
-      status === "scheduled" || status === "completed";
+      status === "scheduled";
 
     if (existingInstances) {
       taken = existingInstances.filter((inst) => {
         if (!inst) return false;
         const instStart = safeDate(inst.start_utc);
         if (!instStart) return false;
-        // For PROJECT placement, don't filter by day since windows span horizon
-        if (sourceType === "HABIT") {
-          const instDayParts = getDateTimeParts(instStart, resolvedTimeZone);
-          if (
-            instDayParts.year !== targetDayParts.year ||
-            instDayParts.month !== targetDayParts.month ||
-            instDayParts.day !== targetDayParts.day
-          ) {
-            return false;
-          }
+        const instDayParts = getDateTimeParts(instStart, resolvedTimeZone);
+        if (
+          instDayParts.year !== targetDayParts.year ||
+          instDayParts.month !== targetDayParts.month ||
+          instDayParts.day !== targetDayParts.day
+        ) {
+          return false;
         }
         if (!isBlockingStatus(inst.status)) return false;
         const instStartMs = instStart.getTime();
@@ -365,26 +362,20 @@ export async function placeItemInWindows(
 
     let taken: ScheduleInstance[] = [];
     const isBlockingStatus = (status?: ScheduleInstance["status"] | null) =>
-      status === "scheduled" || status === "completed";
+      status === "scheduled";
 
     if (existingInstances) {
       taken = existingInstances.filter((inst): inst is ScheduleInstance => {
         if (!inst) return false;
         const instStart = safeDate(inst.start_utc);
         if (!instStart) return false;
-        // For PROJECT placement, check all instances regardless of day
-        // to align with final invariant overlap detection
-        if (item.sourceType === "PROJECT") {
-          // Skip day filtering for PROJECT placement
-        } else {
-          const instDayParts = getDateTimeParts(instStart, resolvedTimeZone);
-          if (
-            instDayParts.year !== targetDayParts.year ||
-            instDayParts.month !== targetDayParts.month ||
-            instDayParts.day !== targetDayParts.day
-          ) {
-            return false;
-          }
+        const instDayParts = getDateTimeParts(instStart, resolvedTimeZone);
+        if (
+          instDayParts.year !== targetDayParts.year ||
+          instDayParts.month !== targetDayParts.month ||
+          instDayParts.day !== targetDayParts.day
+        ) {
+          return false;
         }
         if (!isBlockingStatus(inst.status)) return false;
         const instStartMs = instStart.getTime();

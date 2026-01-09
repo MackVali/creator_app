@@ -75,6 +75,7 @@ import {
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
 } from "@/lib/scheduler/habits";
+import { normalizeHabitType } from "@/lib/scheduler/habits";
 import { mergeHabitCompletionStateFromInstances } from "@/lib/scheduler/habitCompletionState";
 import {
   computeTimelineLayoutForSyncHabits,
@@ -108,10 +109,7 @@ import {
 import { createMemoNoteForHabit } from "@/lib/notesStorage";
 import { MemoNoteSheet } from "@/components/schedule/MemoNoteSheet";
 import { useProfile } from "@/lib/hooks/useProfile";
-import {
-  applyStatusTargets,
-  type StatusTarget,
-} from "./statusMutations";
+import { applyStatusTargets, type StatusTarget } from "./statusMutations";
 import {
   type HabitCompletionByDate,
   type HabitCompletionStatus,
@@ -2079,9 +2077,9 @@ export default function SchedulePage() {
       stableTimeZone
     );
   }, [stableTimeZone, parsedDayKey]);
-  // 5. viewedDayKey (string)
-  const viewedDayKey = useMemo(() => {
-    if (!viewedDate) return null;
+  // 5. dayViewDateKey (string)
+  const dayViewDateKey = useMemo(() => {
+    if (!viewedDate) return "";
     return formatLocalDateKey(viewedDate);
   }, [viewedDate]);
   // 6. canonical today (already fixed earlier)
@@ -2090,9 +2088,9 @@ export default function SchedulePage() {
   }, [effectiveTimeZone]);
   // 7. comparison
   const isViewingToday = useMemo(() => {
-    if (!viewedDayKey || !canonicalTodayDateKey) return false;
-    return viewedDayKey === canonicalTodayDateKey;
-  }, [viewedDayKey, canonicalTodayDateKey]);
+    if (!dayViewDateKey || !canonicalTodayDateKey) return false;
+    return dayViewDateKey === canonicalTodayDateKey;
+  }, [dayViewDateKey, canonicalTodayDateKey]);
   const prefersReducedMotion = useReducedMotion();
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -2720,7 +2718,6 @@ export default function SchedulePage() {
     if (initialDateWasValid) return;
     setCurrentDateKey(formatLocalDateKey(new Date()));
   }, [initialDateWasValid]);
-  const dayViewDateKey = "2025-12-16";
 
   useEffect(() => {
     setMemoNoteState(null);
@@ -2877,7 +2874,7 @@ export default function SchedulePage() {
     await loadInstancesRef.current();
   }, []);
   const scheduleDatasetRef = useRef<ScheduleEventDataset | null>(null);
-  const PRIMARY_WRITE_WINDOW_DAYS = 7;
+  const PRIMARY_WRITE_WINDOW_DAYS = 28;
   const FULL_WRITE_WINDOW_DAYS = 365;
   const isSchedulingRef = useRef(false);
 
@@ -3096,6 +3093,12 @@ export default function SchedulePage() {
     setWindows(derived);
   }, [windowSnapshot, currentDate, localTimeZone, userId]);
 
+  const habitMap = useMemo(() => {
+    const map: Record<string, HabitScheduleItem> = {};
+    for (const habit of habits) map[habit.id] = habit;
+    return map;
+  }, [habits]);
+
   const filterInstancesForDate = useCallback(
     (date: Date, timeZone: string) => {
       if (allInstances.length === 0) {
@@ -3126,7 +3129,7 @@ export default function SchedulePage() {
       );
       const startMs = dayStart.getTime();
       const endMs = nextDayStart.getTime();
-      const filtered = allInstances.filter((instance) => {
+      let filtered = allInstances.filter((instance) => {
         const start = new Date(instance.start_utc ?? "").getTime();
         const end = new Date(instance.end_utc ?? "").getTime();
         if (!Number.isFinite(start) || !Number.isFinite(end)) {
@@ -3134,6 +3137,56 @@ export default function SchedulePage() {
         }
         return end > startMs && start < endMs;
       });
+
+      // Filter out completed instances that overlap with scheduled instances
+      const scheduledInstances = filtered.filter(
+        (instance) => instance.status === "scheduled"
+      );
+      const scheduledWithTimes = scheduledInstances.map((instance) => ({
+        instance,
+        startMs: new Date(instance.start_utc ?? "").getTime(),
+        endMs: new Date(instance.end_utc ?? "").getTime(),
+      }));
+
+      const completedIdsToHide = new Set<string>();
+
+      // Check each completed instance against all scheduled instances
+      for (const instance of filtered) {
+        if (instance.status !== "completed") continue;
+
+        const completedStart = new Date(instance.start_utc ?? "").getTime();
+        const completedEnd = new Date(instance.end_utc ?? "").getTime();
+
+        if (!Number.isFinite(completedStart) || !Number.isFinite(completedEnd))
+          continue;
+
+        // Skip hiding completed SYNC habit instances - they represent aggregated activity
+        // and should remain visible even when overlapping with scheduled instances
+        if (instance.source_type === "HABIT") {
+          const habit = habitMap[instance.source_id];
+          if (habit && normalizeHabitType(habit.habitType) === "SYNC") {
+            continue;
+          }
+        }
+
+        // Check if this completed instance overlaps with any scheduled instance
+        for (const scheduled of scheduledWithTimes) {
+          if (
+            completedEnd > scheduled.startMs &&
+            completedStart < scheduled.endMs
+          ) {
+            // Overlap detected - hide this completed instance
+            completedIdsToHide.add(instance.id);
+            break; // No need to check other scheduled instances
+          }
+        }
+      }
+
+      // Filter out the overlapping completed instances
+      filtered = filtered.filter(
+        (instance) => !completedIdsToHide.has(instance.id)
+      );
+
       if (DEBUG_DAY_SHIFT && filtered.length > 0) {
         const inst = filtered[0];
 
@@ -3154,7 +3207,7 @@ export default function SchedulePage() {
       }
       return filtered;
     },
-    [allInstances]
+    [allInstances, habitMap]
   );
 
   const visibleInstances = useMemo(() => {
@@ -3271,12 +3324,6 @@ export default function SchedulePage() {
     for (const p of projectItems) map[p.id] = p;
     return map;
   }, [projectItems]);
-
-  const habitMap = useMemo(() => {
-    const map: Record<string, HabitScheduleItem> = {};
-    for (const habit of habits) map[habit.id] = habit;
-    return map;
-  }, [habits]);
 
   const editingEventTitle = useMemo(() => {
     if (!resolvedEditingInstance) return "Scheduled event";
@@ -3730,9 +3777,7 @@ export default function SchedulePage() {
           nextStatus: normalizedStatus,
           timestamp: now,
         };
-        window.dispatchEvent(
-          new CustomEvent("schedule-telemetry", { detail })
-        );
+        window.dispatchEvent(new CustomEvent("schedule-telemetry", { detail }));
         console.warn("[schedule.card_flicker_detected]", detail);
       }
     }
@@ -3859,7 +3904,11 @@ export default function SchedulePage() {
         timestamp: new Date().toISOString(),
       });
       console.log(
-        `[TAP] instanceId=${instanceId} habitId=${instance?.source_id ?? "null"} day=${dayKey} sourceType=${instance?.source_type ?? "UNKNOWN"} pending=${pending} nextStatus=${nextStatus}`
+        `[TAP] instanceId=${instanceId} habitId=${
+          instance?.source_id ?? "null"
+        } day=${dayKey} sourceType=${
+          instance?.source_type ?? "UNKNOWN"
+        } pending=${pending} nextStatus=${nextStatus}`
       );
 
       const mutationTargetIds = [instanceId];
@@ -3913,7 +3962,9 @@ export default function SchedulePage() {
 
       try {
         console.log(
-          `[MUTATE] instanceId=${instanceId} next=${nextStatus} completed_at=${completionIso ?? "null"}`
+          `[MUTATE] instanceId=${instanceId} next=${nextStatus} completed_at=${
+            completionIso ?? "null"
+          }`
         );
         let ok = false;
         const result = await updateInstanceStatus(
@@ -3935,7 +3986,11 @@ export default function SchedulePage() {
         );
         const okResult = !result.error && (result.status ?? 500) < 400;
         console.log(
-          `[RESULT] instanceId=${instanceId} http=${result.status ?? "n/a"} ok=${okResult} body=${result.error?.message ?? result.statusText ?? ""}`
+          `[RESULT] instanceId=${instanceId} http=${
+            result.status ?? "n/a"
+          } ok=${okResult} body=${
+            result.error?.message ?? result.statusText ?? ""
+          }`
         );
         ok = okResult;
         if (result.error) {
@@ -3999,7 +4054,6 @@ export default function SchedulePage() {
             action,
           });
         }
-
       } catch (error) {
         console.error(error);
         if (previousInstances) {
@@ -4112,7 +4166,11 @@ export default function SchedulePage() {
         );
       }
       console.log(
-        `[TAP] instanceId=${placement.instanceId ?? "null"} habitId=${placement.habitId} day=${dateKey} sourceType=${placement.habitType ?? "HABIT"} pending=${isPending} nextStatus=${plannedNextStatus}`
+        `[TAP] instanceId=${placement.instanceId ?? "null"} habitId=${
+          placement.habitId
+        } day=${dateKey} sourceType=${
+          placement.habitType ?? "HABIT"
+        } pending=${isPending} nextStatus=${plannedNextStatus}`
       );
       if (placement.habitType === "MEMO") {
         setMemoNoteError(null);
@@ -4436,6 +4494,22 @@ export default function SchedulePage() {
 
         const parsed = parseSchedulerDebugPayload(payload);
         if (parsed) {
+          // Add summary logging for debugging
+          const failureSummary = (parsed.failures || []).reduce((acc, f) => {
+            acc[f.reason] = (acc[f.reason] || 0) + 1;
+            return acc;
+          }, {});
+          console.log("🔍 SCHEDULER DEBUG SUMMARY:", {
+            placedCount: parsed.placedCount,
+            totalFailures: parsed.failures?.length,
+            failureReasons: failureSummary,
+            failedProjectIds: parsed.failures
+              ?.filter((f) => f.itemId)
+              .map((f) => f.itemId)
+              .slice(0, 10),
+            placedProjectIds: parsed.placedProjectIds?.slice(0, 10),
+          });
+
           setSchedulerDebug({
             runAt: new Date().toISOString(),
             ...parsed,
@@ -5787,7 +5861,9 @@ export default function SchedulePage() {
               const handleHabitPrimaryAction = () => {
                 if (disableHabitInteractions) {
                   console.log(
-                    `[SKIP] reason=disabled instanceId=${placement.instanceId ?? "null"}`
+                    `[SKIP] reason=disabled instanceId=${
+                      placement.instanceId ?? "null"
+                    }`
                   );
                   return;
                 }
@@ -6115,16 +6191,12 @@ export default function SchedulePage() {
                 const detailParts: string[] = [];
                 if (tasksLabel) detailParts.push(tasksLabel);
                 const detailText = detailParts.join(" · ");
-                const weightValue =
-                  typeof instance.weight_snapshot === "number"
-                    ? instance.weight_snapshot
-                    : project.weight;
-                const weightDisplay =
-                  typeof weightValue === "number" &&
-                  Number.isFinite(weightValue)
-                    ? weightValue % 1 === 0
-                      ? weightValue.toString()
-                      : weightValue.toFixed(2).replace(/\.00$/, "")
+                const globalRank = project.globalRank;
+                const rankDisplay =
+                  typeof globalRank === "number" &&
+                  Number.isFinite(globalRank) &&
+                  globalRank > 0
+                    ? `#${globalRank}`
                     : null;
                 const hiddenFallbackCount = usingFallback
                   ? Math.max(0, backlogTasks.length - displayCards.length)
@@ -6396,9 +6468,9 @@ export default function SchedulePage() {
                                         aria-label="Locked project"
                                       />
                                     ) : null}
-                                    {weightDisplay ? (
+                                    {rankDisplay ? (
                                       <span className="text-xs font-normal text-white/70">
-                                        ({weightDisplay})
+                                        {rankDisplay}
                                       </span>
                                     ) : null}
                                   </span>
