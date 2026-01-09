@@ -101,7 +101,7 @@ function ensureClient(client?: Client): Client | null {
   return null;
 }
 
-function normalizeHabitType(value?: string | null) {
+export function normalizeHabitType(value?: string | null) {
   const raw = (value ?? "HABIT").toUpperCase();
   return raw;
 }
@@ -256,7 +256,9 @@ export async function fetchHabitsForSchedule(
             typeof record.window.location_context_id === "string" &&
             record.window.location_context_id.trim().length > 0 &&
             record.window.location_context?.value
-              ? String(record.window.location_context.value).toUpperCase().trim()
+              ? String(record.window.location_context.value)
+                  .toUpperCase()
+                  .trim()
               : null,
           locationContextName:
             record.window.location_context?.label ??

@@ -1029,6 +1029,14 @@ export async function scheduleBacklog(
   const cancelLogCounts = new Map<string, number>();
   const canceledHabitIds: string[] = [];
 
+  // Clear all existing missed habit instances before starting fresh
+  await supabase
+    .from("schedule_instances")
+    .delete()
+    .eq("user_id", userId)
+    .eq("source_type", "HABIT")
+    .eq("status", "missed");
+
   const timeZone = normalizeTimeZone(options?.timeZone);
   const location = normalizeCoordinates(options?.location ?? null);
   const mode = normalizeSchedulerModePayload(
@@ -1238,6 +1246,77 @@ export async function scheduleBacklog(
     return acc;
   }, {});
 
+  // Recalculate global ranks before processing (they may be stale)
+  await recalculateGlobalRanks(userId, projectsMap, goals, supabase);
+
+  async function recalculateGlobalRanks(
+    userId: string,
+    projectsMap: Record<string, any>,
+    goals: any[],
+    supabase: Client
+  ) {
+    // Calculate new global ranks based on goal priority + project priority + stage
+    const projectScores: Array<{ id: string; score: number }> = [];
+
+    for (const [projectId, project] of Object.entries(projectsMap)) {
+      const goal = goals.find((g) => g.id === project.goal_id);
+      if (!goal) continue;
+
+      // Score calculation: goal_priority * 1000000 + project_priority * 10000 + stage * 100
+      const goalPriority = goal.priority_code
+        ? getPriorityIndex(goal.priority_code)
+        : 3;
+      const projectPriority = project.priority
+        ? getPriorityIndex(project.priority)
+        : 3;
+      const stage = project.stage ? getStageIndex(project.stage) : 3;
+
+      const score =
+        goalPriority * 1000000 + projectPriority * 10000 + stage * 100;
+      projectScores.push({ id: projectId, score });
+    }
+
+    // Sort by score descending (higher score = higher priority = lower rank number)
+    projectScores.sort((a, b) => b.score - a.score);
+
+    // Update global_rank in database (rank 1 = highest priority)
+    for (let i = 0; i < projectScores.length; i++) {
+      const rank = i + 1;
+      await supabase
+        .from("projects")
+        .update({ global_rank: rank })
+        .eq("id", projectScores[i].id);
+
+      // Update in-memory map too
+      if (projectsMap[projectScores[i].id]) {
+        projectsMap[projectScores[i].id].globalRank = rank;
+      }
+    }
+  }
+
+  function getPriorityIndex(priority: string): number {
+    const priorityMap: Record<string, number> = {
+      "ULTRA-CRITICAL": 6,
+      CRITICAL: 5,
+      HIGH: 4,
+      MEDIUM: 3,
+      LOW: 2,
+      NO: 1,
+    };
+    return priorityMap[priority.toUpperCase()] || 3;
+  }
+
+  function getStageIndex(stage: string): number {
+    const stageMap: Record<string, number> = {
+      RESEARCH: 6,
+      TEST: 5,
+      REFINE: 4,
+      BUILD: 3,
+      RELEASE: 2,
+    };
+    return stageMap[stage.toUpperCase()] || 3;
+  }
+
   const projectItems = buildProjectItems(
     Object.values(projectsMap),
     tasks,
@@ -1255,12 +1334,17 @@ export async function scheduleBacklog(
     a: (typeof projectItems)[0],
     b: (typeof projectItems)[0]
   ) => {
-    const aRank = a.globalRank ?? 0;
-    const bRank = b.globalRank ?? 0;
+    const aRank = a.globalRank ?? Number.POSITIVE_INFINITY;
+    const bRank = b.globalRank ?? Number.POSITIVE_INFINITY;
     return aRank - bRank;
   };
 
   const projectQueue = [...projectsById.values()].sort(byGlobalRank);
+
+  console.log(
+    "[SORT_DEBUG] First sort results (first 10):",
+    projectQueue.slice(0, 10).map((p) => ({ id: p.id, rank: p.globalRank }))
+  );
 
   // TEMPORARY ASSERTION: enforce ordering at runtime
   for (let i = 1; i < projectQueue.length; i++) {
@@ -2856,6 +2940,7 @@ export async function scheduleBacklog(
     console.log("[SCHEDULER_PROJECT_DEBUG]", {
       project_id: item.id,
       project_name: item.eventName,
+      global_rank: item.globalRank,
       instanceId: item.instanceId,
       duration_min: item.duration_min,
       resolved_energy: item.energy,
@@ -2905,249 +2990,203 @@ export async function scheduleBacklog(
       knownHabitIdsMissing: missingHabitIds,
     });
 
-    const windows = await fetchCompatibleWindowsForItem(
-      supabase,
-      baseStart,
-      item,
-      timeZone,
-      {
-        availability: projectWindowAvailability,
-        now: baseDate,
-        cache: projectWindowCache,
-        restMode: isRestMode,
+    // 🔧 MULTI-DAY PROJECT PLACEMENT FIX
+    // Instead of fetching all windows for the horizon at once,
+    // search day by day across the full horizon
+    let placedData: any = null;
+    let placementDayOffset: number | undefined;
+    let placementWindow: any;
+
+    // Search across each day in the horizon
+    for (let dayOffset = 0; dayOffset < maxOffset; dayOffset++) {
+      const currentDay =
+        dayOffset === 0
+          ? baseStart
+          : addDaysInTimeZone(baseStart, dayOffset, timeZone);
+
+      // Get windows for this specific day
+      const dayWindows = await fetchCompatibleWindowsForItem(
+        supabase,
+        currentDay,
+        item,
+        timeZone,
+        {
+          availability: projectWindowAvailability,
+          now: dayOffset === 0 ? baseDate : undefined, // Only apply "now" constraint on first day
+          cache: projectWindowCache,
+          restMode: isRestMode,
+          userId,
+          allowedWindowKinds: ["DEFAULT"],
+          // Don't use horizonEnd here - we're searching day by day
+          preloadedWindows: allWindows,
+        }
+      );
+
+      if (dayWindows.length === 0) continue;
+
+      const reservationsForItem: Array<{
+        key: string;
+        previous: WindowAvailabilityBounds | null;
+      }> = [];
+      const releaseReservationsForItem = () => {
+        if (reservationsForItem.length === 0) return;
+        for (const reservation of reservationsForItem) {
+          if (reservation.previous) {
+            projectWindowAvailability.set(reservation.key, {
+              front: new Date(reservation.previous.front.getTime()),
+              back: new Date(reservation.previous.back.getTime()),
+            });
+          } else {
+            projectWindowAvailability.delete(reservation.key);
+          }
+        }
+        reservationsForItem.length = 0;
+      };
+
+      // Try to place in this day's windows
+      const placed = await placeItemInWindows({
         userId,
-        allowedWindowKinds: ["DEFAULT"],
-        horizonEnd: writeThroughEnd,
-        preloadedWindows: allWindows,
-      }
-    );
-
-    const counters = (windows as any).counters;
-
-    // TEMPORARY LOGS: Remove after verification
-    if (item.id === dedupedProjectQueue[0].id) {
-      const earliest =
-        windows.length > 0
-          ? windows.reduce(
-              (min, w) => (w.startLocal < min.startLocal ? w : min),
-              windows[0]
-            ).startLocal
-          : null;
-      const latest =
-        windows.length > 0
-          ? windows.reduce(
-              (max, w) => (w.endLocal > max.endLocal ? w : max),
-              windows[0]
-            ).endLocal
-          : null;
-      console.log("[PROJECT_WINDOW_FETCH]", {
-        projectId: item.id,
-        windowCount: windows.length,
-        earliestStart: earliest?.toISOString(),
-        latestEnd: latest?.toISOString(),
+        item,
+        windows: dayWindows,
+        date: currentDay, // Use the current day we're searching
+        timeZone,
+        client: supabase,
+        reuseInstanceId: item.instanceId,
+        ignoreProjectIds: new Set([item.id]),
+        notBefore: dayOffset === 0 ? baseDate : undefined, // Only apply notBefore on first day
+        existingInstances: projectBlockingInstances,
+        habitTypeById,
+        windowEdgePreference: null,
       });
-    }
-    if (windows.length === 0) continue;
 
-    const reservationsForItem: Array<{
-      key: string;
-      previous: WindowAvailabilityBounds | null;
-    }> = [];
-    const releaseReservationsForItem = () => {
-      if (reservationsForItem.length === 0) return;
-      for (const reservation of reservationsForItem) {
-        if (reservation.previous) {
-          projectWindowAvailability.set(reservation.key, {
-            front: new Date(reservation.previous.front.getTime()),
-            back: new Date(reservation.previous.back.getTime()),
-          });
-        } else {
-          projectWindowAvailability.delete(reservation.key);
-        }
+      if (!("status" in placed)) {
+        // Failed to place - continue to next day
+        continue;
       }
-      reservationsForItem.length = 0;
-    };
 
-    // 🔒 RESET SEARCH FOR THIS PROJECT
-    const searchStart = baseStart;
+      if (placed.error) {
+        // Failed to place - continue to next day
+        continue;
+      }
 
-    if (
-      item.id === "f9dfe551-53a5-455c-a41e-ac9bc9b1d9be" || // FIND SAMPLES (52)
-      item.globalRank === 1
-    ) {
-      console.log("[RANK_DEBUG] project", {
-        id: item.id,
-        name: item.eventName,
-        rank: item.globalRank,
-        horizonStartUtc: baseStart.toISOString(),
-        searchStartUtc: searchStart.toISOString(),
-      });
-    }
-
-    if (item.globalRank === 1) {
-      if (searchStart.getTime() !== baseStart.getTime()) {
-        throw new Error("Invariant violation: cursor not reset per project");
+      if (placed.data) {
+        // Successfully placed!
+        placedData = placed.data;
+        placementDayOffset = dayOffset;
+        placementWindow = findPlacementWindow(dayWindows, placed.data);
+        break; // Stop searching - we found a slot
       }
     }
 
-    const notBeforeMs = searchStart.getTime();
-    const placed = await placeItemInWindows({
-      userId,
-      item,
-      windows,
-      date: baseStart,
-      timeZone,
-      client: supabase,
-      reuseInstanceId: item.instanceId,
-      ignoreProjectIds: new Set([item.id]),
-      notBefore: baseDate,
-      existingInstances: projectBlockingInstances,
-      habitTypeById,
-      windowEdgePreference: null,
-    });
+    // Process the placement result
+    if (!placedData) {
+      // Failed to place anywhere in the horizon
+      const debugInfo = `NO_FIT: duration=${item.duration_min}, energy=${item.energy}, horizon_days=${maxOffset}`;
 
-    if (!("status" in placed)) {
-      if (placed.error === "NO_FIT") {
-        result.failures.push({
-          itemId: item.id,
-          reason: "NO_FEASIBLE_SLOT_IN_HORIZON",
-          detail: placed.error,
-        });
-      } else {
-        result.failures.push({
-          itemId: item.id,
-          reason: "error",
-          detail: placed.error,
-        });
-      }
-      continue;
-    }
-
-    if (placed.error) {
-      if (placed.error === "NO_FIT") {
-        result.failures.push({
-          itemId: item.id,
-          reason: "NO_FEASIBLE_SLOT_IN_HORIZON",
-          detail: placed.error,
-        });
-        // Update the canonical missed instance (normalizeProjectInstances ensures exactly one exists)
-        if (!item.instanceId) {
-          throw new Error(
-            `Invariant violation: project ${item.id} should have a canonical instance after normalizeProjectInstances`
-          );
-        }
-        const { error: updateError } = await supabase
+      if (!item.instanceId) {
+        // Create missed instance with reason
+        const { error: createError } = await supabase
           .from("schedule_instances")
-          .update({
-            missed_reason: "NO_FEASIBLE_SLOT_IN_HORIZON",
+          .insert({
+            user_id: userId,
+            source_type: "PROJECT",
+            source_id: item.id,
+            status: "missed",
+            missed_reason: debugInfo,
             start_utc: null,
             end_utc: null,
             duration_min: null,
             window_id: null,
-          })
+            energy_resolved: item.energy,
+            locked: false,
+            weight_snapshot: item.weight,
+          });
+        if (createError) {
+          console.error("Failed to create missed instance:", createError);
+        }
+      } else {
+        // Update existing instance with detailed reason
+        const { error: updateError } = await supabase
+          .from("schedule_instances")
+          .update({ missed_reason: debugInfo })
           .eq("id", item.instanceId);
         if (updateError) {
-          result.failures.push({
-            itemId: item.id,
-            reason: "error",
-            detail: updateError,
-          });
-          continue;
+          console.error("Failed to update missed reason:", updateError);
         }
-
-        // TEMPORARY INSTRUMENTATION: Log project placement failed to missed
-        console.log(
-          "[SCHEDULER_PROJECT_DEBUG] project placement failed to missed",
-          {
-            project_id: item.id,
-            instance_id: item.instanceId,
-            reason: "NO_VALID_WINDOWS",
-            window_counts: {
-              total: counters?.total ?? 0,
-              after_energy: counters?.afterEnergy ?? 0,
-              after_duration: counters?.afterDuration ?? 0,
-              after_conflicts: counters?.afterAvailability ?? 0,
-              after_horizon: counters?.afterNowTrim ?? 0,
-            },
-          }
-        );
-      } else {
-        console.error("[SCHEDULER_ERROR_DETAIL]", {
-          context: "project_placement",
-          itemId: item.id,
-          error: placed.error,
-          message:
-            placed.error instanceof Error
-              ? placed.error.message
-              : String(placed.error),
-          stack: placed.error instanceof Error ? placed.error.stack : undefined,
-          type: typeof placed.error,
-        });
-        result.failures.push({
-          itemId: item.id,
-          reason: "error",
-          detail: placed.error,
-        });
       }
+
+      result.failures.push({
+        itemId: item.id,
+        reason: "NO_FEASIBLE_SLOT_IN_HORIZON",
+      });
+
+      // TEMPORARY INSTRUMENTATION: Log project placement failed to missed
+      console.log(
+        "[SCHEDULER_PROJECT_DEBUG] project placement failed across horizon",
+        {
+          project_id: item.id,
+          instance_id: item.instanceId,
+          horizon_days: maxOffset,
+          reason: "NO_VALID_WINDOWS",
+        }
+      );
       continue;
     }
 
-    if (placed.data) {
-      if (
-        item.id === "f9dfe551-53a5-455c-a41e-ac9bc9b1d9be" ||
-        item.globalRank === 1
-      ) {
-        console.log("[RANK_DEBUG_PLACED]", {
-          id: item.id,
-          rank: item.globalRank,
-          placedStartUtc: placed.data.start_utc,
-          placedEndUtc: placed.data.end_utc,
-        });
-      }
-      result.placed.push(placed.data);
-      const placementWindow = findPlacementWindow(windows, placed.data);
-      if (placementWindow?.key) {
-        const placementEnd = new Date(placed.data.end_utc);
-        const existingBounds = projectWindowAvailability.get(
-          placementWindow.key
-        );
-        if (existingBounds) {
-          const nextFront = Math.min(
-            placementEnd.getTime(),
-            existingBounds.back.getTime()
-          );
-          existingBounds.front = new Date(nextFront);
-        }
-      }
-      keptInstancesByProject.delete(item.id);
-      const decision: ScheduleDraftPlacement["decision"] = item.instanceId
-        ? "rescheduled"
-        : "new";
-      result.timeline.push({
-        type: "PROJECT",
-        instance: placed.data,
-        projectId: placed.data.source_id ?? item.id,
-        decision,
-        scheduledDayOffset: dayOffsetFor(placed.data.start_utc) ?? 0,
-        availableStartLocal: placementWindow?.availableStartLocal
-          ? placementWindow.availableStartLocal.toISOString()
-          : undefined,
-        windowStartLocal: placementWindow?.startLocal
-          ? placementWindow.startLocal.toISOString()
-          : undefined,
-        locked: placed.data.locked ?? undefined,
+    // Successfully placed!
+    if (
+      item.id === "f9dfe551-53a5-455c-a41e-ac9bc9b1d9be" ||
+      item.globalRank === 1
+    ) {
+      console.log("[RANK_DEBUG_PLACED]", {
+        id: item.id,
+        rank: item.globalRank,
+        placedStartUtc: placedData.start_utc,
+        placedEndUtc: placedData.end_utc,
+        dayOffset: placementDayOffset,
       });
-      scheduledProjectIds.add(item.id);
-
-      if (item.instanceId) {
-        removeInstanceFromBuckets(item.instanceId);
-      }
-      // Register the placed instance for future reference
-      registerInstanceForOffsets(placed.data);
-
-      // Add the placed project instance as a blocker for subsequent projects
-      projectBlockingInstances.push(placed.data);
     }
+
+    result.placed.push(placedData);
+    if (placementWindow?.key) {
+      const placementEnd = new Date(placedData.end_utc);
+      const existingBounds = projectWindowAvailability.get(placementWindow.key);
+      if (existingBounds) {
+        const nextFront = Math.min(
+          placementEnd.getTime(),
+          existingBounds.back.getTime()
+        );
+        existingBounds.front = new Date(nextFront);
+      }
+    }
+    keptInstancesByProject.delete(item.id);
+    const decision: ScheduleDraftPlacement["decision"] = item.instanceId
+      ? "rescheduled"
+      : "new";
+    result.timeline.push({
+      type: "PROJECT",
+      instance: placedData,
+      projectId: placedData.source_id ?? item.id,
+      decision,
+      scheduledDayOffset: placementDayOffset,
+      availableStartLocal: placementWindow?.availableStartLocal
+        ? placementWindow.availableStartLocal.toISOString()
+        : undefined,
+      windowStartLocal: placementWindow?.startLocal
+        ? placementWindow.startLocal.toISOString()
+        : undefined,
+      locked: placedData.locked ?? undefined,
+    });
+    scheduledProjectIds.add(item.id);
+
+    if (item.instanceId) {
+      removeInstanceFromBuckets(item.instanceId);
+    }
+    // Register the placed instance for future reference
+    registerInstanceForOffsets(placedData);
+
+    // Add the placed project instance as a blocker for subsequent projects
+    projectBlockingInstances.push(placedData);
   }
 
   console.log("[SCHEDULER] EXIT project placement pass");
@@ -3540,15 +3579,14 @@ export async function scheduleBacklog(
   const syncPairingsByInstanceId: Record<string, string[]> = {};
   // Track partner instances already paired to a SYNC during this run to avoid reusing them
   const claimedPartnerInstanceIds = new Set<string>();
-  const finalInstanceLookup = finalInstances.reduce<Map<string, ScheduleInstance>>(
-    (map, inst) => {
-      if (inst.id) {
-        map.set(inst.id, inst);
-      }
-      return map;
-    },
-    new Map<string, ScheduleInstance>()
-  );
+  const finalInstanceLookup = finalInstances.reduce<
+    Map<string, ScheduleInstance>
+  >((map, inst) => {
+    if (inst.id) {
+      map.set(inst.id, inst);
+    }
+    return map;
+  }, new Map<string, ScheduleInstance>());
 
   // Get all scheduled instances from the final range (non-SYNC)
   const allScheduledInstances = finalInstances.filter((inst) => {
@@ -3699,7 +3737,8 @@ export async function scheduleBacklog(
         const filterValidPartnerIds = (ids: string[] | null | undefined) =>
           (ids ?? []).filter((id) => {
             const partner = id ? finalInstanceLookup.get(id) : null;
-            if (!partner || !partner.start_utc || !partner.end_utc) return false;
+            if (!partner || !partner.start_utc || !partner.end_utc)
+              return false;
             const partnerStart = new Date(partner.start_utc).getTime();
             const partnerEnd = new Date(partner.end_utc).getTime();
             if (!Number.isFinite(partnerStart) || !Number.isFinite(partnerEnd))

@@ -49,10 +49,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser, type Goal } from "@/lib/queries/goals";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 import { getProjectsForUser, type Project } from "@/lib/queries/projects";
-import {
-  getMonumentsForUser,
-  type Monument,
-} from "@/lib/queries/monuments";
+import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
 import { useProjectedGlobalRank } from "@/lib/hooks/useProjectedGlobalRank";
@@ -332,13 +329,11 @@ export function Fab({
     const sorter =
       goalSort === "recent"
         ? (a: Goal, b: Goal) =>
-            new Date(b.created_at).getTime() -
-            new Date(a.created_at).getTime()
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         : goalSort === "oldest"
-          ? (a: Goal, b: Goal) =>
-              new Date(a.created_at).getTime() -
-              new Date(b.created_at).getTime()
-          : (a: Goal, b: Goal) => (b.weight ?? 0) - (a.weight ?? 0);
+        ? (a: Goal, b: Goal) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        : (a: Goal, b: Goal) => (b.weight ?? 0) - (a.weight ?? 0);
     return [...list].sort(sorter);
   }, [
     goalFilterEnergy,
@@ -441,6 +436,13 @@ export function Fab({
     left: number;
     width: number;
   } | null>(null);
+  const [showHabitDurationPicker, setShowHabitDurationPicker] = useState(false);
+  const habitDurationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [habitDurationPosition, setHabitDurationPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
   const normalizedProjectDuration =
     typeof projectDuration === "number" && Number.isFinite(projectDuration)
       ? projectDuration
@@ -503,6 +505,69 @@ export function Fab({
   const adjustProjectDuration = (delta: number) => {
     const next = Math.max(0, normalizedProjectDuration + delta);
     setProjectDuration(next);
+  };
+
+  const updateHabitDurationPosition = useCallback(() => {
+    if (!showHabitDurationPicker) return;
+    const trigger = habitDurationTriggerRef.current;
+    if (
+      !trigger ||
+      typeof window === "undefined" ||
+      typeof document === "undefined"
+    ) {
+      return;
+    }
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const estimatedHeight = 150;
+    const margin = 8;
+    const spaceBelow = viewportHeight - rect.bottom;
+    const placeBelow =
+      spaceBelow > estimatedHeight + margin || rect.top < estimatedHeight;
+    const top = placeBelow
+      ? rect.bottom + margin + window.scrollY
+      : Math.max(margin, rect.top - estimatedHeight) + window.scrollY;
+    const width = rect.width;
+    let left = rect.left;
+    if (left + width > viewportWidth - margin) {
+      left = viewportWidth - width - margin;
+    }
+    if (left < margin) left = margin;
+    setHabitDurationPosition({ top, left: left + window.scrollX, width });
+  }, [showHabitDurationPicker]);
+
+  useEffect(() => {
+    if (!showHabitDurationPicker) return;
+    updateHabitDurationPosition();
+    const handle = () => updateHabitDurationPosition();
+    window.addEventListener("resize", handle);
+    window.addEventListener("scroll", handle, true);
+    return () => {
+      window.removeEventListener("resize", handle);
+      window.removeEventListener("scroll", handle, true);
+    };
+  }, [showHabitDurationPicker, updateHabitDurationPosition]);
+
+  const toggleHabitDurationPicker = () => {
+    setShowHabitDurationPicker((prev) => {
+      const next = !prev;
+      if (
+        next &&
+        (!habitDuration || !Number.isFinite(Number.parseInt(habitDuration, 10)))
+      ) {
+        setHabitDuration("15");
+      }
+      // Defer position calculation to allow layout to settle.
+      requestAnimationFrame(() => updateHabitDurationPosition());
+      return next;
+    });
+  };
+
+  const adjustHabitDuration = (delta: number) => {
+    const current = Number.parseInt(habitDuration || "15", 10);
+    const next = Math.max(1, current + delta);
+    setHabitDuration(next.toString());
   };
   const [projectSkillIds, setProjectSkillIds] = useState<string[]>([]);
   const [projectGoalId, setProjectGoalId] = useState<string | null>(null);
@@ -1064,584 +1129,217 @@ export function Fab({
             <div
               className="relative grid gap-4 p-4 pb-6 md:p-8 md:pb-10"
               style={{
-                paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))",
+                paddingBottom:
+                  "calc(1.5rem + env(safe-area-inset-bottom, 0px))",
               }}
             >
-                {selected === "GOAL" && (
-                  <>
-                    <div className="grid gap-2">
+              {selected === "GOAL" && (
+                <>
+                  <div className="grid gap-2">
+                    <Select
+                      value={goalMonumentId ?? ""}
+                      onValueChange={setGoalMonumentId}
+                      hideChevron
+                      triggerClassName={cn(
+                        "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
+                        goalMonumentId
+                          ? "text-white/80 hover:text-blue-200"
+                          : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
+                      )}
+                      trigger={
+                        <span>
+                          {goalMonumentId
+                            ? monuments.find((m) => m.id === goalMonumentId)
+                                ?.title ?? "Link to existing MONUMENT +"
+                            : "Link to existing MONUMENT +"}
+                        </span>
+                      }
+                    >
+                      <SelectContent className="min-w-[220px]">
+                        <SelectItem value="">No monument</SelectItem>
+                        {monumentsLoading ? (
+                          <SelectItem value="__loading" disabled>
+                            Loading monuments…
+                          </SelectItem>
+                        ) : monuments.length > 0 ? (
+                          monuments.map((monument) => (
+                            <SelectItem key={monument.id} value={monument.id}>
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">
+                                  {monument.emoji ?? "🏛️"}
+                                </span>
+                                <span>{monument.title}</span>
+                              </div>
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="__empty" disabled>
+                            No monuments yet
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
+                    <div className="grid gap-2 col-span-3">
+                      <Label htmlFor="goal-name" className="sr-only">
+                        Goal name
+                      </Label>
+                      <Input
+                        id="goal-name"
+                        value={goalName}
+                        onChange={(e) => setGoalName(e.target.value)}
+                        placeholder="Name your GOAL"
+                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                      />
+                    </div>
+                    <div className="grid gap-2 col-span-1">
+                      <Label className="sr-only">Energy</Label>
                       <Select
-                        value={goalMonumentId ?? ""}
-                        onValueChange={setGoalMonumentId}
+                        value={goalEnergy}
+                        onValueChange={setGoalEnergy}
+                        triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
+                        hideChevron
+                        trigger={
+                          <div className="flex h-full w-full items-center justify-center leading-none">
+                            {goalEnergy ? (
+                              <FlameEmber
+                                level={goalEnergy as FlameEmberProps["level"]}
+                                size="md"
+                                className="-translate-y-[3px]"
+                              />
+                            ) : (
+                              <span className="text-zinc-400">Energy</span>
+                            )}
+                          </div>
+                        }
+                      >
+                        <SelectContent>
+                          {ENERGY_OPTIONS_LOCAL.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              <div className="flex items-center justify-center py-2">
+                                <FlameEmber
+                                  level={o.value as FlameEmberProps["level"]}
+                                  size="md"
+                                />
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        PRIORITY
+                      </Label>
+                      <Select
+                        value={goalPriority}
+                        onValueChange={setGoalPriority}
+                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
+                        placeholder="Priority"
+                      >
+                        <SelectContent>
+                          {PRIORITY_OPTIONS_LOCAL.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        DUE
+                      </Label>
+                      <input
+                        id="goal-due"
+                        type="datetime-local"
+                        className="h-12 md:h-14 w-full rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 focus:!border-blue-400/60 focus-visible:ring-0"
+                        value={goalDue ?? ""}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setGoalDue(value === "" ? null : value);
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="goal-why" className="text-zinc-500">
+                      WHY (optional)
+                    </Label>
+                    <Textarea
+                      id="goal-why"
+                      value={goalWhy}
+                      onChange={(e) => setGoalWhy(e.target.value)}
+                      placeholder="Motivation…"
+                      className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                    />
+                  </div>
+                </>
+              )}
+
+              {selected === "PROJECT" && (
+                <>
+                  <div className="grid grid-cols-[2fr_1fr] gap-4">
+                    <div className="grid gap-2">
+                      <Label className="sr-only">Goal</Label>
+                      <Select
+                        value={projectGoalId ?? ""}
+                        onValueChange={(v) => setProjectGoalId(v)}
                         hideChevron
                         triggerClassName={cn(
                           "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
-                          goalMonumentId
+                          projectGoalId
                             ? "text-white/80 hover:text-blue-200"
                             : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
                         )}
                         trigger={
                           <span>
-                            {goalMonumentId
-                              ? monuments.find((m) => m.id === goalMonumentId)
-                                  ?.title ?? "Link to existing MONUMENT +"
-                              : "Link to existing MONUMENT +"}
+                            {projectGoalId
+                              ? goals.find((g) => g.id === projectGoalId)
+                                  ?.name ?? "Link to existing GOAL +"
+                              : "Link to existing GOAL +"}
                           </span>
                         }
                       >
-                        <SelectContent className="min-w-[220px]">
-                          <SelectItem value="">No monument</SelectItem>
-                          {monumentsLoading ? (
-                            <SelectItem value="__loading" disabled>
-                              Loading monuments…
-                            </SelectItem>
-                          ) : monuments.length > 0 ? (
-                            monuments.map((monument) => (
-                              <SelectItem key={monument.id} value={monument.id}>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-lg">
-                                    {monument.emoji ?? "🏛️"}
-                                  </span>
-                                  <span>{monument.title}</span>
-                                </div>
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <SelectItem value="__empty" disabled>
-                              No monuments yet
-                            </SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                      <div className="grid gap-2 col-span-3">
-                        <Label htmlFor="goal-name" className="sr-only">
-                          Goal name
-                        </Label>
-                        <Input
-                          id="goal-name"
-                          value={goalName}
-                          onChange={(e) => setGoalName(e.target.value)}
-                          placeholder="Name your GOAL"
-                          className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
-                        />
-                      </div>
-                      <div className="grid gap-2 col-span-1">
-                        <Label className="sr-only">Energy</Label>
-                        <Select
-                          value={goalEnergy}
-                          onValueChange={setGoalEnergy}
-                          triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
-                          hideChevron
-                          trigger={
-                            <div className="flex h-full w-full items-center justify-center leading-none">
-                              {goalEnergy ? (
-                                <FlameEmber
-                                  level={goalEnergy as FlameEmberProps["level"]}
-                                  size="md"
-                                  className="-translate-y-[3px]"
-                                />
-                              ) : (
-                                <span className="text-zinc-400">Energy</span>
-                              )}
-                            </div>
-                          }
-                        >
-                          <SelectContent>
-                            {ENERGY_OPTIONS_LOCAL.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                <div className="flex items-center justify-center py-2">
-                                  <FlameEmber
-                                    level={o.value as FlameEmberProps["level"]}
-                                    size="md"
-                                  />
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <div className="grid gap-2">
-                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                          PRIORITY
-                        </Label>
-                        <Select
-                          value={goalPriority}
-                          onValueChange={setGoalPriority}
-                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
-                          contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
-                          placeholder="Priority"
-                        >
-                          <SelectContent>
-                            {PRIORITY_OPTIONS_LOCAL.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                          DUE
-                        </Label>
-                        <input
-                          id="goal-due"
-                          type="datetime-local"
-                          className="h-12 md:h-14 w-full rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 focus:!border-blue-400/60 focus-visible:ring-0"
-                          value={goalDue ?? ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setGoalDue(value === "" ? null : value);
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="goal-why" className="text-zinc-500">
-                        WHY (optional)
-                      </Label>
-                      <Textarea
-                        id="goal-why"
-                        value={goalWhy}
-                        onChange={(e) => setGoalWhy(e.target.value)}
-                        placeholder="Motivation…"
-                        className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {selected === "PROJECT" && (
-                  <>
-                    <div className="grid grid-cols-[2fr_1fr] gap-4">
-                      <div className="grid gap-2">
-                        <Label className="sr-only">Goal</Label>
-                        <Select
-                          value={projectGoalId ?? ""}
-                          onValueChange={(v) => setProjectGoalId(v)}
-                          hideChevron
-                          triggerClassName={cn(
-                            "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
-                            projectGoalId
-                              ? "text-white/80 hover:text-blue-200"
-                              : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
-                          )}
-                          trigger={
-                            <span>
-                              {projectGoalId
-                                ? goals.find((g) => g.id === projectGoalId)
-                                    ?.name ?? "Link to existing GOAL +"
-                                : "Link to existing GOAL +"}
-                            </span>
-                          }
-                        >
-                          <SelectContent className="relative min-w-[220px]">
-                            <div className="sticky top-0 z-10 bg-black/80 p-2 backdrop-blur border-b border-white/5">
-                              <div className="relative flex items-center gap-2">
-                                <Input
-                                  value={goalSearch}
-                                  onChange={(e) => setGoalSearch(e.target.value)}
-                                  placeholder="Search goals…"
-                                  className="h-9 text-sm border-white/10 bg-white/[0.05] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => setShowGoalFilters((v) => !v)}
-                                  className={cn(
-                                    "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
-                                    showGoalFilters && "border-blue-400/60 text-white"
-                                  )}
-                                  aria-label="Filter goals"
-                                >
-                                  <Filter className="h-4 w-4" />
-                                </button>
-                              </div>
-                            </div>
-                            {showGoalFilters ? (
-                              <div
-                                ref={goalFilterMenuRef}
-                                className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                        <SelectContent className="relative min-w-[220px]">
+                          <div className="sticky top-0 z-10 bg-black/80 p-2 backdrop-blur border-b border-white/5">
+                            <div className="relative flex items-center gap-2">
+                              <Input
+                                value={goalSearch}
+                                onChange={(e) => setGoalSearch(e.target.value)}
+                                placeholder="Search goals…"
+                                className="h-9 text-sm border-white/10 bg-white/[0.05] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowGoalFilters((v) => !v)}
+                                className={cn(
+                                  "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
+                                  showGoalFilters &&
+                                    "border-blue-400/60 text-white"
+                                )}
+                                aria-label="Filter goals"
                               >
-                                <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
-                                  <span className="text-sm font-semibold">
-                                    Filter & Sort Goals
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowGoalFilters(false)}
-                                    className="text-xs text-white/80 underline-offset-4 hover:underline"
-                                  >
-                                    Close
-                                  </button>
-                                </div>
-                                <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div className="space-y-3">
-                                      <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                        Filter
-                                      </div>
-                                      <div className="space-y-2">
-                                        <select
-                                          value={goalFilterSkillId}
-                                          onChange={(e) => setGoalFilterSkillId(e.target.value)}
-                                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                        >
-                                          <option value="">
-                                            {goalFilterSkillId ? "Skill (clear)" : "Skill (any)"}
-                                          </option>
-                                          {skills.map((skill) => (
-                                            <option key={skill.id} value={skill.id}>
-                                              {skill.name}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <select
-                                          value={goalFilterMonumentId}
-                                          onChange={(e) => setGoalFilterMonumentId(e.target.value)}
-                                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                        >
-                                          <option value="">
-                                            {goalFilterMonumentId ? "Monument (clear)" : "Monument (any)"}
-                                          </option>
-                                          {monuments.map((m) => (
-                                            <option key={m.id} value={m.id}>
-                                              {(m.emoji ?? "✨") + " " + (m.title ?? "Monument")}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <select
-                                          value={goalFilterEnergy}
-                                          onChange={(e) => setGoalFilterEnergy(e.target.value)}
-                                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                        >
-                                          <option value="">
-                                            {goalFilterEnergy ? "Energy (clear)" : "Energy (any)"}
-                                          </option>
-                                          {ENERGY_OPTIONS_LOCAL.map((o) => (
-                                            <option key={o.value} value={o.value}>
-                                              {o.label}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <select
-                                          value={goalFilterPriority}
-                                          onChange={(e) => setGoalFilterPriority(e.target.value)}
-                                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                        >
-                                          <option value="">
-                                            {goalFilterPriority ? "Priority (clear)" : "Priority (any)"}
-                                          </option>
-                                          {PRIORITY_OPTIONS_LOCAL.map((o) => (
-                                            <option key={o.value} value={o.value}>
-                                              {o.label}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                    </div>
-                                    <div className="space-y-3">
-                                      <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                        Sort
-                                      </div>
-                                      <div className="grid grid-cols-1 gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => setGoalSort("recent")}
-                                          className={cn(
-                                            "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
-                                            goalSort === "recent" && "border-blue-400/60 bg-blue-500/10 text-white"
-                                          )}
-                                        >
-                                          Recently updated
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setGoalSort("oldest")}
-                                          className={cn(
-                                            "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
-                                            goalSort === "oldest" && "border-blue-400/60 bg-blue-500/10 text-white"
-                                          )}
-                                        >
-                                          Oldest updated
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setGoalSort("weight")}
-                                          className={cn(
-                                            "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
-                                            goalSort === "weight" && "border-blue-400/60 bg-blue-500/10 text-white"
-                                          )}
-                                        >
-                                          Highest weight
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : null}
-                            {goalsLoading ? (
-                              <SelectItem value="" disabled>
-                                Loading goals…
-                              </SelectItem>
-                            ) : goals.length > 0 ? (
-                              filteredGoals.length > 0 ? (
-                                filteredGoals.map((goal) => (
-                                  <SelectItem key={goal.id} value={goal.id}>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-lg">
-                                        {goal.emoji ??
-                                          goal.monumentEmoji ??
-                                          monumentEmojiMap.get(
-                                            (goal as any).monument_id ??
-                                              (goal as any).monumentId ??
-                                              ""
-                                          ) ??
-                                          "✨"}
-                                      </span>
-                                      <span>{goal.name}</span>
-                                    </div>
-                                  </SelectItem>
-                                ))
-                              ) : (
-                                <SelectItem value="" disabled>
-                                  No goals match your search
-                                </SelectItem>
-                              )
-                            ) : (
-                              <SelectItem value="" disabled>
-                                No goals yet
-                              </SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex items-start justify-end text-right">
-                        {projectedRankState.status === "incomplete" ? (
-                          <p className="text-sm font-semibold tracking-wide text-zinc-500">
-                            ∞
-                          </p>
-                        ) : projectedRankState.status === "loading" ? (
-                          <div className="flex items-center gap-2 text-[10px] text-white/70">
-                            <Loader2 className="h-3 w-3 animate-spin text-white/70" />
-                            <span>Calculating…</span>
+                                <Filter className="h-4 w-4" />
+                              </button>
+                            </div>
                           </div>
-                        ) : projectedRankState.status === "error" ? (
-                          <p className="text-[10px] text-red-300">
-                            Couldn&apos;t calculate rank:{" "}
-                            {projectedRankState.message}
-                          </p>
-                        ) : (
-                          <p className="text-sm font-semibold tracking-wide text-zinc-500">
-                            #{projectedRankState.data.rank}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                      <div className="grid gap-2 col-span-3">
-                        <Label htmlFor="project-name" className="sr-only">
-                          Project name
-                        </Label>
-                        <Input
-                          id="project-name"
-                          value={projectName}
-                          onChange={(e) => setProjectName(e.target.value)}
-                          placeholder="Name your PROJECT"
-                          className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
-                        />
-                      </div>
-                      <div className="grid gap-2 col-span-1">
-                        <Label className="sr-only">Energy</Label>
-                        <Select
-                          value={projectEnergy}
-                          onValueChange={setProjectEnergy}
-                          triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
-                          hideChevron
-                          trigger={
-                            <div className="flex h-full w-full items-center justify-center leading-none">
-                              {projectEnergy ? (
-                                <FlameEmber
-                                  level={
-                                    projectEnergy as FlameEmberProps["level"]
-                                  }
-                                  size="md"
-                                  className="-translate-y-[3px]"
-                                />
-                              ) : (
-                                <span className="text-zinc-400">Energy</span>
-                              )}
-                            </div>
-                          }
-                        >
-                          <SelectContent>
-                            {ENERGY_OPTIONS_LOCAL.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                <div className="flex items-center justify-center py-2">
-                                  <FlameEmber
-                                    level={o.value as FlameEmberProps["level"]}
-                                    size="md"
-                                  />
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
-                      <div className="grid gap-2">
-                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                          PRIORITY
-                        </Label>
-                        <Select
-                          value={projectPriority}
-                          onValueChange={setProjectPriority}
-                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
-                          contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
-                          placeholder="Priority"
-                        >
-                          <SelectContent>
-                            {PRIORITY_OPTIONS_LOCAL.map((o) => (
-                              <SelectItem
-                                key={o.value}
-                                value={o.value}
-                                label={o.label}
-                              >
-                                <div className="flex w-full items-center justify-between gap-3">
-                                  <span>{o.label}</span>
-                                  <span className="w-10 text-right text-red-400">
-                                    {PRIORITY_ICON_MAP[o.value] ?? ""}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                          STAGE
-                        </Label>
-                        <Select
-                          value={projectStage}
-                          onValueChange={setProjectStage}
-                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
-                          placeholder="Stage"
-                        >
-                          <SelectContent>
-                            {PROJECT_STAGE_OPTIONS_LOCAL.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-2 items-end">
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={toggleDurationPicker}
-                            ref={durationTriggerRef}
-                            className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
-                            aria-haspopup="dialog"
-                            aria-expanded={showDurationPicker}
-                            aria-controls="project-duration-picker"
-                          >
-                            <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
-                              <Clock className="h-6 w-6 text-white/80" />
-                              <span className="mt-1 text-[10px] font-semibold leading-none text-white/80">
-                                {normalizedProjectDuration || 30}m
-                              </span>
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    {showDurationPicker && durationPosition
-                      ? createPortal(
-                          <div
-                            id="project-duration-picker"
-                            className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
-                            style={{
-                              position: "absolute",
-                              top: durationPosition.top,
-                              left: durationPosition.left,
-                              width: durationPosition.width,
-                            }}
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <button
-                                type="button"
-                                onClick={() => adjustProjectDuration(-5)}
-                                className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
-                              >
-                                -
-                              </button>
-                              <div className="text-lg font-semibold text-white">
-                                {normalizedProjectDuration || 30} min
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => adjustProjectDuration(5)}
-                                className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
-                              >
-                                +
-                              </button>
-                            </div>
-                            <p className="mt-2 text-xs text-white/60">
-                              Adjust in 5-minute steps. Default starts at 30.
-                            </p>
-                          </div>,
-                          document.body
-                        )
-                      : null}
-                    <div className="grid gap-2">
-                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                        SKILL
-                      </Label>
-                      <Select
-                        value={projectSkillIds[0] ?? ""}
-                        onOpenChange={handleSkillDropdownOpenChange}
-                        onValueChange={(value) => {
-                          setProjectSkillIds(value ? [value] : []);
-                          const skill = findSkillById(value);
-                          setSkillSearch(skill?.name ?? "");
-                          setShowSkillFilters(false);
-                        }}
-                        placeholder="Link a skill"
-                        triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
-                        contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
-                        maxHeight={150}
-                        openOnTriggerFocus
-                        trigger={
-                          <SkillTrigger
-                            selectedId={projectSkillIds[0] ?? null}
-                            onClearSelection={() => {
-                              setProjectSkillIds([]);
-                              setSkillSearch("");
-                            }}
-                          />
-                        }
-                      >
-                        <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
-                          {showSkillFilters ? (
+                          {showGoalFilters ? (
                             <div
-                              ref={skillFilterMenuRef}
+                              ref={goalFilterMenuRef}
                               className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
                             >
                               <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
                                 <span className="text-sm font-semibold">
-                                  Filter Skills
+                                  Filter & Sort Goals
                                 </span>
                                 <button
                                   type="button"
-                                  onClick={() => setShowSkillFilters(false)}
+                                  onClick={() => setShowGoalFilters(false)}
                                   className="text-xs text-white/80 underline-offset-4 hover:underline"
                                 >
                                   Close
@@ -1655,16 +1353,81 @@ export function Fab({
                                     </div>
                                     <div className="space-y-2">
                                       <select
-                                        value={skillFilterMonumentId}
-                                        onChange={(e) => setSkillFilterMonumentId(e.target.value)}
+                                        value={goalFilterSkillId}
+                                        onChange={(e) =>
+                                          setGoalFilterSkillId(e.target.value)
+                                        }
                                         className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
                                       >
                                         <option value="">
-                                          {skillFilterMonumentId ? "Monument (clear)" : "Monument (any)"}
+                                          {goalFilterSkillId
+                                            ? "Skill (clear)"
+                                            : "Skill (any)"}
+                                        </option>
+                                        {skills.map((skill) => (
+                                          <option
+                                            key={skill.id}
+                                            value={skill.id}
+                                          >
+                                            {skill.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <select
+                                        value={goalFilterMonumentId}
+                                        onChange={(e) =>
+                                          setGoalFilterMonumentId(
+                                            e.target.value
+                                          )
+                                        }
+                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                      >
+                                        <option value="">
+                                          {goalFilterMonumentId
+                                            ? "Monument (clear)"
+                                            : "Monument (any)"}
                                         </option>
                                         {monuments.map((m) => (
                                           <option key={m.id} value={m.id}>
-                                            {(m.emoji ?? "✨") + " " + (m.title ?? "Monument")}
+                                            {(m.emoji ?? "✨") +
+                                              " " +
+                                              (m.title ?? "Monument")}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <select
+                                        value={goalFilterEnergy}
+                                        onChange={(e) =>
+                                          setGoalFilterEnergy(e.target.value)
+                                        }
+                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                      >
+                                        <option value="">
+                                          {goalFilterEnergy
+                                            ? "Energy (clear)"
+                                            : "Energy (any)"}
+                                        </option>
+                                        {ENERGY_OPTIONS_LOCAL.map((o) => (
+                                          <option key={o.value} value={o.value}>
+                                            {o.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <select
+                                        value={goalFilterPriority}
+                                        onChange={(e) =>
+                                          setGoalFilterPriority(e.target.value)
+                                        }
+                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                      >
+                                        <option value="">
+                                          {goalFilterPriority
+                                            ? "Priority (clear)"
+                                            : "Priority (any)"}
+                                        </option>
+                                        {PRIORITY_OPTIONS_LOCAL.map((o) => (
+                                          <option key={o.value} value={o.value}>
+                                            {o.label}
                                           </option>
                                         ))}
                                       </select>
@@ -1677,17 +1440,36 @@ export function Fab({
                                     <div className="grid grid-cols-1 gap-2">
                                       <button
                                         type="button"
-                                        onClick={() => setSkillSearch("")}
-                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                        onClick={() => setGoalSort("recent")}
+                                        className={cn(
+                                          "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
+                                          goalSort === "recent" &&
+                                            "border-blue-400/60 bg-blue-500/10 text-white"
+                                        )}
                                       >
-                                        Reset search
+                                        Recently updated
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => setSkillFilterMonumentId("")}
-                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                        onClick={() => setGoalSort("oldest")}
+                                        className={cn(
+                                          "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
+                                          goalSort === "oldest" &&
+                                            "border-blue-400/60 bg-blue-500/10 text-white"
+                                        )}
                                       >
-                                        Clear filters
+                                        Oldest updated
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setGoalSort("weight")}
+                                        className={cn(
+                                          "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
+                                          goalSort === "weight" &&
+                                            "border-blue-400/60 bg-blue-500/10 text-white"
+                                        )}
+                                      >
+                                        Highest weight
                                       </button>
                                     </div>
                                   </div>
@@ -1695,307 +1477,684 @@ export function Fab({
                               </div>
                             </div>
                           ) : null}
-                          {skillsLoading ? (
-                            <SelectItem value="__loading" disabled>
-                              Loading skills…
+                          {goalsLoading ? (
+                            <SelectItem value="" disabled>
+                              Loading goals…
                             </SelectItem>
-                          ) : filteredSkills.length > 0 ? (
-                            filteredSkills.map((skill) => (
-                              <SelectItem key={skill.id} value={skill.id}>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-lg">
-                                    {skill.icon ?? "🎯"}
-                                  </span>
-                                  <span>{skill.name}</span>
-                                </div>
+                          ) : goals.length > 0 ? (
+                            filteredGoals.length > 0 ? (
+                              filteredGoals.map((goal) => (
+                                <SelectItem key={goal.id} value={goal.id}>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-lg">
+                                      {goal.emoji ??
+                                        goal.monumentEmoji ??
+                                        monumentEmojiMap.get(
+                                          (goal as any).monument_id ??
+                                            (goal as any).monumentId ??
+                                            ""
+                                        ) ??
+                                        "✨"}
+                                    </span>
+                                    <span>{goal.name}</span>
+                                  </div>
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="" disabled>
+                                No goals match your search
                               </SelectItem>
-                            ))
+                            )
                           ) : (
-                            <SelectItem value="__empty" disabled>
-                              No skills found
+                            <SelectItem value="" disabled>
+                              No goals yet
                             </SelectItem>
                           )}
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="project-why" className="text-zinc-500">
-                        WHY (optional)
+                    <div className="flex items-start justify-end text-right">
+                      {projectedRankState.status === "incomplete" ? (
+                        <p className="text-sm font-semibold tracking-wide text-zinc-500">
+                          ∞
+                        </p>
+                      ) : projectedRankState.status === "loading" ? (
+                        <div className="flex items-center gap-2 text-[10px] text-white/70">
+                          <Loader2 className="h-3 w-3 animate-spin text-white/70" />
+                          <span>Calculating…</span>
+                        </div>
+                      ) : projectedRankState.status === "error" ? (
+                        <p className="text-[10px] text-red-300">
+                          Couldn&apos;t calculate rank:{" "}
+                          {projectedRankState.message}
+                        </p>
+                      ) : (
+                        <p className="text-sm font-semibold tracking-wide text-zinc-500">
+                          #{projectedRankState.data.rank}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
+                    <div className="grid gap-2 col-span-3">
+                      <Label htmlFor="project-name" className="sr-only">
+                        Project name
                       </Label>
-                      <Textarea
-                        id="project-why"
-                        value={projectWhy}
-                        onChange={(e) => setProjectWhy(e.target.value)}
-                        placeholder="Add context…"
-                        className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                      <Input
+                        id="project-name"
+                        value={projectName}
+                        onChange={(e) => setProjectName(e.target.value)}
+                        placeholder="Name your PROJECT"
+                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
-                  </>
-                )}
-
-                {selected === "TASK" && (
-                  <>
-                    <div className="grid gap-2">
+                    <div className="grid gap-2 col-span-1">
+                      <Label className="sr-only">Energy</Label>
                       <Select
-                        value={taskProjectId ?? ""}
-                        onValueChange={setTaskProjectId}
-                        onOpenChange={(open) => {
-                          if (!open) {
-                            setShowTaskProjectFilters(false);
-                          }
-                        }}
+                        value={projectEnergy}
+                        onValueChange={setProjectEnergy}
+                        triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
                         hideChevron
-                        triggerClassName={cn(
-                          "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
-                          taskProjectId
-                            ? "text-white/80 hover:text-blue-200"
-                            : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
-                        )}
                         trigger={
-                          <span>
-                            {taskProjectId
-                              ? taskProjects.find((p) => p.id === taskProjectId)
-                                  ?.name ?? "Link to existing PROJECT +"
-                              : "Link to existing PROJECT +"}
-                          </span>
+                          <div className="flex h-full w-full items-center justify-center leading-none">
+                            {projectEnergy ? (
+                              <FlameEmber
+                                level={
+                                  projectEnergy as FlameEmberProps["level"]
+                                }
+                                size="md"
+                                className="-translate-y-[3px]"
+                              />
+                            ) : (
+                              <span className="text-zinc-400">Energy</span>
+                            )}
+                          </div>
                         }
                       >
-                        <SelectContent className="relative min-w-[220px]">
-                          <div className="sticky top-0 z-10 bg-black/80 p-2 backdrop-blur border-b border-white/5">
-                            <div className="relative flex items-center gap-2">
-                              <Input
-                                value={taskProjectSearch}
-                                onChange={(e) => setTaskProjectSearch(e.target.value)}
-                                placeholder="Search projects…"
-                                className="h-9 text-sm border-white/10 bg-white/[0.05] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowTaskProjectFilters((v) => !v)}
-                                className={cn(
-                                  "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
-                                  showTaskProjectFilters && "border-blue-400/60 text-white"
-                                )}
-                                aria-label="Filter projects"
-                              >
-                                <Filter className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </div>
-                          {showTaskProjectFilters ? (
-                            <div
-                              ref={taskProjectFilterMenuRef}
-                              className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
-                            >
-                              <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
-                                <span className="text-sm font-semibold">
-                                  Filter Projects
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setShowTaskProjectFilters(false)}
-                                  className="text-xs text-white/80 underline-offset-4 hover:underline"
-                                >
-                                  Close
-                                </button>
+                        <SelectContent>
+                          {ENERGY_OPTIONS_LOCAL.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              <div className="flex items-center justify-center py-2">
+                                <FlameEmber
+                                  level={o.value as FlameEmberProps["level"]}
+                                  size="md"
+                                />
                               </div>
-                              <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="space-y-3">
-                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                      Filter
-                                    </div>
-                                    <div className="space-y-2">
-                                      <select
-                                        value={taskProjectFilterStage}
-                                        onChange={(e) => setTaskProjectFilterStage(e.target.value)}
-                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                      >
-                                        <option value="">
-                                          {taskProjectFilterStage ? "Stage (clear)" : "Stage (any)"}
-                                        </option>
-                                        {PROJECT_STAGE_OPTIONS_LOCAL.map((stage) => (
-                                          <option key={stage.value} value={stage.value}>
-                                            {stage.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      <select
-                                        value={taskProjectFilterPriority}
-                                        onChange={(e) => setTaskProjectFilterPriority(e.target.value)}
-                                        className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                      >
-                                        <option value="">
-                                          {taskProjectFilterPriority
-                                            ? "Priority (clear)"
-                                            : "Priority (any)"}
-                                        </option>
-                                        {PRIORITY_OPTIONS_LOCAL.map((p) => (
-                                          <option key={p.value} value={p.value}>
-                                            {p.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  </div>
-                                  <div className="space-y-3">
-                                    <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                      Quick actions
-                                    </div>
-                                    <div className="grid grid-cols-1 gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => setTaskProjectSearch("")}
-                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
-                                      >
-                                        Reset search
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setTaskProjectFilterStage("");
-                                          setTaskProjectFilterPriority("");
-                                        }}
-                                        className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
-                                      >
-                                        Clear filters
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ) : null}
-                          {taskProjectsLoading ? (
-                            <SelectItem value="__loading" disabled>
-                              Loading projects…
                             </SelectItem>
-                          ) : filteredTaskProjects.length > 0 ? (
-                            filteredTaskProjects.map((project) => (
-                              <SelectItem key={project.id} value={project.id}>
-                                {project.name}
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <SelectItem value="__empty" disabled>
-                              {taskProjectSearch.trim().length > 0
-                                ? "No projects found"
-                                : "No projects yet"}
-                            </SelectItem>
-                          )}
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                      <div className="grid gap-2 col-span-3">
-                        <Label htmlFor="task-name" className="sr-only">
-                          Task name
-                        </Label>
-                        <Input
-                          id="task-name"
-                          value={taskName}
-                          onChange={(e) => setTaskName(e.target.value)}
-                          placeholder="Name your TASK"
-                          className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
-                        />
-                      </div>
-                      <div className="grid gap-2 col-span-1">
-                        <Label className="sr-only">Energy</Label>
-                        <Select
-                          value={taskEnergy}
-                          onValueChange={setTaskEnergy}
-                          triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
-                          hideChevron
-                          trigger={
-                            <div className="flex h-full w-full items-center justify-center leading-none">
-                              {taskEnergy ? (
-                                <FlameEmber
-                                  level={taskEnergy as FlameEmberProps["level"]}
-                                  size="md"
-                                  className="-translate-y-[3px]"
-                                />
-                              ) : (
-                                <span className="text-zinc-400">Energy</span>
-                              )}
-                            </div>
-                          }
-                        >
-                          <SelectContent>
-                            {ENERGY_OPTIONS_LOCAL.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                <div className="flex items-center justify-center py-2">
-                                  <FlameEmber
-                                    level={o.value as FlameEmberProps["level"]}
-                                    size="md"
-                                  />
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                  </div>
+                  <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        PRIORITY
+                      </Label>
+                      <Select
+                        value={projectPriority}
+                        onValueChange={setProjectPriority}
+                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
+                        placeholder="Priority"
+                      >
+                        <SelectContent>
+                          {PRIORITY_OPTIONS_LOCAL.map((o) => (
+                            <SelectItem
+                              key={o.value}
+                              value={o.value}
+                              label={o.label}
+                            >
+                              <div className="flex w-full items-center justify-between gap-3">
+                                <span>{o.label}</span>
+                                <span className="w-10 text-right text-red-400">
+                                  {PRIORITY_ICON_MAP[o.value] ?? ""}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
-                      <div className="grid gap-2">
-                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                          PRIORITY
-                        </Label>
-                        <Select
-                          value={taskPriority}
-                          onValueChange={setTaskPriority}
-                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
-                          contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
-                          placeholder="Priority"
-                        >
-                          <SelectContent>
-                            {PRIORITY_OPTIONS_LOCAL.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                          STAGE
-                        </Label>
-                        <Select
-                          value={taskStage}
-                          onValueChange={setTaskStage}
-                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
-                          placeholder="Stage"
-                        >
-                          <SelectContent>
-                            {TASK_STAGE_OPTIONS_LOCAL.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                          DURATION
-                        </Label>
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        STAGE
+                      </Label>
+                      <Select
+                        value={projectStage}
+                        onValueChange={setProjectStage}
+                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        placeholder="Stage"
+                      >
+                        <SelectContent>
+                          {PROJECT_STAGE_OPTIONS_LOCAL.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2 items-end">
+                      <div className="relative">
                         <button
                           type="button"
+                          onClick={toggleDurationPicker}
+                          ref={durationTriggerRef}
                           className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                          aria-haspopup="dialog"
+                          aria-expanded={showDurationPicker}
+                          aria-controls="project-duration-picker"
                         >
                           <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
                             <Clock className="h-6 w-6 text-white/80" />
                             <span className="mt-1 text-[10px] font-semibold leading-none text-white/80">
-                              {taskDuration || 30}m
+                              {normalizedProjectDuration || 30}m
                             </span>
                           </span>
                         </button>
                       </div>
                     </div>
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <div className="grid gap-2">
-                        <Label>Skill</Label>
-                        <Select
+                  </div>
+                  {showDurationPicker && durationPosition
+                    ? createPortal(
+                        <div
+                          id="project-duration-picker"
+                          className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
+                          style={{
+                            position: "absolute",
+                            top: durationPosition.top,
+                            left: durationPosition.left,
+                            width: durationPosition.width,
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <button
+                              type="button"
+                              onClick={() => adjustProjectDuration(-5)}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                            >
+                              -
+                            </button>
+                            <div className="text-lg font-semibold text-white">
+                              {normalizedProjectDuration || 30} min
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => adjustProjectDuration(5)}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                            >
+                              +
+                            </button>
+                          </div>
+                          <p className="mt-2 text-xs text-white/60">
+                            Adjust in 5-minute steps. Default starts at 30.
+                          </p>
+                        </div>,
+                        document.body
+                      )
+                    : null}
+                  {showHabitDurationPicker && habitDurationPosition
+                    ? createPortal(
+                        <div
+                          id="habit-duration-picker"
+                          className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
+                          style={{
+                            position: "absolute",
+                            top: habitDurationPosition.top,
+                            left: habitDurationPosition.left,
+                            width: habitDurationPosition.width,
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <button
+                              type="button"
+                              onClick={() => adjustHabitDuration(-5)}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                            >
+                              -
+                            </button>
+                            <div className="text-lg font-semibold text-white">
+                              {habitDuration || 15} min
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => adjustHabitDuration(5)}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                            >
+                              +
+                            </button>
+                          </div>
+                          <p className="mt-2 text-xs text-white/60">
+                            Adjust in 5-minute steps. Default starts at 15.
+                          </p>
+                        </div>,
+                        document.body
+                      )
+                    : null}
+                  <div className="grid gap-2">
+                    <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                      SKILL
+                    </Label>
+                    <Select
+                      value={projectSkillIds[0] ?? ""}
+                      onOpenChange={handleSkillDropdownOpenChange}
+                      onValueChange={(value) => {
+                        setProjectSkillIds(value ? [value] : []);
+                        const skill = findSkillById(value);
+                        setSkillSearch(skill?.name ?? "");
+                        setShowSkillFilters(false);
+                      }}
+                      placeholder="Link a skill"
+                      triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                      contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                      maxHeight={150}
+                      openOnTriggerFocus
+                      trigger={
+                        <SkillTrigger
+                          selectedId={projectSkillIds[0] ?? null}
+                          onClearSelection={() => {
+                            setProjectSkillIds([]);
+                            setSkillSearch("");
+                          }}
+                        />
+                      }
+                    >
+                      <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                        {showSkillFilters ? (
+                          <div
+                            ref={skillFilterMenuRef}
+                            className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                          >
+                            <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                              <span className="text-sm font-semibold">
+                                Filter Skills
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowSkillFilters(false)}
+                                className="text-xs text-white/80 underline-offset-4 hover:underline"
+                              >
+                                Close
+                              </button>
+                            </div>
+                            <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-3">
+                                  <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                    Filter
+                                  </div>
+                                  <div className="space-y-2">
+                                    <select
+                                      value={skillFilterMonumentId}
+                                      onChange={(e) =>
+                                        setSkillFilterMonumentId(e.target.value)
+                                      }
+                                      className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                    >
+                                      <option value="">
+                                        {skillFilterMonumentId
+                                          ? "Monument (clear)"
+                                          : "Monument (any)"}
+                                      </option>
+                                      {monuments.map((m) => (
+                                        <option key={m.id} value={m.id}>
+                                          {(m.emoji ?? "✨") +
+                                            " " +
+                                            (m.title ?? "Monument")}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                                <div className="space-y-3">
+                                  <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                    Quick actions
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSkillSearch("")}
+                                      className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                    >
+                                      Reset search
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setSkillFilterMonumentId("")
+                                      }
+                                      className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                    >
+                                      Clear filters
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                        {skillsLoading ? (
+                          <SelectItem value="__loading" disabled>
+                            Loading skills…
+                          </SelectItem>
+                        ) : filteredSkills.length > 0 ? (
+                          filteredSkills.map((skill) => (
+                            <SelectItem key={skill.id} value={skill.id}>
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">
+                                  {skill.icon ?? "🎯"}
+                                </span>
+                                <span>{skill.name}</span>
+                              </div>
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="__empty" disabled>
+                            No skills found
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="project-why" className="text-zinc-500">
+                      WHY (optional)
+                    </Label>
+                    <Textarea
+                      id="project-why"
+                      value={projectWhy}
+                      onChange={(e) => setProjectWhy(e.target.value)}
+                      placeholder="Add context…"
+                      className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                    />
+                  </div>
+                </>
+              )}
+
+              {selected === "TASK" && (
+                <>
+                  <div className="grid gap-2">
+                    <Select
+                      value={taskProjectId ?? ""}
+                      onValueChange={setTaskProjectId}
+                      onOpenChange={(open) => {
+                        if (!open) {
+                          setShowTaskProjectFilters(false);
+                        }
+                      }}
+                      hideChevron
+                      triggerClassName={cn(
+                        "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
+                        taskProjectId
+                          ? "text-white/80 hover:text-blue-200"
+                          : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
+                      )}
+                      trigger={
+                        <span>
+                          {taskProjectId
+                            ? taskProjects.find((p) => p.id === taskProjectId)
+                                ?.name ?? "Link to existing PROJECT +"
+                            : "Link to existing PROJECT +"}
+                        </span>
+                      }
+                    >
+                      <SelectContent className="relative min-w-[220px]">
+                        <div className="sticky top-0 z-10 bg-black/80 p-2 backdrop-blur border-b border-white/5">
+                          <div className="relative flex items-center gap-2">
+                            <Input
+                              value={taskProjectSearch}
+                              onChange={(e) =>
+                                setTaskProjectSearch(e.target.value)
+                              }
+                              placeholder="Search projects…"
+                              className="h-9 text-sm border-white/10 bg-white/[0.05] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setShowTaskProjectFilters((v) => !v)
+                              }
+                              className={cn(
+                                "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
+                                showTaskProjectFilters &&
+                                  "border-blue-400/60 text-white"
+                              )}
+                              aria-label="Filter projects"
+                            >
+                              <Filter className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                        {showTaskProjectFilters ? (
+                          <div
+                            ref={taskProjectFilterMenuRef}
+                            className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                          >
+                            <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                              <span className="text-sm font-semibold">
+                                Filter Projects
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowTaskProjectFilters(false)}
+                                className="text-xs text-white/80 underline-offset-4 hover:underline"
+                              >
+                                Close
+                              </button>
+                            </div>
+                            <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-3">
+                                  <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                    Filter
+                                  </div>
+                                  <div className="space-y-2">
+                                    <select
+                                      value={taskProjectFilterStage}
+                                      onChange={(e) =>
+                                        setTaskProjectFilterStage(
+                                          e.target.value
+                                        )
+                                      }
+                                      className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                    >
+                                      <option value="">
+                                        {taskProjectFilterStage
+                                          ? "Stage (clear)"
+                                          : "Stage (any)"}
+                                      </option>
+                                      {PROJECT_STAGE_OPTIONS_LOCAL.map(
+                                        (stage) => (
+                                          <option
+                                            key={stage.value}
+                                            value={stage.value}
+                                          >
+                                            {stage.label}
+                                          </option>
+                                        )
+                                      )}
+                                    </select>
+                                    <select
+                                      value={taskProjectFilterPriority}
+                                      onChange={(e) =>
+                                        setTaskProjectFilterPriority(
+                                          e.target.value
+                                        )
+                                      }
+                                      className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                    >
+                                      <option value="">
+                                        {taskProjectFilterPriority
+                                          ? "Priority (clear)"
+                                          : "Priority (any)"}
+                                      </option>
+                                      {PRIORITY_OPTIONS_LOCAL.map((p) => (
+                                        <option key={p.value} value={p.value}>
+                                          {p.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                                <div className="space-y-3">
+                                  <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                    Quick actions
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setTaskProjectSearch("")}
+                                      className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                    >
+                                      Reset search
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setTaskProjectFilterStage("");
+                                        setTaskProjectFilterPriority("");
+                                      }}
+                                      className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                    >
+                                      Clear filters
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                        {taskProjectsLoading ? (
+                          <SelectItem value="__loading" disabled>
+                            Loading projects…
+                          </SelectItem>
+                        ) : filteredTaskProjects.length > 0 ? (
+                          filteredTaskProjects.map((project) => (
+                            <SelectItem key={project.id} value={project.id}>
+                              {project.name}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="__empty" disabled>
+                            {taskProjectSearch.trim().length > 0
+                              ? "No projects found"
+                              : "No projects yet"}
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
+                    <div className="grid gap-2 col-span-3">
+                      <Label htmlFor="task-name" className="sr-only">
+                        Task name
+                      </Label>
+                      <Input
+                        id="task-name"
+                        value={taskName}
+                        onChange={(e) => setTaskName(e.target.value)}
+                        placeholder="Name your TASK"
+                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                      />
+                    </div>
+                    <div className="grid gap-2 col-span-1">
+                      <Label className="sr-only">Energy</Label>
+                      <Select
+                        value={taskEnergy}
+                        onValueChange={setTaskEnergy}
+                        triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
+                        hideChevron
+                        trigger={
+                          <div className="flex h-full w-full items-center justify-center leading-none">
+                            {taskEnergy ? (
+                              <FlameEmber
+                                level={taskEnergy as FlameEmberProps["level"]}
+                                size="md"
+                                className="-translate-y-[3px]"
+                              />
+                            ) : (
+                              <span className="text-zinc-400">Energy</span>
+                            )}
+                          </div>
+                        }
+                      >
+                        <SelectContent>
+                          {ENERGY_OPTIONS_LOCAL.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              <div className="flex items-center justify-center py-2">
+                                <FlameEmber
+                                  level={o.value as FlameEmberProps["level"]}
+                                  size="md"
+                                />
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        PRIORITY
+                      </Label>
+                      <Select
+                        value={taskPriority}
+                        onValueChange={setTaskPriority}
+                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
+                        placeholder="Priority"
+                      >
+                        <SelectContent>
+                          {PRIORITY_OPTIONS_LOCAL.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        STAGE
+                      </Label>
+                      <Select
+                        value={taskStage}
+                        onValueChange={setTaskStage}
+                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        placeholder="Stage"
+                      >
+                        <SelectContent>
+                          {TASK_STAGE_OPTIONS_LOCAL.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        DURATION
+                      </Label>
+                      <button
+                        type="button"
+                        className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                      >
+                        <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
+                          <Clock className="h-6 w-6 text-white/80" />
+                          <span className="mt-1 text-[10px] font-semibold leading-none text-white/80">
+                            {taskDuration || 30}m
+                          </span>
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="grid gap-2">
+                      <Label>Skill</Label>
+                      <Select
                         value={taskSkillId ?? ""}
                         onOpenChange={handleSkillDropdownOpenChange}
                         onValueChange={(value) => {
@@ -2025,303 +2184,6 @@ export function Fab({
                               ref={skillFilterMenuRef}
                               className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
                             >
-                                <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
-                                  <span className="text-sm font-semibold">
-                                    Filter Skills
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowSkillFilters(false)}
-                                    className="text-xs text-white/80 underline-offset-4 hover:underline"
-                                  >
-                                    Close
-                                  </button>
-                                </div>
-                                <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div className="space-y-3">
-                                      <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                        Filter
-                                      </div>
-                                      <div className="space-y-2">
-                                        <select
-                                          value={skillFilterMonumentId}
-                                          onChange={(e) => setSkillFilterMonumentId(e.target.value)}
-                                          className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
-                                        >
-                                          <option value="">
-                                            {skillFilterMonumentId ? "Monument (clear)" : "Monument (any)"}
-                                          </option>
-                                          {monuments.map((m) => (
-                                            <option key={m.id} value={m.id}>
-                                              {(m.emoji ?? "✨") + " " + (m.title ?? "Monument")}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                    </div>
-                                    <div className="space-y-3">
-                                      <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                        Quick actions
-                                      </div>
-                                      <div className="grid grid-cols-1 gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => setSkillSearch("")}
-                                          className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
-                                        >
-                                          Reset search
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setSkillFilterMonumentId("")}
-                                          className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
-                                        >
-                                          Clear filters
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : null}
-                          {skillsLoading ? (
-                            <SelectItem value="__loading" disabled>
-                              Loading skills…
-                            </SelectItem>
-                          ) : filteredSkills.length > 0 ? (
-                              filteredSkills.map((skill) => (
-                                <SelectItem key={skill.id} value={skill.id}>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-lg">
-                                      {skill.icon ?? "🎯"}
-                                    </span>
-                                    <span>{skill.name}</span>
-                                  </div>
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <SelectItem value="__empty" disabled>
-                                No skills found
-                              </SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-2 md:col-span-2">
-                        <Label htmlFor="task-notes">Notes (optional)</Label>
-                        <Textarea
-                          id="task-notes"
-                          value={taskNotes}
-                          onChange={(e) => setTaskNotes(e.target.value)}
-                          placeholder="Context…"
-                          className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
-                        />
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {selected === "HABIT" && (
-                  <>
-                    <div className="grid gap-2">
-                      <Select
-                        value={habitRoutineId ?? ""}
-                        onValueChange={(value) => {
-                          if (value === "__create__") {
-                            router.push("/habits/new");
-                            return;
-                          }
-                          setHabitRoutineId(value);
-                        }}
-                        hideChevron
-                        triggerClassName={cn(
-                          "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
-                          habitRoutineId
-                            ? "text-white/80 hover:text-blue-200"
-                            : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
-                        )}
-                        trigger={
-                          <span>
-                            {habitRoutineId
-                              ? habitRoutines.find((r) => r.id === habitRoutineId)
-                                  ?.name ?? "Link to existing ROUTINE +"
-                              : "Link to existing ROUTINE +"}
-                          </span>
-                        }
-                      >
-                        <SelectContent className="min-w-[220px]">
-                          <SelectItem value="__create__">
-                            <div className="flex items-center gap-2 text-white">
-                              <Plus className="h-4 w-4" />
-                              <span>Create new routine</span>
-                            </div>
-                          </SelectItem>
-                          {habitRoutinesLoading ? (
-                            <SelectItem value="__loading" disabled>
-                              Loading routines…
-                            </SelectItem>
-                          ) : habitRoutines.length > 0 ? (
-                            habitRoutines.map((routine) => (
-                              <SelectItem key={routine.id} value={routine.id}>
-                                <div className="flex flex-col">
-                                  <span className="font-medium">
-                                    {routine.name}
-                                  </span>
-                                  {routine.description ? (
-                                    <span className="text-xs text-white/60">
-                                      {routine.description}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <SelectItem value="__empty" disabled>
-                              No routines yet
-                            </SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                      <div className="grid gap-2 col-span-3">
-                        <Label htmlFor="habit-name" className="sr-only">
-                          Habit name
-                        </Label>
-                        <Input
-                          id="habit-name"
-                          value={habitName}
-                          onChange={(e) => setHabitName(e.target.value)}
-                          placeholder="Name your HABIT"
-                          className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
-                        />
-                      </div>
-                      <div className="grid gap-2 col-span-1">
-                        <Label className="sr-only">Energy</Label>
-                        <Select
-                          value={habitEnergy}
-                          onValueChange={setHabitEnergy}
-                          triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
-                          hideChevron
-                          trigger={
-                            <div className="flex h-full w-full items-center justify-center leading-none">
-                              {habitEnergy ? (
-                                <FlameEmber
-                                  level={habitEnergy as FlameEmberProps["level"]}
-                                  size="md"
-                                  className="-translate-y-[3px]"
-                                />
-                              ) : (
-                                <span className="text-zinc-400">Energy</span>
-                              )}
-                            </div>
-                          }
-                        >
-                          <SelectContent>
-                            {ENERGY_OPTIONS_LOCAL.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                <div className="flex items-center justify-center py-2">
-                                  <FlameEmber
-                                    level={o.value as FlameEmberProps["level"]}
-                                    size="md"
-                                  />
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
-                      <div className="grid gap-2">
-                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                          TYPE
-                        </Label>
-                        <Select
-                          value={habitType}
-                          onValueChange={setHabitType}
-                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
-                          placeholder="Type"
-                        >
-                          <SelectContent>
-                            {HABIT_TYPE_OPTIONS.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                          RECURRENCE
-                        </Label>
-                        <Select
-                          value={habitRecurrence}
-                          onValueChange={setHabitRecurrence}
-                          triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
-                          placeholder="Recurrence"
-                        >
-                          <SelectContent>
-                            {HABIT_RECURRENCE_OPTIONS.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-2 items-end">
-                        <div className="relative">
-                        <button
-                          type="button"
-                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
-                        >
-                            <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
-                              <Clock className="h-6 w-6 text-white/80" />
-                              <span className="mt-1 text-[10px] font-semibold leading-none text-white/80">
-                                {habitDuration || 15}m
-                              </span>
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                        SKILL
-                      </Label>
-                      <Select
-                        value={habitSkillId ?? ""}
-                        onOpenChange={handleSkillDropdownOpenChange}
-                        onValueChange={(value) => {
-                          setHabitSkillId(value);
-                          const skill = findSkillById(value);
-                          setSkillSearch(skill?.name ?? "");
-                          setShowSkillFilters(false);
-                        }}
-                        placeholder="Link a skill"
-                        triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
-                        contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
-                        maxHeight={150}
-                        openOnTriggerFocus
-                        trigger={
-                          <SkillTrigger
-                            selectedId={habitSkillId ?? null}
-                            onClearSelection={() => {
-                              setHabitSkillId("");
-                              setSkillSearch("");
-                            }}
-                          />
-                        }
-                      >
-                        <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
-                          {showSkillFilters ? (
-                            <div
-                              ref={skillFilterMenuRef}
-                              className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
-                            >
                               <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
                                 <span className="text-sm font-semibold">
                                   Filter Skills
@@ -2343,15 +2205,23 @@ export function Fab({
                                     <div className="space-y-2">
                                       <select
                                         value={skillFilterMonumentId}
-                                        onChange={(e) => setSkillFilterMonumentId(e.target.value)}
+                                        onChange={(e) =>
+                                          setSkillFilterMonumentId(
+                                            e.target.value
+                                          )
+                                        }
                                         className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
                                       >
                                         <option value="">
-                                          {skillFilterMonumentId ? "Monument (clear)" : "Monument (any)"}
+                                          {skillFilterMonumentId
+                                            ? "Monument (clear)"
+                                            : "Monument (any)"}
                                         </option>
                                         {monuments.map((m) => (
                                           <option key={m.id} value={m.id}>
-                                            {(m.emoji ?? "✨") + " " + (m.title ?? "Monument")}
+                                            {(m.emoji ?? "✨") +
+                                              " " +
+                                              (m.title ?? "Monument")}
                                           </option>
                                         ))}
                                       </select>
@@ -2371,7 +2241,9 @@ export function Fab({
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => setSkillFilterMonumentId("")}
+                                        onClick={() =>
+                                          setSkillFilterMonumentId("")
+                                        }
                                         className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
                                       >
                                         Clear filters
@@ -2405,25 +2277,362 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="habit-why" className="text-zinc-500">
-                        WHY (optional)
-                      </Label>
+                    <div className="grid gap-2 md:col-span-2">
+                      <Label htmlFor="task-notes">Notes (optional)</Label>
                       <Textarea
-                        id="habit-why"
-                        value={habitWhy}
-                        onChange={(e) => setHabitWhy(e.target.value)}
-                        placeholder="Add context…"
+                        id="task-notes"
+                        value={taskNotes}
+                        onChange={(e) => setTaskNotes(e.target.value)}
+                        placeholder="Context…"
                         className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
                       />
                     </div>
-                  </>
-                )}
-              </div>
+                  </div>
+                </>
+              )}
 
-              {saveError ? (
-                <p className="text-xs text-red-300">{saveError}</p>
-              ) : null}
+              {selected === "HABIT" && (
+                <>
+                  <div className="grid gap-2">
+                    <Select
+                      value={habitRoutineId ?? ""}
+                      onValueChange={(value) => {
+                        if (value === "__create__") {
+                          router.push("/habits/new");
+                          return;
+                        }
+                        setHabitRoutineId(value);
+                      }}
+                      hideChevron
+                      triggerClassName={cn(
+                        "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
+                        habitRoutineId
+                          ? "text-white/80 hover:text-blue-200"
+                          : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
+                      )}
+                      trigger={
+                        <span>
+                          {habitRoutineId
+                            ? habitRoutines.find((r) => r.id === habitRoutineId)
+                                ?.name ?? "Link to existing ROUTINE +"
+                            : "Link to existing ROUTINE +"}
+                        </span>
+                      }
+                    >
+                      <SelectContent className="min-w-[220px]">
+                        <SelectItem value="__create__">
+                          <div className="flex items-center gap-2 text-white">
+                            <Plus className="h-4 w-4" />
+                            <span>Create new routine</span>
+                          </div>
+                        </SelectItem>
+                        {habitRoutinesLoading ? (
+                          <SelectItem value="__loading" disabled>
+                            Loading routines…
+                          </SelectItem>
+                        ) : habitRoutines.length > 0 ? (
+                          habitRoutines.map((routine) => (
+                            <SelectItem key={routine.id} value={routine.id}>
+                              <div className="flex flex-col">
+                                <span className="font-medium">
+                                  {routine.name}
+                                </span>
+                                {routine.description ? (
+                                  <span className="text-xs text-white/60">
+                                    {routine.description}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="__empty" disabled>
+                            No routines yet
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
+                    <div className="grid gap-2 col-span-3">
+                      <Label htmlFor="habit-name" className="sr-only">
+                        Habit name
+                      </Label>
+                      <Input
+                        id="habit-name"
+                        value={habitName}
+                        onChange={(e) => setHabitName(e.target.value)}
+                        placeholder="Name your HABIT"
+                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                      />
+                    </div>
+                    <div className="grid gap-2 col-span-1">
+                      <Label className="sr-only">Energy</Label>
+                      <Select
+                        value={habitEnergy}
+                        onValueChange={setHabitEnergy}
+                        triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
+                        hideChevron
+                        trigger={
+                          <div className="flex h-full w-full items-center justify-center leading-none">
+                            {habitEnergy ? (
+                              <FlameEmber
+                                level={habitEnergy as FlameEmberProps["level"]}
+                                size="md"
+                                className="-translate-y-[3px]"
+                              />
+                            ) : (
+                              <span className="text-zinc-400">Energy</span>
+                            )}
+                          </div>
+                        }
+                      >
+                        <SelectContent>
+                          {ENERGY_OPTIONS_LOCAL.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              <div className="flex items-center justify-center py-2">
+                                <FlameEmber
+                                  level={o.value as FlameEmberProps["level"]}
+                                  size="md"
+                                />
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        TYPE
+                      </Label>
+                      <Select
+                        value={habitType}
+                        onValueChange={setHabitType}
+                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        placeholder="Type"
+                      >
+                        <SelectContent>
+                          {HABIT_TYPE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        RECURRENCE
+                      </Label>
+                      <Select
+                        value={habitRecurrence}
+                        onValueChange={setHabitRecurrence}
+                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        placeholder="Recurrence"
+                      >
+                        <SelectContent>
+                          {HABIT_RECURRENCE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2 items-end">
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={toggleHabitDurationPicker}
+                          ref={habitDurationTriggerRef}
+                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                          aria-haspopup="dialog"
+                          aria-expanded={showHabitDurationPicker}
+                          aria-controls="habit-duration-picker"
+                        >
+                          <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
+                            <Clock className="h-6 w-6 text-white/80" />
+                            <span className="mt-1 text-[10px] font-semibold leading-none text-white/80">
+                              {Number.parseInt(habitDuration || "15", 10)}m
+                            </span>
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                      SKILL
+                    </Label>
+                    <Select
+                      value={habitSkillId ?? ""}
+                      onOpenChange={handleSkillDropdownOpenChange}
+                      onValueChange={(value) => {
+                        setHabitSkillId(value);
+                        const skill = findSkillById(value);
+                        setSkillSearch(skill?.name ?? "");
+                        setShowSkillFilters(false);
+                      }}
+                      placeholder="Link a skill"
+                      triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                      contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                      maxHeight={150}
+                      openOnTriggerFocus
+                      trigger={
+                        <SkillTrigger
+                          selectedId={habitSkillId ?? null}
+                          onClearSelection={() => {
+                            setHabitSkillId("");
+                            setSkillSearch("");
+                          }}
+                        />
+                      }
+                    >
+                      <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                        {showSkillFilters ? (
+                          <div
+                            ref={skillFilterMenuRef}
+                            className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                          >
+                            <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                              <span className="text-sm font-semibold">
+                                Filter Skills
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowSkillFilters(false)}
+                                className="text-xs text-white/80 underline-offset-4 hover:underline"
+                              >
+                                Close
+                              </button>
+                            </div>
+                            <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-3">
+                                  <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                    Filter
+                                  </div>
+                                  <div className="space-y-2">
+                                    <select
+                                      value={skillFilterMonumentId}
+                                      onChange={(e) =>
+                                        setSkillFilterMonumentId(e.target.value)
+                                      }
+                                      className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                    >
+                                      <option value="">
+                                        {skillFilterMonumentId
+                                          ? "Monument (clear)"
+                                          : "Monument (any)"}
+                                      </option>
+                                      {monuments.map((m) => (
+                                        <option key={m.id} value={m.id}>
+                                          {(m.emoji ?? "✨") +
+                                            " " +
+                                            (m.title ?? "Monument")}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                                <div className="space-y-3">
+                                  <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                    Quick actions
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSkillSearch("")}
+                                      className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                    >
+                                      Reset search
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setSkillFilterMonumentId("")
+                                      }
+                                      className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                    >
+                                      Clear filters
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                        {skillsLoading ? (
+                          <SelectItem value="__loading" disabled>
+                            Loading skills…
+                          </SelectItem>
+                        ) : filteredSkills.length > 0 ? (
+                          filteredSkills.map((skill) => (
+                            <SelectItem key={skill.id} value={skill.id}>
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">
+                                  {skill.icon ?? "🎯"}
+                                </span>
+                                <span>{skill.name}</span>
+                              </div>
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="__empty" disabled>
+                            No skills found
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {showHabitDurationPicker && habitDurationPosition
+                    ? createPortal(
+                        <div
+                          id="habit-duration-picker"
+                          className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
+                          style={{
+                            position: "absolute",
+                            top: habitDurationPosition.top,
+                            left: habitDurationPosition.left,
+                            width: habitDurationPosition.width,
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <button
+                              type="button"
+                              onClick={() => adjustHabitDuration(-5)}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                            >
+                              -
+                            </button>
+                            <div className="text-lg font-semibold text-white">
+                              {habitDuration || 15} min
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => adjustHabitDuration(5)}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                            >
+                              +
+                            </button>
+                          </div>
+                          <p className="mt-2 text-xs text-white/60">
+                            Adjust in 5-minute steps. Default starts at 15.
+                          </p>
+                        </div>,
+                        document.body
+                      )
+                    : null}
+                </>
+              )}
+            </div>
+
+            {saveError ? (
+              <p className="text-xs text-red-300">{saveError}</p>
+            ) : null}
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -3347,10 +3556,10 @@ export function Fab({
       selected === "GOAL"
         ? goalName.trim()
         : selected === "PROJECT"
-          ? projectName.trim()
-          : selected === "TASK"
-            ? taskName.trim()
-            : habitName.trim();
+        ? projectName.trim()
+        : selected === "TASK"
+        ? taskName.trim()
+        : habitName.trim();
     if (trimmedName.length === 0) {
       setSaveError("Please enter a name.");
       return;
@@ -3462,10 +3671,13 @@ export function Fab({
         if (error) throw error;
       } else if (selected === "HABIT") {
         const parsedDuration = Number.parseInt(habitDuration || "0", 10);
-        const duration = Number.isFinite(parsedDuration) ? parsedDuration : null;
+        const duration = Number.isFinite(parsedDuration)
+          ? parsedDuration
+          : null;
         const { error } = await supabase.from("habits").insert({
           user_id: user.id,
           name: trimmedName,
+          type: habitType,
           habit_type: habitType,
           recurrence: habitRecurrence,
           duration_minutes: duration,
@@ -3473,18 +3685,17 @@ export function Fab({
           skill_id: habitSkillId || null,
           routine_id: habitRoutineId || null,
           goal_id: habitGoalId || null,
-          why: habitWhy?.trim() || null,
         });
         if (error) throw error;
         await notifySchedulerOfChange();
       }
       setExpanded(false);
       setSelected(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to save item", error);
-      setSaveError(
-        error instanceof Error ? error.message : "Unable to save right now."
-      );
+      const errorMessage =
+        error?.message || error?.error?.message || "Unable to save right now.";
+      setSaveError(errorMessage);
     } finally {
       setIsSavingFab(false);
     }
@@ -3733,7 +3944,9 @@ export function Fab({
                         right: dragConstraintRight,
                       }}
                       style={{ x: pageX }}
-                      onPointerDown={!expanded ? handlePagePointerDown : undefined}
+                      onPointerDown={
+                        !expanded ? handlePagePointerDown : undefined
+                      }
                       onDragStart={handlePageDragStart}
                       onDrag={handlePageDrag}
                       onDragEnd={handlePageDragEnd}
@@ -3777,19 +3990,23 @@ export function Fab({
               </>
             </motion.div>
             {expanded && overhangPos
-                ? createPortal(
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.9, y: 6 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.92, y: 4 }}
-                      transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
-                      className="pointer-events-auto fixed flex w-[108px] items-center gap-3"
-                      style={{
-                        left: overhangPos.left,
-                        top: overhangPos.top,
-                        zIndex: 2147483650,
-                      }}
-                    >
+              ? createPortal(
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, y: 6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.92, y: 4 }}
+                    transition={{
+                      type: "tween",
+                      duration: 0.18,
+                      ease: "easeOut",
+                    }}
+                    className="pointer-events-auto fixed flex w-[108px] items-center gap-3"
+                    style={{
+                      left: overhangPos.left,
+                      top: overhangPos.top,
+                      zIndex: 2147483650,
+                    }}
+                  >
                     <Button
                       type="button"
                       aria-label="Discard"

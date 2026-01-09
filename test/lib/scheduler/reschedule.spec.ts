@@ -1374,7 +1374,7 @@ describe("scheduleBacklog", () => {
     ).toBe(false);
   });
 
-  it("prevents projects from overlapping completed habits", async () => {
+  it("allows projects to overlap with completed habits", async () => {
     const { client } = createSupabaseMock();
 
     const completedHabit = createInstanceRecord({
@@ -1435,12 +1435,14 @@ describe("scheduleBacklog", () => {
     ) as (typeof result.timeline)[number] | undefined;
 
     expect(projectPlacement).toBeDefined();
+    // Completed instances no longer block, so project can be placed at the same time
     if (projectPlacement && projectPlacement.type === "PROJECT") {
       const placementStart = new Date(
         projectPlacement.instance.start_utc
       ).getTime();
-      const completedEnd = new Date(completedHabit.end_utc).getTime();
-      expect(placementStart).toBeGreaterThanOrEqual(completedEnd);
+      const completedStart = new Date(completedHabit.start_utc).getTime();
+      // Project can start at the same time as completed habit
+      expect(placementStart).toBe(completedStart);
     }
   });
 
@@ -4407,12 +4409,15 @@ describe("scheduleBacklog", () => {
 
     expect(
       updateCalls.some(
-        (call) => call.id === "inst-habit-location" && call.payload?.status === "canceled"
+        (call) =>
+          call.id === "inst-habit-location" &&
+          call.payload?.status === "canceled"
       )
     ).toBe(true);
     expect(
       updateCalls.some(
-        (call) => call.id === "inst-habit-location" && call.payload?.status === "missed"
+        (call) =>
+          call.id === "inst-habit-location" && call.payload?.status === "missed"
       )
     ).toBe(false);
     const habitEntries = result.timeline.filter(
