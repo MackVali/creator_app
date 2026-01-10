@@ -36,14 +36,18 @@ import {
 } from "./habits";
 import {
   evaluateHabitDueOnDate,
+  normalizeDayList,
+  normalizeRecurrence,
+  nextOnOrAfterAllowedWeekday,
+  resolveRecurrenceInterval,
   type HabitDueEvaluation,
 } from "./habitRecurrence";
 import {
   addDaysInTimeZone,
+  addMonthsInTimeZone,
   differenceInCalendarDaysInTimeZone,
   getDateTimeParts,
   makeZonedDate,
-  normalizeTimeZone,
   setTimeInTimeZone,
   startOfDayInTimeZone,
 } from "./timezone";
@@ -235,6 +239,139 @@ type WindowAvailabilityBounds = {
   front: Date;
   back: Date;
 };
+
+/**
+ * Plan NON-DAILY occurrences across the horizon.
+ * - For 'every x days': chain from the first due day, then add +x days repeatedly until horizon end.
+ * - For 'weekly' WITH recurrenceDays[]: generate all horizon days whose weekday is in recurrenceDays.
+ * - For 'weekly' WITHOUT recurrenceDays: chain by +7 days repeatedly starting from first due day.
+ * - For 'monthly': chain by +1 month increments starting from first due day.
+ * - For any other: fallback to the first due only.
+ * If there is an existing future scheduled instance on or after the first due within horizon,
+ * treat its local day as the anchor for the NEXT link in the chain (virtual completion),
+ * and continue chaining from there.
+ */
+export function planNonDailyOccurrences(params: {
+  habit: HabitScheduleItem;
+  userTz: string;
+  horizonStartLocalDay: Date;
+  horizonEndLocalDay: Date;
+  firstDueLocalDay: Date;
+  existingScheduledLocalDays: Date[];
+}): Date[] {
+  const {
+    habit,
+    userTz,
+    horizonStartLocalDay,
+    horizonEndLocalDay,
+    firstDueLocalDay,
+    existingScheduledLocalDays,
+  } = params;
+  const zone = userTz; // timezone already validated upstream; no normalization helper required.
+  const horizonStart = startOfDayInTimeZone(horizonStartLocalDay, zone);
+  const horizonEnd = startOfDayInTimeZone(horizonEndLocalDay, zone);
+  const horizonStartMs = horizonStart.getTime();
+  const horizonEndMs = horizonEnd.getTime();
+
+  let firstDue = startOfDayInTimeZone(firstDueLocalDay, zone);
+  if (firstDue.getTime() < horizonStartMs) {
+    firstDue = horizonStart;
+  }
+
+  const normalizedExisting = existingScheduledLocalDays
+    .map((day) => startOfDayInTimeZone(day, zone))
+    .filter((day) => {
+      const ms = day.getTime();
+      return (
+        Number.isFinite(ms) && ms >= horizonStartMs && ms <= horizonEndMs
+      );
+    })
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  const anchorFromExisting =
+    normalizedExisting.find((day) => day.getTime() >= firstDue.getTime()) ??
+    null;
+  let anchor = anchorFromExisting ?? firstDue;
+  const skipAnchor = Boolean(anchorFromExisting);
+  const recurrence = normalizeRecurrence(habit.recurrence);
+  const recurrenceDays = normalizeDayList(habit.recurrenceDays ?? null);
+
+  const results: Date[] = [];
+  const pushUnique = (day: Date) => {
+    const normalized = startOfDayInTimeZone(day, zone);
+    const ms = normalized.getTime();
+    if (ms < horizonStartMs || ms > horizonEndMs) return;
+    if (results.some((entry) => entry.getTime() === ms)) return;
+    results.push(normalized);
+  };
+
+  if (recurrence === "weekly" && recurrenceDays && recurrenceDays.length > 0) {
+    const thresholdMs = skipAnchor
+      ? addDaysInTimeZone(anchor, 1, zone).getTime()
+      : anchor.getTime();
+    const seededStart = addDaysInTimeZone(anchor, skipAnchor ? 1 : 0, zone);
+    let cursor = nextOnOrAfterAllowedWeekday(
+      seededStart,
+      recurrenceDays,
+      zone
+    );
+    if (cursor.getTime() < horizonStartMs) {
+      cursor = nextOnOrAfterAllowedWeekday(horizonStart, recurrenceDays, zone);
+    }
+    while (cursor.getTime() <= horizonEndMs) {
+      if (cursor.getTime() >= thresholdMs) {
+        pushUnique(cursor);
+      }
+      const nextDay = addDaysInTimeZone(cursor, 1, zone);
+      cursor = nextOnOrAfterAllowedWeekday(nextDay, recurrenceDays, zone);
+      if (cursor.getTime() === nextDay.getTime() && nextDay > horizonEnd) {
+        break;
+      }
+    }
+    return results.sort((a, b) => a.getTime() - b.getTime());
+  }
+
+  const interval = resolveRecurrenceInterval(
+    recurrence,
+    habit.recurrenceDays ?? null
+  );
+  const advanceByDays =
+    typeof interval.days === "number" && interval.days > 0
+      ? interval.days
+      : null;
+  const advanceByMonths =
+    typeof interval.months === "number" && interval.months > 0
+      ? interval.months
+      : null;
+
+  if (advanceByDays || advanceByMonths) {
+    let cursor = anchor;
+    if (skipAnchor) {
+      if (advanceByDays) {
+        cursor = addDaysInTimeZone(cursor, advanceByDays, zone);
+      } else if (advanceByMonths) {
+        cursor = addMonthsInTimeZone(cursor, advanceByMonths, zone);
+      }
+    }
+    while (cursor.getTime() <= horizonEndMs) {
+      if (cursor.getTime() >= horizonStartMs) {
+        pushUnique(cursor);
+      }
+      if (advanceByDays) {
+        cursor = addDaysInTimeZone(cursor, advanceByDays, zone);
+      } else if (advanceByMonths) {
+        cursor = addMonthsInTimeZone(cursor, advanceByMonths, zone);
+      }
+    }
+    return results.sort((a, b) => a.getTime() - b.getTime());
+  }
+
+  if (!skipAnchor) {
+    pushUnique(anchor);
+  }
+
+  return results.sort((a, b) => a.getTime() - b.getTime());
+}
 
 type TimelineInstance = {
   instance: ScheduleInstance;
@@ -1037,7 +1174,8 @@ export async function scheduleBacklog(
     .eq("source_type", "HABIT")
     .eq("status", "missed");
 
-  const timeZone = normalizeTimeZone(options?.timeZone);
+  const timeZone =
+    options?.timeZone ?? "UTC"; // timezone already validated upstream; no normalization helper required.
   const location = normalizeCoordinates(options?.location ?? null);
   const mode = normalizeSchedulerModePayload(
     options?.mode ?? { type: "REGULAR" }
@@ -1143,6 +1281,7 @@ export async function scheduleBacklog(
       dueSkipped_RepeatablePracticeNoWindows: [],
     },
   };
+
   const habitAudit: HabitAuditTracker = {
     enabled: true,
     report: habitAuditReport,
@@ -1575,10 +1714,12 @@ export async function scheduleBacklog(
     if (!Number.isFinite(coerced) || coerced < 0) return lookaheadDays;
     return Math.min(lookaheadDays, coerced);
   })();
+  const maxOffset = persistedDayLimit;
   const habitWriteLookaheadDays = Math.min(
     lookaheadDays,
     HABIT_WRITE_LOOKAHEAD_DAYS
   );
+  const cleanupOffsetLimit = Math.max(maxOffset, habitWriteLookaheadDays);
   const dedupeWindowDays = Math.max(lookaheadDays, 28);
   const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone);
   const writeThroughEnd =
@@ -1600,6 +1741,7 @@ export async function scheduleBacklog(
   if (dedupe.failures.length > 0) {
     result.failures.push(...dedupe.failures);
   }
+  const effectiveLastCompletedAt = dedupe.effectiveLastCompletedAt;
   const lockedProjectInstances = dedupe.lockedProjectInstances;
   if (lockedProjectInstances.size > 0) {
     for (const projectId of lockedProjectInstances.keys()) {
@@ -2099,6 +2241,26 @@ export async function scheduleBacklog(
   for (const inst of keptNonProjectInstances) {
     registerInstanceForOffsets(inst);
   }
+  const baseBlockers: ScheduleInstance[] = [
+    ...keptLockedProjects,
+    ...keptNonProjectInstances,
+  ];
+  const habitBlockingInstances: ScheduleInstance[] = [];
+  const habitBlockingInstanceIds = new Set<string>();
+  const addHabitBlocker = (inst: ScheduleInstance | null | undefined) => {
+    if (!inst) return;
+    if (!isBlockingInstance(inst)) return;
+    const id = inst.id ?? null;
+    if (id && habitBlockingInstanceIds.has(id)) return;
+    habitBlockingInstances.push(inst);
+    if (id) {
+      habitBlockingInstanceIds.add(id);
+    }
+  };
+  for (const inst of keptInstances) {
+    if (inst.source_type !== "HABIT") continue;
+    addHabitBlocker(inst);
+  }
 
   for (const inst of keptLockedProjects) {
     const projectId = inst.source_id ?? "";
@@ -2219,6 +2381,7 @@ export async function scheduleBacklog(
       taskContextById,
       contextTaskCounts,
       practiceHistory,
+      effectiveLastCompletedAt,
       getProjectGoalMonumentId,
       reservedPlacements,
       audit: habitAudit,
@@ -2231,6 +2394,9 @@ export async function scheduleBacklog(
     }
     if (dayResult.instances.length > 0) {
       result.placed.push(...dayResult.instances);
+      for (const inst of dayResult.instances) {
+        addHabitBlocker(inst);
+      }
     }
     if (dayResult.failures.length > 0) {
       result.failures.push(...dayResult.failures);
@@ -2290,6 +2456,11 @@ export async function scheduleBacklog(
     }
   };
 
+  /**
+   * Feature flag: SCHEDULE_NONDAILY_CHAIN
+   * When 'true', non-daily habits are planned across the horizon as a chain (virtual completion).
+   * When 'false', the legacy "first instance only" behavior is used.
+   */
   const scheduleNonDailyHabitsAcrossHorizon = async (
     nonDailyHabits: HabitScheduleItem[]
   ): Promise<Set<string>> => {
@@ -2324,61 +2495,28 @@ export async function scheduleBacklog(
     }) => {
       console.log("[SCHEDULER_NON_DAILY_PLACEMENT]", payload);
     };
-    const scheduledNonDailyIds = new Set<string>();
-    const scheduledNonDailyFirstMatch = new Map<
-      string,
-      { instanceId: string; day: string; dayStartMs: number }
-    >();
+    // Chained non-daily scheduling is the default; feature flag removed.
+    const horizonStartLocalDay = startOfDayInTimeZone(baseStart, timeZone);
+    const horizonEndLocalDay = startOfDayInTimeZone(
+      addDaysInTimeZone(
+        baseStart,
+        Math.max(habitWriteLookaheadDays - 1, 0),
+        timeZone
+      ),
+      timeZone
+    );
+    const dayKeyFor = (habitId: string, day: Date) =>
+      `${habitId}|${startOfDayInTimeZone(day, timeZone).toISOString()}`;
     const nonDailyReplacementInstanceIds = new Set<string>();
-    for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
-      const day =
-        offset === 0
-          ? baseStart
-          : addDaysInTimeZone(baseStart, offset, timeZone);
-      const existingInstances = getDayInstances(offset);
-      for (const inst of existingInstances) {
-        if (!inst) continue;
-        if (inst.source_type !== "HABIT") continue;
-        if (inst.status !== "scheduled") continue;
-        if (!inst.source_id) continue;
-        scheduledNonDailyIds.add(inst.source_id);
-        if (!scheduledNonDailyFirstMatch.has(inst.source_id) && inst.id) {
-          const dayStartMs = startOfDayInTimeZone(day, timeZone).getTime();
-          scheduledNonDailyFirstMatch.set(inst.source_id, {
-            instanceId: inst.id,
-            day: day.toISOString(),
-            dayStartMs,
-          });
-        }
-      }
-    }
-    const markNonDailyInstanceMissed = async (instanceId: string) => {
-      const payload = {
-        status: "missed",
-        missed_reason: "REPLACED_BY_EARLIER_SLOT",
-      } as Database["public"]["Tables"]["schedule_instances"]["Update"];
-      const { error } = await supabase
-        .from("schedule_instances")
-        .update(payload)
-        .eq("id", instanceId);
-      if (error) {
-        result.failures.push({
-          itemId: instanceId,
-          reason: "error",
-          detail: error,
-        });
-        return false;
-      }
-      removeInstanceFromBuckets(instanceId);
-      return true;
-    };
+
     for (const habit of nonDailyHabits) {
-      const alreadyScheduledInHorizon = scheduledNonDailyIds.has(habit.id);
-      const scheduledMatch = scheduledNonDailyFirstMatch.get(habit.id) ?? null;
-      let placed = false;
+      const normalizedType =
+        habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
+      if (normalizedType === "SYNC") continue;
+
       const windowDays = habit.window?.days ?? null;
       const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
-      const dueInfoToday = evaluateHabitDueOnDate({
+      const dueInfoStart = evaluateHabitDueOnDate({
         habit,
         date: baseStart,
         timeZone,
@@ -2386,80 +2524,83 @@ export async function scheduleBacklog(
         lastScheduledStart: getHabitLastScheduledStart(habit.id),
         nextDueOverride,
       });
-      const pastDue = dueInfoToday.dueStart < baseStart;
-      const dueDayOffset = Math.max(
-        0,
-        differenceInCalendarDaysInTimeZone(
-          baseStart,
-          dueInfoToday.dueStart ?? baseStart,
-          timeZone
-        )
+      let firstDueLocalDay = startOfDayInTimeZone(
+        dueInfoStart.dueStart ?? horizonStartLocalDay,
+        timeZone
       );
-      const startOffset = pastDue
-        ? 0
-        : Math.max(
-            0,
-            Math.min(dueDayOffset, Math.max(habitWriteLookaheadDays - 1, 0))
-          );
-      const endOffset = pastDue
-        ? habitWriteLookaheadDays
-        : Math.min(startOffset + 1, habitWriteLookaheadDays);
-      for (let offset = startOffset; offset < endOffset; offset += 1) {
-        const day =
-          offset === 0
-            ? baseStart
-            : addDaysInTimeZone(baseStart, offset, timeZone);
+      if (firstDueLocalDay.getTime() < horizonStartLocalDay.getTime()) {
+        firstDueLocalDay = horizonStartLocalDay;
+      }
 
-        if (alreadyScheduledInHorizon && scheduledMatch) {
-          const dayStartMs = startOfDayInTimeZone(day, timeZone).getTime();
-          if (dayStartMs >= scheduledMatch.dayStartMs) {
-            logNonDailyPlacementAttempt({
-              habitId: habit.id,
-              durationMin: Number(habit.durationMinutes ?? 0),
-              resolvedEnergy: (
-                habit.energy ??
-                habit.window?.energy ??
-                "NO"
-              ).toUpperCase(),
-              compatibleWindowCount: 0,
-              result: "SKIP",
-              reason: "SKIPPED_ALREADY_SCHEDULED",
-              day: day.toISOString(),
-              alreadyScheduledInHorizon,
-              scheduledInstanceId: scheduledMatch.instanceId,
-              scheduledInstanceDay: scheduledMatch.day,
-            });
-            placed = true;
-            break;
+      const habitDayKeys = new Set<string>();
+      const existingLocalDays: Date[] = [];
+      for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
+        const dayInstances = getDayInstances(offset);
+        for (const inst of dayInstances) {
+          if (
+            !inst ||
+            inst.source_type !== "HABIT" ||
+            inst.status !== "scheduled" ||
+            inst.source_id !== habit.id
+          ) {
+            continue;
+          }
+          const localDay = startOfDayInTimeZone(
+            new Date(inst.start_utc ?? ""),
+            timeZone
+          );
+          const key = dayKeyFor(habit.id, localDay);
+          habitDayKeys.add(key);
+          if (
+            localDay.getTime() >= horizonStartLocalDay.getTime() &&
+            localDay.getTime() <= horizonEndLocalDay.getTime()
+          ) {
+            existingLocalDays.push(localDay);
           }
         }
+      }
 
-        const normalizedType =
-          habitTypeById.get(habit.id) ??
-          normalizeHabitTypeValue(habit.habitType);
-        if (normalizedType === "SYNC") continue;
+      existingLocalDays.sort((a, b) => a.getTime() - b.getTime());
 
-        const dueInfo = evaluateHabitDueOnDate({
-          habit,
-          date: day,
-          timeZone,
-          windowDays,
-          lastScheduledStart: getHabitLastScheduledStart(habit.id),
-          nextDueOverride,
-        });
-        if (!pastDue && !dueInfo.isDue) continue;
+      const plannedLocalDays = planNonDailyOccurrences({
+        habit,
+        userTz: timeZone,
+        horizonStartLocalDay,
+        horizonEndLocalDay,
+        firstDueLocalDay,
+        existingScheduledLocalDays: existingLocalDays,
+      });
 
-        await prepareWindowsForDay(day);
+      let placedAny = false;
+
+      for (const plannedDay of plannedLocalDays) {
+        const plannedDayStart = startOfDayInTimeZone(plannedDay, timeZone);
+        const dayKey = dayKeyFor(habit.id, plannedDayStart);
+        if (habitDayKeys.has(dayKey)) continue;
+
+        const offset = differenceInCalendarDaysInTimeZone(
+          horizonStartLocalDay,
+          plannedDayStart,
+          timeZone
+        );
+        if (!Number.isFinite(offset) || offset < 0) continue;
+        if (offset >= habitWriteLookaheadDays) continue;
+
+        await prepareWindowsForDay(plannedDayStart);
         const existingInstances = getDayInstances(offset);
         const alreadyScheduled = existingInstances.some(
           (inst) =>
             inst?.source_type === "HABIT" &&
             inst.status === "scheduled" &&
-            inst.source_id === habit.id
+            inst.source_id === habit.id &&
+            startOfDayInTimeZone(
+              new Date(inst.start_utc ?? ""),
+              timeZone
+            ).getTime() === plannedDayStart.getTime()
         );
         if (alreadyScheduled) {
-          placed = true;
-          break;
+          habitDayKeys.add(dayKey);
+          continue;
         }
 
         const rawDuration = Number(habit.durationMinutes ?? 0);
@@ -2468,10 +2609,7 @@ export async function scheduleBacklog(
             ? rawDuration
             : DEFAULT_HABIT_DURATION_MIN;
         if (durationMultiplier !== 1) {
-          durationMin = Math.max(
-            1,
-            Math.round(durationMin * durationMultiplier)
-          );
+          durationMin = Math.max(1, Math.round(durationMin * durationMultiplier));
         }
         if (durationMin <= 0) continue;
 
@@ -2503,19 +2641,19 @@ export async function scheduleBacklog(
             ? { offsetMinutes: timeZoneOffsetMinutes }
             : undefined;
         const sunlightToday = resolveSunlightBounds(
-          day,
+          plannedDayStart,
           timeZone,
           location,
           sunlightOptions
         );
         const sunlightPrevious = resolveSunlightBounds(
-          addDaysInTimeZone(day, -1, timeZone),
+          addDaysInTimeZone(plannedDayStart, -1, timeZone),
           timeZone,
           location,
           sunlightOptions
         );
         const sunlightNext = resolveSunlightBounds(
-          addDaysInTimeZone(day, 1, timeZone),
+          addDaysInTimeZone(plannedDayStart, 1, timeZone),
           timeZone,
           location,
           sunlightOptions
@@ -2549,7 +2687,7 @@ export async function scheduleBacklog(
 
         const compatibleWindows = await fetchCompatibleWindowsForItem(
           supabase,
-          day,
+          plannedDayStart,
           { energy: resolvedEnergy, duration_min: durationMin },
           timeZone,
           {
@@ -2579,12 +2717,12 @@ export async function scheduleBacklog(
             compatibleWindowCount: 0,
             result: "FAIL",
             reason: "NO_COMPATIBLE_WINDOWS",
-            day: day.toISOString(),
-            alreadyScheduledInHorizon,
+            day: plannedDayStart.toISOString(),
+            alreadyScheduledInHorizon: existingLocalDays.length > 0,
           });
           continue;
         }
-        const dayWindows = getWindowsForDay(day);
+        const dayWindows = getWindowsForDay(plannedDayStart);
 
         const placement = await placeItemInWindows({
           userId,
@@ -2601,7 +2739,7 @@ export async function scheduleBacklog(
                 : null,
           },
           windows: compatibleWindows,
-          date: day,
+          date: plannedDayStart,
           timeZone,
           client: supabase,
           existingInstances,
@@ -2618,8 +2756,8 @@ export async function scheduleBacklog(
             compatibleWindowCount: compatibleWindows.length,
             result: "FAIL",
             reason: formatPlacementError(placement.error),
-            day: day.toISOString(),
-            alreadyScheduledInHorizon,
+            day: plannedDayStart.toISOString(),
+            alreadyScheduledInHorizon: existingLocalDays.length > 0,
           });
           if (placement.error && placement.error !== "NO_FIT") {
             result.failures.push({
@@ -2627,7 +2765,6 @@ export async function scheduleBacklog(
               reason: "error",
               detail: placement.error,
             });
-            break;
           }
           continue;
         }
@@ -2641,8 +2778,8 @@ export async function scheduleBacklog(
             result: "FAIL",
             reason:
               formatPlacementError(placement.error) ?? "NO_PLACEMENT_DATA",
-            day: day.toISOString(),
-            alreadyScheduledInHorizon,
+            day: plannedDayStart.toISOString(),
+            alreadyScheduledInHorizon: existingLocalDays.length > 0,
           });
           if (placement.error && placement.error !== "NO_FIT") {
             result.failures.push({
@@ -2650,7 +2787,6 @@ export async function scheduleBacklog(
               reason: "error",
               detail: placement.error,
             });
-            break;
           }
           continue;
         }
@@ -2662,22 +2798,15 @@ export async function scheduleBacklog(
           resolvedEnergy,
           compatibleWindowCount: compatibleWindows.length,
           result: "SUCCESS",
-          day: day.toISOString(),
-          alreadyScheduledInHorizon,
+          day: plannedDayStart.toISOString(),
+          alreadyScheduledInHorizon: existingLocalDays.length > 0,
         });
         if (persisted?.id) {
           createdThisRun.add(persisted.id);
         }
-        if (alreadyScheduledInHorizon && scheduledMatch) {
-          const dayStartMs = startOfDayInTimeZone(day, timeZone).getTime();
-          if (dayStartMs < scheduledMatch.dayStartMs && persisted?.id) {
-            nonDailyReplacementInstanceIds.add(persisted.id);
-            await markNonDailyInstanceMissed(scheduledMatch.instanceId);
-          }
-        }
         registerInstanceForOffsets(persisted);
         recordHabitScheduledStart(habit.id, persisted.start_utc ?? "");
-        habitBlockingInstances.push(persisted);
+        addHabitBlocker(persisted);
         result.placed.push(persisted);
         const windowLabel =
           dayWindows.find((win) => win.id === persisted.window_id)?.label ??
@@ -2697,11 +2826,11 @@ export async function scheduleBacklog(
           decision: "new",
           scheduledDayOffset: offset,
         });
-        placed = true;
-        break;
+        habitDayKeys.add(dayKey);
+        placedAny = true;
       }
 
-      if (!placed) {
+      if (!placedAny) {
         await createMissedHabitInstance(habit, "NO_FEASIBLE_SLOT_IN_HORIZON");
         result.failures.push({
           itemId: habit.id,
@@ -2711,155 +2840,10 @@ export async function scheduleBacklog(
     }
 
     return nonDailyReplacementInstanceIds;
+
   };
-
-  const scheduledProjectIds = new Set<string>();
-  const maxOffset = restrictProjectsToToday
-    ? Math.min(Math.max(persistedDayLimit, 1), 1)
-    : persistedDayLimit;
-  const cleanupOffsetLimit = Math.max(
-    maxOffset,
-    Math.min(persistedDayLimit, LOCATION_CLEANUP_DAYS)
-  );
-
-  // Enforce one-pass, one-attempt invariant
-  const attempted = new Set<string>();
-
-  // ONE-INSTANCE-PER-PROJECT: enforce dedupe before placement
-  const dedupedProjectQueue = Array.from(
-    new Map(queue.map((p) => [p.id, p])).values()
-  ).sort((a, b) => {
-    const ar = a.globalRank ?? Number.POSITIVE_INFINITY;
-    const br = b.globalRank ?? Number.POSITIVE_INFINITY;
-    if (ar !== br) return ar - br;
-    return a.id.localeCompare(b.id);
-  });
-
-  // Ensure each project has a canonical instanceId
-  for (const item of dedupedProjectQueue) {
-    if (item.instanceId) continue;
-    // Create new instance with missed status
-    const { data: newInstance, error } = await supabase
-      .from("schedule_instances")
-      .insert({
-        user_id: userId,
-        source_type: "PROJECT",
-        source_id: item.id,
-        status: "missed",
-        start_utc: null,
-        end_utc: null,
-        duration_min: null,
-        energy_resolved: item.energy,
-        locked: false,
-        weight_snapshot: item.weight,
-      })
-      .select("*")
-      .single();
-    if (error) {
-      result.failures.push({ itemId: item.id, reason: "error", detail: error });
-      continue;
-    }
-    item.instanceId = newInstance.id;
-  }
-
-  // Build base blockers: locked instances that must remain
-  const baseBlockers: ScheduleInstance[] = dedupe.allInstances.filter(
-    (inst) => !invalidatedInstanceIds.has(inst.id) && inst.locked === true
-  );
-
-  // Register base blockers into day buckets
-  for (const blocker of baseBlockers) {
-    registerInstanceForOffsets(blocker);
-  }
-
-  // ===== HABIT PASS FIRST =====
-  const nonLockedProjectBlockersBeforeHabitPass = keptNonLockedProjects.length;
-  console.log(
-    "[SCHEDULER_SANITY] nonLockedProjectBlockersBeforeHabitPass:",
-    nonLockedProjectBlockersBeforeHabitPass
-  );
-  console.log("[SCHEDULER_ORDER] HABIT_PASS_START", {
-    horizonStart: baseStart.toISOString(),
-    horizonEnd: writeThroughEnd.toISOString(),
-  });
-
-  const habitBlockingInstances: ScheduleInstance[] = [];
-  const dueNonDailyHabits = nonDailyHabits.filter((habit) => {
-    const normalizedType =
-      habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
-    if (normalizedType === "SYNC") return false;
-    const windowDays = habit.window?.days ?? null;
-    const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
-    const lastScheduledStart = getHabitLastScheduledStart(habit.id);
-    // Only enqueue non-daily habits that become due within the habit horizon.
-    for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
-      const day =
-        offset === 0
-          ? baseStart
-          : addDaysInTimeZone(baseStart, offset, timeZone);
-      const dueInfo = evaluateHabitDueOnDate({
-        habit,
-        date: day,
-        timeZone,
-        windowDays,
-        lastScheduledStart,
-        nextDueOverride,
-      });
-      if (dueInfo.isDue) return true;
-    }
-    return false;
-  });
-
-  for (let offset = 0; offset < maxOffset; offset += 1) {
-    const day =
-      offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
-    if (offset < habitWriteLookaheadDays) {
-      await prepareWindowsForDay(day);
-      const existingInstances = getDayInstances(offset);
-
-      const dayResult = await scheduleHabitsForDay({
-        userId,
-        habits: dailyHabits,
-        day,
-        offset,
-        timeZone,
-        availability: new Map(),
-        baseDate,
-        windowCache,
-        client: supabase,
-        sunlightLocation: location,
-        timeZoneOffsetMinutes,
-        durationMultiplier,
-        restMode: isRestMode,
-        existingInstances,
-        registerInstance: registerInstanceForOffsets,
-        getWindowsForDay,
-        getLastScheduledHabitStart: getHabitLastScheduledStart,
-        recordHabitScheduledStart,
-        createdThisRun,
-        logCancel,
-        habitMap: habitById,
-        taskContextById,
-        contextTaskCounts,
-        practiceHistory,
-        getProjectGoalMonumentId,
-        reservedPlacements: undefined,
-        audit: habitAudit,
-        nonDailyHabitIds,
-        nonDailyReplacementInstanceIds,
-      });
-
-      habitBlockingInstances.push(...dayResult.instances);
-      result.placed.push(...dayResult.instances);
-      result.timeline.push(...dayResult.placements);
-      if (dayResult.failures.length > 0) {
-        result.failures.push(...dayResult.failures);
-      }
-    }
-  }
-
   nonDailyReplacementInstanceIds = await scheduleNonDailyHabitsAcrossHorizon(
-    dueNonDailyHabits
+    nonDailyHabits
   );
 
   console.log("[SCHEDULER_ORDER] HABIT_PASS_END", {
@@ -2879,6 +2863,7 @@ export async function scheduleBacklog(
     baseStart,
     writeThroughEnd
   );
+  const dedupedProjectQueue = queue;
 
   // ===== PROJECT REBUILD PASS (ONE SHOT) =====
   console.log("[SCHEDULER] ENTER project placement pass", {
@@ -2899,6 +2884,8 @@ export async function scheduleBacklog(
     ...baseBlockers,
     ...habitBlockingInstances,
   ];
+  const attempted = new Set<string>();
+  const scheduledProjectIds = new Set<string>();
 
   for (const item of dedupedProjectQueue) {
     const canonicalProject = projectItemMap[item.id];
@@ -3302,6 +3289,7 @@ export async function scheduleBacklog(
           taskContextById,
           contextTaskCounts,
           practiceHistory,
+          effectiveLastCompletedAt,
           getProjectGoalMonumentId,
           allowScheduling: false,
           audit: habitAudit,
@@ -3841,6 +3829,7 @@ type DedupeResult = {
   canceledByProject: Map<string, string[]>;
   reusableByProject: Map<string, string>;
   allInstances: ScheduleInstance[];
+  effectiveLastCompletedAt: Map<string, string>;
   lockedProjectInstances: Map<string, ScheduleInstance>;
 };
 
@@ -3868,6 +3857,7 @@ async function dedupeScheduledProjects(
       canceledByProject: new Map(),
       reusableByProject: new Map(),
       allInstances: [],
+      effectiveLastCompletedAt: new Map(),
       lockedProjectInstances: new Map(),
     };
   }
@@ -3875,6 +3865,21 @@ async function dedupeScheduledProjects(
   const allInstances = ((response.data ?? []) as ScheduleInstance[]).filter(
     (inst): inst is ScheduleInstance => Boolean(inst)
   );
+
+  // Build effective lastCompletedAt from allInstances
+  const effectiveLastCompletedAt = new Map<string, string>();
+  for (const instance of allInstances) {
+    if (instance.source_type !== "HABIT" || instance.status !== "completed")
+      continue;
+    const habitId = instance.source_id;
+    if (!habitId) continue;
+    const completedAt = instance.end_utc || instance.start_utc;
+    if (!completedAt) continue;
+    const existing = effectiveLastCompletedAt.get(habitId);
+    if (!existing || Date.parse(completedAt) > Date.parse(existing)) {
+      effectiveLastCompletedAt.set(habitId, completedAt);
+    }
+  }
 
   const keepers = new Map<string, ScheduleInstance>();
   const reusableCandidates = new Map<string, ScheduleInstance>();
@@ -3975,6 +3980,7 @@ async function dedupeScheduledProjects(
     canceledByProject,
     reusableByProject,
     allInstances,
+    effectiveLastCompletedAt,
     lockedProjectInstances,
   };
 }
@@ -5000,6 +5006,7 @@ async function scheduleHabitsForDay(params: {
   taskContextById: Map<string, string | null>;
   contextTaskCounts: Map<string, number>;
   practiceHistory: Map<string, Date>;
+  effectiveLastCompletedAt?: Map<string, string>;
   getProjectGoalMonumentId: (projectId: string) => string | null;
   allowScheduling?: boolean;
   reservedPlacements?: Map<string, HabitReservation>;
@@ -5032,6 +5039,7 @@ async function scheduleHabitsForDay(params: {
     taskContextById,
     contextTaskCounts,
     practiceHistory,
+    effectiveLastCompletedAt = new Map<string, string>(),
     getProjectGoalMonumentId,
     allowScheduling = true,
     reservedPlacements,
@@ -5745,8 +5753,17 @@ async function scheduleHabitsForDay(params: {
     const overrideDayStart = nextDueOverride
       ? startOfDayInTimeZone(nextDueOverride, zone)
       : null;
+    // Use effective lastCompletedAt if more recent than habit's lastCompletedAt
+    const effectiveLastCompletedAtForHabit = effectiveLastCompletedAt.get(
+      habit.id
+    );
+    const habitWithEffectiveLastCompletedAt = {
+      ...habit,
+      lastCompletedAt:
+        effectiveLastCompletedAtForHabit || habit.lastCompletedAt,
+    };
     const dueInfo = evaluateHabitDueOnDate({
-      habit,
+      habit: habitWithEffectiveLastCompletedAt,
       date: day,
       timeZone: zone,
       windowDays,
