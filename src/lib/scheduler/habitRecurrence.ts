@@ -34,7 +34,7 @@ const MONTH_INTERVALS: Record<string, number> = {
   yearly: 12,
 };
 
-function normalizeRecurrence(value: string | null | undefined) {
+export function normalizeRecurrence(value: string | null | undefined): string {
   if (!value) return "daily";
   return value.toLowerCase().trim();
 }
@@ -46,7 +46,7 @@ function parseIsoDate(value: string | null | undefined) {
   return parsed;
 }
 
-function normalizeDayList(days?: number[] | null) {
+export function normalizeDayList(days?: number[] | null): number[] | null {
   if (!days || days.length === 0) return null;
   const normalized = Array.from(
     new Set(
@@ -81,6 +81,44 @@ function resolveCustomDayInterval(
 
 function isDailyRecurrence(recurrence: string) {
   return DAILY_RECURRENCES.has(recurrence);
+}
+
+export function resolveRecurrenceInterval(
+  recurrence: string,
+  recurrenceDays?: number[] | null
+): { days: number | null; months: number | null } {
+  if (recurrence in DAY_INTERVALS) {
+    return { days: DAY_INTERVALS[recurrence], months: null };
+  }
+  if (recurrence in MONTH_INTERVALS) {
+    return { days: null, months: MONTH_INTERVALS[recurrence] };
+  }
+  const everyDays = resolveCustomDayInterval(recurrence, recurrenceDays);
+  if (typeof everyDays === "number" && everyDays > 0) {
+    return { days: everyDays, months: null };
+  }
+  return { days: null, months: null };
+}
+
+export function nextOnOrAfterAllowedWeekday(
+  startLocalDay: Date,
+  allowedWeekdays: number[],
+  tz: string
+): Date {
+  const normalizedDays = normalizeDayList(allowedWeekdays);
+  if (!normalizedDays || normalizedDays.length === 0) {
+    return startOfDayInTimeZone(startLocalDay, tz);
+  }
+  let cursor = startOfDayInTimeZone(startLocalDay, tz);
+  const allowed = new Set(normalizedDays);
+  for (let guard = 0; guard < 14; guard += 1) {
+    const weekday = weekdayInTimeZone(cursor, tz);
+    if (allowed.has(weekday)) {
+      return cursor;
+    }
+    cursor = addDaysInTimeZone(cursor, 1, tz);
+  }
+  return cursor;
 }
 
 function resolveDueStartForRecurrence(params: {
@@ -118,110 +156,127 @@ export function evaluateHabitDueOnDate(
     lastScheduledStart,
     nextDueOverride,
   } = params;
-  const zone = timeZone || "UTC";
-  const recurrence = normalizeRecurrence(habit.recurrence);
-  const dayStart = startOfDayInTimeZone(date, zone);
-  const nextDueOverrideStart = nextDueOverride
-    ? startOfDayInTimeZone(nextDueOverride, zone)
-    : null;
-  if (nextDueOverrideStart) {
-    const overrideMs = nextDueOverrideStart.getTime();
-    const dayMs = dayStart.getTime();
-    if (overrideMs === dayMs) {
-      return {
-        isDue: true,
-        dueStart: nextDueOverrideStart,
-        debugTag: "NEXT_DUE_OVERRIDE_SLOT",
-      };
-    }
-    if (overrideMs > dayMs) {
-      return {
-        isDue: false,
-        dueStart: nextDueOverrideStart,
-        debugTag: "NEXT_DUE_OVERRIDE_FUTURE",
-      };
-    }
-  }
-  const lastCompletionRaw = habit.lastCompletedAt ?? null;
-  const lastCompletionDate = parseIsoDate(lastCompletionRaw);
-  const lastCompletionStart =
-    lastCompletionDate !== null
-      ? startOfDayInTimeZone(lastCompletionDate, zone)
+
+  const result = (() => {
+    const zone = timeZone || "UTC";
+    const recurrence = normalizeRecurrence(habit.recurrence);
+    const dayStart = startOfDayInTimeZone(date, zone);
+    const nextDueOverrideStart = nextDueOverride
+      ? startOfDayInTimeZone(nextDueOverride, zone)
       : null;
-  if (
-    lastScheduledStart &&
-    startOfDayInTimeZone(lastScheduledStart, zone).getTime() ===
-      dayStart.getTime()
-  ) {
-    return { isDue: false, dueStart: null, debugTag: "LAST_SCHEDULED_TODAY" };
-  }
-  if (
-    lastCompletionStart &&
-    lastCompletionStart.getTime() === dayStart.getTime()
-  ) {
-    return { isDue: false, dueStart: null, debugTag: "LAST_COMPLETED_TODAY" };
-  }
-  const anchorRaw = habit.createdAt ?? habit.updatedAt ?? null;
-  const anchorDate = parseIsoDate(anchorRaw);
-  const anchorStart = anchorDate
-    ? startOfDayInTimeZone(anchorDate, zone)
-    : null;
-  // Recurrence anchor must advance ONLY on completion
-  const lastStart = lastCompletionStart ?? anchorStart;
-  const hasCompletion = lastCompletionStart !== null;
-  if (isDailyRecurrence(recurrence)) {
-    const resolvedRecurrenceDays = normalizeDayList(
-      habit.recurrenceDays ?? null
-    );
-    const resolvedWindowDays = normalizeDayList(
-      windowDays ?? habit.window?.days ?? null
-    );
-    const activeDayList =
-      resolvedRecurrenceDays && resolvedRecurrenceDays.length > 0
-        ? resolvedRecurrenceDays
-        : resolvedWindowDays;
-    if (activeDayList && activeDayList.length > 0) {
-      const weekday = weekdayInTimeZone(dayStart, zone);
-      if (!activeDayList.includes(weekday)) {
+    if (nextDueOverrideStart) {
+      const overrideMs = nextDueOverrideStart.getTime();
+      const dayMs = dayStart.getTime();
+      if (overrideMs === dayMs) {
+        return {
+          isDue: true,
+          dueStart: nextDueOverrideStart,
+          debugTag: "NEXT_DUE_OVERRIDE_SLOT",
+        };
+      }
+      if (overrideMs > dayMs) {
         return {
           isDue: false,
-          dueStart: null,
-          debugTag: "RECURRENCE_DAY_MISMATCH",
+          dueStart: nextDueOverrideStart,
+          debugTag: "NEXT_DUE_OVERRIDE_FUTURE",
         };
       }
     }
-    return { isDue: true, dueStart: dayStart, debugTag: "DUE_DAILY" };
-  }
+    const lastCompletionRaw = habit.lastCompletedAt ?? null;
+    const lastCompletionDate = parseIsoDate(lastCompletionRaw);
+    const lastCompletionStart =
+      lastCompletionDate !== null
+        ? startOfDayInTimeZone(lastCompletionDate, zone)
+        : null;
+    if (
+      lastScheduledStart &&
+      startOfDayInTimeZone(lastScheduledStart, zone).getTime() ===
+        dayStart.getTime()
+    ) {
+      return { isDue: false, dueStart: null, debugTag: "LAST_SCHEDULED_TODAY" };
+    }
+    if (
+      lastCompletionStart &&
+      lastCompletionStart.getTime() === dayStart.getTime()
+    ) {
+      return { isDue: false, dueStart: null, debugTag: "LAST_COMPLETED_TODAY" };
+    }
+    const anchorRaw = habit.createdAt ?? habit.updatedAt ?? null;
+    const anchorDate = parseIsoDate(anchorRaw);
+    const anchorStart = anchorDate
+      ? startOfDayInTimeZone(anchorDate, zone)
+      : null;
+    // Recurrence anchor must advance ONLY on completion
+    const lastStart = lastCompletionStart ?? anchorStart;
+    const hasCompletion = lastCompletionStart !== null;
+    if (isDailyRecurrence(recurrence)) {
+      const resolvedRecurrenceDays = normalizeDayList(
+        habit.recurrenceDays ?? null
+      );
+      const resolvedWindowDays = normalizeDayList(
+        windowDays ?? habit.window?.days ?? null
+      );
+      const activeDayList =
+        resolvedRecurrenceDays && resolvedRecurrenceDays.length > 0
+          ? resolvedRecurrenceDays
+          : resolvedWindowDays;
+      if (activeDayList && activeDayList.length > 0) {
+        const weekday = weekdayInTimeZone(dayStart, zone);
+        if (!activeDayList.includes(weekday)) {
+          return {
+            isDue: false,
+            dueStart: null,
+            debugTag: "RECURRENCE_DAY_MISMATCH",
+          };
+        }
+      }
+      return { isDue: true, dueStart: dayStart, debugTag: "DUE_DAILY" };
+    }
 
-  const resolvedDueStart = hasCompletion
-    ? lastStart
-      ? resolveDueStartForRecurrence({
-          recurrence,
-          habit,
-          lastStart,
-          timeZone: zone,
-        }) ?? lastStart
-      : dayStart
-    : dayStart;
-  if (dayStart.getTime() < resolvedDueStart.getTime()) {
-    return {
-      isDue: false,
-      dueStart: resolvedDueStart,
-      debugTag: "INTERVAL_NOT_REACHED",
-    };
-  }
-  if (lastScheduledStart) {
-    const lastScheduledDay = startOfDayInTimeZone(lastScheduledStart, zone);
-    if (lastScheduledDay.getTime() === dayStart.getTime()) {
+    const resolvedDueStart = hasCompletion
+      ? lastStart
+        ? resolveDueStartForRecurrence({
+            recurrence,
+            habit,
+            lastStart,
+            timeZone: zone,
+          }) ?? lastStart
+        : dayStart
+      : dayStart;
+    if (dayStart.getTime() < resolvedDueStart.getTime()) {
       return {
         isDue: false,
         dueStart: resolvedDueStart,
-        debugTag: "ALREADY_SCHEDULED_TODAY",
+        debugTag: "INTERVAL_NOT_REACHED",
       };
     }
+    if (lastScheduledStart) {
+      const lastScheduledDay = startOfDayInTimeZone(lastScheduledStart, zone);
+      if (lastScheduledDay.getTime() === dayStart.getTime()) {
+        return {
+          isDue: false,
+          dueStart: resolvedDueStart,
+          debugTag: "ALREADY_SCHEDULED_TODAY",
+        };
+      }
+    }
+    if (!lastStart) {
+      return { isDue: true, dueStart: dayStart, debugTag: "DUE_NO_ANCHOR" };
+    }
+    return { isDue: true, dueStart: resolvedDueStart, debugTag: "DUE_OVERDUE" };
+  })();
+
+  // Debug logging guarded by env flag
+  if (process.env.DEBUG_LAST_COMPLETED_AT === "true") {
+    console.log("LAST_COMPLETED_AT_DEBUG", {
+      habitId: habit.id,
+      lastCompletedAtMerged: habit.lastCompletedAt,
+      evalDate: date.toISOString(),
+      userTz: timeZone,
+      tag: result.debugTag,
+      dueStartIso: result.dueStart?.toISOString() ?? null,
+    });
   }
-  if (!lastStart) {
-    return { isDue: true, dueStart: dayStart, debugTag: "DUE_NO_ANCHOR" };
-  }
-  return { isDue: true, dueStart: resolvedDueStart, debugTag: "DUE_OVERDUE" };
+
+  return result;
 }

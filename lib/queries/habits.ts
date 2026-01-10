@@ -31,8 +31,8 @@ function normalizeStreakDayCount(value: unknown): number {
     typeof value === "number"
       ? value
       : typeof value === "string"
-        ? Number(value)
-        : Number.NaN;
+      ? Number(value)
+      : Number.NaN;
   if (!Number.isFinite(numeric)) {
     return 0;
   }
@@ -60,7 +60,9 @@ function diffInDays(a: string, b: string): number {
   return Math.round((second - first) / 86_400_000);
 }
 
-function computeHabitStreakStats(rows: HabitCompletionRow[]): Map<string, HabitStreakStats> {
+function computeHabitStreakStats(
+  rows: HabitCompletionRow[]
+): Map<string, HabitStreakStats> {
   const map = new Map<string, HabitCompletionRow[]>();
   for (const row of rows) {
     if (!row.habit_id || !row.completion_day) continue;
@@ -133,7 +135,9 @@ function computeHabitStreakStats(rows: HabitCompletionRow[]): Map<string, HabitS
     const lastCompletedAt = habitRows.reduce<string | null>((latest, row) => {
       if (!row.completed_at) return latest;
       if (!latest) return row.completed_at;
-      return Date.parse(row.completed_at) > Date.parse(latest) ? row.completed_at : latest;
+      return Date.parse(row.completed_at) > Date.parse(latest)
+        ? row.completed_at
+        : latest;
     }, null);
 
     stats.set(habitId, {
@@ -141,7 +145,9 @@ function computeHabitStreakStats(rows: HabitCompletionRow[]): Map<string, HabitS
       longest,
       lastCompletedAt:
         lastCompletedAt ??
-        (uniqueDays.length ? `${uniqueDays[uniqueDays.length - 1]}T00:00:00.000Z` : null),
+        (uniqueDays.length
+          ? `${uniqueDays[uniqueDays.length - 1]}T00:00:00.000Z`
+          : null),
     });
   }
 
@@ -171,7 +177,52 @@ async function fetchHabitStreakMap(
   return computeHabitStreakStats((data ?? []) as HabitCompletionRow[]);
 }
 
-function pickLatestTimestamp(a?: string | null, b?: string | null): string | null {
+async function getAuthoritativeLastCompletedAt(
+  client: ReturnType<typeof getSupabaseBrowser>,
+  userId: string,
+  habitId: string
+): Promise<string | null> {
+  if (!client) {
+    return null;
+  }
+
+  const { data: days } = await client
+    .from("habit_completion_days")
+    .select("completed_at")
+    .eq("user_id", userId)
+    .eq("habit_id", habitId)
+    .order("completed_at", { ascending: false })
+    .limit(1);
+
+  const fromDays =
+    (days as { completed_at: string | null }[] | null)?.[0]?.completed_at ??
+    null;
+
+  const { data: items } = await client
+    .from("schedule_instances")
+    .select("end_utc")
+    .eq("user_id", userId)
+    .eq("source_type", "HABIT")
+    .eq("source_id", habitId)
+    .eq("status", "completed")
+    .order("end_utc", { ascending: false })
+    .limit(1);
+
+  const fromItems =
+    (items as { end_utc: string | null }[] | null)?.[0]?.end_utc ?? null;
+
+  const pickMax = (a: string | null, b: string | null) => {
+    if (!a) return b;
+    if (!b) return a;
+    return Date.parse(a) >= Date.parse(b) ? a : b;
+  };
+  return pickMax(fromDays, fromItems);
+}
+
+function pickLatestTimestamp(
+  a?: string | null,
+  b?: string | null
+): string | null {
   const first = a ? Date.parse(a) : Number.NaN;
   const second = b ? Date.parse(b) : Number.NaN;
   if (!Number.isFinite(first) && !Number.isFinite(second)) {
@@ -179,7 +230,7 @@ function pickLatestTimestamp(a?: string | null, b?: string | null): string | nul
   }
   if (!Number.isFinite(first)) return b ?? null;
   if (!Number.isFinite(second)) return a ?? null;
-  return first >= second ? (a ?? null) : (b ?? null);
+  return first >= second ? a ?? null : b ?? null;
 }
 
 type HabitRecord = {
@@ -228,9 +279,14 @@ type HabitRecord = {
 function normalizeHabitRecord(
   habit: HabitRecord,
   supportsGoalMetadata: boolean,
-  streakMap: Map<string, HabitStreakStats>
+  streakMap: Map<string, HabitStreakStats>,
+  authoritativeLastCompletedAtMap?: Map<string, string | null>
 ): Habit {
-  const streakStats = streakMap.get(habit.id) ?? { current: 0, longest: 0, lastCompletedAt: null };
+  const streakStats = streakMap.get(habit.id) ?? {
+    current: 0,
+    longest: 0,
+    lastCompletedAt: null,
+  };
   const currentStreak = Math.max(
     normalizeStreakDayCount(habit.current_streak_days),
     normalizeStreakDayCount(streakStats.current)
@@ -240,10 +296,8 @@ function normalizeHabitRecord(
     normalizeStreakDayCount(streakStats.longest)
   );
 
-  const lastCompletedAt = pickLatestTimestamp(
-    habit.last_completed_at ?? null,
-    streakStats.lastCompletedAt
-  );
+  const lastCompletedAt =
+    authoritativeLastCompletedAtMap?.get(habit.id) ?? null;
 
   return {
     id: habit.id,
@@ -404,5 +458,25 @@ export async function getHabits(userId: string): Promise<Habit[]> {
 
   const streakMap = await fetchHabitStreakMap(supabase, userId);
 
-  return habitRows.map((habit) => normalizeHabitRecord(habit, supportsGoalMetadata, streakMap));
+  // Fetch authoritative lastCompletedAt for each habit
+  const authoritativeLastCompletedAtMap = new Map<string, string | null>();
+  await Promise.all(
+    habitRows.map(async (habit) => {
+      const authoritative = await getAuthoritativeLastCompletedAt(
+        supabase,
+        userId,
+        habit.id
+      );
+      authoritativeLastCompletedAtMap.set(habit.id, authoritative);
+    })
+  );
+
+  return habitRows.map((habit) =>
+    normalizeHabitRecord(
+      habit,
+      supportsGoalMetadata,
+      streakMap,
+      authoritativeLastCompletedAtMap
+    )
+  );
 }
