@@ -199,14 +199,19 @@ function useOverhangLT(ref: React.RefObject<HTMLElement>, deps: any[] = []) {
             .trim() || "0"
         ) || 0;
 
+      // Use visualViewport for mobile keyboard compatibility, fallback to window
+      const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+      const viewportHeight =
+        window.visualViewport?.height ?? window.innerHeight;
+
       // Align group's right edge to panel's right (no horizontal overhang).
       let left = Math.round(rect.right - GROUP_W - SHIFT_LEFT);
       const minLeft = 8;
-      const maxLeft = window.innerWidth - GROUP_W - 8;
+      const maxLeft = viewportWidth - GROUP_W - 8;
       left = Math.min(Math.max(left, minLeft), maxLeft);
 
       let top = Math.round(rect.bottom + OVERHANG - GROUP_H);
-      const maxTop = window.innerHeight - safeBottom - GROUP_H - 8;
+      const maxTop = viewportHeight - safeBottom - GROUP_H - 8;
       top = Math.min(top, maxTop);
       top = Math.max(top, 8);
 
@@ -214,10 +219,21 @@ function useOverhangLT(ref: React.RefObject<HTMLElement>, deps: any[] = []) {
     };
 
     update();
-    window.addEventListener("resize", update);
+    // Listen to visualViewport resize for mobile keyboard compatibility
+    const visualViewport = window.visualViewport;
+    if (visualViewport) {
+      visualViewport.addEventListener("resize", update);
+    } else {
+      // Fallback for browsers without visualViewport support
+      window.addEventListener("resize", update);
+    }
     window.addEventListener("scroll", update, { passive: true });
     return () => {
-      window.removeEventListener("resize", update);
+      if (visualViewport) {
+        visualViewport.removeEventListener("resize", update);
+      } else {
+        window.removeEventListener("resize", update);
+      }
       window.removeEventListener("scroll", update);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -607,8 +623,12 @@ export function Fab({
     setHabitDuration(next.toString());
   };
 
-  const projectDurationTapHandlers = useTapHandler(() => toggleDurationPicker());
-  const habitDurationTapHandlers = useTapHandler(() => toggleHabitDurationPicker());
+  const projectDurationTapHandlers = useTapHandler(() =>
+    toggleDurationPicker()
+  );
+  const habitDurationTapHandlers = useTapHandler(() =>
+    toggleHabitDurationPicker()
+  );
   const projectDurationMinusTapHandlers = useTapHandler(() =>
     adjustProjectDuration(-5)
   );
@@ -1186,10 +1206,10 @@ export function Fab({
             aria-label="Expanded placeholder"
           >
             <div
-              className="relative grid gap-4 p-4 pb-6 md:p-8 md:pb-10"
+              className="relative grid gap-4 p-4 pb-4 md:p-8 md:pb-6"
               style={{
                 paddingBottom:
-                  "calc(1.5rem + env(safe-area-inset-bottom, 0px))",
+                  "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
               }}
             >
               {selected === "GOAL" && (
@@ -3981,7 +4001,7 @@ export function Fab({
                 transition: "border-color 0.1s linear",
                 transformOrigin:
                   menuVariant === "timeline" ? "bottom right" : "bottom center",
-                minHeight: expanded ? "60dvh" : menuContainerHeight,
+                minHeight: expanded ? "48dvh" : menuContainerHeight,
                 maxHeight: expanded
                   ? "calc(90dvh - env(safe-area-inset-bottom, 0px) - 8px)"
                   : menuContainerHeight,
