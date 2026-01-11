@@ -621,6 +621,14 @@ export function Fab({
   const habitDurationPlusTapHandlers = useTapHandler(() =>
     adjustHabitDuration(5)
   );
+  const overhangCancelTapHandlers = useTapHandler(() => {
+    setExpanded(false);
+    setSelected(null);
+    setIsOpen(false);
+  });
+  const overhangSaveTapHandlers = useTapHandler(() => handleFabSave(), {
+    disabled: isSaveDisabled,
+  });
   const [projectSkillIds, setProjectSkillIds] = useState<string[]>([]);
   const [projectGoalId, setProjectGoalId] = useState<string | null>(null);
   const [showGoalFilters, setShowGoalFilters] = useState(false);
@@ -4090,12 +4098,8 @@ export function Fab({
                       aria-label="Discard"
                       variant="cancelSquare"
                       size="iconSquare"
-                      className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none"
-                      onClick={() => {
-                        setExpanded(false);
-                        setSelected(null);
-                        setIsOpen(false);
-                      }}
+                      className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation"
+                      {...overhangCancelTapHandlers}
                     >
                       <X
                         className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
@@ -4109,13 +4113,13 @@ export function Fab({
                       variant="confirmSquare"
                       size="iconSquare"
                       disabled={isSaveDisabled}
-                      onClick={handleFabSave}
                       className={cn(
-                        "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none",
+                        "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation",
                         isSaveDisabled
                           ? "btn-3d--amber bg-gradient-to-b from-amber-500 to-amber-700 hover:from-amber-500 hover:to-amber-800 active:from-amber-600 active:to-amber-800 disabled:opacity-100"
                           : ""
                       )}
+                      {...overhangSaveTapHandlers}
                     >
                       <Check
                         className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
