@@ -4691,6 +4691,8 @@ export default function SchedulePage() {
               const anchorProgress = Number.isFinite(progressRaw)
                 ? Math.min(Math.max(progressRaw, 0), 1)
                 : 0.5;
+              // Prevent the browser from hijacking the pinch for page zoom
+              e.preventDefault();
               stopZoomAnimation();
               const currentZoom = clampPxPerMin(animatedPxPerMin.get());
               animatedPxPerMin.set(currentZoom);
@@ -5531,9 +5533,9 @@ export default function SchedulePage() {
         ? {
             ...TIMELINE_CSS_VARIABLES,
             ...TIMELINE_FULL_BLEED_STYLE,
-            touchAction: "pan-y pinch-zoom",
+            touchAction: "pan-y",
           }
-        : { ...TIMELINE_CSS_VARIABLES, touchAction: "pan-y pinch-zoom" };
+        : { ...TIMELINE_CSS_VARIABLES, touchAction: "pan-y" };
 
       const { habitLayouts, projectLayouts } =
         computeTimelineLayoutForSyncHabits({
