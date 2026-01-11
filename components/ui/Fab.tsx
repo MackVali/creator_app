@@ -842,6 +842,46 @@ export function Fab({
   const overhangPos = useOverhangLT(panelRef, [expanded, selected], {
     listenVisualViewport: !expanded,
   });
+  const [stableViewportHeight, setStableViewportHeight] = useState<number | null>(
+    null
+  );
+  const [stableSafeBottom, setStableSafeBottom] = useState(0);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const measureOnce = () => {
+      if (typeof window === "undefined") return;
+      const height = Math.max(
+        window.innerHeight,
+        window.visualViewport?.height ?? 0
+      );
+      setStableViewportHeight((prev) => (prev ?? height));
+      const safeBottom =
+        Number.parseFloat(
+          getComputedStyle(document.documentElement)
+            .getPropertyValue("--sat-safe-bottom")
+            .trim() || "0"
+        ) || 0;
+      setStableSafeBottom((prev) => (prev || safeBottom));
+    };
+    const handleResize = () => {
+      if (typeof window === "undefined") return;
+      const nextHeight = window.innerHeight;
+      setStableViewportHeight((prev) => {
+        if (prev === null) return nextHeight;
+        // Ignore shrinkage (likely keyboard); allow growth (rotation/fullscreen).
+        if (nextHeight > prev * 0.98) return nextHeight;
+        return prev;
+      });
+    };
+    measureOnce();
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", measureOnce);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", measureOnce);
+    };
+  }, [expanded]);
 
   useEffect(() => {
     if (!expanded) {
@@ -4018,9 +4058,15 @@ export function Fab({
                 transition: "border-color 0.1s linear",
                 transformOrigin:
                   menuVariant === "timeline" ? "bottom right" : "bottom center",
-                minHeight: expanded ? "53dvh" : menuContainerHeight,
+                minHeight: expanded
+                  ? stableViewportHeight
+                    ? Math.round(stableViewportHeight * 0.58)
+                    : "58vh"
+                  : menuContainerHeight,
                 maxHeight: expanded
-                  ? "calc(90dvh - env(safe-area-inset-bottom, 0px) - 8px)"
+                  ? stableViewportHeight
+                    ? Math.round(stableViewportHeight * 0.9 - 8 - stableSafeBottom)
+                    : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"
                   : menuContainerHeight,
                 height: expanded ? undefined : menuContainerHeight,
                 minWidth: expanded ? undefined : menuWidth ?? undefined,
