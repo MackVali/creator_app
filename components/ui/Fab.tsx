@@ -677,11 +677,19 @@ export function Fab({
           placeholder={selectedSkill?.name ?? "Search skills…"}
           className="h-full flex-1 border-none bg-transparent p-0 text-base font-semibold text-white placeholder:text-white/60 focus-visible:ring-0"
         />
-        <button
-          type="button"
+        <div
+          role="button"
+          tabIndex={0}
           onClick={(e) => {
             e.stopPropagation();
             setShowSkillFilters((v) => !v);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              setShowSkillFilters((v) => !v);
+            }
           }}
           className={cn(
             "flex h-9 w-9 items-center justify-center rounded-md text-white/70 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20",
@@ -690,7 +698,7 @@ export function Fab({
           aria-label="Filter skills"
         >
           <Filter className="h-4 w-4" />
-        </button>
+        </div>
       </div>
     );
   }

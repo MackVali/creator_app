@@ -4716,7 +4716,7 @@ export default function SchedulePage() {
         firstTouch &&
         isTouchWithinElement(firstTouch, dayTimelineContainerRef.current)
       ) {
-        event.preventDefault();
+        e.preventDefault();
       }
     }
 
