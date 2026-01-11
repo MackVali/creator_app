@@ -80,6 +80,8 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
     const openedViaFocusRef = React.useRef(false);
     // Skip the click that follows a handled touch pointer down to avoid double toggles.
     const pointerDownHandledRef = React.useRef(false);
+    // Prevent immediate reopen when a click just closed the menu.
+    const suppressFocusOpenRef = React.useRef(false);
     const [contentPosition, setContentPosition] = React.useState<{
       left: number;
       width: number;
@@ -161,6 +163,10 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       if (!next) {
         openedViaFocusRef.current = false;
         pointerDownHandledRef.current = false;
+        suppressFocusOpenRef.current = true;
+        requestAnimationFrame(() => {
+          suppressFocusOpenRef.current = false;
+        });
       }
       onOpenChange?.(next);
     };
@@ -248,7 +254,8 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
               updateOpen(!isOpen);
             }}
             onFocusCapture={() => {
-              if (!openOnTriggerFocus || isOpen) return;
+              if (!openOnTriggerFocus || isOpen || suppressFocusOpenRef.current)
+                return;
               openedViaFocusRef.current = true;
               updateOpen(true);
             }}
