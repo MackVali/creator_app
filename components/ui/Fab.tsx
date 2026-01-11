@@ -846,6 +846,7 @@ export function Fab({
     null
   );
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
+  const [keyboardLift, setKeyboardLift] = useState(0);
 
   useEffect(() => {
     if (!expanded) return;
@@ -882,6 +883,35 @@ export function Fab({
       window.removeEventListener("orientationchange", measureOnce);
     };
   }, [expanded]);
+
+  useEffect(() => {
+    if (!expanded) {
+      setKeyboardLift(0);
+      return;
+    }
+    const updateLift = () => {
+      if (typeof window === "undefined") return;
+      const viewport = window.visualViewport;
+      if (!viewport) {
+        setKeyboardLift(0);
+        return;
+      }
+      const heightLoss = Math.max(0, window.innerHeight - viewport.height);
+      const offsetTop = viewport.offsetTop ?? 0;
+      const lift = Math.max(0, heightLoss - offsetTop - stableSafeBottom);
+      setKeyboardLift(lift);
+    };
+    updateLift();
+    const viewport = window.visualViewport;
+    viewport?.addEventListener("resize", updateLift);
+    viewport?.addEventListener("scroll", updateLift);
+    window.addEventListener("orientationchange", updateLift);
+    return () => {
+      viewport?.removeEventListener("resize", updateLift);
+      viewport?.removeEventListener("scroll", updateLift);
+      window.removeEventListener("orientationchange", updateLift);
+    };
+  }, [expanded, stableSafeBottom]);
 
   useEffect(() => {
     if (!expanded) {
@@ -4055,7 +4085,7 @@ export function Fab({
                 borderColor: isBlendingGradient
                   ? blendedBorderColor
                   : staticBorderColor,
-                transition: "border-color 0.1s linear",
+                transition: "border-color 0.1s linear, transform 0.2s ease",
                 transformOrigin:
                   menuVariant === "timeline" ? "bottom right" : "bottom center",
                 minHeight: expanded
@@ -4068,6 +4098,7 @@ export function Fab({
                     ? Math.round(stableViewportHeight * 0.9 - 8 - stableSafeBottom)
                     : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"
                   : menuContainerHeight,
+                y: expanded ? -keyboardLift : 0,
                 height: expanded ? undefined : menuContainerHeight,
                 minWidth: expanded ? undefined : menuWidth ?? undefined,
                 width: expanded ? undefined : menuWidth ?? undefined,
@@ -4179,7 +4210,11 @@ export function Fab({
                         : "calc(12px + env(safe-area-inset-bottom, 0px))",
                       zIndex: 2147483651,
                       transition:
-                        "top 0.18s ease, left 0.18s ease, right 0.18s ease, bottom 0.18s ease",
+                        "top 0.18s ease, left 0.18s ease, right 0.18s ease, bottom 0.18s ease, transform 0.18s ease",
+                      transform:
+                        expanded && keyboardLift > 0
+                          ? `translateY(${-keyboardLift}px)`
+                          : undefined,
                     }}
                   >
                     <Button

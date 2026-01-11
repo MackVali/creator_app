@@ -76,6 +76,8 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
     const [selectedLabel, setSelectedLabel] = React.useState("");
     const containerRef = React.useRef<HTMLDivElement>(null);
     const contentRef = React.useRef<HTMLDivElement>(null);
+    // Track when focus opened the menu so the ensuing click doesn't immediately close it.
+    const openedViaFocusRef = React.useRef(false);
     const [contentPosition, setContentPosition] = React.useState<{
       left: number;
       width: number;
@@ -222,11 +224,17 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
           <button
             type="button"
             onPointerDown={handleTriggerPointerDown}
-            onClick={() =>
-              openOnTriggerFocus ? updateOpen(true) : updateOpen(!isOpen)
-            }
+            onClick={() => {
+              if (openOnTriggerFocus && openedViaFocusRef.current) return;
+              updateOpen(!isOpen);
+            }}
             onFocusCapture={() => {
-              if (openOnTriggerFocus) updateOpen(true);
+              if (!openOnTriggerFocus || isOpen) return;
+              openedViaFocusRef.current = true;
+              updateOpen(true);
+              requestAnimationFrame(() => {
+                openedViaFocusRef.current = false;
+              });
             }}
             className={cn(
               "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition overflow-visible",
