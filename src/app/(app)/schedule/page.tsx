@@ -187,6 +187,8 @@ const TIMELINE_CARD_BOUNDS: CSSProperties = {
   right: `var(--timeline-card-right, ${TIMELINE_CARD_RIGHT_FALLBACK})`,
 };
 
+const TIMELINE_TOUCH_ACTION = "pan-y pinch-zoom";
+
 const getScheduleInstanceLayoutId = (instanceId: string) =>
   `schedule-instance-${instanceId}`;
 
@@ -4731,16 +4733,6 @@ export default function SchedulePage() {
       return;
     }
 
-    if (touches.length === 1) {
-      const firstTouch = touches[0];
-      if (
-        firstTouch &&
-        isTouchWithinElement(firstTouch, dayTimelineContainerRef.current)
-      ) {
-        e.preventDefault();
-      }
-    }
-
     if (view !== "day" || prefersReducedMotion || pinchActiveRef.current) {
       touchStartX.current = null;
       touchStartY.current = null;
@@ -5533,9 +5525,12 @@ export default function SchedulePage() {
         ? {
             ...TIMELINE_CSS_VARIABLES,
             ...TIMELINE_FULL_BLEED_STYLE,
-            touchAction: "pan-y",
+            touchAction: TIMELINE_TOUCH_ACTION,
           }
-        : { ...TIMELINE_CSS_VARIABLES, touchAction: "pan-y" };
+        : {
+            ...TIMELINE_CSS_VARIABLES,
+            touchAction: TIMELINE_TOUCH_ACTION,
+          };
 
       const { habitLayouts, projectLayouts } =
         computeTimelineLayoutForSyncHabits({
@@ -7260,6 +7255,7 @@ export default function SchedulePage() {
           <div
             className="relative bg-[var(--surface)]"
             ref={swipeContainerRef}
+            style={{ touchAction: TIMELINE_TOUCH_ACTION }}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={() => {
