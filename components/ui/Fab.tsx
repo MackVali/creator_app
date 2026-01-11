@@ -2865,14 +2865,12 @@ export function Fab({
   const handleExpandedPointerDownCapture = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!expanded) return;
-
-      // Skip on touch/pencil to avoid iOS Safari suppressing the subsequent click.
-      const pt = (event as any).pointerType as string | undefined;
-      if (pt && pt !== "mouse") return;
-
       const target = event.target as HTMLElement | null;
       if (!target) return;
 
+      // Skip most touch/pencil interactions to avoid iOS Safari suppressing the subsequent click,
+      // but still focus text inputs so they respond on the first tap.
+      const pt = (event as any).pointerType as string | undefined;
       // Only help text inputs on desktop; never programmatically focus buttons.
       const tag = target.tagName;
       const isTextInput =
@@ -2880,6 +2878,13 @@ export function Fab({
         tag === "TEXTAREA" ||
         tag === "SELECT" ||
         target.isContentEditable;
+
+      if (pt && pt !== "mouse") {
+        if (isTextInput) {
+          target.focus({ preventScroll: true });
+        }
+        return;
+      }
 
       if (isTextInput) {
         target.focus({ preventScroll: true });
