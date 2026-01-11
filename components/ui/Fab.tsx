@@ -4126,9 +4126,14 @@ export function Fab({
                     className="pointer-events-auto fixed flex w-[108px] items-center gap-3"
                     style={{
                       left: overhangPos?.left,
+                      top: overhangPos?.top,
                       right: overhangPos ? undefined : 12,
-                      bottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+                      bottom: overhangPos
+                        ? undefined
+                        : "calc(12px + env(safe-area-inset-bottom, 0px))",
                       zIndex: 2147483651,
+                      transition:
+                        "top 0.18s ease, left 0.18s ease, right 0.18s ease, bottom 0.18s ease",
                     }}
                   >
                     <Button
