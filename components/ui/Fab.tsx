@@ -173,7 +173,11 @@ function useTapHandler(onTap: () => void, opts?: { disabled?: boolean }) {
   return { onPointerUp, onClick };
 }
 
-function useOverhangLT(ref: React.RefObject<HTMLElement>, deps: any[] = []) {
+function useOverhangLT(
+  ref: React.RefObject<HTMLElement>,
+  deps: any[] = [],
+  opts?: { listenVisualViewport?: boolean; listenScroll?: boolean }
+) {
   const [pos, setPos] = React.useState<{ left: number; top: number } | null>(
     null
   );
@@ -220,21 +224,31 @@ function useOverhangLT(ref: React.RefObject<HTMLElement>, deps: any[] = []) {
 
     update();
     // Listen to visualViewport resize for mobile keyboard compatibility
+    const listenVisualViewport = opts?.listenVisualViewport ?? true;
+    const listenScroll = opts?.listenScroll ?? true;
     const visualViewport = window.visualViewport;
-    if (visualViewport) {
-      visualViewport.addEventListener("resize", update);
-    } else {
-      // Fallback for browsers without visualViewport support
-      window.addEventListener("resize", update);
-    }
-    window.addEventListener("scroll", update, { passive: true });
-    return () => {
+    if (listenVisualViewport) {
       if (visualViewport) {
-        visualViewport.removeEventListener("resize", update);
+        visualViewport.addEventListener("resize", update);
       } else {
-        window.removeEventListener("resize", update);
+        // Fallback for browsers without visualViewport support
+        window.addEventListener("resize", update);
       }
-      window.removeEventListener("scroll", update);
+    }
+    if (listenScroll) {
+      window.addEventListener("scroll", update, { passive: true });
+    }
+    return () => {
+      if (listenVisualViewport) {
+        if (visualViewport) {
+          visualViewport.removeEventListener("resize", update);
+        } else {
+          window.removeEventListener("resize", update);
+        }
+      }
+      if (listenScroll) {
+        window.removeEventListener("scroll", update);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
@@ -825,7 +839,9 @@ export function Fab({
   const DRAG_THRESHOLD_PX = 80;
   const EDGE_SWIPE_ZONE_RATIO = 0.12;
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
-  const overhangPos = useOverhangLT(panelRef, [expanded, selected]);
+  const overhangPos = useOverhangLT(panelRef, [expanded, selected], {
+    listenVisualViewport: !expanded,
+  });
 
   useEffect(() => {
     if (!expanded) {
@@ -3984,13 +4000,14 @@ export function Fab({
                 menuRef.current = node;
                 panelRef.current = node;
               }}
-              layout
               className={cn(
-                "absolute bottom-20 mb-2 z-[2147483650] border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
+                "bottom-20 mb-2 z-[2147483650] border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
+                expanded ? "fixed" : "absolute",
                 expanded ? "overflow-visible" : "overflow-hidden",
                 expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
                 menuClassName
               )}
+              layout={!expanded}
               onTouchStart={(event) => event.stopPropagation()}
               onPointerDownCapture={handleExpandedPointerDownCapture}
               style={{
@@ -4001,12 +4018,11 @@ export function Fab({
                 transition: "border-color 0.1s linear",
                 transformOrigin:
                   menuVariant === "timeline" ? "bottom right" : "bottom center",
-                minHeight: expanded ? "48dvh" : menuContainerHeight,
+                minHeight: expanded ? "53dvh" : menuContainerHeight,
                 maxHeight: expanded
                   ? "calc(90dvh - env(safe-area-inset-bottom, 0px) - 8px)"
                   : menuContainerHeight,
                 height: expanded ? undefined : menuContainerHeight,
-                maxHeight: !expanded ? menuContainerHeight : undefined,
                 minWidth: expanded ? undefined : menuWidth ?? undefined,
                 width: expanded ? undefined : menuWidth ?? undefined,
                 maxWidth: expanded ? undefined : menuWidth ?? undefined,
@@ -4096,7 +4112,7 @@ export function Fab({
                 </motion.div>
               </>
             </motion.div>
-            {expanded && overhangPos
+            {expanded
               ? createPortal(
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9, y: 6 }}
@@ -4109,8 +4125,9 @@ export function Fab({
                     }}
                     className="pointer-events-auto fixed flex w-[108px] items-center gap-3"
                     style={{
-                      left: overhangPos.left,
-                      top: overhangPos.top,
+                      left: overhangPos?.left,
+                      right: overhangPos ? undefined : 12,
+                      bottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
                       zIndex: 2147483651,
                     }}
                   >
