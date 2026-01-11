@@ -4644,11 +4644,20 @@ export default function SchedulePage() {
 
   const isTouchFromFabOverlay = (event: React.TouchEvent) => {
     const target = event.target as HTMLElement | null;
-    if (!target) return false;
-    return Boolean(
-      target.closest("[data-fab-overlay]") ||
-        target.closest("[data-fab-reschedule-overlay]")
-    );
+    if (target?.closest?.("[data-fab-overlay], [data-fab-reschedule-overlay]")) {
+      return true;
+    }
+    const path =
+      (event.nativeEvent as TouchEvent | (TouchEvent & { composedPath?: () => EventTarget[] }))
+        ?.composedPath?.();
+    if (Array.isArray(path)) {
+      return path.some(
+        (node) =>
+          node instanceof HTMLElement &&
+          node.closest?.("[data-fab-overlay], [data-fab-reschedule-overlay]")
+      );
+    }
+    return false;
   };
 
   function handleTouchStart(e: React.TouchEvent) {
