@@ -9,7 +9,6 @@ import {
   useCallback,
   useMemo,
   type HTMLAttributes,
-  type PointerEvent as ReactPointerEvent,
   type RefObject,
   type UIEvent,
 } from "react";
@@ -1646,8 +1645,7 @@ export function Fab({
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={toggleDurationPicker}
-                          onTouchEnd={(event) => {
+                          onClick={(event) => {
                             event.stopPropagation();
                             toggleDurationPicker();
                           }}
@@ -1685,8 +1683,7 @@ export function Fab({
                           <div className="flex items-center justify-between gap-3">
                             <button
                               type="button"
-                              onClick={() => adjustProjectDuration(-5)}
-                              onTouchEnd={(event) => {
+                              onClick={(event) => {
                                 event.stopPropagation();
                                 adjustProjectDuration(-5);
                               }}
@@ -1699,8 +1696,7 @@ export function Fab({
                             </div>
                             <button
                               type="button"
-                              onClick={() => adjustProjectDuration(5)}
-                              onTouchEnd={(event) => {
+                              onClick={(event) => {
                                 event.stopPropagation();
                                 adjustProjectDuration(5);
                               }}
@@ -1734,8 +1730,7 @@ export function Fab({
                           <div className="flex items-center justify-between gap-3">
                             <button
                               type="button"
-                              onClick={() => adjustHabitDuration(-5)}
-                              onTouchEnd={(event) => {
+                              onClick={(event) => {
                                 event.stopPropagation();
                                 adjustHabitDuration(-5);
                               }}
@@ -1748,8 +1743,7 @@ export function Fab({
                             </div>
                             <button
                               type="button"
-                              onClick={() => adjustHabitDuration(5)}
-                              onTouchEnd={(event) => {
+                              onClick={(event) => {
                                 event.stopPropagation();
                                 adjustHabitDuration(5);
                               }}
@@ -2478,7 +2472,10 @@ export function Fab({
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={toggleHabitDurationPicker}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleHabitDurationPicker();
+                          }}
                           ref={habitDurationTriggerRef}
                           className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
                           aria-haspopup="dialog"
@@ -2636,7 +2633,10 @@ export function Fab({
                           <div className="flex items-center justify-between gap-3">
                             <button
                               type="button"
-                              onClick={() => adjustHabitDuration(-5)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                adjustHabitDuration(-5);
+                              }}
                               className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
                             >
                               -
@@ -2646,7 +2646,10 @@ export function Fab({
                             </div>
                             <button
                               type="button"
-                              onClick={() => adjustHabitDuration(5)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                adjustHabitDuration(5);
+                              }}
                               className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
                             >
                               +
@@ -2830,12 +2833,24 @@ export function Fab({
   };
 
   const handleExpandedPointerDownCapture = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
+    (event: React.PointerEvent<HTMLDivElement>) => {
       if (!expanded) return;
       const target = event.target as HTMLElement | null;
       if (!target) return;
-      const focusableTags = ["INPUT", "TEXTAREA", "SELECT", "BUTTON"];
-      if (focusableTags.includes(target.tagName)) {
+
+      // Skip on touch/pencil to avoid iOS Safari suppressing the subsequent click.
+      const pt = (event as any).pointerType as string | undefined;
+      if (pt && pt !== "mouse") return;
+
+      // Only help text inputs on desktop; never programmatically focus buttons.
+      const tag = target.tagName;
+      const isTextInput =
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target.isContentEditable;
+
+      if (isTextInput) {
         target.focus({ preventScroll: true });
       }
     },
@@ -4039,7 +4054,7 @@ export function Fab({
                     style={{
                       left: overhangPos.left,
                       top: overhangPos.top,
-                      zIndex: 2147483650,
+                      zIndex: 2147483651,
                     }}
                   >
                     <Button
