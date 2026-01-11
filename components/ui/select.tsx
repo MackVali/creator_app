@@ -76,6 +76,12 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
     const [selectedLabel, setSelectedLabel] = React.useState("");
     const containerRef = React.useRef<HTMLDivElement>(null);
     const contentRef = React.useRef<HTMLDivElement>(null);
+    // Track when focus opened the menu so the ensuing click doesn't immediately close it.
+    const openedViaFocusRef = React.useRef(false);
+    // Skip the click that follows a handled touch pointer down to avoid double toggles.
+    const pointerDownHandledRef = React.useRef(false);
+    // Prevent immediate reopen when a click just closed the menu.
+    const suppressFocusOpenRef = React.useRef(false);
     const [contentPosition, setContentPosition] = React.useState<{
       left: number;
       width: number;
@@ -85,17 +91,22 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
     } | null>(null);
 
     React.useEffect(() => {
-      const handleClickOutside = (event: MouseEvent) => {
+      const handlePointerDown = (event: PointerEvent) => {
         const target = event.target as Node;
         const clickedTrigger = containerRef.current?.contains(target);
         const clickedContent = contentRef.current?.contains(target);
         if (!clickedTrigger && !clickedContent) {
-          setIsOpen(false);
+          updateOpen(false);
         }
       };
 
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
+      // Pointer covers both mouse and touch; fallback mousedown for older browsers.
+      document.addEventListener("pointerdown", handlePointerDown);
+      document.addEventListener("mousedown", handlePointerDown);
+      return () => {
+        document.removeEventListener("pointerdown", handlePointerDown);
+        document.removeEventListener("mousedown", handlePointerDown);
+      };
     }, []);
 
     const updateContentPosition = React.useCallback(() => {
@@ -149,6 +160,13 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
 
     const updateOpen = (next: boolean) => {
       setIsOpen(next);
+      if (!next) {
+        openedViaFocusRef.current = false;
+        suppressFocusOpenRef.current = true;
+        setTimeout(() => {
+          suppressFocusOpenRef.current = false;
+        }, 150);
+      }
       onOpenChange?.(next);
     };
 
@@ -165,6 +183,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       if (event.pointerType !== "touch") return;
       // Toggle immediately on touch to avoid synthesized click delays/double taps.
       event.preventDefault();
+      pointerDownHandledRef.current = true;
       updateOpen(!isOpen);
     };
 
@@ -222,11 +241,22 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
           <button
             type="button"
             onPointerDown={handleTriggerPointerDown}
-            onClick={() =>
-              openOnTriggerFocus ? updateOpen(true) : updateOpen(!isOpen)
-            }
+            onClick={() => {
+              if (pointerDownHandledRef.current) {
+                pointerDownHandledRef.current = false;
+                return;
+              }
+              if (openOnTriggerFocus && openedViaFocusRef.current) {
+                openedViaFocusRef.current = false;
+                return;
+              }
+              updateOpen(!isOpen);
+            }}
             onFocusCapture={() => {
-              if (openOnTriggerFocus) updateOpen(true);
+              if (!openOnTriggerFocus || isOpen || suppressFocusOpenRef.current)
+                return;
+              openedViaFocusRef.current = true;
+              updateOpen(true);
             }}
             className={cn(
               "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition overflow-visible",

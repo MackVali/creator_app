@@ -146,7 +146,7 @@ const DEBUG_LONG_PRESS = true;
 const SCHEDULE_CARD_LONG_PRESS_MS = 650;
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280;
 const LONG_PRESS_ACTION_DELAY_MS = 120;
-const HABIT_STREAK_BADGE_BASE_HEIGHT_PX = 22;
+const HABIT_STREAK_BADGE_BASE_HEIGHT_PX = 18;
 const HABIT_STREAK_BADGE_TOP_MARGIN_PX = 8;
 const HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX = 2;
 const HABIT_COMPACT_SHADOW_HEIGHT_PX = 96;
@@ -186,6 +186,8 @@ const TIMELINE_CARD_BOUNDS: CSSProperties = {
   left: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
   right: `var(--timeline-card-right, ${TIMELINE_CARD_RIGHT_FALLBACK})`,
 };
+
+const TIMELINE_TOUCH_ACTION = "pan-y pinch-zoom";
 
 const getScheduleInstanceLayoutId = (instanceId: string) =>
   `schedule-instance-${instanceId}`;
@@ -4691,6 +4693,8 @@ export default function SchedulePage() {
               const anchorProgress = Number.isFinite(progressRaw)
                 ? Math.min(Math.max(progressRaw, 0), 1)
                 : 0.5;
+              // Prevent the browser from hijacking the pinch for page zoom
+              e.preventDefault();
               stopZoomAnimation();
               const currentZoom = clampPxPerMin(animatedPxPerMin.get());
               animatedPxPerMin.set(currentZoom);
@@ -4727,16 +4731,6 @@ export default function SchedulePage() {
       touchStartY.current = null;
       hasVerticalTouchMovement.current = false;
       return;
-    }
-
-    if (touches.length === 1) {
-      const firstTouch = touches[0];
-      if (
-        firstTouch &&
-        isTouchWithinElement(firstTouch, dayTimelineContainerRef.current)
-      ) {
-        e.preventDefault();
-      }
     }
 
     if (view !== "day" || prefersReducedMotion || pinchActiveRef.current) {
@@ -5531,8 +5525,12 @@ export default function SchedulePage() {
         ? {
             ...TIMELINE_CSS_VARIABLES,
             ...TIMELINE_FULL_BLEED_STYLE,
+            touchAction: TIMELINE_TOUCH_ACTION,
           }
-        : TIMELINE_CSS_VARIABLES;
+        : {
+            ...TIMELINE_CSS_VARIABLES,
+            touchAction: TIMELINE_TOUCH_ACTION,
+          };
 
       const { habitLayouts, projectLayouts } =
         computeTimelineLayoutForSyncHabits({
@@ -5704,33 +5702,10 @@ export default function SchedulePage() {
               const streakLabel = `${streakDays}x`;
               let streakBadgeStyle: CSSProperties | undefined;
               if (showHabitStreakBadge) {
-                const availableHeight =
-                  habitHeightPx - HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX;
-                let streakBadgeHeightPx = HABIT_STREAK_BADGE_BASE_HEIGHT_PX;
-                if (
-                  availableHeight <
-                  HABIT_STREAK_BADGE_BASE_HEIGHT_PX +
-                    HABIT_STREAK_BADGE_TOP_MARGIN_PX
-                ) {
-                  streakBadgeHeightPx = Math.max(
-                    0,
-                    availableHeight - HABIT_STREAK_BADGE_TOP_MARGIN_PX
-                  );
-                }
-                let streakBadgeScale = 1;
-                if (
-                  streakBadgeHeightPx > 0 &&
-                  streakBadgeHeightPx < HABIT_STREAK_BADGE_BASE_HEIGHT_PX
-                ) {
-                  streakBadgeScale =
-                    streakBadgeHeightPx / HABIT_STREAK_BADGE_BASE_HEIGHT_PX;
-                } else if (streakBadgeHeightPx <= 0) {
-                  streakBadgeScale = 0;
-                }
                 let streakBadgeTopPx = HABIT_STREAK_BADGE_TOP_MARGIN_PX;
                 const overflow =
                   streakBadgeTopPx +
-                  streakBadgeHeightPx +
+                  HABIT_STREAK_BADGE_BASE_HEIGHT_PX +
                   HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX -
                   habitHeightPx;
                 if (overflow > 0) {
@@ -5741,11 +5716,6 @@ export default function SchedulePage() {
                 }
                 streakBadgeStyle = {
                   top: `${streakBadgeTopPx}px`,
-                  transform:
-                    streakBadgeScale < 0.999
-                      ? `scale(${streakBadgeScale})`
-                      : undefined,
-                  transformOrigin: "top right",
                 };
               }
               const scheduledShadow = [
@@ -6061,7 +6031,7 @@ export default function SchedulePage() {
                   </motion.span>
                   {showHabitStreakBadge ? (
                     <span
-                      className="pointer-events-none absolute right-3 top-2 flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.18em] text-amber-100"
+                      className="pointer-events-none absolute right-3 top-2 flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-[2px] text-xs font-semibold leading-tight text-amber-100"
                       style={streakBadgeStyle}
                     >
                       <FlameEmber
@@ -6882,8 +6852,9 @@ export default function SchedulePage() {
                                     <SkillEnergyBadge
                                       energyLevel={energyLevel}
                                       skillIcon={task.skill_icon}
+                                      size="xs"
                                       className="pointer-events-none absolute -top-1 -right-1 flex items-center gap-1 rounded-full bg-zinc-950/70 px-1.5 py-[1px]"
-                                      iconClassName="text-base leading-none"
+                                      iconClassName="text-xs leading-none"
                                       flameClassName="drop-shadow-[0_0_6px_rgba(0,0,0,0.45)]"
                                     />
                                     {progressValue > 0 && (
@@ -7105,8 +7076,9 @@ export default function SchedulePage() {
                       <SkillEnergyBadge
                         energyLevel={standaloneEnergyLevel}
                         skillIcon={task.skill_icon}
+                        size="xs"
                         className="pointer-events-none absolute -top-1 -right-1 flex items-center gap-1 rounded-full bg-zinc-950/70 px-1.5 py-[1px]"
-                        iconClassName="text-base leading-none"
+                        iconClassName="text-xs leading-none"
                         flameClassName="drop-shadow-[0_0_6px_rgba(0,0,0,0.45)]"
                       />
                       <div
@@ -7283,6 +7255,7 @@ export default function SchedulePage() {
           <div
             className="relative bg-[var(--surface)]"
             ref={swipeContainerRef}
+            style={{ touchAction: TIMELINE_TOUCH_ACTION }}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={() => {
@@ -7390,20 +7363,6 @@ export default function SchedulePage() {
         monuments={monuments}
         skills={skills}
       />
-      {process.env.NODE_ENV === "development" && (
-        <div className="fixed bottom-3 left-3 z-[99999] rounded-lg bg-black/80 px-3 py-2 text-xs text-white">
-          <div>
-            snapshot:{" "}
-            {editingSnapshot
-              ? `${editingSnapshot.source_type}:${
-                  editingSnapshot.projectId || editingSnapshot.habitId
-                }`
-              : "null"}
-          </div>
-          <div>isHabitEditing: {String(isHabitEditing)}</div>
-          <div>habitId: {String(editingHabitId)}</div>
-        </div>
-      )}
       {console.log("[SchedulePage] edit sheet props", {
         snapshot: describeEditingSnapshot(editingSnapshot),
         isProjectEditing,

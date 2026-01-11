@@ -173,7 +173,11 @@ function useTapHandler(onTap: () => void, opts?: { disabled?: boolean }) {
   return { onPointerUp, onClick };
 }
 
-function useOverhangLT(ref: React.RefObject<HTMLElement>, deps: any[] = []) {
+function useOverhangLT(
+  ref: React.RefObject<HTMLElement>,
+  deps: any[] = [],
+  opts?: { listenVisualViewport?: boolean; listenScroll?: boolean }
+) {
   const [pos, setPos] = React.useState<{ left: number; top: number } | null>(
     null
   );
@@ -199,14 +203,19 @@ function useOverhangLT(ref: React.RefObject<HTMLElement>, deps: any[] = []) {
             .trim() || "0"
         ) || 0;
 
+      // Use visualViewport for mobile keyboard compatibility, fallback to window
+      const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+      const viewportHeight =
+        window.visualViewport?.height ?? window.innerHeight;
+
       // Align group's right edge to panel's right (no horizontal overhang).
       let left = Math.round(rect.right - GROUP_W - SHIFT_LEFT);
       const minLeft = 8;
-      const maxLeft = window.innerWidth - GROUP_W - 8;
+      const maxLeft = viewportWidth - GROUP_W - 8;
       left = Math.min(Math.max(left, minLeft), maxLeft);
 
       let top = Math.round(rect.bottom + OVERHANG - GROUP_H);
-      const maxTop = window.innerHeight - safeBottom - GROUP_H - 8;
+      const maxTop = viewportHeight - safeBottom - GROUP_H - 8;
       top = Math.min(top, maxTop);
       top = Math.max(top, 8);
 
@@ -214,11 +223,32 @@ function useOverhangLT(ref: React.RefObject<HTMLElement>, deps: any[] = []) {
     };
 
     update();
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, { passive: true });
+    // Listen to visualViewport resize for mobile keyboard compatibility
+    const listenVisualViewport = opts?.listenVisualViewport ?? true;
+    const listenScroll = opts?.listenScroll ?? true;
+    const visualViewport = window.visualViewport;
+    if (listenVisualViewport) {
+      if (visualViewport) {
+        visualViewport.addEventListener("resize", update);
+      } else {
+        // Fallback for browsers without visualViewport support
+        window.addEventListener("resize", update);
+      }
+    }
+    if (listenScroll) {
+      window.addEventListener("scroll", update, { passive: true });
+    }
     return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update);
+      if (listenVisualViewport) {
+        if (visualViewport) {
+          visualViewport.removeEventListener("resize", update);
+        } else {
+          window.removeEventListener("resize", update);
+        }
+      }
+      if (listenScroll) {
+        window.removeEventListener("scroll", update);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
@@ -464,17 +494,29 @@ export function Fab({
       setTaskProjectFilterStage("");
       setTaskProjectFilterPriority("");
       setShowTaskProjectFilters(false);
+      setShowTaskDurationPicker(false);
+      setTaskDurationPosition(null);
     }
   }, [selected]);
   const [showDurationPicker, setShowDurationPicker] = useState(false);
   const durationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const durationPickerRef = useRef<HTMLDivElement | null>(null);
   const [durationPosition, setDurationPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+  const [showTaskDurationPicker, setShowTaskDurationPicker] = useState(false);
+  const taskDurationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const taskDurationPickerRef = useRef<HTMLDivElement | null>(null);
+  const [taskDurationPosition, setTaskDurationPosition] = useState<{
     top: number;
     left: number;
     width: number;
   } | null>(null);
   const [showHabitDurationPicker, setShowHabitDurationPicker] = useState(false);
   const habitDurationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const habitDurationPickerRef = useRef<HTMLDivElement | null>(null);
   const [habitDurationPosition, setHabitDurationPosition] = useState<{
     top: number;
     left: number;
@@ -505,7 +547,8 @@ export function Fab({
     const top = placeBelow
       ? rect.bottom + margin + window.scrollY
       : Math.max(margin, rect.top - estimatedHeight) + window.scrollY;
-    const width = rect.width;
+    const desiredWidth = Math.max(rect.width, 320);
+    const width = Math.min(desiredWidth, viewportWidth - margin * 2);
     let left = rect.left;
     if (left + width > viewportWidth - margin) {
       left = viewportWidth - width - margin;
@@ -513,6 +556,37 @@ export function Fab({
     if (left < margin) left = margin;
     setDurationPosition({ top, left: left + window.scrollX, width });
   }, [showDurationPicker]);
+
+  const updateTaskDurationPosition = useCallback(() => {
+    if (!showTaskDurationPicker) return;
+    const trigger = taskDurationTriggerRef.current;
+    if (
+      !trigger ||
+      typeof window === "undefined" ||
+      typeof document === "undefined"
+    ) {
+      return;
+    }
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const estimatedHeight = 150;
+    const margin = 8;
+    const spaceBelow = viewportHeight - rect.bottom;
+    const placeBelow =
+      spaceBelow > estimatedHeight + margin || rect.top < estimatedHeight;
+    const top = placeBelow
+      ? rect.bottom + margin + window.scrollY
+      : Math.max(margin, rect.top - estimatedHeight) + window.scrollY;
+    const desiredWidth = Math.max(rect.width, 320);
+    const width = Math.min(desiredWidth, viewportWidth - margin * 2);
+    let left = rect.left;
+    if (left + width > viewportWidth - margin) {
+      left = viewportWidth - width - margin;
+    }
+    if (left < margin) left = margin;
+    setTaskDurationPosition({ top, left: left + window.scrollX, width });
+  }, [showTaskDurationPicker]);
   useEffect(() => {
     if (!showDurationPicker) return;
     updateDurationPosition();
@@ -524,6 +598,60 @@ export function Fab({
       window.removeEventListener("scroll", handle, true);
     };
   }, [showDurationPicker, updateDurationPosition]);
+
+  useEffect(() => {
+    if (!showDurationPicker) return;
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (
+        !target ||
+        durationPickerRef.current?.contains(target) ||
+        durationTriggerRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setShowDurationPicker(false);
+    };
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("touchstart", handleOutside, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("touchstart", handleOutside);
+    };
+  }, [showDurationPicker]);
+
+  useEffect(() => {
+    if (!showTaskDurationPicker) return;
+    updateTaskDurationPosition();
+    const handle = () => updateTaskDurationPosition();
+    window.addEventListener("resize", handle);
+    window.addEventListener("scroll", handle, true);
+    return () => {
+      window.removeEventListener("resize", handle);
+      window.removeEventListener("scroll", handle, true);
+    };
+  }, [showTaskDurationPicker, updateTaskDurationPosition]);
+
+  useEffect(() => {
+    if (!showTaskDurationPicker) return;
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (
+        !target ||
+        taskDurationPickerRef.current?.contains(target) ||
+        taskDurationTriggerRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setShowTaskDurationPicker(false);
+    };
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("touchstart", handleOutside, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("touchstart", handleOutside);
+    };
+  }, [showTaskDurationPicker]);
   const toggleDurationPicker = () => {
     setShowDurationPicker((prev) => {
       const next = !prev;
@@ -539,9 +667,29 @@ export function Fab({
     });
   };
 
+  const toggleTaskDurationPicker = () => {
+    setShowTaskDurationPicker((prev) => {
+      const next = !prev;
+      if (
+        next &&
+        (!taskDuration || !Number.isFinite(Number.parseInt(taskDuration, 10)))
+      ) {
+        setTaskDuration("30");
+      }
+      requestAnimationFrame(() => updateTaskDurationPosition());
+      return next;
+    });
+  };
+
   const adjustProjectDuration = (delta: number) => {
     const next = Math.max(0, normalizedProjectDuration + delta);
     setProjectDuration(next);
+  };
+
+  const adjustTaskDuration = (delta: number) => {
+    const current = Number.parseInt(taskDuration || "30", 10);
+    const next = Math.max(1, current + delta);
+    setTaskDuration(next.toString());
   };
 
   const updateHabitDurationPosition = useCallback(() => {
@@ -565,7 +713,8 @@ export function Fab({
     const top = placeBelow
       ? rect.bottom + margin + window.scrollY
       : Math.max(margin, rect.top - estimatedHeight) + window.scrollY;
-    const width = rect.width;
+    const desiredWidth = Math.max(rect.width, 320);
+    const width = Math.min(desiredWidth, viewportWidth - margin * 2);
     let left = rect.left;
     if (left + width > viewportWidth - margin) {
       left = viewportWidth - width - margin;
@@ -585,6 +734,27 @@ export function Fab({
       window.removeEventListener("scroll", handle, true);
     };
   }, [showHabitDurationPicker, updateHabitDurationPosition]);
+
+  useEffect(() => {
+    if (!showHabitDurationPicker) return;
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (
+        !target ||
+        habitDurationPickerRef.current?.contains(target) ||
+        habitDurationTriggerRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setShowHabitDurationPicker(false);
+    };
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("touchstart", handleOutside, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("touchstart", handleOutside);
+    };
+  }, [showHabitDurationPicker]);
 
   const toggleHabitDurationPicker = () => {
     setShowHabitDurationPicker((prev) => {
@@ -607,13 +777,26 @@ export function Fab({
     setHabitDuration(next.toString());
   };
 
-  const projectDurationTapHandlers = useTapHandler(() => toggleDurationPicker());
-  const habitDurationTapHandlers = useTapHandler(() => toggleHabitDurationPicker());
+  const projectDurationTapHandlers = useTapHandler(() =>
+    toggleDurationPicker()
+  );
+  const taskDurationTapHandlers = useTapHandler(() =>
+    toggleTaskDurationPicker()
+  );
+  const habitDurationTapHandlers = useTapHandler(() =>
+    toggleHabitDurationPicker()
+  );
   const projectDurationMinusTapHandlers = useTapHandler(() =>
     adjustProjectDuration(-5)
   );
+  const taskDurationMinusTapHandlers = useTapHandler(() =>
+    adjustTaskDuration(-5)
+  );
   const projectDurationPlusTapHandlers = useTapHandler(() =>
     adjustProjectDuration(5)
+  );
+  const taskDurationPlusTapHandlers = useTapHandler(() =>
+    adjustTaskDuration(5)
   );
   const habitDurationMinusTapHandlers = useTapHandler(() =>
     adjustHabitDuration(-5)
@@ -717,7 +900,7 @@ export function Fab({
     return (
       <div className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition focus-within:border-blue-400/60">
         <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-white/[0.08] text-lg">
-          {selectedSkill?.icon ?? "🎯"}
+          {selectedSkill?.icon ?? "🛠️"}
         </span>
         <Input
           value={skillSearch}
@@ -805,7 +988,129 @@ export function Fab({
   const DRAG_THRESHOLD_PX = 80;
   const EDGE_SWIPE_ZONE_RATIO = 0.12;
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
-  const overhangPos = useOverhangLT(panelRef, [expanded, selected]);
+  const overhangPos = useOverhangLT(panelRef, [expanded, selected], {
+    listenVisualViewport: !expanded,
+  });
+  const [stableViewportHeight, setStableViewportHeight] = useState<number | null>(
+    null
+  );
+  const [stableSafeBottom, setStableSafeBottom] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [keyboardLift, setKeyboardLift] = useState(0);
+  const [isTextInputFocused, setIsTextInputFocused] = useState(false);
+  const isKeyboardVisible = useMemo(() => {
+    if (!expanded) return false;
+    if (keyboardLift <= 12) return false;
+    if (stableViewportHeight && viewportHeight) {
+      const shrink = stableViewportHeight - viewportHeight;
+      return shrink > 80;
+    }
+    return keyboardLift > 24;
+  }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
+  const shouldHideOverhangButtons = expanded && (isKeyboardVisible || isTextInputFocused);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const measureOnce = () => {
+      if (typeof window === "undefined") return;
+      const height = Math.max(
+        window.innerHeight,
+        window.visualViewport?.height ?? 0
+      );
+      setStableViewportHeight((prev) => (prev ?? height));
+      setViewportHeight((prev) => prev ?? (window.visualViewport?.height ?? window.innerHeight));
+      const safeBottom =
+        Number.parseFloat(
+          getComputedStyle(document.documentElement)
+            .getPropertyValue("--sat-safe-bottom")
+            .trim() || "0"
+        ) || 0;
+      setStableSafeBottom((prev) => (prev || safeBottom));
+    };
+    const handleResize = () => {
+      if (typeof window === "undefined") return;
+      const nextHeight = window.innerHeight;
+      setStableViewportHeight((prev) => {
+        if (prev === null) return nextHeight;
+        // Ignore shrinkage (likely keyboard); allow growth (rotation/fullscreen).
+        if (nextHeight > prev * 0.98) return nextHeight;
+        return prev;
+      });
+    };
+    measureOnce();
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", measureOnce);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", measureOnce);
+    };
+  }, [expanded]);
+
+  useEffect(() => {
+    if (!expanded) {
+      setKeyboardLift(0);
+      setIsTextInputFocused(false);
+      return;
+    }
+    const updateLift = () => {
+      if (typeof window === "undefined") return;
+      const viewport = window.visualViewport;
+      if (!viewport) {
+        setKeyboardLift(0);
+        return;
+      }
+      const viewportH = viewport.height ?? window.innerHeight;
+      if (viewportH) {
+        setViewportHeight(viewportH);
+      }
+      const heightLoss = Math.max(0, window.innerHeight - viewport.height);
+      const offsetTop = viewport.offsetTop ?? 0;
+      const lift = Math.max(0, heightLoss - offsetTop - stableSafeBottom);
+      setKeyboardLift(lift);
+    };
+    updateLift();
+    const viewport = window.visualViewport;
+    viewport?.addEventListener("resize", updateLift);
+    viewport?.addEventListener("scroll", updateLift);
+    window.addEventListener("orientationchange", updateLift);
+    return () => {
+      viewport?.removeEventListener("resize", updateLift);
+      viewport?.removeEventListener("scroll", updateLift);
+      window.removeEventListener("orientationchange", updateLift);
+    };
+  }, [expanded, stableSafeBottom]);
+
+  useEffect(() => {
+    if (!expanded) {
+      setIsTextInputFocused(false);
+      return;
+    }
+    const isTextEntryElement = (el: Element | null) => {
+      if (!el) return false;
+      const tag = el.tagName.toLowerCase();
+      const editable = (el as HTMLElement).isContentEditable;
+      return (
+        editable ||
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        (el instanceof HTMLTextAreaElement) ||
+        (el instanceof HTMLInputElement && el.type !== "button" && el.type !== "submit" && el.type !== "reset")
+      );
+    };
+    const handleFocusIn = (event: FocusEvent) => {
+      setIsTextInputFocused(isTextEntryElement(event.target as Element));
+    };
+    const handleFocusOut = () => {
+      setIsTextInputFocused(isTextEntryElement(document.activeElement));
+    };
+    document.addEventListener("focusin", handleFocusIn, true);
+    document.addEventListener("focusout", handleFocusOut, true);
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn, true);
+      document.removeEventListener("focusout", handleFocusOut, true);
+    };
+  }, [expanded]);
 
   useEffect(() => {
     if (!expanded) {
@@ -1186,10 +1491,10 @@ export function Fab({
             aria-label="Expanded placeholder"
           >
             <div
-              className="relative grid gap-4 p-4 pb-6 md:p-8 md:pb-10"
+              className="relative grid gap-4 p-4 pb-4 md:p-8 md:pb-6"
               style={{
-                paddingBottom:
-                  "calc(1.5rem + env(safe-area-inset-bottom, 0px))",
+                paddingBottom: `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
+                scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
               }}
             >
               {selected === "GOAL" && (
@@ -1273,14 +1578,21 @@ export function Fab({
                           </div>
                         }
                       >
-                        <SelectContent>
+                        <SelectContent className="overflow-y-auto scrollbar-thin scrollbar-thumb-black scrollbar-track-black/40">
                           {ENERGY_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                              <div className="flex items-center justify-center py-2">
+                            <SelectItem
+                              key={o.value}
+                              value={o.value}
+                              className="flex justify-center"
+                            >
+                              <div className="flex w-full flex-col items-center justify-center gap-1 py-2 text-center">
                                 <FlameEmber
                                   level={o.value as FlameEmberProps["level"]}
                                   size="md"
                                 />
+                                <span className="text-[6px] font-bold tracking-[0.2em]">
+                                  {o.label.toUpperCase()}
+                                </span>
                               </div>
                             </SelectItem>
                           ))}
@@ -1630,14 +1942,21 @@ export function Fab({
                           </div>
                         }
                       >
-                        <SelectContent>
+                        <SelectContent className="overflow-y-auto scrollbar-thin scrollbar-thumb-black scrollbar-track-black/40">
                           {ENERGY_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                              <div className="flex items-center justify-center py-2">
+                            <SelectItem
+                              key={o.value}
+                              value={o.value}
+                              className="flex justify-center"
+                            >
+                              <div className="flex w-full flex-col items-center justify-center gap-1 py-2 text-center">
                                 <FlameEmber
                                   level={o.value as FlameEmberProps["level"]}
                                   size="md"
                                 />
+                                <span className="text-[6px] font-bold tracking-[0.2em]">
+                                  {o.label.toUpperCase()}
+                                </span>
                               </div>
                             </SelectItem>
                           ))}
@@ -1720,6 +2039,7 @@ export function Fab({
                         <div
                           data-fab-overlay
                           id="project-duration-picker"
+                          ref={durationPickerRef}
                           className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
                           style={{
                             position: "absolute",
@@ -1749,9 +2069,6 @@ export function Fab({
                               +
                             </button>
                           </div>
-                          <p className="mt-2 text-xs text-white/60">
-                            Adjust in 5-minute steps. Default starts at 30.
-                          </p>
                         </div>,
                         document.body
                       )
@@ -1761,6 +2078,7 @@ export function Fab({
                         <div
                           data-fab-overlay
                           id="habit-duration-picker"
+                          ref={habitDurationPickerRef}
                           className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
                           style={{
                             position: "absolute",
@@ -1790,9 +2108,6 @@ export function Fab({
                               +
                             </button>
                           </div>
-                          <p className="mt-2 text-xs text-white/60">
-                            Adjust in 5-minute steps. Default starts at 15.
-                          </p>
                         </div>,
                         document.body
                       )
@@ -1908,7 +2223,7 @@ export function Fab({
                             <SelectItem key={skill.id} value={skill.id}>
                               <div className="flex items-center gap-2">
                                 <span className="text-lg">
-                                  {skill.icon ?? "🎯"}
+                                  {skill.icon ?? "🛠️"}
                                 </span>
                                 <span>{skill.name}</span>
                               </div>
@@ -2144,14 +2459,21 @@ export function Fab({
                           </div>
                         }
                       >
-                        <SelectContent>
+                        <SelectContent className="overflow-y-auto scrollbar-thin scrollbar-thumb-black scrollbar-track-black/40">
                           {ENERGY_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                              <div className="flex items-center justify-center py-2">
+                            <SelectItem
+                              key={o.value}
+                              value={o.value}
+                              className="flex justify-center"
+                            >
+                              <div className="flex w-full flex-col items-center justify-center gap-1 py-2 text-center">
                                 <FlameEmber
                                   level={o.value as FlameEmberProps["level"]}
                                   size="md"
                                 />
+                                <span className="text-[6px] font-bold tracking-[0.2em]">
+                                  {o.label.toUpperCase()}
+                                </span>
                               </div>
                             </SelectItem>
                           ))}
@@ -2205,7 +2527,12 @@ export function Fab({
                       </Label>
                       <button
                         type="button"
-                        className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                        {...taskDurationTapHandlers}
+                        ref={taskDurationTriggerRef}
+                        className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation"
+                        aria-haspopup="dialog"
+                        aria-expanded={showTaskDurationPicker}
+                        aria-controls="task-duration-picker"
                       >
                         <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
                           <Clock className="h-6 w-6 text-white/80" />
@@ -2216,6 +2543,45 @@ export function Fab({
                       </button>
                     </div>
                   </div>
+                  {showTaskDurationPicker && taskDurationPosition
+                    ? createPortal(
+                        <div
+                          data-fab-overlay
+                          id="task-duration-picker"
+                          ref={taskDurationPickerRef}
+                          className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
+                          style={{
+                            position: "absolute",
+                            top: taskDurationPosition.top,
+                            left: taskDurationPosition.left,
+                            width: taskDurationPosition.width,
+                            touchAction: "manipulation",
+                          }}
+                          onTouchStart={(event) => event.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <button
+                              type="button"
+                              {...taskDurationMinusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+                            >
+                              -
+                            </button>
+                            <div className="text-lg font-semibold text-white">
+                              {Number.parseInt(taskDuration || "30", 10)} min
+                            </div>
+                            <button
+                              type="button"
+                              {...taskDurationPlusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>,
+                        document.body
+                      )
+                    : null}
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                     <div className="grid gap-2">
                       <Label>Skill</Label>
@@ -2328,7 +2694,7 @@ export function Fab({
                               <SelectItem key={skill.id} value={skill.id}>
                                 <div className="flex items-center gap-2">
                                   <span className="text-lg">
-                                    {skill.icon ?? "🎯"}
+                                    {skill.icon ?? "🛠️"}
                                   </span>
                                   <span>{skill.name}</span>
                                 </div>
@@ -2638,7 +3004,7 @@ export function Fab({
                             <SelectItem key={skill.id} value={skill.id}>
                               <div className="flex items-center gap-2">
                                 <span className="text-lg">
-                                  {skill.icon ?? "🎯"}
+                                  {skill.icon ?? "🛠️"}
                                 </span>
                                 <span>{skill.name}</span>
                               </div>
@@ -2685,9 +3051,6 @@ export function Fab({
                               +
                             </button>
                           </div>
-                          <p className="mt-2 text-xs text-white/60">
-                            Adjust in 5-minute steps. Default starts at 15.
-                          </p>
                         </div>,
                         document.body
                       )
@@ -3941,6 +4304,20 @@ export function Fab({
   const isBlendingGradient = isDragging && dragTargetPage !== null;
   const dragConstraintLeft = -normalizedStageWidth;
   const dragConstraintRight = normalizedStageWidth;
+  const effectiveViewportHeight =
+    expanded && (viewportHeight || stableViewportHeight)
+      ? viewportHeight ?? stableViewportHeight
+      : null;
+  const minHeightExpanded = expanded
+    ? effectiveViewportHeight
+      ? Math.round(effectiveViewportHeight * 0.58)
+      : "58vh"
+    : undefined;
+  const maxHeightExpanded = expanded
+    ? effectiveViewportHeight
+      ? Math.round(effectiveViewportHeight * 0.9 - 8 - stableSafeBottom)
+      : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"
+    : undefined;
 
   return (
     <div className={cn("relative", className)} {...wrapperProps}>
@@ -3969,13 +4346,13 @@ export function Fab({
                 menuRef.current = node;
                 panelRef.current = node;
               }}
-              layout
               className={cn(
-                "absolute bottom-20 mb-2 z-[2147483650] border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
-                expanded ? "overflow-visible" : "overflow-hidden",
+                "bottom-20 mb-2 z-[2147483650] border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
+                expanded ? "fixed" : "absolute",
                 expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
                 menuClassName
               )}
+              layout={!expanded}
               onTouchStart={(event) => event.stopPropagation()}
               onPointerDownCapture={handleExpandedPointerDownCapture}
               style={{
@@ -3983,19 +4360,20 @@ export function Fab({
                 borderColor: isBlendingGradient
                   ? blendedBorderColor
                   : staticBorderColor,
-                transition: "border-color 0.1s linear",
+                transition: "border-color 0.1s linear, transform 0.2s ease",
                 transformOrigin:
                   menuVariant === "timeline" ? "bottom right" : "bottom center",
-                minHeight: expanded ? "60dvh" : menuContainerHeight,
-                maxHeight: expanded
-                  ? "calc(90dvh - env(safe-area-inset-bottom, 0px) - 8px)"
-                  : menuContainerHeight,
+                minHeight: expanded ? minHeightExpanded : menuContainerHeight,
+                maxHeight: expanded ? maxHeightExpanded : menuContainerHeight,
+                y: 0,
                 height: expanded ? undefined : menuContainerHeight,
-                maxHeight: !expanded ? menuContainerHeight : undefined,
                 minWidth: expanded ? undefined : menuWidth ?? undefined,
                 width: expanded ? undefined : menuWidth ?? undefined,
                 maxWidth: expanded ? undefined : menuWidth ?? undefined,
                 touchAction: expanded ? "manipulation" : undefined,
+                overflowY: expanded ? "auto" : "hidden",
+                overflowX: "hidden",
+                overscrollBehavior: expanded ? "contain" : undefined,
               }}
               initial={{ opacity: 0, y: 8 }}
               animate={{
@@ -4081,7 +4459,7 @@ export function Fab({
                 </motion.div>
               </>
             </motion.div>
-            {expanded && overhangPos
+            {expanded && !shouldHideOverhangButtons
               ? createPortal(
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9, y: 6 }}
@@ -4094,9 +4472,19 @@ export function Fab({
                     }}
                     className="pointer-events-auto fixed flex w-[108px] items-center gap-3"
                     style={{
-                      left: overhangPos.left,
-                      top: overhangPos.top,
+                      left: overhangPos?.left,
+                      top: overhangPos?.top,
+                      right: overhangPos ? undefined : 12,
+                      bottom: overhangPos
+                        ? undefined
+                        : "calc(12px + env(safe-area-inset-bottom, 0px))",
                       zIndex: 2147483651,
+                      transition:
+                        "top 0.18s ease, left 0.18s ease, right 0.18s ease, bottom 0.18s ease, transform 0.18s ease",
+                      transform:
+                        expanded && keyboardLift > 0
+                          ? `translateY(${-keyboardLift}px)`
+                          : undefined,
                     }}
                   >
                     <Button

@@ -122,6 +122,7 @@ export function DayTimeline({
     paddingRight: `var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK})`,
     height: heightExpression,
     background: backgroundGradient,
+    touchAction: "pan-y pinch-zoom",
     ...externalStyle,
   };
 
