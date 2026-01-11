@@ -4642,7 +4642,17 @@ export default function SchedulePage() {
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null);
   const swipeContainerRef = useRef<HTMLDivElement | null>(null);
 
+  const isTouchFromFabOverlay = (event: React.TouchEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (!target) return false;
+    return Boolean(
+      target.closest("[data-fab-overlay]") ||
+        target.closest("[data-fab-reschedule-overlay]")
+    );
+  };
+
   function handleTouchStart(e: React.TouchEvent) {
+    if (isTouchFromFabOverlay(e)) return;
     swipeScrollProgressRef.current = null;
 
     const touches = e.touches;
@@ -4765,6 +4775,7 @@ export default function SchedulePage() {
   }
 
   function handleTouchMove(e: React.TouchEvent) {
+    if (isTouchFromFabOverlay(e)) return;
     if (pinchActiveRef.current) {
       const pinchState = pinchStateRef.current;
       if (!pinchState) {

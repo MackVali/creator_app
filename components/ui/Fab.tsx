@@ -3865,6 +3865,7 @@ export function Fab({
             {expanded
               ? createPortal(
                   <div
+                    data-fab-overlay
                     className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
                     onWheel={(event) => event.preventDefault()}
                     onTouchMove={(event) => {
@@ -3878,6 +3879,7 @@ export function Fab({
                 )
               : null}
             <motion.div
+              data-fab-overlay
               ref={(node) => {
                 menuRef.current = node;
                 panelRef.current = node;
@@ -4362,6 +4364,7 @@ function FabRescheduleOverlay({
     <AnimatePresence>
       {open ? (
         <motion.div
+          data-fab-reschedule-overlay
           className="fixed inset-0 z-[2147483647] bg-black/60 backdrop-blur"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
