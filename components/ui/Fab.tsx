@@ -135,6 +135,44 @@ type FabSearchCursor = {
 
 const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
 
+// Keeps taps single-action on iOS by acting on pointerup and ignoring the
+// synthetic click that follows; real clicks (keyboard/AT) still fire onClick.
+function useTapHandler(onTap: () => void, opts?: { disabled?: boolean }) {
+  const sawPointerUpRef = React.useRef(false);
+
+  const onPointerUp = React.useCallback(
+    (e: React.PointerEvent) => {
+      if (opts?.disabled) return;
+      // Only primary button
+      // (pointerup.button may be 0 or -1 on some mobile UAs; don't over-filter)
+      if ((e as any).button != null && (e as any).button !== 0) return;
+
+      // Act immediately on pointerup for mouse & touch
+      sawPointerUpRef.current = true;
+      onTap();
+      // Reset flag soon so keyboard click later still works
+      setTimeout(() => {
+        sawPointerUpRef.current = false;
+      }, 0);
+    },
+    [onTap, opts?.disabled]
+  );
+
+  const onClick = React.useCallback(
+    (e: React.MouseEvent) => {
+      if (opts?.disabled) return;
+      // Ignore synthetic click that follows our pointerup (iOS)
+      if (sawPointerUpRef.current) {
+        return;
+      }
+      onTap(); // allow keyboard/AT-triggered clicks
+    },
+    [onTap, opts?.disabled]
+  );
+
+  return { onPointerUp, onClick };
+}
+
 function useOverhangLT(ref: React.RefObject<HTMLElement>, deps: any[] = []) {
   const [pos, setPos] = React.useState<{ left: number; top: number } | null>(
     null
@@ -568,6 +606,21 @@ export function Fab({
     const next = Math.max(1, current + delta);
     setHabitDuration(next.toString());
   };
+
+  const projectDurationTapHandlers = useTapHandler(() => toggleDurationPicker());
+  const habitDurationTapHandlers = useTapHandler(() => toggleHabitDurationPicker());
+  const projectDurationMinusTapHandlers = useTapHandler(() =>
+    adjustProjectDuration(-5)
+  );
+  const projectDurationPlusTapHandlers = useTapHandler(() =>
+    adjustProjectDuration(5)
+  );
+  const habitDurationMinusTapHandlers = useTapHandler(() =>
+    adjustHabitDuration(-5)
+  );
+  const habitDurationPlusTapHandlers = useTapHandler(() =>
+    adjustHabitDuration(5)
+  );
   const [projectSkillIds, setProjectSkillIds] = useState<string[]>([]);
   const [projectGoalId, setProjectGoalId] = useState<string | null>(null);
   const [showGoalFilters, setShowGoalFilters] = useState(false);
@@ -1645,12 +1698,9 @@ export function Fab({
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleDurationPicker();
-                          }}
+                          {...projectDurationTapHandlers}
                           ref={durationTriggerRef}
-                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation"
                           aria-haspopup="dialog"
                           aria-expanded={showDurationPicker}
                           aria-controls="project-duration-picker"
@@ -1683,11 +1733,8 @@ export function Fab({
                           <div className="flex items-center justify-between gap-3">
                             <button
                               type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                adjustProjectDuration(-5);
-                              }}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...projectDurationMinusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               -
                             </button>
@@ -1696,11 +1743,8 @@ export function Fab({
                             </div>
                             <button
                               type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                adjustProjectDuration(5);
-                              }}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...projectDurationPlusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               +
                             </button>
@@ -1730,11 +1774,8 @@ export function Fab({
                           <div className="flex items-center justify-between gap-3">
                             <button
                               type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                adjustHabitDuration(-5);
-                              }}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...habitDurationMinusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               -
                             </button>
@@ -1743,11 +1784,8 @@ export function Fab({
                             </div>
                             <button
                               type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                adjustHabitDuration(5);
-                              }}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...habitDurationPlusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               +
                             </button>
@@ -2472,12 +2510,9 @@ export function Fab({
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleHabitDurationPicker();
-                          }}
+                          {...habitDurationTapHandlers}
                           ref={habitDurationTriggerRef}
-                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation"
                           aria-haspopup="dialog"
                           aria-expanded={showHabitDurationPicker}
                           aria-controls="habit-duration-picker"
@@ -2628,16 +2663,14 @@ export function Fab({
                             top: habitDurationPosition.top,
                             left: habitDurationPosition.left,
                             width: habitDurationPosition.width,
+                            touchAction: "manipulation",
                           }}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <button
                               type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                adjustHabitDuration(-5);
-                              }}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...habitDurationMinusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               -
                             </button>
@@ -2646,11 +2679,8 @@ export function Fab({
                             </div>
                             <button
                               type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                adjustHabitDuration(5);
-                              }}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...habitDurationPlusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               +
                             </button>
@@ -2835,12 +2865,13 @@ export function Fab({
   const handleExpandedPointerDownCapture = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!expanded) return;
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
 
       // Skip on touch/pencil to avoid iOS Safari suppressing the subsequent click.
       const pt = (event as any).pointerType as string | undefined;
       if (pt && pt !== "mouse") return;
+
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
 
       // Only help text inputs on desktop; never programmatically focus buttons.
       const tag = target.tagName;
@@ -3185,7 +3216,7 @@ export function Fab({
   }, []);
 
   const handlePagePointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
+    (event: React.PointerEvent<HTMLDivElement>) => {
       if (!isOpen) return;
       if (event.pointerType === "mouse" && event.button !== 0) {
         return;
@@ -3910,13 +3941,10 @@ export function Fab({
                     className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
                     style={{ touchAction: "manipulation" }}
                     onWheel={(event) => event.preventDefault()}
-                    onTouchStart={(event) => event.stopPropagation()}
                     onTouchMove={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
                     }}
-                    onPointerMove={(event) => event.stopPropagation()}
-                    onPointerDown={(event) => event.stopPropagation()}
                   />,
                   document.body
                 )

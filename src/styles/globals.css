@@ -7,6 +7,9 @@
   .text-balance {
     text-wrap: balance;
   }
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
 }
 
 :root {
