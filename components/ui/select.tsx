@@ -162,7 +162,6 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       setIsOpen(next);
       if (!next) {
         openedViaFocusRef.current = false;
-        pointerDownHandledRef.current = false;
         suppressFocusOpenRef.current = true;
         setTimeout(() => {
           suppressFocusOpenRef.current = false;
