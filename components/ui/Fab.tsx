@@ -846,6 +846,7 @@ export function Fab({
     null
   );
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
 
   useEffect(() => {
@@ -857,6 +858,7 @@ export function Fab({
         window.visualViewport?.height ?? 0
       );
       setStableViewportHeight((prev) => (prev ?? height));
+      setViewportHeight((prev) => prev ?? (window.visualViewport?.height ?? window.innerHeight));
       const safeBottom =
         Number.parseFloat(
           getComputedStyle(document.documentElement)
@@ -895,6 +897,10 @@ export function Fab({
       if (!viewport) {
         setKeyboardLift(0);
         return;
+      }
+      const viewportH = viewport.height ?? window.innerHeight;
+      if (viewportH) {
+        setViewportHeight(viewportH);
       }
       const heightLoss = Math.max(0, window.innerHeight - viewport.height);
       const offsetTop = viewport.offsetTop ?? 0;
@@ -1294,8 +1300,8 @@ export function Fab({
             <div
               className="relative grid gap-4 p-4 pb-4 md:p-8 md:pb-6"
               style={{
-                paddingBottom:
-                  "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
+                paddingBottom: `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
+                scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
               }}
             >
               {selected === "GOAL" && (
@@ -4042,6 +4048,20 @@ export function Fab({
   const isBlendingGradient = isDragging && dragTargetPage !== null;
   const dragConstraintLeft = -normalizedStageWidth;
   const dragConstraintRight = normalizedStageWidth;
+  const effectiveViewportHeight =
+    expanded && (viewportHeight || stableViewportHeight)
+      ? viewportHeight ?? stableViewportHeight
+      : null;
+  const minHeightExpanded = expanded
+    ? effectiveViewportHeight
+      ? Math.round(effectiveViewportHeight * 0.58)
+      : "58vh"
+    : undefined;
+  const maxHeightExpanded = expanded
+    ? effectiveViewportHeight
+      ? Math.round(effectiveViewportHeight * 0.9 - 8 - stableSafeBottom)
+      : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"
+    : undefined;
 
   return (
     <div className={cn("relative", className)} {...wrapperProps}>
@@ -4073,7 +4093,6 @@ export function Fab({
               className={cn(
                 "bottom-20 mb-2 z-[2147483650] border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
                 expanded ? "fixed" : "absolute",
-                expanded ? "overflow-visible" : "overflow-hidden",
                 expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
                 menuClassName
               )}
@@ -4088,22 +4107,17 @@ export function Fab({
                 transition: "border-color 0.1s linear, transform 0.2s ease",
                 transformOrigin:
                   menuVariant === "timeline" ? "bottom right" : "bottom center",
-                minHeight: expanded
-                  ? stableViewportHeight
-                    ? Math.round(stableViewportHeight * 0.58)
-                    : "58vh"
-                  : menuContainerHeight,
-                maxHeight: expanded
-                  ? stableViewportHeight
-                    ? Math.round(stableViewportHeight * 0.9 - 8 - stableSafeBottom)
-                    : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"
-                  : menuContainerHeight,
-                y: expanded ? -keyboardLift : 0,
+                minHeight: expanded ? minHeightExpanded : menuContainerHeight,
+                maxHeight: expanded ? maxHeightExpanded : menuContainerHeight,
+                y: 0,
                 height: expanded ? undefined : menuContainerHeight,
                 minWidth: expanded ? undefined : menuWidth ?? undefined,
                 width: expanded ? undefined : menuWidth ?? undefined,
                 maxWidth: expanded ? undefined : menuWidth ?? undefined,
                 touchAction: expanded ? "manipulation" : undefined,
+                overflowY: expanded ? "auto" : "hidden",
+                overflowX: "hidden",
+                overscrollBehavior: expanded ? "contain" : undefined,
               }}
               initial={{ opacity: 0, y: 8 }}
               animate={{

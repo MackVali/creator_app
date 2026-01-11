@@ -87,7 +87,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
     } | null>(null);
 
     React.useEffect(() => {
-      const handleClickOutside = (event: MouseEvent) => {
+      const handlePointerDown = (event: PointerEvent) => {
         const target = event.target as Node;
         const clickedTrigger = containerRef.current?.contains(target);
         const clickedContent = contentRef.current?.contains(target);
@@ -96,8 +96,13 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
         }
       };
 
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
+      // Pointer covers both mouse and touch; fallback mousedown for older browsers.
+      document.addEventListener("pointerdown", handlePointerDown);
+      document.addEventListener("mousedown", handlePointerDown);
+      return () => {
+        document.removeEventListener("pointerdown", handlePointerDown);
+        document.removeEventListener("mousedown", handlePointerDown);
+      };
     }, []);
 
     const updateContentPosition = React.useCallback(() => {
