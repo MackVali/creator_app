@@ -848,6 +848,7 @@ export function Fab({
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
+  const [isTextInputFocused, setIsTextInputFocused] = useState(false);
   const isKeyboardVisible = useMemo(() => {
     if (!expanded) return false;
     if (keyboardLift <= 12) return false;
@@ -857,6 +858,7 @@ export function Fab({
     }
     return keyboardLift > 24;
   }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
+  const shouldHideOverhangButtons = expanded && (isKeyboardVisible || isTextInputFocused);
 
   useEffect(() => {
     if (!expanded) return;
@@ -898,6 +900,7 @@ export function Fab({
   useEffect(() => {
     if (!expanded) {
       setKeyboardLift(0);
+      setIsTextInputFocused(false);
       return;
     }
     const updateLift = () => {
@@ -927,6 +930,38 @@ export function Fab({
       window.removeEventListener("orientationchange", updateLift);
     };
   }, [expanded, stableSafeBottom]);
+
+  useEffect(() => {
+    if (!expanded) {
+      setIsTextInputFocused(false);
+      return;
+    }
+    const isTextEntryElement = (el: Element | null) => {
+      if (!el) return false;
+      const tag = el.tagName.toLowerCase();
+      const editable = (el as HTMLElement).isContentEditable;
+      return (
+        editable ||
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        (el instanceof HTMLTextAreaElement) ||
+        (el instanceof HTMLInputElement && el.type !== "button" && el.type !== "submit" && el.type !== "reset")
+      );
+    };
+    const handleFocusIn = (event: FocusEvent) => {
+      setIsTextInputFocused(isTextEntryElement(event.target as Element));
+    };
+    const handleFocusOut = () => {
+      setIsTextInputFocused(isTextEntryElement(document.activeElement));
+    };
+    document.addEventListener("focusin", handleFocusIn, true);
+    document.addEventListener("focusout", handleFocusOut, true);
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn, true);
+      document.removeEventListener("focusout", handleFocusOut, true);
+    };
+  }, [expanded]);
 
   useEffect(() => {
     if (!expanded) {
@@ -4212,7 +4247,7 @@ export function Fab({
                 </motion.div>
               </>
             </motion.div>
-            {expanded && !isKeyboardVisible
+            {expanded && !shouldHideOverhangButtons
               ? createPortal(
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9, y: 6 }}

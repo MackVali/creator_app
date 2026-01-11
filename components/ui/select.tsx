@@ -96,7 +96,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
         const clickedTrigger = containerRef.current?.contains(target);
         const clickedContent = contentRef.current?.contains(target);
         if (!clickedTrigger && !clickedContent) {
-          setIsOpen(false);
+          updateOpen(false);
         }
       };
 
@@ -164,9 +164,9 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
         openedViaFocusRef.current = false;
         pointerDownHandledRef.current = false;
         suppressFocusOpenRef.current = true;
-        requestAnimationFrame(() => {
+        setTimeout(() => {
           suppressFocusOpenRef.current = false;
-        });
+        }, 150);
       }
       onOpenChange?.(next);
     };
