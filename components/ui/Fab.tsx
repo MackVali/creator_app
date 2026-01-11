@@ -4024,6 +4024,8 @@ export function Fab({
                       onClick={() => {
                         setExpanded(false);
                         setSelected(null);
+                        setIsOpen(false);
+                        skipClickRef.current = false;
                       }}
                     >
                       <X
