@@ -738,7 +738,6 @@ export function Fab({
   const menuRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const skipClickRef = useRef(false);
   const searchAbortRef = useRef<AbortController | null>(null);
   const goalFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const skillFilterMenuRef = useRef<HTMLDivElement | null>(null);
@@ -2727,10 +2726,6 @@ export function Fab({
   };
 
   const handleFabButtonClick = () => {
-    if (skipClickRef.current) {
-      skipClickRef.current = false;
-      return;
-    }
     toggleMenu();
   };
 
@@ -2757,7 +2752,8 @@ export function Fab({
     setTouchStartY(null);
     if (diffY < -40 && !isOpen) {
       setIsOpen(true);
-      skipClickRef.current = true;
+      event.preventDefault();
+      event.stopPropagation();
       return;
     }
   };
