@@ -4642,7 +4642,26 @@ export default function SchedulePage() {
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null);
   const swipeContainerRef = useRef<HTMLDivElement | null>(null);
 
+  const isTouchFromFabOverlay = (event: React.TouchEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest?.("[data-fab-overlay], [data-fab-reschedule-overlay]")) {
+      return true;
+    }
+    const path =
+      (event.nativeEvent as TouchEvent | (TouchEvent & { composedPath?: () => EventTarget[] }))
+        ?.composedPath?.();
+    if (Array.isArray(path)) {
+      return path.some(
+        (node) =>
+          node instanceof HTMLElement &&
+          node.closest?.("[data-fab-overlay], [data-fab-reschedule-overlay]")
+      );
+    }
+    return false;
+  };
+
   function handleTouchStart(e: React.TouchEvent) {
+    if (isTouchFromFabOverlay(e)) return;
     swipeScrollProgressRef.current = null;
 
     const touches = e.touches;
@@ -4716,7 +4735,7 @@ export default function SchedulePage() {
         firstTouch &&
         isTouchWithinElement(firstTouch, dayTimelineContainerRef.current)
       ) {
-        event.preventDefault();
+        e.preventDefault();
       }
     }
 
@@ -4765,6 +4784,7 @@ export default function SchedulePage() {
   }
 
   function handleTouchMove(e: React.TouchEvent) {
+    if (isTouchFromFabOverlay(e)) return;
     if (pinchActiveRef.current) {
       const pinchState = pinchStateRef.current;
       if (!pinchState) {

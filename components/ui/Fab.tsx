@@ -9,7 +9,6 @@ import {
   useCallback,
   useMemo,
   type HTMLAttributes,
-  type PointerEvent as ReactPointerEvent,
   type RefObject,
   type UIEvent,
 } from "react";
@@ -135,6 +134,44 @@ type FabSearchCursor = {
 };
 
 const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
+
+// Keeps taps single-action on iOS by acting on pointerup and ignoring the
+// synthetic click that follows; real clicks (keyboard/AT) still fire onClick.
+function useTapHandler(onTap: () => void, opts?: { disabled?: boolean }) {
+  const sawPointerUpRef = React.useRef(false);
+
+  const onPointerUp = React.useCallback(
+    (e: React.PointerEvent) => {
+      if (opts?.disabled) return;
+      // Only primary button
+      // (pointerup.button may be 0 or -1 on some mobile UAs; don't over-filter)
+      if ((e as any).button != null && (e as any).button !== 0) return;
+
+      // Act immediately on pointerup for mouse & touch
+      sawPointerUpRef.current = true;
+      onTap();
+      // Reset flag soon so keyboard click later still works
+      setTimeout(() => {
+        sawPointerUpRef.current = false;
+      }, 0);
+    },
+    [onTap, opts?.disabled]
+  );
+
+  const onClick = React.useCallback(
+    (e: React.MouseEvent) => {
+      if (opts?.disabled) return;
+      // Ignore synthetic click that follows our pointerup (iOS)
+      if (sawPointerUpRef.current) {
+        return;
+      }
+      onTap(); // allow keyboard/AT-triggered clicks
+    },
+    [onTap, opts?.disabled]
+  );
+
+  return { onPointerUp, onClick };
+}
 
 function useOverhangLT(ref: React.RefObject<HTMLElement>, deps: any[] = []) {
   const [pos, setPos] = React.useState<{ left: number; top: number } | null>(
@@ -569,6 +606,21 @@ export function Fab({
     const next = Math.max(1, current + delta);
     setHabitDuration(next.toString());
   };
+
+  const projectDurationTapHandlers = useTapHandler(() => toggleDurationPicker());
+  const habitDurationTapHandlers = useTapHandler(() => toggleHabitDurationPicker());
+  const projectDurationMinusTapHandlers = useTapHandler(() =>
+    adjustProjectDuration(-5)
+  );
+  const projectDurationPlusTapHandlers = useTapHandler(() =>
+    adjustProjectDuration(5)
+  );
+  const habitDurationMinusTapHandlers = useTapHandler(() =>
+    adjustHabitDuration(-5)
+  );
+  const habitDurationPlusTapHandlers = useTapHandler(() =>
+    adjustHabitDuration(5)
+  );
   const [projectSkillIds, setProjectSkillIds] = useState<string[]>([]);
   const [projectGoalId, setProjectGoalId] = useState<string | null>(null);
   const [showGoalFilters, setShowGoalFilters] = useState(false);
@@ -677,11 +729,19 @@ export function Fab({
           placeholder={selectedSkill?.name ?? "Search skills…"}
           className="h-full flex-1 border-none bg-transparent p-0 text-base font-semibold text-white placeholder:text-white/60 focus-visible:ring-0"
         />
-        <button
-          type="button"
+        <div
+          role="button"
+          tabIndex={0}
           onClick={(e) => {
             e.stopPropagation();
             setShowSkillFilters((v) => !v);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              setShowSkillFilters((v) => !v);
+            }
           }}
           className={cn(
             "flex h-9 w-9 items-center justify-center rounded-md text-white/70 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20",
@@ -690,7 +750,7 @@ export function Fab({
           aria-label="Filter skills"
         >
           <Filter className="h-4 w-4" />
-        </button>
+        </div>
       </div>
     );
   }
@@ -730,7 +790,6 @@ export function Fab({
   const menuRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const skipClickRef = useRef(false);
   const searchAbortRef = useRef<AbortController | null>(null);
   const goalFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const skillFilterMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1639,9 +1698,9 @@ export function Fab({
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={toggleDurationPicker}
+                          {...projectDurationTapHandlers}
                           ref={durationTriggerRef}
-                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation"
                           aria-haspopup="dialog"
                           aria-expanded={showDurationPicker}
                           aria-controls="project-duration-picker"
@@ -1659,6 +1718,7 @@ export function Fab({
                   {showDurationPicker && durationPosition
                     ? createPortal(
                         <div
+                          data-fab-overlay
                           id="project-duration-picker"
                           className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
                           style={{
@@ -1666,13 +1726,15 @@ export function Fab({
                             top: durationPosition.top,
                             left: durationPosition.left,
                             width: durationPosition.width,
+                            touchAction: "manipulation",
                           }}
+                          onTouchStart={(event) => event.stopPropagation()}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <button
                               type="button"
-                              onClick={() => adjustProjectDuration(-5)}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...projectDurationMinusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               -
                             </button>
@@ -1681,8 +1743,8 @@ export function Fab({
                             </div>
                             <button
                               type="button"
-                              onClick={() => adjustProjectDuration(5)}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...projectDurationPlusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               +
                             </button>
@@ -1697,6 +1759,7 @@ export function Fab({
                   {showHabitDurationPicker && habitDurationPosition
                     ? createPortal(
                         <div
+                          data-fab-overlay
                           id="habit-duration-picker"
                           className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
                           style={{
@@ -1704,13 +1767,15 @@ export function Fab({
                             top: habitDurationPosition.top,
                             left: habitDurationPosition.left,
                             width: habitDurationPosition.width,
+                            touchAction: "manipulation",
                           }}
+                          onTouchStart={(event) => event.stopPropagation()}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <button
                               type="button"
-                              onClick={() => adjustHabitDuration(-5)}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...habitDurationMinusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               -
                             </button>
@@ -1719,8 +1784,8 @@ export function Fab({
                             </div>
                             <button
                               type="button"
-                              onClick={() => adjustHabitDuration(5)}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...habitDurationPlusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               +
                             </button>
@@ -2445,9 +2510,9 @@ export function Fab({
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={toggleHabitDurationPicker}
+                          {...habitDurationTapHandlers}
                           ref={habitDurationTriggerRef}
-                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
+                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation"
                           aria-haspopup="dialog"
                           aria-expanded={showHabitDurationPicker}
                           aria-controls="habit-duration-picker"
@@ -2598,13 +2663,14 @@ export function Fab({
                             top: habitDurationPosition.top,
                             left: habitDurationPosition.left,
                             width: habitDurationPosition.width,
+                            touchAction: "manipulation",
                           }}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <button
                               type="button"
-                              onClick={() => adjustHabitDuration(-5)}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...habitDurationMinusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               -
                             </button>
@@ -2613,8 +2679,8 @@ export function Fab({
                             </div>
                             <button
                               type="button"
-                              onClick={() => adjustHabitDuration(5)}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
+                              {...habitDurationPlusTapHandlers}
+                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               +
                             </button>
@@ -2719,10 +2785,6 @@ export function Fab({
   };
 
   const handleFabButtonClick = () => {
-    if (skipClickRef.current) {
-      skipClickRef.current = false;
-      return;
-    }
     toggleMenu();
   };
 
@@ -2749,7 +2811,8 @@ export function Fab({
     setTouchStartY(null);
     if (diffY < -40 && !isOpen) {
       setIsOpen(true);
-      skipClickRef.current = true;
+      event.preventDefault();
+      event.stopPropagation();
       return;
     }
   };
@@ -2800,12 +2863,25 @@ export function Fab({
   };
 
   const handleExpandedPointerDownCapture = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
+    (event: React.PointerEvent<HTMLDivElement>) => {
       if (!expanded) return;
+
+      // Skip on touch/pencil to avoid iOS Safari suppressing the subsequent click.
+      const pt = (event as any).pointerType as string | undefined;
+      if (pt && pt !== "mouse") return;
+
       const target = event.target as HTMLElement | null;
       if (!target) return;
-      const focusableTags = ["INPUT", "TEXTAREA", "SELECT", "BUTTON"];
-      if (focusableTags.includes(target.tagName)) {
+
+      // Only help text inputs on desktop; never programmatically focus buttons.
+      const tag = target.tagName;
+      const isTextInput =
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target.isContentEditable;
+
+      if (isTextInput) {
         target.focus({ preventScroll: true });
       }
     },
@@ -3140,7 +3216,7 @@ export function Fab({
   }, []);
 
   const handlePagePointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
+    (event: React.PointerEvent<HTMLDivElement>) => {
       if (!isOpen) return;
       if (event.pointerType === "mouse" && event.button !== 0) {
         return;
@@ -3731,6 +3807,15 @@ export function Fab({
     taskSkillId,
     taskStage,
   ]);
+
+  const overhangCancelTapHandlers = useTapHandler(() => {
+    setExpanded(false);
+    setSelected(null);
+    setIsOpen(false);
+  });
+  const overhangSaveTapHandlers = useTapHandler(() => handleFabSave(), {
+    disabled: isSaveDisabled,
+  });
   const handleDeleteEvent = useCallback(async () => {
     if (isDeletingEvent) {
       return;
@@ -3861,19 +3946,20 @@ export function Fab({
             {expanded
               ? createPortal(
                   <div
+                    data-fab-overlay
                     className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+                    style={{ touchAction: "manipulation" }}
                     onWheel={(event) => event.preventDefault()}
                     onTouchMove={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
                     }}
-                    onPointerMove={(event) => event.stopPropagation()}
-                    onPointerDown={(event) => event.stopPropagation()}
                   />,
                   document.body
                 )
               : null}
             <motion.div
+              data-fab-overlay
               ref={(node) => {
                 menuRef.current = node;
                 panelRef.current = node;
@@ -3885,6 +3971,7 @@ export function Fab({
                 expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
                 menuClassName
               )}
+              onTouchStart={(event) => event.stopPropagation()}
               onPointerDownCapture={handleExpandedPointerDownCapture}
               style={{
                 boxShadow: MENU_BOX_SHADOW,
@@ -4004,7 +4091,7 @@ export function Fab({
                     style={{
                       left: overhangPos.left,
                       top: overhangPos.top,
-                      zIndex: 2147483650,
+                      zIndex: 2147483651,
                     }}
                   >
                     <Button
@@ -4012,11 +4099,8 @@ export function Fab({
                       aria-label="Discard"
                       variant="cancelSquare"
                       size="iconSquare"
-                      className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none"
-                      onClick={() => {
-                        setExpanded(false);
-                        setSelected(null);
-                      }}
+                      className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation"
+                      {...overhangCancelTapHandlers}
                     >
                       <X
                         className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
@@ -4030,13 +4114,13 @@ export function Fab({
                       variant="confirmSquare"
                       size="iconSquare"
                       disabled={isSaveDisabled}
-                      onClick={handleFabSave}
                       className={cn(
-                        "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none",
+                        "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation",
                         isSaveDisabled
                           ? "btn-3d--amber bg-gradient-to-b from-amber-500 to-amber-700 hover:from-amber-500 hover:to-amber-800 active:from-amber-600 active:to-amber-800 disabled:opacity-100"
                           : ""
                       )}
+                      {...overhangSaveTapHandlers}
                     >
                       <Check
                         className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
@@ -4357,11 +4441,14 @@ function FabRescheduleOverlay({
     <AnimatePresence>
       {open ? (
         <motion.div
+          data-fab-reschedule-overlay
           className="fixed inset-0 z-[2147483647] bg-black/60 backdrop-blur"
+          style={{ touchAction: "manipulation" }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
+          onTouchStart={(event) => event.stopPropagation()}
         >
           <motion.div
             className="absolute left-1/2 top-1/2 w-[90vw] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-[#050507]/95 p-5 text-white shadow-2xl"
@@ -4426,6 +4513,10 @@ function FabRescheduleOverlay({
                     type="button"
                     variant="destructive"
                     onClick={handleDeleteClick}
+                    onTouchEnd={(event) => {
+                      event.stopPropagation();
+                      handleDeleteClick();
+                    }}
                     disabled={disableActions || !target}
                     className={cn(
                       "bg-red-600 text-white hover:bg-red-500 transition",
@@ -4446,6 +4537,11 @@ function FabRescheduleOverlay({
                         setConfirmingDelete(false);
                         onClose();
                       }}
+                      onTouchEnd={(event) => {
+                        event.stopPropagation();
+                        setConfirmingDelete(false);
+                        onClose();
+                      }}
                       className="text-white/70 hover:bg-white/10"
                       disabled={disableActions}
                     >
@@ -4454,6 +4550,10 @@ function FabRescheduleOverlay({
                     <Button
                       type="button"
                       onClick={onSave}
+                      onTouchEnd={(event) => {
+                        event.stopPropagation();
+                        onSave();
+                      }}
                       disabled={disableActions || !target?.scheduleInstanceId}
                       className="bg-white/90 text-black hover:bg-white"
                     >
