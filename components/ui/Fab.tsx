@@ -1647,6 +1647,10 @@ export function Fab({
                         <button
                           type="button"
                           onClick={toggleDurationPicker}
+                          onTouchEnd={(event) => {
+                            event.stopPropagation();
+                            toggleDurationPicker();
+                          }}
                           ref={durationTriggerRef}
                           className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20"
                           aria-haspopup="dialog"
@@ -1682,6 +1686,10 @@ export function Fab({
                             <button
                               type="button"
                               onClick={() => adjustProjectDuration(-5)}
+                              onTouchEnd={(event) => {
+                                event.stopPropagation();
+                                adjustProjectDuration(-5);
+                              }}
                               className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
                             >
                               -
@@ -1692,6 +1700,10 @@ export function Fab({
                             <button
                               type="button"
                               onClick={() => adjustProjectDuration(5)}
+                              onTouchEnd={(event) => {
+                                event.stopPropagation();
+                                adjustProjectDuration(5);
+                              }}
                               className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
                             >
                               +
@@ -1723,6 +1735,10 @@ export function Fab({
                             <button
                               type="button"
                               onClick={() => adjustHabitDuration(-5)}
+                              onTouchEnd={(event) => {
+                                event.stopPropagation();
+                                adjustHabitDuration(-5);
+                              }}
                               className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
                             >
                               -
@@ -1733,6 +1749,10 @@ export function Fab({
                             <button
                               type="button"
                               onClick={() => adjustHabitDuration(5)}
+                              onTouchEnd={(event) => {
+                                event.stopPropagation();
+                                adjustHabitDuration(5);
+                              }}
                               className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30"
                             >
                               +
@@ -4445,6 +4465,10 @@ function FabRescheduleOverlay({
                     type="button"
                     variant="destructive"
                     onClick={handleDeleteClick}
+                    onTouchEnd={(event) => {
+                      event.stopPropagation();
+                      handleDeleteClick();
+                    }}
                     disabled={disableActions || !target}
                     className={cn(
                       "bg-red-600 text-white hover:bg-red-500 transition",
@@ -4465,6 +4489,11 @@ function FabRescheduleOverlay({
                         setConfirmingDelete(false);
                         onClose();
                       }}
+                      onTouchEnd={(event) => {
+                        event.stopPropagation();
+                        setConfirmingDelete(false);
+                        onClose();
+                      }}
                       className="text-white/70 hover:bg-white/10"
                       disabled={disableActions}
                     >
@@ -4473,6 +4502,10 @@ function FabRescheduleOverlay({
                     <Button
                       type="button"
                       onClick={onSave}
+                      onTouchEnd={(event) => {
+                        event.stopPropagation();
+                        onSave();
+                      }}
                       disabled={disableActions || !target?.scheduleInstanceId}
                       className="bg-white/90 text-black hover:bg-white"
                     >
