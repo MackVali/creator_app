@@ -1666,6 +1666,7 @@ export function Fab({
                   {showDurationPicker && durationPosition
                     ? createPortal(
                         <div
+                          data-fab-overlay
                           id="project-duration-picker"
                           className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
                           style={{
@@ -1704,6 +1705,7 @@ export function Fab({
                   {showHabitDurationPicker && habitDurationPosition
                     ? createPortal(
                         <div
+                          data-fab-overlay
                           id="habit-duration-picker"
                           className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
                           style={{
