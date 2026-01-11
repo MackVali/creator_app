@@ -848,6 +848,15 @@ export function Fab({
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
+  const isKeyboardVisible = useMemo(() => {
+    if (!expanded) return false;
+    if (keyboardLift <= 12) return false;
+    if (stableViewportHeight && viewportHeight) {
+      const shrink = stableViewportHeight - viewportHeight;
+      return shrink > 80;
+    }
+    return keyboardLift > 24;
+  }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -4203,7 +4212,7 @@ export function Fab({
                 </motion.div>
               </>
             </motion.div>
-            {expanded
+            {expanded && !isKeyboardVisible
               ? createPortal(
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9, y: 6 }}

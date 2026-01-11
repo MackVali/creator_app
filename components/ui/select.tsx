@@ -78,6 +78,8 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
     const contentRef = React.useRef<HTMLDivElement>(null);
     // Track when focus opened the menu so the ensuing click doesn't immediately close it.
     const openedViaFocusRef = React.useRef(false);
+    // Skip the click that follows a handled touch pointer down to avoid double toggles.
+    const pointerDownHandledRef = React.useRef(false);
     const [contentPosition, setContentPosition] = React.useState<{
       left: number;
       width: number;
@@ -156,6 +158,10 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
 
     const updateOpen = (next: boolean) => {
       setIsOpen(next);
+      if (!next) {
+        openedViaFocusRef.current = false;
+        pointerDownHandledRef.current = false;
+      }
       onOpenChange?.(next);
     };
 
@@ -172,6 +178,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       if (event.pointerType !== "touch") return;
       // Toggle immediately on touch to avoid synthesized click delays/double taps.
       event.preventDefault();
+      pointerDownHandledRef.current = true;
       updateOpen(!isOpen);
     };
 
@@ -230,16 +237,20 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
             type="button"
             onPointerDown={handleTriggerPointerDown}
             onClick={() => {
-              if (openOnTriggerFocus && openedViaFocusRef.current) return;
+              if (pointerDownHandledRef.current) {
+                pointerDownHandledRef.current = false;
+                return;
+              }
+              if (openOnTriggerFocus && openedViaFocusRef.current) {
+                openedViaFocusRef.current = false;
+                return;
+              }
               updateOpen(!isOpen);
             }}
             onFocusCapture={() => {
               if (!openOnTriggerFocus || isOpen) return;
               openedViaFocusRef.current = true;
               updateOpen(true);
-              requestAnimationFrame(() => {
-                openedViaFocusRef.current = false;
-              });
             }}
             className={cn(
               "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition overflow-visible",
