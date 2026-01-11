@@ -1674,7 +1674,9 @@ export function Fab({
                             top: durationPosition.top,
                             left: durationPosition.left,
                             width: durationPosition.width,
+                            touchAction: "manipulation",
                           }}
+                          onTouchStart={(event) => event.stopPropagation()}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <button
@@ -1713,7 +1715,9 @@ export function Fab({
                             top: habitDurationPosition.top,
                             left: habitDurationPosition.left,
                             width: habitDurationPosition.width,
+                            touchAction: "manipulation",
                           }}
+                          onTouchStart={(event) => event.stopPropagation()}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <button
@@ -3869,7 +3873,9 @@ export function Fab({
                   <div
                     data-fab-overlay
                     className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+                    style={{ touchAction: "manipulation" }}
                     onWheel={(event) => event.preventDefault()}
+                    onTouchStart={(event) => event.stopPropagation()}
                     onTouchMove={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -3893,6 +3899,7 @@ export function Fab({
                 expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
                 menuClassName
               )}
+              onTouchStart={(event) => event.stopPropagation()}
               onPointerDownCapture={handleExpandedPointerDownCapture}
               style={{
                 boxShadow: MENU_BOX_SHADOW,
@@ -4368,10 +4375,12 @@ function FabRescheduleOverlay({
         <motion.div
           data-fab-reschedule-overlay
           className="fixed inset-0 z-[2147483647] bg-black/60 backdrop-blur"
+          style={{ touchAction: "manipulation" }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
+          onTouchStart={(event) => event.stopPropagation()}
         >
           <motion.div
             className="absolute left-1/2 top-1/2 w-[90vw] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-[#050507]/95 p-5 text-white shadow-2xl"
