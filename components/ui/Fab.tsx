@@ -621,14 +621,6 @@ export function Fab({
   const habitDurationPlusTapHandlers = useTapHandler(() =>
     adjustHabitDuration(5)
   );
-  const overhangCancelTapHandlers = useTapHandler(() => {
-    setExpanded(false);
-    setSelected(null);
-    setIsOpen(false);
-  });
-  const overhangSaveTapHandlers = useTapHandler(() => handleFabSave(), {
-    disabled: isSaveDisabled,
-  });
   const [projectSkillIds, setProjectSkillIds] = useState<string[]>([]);
   const [projectGoalId, setProjectGoalId] = useState<string | null>(null);
   const [showGoalFilters, setShowGoalFilters] = useState(false);
@@ -3815,6 +3807,15 @@ export function Fab({
     taskSkillId,
     taskStage,
   ]);
+
+  const overhangCancelTapHandlers = useTapHandler(() => {
+    setExpanded(false);
+    setSelected(null);
+    setIsOpen(false);
+  });
+  const overhangSaveTapHandlers = useTapHandler(() => handleFabSave(), {
+    disabled: isSaveDisabled,
+  });
   const handleDeleteEvent = useCallback(async () => {
     if (isDeletingEvent) {
       return;
