@@ -146,7 +146,7 @@ const DEBUG_LONG_PRESS = true;
 const SCHEDULE_CARD_LONG_PRESS_MS = 650;
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280;
 const LONG_PRESS_ACTION_DELAY_MS = 120;
-const HABIT_STREAK_BADGE_BASE_HEIGHT_PX = 20;
+const HABIT_STREAK_BADGE_BASE_HEIGHT_PX = 18;
 const HABIT_STREAK_BADGE_TOP_MARGIN_PX = 8;
 const HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX = 2;
 const HABIT_COMPACT_SHADOW_HEIGHT_PX = 96;
@@ -5531,8 +5531,9 @@ export default function SchedulePage() {
         ? {
             ...TIMELINE_CSS_VARIABLES,
             ...TIMELINE_FULL_BLEED_STYLE,
+            touchAction: "none",
           }
-        : TIMELINE_CSS_VARIABLES;
+        : { ...TIMELINE_CSS_VARIABLES, touchAction: "none" };
 
       const { habitLayouts, projectLayouts } =
         computeTimelineLayoutForSyncHabits({
@@ -6033,7 +6034,7 @@ export default function SchedulePage() {
                   </motion.span>
                   {showHabitStreakBadge ? (
                     <span
-                      className="pointer-events-none absolute right-3 top-2 flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[13px] font-semibold leading-tight text-amber-100"
+                      className="pointer-events-none absolute right-3 top-2 flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-[2px] text-xs font-semibold leading-tight text-amber-100"
                       style={streakBadgeStyle}
                     >
                       <FlameEmber
