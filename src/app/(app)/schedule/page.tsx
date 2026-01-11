@@ -5531,9 +5531,9 @@ export default function SchedulePage() {
         ? {
             ...TIMELINE_CSS_VARIABLES,
             ...TIMELINE_FULL_BLEED_STYLE,
-            touchAction: "none",
+            touchAction: "pan-y pinch-zoom",
           }
-        : { ...TIMELINE_CSS_VARIABLES, touchAction: "none" };
+        : { ...TIMELINE_CSS_VARIABLES, touchAction: "pan-y pinch-zoom" };
 
       const { habitLayouts, projectLayouts } =
         computeTimelineLayoutForSyncHabits({
