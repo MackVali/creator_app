@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState, useCallback, type CSSProperties } from "react";
-import { ChevronLeft, ChevronRight, CalendarDays, Paintbrush } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, Paintbrush, Droplet } from "lucide-react";
 import type { JumpToDateSnapshot } from "@/lib/scheduler/snapshot";
 import { ENERGY_LEVELS } from "@/lib/scheduler/energy";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
@@ -134,7 +134,7 @@ export function JumpToDateSheet({
   }) {
     const completeBy = formatCompleteBy(goal.completionUtc);
     return (
-      <div className="min-w-[140px] sm:min-w-[200px] shrink-0 rounded-lg bg-[var(--surface-elevated)] px-2 py-1.5 text-white/90 shadow-[0_12px_30px_rgba(5,7,12,0.35)]">
+      <div className="min-w-[120px] sm:min-w-[200px] shrink-0 rounded-lg bg-[var(--surface-elevated)] px-2 py-1.5 text-white/90 shadow-[0_12px_30px_rgba(5,7,12,0.35)]">
         <div className="flex items-center gap-1.5">
           <span className="text-[13px] sm:text-base">{goal.emoji ?? "🎯"}</span>
           <span className="truncate text-[12px] sm:text-sm font-medium leading-tight">
@@ -165,6 +165,7 @@ export function JumpToDateSheet({
 
   const [visibleMonth, setVisibleMonth] = useState(initialMonth);
   const [todayKey, setTodayKey] = useState<string | null>(null);
+  const [showDayTypesComingSoon, setShowDayTypesComingSoon] = useState(false);
 
   const computeTodayKey = useCallback(() => {
     try {
@@ -244,43 +245,24 @@ export function JumpToDateSheet({
         side="bottom"
         className="bg-[var(--surface-elevated)] border-t border-white/10 p-0 text-[var(--text-primary)] rounded-t-[26px] sm:rounded-t-2xl max-h-[92vh] sm:max-h-[88vh] overflow-hidden shadow-[0_-22px_50px_rgba(0,0,0,0.45)] backdrop-blur"
       >
-        <SheetHeader className="sticky top-0 z-20 border-b border-white/10 bg-[var(--surface-elevated)]/95 px-4 pt-4 pb-3 backdrop-blur">
+          <SheetHeader className="sticky top-0 z-20 border-b border-white/10 bg-[var(--surface-elevated)]/95 px-4 pt-4 pb-3 backdrop-blur">
             <div className="flex items-start justify-between gap-3">
               <div className="flex flex-col gap-1">
                 <SheetTitle className="text-lg font-semibold">Jump to date</SheetTitle>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsPaintMode(prev => !prev)}
-              className={cn(
-                "rounded-full p-2 text-white/70 transition hover:bg-white/10 hover:text-white",
-                isPaintMode && "bg-white/15 text-white shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
-              )}
-              aria-pressed={isPaintMode}
-              aria-label="Toggle day type paint mode"
-            >
-              <Paintbrush className="h-5 w-5" />
-            </button>
-          </div>
-        </SheetHeader>
+            </div>
+          </SheetHeader>
         <div
-          className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4 pt-1 sm:pt-2 overflow-y-auto"
+          className="flex min-h-0 flex-1 flex-col gap-3 px-3 sm:px-4 pb-4 pt-1 sm:pt-2 overflow-y-auto"
           style={scrollAreaPadding}
         >
           {snapshot ? (
-            <div
-              className="relative flex min-h-0 sm:min-h-[200px] flex-col gap-1 sm:gap-3 overflow-hidden rounded-2xl border border-white/10 p-2 sm:p-4 shadow-[0_-1px_0_rgba(252,165,165,0.2)_inset]"
-              style={{
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))",
-              }}
-            >
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[rgba(252,165,165,0.25)]" />
+            <div className="space-y-2 sm:space-y-3">
               <div className="flex items-center justify-between text-[10px] sm:text-xs font-semibold uppercase tracking-[0.1em] sm:tracking-[0.18em] text-white/70">
                 <span className="text-white/80">Snapshot</span>
                 <span className="text-white/50">Current view</span>
               </div>
-              <div className="grid gap-1.5 sm:gap-3 sm:grid-cols-2">
+              <div className="grid gap-2 sm:gap-3 sm:grid-cols-2">
                 <div className="rounded-xl border border-white/5 bg-white/5 p-1.5 sm:p-3 w-fit max-w-full sm:w-full">
                   <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.08em] sm:tracking-[0.14em] text-white/60 leading-tight">
                     Energy hours
@@ -403,30 +385,64 @@ export function JumpToDateSheet({
             </div>
           ) : null}
           <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5">
-            <button
-              type="button"
-              onClick={() => goToOffsetMonth(-1)}
-              className="rounded-full p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white"
-              aria-label="Previous month"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => goToOffsetMonth(-1)}
+                className="rounded-full p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white"
+                aria-label="Previous month"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDayTypesComingSoon(prev => !prev)}
+                className={cn(
+                  "rounded-full p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white",
+                  showDayTypesComingSoon && "bg-white/15 text-white shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+                )}
+                aria-pressed={showDayTypesComingSoon}
+                aria-label="Day types coming soon"
+              >
+                <Droplet className="h-4 w-4" />
+              </button>
+            </div>
             <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-white/80">
               <CalendarDays className="h-3.5 w-3.5" />
               <span>{monthMetadata.monthLabel}</span>
             </div>
-            <button
-              type="button"
-              onClick={() => goToOffsetMonth(1)}
-              className="rounded-full p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white"
-              aria-label="Next month"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsPaintMode(prev => !prev)}
+                className={cn(
+                  "rounded-full p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white",
+                  isPaintMode && "bg-white/15 text-white shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+                )}
+                aria-pressed={isPaintMode}
+                aria-label="Toggle day type paint mode"
+              >
+                <Paintbrush className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => goToOffsetMonth(1)}
+                className="rounded-full p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white"
+                aria-label="Next month"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-            <table className="w-full border-collapse table-fixed text-sm">
+          {showDayTypesComingSoon ? (
+            <div className="rounded-xl border border-dashed border-white/20 bg-white/5 px-3 py-2 text-sm text-white/80">
+              Day types coming soon.
+            </div>
+          ) : null}
+
+          <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
+            <table className="w-full border-collapse table-fixed text-sm min-w-[320px]">
               <thead>
                 <tr className="text-[11px] uppercase tracking-[0.28em] text-white/60">
                   {WEEKDAY_LABELS.map(label => (
@@ -449,7 +465,7 @@ export function JumpToDateSheet({
                       const isSelected = dayKey === selectedDateKey;
                       const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                       const circleClass = cn(
-                        "flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-md text-sm font-medium",
+                        "flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-md text-sm font-medium",
                         isSelected
                           ? "bg-[var(--accent-red)] text-white shadow-[0_14px_34px_rgba(252,165,165,0.45)]"
                           : "bg-white/10 text-white/80",
@@ -462,7 +478,7 @@ export function JumpToDateSheet({
                             type="button"
                             onClick={() => handleSelect(day)}
                             className={cn(
-                              "mx-auto flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border text-sm font-semibold transition",
+                              "mx-auto flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border text-sm font-semibold transition",
                               "focus-visible:outline focus-visible:outline-2 focus-visible:outline-white",
                               "border-transparent bg-transparent hover:bg-white/10"
                             )}
