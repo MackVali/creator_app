@@ -90,7 +90,16 @@ import {
   makeDateInTimeZone,
   getDateTimeParts,
   makeZonedDate,
+  weekdayInTimeZone,
+  getDatePartsInTimeZone,
+  getSchedulerDayAnchorForNow,
 } from "@/lib/scheduler/timezone";
+import {
+  computeEnergyHoursForDateRange,
+  computeProjectedGoalsLikely,
+  EMPTY_ENERGY_TOTALS,
+  type JumpToDateSnapshot,
+} from "@/lib/scheduler/snapshot";
 import { toZonedTime, format } from "date-fns-tz";
 import {
   TIME_FORMATTER,
@@ -2149,6 +2158,22 @@ export default function SchedulePage() {
     useState<HabitCompletionByDate>({});
   const [windowSnapshot, setWindowSnapshot_REAL] = useState<RepoWindow[]>([]);
   const [windows, setWindows_REAL] = useState<RepoWindow[]>([]);
+  const goalMetaById = useMemo(() => {
+    const monumentEmojiById = new Map<string, string | null>();
+    for (const monument of monuments ?? []) {
+      if (monument?.id) monumentEmojiById.set(monument.id, monument.emoji ?? null);
+    }
+    const map = new Map<string, { title: string | null; emoji: string | null }>();
+    Object.values(projectGoalRelations ?? {}).forEach(relation => {
+      if (!relation?.goalId) return;
+      const title = relation.goalName ?? null;
+      const emoji =
+        relation.goalEmoji ??
+        (relation.goalMonumentId ? monumentEmojiById.get(relation.goalMonumentId) ?? null : null);
+      map.set(relation.goalId, { title, emoji });
+    });
+    return map;
+  }, [projectGoalRelations, monuments]);
 
   function setTasks(next) {
     debugger;
@@ -2320,6 +2345,8 @@ export default function SchedulePage() {
   const [isSwipingDayView, setIsSwipingDayView] = useState(false);
   const [skipNextDayAnimation, setSkipNextDayAnimation] = useState(false);
   const [isJumpToDateOpen, setIsJumpToDateOpen] = useState(false);
+  const [jumpToDateSnapshot, setJumpToDateSnapshot] =
+    useState<JumpToDateSnapshot | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null);
   const [editingInstance, setEditingInstance] =
@@ -3094,6 +3121,120 @@ export default function SchedulePage() {
     );
     setWindows(derived);
   }, [windowSnapshot, currentDate, localTimeZone, userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      setJumpToDateSnapshot(null);
+      return;
+    }
+    let isCancelled = false;
+    const tz = effectiveTimeZone || "UTC";
+    const baseDate = currentDate;
+    if (!baseDate || Number.isNaN(baseDate.getTime())) {
+      setJumpToDateSnapshot(null);
+      return;
+    }
+
+    const baseDayStart = startOfDayInTimeZone(baseDate, tz);
+    const todayStart = getSchedulerDayAnchorForNow(new Date(), tz);
+    const weekStart = addDaysInTimeZone(
+      baseDayStart,
+      -weekdayInTimeZone(baseDayStart, tz),
+      tz
+    );
+    const weekEnd = addDaysInTimeZone(weekStart, 7, tz);
+    const dayParts = getDatePartsInTimeZone(baseDayStart, tz);
+    const monthAnchor = makeDateInTimeZone(
+      { year: dayParts.year, month: dayParts.month, day: 1, hour: 12, minute: 0 },
+      tz
+    );
+    const monthStart = startOfDayInTimeZone(monthAnchor, tz);
+    const daysInMonth = new Date(Date.UTC(dayParts.year, dayParts.month, 0)).getUTCDate();
+    const monthEnd = addDaysInTimeZone(monthStart, daysInMonth, tz);
+
+    const weekDays = Array.from({ length: 7 }, (_, index) =>
+      addDaysInTimeZone(weekStart, index, tz)
+    );
+    const monthDays = Array.from({ length: daysInMonth }, (_, index) =>
+      addDaysInTimeZone(monthStart, index, tz)
+    );
+    const fallbackTotals = () => ({ ...EMPTY_ENERGY_TOTALS });
+
+    const loadSnapshot = async () => {
+      let dayTotals = fallbackTotals();
+      let weekTotals = fallbackTotals();
+      let monthTotals = fallbackTotals();
+
+      try {
+        const [today, week, month] = await Promise.all([
+          computeEnergyHoursForDateRange([todayStart], userId),
+          computeEnergyHoursForDateRange(weekDays, userId),
+          computeEnergyHoursForDateRange(monthDays, userId),
+        ]);
+        dayTotals = today ?? fallbackTotals();
+        weekTotals = week ?? fallbackTotals();
+        monthTotals = month ?? fallbackTotals();
+      } catch (error) {
+        console.warn("[JumpToDateSnapshot] Failed to compute energy hours", error);
+      }
+
+      let weekGoals: number | undefined;
+      let monthGoals: number | undefined;
+      let weekLikelyGoals: Array<{
+        id: string;
+        title: string;
+        emoji?: string;
+        completionUtc?: string | null;
+      }> = [];
+      let monthLikelyGoals: Array<{
+        id: string;
+        title: string;
+        emoji?: string;
+        completionUtc?: string | null;
+      }> = [];
+      try {
+        const { weekGoalIds, monthGoalIds, weekLikelyGoals: weekComputed, monthLikelyGoals: monthComputed } =
+          await computeProjectedGoalsLikely(weekStart, weekEnd, monthStart, monthEnd, userId);
+        weekGoals = weekGoalIds.size;
+        monthGoals = monthGoalIds.size;
+        const resolveGoal = (entry: { id: string; completionUtc?: string | null }) => {
+          const { id, completionUtc } = entry;
+          const meta = goalMetaById.get(id);
+          return {
+            id,
+            title: meta?.title ?? "Goal",
+            emoji: meta?.emoji ?? "🎯",
+            completionUtc: completionUtc ?? null,
+          };
+        };
+        weekLikelyGoals = weekComputed.map(resolveGoal);
+        monthLikelyGoals = monthComputed.map(resolveGoal);
+      } catch (error) {
+        console.warn("[JumpToDateSnapshot] Failed to compute projected goals", error);
+      }
+
+      if (isCancelled) return;
+      setJumpToDateSnapshot({
+        energyHours: {
+          day: { ...dayTotals },
+          week: { ...weekTotals },
+          month: { ...monthTotals },
+        },
+        projected: {
+          weekGoalsCompleted: weekGoals,
+          monthGoalsCompleted: monthGoals,
+          weekLikelyGoals,
+          monthLikelyGoals,
+        },
+      });
+    };
+
+    void loadSnapshot();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [userId, currentDate, effectiveTimeZone, goalMetaById]);
 
   const habitMap = useMemo(() => {
     const map: Record<string, HabitScheduleItem> = {};
@@ -7341,6 +7482,7 @@ export default function SchedulePage() {
         currentDate={currentDate}
         timeZone={effectiveTimeZone}
         onSelectDate={handleJumpToDateSelect}
+        snapshot={jumpToDateSnapshot ?? undefined}
       />
       <ScheduleSearchSheet
         open={isSearchOpen}

@@ -258,6 +258,24 @@ export function differenceInCalendarMonthsInTimeZone(
   );
 }
 
+export function getSchedulerDayAnchorForNow(now: Date, timeZone: string) {
+  const parts = getDatePartsInTimeZone(now, timeZone);
+  const start = makeDateInTimeZone(
+    {
+      year: parts.year,
+      month: parts.month,
+      day: parts.day,
+      hour: GLOBAL_DAY_START_HOUR,
+      minute: 0,
+    },
+    timeZone
+  );
+  if (now.getTime() < start.getTime()) {
+    return addDaysInTimeZone(start, -1, timeZone);
+  }
+  return start;
+}
+
 export function getDatePartsInTimeZone(date: Date, timeZone: string) {
   const parts = getDateTimeParts(date, timeZone);
   return {

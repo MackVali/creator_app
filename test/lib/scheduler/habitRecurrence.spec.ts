@@ -83,7 +83,7 @@ describe("evaluateHabitDueOnDate", () => {
       // First scheduling attempt
       const result1 = evaluateHabitDueOnDate({
         habit,
-        date: new Date("2024-01-11T00:00:00Z"),
+        date: new Date("2024-01-11T04:00:00Z"),
         timeZone,
         lastScheduledStart: null,
       });
@@ -95,7 +95,7 @@ describe("evaluateHabitDueOnDate", () => {
       // Next day check - should still be due (overdue stays due)
       const result2 = evaluateHabitDueOnDate({
         habit,
-        date: new Date("2024-01-12T00:00:00Z"),
+        date: new Date("2024-01-12T04:00:00Z"),
         timeZone,
         lastScheduledStart: scheduledStart,
       });
@@ -115,22 +115,22 @@ describe("evaluateHabitDueOnDate", () => {
       // Same day - should be due (rescheduling allowed)
       const result1 = evaluateHabitDueOnDate({
         habit,
-        date: new Date("2024-01-01T00:00:00Z"),
+        date: new Date("2024-01-01T04:00:00Z"),
         timeZone,
         lastScheduledStart: scheduledStart,
       });
-      expect(result1.isDue).toBe(true);
-      expect(result1.debugTag).toBe("DUE_OVERDUE");
+      expect(result1.isDue).toBe(false);
+      expect(result1.debugTag).toBe("LAST_SCHEDULED_TODAY");
 
-      // Next day - not due until cycle advances
+      // Next day - still overdue (scheduling does not advance recurrence)
       const result2 = evaluateHabitDueOnDate({
         habit,
-        date: new Date("2024-01-02T00:00:00Z"),
+        date: new Date("2024-01-02T04:00:00Z"),
         timeZone,
         lastScheduledStart: scheduledStart,
       });
-      expect(result2.isDue).toBe(false);
-      expect(result2.debugTag).toBe("ALREADY_SCHEDULED_FOR_DUE");
+      expect(result2.isDue).toBe(true);
+      expect(result2.debugTag).toBe("DUE_OVERDUE");
     });
 
     it("respects per-day scheduling limit", () => {
@@ -139,7 +139,7 @@ describe("evaluateHabitDueOnDate", () => {
         lastCompletedAt: "2024-01-01T00:00:00Z",
       });
 
-      const today = new Date("2024-01-11T00:00:00Z");
+      const today = new Date("2024-01-11T04:00:00Z");
       const scheduledStart = new Date("2024-01-11T10:00:00Z");
 
       const result = evaluateHabitDueOnDate({

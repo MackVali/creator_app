@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ComponentType,
-  type ReactNode,
-} from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -23,6 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { CircularProgress } from "@/components/visuals/CircularProgress";
+import { Ticker } from "@/components/ui/Ticker";
 import { SkillMasterySection } from "@/app/analytics/_sections/SkillMasterySection";
 import type {
   AnalyticsResponse,
@@ -304,9 +299,6 @@ export default function AnalyticsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const focusInsightsRef = useRef<HTMLUListElement | null>(null);
-  const [tickerPaused, setTickerPaused] = useState(false);
-  const [tickerLayoutVersion, setTickerLayoutVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -451,89 +443,6 @@ export default function AnalyticsDashboard() {
           : "No KPIs yet",
     },
   ];
-  const tickerInsights =
-    focusInsights.length > 0 ? [...focusInsights, ...focusInsights] : [];
-
-  useEffect(() => {
-    const track = focusInsightsRef.current;
-    if (!track || tickerInsights.length === 0) {
-      return;
-    }
-
-    const container = track.parentElement;
-    const containerWidth = container?.clientWidth ?? track.clientWidth;
-    const perSetCount = focusInsights.length;
-    const markerChild =
-      perSetCount > 0
-        ? (track.children.item(perSetCount) as HTMLElement | null)
-        : null;
-    const loopWidth = markerChild?.offsetLeft ?? track.scrollWidth / 2;
-
-    if (!loopWidth || loopWidth <= containerWidth + 8) {
-      track.style.transform = "translateX(0)";
-      return;
-    }
-
-    let animationFrame: number;
-    let lastTimestamp: number | null = null;
-    let offset = 0;
-    const SPEED_PX_PER_SEC = 60;
-
-    const tick = (timestamp: number) => {
-      if (tickerPaused) {
-        lastTimestamp = timestamp;
-        animationFrame = window.requestAnimationFrame(tick);
-        return;
-      }
-
-      if (lastTimestamp != null) {
-        const deltaSeconds = (timestamp - lastTimestamp) / 1000;
-        offset += deltaSeconds * SPEED_PX_PER_SEC;
-        if (loopWidth > 0) {
-          offset = offset % loopWidth;
-        }
-        track.style.transform = `translateX(-${offset}px)`;
-      }
-      lastTimestamp = timestamp;
-      animationFrame = window.requestAnimationFrame(tick);
-    };
-
-    track.style.transform = "translateX(0)";
-    animationFrame = window.requestAnimationFrame(tick);
-
-    return () => {
-      window.cancelAnimationFrame(animationFrame);
-      track.style.transform = "";
-    };
-  }, [
-    loading,
-    error,
-    tickerInsights.length,
-    tickerPaused,
-    tickerLayoutVersion,
-    focusInsights.length,
-  ]);
-
-  useEffect(() => {
-    if (typeof ResizeObserver === "undefined") {
-      return;
-    }
-    const track = focusInsightsRef.current;
-    if (!track) {
-      return;
-    }
-    const observer = new ResizeObserver(() => {
-      setTickerLayoutVersion((version) => version + 1);
-    });
-    observer.observe(track);
-    if (track.parentElement) {
-      observer.observe(track.parentElement);
-    }
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
-
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-[#050505] via-[#080808] to-[#050505] text-[#E6E6EB]">
       <div
@@ -561,17 +470,12 @@ export default function AnalyticsDashboard() {
             <div className="relative overflow-hidden">
               <div className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[#050505] via-[#050505]/60 to-transparent" />
               <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[#050505] via-[#050505]/60 to-transparent" />
-              <ul
-                ref={focusInsightsRef}
-                className="flex flex-nowrap gap-4 pb-2 will-change-transform"
-                onMouseEnter={() => setTickerPaused(true)}
-                onMouseLeave={() => setTickerPaused(false)}
-                onFocusCapture={() => setTickerPaused(true)}
-                onBlurCapture={() => setTickerPaused(false)}
-                aria-live="off"
-              >
-                {tickerInsights.map((insight, index) => (
-                  <li
+              <Ticker
+                items={focusInsights}
+                speed={60}
+                trackClassName="flex flex-nowrap gap-4 pb-2 will-change-transform"
+                renderItem={(insight, index) => (
+                  <div
                     key={`${insight.id}-${index}`}
                     className="min-w-[240px] shrink-0 rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)]"
                   >
@@ -584,9 +488,9 @@ export default function AnalyticsDashboard() {
                     <p className="mt-1 text-sm text-[#99A4BD]">
                       {insight.helper}
                     </p>
-                  </li>
-                ))}
-              </ul>
+                  </div>
+                )}
+              />
             </div>
           )}
         </SectionCard>

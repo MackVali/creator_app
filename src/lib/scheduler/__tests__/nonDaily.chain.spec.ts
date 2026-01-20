@@ -85,25 +85,25 @@ describe("planNonDailyOccurrences", () => {
     const firstDue = addDaysInTimeZone(horizonStart, 3, tz);
     const horizonEnd = addDaysInTimeZone(horizonStart, 12, tz);
 
-    const planned = planNonDailyOccurrences({
-      habit,
-      userTz: tz,
-      horizonStartLocalDay: horizonStart,
-      horizonEndLocalDay: horizonEnd,
-      firstDueLocalDay: firstDue,
-      existingScheduledLocalDays: [],
-    });
-
-    const days = planned.map(toISODate);
-    expect(days).toEqual(["2024-01-04", "2024-01-11"]);
-    expect(new Set(days).size).toBe(days.length);
+  const planned = planNonDailyOccurrences({
+    habit,
+    userTz: tz,
+    horizonStartLocalDay: horizonStart,
+    horizonEndLocalDay: horizonEnd,
+    firstDueLocalDay: firstDue,
+    existingScheduledLocalDays: [],
   });
 
-  it("treats existing future instance as virtual completion", () => {
-    const habit = createHabit({
-      id: "habit-existing",
-      recurrence: "every 7 days",
-    });
+  const days = planned.map(toISODate);
+  expect(days).toEqual(["2024-01-04", "2024-01-11"]);
+  expect(new Set(days).size).toBe(days.length);
+});
+
+it("skips already scheduled day but continues chaining", () => {
+  const habit = createHabit({
+    id: "habit-existing",
+    recurrence: "every 7 days",
+  });
     const horizonStart = startOfDayInTimeZone(
       new Date("2024-01-01T12:00:00Z"),
       tz

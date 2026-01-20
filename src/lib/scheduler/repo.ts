@@ -651,6 +651,7 @@ export type GoalSummary = {
   name: string | null;
   weight: number;
   monumentId: string | null;
+  emoji: string | null;
 };
 
 export async function fetchGoalsForUser(
@@ -663,10 +664,11 @@ export async function fetchGoalsForUser(
     name?: string | null;
     weight?: number | null;
     monument_id?: string | null;
+    emoji?: string | null;
   };
   const { data, error } = await supabase
     .from("goals")
-    .select("id, name, weight, monument_id")
+    .select("id, name, weight, monument_id, emoji")
     .eq("user_id", userId);
 
   if (error) throw error;
@@ -676,5 +678,6 @@ export async function fetchGoalsForUser(
     name: goal.name ?? null,
     weight: Number(goal.weight ?? 0) || 0,
     monumentId: goal.monument_id ?? null,
+    emoji: goal.emoji ?? null,
   }));
 }

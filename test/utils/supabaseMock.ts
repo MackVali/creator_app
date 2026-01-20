@@ -41,34 +41,41 @@ export const createSupabaseMock = (
     status: 200,
     statusText: "OK",
   }));
-  const select = vi.fn(() => ({ single }));
-  const lt = vi.fn(() => ({ select, single }));
-  const eq = vi.fn((column: string, value: string) => {
-    lastEqValue = value;
-    if (column === "id" && lastUpdatePayload?.status === "canceled") {
-      canceledIds.push(value);
-    }
-    if (column === "id") {
-      updateCalls.push({ id: value, payload: lastUpdatePayload });
-    }
-    return { select, single, lt, eq };
-  });
-  const inFn = vi.fn((column: string, values: string[]) => {
-    if (column === "id" && lastUpdatePayload?.status === "canceled") {
-      for (const value of values) {
+  const buildUpdateChain = () => {
+    const chain: Record<string, any> = {};
+    chain.select = vi.fn(() => chain);
+    chain.single = single;
+    chain.lt = vi.fn(() => chain);
+    chain.gt = vi.fn(() => chain);
+    chain.or = vi.fn(() => chain);
+    chain.eq = vi.fn((column: string, value: string) => {
+      lastEqValue = value;
+      if (column === "id" && lastUpdatePayload?.status === "canceled") {
         canceledIds.push(value);
       }
-    }
-    if (column === "id") {
-      for (const value of values) {
+      if (column === "id") {
         updateCalls.push({ id: value, payload: lastUpdatePayload });
       }
-    }
-    return { select, single, lt, eq };
-  });
+      return chain;
+    });
+    chain.in = vi.fn((column: string, values: string[]) => {
+      if (column === "id" && lastUpdatePayload?.status === "canceled") {
+        for (const value of values) {
+          canceledIds.push(value);
+        }
+      }
+      if (column === "id") {
+        for (const value of values) {
+          updateCalls.push({ id: value, payload: lastUpdatePayload });
+        }
+      }
+      return chain;
+    });
+    return chain;
+  };
   const update = vi.fn((payload: Record<string, unknown>) => {
     lastUpdatePayload = payload ?? null;
-    return { eq, in: inFn, lt, select, single };
+    return buildUpdateChain();
   });
   const buildWindowsChain = () => {
     const response = {
@@ -78,20 +85,22 @@ export const createSupabaseMock = (
       status: 200,
       statusText: "OK",
     };
-    const chain = {
-      select: vi.fn(() => chain),
-      eq: vi.fn(() => chain),
-      in: vi.fn(() => chain),
-      gte: vi.fn(() => chain),
-      lte: vi.fn(() => chain),
-      order: vi.fn(() => chain),
-      contains: vi.fn(() => chain),
-      is: vi.fn(() => chain),
-      then: (
-        onFulfilled?: (value: unknown) => unknown,
-        onRejected?: (reason: unknown) => unknown
-      ) => Promise.resolve(response).then(onFulfilled, onRejected),
-    };
+    const chain: Record<string, any> = {};
+    chain.select = vi.fn(() => chain);
+    chain.eq = vi.fn(() => chain);
+    chain.in = vi.fn(() => chain);
+    chain.gte = vi.fn(() => chain);
+    chain.lte = vi.fn(() => chain);
+    chain.lt = vi.fn(() => chain);
+    chain.gt = vi.fn(() => chain);
+    chain.order = vi.fn(() => chain);
+    chain.contains = vi.fn(() => chain);
+    chain.is = vi.fn(() => chain);
+    chain.or = vi.fn(() => chain);
+    chain.then = (
+      onFulfilled?: (value: unknown) => unknown,
+      onRejected?: (reason: unknown) => unknown
+    ) => Promise.resolve(response).then(onFulfilled, onRejected);
     return chain;
   };
   const buildQueryChain = () => {
@@ -102,68 +111,78 @@ export const createSupabaseMock = (
       status: 200,
       statusText: "OK",
     };
-    const chain = {
-      eq: vi.fn(() => chain),
-      in: vi.fn(() => chain),
-      not: vi.fn(() => chain),
-      order: vi.fn(() => chain),
-      gte: vi.fn(() => chain),
-      lte: vi.fn(() => chain),
-      contains: vi.fn(() => chain),
-      is: vi.fn(() => chain),
-      single: vi.fn(async () => response),
-      limit: vi.fn(async () => ({
-        data: [],
-        error: null,
-        count: null,
-        status: 200,
-        statusText: "OK",
-      })),
-      then: (
-        onFulfilled?: (value: unknown) => unknown,
-        onRejected?: (reason: unknown) => unknown
-      ) => Promise.resolve(response).then(onFulfilled, onRejected),
-    };
-    return chain;
-  };
-  const buildDefaultChain = () => {
-    const response = {
+    const chain: Record<string, any> = {};
+    chain.select = vi.fn(() => chain);
+    chain.eq = vi.fn(() => chain);
+    chain.in = vi.fn(() => chain);
+    chain.not = vi.fn(() => chain);
+    chain.order = vi.fn(() => chain);
+    chain.gte = vi.fn(() => chain);
+    chain.lte = vi.fn(() => chain);
+    chain.lt = vi.fn(() => chain);
+    chain.gt = vi.fn(() => chain);
+    chain.contains = vi.fn(() => chain);
+    chain.is = vi.fn(() => chain);
+    chain.or = vi.fn(() => chain);
+    chain.single = vi.fn(async () => response);
+    chain.limit = vi.fn(async () => ({
       data: [],
       error: null,
       count: null,
       status: 200,
       statusText: "OK",
-    };
-    const chain = {
-      select: vi.fn(() => chain),
-      eq: vi.fn(() => chain),
-      in: vi.fn(() => chain),
-      not: vi.fn(() => chain),
-      order: vi.fn(() => chain),
-      gte: vi.fn(() => chain),
-      lte: vi.fn(() => chain),
-      contains: vi.fn(() => chain),
-      is: vi.fn(() => chain),
-      single: vi.fn(async () => response),
-      limit: vi.fn(async () => response),
-      then: (
-        onFulfilled?: (value: unknown) => unknown,
-        onRejected?: (reason: unknown) => unknown
-      ) => Promise.resolve(response).then(onFulfilled, onRejected),
-    };
+    }));
+    chain.then = (
+      onFulfilled?: (value: unknown) => unknown,
+      onRejected?: (reason: unknown) => unknown
+    ) => Promise.resolve(response).then(onFulfilled, onRejected);
     return chain;
   };
-  const insert = vi.fn((input: unknown) => ({
-    select: vi.fn(() => ({
-      single: vi.fn(async () => ({
-        data: input ?? null,
+  const buildDefaultChain = (responseOverride?: {
+    data: unknown;
+    error: null;
+    count: null;
+    status: number;
+    statusText: string;
+  }) => {
+    const response =
+      responseOverride ?? {
+        data: [],
         error: null,
         count: null,
-        status: 201,
-        statusText: "Created",
-      })),
-    })),
-  }));
+        status: 200,
+        statusText: "OK",
+      };
+    const chain: Record<string, any> = {};
+    chain.select = vi.fn(() => chain);
+    chain.eq = vi.fn(() => chain);
+    chain.in = vi.fn(() => chain);
+    chain.not = vi.fn(() => chain);
+    chain.order = vi.fn(() => chain);
+    chain.gte = vi.fn(() => chain);
+    chain.lte = vi.fn(() => chain);
+    chain.lt = vi.fn(() => chain);
+    chain.gt = vi.fn(() => chain);
+    chain.contains = vi.fn(() => chain);
+    chain.is = vi.fn(() => chain);
+    chain.or = vi.fn(() => chain);
+    chain.single = vi.fn(async () => response);
+    chain.limit = vi.fn(async () => response);
+    chain.then = (
+      onFulfilled?: (value: unknown) => unknown,
+      onRejected?: (reason: unknown) => unknown
+    ) => Promise.resolve(response).then(onFulfilled, onRejected);
+    return chain;
+  };
+  const insert = vi.fn((input: unknown) =>
+    buildDefaultChain({
+      data: input ?? null,
+      error: null,
+      count: null,
+      status: 201,
+      statusText: "Created",
+    })
+  );
   const from = vi.fn((table: string) => {
     if (table === "skills") {
       return {
