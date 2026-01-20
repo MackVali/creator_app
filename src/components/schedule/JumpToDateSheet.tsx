@@ -78,8 +78,8 @@ export function JumpToDateSheet({
       <span className="inline-flex align-middle" aria-hidden="true">
         <FlameEmber
           level={level.toUpperCase() as FlameLevel}
-          size="sm"
-          className="translate-y-[2px]"
+          size="xs"
+          className="translate-y-[1px]"
         />
       </span>
     );
