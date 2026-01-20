@@ -243,7 +243,7 @@ export function JumpToDateSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
-        className="bg-[var(--surface-elevated)] border-t border-white/10 p-0 text-[var(--text-primary)] rounded-t-[26px] sm:rounded-t-2xl max-h-[92vh] sm:max-h-[88vh] overflow-hidden shadow-[0_-22px_50px_rgba(0,0,0,0.45)] backdrop-blur"
+        className="flex h-full flex-col bg-[var(--surface-elevated)] border-t border-white/10 p-0 text-[var(--text-primary)] rounded-t-[26px] sm:rounded-t-2xl max-h-[92vh] sm:max-h-[88vh] overflow-hidden shadow-[0_-22px_50px_rgba(0,0,0,0.45)] backdrop-blur"
       >
           <SheetHeader className="sticky top-0 z-20 border-b border-white/10 bg-[var(--surface-elevated)]/95 px-4 pt-4 pb-3 backdrop-blur">
             <div className="flex items-start justify-between gap-3">
