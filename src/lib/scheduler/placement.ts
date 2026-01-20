@@ -126,6 +126,7 @@ type PlaceParams = {
   habitTypeById?: Map<string, string>;
   projectGlobalRankMap?: Map<string, number | null>;
   windowEdgePreference?: string | null;
+  metadata?: ScheduleInstance["metadata"];
 };
 
 const normalizeHabitTypeValue = (value?: string | null) => {
@@ -327,6 +328,7 @@ export async function placeItemInWindows(
     habitTypeById,
     projectGlobalRankMap,
     windowEdgePreference,
+    metadata,
   } = params;
   let best: null | {
     window: (typeof windows)[number];
@@ -731,6 +733,7 @@ export async function placeItemInWindows(
       durationMin,
       reuseInstanceId,
       eventName: item.eventName,
+      metadata,
     },
     client
   );
@@ -765,6 +768,7 @@ async function persistPlacement(
     durationMin: number;
     reuseInstanceId?: string | null;
     eventName: string;
+    metadata?: ScheduleInstance["metadata"];
   },
   client?: Client
 ) {
@@ -776,6 +780,7 @@ async function persistPlacement(
     endUTC,
     reuseInstanceId,
     eventName,
+    metadata,
   } = params;
   const computedDurationMin = computeDurationMin(
     new Date(startUTC),
@@ -796,6 +801,7 @@ async function persistPlacement(
         energyResolved: item.energy,
         eventName,
         practiceContextId: item.practiceContextId,
+        metadata,
       },
       client
     );
@@ -814,6 +820,7 @@ async function persistPlacement(
         energyResolved: item.energy,
         eventName,
         practiceContextId: item.practiceContextId,
+        metadata,
       },
       client
     );

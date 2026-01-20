@@ -52,6 +52,10 @@ import {
   startOfDayInTimeZone,
 } from "./timezone";
 import { safeDate } from "./safeDate";
+import {
+  computeForecastDueAt,
+  computeNonDailyChainPlan,
+} from "./nonDailyChain";
 import { computeSyncHabitDuration } from "./syncLayout";
 import {
   normalizeCoordinates,
@@ -68,7 +72,7 @@ import { selectPracticeContext } from "./practiceContextSelector";
 type Client = SupabaseClient<Database>;
 
 const START_GRACE_MIN = 1;
-const BASE_LOOKAHEAD_DAYS = 28;
+const BASE_LOOKAHEAD_DAYS = 14;
 const LOOKAHEAD_PER_ITEM_DAYS = 7;
 const MAX_LOOKAHEAD_DAYS = 365;
 const HABIT_WRITE_LOOKAHEAD_DAYS = BASE_LOOKAHEAD_DAYS;
@@ -247,9 +251,6 @@ type WindowAvailabilityBounds = {
  * - For 'weekly' WITHOUT recurrenceDays: chain by +7 days repeatedly starting from first due day.
  * - For 'monthly': chain by +1 month increments starting from first due day.
  * - For any other: fallback to the first due only.
- * If there is an existing future scheduled instance on or after the first due within horizon,
- * treat its local day as the anchor for the NEXT link in the chain (virtual completion),
- * and continue chaining from there.
  */
 export function planNonDailyOccurrences(params: {
   habit: HabitScheduleItem;
@@ -273,26 +274,22 @@ export function planNonDailyOccurrences(params: {
   const horizonStartMs = horizonStart.getTime();
   const horizonEndMs = horizonEnd.getTime();
 
-  let firstDue = startOfDayInTimeZone(firstDueLocalDay, zone);
-  if (firstDue.getTime() < horizonStartMs) {
-    firstDue = horizonStart;
+  let anchor = startOfDayInTimeZone(firstDueLocalDay, zone);
+  if (anchor.getTime() < horizonStartMs) {
+    anchor = horizonStart;
   }
-
-  const normalizedExisting = existingScheduledLocalDays
-    .map((day) => startOfDayInTimeZone(day, zone))
-    .filter((day) => {
-      const ms = day.getTime();
-      return (
-        Number.isFinite(ms) && ms >= horizonStartMs && ms <= horizonEndMs
-      );
-    })
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  const anchorFromExisting =
-    normalizedExisting.find((day) => day.getTime() >= firstDue.getTime()) ??
-    null;
-  let anchor = anchorFromExisting ?? firstDue;
-  const skipAnchor = Boolean(anchorFromExisting);
+  const existingDaySet = new Set(
+    existingScheduledLocalDays
+      .map((day) => startOfDayInTimeZone(day, zone))
+      .filter((day) => {
+        const ms = day.getTime();
+        return (
+          Number.isFinite(ms) && ms >= horizonStartMs && ms <= horizonEndMs
+        );
+      })
+      .map((day) => day.getTime())
+  );
+  const skipAnchor = false;
   const recurrence = normalizeRecurrence(habit.recurrence);
   const recurrenceDays = normalizeDayList(habit.recurrenceDays ?? null);
 
@@ -301,6 +298,7 @@ export function planNonDailyOccurrences(params: {
     const normalized = startOfDayInTimeZone(day, zone);
     const ms = normalized.getTime();
     if (ms < horizonStartMs || ms > horizonEndMs) return;
+    if (existingDaySet.has(ms)) return;
     if (results.some((entry) => entry.getTime() === ms)) return;
     results.push(normalized);
   };
@@ -310,11 +308,7 @@ export function planNonDailyOccurrences(params: {
       ? addDaysInTimeZone(anchor, 1, zone).getTime()
       : anchor.getTime();
     const seededStart = addDaysInTimeZone(anchor, skipAnchor ? 1 : 0, zone);
-    let cursor = nextOnOrAfterAllowedWeekday(
-      seededStart,
-      recurrenceDays,
-      zone
-    );
+    let cursor = nextOnOrAfterAllowedWeekday(seededStart, recurrenceDays, zone);
     if (cursor.getTime() < horizonStartMs) {
       cursor = nextOnOrAfterAllowedWeekday(horizonStart, recurrenceDays, zone);
     }
@@ -1174,8 +1168,7 @@ export async function scheduleBacklog(
     .eq("source_type", "HABIT")
     .eq("status", "missed");
 
-  const timeZone =
-    options?.timeZone ?? "UTC"; // timezone already validated upstream; no normalization helper required.
+  const timeZone = options?.timeZone ?? "UTC"; // timezone already validated upstream; no normalization helper required.
   const location = normalizeCoordinates(options?.location ?? null);
   const mode = normalizeSchedulerModePayload(
     options?.mode ?? { type: "REGULAR" }
@@ -2465,37 +2458,7 @@ export async function scheduleBacklog(
     nonDailyHabits: HabitScheduleItem[]
   ): Promise<Set<string>> => {
     if (nonDailyHabits.length === 0) return new Set<string>();
-    const formatPlacementError = (error: unknown) => {
-      if (!error) return null;
-      if (typeof error === "string") return error;
-      if (error instanceof Error) return error.message;
-      if (typeof error === "object") {
-        const maybeMessage =
-          "message" in error
-            ? String((error as { message?: unknown }).message)
-            : null;
-        const maybeCode =
-          "code" in error ? String((error as { code?: unknown }).code) : null;
-        if (maybeCode && maybeMessage) return `${maybeCode}: ${maybeMessage}`;
-        if (maybeMessage) return maybeMessage;
-      }
-      return String(error);
-    };
-    const logNonDailyPlacementAttempt = (payload: {
-      habitId: string;
-      durationMin: number;
-      resolvedEnergy: string;
-      compatibleWindowCount: number;
-      result: "SUCCESS" | "FAIL" | "SKIP";
-      reason?: string | null;
-      day: string;
-      alreadyScheduledInHorizon: boolean;
-      scheduledInstanceId?: string | null;
-      scheduledInstanceDay?: string | null;
-    }) => {
-      console.log("[SCHEDULER_NON_DAILY_PLACEMENT]", payload);
-    };
-    // Chained non-daily scheduling is the default; feature flag removed.
+    const nonDailyReplacementInstanceIds = new Set<string>();
     const horizonStartLocalDay = startOfDayInTimeZone(baseStart, timeZone);
     const horizonEndLocalDay = startOfDayInTimeZone(
       addDaysInTimeZone(
@@ -2505,342 +2468,513 @@ export async function scheduleBacklog(
       ),
       timeZone
     );
-    const dayKeyFor = (habitId: string, day: Date) =>
-      `${habitId}|${startOfDayInTimeZone(day, timeZone).toISOString()}`;
-    const nonDailyReplacementInstanceIds = new Set<string>();
+    const horizonEndExclusive = addDaysInTimeZone(
+      horizonEndLocalDay,
+      1,
+      timeZone
+    );
+    const lowerBound = addDaysInTimeZone(
+      horizonStartLocalDay,
+      -habitWriteLookaheadDays,
+      timeZone
+    );
+    const normalizeRole = (
+      metadata: ScheduleInstance["metadata"] | null | undefined
+    ): "PRIMARY" | "FORECAST" | null => {
+      const roleRaw =
+        metadata &&
+        typeof metadata === "object" &&
+        metadata !== null &&
+        "nonDaily" in metadata
+          ? ((metadata as any).nonDaily?.role as string | null | undefined)
+          : null;
+      return roleRaw === "PRIMARY" || roleRaw === "FORECAST" ? roleRaw : null;
+    };
+    const startValueForInstance = (instance: ScheduleInstance) => {
+      const time = new Date(instance.start_utc ?? "").getTime();
+      return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
+    };
+    const mergeNonDailyMetadata = (
+      existing: ScheduleInstance["metadata"] | null | undefined,
+      payload: {
+        role: "PRIMARY" | "FORECAST";
+        dueAtUtc: string;
+        anchorCompletedAtUtc: string;
+        chainKey: string;
+      }
+    ) => {
+      const base =
+        existing && typeof existing === "object"
+          ? { ...(existing as any) }
+          : {};
+      return {
+        ...base,
+        nonDaily: {
+          ...(typeof (base as any).nonDaily === "object"
+            ? { ...(base as any).nonDaily }
+            : {}),
+          role: payload.role,
+          dueAtUtc: payload.dueAtUtc,
+          anchorCompletedAtUtc: payload.anchorCompletedAtUtc,
+          chainKey: payload.chainKey,
+        },
+      };
+    };
+    const applyMetadataIfNeeded = async (
+      instance: ScheduleInstance | null | undefined,
+      payload: {
+        role: "PRIMARY" | "FORECAST";
+        dueAtUtc: string;
+        anchorCompletedAtUtc: string;
+        chainKey: string;
+      }
+    ): Promise<ScheduleInstance | null> => {
+      if (!instance?.id) return instance ?? null;
+      const merged = mergeNonDailyMetadata(instance.metadata, payload);
+      instance.metadata = merged as any;
+      const { data, error } = await supabase
+        .from("schedule_instances")
+        .update({ metadata: merged })
+        .eq("id", instance.id)
+        .select("*")
+        .single();
+      if (error) {
+        result.failures.push({
+          itemId: instance.id,
+          reason: "error",
+          detail: error,
+        });
+        return instance;
+      }
+      if (data && "metadata" in data) {
+        return data as ScheduleInstance;
+      }
+      return instance;
+    };
+    const collectHabitInstances = (habitId: string): ScheduleInstance[] => {
+      const seen = new Set<string>();
+      const bucket: ScheduleInstance[] = [];
+      const consider = (inst: ScheduleInstance | null | undefined) => {
+        if (
+          !inst ||
+          inst.source_type !== "HABIT" ||
+          inst.status !== "scheduled" ||
+          inst.source_id !== habitId
+        ) {
+          return;
+        }
+        const start = safeDate(inst.start_utc);
+        if (!start) return;
+        const startMs = start.getTime();
+        if (
+          startMs < lowerBound.getTime() ||
+          startMs >= horizonEndExclusive.getTime()
+        ) {
+          return;
+        }
+        const id = inst.id ?? "";
+        if (id && seen.has(id)) return;
+        if (id) seen.add(id);
+        bucket.push(inst);
+      };
+      for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
+        const dayInstances = getDayInstances(offset);
+        for (const inst of dayInstances) {
+          consider(inst);
+        }
+      }
+      for (const inst of dedupe.allInstances) {
+        consider(inst);
+      }
+      bucket.sort((a, b) => {
+        const diff = startValueForInstance(a) - startValueForInstance(b);
+        if (diff !== 0) return diff;
+        return (a.id ?? "").localeCompare(b.id ?? "");
+      });
+      return bucket;
+    };
 
     for (const habit of nonDailyHabits) {
       const normalizedType =
         habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
       if (normalizedType === "SYNC") continue;
 
-      const windowDays = habit.window?.days ?? null;
-      const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
-      const dueInfoStart = evaluateHabitDueOnDate({
+      const plan = computeNonDailyChainPlan(
         habit,
-        date: baseStart,
-        timeZone,
-        windowDays,
-        lastScheduledStart: getHabitLastScheduledStart(habit.id),
-        nextDueOverride,
-      });
-      let firstDueLocalDay = startOfDayInTimeZone(
-        dueInfoStart.dueStart ?? horizonStartLocalDay,
+        baseDate.toISOString(),
         timeZone
       );
-      if (firstDueLocalDay.getTime() < horizonStartLocalDay.getTime()) {
-        firstDueLocalDay = horizonStartLocalDay;
+      const chainKey = `HABIT:${habit.id}:${plan.anchor.completedAtUtc}`;
+      const existingInstances = collectHabitInstances(habit.id);
+      const primaryExisting =
+        existingInstances.find(
+          (inst) => normalizeRole(inst.metadata) === "PRIMARY"
+        ) ??
+        existingInstances[0] ??
+        null;
+      const remainingForForecast = existingInstances.filter(
+        (inst) => inst !== primaryExisting
+      );
+      const forecastExisting =
+        remainingForForecast.find(
+          (inst) => normalizeRole(inst.metadata) === "FORECAST"
+        ) ??
+        remainingForForecast[0] ??
+        null;
+      const extras = remainingForForecast.filter(
+        (inst) => inst !== forecastExisting
+      );
+      const rawDuration = Number(habit.durationMinutes ?? 0);
+      let durationMin =
+        Number.isFinite(rawDuration) && rawDuration > 0
+          ? rawDuration
+          : DEFAULT_HABIT_DURATION_MIN;
+      if (durationMultiplier !== 1) {
+        durationMin = Math.max(1, Math.round(durationMin * durationMultiplier));
       }
+      if (durationMin <= 0) {
+        await createMissedHabitInstance(habit, "INVALID_DURATION");
+        result.failures.push({
+          itemId: habit.id,
+          reason: "INVALID_DURATION",
+        });
+        continue;
+      }
+      const resolvedEnergy = (
+        habit.energy ??
+        habit.window?.energy ??
+        "NO"
+      ).toUpperCase();
+      const locationContextIdRaw = habit.locationContextId ?? null;
+      const locationContextId =
+        typeof locationContextIdRaw === "string" &&
+        locationContextIdRaw.trim().length > 0
+          ? locationContextIdRaw.trim()
+          : null;
+      const locationContextValueRaw = habit.locationContextValue ?? null;
+      const locationContextValue =
+        typeof locationContextValueRaw === "string"
+          ? normalizeLocationContextValue(locationContextValueRaw)
+          : null;
+      const daylightRaw = habit.daylightPreference
+        ? String(habit.daylightPreference).toUpperCase().trim()
+        : "ALL_DAY";
+      const daylightPreference =
+        daylightRaw === "DAY" || daylightRaw === "NIGHT"
+          ? daylightRaw
+          : "ALL_DAY";
+      const anchorRaw = habit.windowEdgePreference
+        ? String(habit.windowEdgePreference).toUpperCase().trim()
+        : "FRONT";
+      const anchorPreference = anchorRaw === "BACK" ? "BACK" : "FRONT";
+      const practiceContextId =
+        normalizedType === "PRACTICE" ? habit.skillMonumentId ?? null : null;
+      const blockLocalDays = new Set<number>();
 
-      const habitDayKeys = new Set<string>();
-      const existingLocalDays: Date[] = [];
-      for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
-        const dayInstances = getDayInstances(offset);
-        for (const inst of dayInstances) {
-          if (
-            !inst ||
-            inst.source_type !== "HABIT" ||
-            inst.status !== "scheduled" ||
-            inst.source_id !== habit.id
-          ) {
-            continue;
-          }
-          const localDay = startOfDayInTimeZone(
-            new Date(inst.start_utc ?? ""),
+      const placeRole = async (params: {
+        role: "PRIMARY" | "FORECAST";
+        dueAtUtc: string;
+        minStartUtc: string;
+        reuseInstance?: ScheduleInstance | null;
+      }): Promise<{
+        instance: ScheduleInstance | null;
+        startLocalDay?: Date | null;
+      }> => {
+        const minStartDate =
+          safeDate(params.minStartUtc) ?? new Date(params.minStartUtc);
+        if (Number.isNaN(minStartDate.getTime())) {
+          return { instance: null, startLocalDay: null };
+        }
+        let cursorDay = startOfDayInTimeZone(minStartDate, timeZone);
+        let firstDay = true;
+        while (cursorDay.getTime() <= horizonEndLocalDay.getTime()) {
+          const offset = differenceInCalendarDaysInTimeZone(
+            horizonStartLocalDay,
+            cursorDay,
             timeZone
           );
-          const key = dayKeyFor(habit.id, localDay);
-          habitDayKeys.add(key);
           if (
-            localDay.getTime() >= horizonStartLocalDay.getTime() &&
-            localDay.getTime() <= horizonEndLocalDay.getTime()
+            !Number.isFinite(offset) ||
+            offset < 0 ||
+            offset >= habitWriteLookaheadDays
           ) {
-            existingLocalDays.push(localDay);
+            cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
+            firstDay = false;
+            continue;
           }
+          const localDayMs = cursorDay.getTime();
+          if (blockLocalDays.has(localDayMs)) {
+            cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
+            firstDay = false;
+            continue;
+          }
+          await prepareWindowsForDay(cursorDay);
+          const existingInstancesForDay = getDayInstances(offset);
+          const sunlightOptions =
+            typeof timeZoneOffsetMinutes === "number"
+              ? { offsetMinutes: timeZoneOffsetMinutes }
+              : undefined;
+          const sunlightToday = resolveSunlightBounds(
+            cursorDay,
+            timeZone,
+            location,
+            sunlightOptions
+          );
+          const sunlightPrevious = resolveSunlightBounds(
+            addDaysInTimeZone(cursorDay, -1, timeZone),
+            timeZone,
+            location,
+            sunlightOptions
+          );
+          const sunlightNext = resolveSunlightBounds(
+            addDaysInTimeZone(cursorDay, 1, timeZone),
+            timeZone,
+            location,
+            sunlightOptions
+          );
+          const daylightConstraint =
+            daylightPreference === "ALL_DAY"
+              ? null
+              : {
+                  preference: daylightPreference as "DAY" | "NIGHT",
+                  sunrise: sunlightToday.sunrise ?? null,
+                  sunset: sunlightToday.sunset ?? null,
+                  dawn: sunlightToday.dawn ?? null,
+                  dusk: sunlightToday.dusk ?? null,
+                  previousSunset: sunlightPrevious.sunset ?? null,
+                  previousDusk: sunlightPrevious.dusk ?? null,
+                  nextDawn: sunlightNext.dawn ?? sunlightNext.sunrise ?? null,
+                  nextSunrise: sunlightNext.sunrise ?? null,
+                };
+          const nightSunlightBundle =
+            daylightConstraint?.preference === "NIGHT"
+              ? {
+                  today: sunlightToday,
+                  previous: sunlightPrevious,
+                  next: sunlightNext,
+                }
+              : null;
+          const compatibleWindows = await fetchCompatibleWindowsForItem(
+            supabase,
+            cursorDay,
+            { energy: resolvedEnergy, duration_min: durationMin },
+            timeZone,
+            {
+              availability: new Map(),
+              now:
+                startOfDayInTimeZone(baseStart, timeZone).getTime() ===
+                startOfDayInTimeZone(cursorDay, timeZone).getTime()
+                  ? baseDate
+                  : undefined,
+              cache: windowCache,
+              restMode: isRestMode,
+              userId,
+              locationContextId,
+              locationContextValue,
+              daylight: daylightConstraint,
+              enforceNightSpan: daylightConstraint?.preference === "NIGHT",
+              nightSunlight: nightSunlightBundle,
+              anchor: anchorPreference,
+              requireLocationContextMatch: true,
+              hasExplicitLocationContext:
+                Boolean(locationContextId) || Boolean(locationContextValue),
+              allowedWindowKinds: ["DEFAULT"],
+            }
+          );
+          if (compatibleWindows.length === 0) {
+            cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
+            firstDay = false;
+            continue;
+          }
+          const placement = await placeItemInWindows({
+            userId,
+            item: {
+              id: habit.id,
+              sourceType: "HABIT",
+              duration_min: durationMin,
+              energy: resolvedEnergy,
+              weight: 0,
+              eventName: habit.name || "Habit",
+              practiceContextId,
+            },
+            windows: compatibleWindows,
+            date: cursorDay,
+            timeZone,
+            client: supabase,
+            reuseInstanceId: params.reuseInstance?.id ?? null,
+            notBefore: firstDay ? minStartDate : cursorDay,
+            existingInstances: existingInstancesForDay,
+            allowHabitOverlap: habitAllowsOverlap.get(habit.id) ?? false,
+            habitTypeById,
+            windowEdgePreference: habit.windowEdgePreference,
+            metadata: mergeNonDailyMetadata(params.reuseInstance?.metadata, {
+              role: params.role,
+              dueAtUtc: params.dueAtUtc,
+              anchorCompletedAtUtc: plan.anchor.completedAtUtc,
+              chainKey,
+            }),
+          });
+          if (!("status" in placement)) {
+            if (placement.error && placement.error !== "NO_FIT") {
+              result.failures.push({
+                itemId: habit.id,
+                reason: "error",
+                detail: placement.error,
+              });
+            }
+            cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
+            firstDay = false;
+            continue;
+          }
+          if (placement.error || !placement.data) {
+            if (placement.error && placement.error !== "NO_FIT") {
+              result.failures.push({
+                itemId: habit.id,
+                reason: "error",
+                detail: placement.error,
+              });
+            }
+            cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
+            firstDay = false;
+            continue;
+          }
+          const persisted = placement.data;
+          if (persisted?.id) {
+            createdThisRun.add(persisted.id);
+            nonDailyReplacementInstanceIds.add(persisted.id);
+          }
+          registerInstanceForOffsets(persisted);
+          recordHabitScheduledStart(habit.id, persisted.start_utc ?? "");
+          addHabitBlocker(persisted);
+          result.placed.push(persisted);
+          const windowLabel =
+            getWindowsForDay(cursorDay).find(
+              (win) => win.id === persisted.window_id
+            )?.label ?? null;
+          result.timeline.push({
+            type: "HABIT",
+            habit: {
+              id: habit.id,
+              name: habit.name,
+              windowId: persisted.window_id ?? null,
+              windowLabel,
+              startUTC: persisted.start_utc ?? "",
+              endUTC: persisted.end_utc ?? "",
+              durationMin: durationMin,
+              energyResolved: persisted.energy_resolved ?? null,
+            },
+            decision: params.reuseInstance ? "rescheduled" : "new",
+            scheduledDayOffset: offset,
+          });
+          return { instance: persisted, startLocalDay: cursorDay };
+        }
+        return { instance: null, startLocalDay: null };
+      };
+
+      const primaryPlacement = await placeRole({
+        role: "PRIMARY",
+        dueAtUtc: plan.primary.dueAtUtc,
+        minStartUtc: plan.primary.minStartUtc,
+        reuseInstance: primaryExisting ?? forecastExisting ?? extras[0] ?? null,
+      });
+      let primaryInstance = primaryPlacement.instance ?? null;
+      if (!primaryInstance && primaryExisting) {
+        const start = safeDate(primaryExisting.start_utc);
+        if (start && start.getTime() >= baseDate.getTime()) {
+          primaryInstance = primaryExisting;
+        }
+      }
+      if (!primaryPlacement.instance && primaryInstance) {
+        primaryInstance = await applyMetadataIfNeeded(primaryInstance, {
+          role: "PRIMARY",
+          dueAtUtc: plan.primary.dueAtUtc,
+          anchorCompletedAtUtc: plan.anchor.completedAtUtc,
+          chainKey,
+        });
+      }
+      if (primaryInstance?.start_utc) {
+        const primaryDayMs = startOfDayInTimeZone(
+          new Date(primaryInstance.start_utc),
+          timeZone
+        ).getTime();
+        if (Number.isFinite(primaryDayMs)) {
+          blockLocalDays.add(primaryDayMs);
         }
       }
 
-      existingLocalDays.sort((a, b) => a.getTime() - b.getTime());
-
-      const plannedLocalDays = planNonDailyOccurrences({
-        habit,
-        userTz: timeZone,
-        horizonStartLocalDay,
-        horizonEndLocalDay,
-        firstDueLocalDay,
-        existingScheduledLocalDays: existingLocalDays,
-      });
-
-      let placedAny = false;
-
-      for (const plannedDay of plannedLocalDays) {
-        const plannedDayStart = startOfDayInTimeZone(plannedDay, timeZone);
-        const dayKey = dayKeyFor(habit.id, plannedDayStart);
-        if (habitDayKeys.has(dayKey)) continue;
-
-        const offset = differenceInCalendarDaysInTimeZone(
-          horizonStartLocalDay,
-          plannedDayStart,
+      let forecastInstance: ScheduleInstance | null = null;
+      if (primaryInstance?.start_utc) {
+        const forecastDueAt = computeForecastDueAt(
+          primaryInstance.start_utc,
+          habit,
           timeZone
         );
-        if (!Number.isFinite(offset) || offset < 0) continue;
-        if (offset >= habitWriteLookaheadDays) continue;
-
-        await prepareWindowsForDay(plannedDayStart);
-        const existingInstances = getDayInstances(offset);
-        const alreadyScheduled = existingInstances.some(
-          (inst) =>
-            inst?.source_type === "HABIT" &&
-            inst.status === "scheduled" &&
-            inst.source_id === habit.id &&
-            startOfDayInTimeZone(
-              new Date(inst.start_utc ?? ""),
-              timeZone
-            ).getTime() === plannedDayStart.getTime()
-        );
-        if (alreadyScheduled) {
-          habitDayKeys.add(dayKey);
-          continue;
-        }
-
-        const rawDuration = Number(habit.durationMinutes ?? 0);
-        let durationMin =
-          Number.isFinite(rawDuration) && rawDuration > 0
-            ? rawDuration
-            : DEFAULT_HABIT_DURATION_MIN;
-        if (durationMultiplier !== 1) {
-          durationMin = Math.max(1, Math.round(durationMin * durationMultiplier));
-        }
-        if (durationMin <= 0) continue;
-
-        const resolvedEnergy = (
-          habit.energy ??
-          habit.window?.energy ??
-          "NO"
-        ).toUpperCase();
-        const locationContextIdRaw = habit.locationContextId ?? null;
-        const locationContextId =
-          typeof locationContextIdRaw === "string" &&
-          locationContextIdRaw.trim().length > 0
-            ? locationContextIdRaw.trim()
-            : null;
-        const locationContextValueRaw = habit.locationContextValue ?? null;
-        const locationContextValue =
-          typeof locationContextValueRaw === "string"
-            ? normalizeLocationContextValue(locationContextValueRaw)
-            : null;
-        const daylightRaw = habit.daylightPreference
-          ? String(habit.daylightPreference).toUpperCase().trim()
-          : "ALL_DAY";
-        const daylightPreference =
-          daylightRaw === "DAY" || daylightRaw === "NIGHT"
-            ? daylightRaw
-            : "ALL_DAY";
-        const sunlightOptions =
-          typeof timeZoneOffsetMinutes === "number"
-            ? { offsetMinutes: timeZoneOffsetMinutes }
-            : undefined;
-        const sunlightToday = resolveSunlightBounds(
-          plannedDayStart,
-          timeZone,
-          location,
-          sunlightOptions
-        );
-        const sunlightPrevious = resolveSunlightBounds(
-          addDaysInTimeZone(plannedDayStart, -1, timeZone),
-          timeZone,
-          location,
-          sunlightOptions
-        );
-        const sunlightNext = resolveSunlightBounds(
-          addDaysInTimeZone(plannedDayStart, 1, timeZone),
-          timeZone,
-          location,
-          sunlightOptions
-        );
-        const daylightConstraint =
-          daylightPreference === "ALL_DAY"
-            ? null
-            : {
-                preference: daylightPreference as "DAY" | "NIGHT",
-                sunrise: sunlightToday.sunrise ?? null,
-                sunset: sunlightToday.sunset ?? null,
-                dawn: sunlightToday.dawn ?? null,
-                dusk: sunlightToday.dusk ?? null,
-                previousSunset: sunlightPrevious.sunset ?? null,
-                previousDusk: sunlightPrevious.dusk ?? null,
-                nextDawn: sunlightNext.dawn ?? sunlightNext.sunrise ?? null,
-                nextSunrise: sunlightNext.sunrise ?? null,
-              };
-        const nightSunlightBundle =
-          daylightConstraint?.preference === "NIGHT"
-            ? {
-                today: sunlightToday,
-                previous: sunlightPrevious,
-                next: sunlightNext,
-              }
-            : null;
-        const anchorRaw = habit.windowEdgePreference
-          ? String(habit.windowEdgePreference).toUpperCase().trim()
-          : "FRONT";
-        const anchorPreference = anchorRaw === "BACK" ? "BACK" : "FRONT";
-
-        const compatibleWindows = await fetchCompatibleWindowsForItem(
-          supabase,
-          plannedDayStart,
-          { energy: resolvedEnergy, duration_min: durationMin },
-          timeZone,
-          {
-            availability: new Map(),
-            now: baseDate,
-            cache: windowCache,
-            restMode: isRestMode,
-            userId,
-            locationContextId,
-            locationContextValue,
-            daylight: daylightConstraint,
-            enforceNightSpan: daylightConstraint?.preference === "NIGHT",
-            nightSunlight: nightSunlightBundle,
-            anchor: anchorPreference,
-            requireLocationContextMatch: true,
-            hasExplicitLocationContext:
-              Boolean(locationContextId) || Boolean(locationContextValue),
-            allowedWindowKinds: ["DEFAULT"],
-          }
-        );
-
-        if (compatibleWindows.length === 0) {
-          logNonDailyPlacementAttempt({
-            habitId: habit.id,
-            durationMin,
-            resolvedEnergy,
-            compatibleWindowCount: 0,
-            result: "FAIL",
-            reason: "NO_COMPATIBLE_WINDOWS",
-            day: plannedDayStart.toISOString(),
-            alreadyScheduledInHorizon: existingLocalDays.length > 0,
-          });
-          continue;
-        }
-        const dayWindows = getWindowsForDay(plannedDayStart);
-
-        const placement = await placeItemInWindows({
-          userId,
-          item: {
-            id: habit.id,
-            sourceType: "HABIT",
-            duration_min: durationMin,
-            energy: resolvedEnergy,
-            weight: 0,
-            eventName: habit.name || "Habit",
-            practiceContextId:
-              normalizedType === "PRACTICE"
-                ? habit.skillMonumentId ?? null
-                : null,
-          },
-          windows: compatibleWindows,
-          date: plannedDayStart,
-          timeZone,
-          client: supabase,
-          existingInstances,
-          allowHabitOverlap: habitAllowsOverlap.get(habit.id) ?? false,
-          habitTypeById,
-          windowEdgePreference: habit.windowEdgePreference,
+        const forecastPlacement = await placeRole({
+          role: "FORECAST",
+          dueAtUtc: forecastDueAt,
+          minStartUtc: forecastDueAt,
+          reuseInstance: forecastExisting ?? extras[0] ?? null,
         });
-
-        if (!("status" in placement)) {
-          logNonDailyPlacementAttempt({
-            habitId: habit.id,
-            durationMin,
-            resolvedEnergy,
-            compatibleWindowCount: compatibleWindows.length,
-            result: "FAIL",
-            reason: formatPlacementError(placement.error),
-            day: plannedDayStart.toISOString(),
-            alreadyScheduledInHorizon: existingLocalDays.length > 0,
-          });
-          if (placement.error && placement.error !== "NO_FIT") {
-            result.failures.push({
-              itemId: habit.id,
-              reason: "error",
-              detail: placement.error,
-            });
+        forecastInstance = forecastPlacement.instance ?? null;
+        if (!forecastInstance && forecastExisting) {
+          const start = safeDate(forecastExisting.start_utc);
+          if (start && start.getTime() >= baseDate.getTime()) {
+            forecastInstance = forecastExisting;
           }
-          continue;
         }
-
-        if (placement.error || !placement.data) {
-          logNonDailyPlacementAttempt({
-            habitId: habit.id,
-            durationMin,
-            resolvedEnergy,
-            compatibleWindowCount: compatibleWindows.length,
-            result: "FAIL",
-            reason:
-              formatPlacementError(placement.error) ?? "NO_PLACEMENT_DATA",
-            day: plannedDayStart.toISOString(),
-            alreadyScheduledInHorizon: existingLocalDays.length > 0,
+        if (!forecastPlacement.instance && forecastInstance) {
+          forecastInstance = await applyMetadataIfNeeded(forecastInstance, {
+            role: "FORECAST",
+            dueAtUtc: forecastDueAt,
+            anchorCompletedAtUtc: plan.anchor.completedAtUtc,
+            chainKey,
           });
-          if (placement.error && placement.error !== "NO_FIT") {
-            result.failures.push({
-              itemId: habit.id,
-              reason: "error",
-              detail: placement.error,
-            });
+        }
+        if (forecastInstance?.start_utc) {
+          const forecastDayMs = startOfDayInTimeZone(
+            new Date(forecastInstance.start_utc),
+            timeZone
+          ).getTime();
+          if (Number.isFinite(forecastDayMs)) {
+            blockLocalDays.add(forecastDayMs);
           }
-          continue;
         }
-
-        const persisted = placement.data;
-        logNonDailyPlacementAttempt({
-          habitId: habit.id,
-          durationMin,
-          resolvedEnergy,
-          compatibleWindowCount: compatibleWindows.length,
-          result: "SUCCESS",
-          day: plannedDayStart.toISOString(),
-          alreadyScheduledInHorizon: existingLocalDays.length > 0,
-        });
-        if (persisted?.id) {
-          createdThisRun.add(persisted.id);
-        }
-        registerInstanceForOffsets(persisted);
-        recordHabitScheduledStart(habit.id, persisted.start_utc ?? "");
-        addHabitBlocker(persisted);
-        result.placed.push(persisted);
-        const windowLabel =
-          dayWindows.find((win) => win.id === persisted.window_id)?.label ??
-          null;
-        result.timeline.push({
-          type: "HABIT",
-          habit: {
-            id: habit.id,
-            name: habit.name,
-            windowId: persisted.window_id ?? null,
-            windowLabel,
-            startUTC: persisted.start_utc ?? "",
-            endUTC: persisted.end_utc ?? "",
-            durationMin: durationMin,
-            energyResolved: persisted.energy_resolved ?? null,
-          },
-          decision: "new",
-          scheduledDayOffset: offset,
-        });
-        habitDayKeys.add(dayKey);
-        placedAny = true;
       }
 
-      if (!placedAny) {
+      const keepIds = new Set<string>();
+      if (primaryInstance?.id) {
+        keepIds.add(primaryInstance.id);
+        nonDailyReplacementInstanceIds.add(primaryInstance.id);
+      }
+      if (forecastInstance?.id) {
+        keepIds.add(forecastInstance.id);
+        nonDailyReplacementInstanceIds.add(forecastInstance.id);
+      }
+
+      for (const inst of existingInstances) {
+        if (!inst?.id) continue;
+        if (keepIds.has(inst.id)) continue;
+        await cancelScheduleInstance(inst.id, {
+          reason: "NON_DAILY_CHAIN_PRUNE",
+        });
+        removeInstanceFromBuckets(inst.id);
+      }
+
+      if (!primaryInstance) {
         await createMissedHabitInstance(habit, "NO_FEASIBLE_SLOT_IN_HORIZON");
         result.failures.push({
           itemId: habit.id,
           reason: "NO_FEASIBLE_SLOT_IN_HORIZON",
         });
+      } else {
+        recordHabitScheduledStart(habit.id, primaryInstance.start_utc ?? "");
+        if (forecastInstance) {
+          recordHabitScheduledStart(habit.id, forecastInstance.start_utc ?? "");
+        }
       }
     }
 
     return nonDailyReplacementInstanceIds;
-
   };
   nonDailyReplacementInstanceIds = await scheduleNonDailyHabitsAcrossHorizon(
     nonDailyHabits

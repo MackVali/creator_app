@@ -56,6 +56,8 @@ export type ProjectGoalRelations = Record<
   {
     goalId: string;
     goalName: string | null;
+    goalEmoji: string | null;
+    goalMonumentId: string | null;
   }
 >;
 
@@ -357,6 +359,12 @@ export async function buildScheduleEventDataset({
   const goalNameById = new Map<string, GoalSummary["name"]>(
     goals.map((goal) => [goal.id, goal.name ?? null])
   );
+  const goalEmojiById = new Map<string, GoalSummary["emoji"]>(
+    goals.map((goal) => [goal.id, goal.emoji ?? null])
+  );
+  const goalMonumentIdById = new Map<string, GoalSummary["monumentId"]>(
+    goals.map((goal) => [goal.id, goal.monumentId ?? null])
+  );
   const projectGoalRelations: ProjectGoalRelations = {};
   for (const project of projectList) {
     const goalId = project.goal_id ?? null;
@@ -365,6 +373,8 @@ export async function buildScheduleEventDataset({
     projectGoalRelations[project.id] = {
       goalId,
       goalName: goalNameById.get(goalId) ?? null,
+      goalEmoji: goalEmojiById.get(goalId) ?? null,
+      goalMonumentId: goalMonumentIdById.get(goalId) ?? null,
     };
   }
 

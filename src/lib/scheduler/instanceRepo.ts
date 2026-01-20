@@ -129,6 +129,7 @@ export async function createInstance(
     eventName?: string | null;
     locked?: boolean;
     practiceContextId?: string | null;
+    metadata?: ScheduleInstance["metadata"];
   },
   client?: Client
 ) {
@@ -156,6 +157,7 @@ export async function createInstance(
       locked: input.locked ?? false,
       event_name: input.eventName ?? null,
       practice_context_monument_id: input.practiceContextId ?? null,
+      metadata: input.metadata ?? null,
     })
     .select("*")
     .single();
@@ -199,6 +201,7 @@ export async function rescheduleInstance(
     eventName?: string | null;
     locked?: boolean;
     practiceContextId?: string | null;
+    metadata?: ScheduleInstance["metadata"];
   },
   client?: Client
 ) {
@@ -223,6 +226,9 @@ export async function rescheduleInstance(
     completed_at: null,
     event_name: input.eventName ?? null,
   };
+  if (typeof input.metadata !== "undefined") {
+    payload.metadata = input.metadata ?? null;
+  }
   if (typeof input.practiceContextId !== "undefined") {
     payload.practice_context_monument_id = input.practiceContextId ?? null;
   }

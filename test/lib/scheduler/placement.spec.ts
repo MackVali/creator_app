@@ -1,22 +1,28 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 
-vi.mock("../../../src/lib/scheduler/instanceRepo", () => ({
-  fetchInstancesForRange: vi.fn(async () => ({
-    data: [],
-    error: null,
-    count: null,
-    status: 200,
-    statusText: "OK",
-  })),
-  createInstance: vi.fn(async (input: unknown) => ({
-    data: input,
-    error: null,
-    count: null,
-    status: 201,
-    statusText: "Created",
-  })),
-  rescheduleInstance: vi.fn(),
-}));
+vi.mock("../../../src/lib/scheduler/instanceRepo", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../../../src/lib/scheduler/instanceRepo")
+  >();
+  return {
+    ...actual,
+    fetchInstancesForRange: vi.fn(async () => ({
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    })),
+    createInstance: vi.fn(async (input: unknown) => ({
+      data: input,
+      error: null,
+      count: null,
+      status: 201,
+      statusText: "Created",
+    })),
+    rescheduleInstance: vi.fn(),
+  };
+});
 
 let placeItemInWindows: (typeof import("../../../src/lib/scheduler/placement"))[
   "placeItemInWindows"
