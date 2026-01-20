@@ -243,7 +243,7 @@ export function JumpToDateSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
-        className="bg-[var(--surface-elevated)] border-t border-white/10 p-0 text-[var(--text-primary)] rounded-t-[26px] sm:rounded-t-2xl max-h-[92vh] sm:max-h-[88vh] overflow-hidden shadow-[0_-22px_50px_rgba(0,0,0,0.45)] backdrop-blur"
+        className="flex h-full flex-col bg-[var(--surface-elevated)] border-t border-white/10 p-0 text-[var(--text-primary)] rounded-t-[26px] sm:rounded-t-2xl max-h-[92vh] sm:max-h-[88vh] overflow-hidden shadow-[0_-22px_50px_rgba(0,0,0,0.45)] backdrop-blur"
       >
           <SheetHeader className="sticky top-0 z-20 border-b border-white/10 bg-[var(--surface-elevated)]/95 px-4 pt-4 pb-3 backdrop-blur">
             <div className="flex items-start justify-between gap-3">
@@ -442,7 +442,7 @@ export function JumpToDateSheet({
           ) : null}
 
           <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
-            <table className="w-full border-collapse table-fixed text-sm min-w-[320px]">
+            <table className="w-full border-collapse table-fixed text-[11px] sm:text-sm min-w-[300px]">
               <thead>
                 <tr className="text-[11px] uppercase tracking-[0.28em] text-white/60">
                   {WEEKDAY_LABELS.map(label => (
@@ -452,7 +452,7 @@ export function JumpToDateSheet({
                   ))}
                 </tr>
               </thead>
-              <tbody className="text-base">
+              <tbody className="text-[12px] sm:text-base">
                 {monthMetadata.weeks.map((week, weekIndex) => (
                   <tr key={`week-${weekIndex}`} className="text-center">
                     {week.map((day, dayIndex) => {
@@ -465,7 +465,7 @@ export function JumpToDateSheet({
                       const isSelected = dayKey === selectedDateKey;
                       const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                       const circleClass = cn(
-                        "flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-md text-sm font-medium",
+                        "flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-md text-[11px] sm:text-sm font-medium",
                         isSelected
                           ? "bg-[var(--accent-red)] text-white shadow-[0_14px_34px_rgba(252,165,165,0.45)]"
                           : "bg-white/10 text-white/80",
@@ -473,12 +473,12 @@ export function JumpToDateSheet({
                         isWeekend && !isSelected && "text-white/60"
                       );
                       return (
-                        <td key={day.toISOString()} className="px-1 py-1 sm:py-1.5">
+                        <td key={day.toISOString()} className="px-0.5 py-0.5 sm:py-1">
                           <button
                             type="button"
                             onClick={() => handleSelect(day)}
                             className={cn(
-                              "mx-auto flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border text-sm font-semibold transition",
+                              "mx-auto flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl border text-[11px] sm:text-sm font-semibold transition",
                               "focus-visible:outline focus-visible:outline-2 focus-visible:outline-white",
                               "border-transparent bg-transparent hover:bg-white/10"
                             )}
