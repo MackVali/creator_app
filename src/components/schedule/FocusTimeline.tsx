@@ -16,16 +16,17 @@ import { DayTimeline } from "./DayTimeline";
 
 interface FocusTimelineProps {
   children?: ReactNode;
+  hideFab?: boolean;
 }
 
-export function FocusTimelineFab() {
+export function FocusTimelineFab({ hidden = false }: { hidden?: boolean }) {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  if (!isMounted) {
+  if (!isMounted || hidden) {
     return null;
   }
 
@@ -40,7 +41,7 @@ export function FocusTimelineFab() {
   );
 }
 
-export function FocusTimeline({ children }: FocusTimelineProps) {
+export function FocusTimeline({ children, hideFab = false }: FocusTimelineProps) {
   const now = new Date();
   const startHour = now.getHours() + now.getMinutes() / 60;
   const endHour = startHour + 3;
@@ -62,7 +63,7 @@ export function FocusTimeline({ children }: FocusTimelineProps) {
       <DayTimeline startHour={startHour} endHour={endHour} date={now}>
         {enhancedChildren}
       </DayTimeline>
-      <FocusTimelineFab />
+      <FocusTimelineFab hidden={hideFab} />
     </div>
   );
 }

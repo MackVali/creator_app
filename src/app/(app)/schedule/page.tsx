@@ -7455,12 +7455,12 @@ export default function SchedulePage() {
                       </motion.div>
                     </AnimatePresence>
                   )}
-                  <FocusTimelineFab />
+                  <FocusTimelineFab hidden={isJumpToDateOpen} />
                 </ScheduleViewShell>
               )}
               {view === "focus" && (
                 <ScheduleViewShell key="focus">
-                  <FocusTimeline />
+                  <FocusTimeline hideFab={isJumpToDateOpen} />
                 </ScheduleViewShell>
               )}
             </AnimatePresence>
@@ -7483,6 +7483,7 @@ export default function SchedulePage() {
         timeZone={effectiveTimeZone}
         onSelectDate={handleJumpToDateSelect}
         snapshot={jumpToDateSnapshot ?? undefined}
+        windowSnapshot={windowSnapshot}
       />
       <ScheduleSearchSheet
         open={isSearchOpen}
