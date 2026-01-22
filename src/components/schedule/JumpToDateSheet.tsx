@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState, useCallback, useRef, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, CalendarDays, Paintbrush, Droplet } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, Paintbrush, Droplet, MapPin } from "lucide-react";
 import type { JumpToDateSnapshot } from "@/lib/scheduler/snapshot";
 import { ENERGY_LEVELS } from "@/lib/scheduler/energy";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
@@ -13,7 +13,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { windowsForDateFromSnapshot, type WindowLite } from "@/lib/scheduler/repo";
+import type { WindowLite } from "@/lib/scheduler/repo";
 
 import {
   Sheet,
@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { formatDateKeyInTimeZone } from "@/lib/scheduler/timezone";
+import { getSupabaseBrowser } from "@/lib/supabase";
 
 interface JumpToDateSheetProps {
   open: boolean;
@@ -34,6 +35,8 @@ interface JumpToDateSheetProps {
   snapshot?: JumpToDateSnapshot;
   windowSnapshot?: WindowLite[];
 }
+
+type BlockType = "FOCUS" | "BREAK" | "PRACTICE";
 
 const WEEKDAY_LABELS = (() => {
   try {
@@ -60,13 +63,47 @@ export function JumpToDateSheet({
   timeZone,
   dayMetaByDateKey,
   snapshot,
-  windowSnapshot,
+  windowSnapshot: _windowSnapshot,
 }: JumpToDateSheetProps) {
   const router = useRouter();
   const [isPaintMode, setIsPaintMode] = useState(false);
   const [paintSelectionKey, setPaintSelectionKey] = useState<string | null>(null);
   const [isDayTypesMenuOpen, setIsDayTypesMenuOpen] = useState(false);
-  const [showWindowStack, setShowWindowStack] = useState(false);
+  const SHOW_TIME_BLOCKS_KEY = "jump-to-date-show-time-blocks";
+  const [showTimeBlocks, setShowTimeBlocks] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const stored = window.localStorage.getItem(SHOW_TIME_BLOCKS_KEY);
+      if (stored === null) return true;
+      return stored === "1";
+    } catch {
+      return true;
+    }
+  });
+  const [dayTypes, setDayTypes] = useState<
+    Array<{ id: string; name: string; isDefault: boolean; days: number[] }>
+  >([]);
+  const [isLoadingDayTypes, setIsLoadingDayTypes] = useState(false);
+  const [dayTypeError, setDayTypeError] = useState<string | null>(null);
+  const [timeBlocks, setTimeBlocks] = useState<
+    Array<{ id: string; label?: string | null; start_local: string; end_local: string }>
+  >([]);
+  const [dayTypeBlockMap, setDayTypeBlockMap] = useState<Map<string, Set<string>>>(() => new Map());
+  const [blockEnergy, setBlockEnergy] = useState<Map<string, FlameLevel>>(() => new Map());
+  const [blockTypeMap, setBlockTypeMap] = useState<Map<string, BlockType>>(() => new Map());
+  const [blockLocation, setBlockLocation] = useState<Map<string, { label: string; value: string } | null>>(
+    () => new Map()
+  );
+  const [isLoadingTimeBlocks, setIsLoadingTimeBlocks] = useState(false);
+  const [timeBlockError, setTimeBlockError] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(SHOW_TIME_BLOCKS_KEY, showTimeBlocks ? "1" : "0");
+    } catch {
+      // ignore write errors
+    }
+  }, [showTimeBlocks, SHOW_TIME_BLOCKS_KEY]);
   const energyHours = (snapshot?.energyHours ?? {}) as JumpToDateSnapshot["energyHours"];
   const projected = snapshot?.projected ?? {};
   type EnergyView = "day" | "week" | "month";
@@ -123,6 +160,178 @@ export function JumpToDateSheet({
     });
   };
 
+  useEffect(() => {
+    if (!open || !isPaintMode) return;
+    let cancelled = false;
+    const loadDayTypes = async () => {
+      setIsLoadingDayTypes(true);
+      setDayTypeError(null);
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) throw new Error("Supabase client not available");
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user?.id) {
+          setDayTypes([]);
+          return;
+        }
+        const { data, error } = await supabase
+          .from("day_types")
+          .select("id,name,is_default,days")
+          .eq("user_id", user.id);
+        if (error) throw error;
+        if (cancelled) return;
+        const normalized =
+          data?.flatMap(entry => {
+            if (!entry?.id || typeof entry.name !== "string") return [];
+            const days = Array.isArray(entry.days)
+              ? entry.days
+                  .map(day => Number(day))
+                  .filter(day => Number.isInteger(day) && day >= 0 && day <= 6)
+              : [];
+            return [
+              {
+                id: entry.id,
+                name: entry.name,
+                isDefault: entry.is_default ?? false,
+                days,
+              },
+            ];
+          }) ?? [];
+        setDayTypes(normalized);
+      } catch (error) {
+        console.warn("Unable to load day types", error);
+        if (cancelled) return;
+        setDayTypes([]);
+        setDayTypeError("Unable to load day types right now.");
+      } finally {
+        if (cancelled) return;
+        setIsLoadingDayTypes(false);
+      }
+    };
+    void loadDayTypes();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isPaintMode]);
+
+  useEffect(() => {
+    if (!open || !isPaintMode) return;
+    let cancelled = false;
+    const loadTimeBlocks = async () => {
+      setIsLoadingTimeBlocks(true);
+      setTimeBlockError(null);
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) throw new Error("Supabase client not available");
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user?.id) {
+          setTimeBlocks([]);
+          setDayTypeBlockMap(new Map());
+          setBlockEnergy(new Map());
+          setBlockTypeMap(new Map());
+          setBlockLocation(new Map());
+          return;
+        }
+        const [blocksResult, linksResult] = await Promise.all([
+          supabase
+            .from("time_blocks")
+            .select("id,label,start_local,end_local")
+            .eq("user_id", user.id),
+          supabase
+            .from("day_type_time_blocks")
+            .select(
+              "day_type_id,time_block_id,energy,block_type,location_context_id,location_context:location_contexts(value,label)"
+            )
+            .eq("user_id", user.id),
+        ]);
+        if (blocksResult.error) throw blocksResult.error;
+        if (linksResult.error) throw linksResult.error;
+        if (cancelled) return;
+
+        const normalizedBlocks =
+          blocksResult.data?.flatMap(entry => {
+            if (!entry?.id) return [];
+            return [
+              {
+                id: entry.id,
+                label: normalizeBlockLabel(entry.label),
+                start_local: normalizeTimeLabel(entry.start_local),
+                end_local: normalizeTimeLabel(entry.end_local),
+              },
+            ];
+          }) ?? [];
+
+        const byDayType = new Map<string, Set<string>>();
+        const energyMap = new Map<string, FlameLevel>();
+        const typeMap = new Map<string, BlockType>();
+        const locationMap = new Map<string, { label: string; value: string } | null>();
+        (linksResult.data ?? []).forEach(row => {
+          const dayTypeId = (row as { day_type_id?: string | null })?.day_type_id;
+          const blockId = (row as { time_block_id?: string | null })?.time_block_id;
+          if (!dayTypeId || !blockId) return;
+          const existing = byDayType.get(dayTypeId) ?? new Set<string>();
+          existing.add(blockId);
+          byDayType.set(dayTypeId, existing);
+          const level = (row as { energy?: string | null })?.energy ?? "NO";
+          energyMap.set(blockId, normalizeFlameLevel(level));
+          const type = ((row as { block_type?: string | null })?.block_type ?? "FOCUS").toUpperCase();
+          if (type === "BREAK" || type === "PRACTICE" || type === "FOCUS") {
+            typeMap.set(blockId, type);
+          } else {
+            typeMap.set(blockId, "FOCUS");
+          }
+          const locationContext = (row as { location_context?: { value?: string | null; label?: string | null } | null })
+            ?.location_context;
+          const locationId = (row as { location_context_id?: string | null })?.location_context_id;
+          if (locationId) {
+            const value =
+              typeof locationContext?.value === "string" ? locationContext.value.trim().toUpperCase() : locationId;
+            const label =
+              typeof locationContext?.label === "string" ? locationContext.label.trim() : locationContext?.value ?? value;
+            locationMap.set(blockId, { label: label ?? locationId, value });
+          } else {
+            locationMap.set(blockId, null);
+          }
+        });
+
+        const sortedBlocks = [...normalizedBlocks].sort((a, b) => {
+          const aStart = timeStringToMinutes(a.start_local);
+          const bStart = timeStringToMinutes(b.start_local);
+          if (aStart === bStart) {
+            return (a.label ?? "").localeCompare(b.label ?? "");
+          }
+          return aStart - bStart;
+        });
+
+        setTimeBlocks(sortedBlocks);
+        setDayTypeBlockMap(byDayType);
+        setBlockEnergy(energyMap);
+        setBlockTypeMap(typeMap);
+        setBlockLocation(locationMap);
+      } catch (error) {
+        console.warn("Unable to load time blocks for paint mode", error);
+        if (cancelled) return;
+        setTimeBlocks([]);
+        setDayTypeBlockMap(new Map());
+        setBlockEnergy(new Map());
+        setBlockTypeMap(new Map());
+        setBlockLocation(new Map());
+        setTimeBlockError("Unable to load time blocks right now.");
+      } finally {
+        if (cancelled) return;
+        setIsLoadingTimeBlocks(false);
+      }
+    };
+    void loadTimeBlocks();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isPaintMode]);
+
   const handleCreateDayType = useCallback(() => {
     onOpenChange(false);
     setIsDayTypesMenuOpen(false);
@@ -141,16 +350,30 @@ export function JumpToDateSheet({
       ? (upper as FlameLevel)
       : "MEDIUM";
   };
-  const windowDurationHours = (window?: WindowLite | null) => {
+  const normalizeBlockLabel = (value?: string | null) => {
+    const trimmed = (value ?? "").trim();
+    return trimmed.length > 0 ? trimmed.toUpperCase() : null;
+  };
+  const timeStringToMinutes = (time?: string | null) => {
+    const [h, m] = String(time ?? "").split(":").map(Number);
+    const hh = Number.isFinite(h) ? Math.min(Math.max(h, 0), 24) : 0;
+    const mm = Number.isFinite(m) ? Math.min(Math.max(m, 0), 59) : 0;
+    const clampedHour = hh === 24 && mm > 0 ? 23 : hh;
+    return clampedHour * 60 + mm;
+  };
+  const normalizeTimeLabel = (value?: string | null) => {
+    const minutes = timeStringToMinutes(value);
+    const clamped = Math.min(Math.max(minutes, 0), 1439);
+    const h = Math.floor(clamped / 60);
+    const m = clamped % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  };
+  const windowDurationHours = (
+    window?: { start_local?: string | null; end_local?: string | null } | null
+  ) => {
     if (!window) return 0;
-    const toMinutes = (time?: string | null) => {
-      const [h, m] = String(time ?? "").split(":").map(Number);
-      const hh = Number.isFinite(h) ? h : 0;
-      const mm = Number.isFinite(m) ? m : 0;
-      return hh * 60 + mm;
-    };
-    const start = toMinutes(window.start_local);
-    const end = toMinutes(window.end_local);
+    const start = timeStringToMinutes(window.start_local);
+    const end = timeStringToMinutes(window.end_local);
     const durationMin = end < start ? 1440 - start + end : end - start;
     return Math.max(durationMin, 0) / 60;
   };
@@ -328,28 +551,28 @@ export function JumpToDateSheet({
     return { dayName, dateLabel };
   }, [paintSelectionDate]);
 
-  const paintWindows = useMemo(() => {
-    if (!isPaintMode || !paintSelectionDate || !windowSnapshot || windowSnapshot.length === 0) {
-      return [];
-    }
-    try {
-      const windows = windowsForDateFromSnapshot(windowSnapshot, paintSelectionDate, resolvedTimeZone);
-      return [...windows].sort((a, b) => {
-        const toMinutes = (time?: string | null) => {
-          const [h, m] = String(time ?? "").split(":").map(Number);
-          const hh = Number.isFinite(h) ? h : 0;
-          const mm = Number.isFinite(m) ? m : 0;
-          return hh * 60 + mm;
-        };
-        const aStart = toMinutes(a.start_local);
-        const bStart = toMinutes(b.start_local);
-        return aStart - bStart;
-      });
-    } catch (error) {
-      console.warn("Unable to derive windows for paint selection", error);
-      return [];
-    }
-  }, [isPaintMode, paintSelectionDate, windowSnapshot, resolvedTimeZone]);
+  const paintDayType = useMemo(() => {
+    if (!paintSelectionDate || dayTypes.length === 0) return null;
+    const dayIndex = paintSelectionDate.getDay();
+    const matches = dayTypes.filter(dayType => dayType.days.includes(dayIndex));
+    if (matches.length === 0) return null;
+    const preferred = matches.find(dayType => dayType.isDefault);
+    return preferred ?? matches[0];
+  }, [dayTypes, paintSelectionDate]);
+
+  const paintTimeBlocks = useMemo(() => {
+    if (!isPaintMode || !paintDayType) return [];
+    const linkedBlocks = dayTypeBlockMap.get(paintDayType.id);
+    if (!linkedBlocks) return [];
+    return timeBlocks
+      .filter(block => linkedBlocks.has(block.id))
+      .map(block => ({
+        ...block,
+        energy: blockEnergy.get(block.id) ?? null,
+        blockType: blockTypeMap.get(block.id) ?? "FOCUS",
+        location: blockLocation.get(block.id) ?? null,
+      }));
+  }, [blockEnergy, blockLocation, blockTypeMap, dayTypeBlockMap, isPaintMode, paintDayType, timeBlocks]);
 
   const handleSelect = (date: Date, dateKey?: string) => {
     if (isPaintMode && dateKey) {
@@ -421,52 +644,88 @@ export function JumpToDateSheet({
                 )}
                 {paintSelectionLabel ? (
                   <div className="rounded-lg border border-white/10 bg-white/5 p-2.5 sm:p-3 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] sm:text-sm font-semibold uppercase tracking-[0.12em] text-white/70">
-                      <span>Windows</span>
-                      <label className="flex items-center gap-2 text-[11px] sm:text-xs font-medium text-white/70 select-none">
-                        <input
-                          type="checkbox"
-                          className="h-3.5 w-3.5 rounded border border-white/40 bg-white/5 accent-white/80"
-                          checked={showWindowStack}
-                          onChange={e => setShowWindowStack(e.target.checked)}
-                        />
-                        <span>View window stack</span>
-                      </label>
+                    <div className="pt-1 space-y-0.5 text-[12px] sm:text-sm font-semibold text-white/75">
+                      <div className="flex items-center justify-between gap-2">
+                        <span>Day type</span>
+                        <span className="text-white/90">
+                          {dayTypeError
+                            ? "Unavailable"
+                            : isLoadingDayTypes
+                              ? "Loading…"
+                              : paintDayType?.name ?? "None set"}
+                        </span>
+                      </div>
+                      <div>
+                        Mode: <span className="text-white/90">Default</span>
+                      </div>
                     </div>
-                    {showWindowStack ? (
-                      paintWindows.length === 0 ? (
+                    <div className="rounded-md border border-white/10 bg-white/5 p-2.5 sm:p-3 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] sm:text-sm font-semibold uppercase tracking-[0.12em] text-white/70">
+                        <span>Time blocks</span>
+                        <label className="flex items-center gap-2 text-[11px] sm:text-xs font-medium text-white/70 select-none">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 rounded border border-white/40 bg-white/5 accent-white/80"
+                            checked={showTimeBlocks}
+                            onChange={e => setShowTimeBlocks(e.target.checked)}
+                          />
+                          <span>View time blocks</span>
+                        </label>
+                      </div>
+                      {!showTimeBlocks ? null : timeBlockError ? (
                         <div className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
-                          No windows on this day.
+                          {timeBlockError}
+                        </div>
+                      ) : isLoadingTimeBlocks ? (
+                        <div className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
+                          Loading time blocks…
+                        </div>
+                      ) : paintTimeBlocks.length === 0 ? (
+                        <div className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
+                          No time blocks for this day type.
                         </div>
                       ) : (
                         <div className="space-y-1">
-                          {paintWindows.map(window => {
-                            const hours = windowDurationHours(window);
+                          {paintTimeBlocks.map(block => {
+                            const hours = windowDurationHours(block);
+                            const typeLabel =
+                              (block.blockType ?? "FOCUS").charAt(0) +
+                              (block.blockType ?? "FOCUS").slice(1).toLowerCase();
                             return (
                               <div
-                                key={window.id}
+                                key={block.id}
                                 className="flex items-center justify-between gap-2 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5"
                               >
-                                <div className="min-w-0">
+                                <div className="min-w-0 space-y-0.5">
                                   <div className="truncate text-[13px] sm:text-sm font-semibold text-white/90">
-                                    {window.label || "Window"}
+                                    {block.label || "Time block"}
                                   </div>
-                                  <div className="text-[10px] sm:text-[11px] text-white/60">
-                                    {window.start_local} – {window.end_local}
+                                  <div className="flex flex-wrap items-center gap-1.5 text-[10px] sm:text-[11px] text-white/60">
+                                    <span>
+                                      {block.start_local} – {block.end_local}
+                                    </span>
+                                    {block.location ? (
+                                      <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-white/65">
+                                        <MapPin className="h-3 w-3" />
+                                        <span className="truncate max-w-[120px] sm:max-w-[200px]">
+                                          {block.location.label ?? block.location.value}
+                                        </span>
+                                      </span>
+                                    ) : null}
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1 text-[12px] sm:text-[13px] font-semibold text-white/90 whitespace-nowrap">
+                                <div className="flex items-center gap-1 text-[11px] sm:text-[12px] font-semibold text-white/90 whitespace-nowrap">
+                                  <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/75">
+                                    {typeLabel}
+                                  </span>
                                   <span>{formatWindowHours(hours)}</span>
-                                  <EnergyFlame level={normalizeFlameLevel(window.energy)} />
+                                  <EnergyFlame level={normalizeFlameLevel(block.energy)} />
                                 </div>
                               </div>
                             );
                           })}
                         </div>
-                      )
-                    ) : null}
-                    <div className="pt-1 text-[12px] sm:text-sm font-semibold text-white/75">
-                      Mode: <span className="text-white/90">Default</span>
+                      )}
                     </div>
                   </div>
                 ) : null}
