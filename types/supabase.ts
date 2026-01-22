@@ -849,6 +849,38 @@ export interface Database {
           created_by?: string | null;
         };
       };
+      time_blocks: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          label: string | null;
+          start_local: string;
+          end_local: string;
+          days: number[] | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          label?: string | null;
+          start_local: string;
+          end_local: string;
+          days?: number[] | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          label?: string | null;
+          start_local?: string;
+          end_local?: string;
+          days?: number[] | null;
+        };
+      };
       windows: {
         Row: {
           id: string;

@@ -125,7 +125,7 @@ export function SchedulerModeSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="bg-gradient-to-b from-[#12131B] to-[#0B0B11] p-0 text-zinc-100 shadow-[0_25px_120px_rgba(2,2,16,0.65)] sm:max-w-xl lg:max-w-3xl"
+        className="border-0 bg-gradient-to-b from-[#12131B] to-[#0B0B11] p-0 text-zinc-100 shadow-[0_25px_120px_rgba(2,2,16,0.65)] sm:max-w-xl lg:max-w-3xl"
       >
         <div className="flex h-full flex-col">
           <SheetHeader className="border-b border-white/5 px-6 py-5 text-left">
@@ -137,9 +137,9 @@ export function SchedulerModeSheet({
             </SheetDescription>
           </SheetHeader>
 
-          <div className="grid flex-1 gap-6 overflow-hidden lg:grid-cols-[minmax(0,260px)_1fr]">
-            <ScrollArea className="h-full border-r border-white/5 px-6 py-6">
-              <div className="space-y-3">
+          <div className="grid flex-1 min-h-0 gap-6 lg:grid-cols-[minmax(0,260px)_1fr]">
+            <ScrollArea className="h-full min-h-0 border-r border-white/5 px-5 py-5">
+              <div className="space-y-2">
                 {MODE_OPTIONS.map(option => {
                   const isActive = option.type === modeType;
                   return (
@@ -148,26 +148,26 @@ export function SchedulerModeSheet({
                       type="button"
                       onClick={() => onModeTypeChange(option.type)}
                       className={cn(
-                        "group relative flex w-full items-start gap-3 rounded-2xl border border-transparent bg-white/5 px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)]/50",
+                        "group relative flex w-full items-start gap-2 rounded-xl border border-transparent bg-white/5 px-3 py-2.5 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)]/50",
                         isActive
-                          ? "border-[var(--accent-red)] bg-[var(--accent-red)]/15 text-white shadow-[0_18px_38px_rgba(12,12,40,0.35)]"
+                          ? "border-[var(--accent-red)] bg-[var(--accent-red)]/12 text-white shadow-[0_12px_28px_rgba(12,12,40,0.28)]"
                           : "hover:border-white/15 hover:bg-white/10 text-zinc-300"
                       )}
                     >
                       <span
                         className={cn(
-                          "flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-[var(--accent-red)] transition",
-                          isActive && "bg-[var(--accent-red)]/25"
+                          "flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-[var(--accent-red)] transition",
+                          isActive && "bg-[var(--accent-red)]/20"
                         )}
                       >
                         {option.icon}
                       </span>
                       <span className="flex flex-col gap-0.5">
                         <span className="text-sm font-semibold">{option.label}</span>
-                        <span className="text-xs text-zinc-400">{option.description}</span>
+                        <span className="text-[10px] text-zinc-500">{option.description}</span>
                       </span>
                       {isActive ? (
-                        <Badge className="absolute right-4 top-4 bg-white/15 text-[10px] uppercase tracking-wide text-white">
+                        <Badge className="absolute right-3 top-2.5 bg-white/10 px-2 py-1 text-[10px] uppercase tracking-wide text-white">
                           Active
                         </Badge>
                       ) : null}
@@ -177,7 +177,7 @@ export function SchedulerModeSheet({
               </div>
             </ScrollArea>
 
-            <ScrollArea className="h-full px-6 py-6">
+            <ScrollArea className="h-full min-h-0 px-6 py-6">
               <div className="space-y-6">
                 {selectedOption ? (
                   <div className="rounded-2xl border border-white/5 bg-white/5 p-5 shadow-[0_25px_45px_rgba(5,6,10,0.45)]">
@@ -190,7 +190,7 @@ export function SchedulerModeSheet({
                       </span>
                       <div>
                         <p className="text-lg font-semibold text-white">{selectedOption.label}</p>
-                        <p className="text-sm text-zinc-400">{selectedOption.description}</p>
+                        <p className="text-xs text-zinc-400">{selectedOption.description}</p>
                       </div>
                     </div>
                   </div>
@@ -201,9 +201,6 @@ export function SchedulerModeSheet({
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-semibold text-white">Focus monument</p>
-                        <p className="text-xs text-zinc-400">
-                          Projects linked to this monument are prioritized across every day.
-                        </p>
                       </div>
                       <Badge variant="outline" className="border-white/15 text-[10px] uppercase tracking-wide text-zinc-300">
                         Priority filter
@@ -217,10 +214,13 @@ export function SchedulerModeSheet({
                       <Select
                         value={monumentId ?? ""}
                         onValueChange={value => onMonumentChange(value || null)}
+                        placement="above"
+                        maxHeight={320}
+                        contentWrapperClassName="max-h-[min(320px,70vh)] overflow-y-auto"
                         placeholder="Choose a monument"
                         triggerClassName="mt-3 h-12 rounded-xl border border-white/15 bg-black/20 text-sm text-zinc-100"
                       >
-                        <SelectContent>
+                        <SelectContent className="max-h-[min(320px,70vh)]">
                           {monuments.map(monument => (
                             <SelectItem key={monument.id} value={monument.id} label={monument.title}>
                               <div className="flex items-center gap-3">

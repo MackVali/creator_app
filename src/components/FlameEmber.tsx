@@ -41,7 +41,7 @@ const OUTER_SHAPES: Record<string, string> = {
 
 const PALETTES = {
   LOW:   { redTop:"#ff5a36", redBot:"#e84a3b", midTop:"#ff8f3a", midBot:"#ff6d00", core0:"#ffe08a", core1:"#ffd061" },
-  MEDIUM:{ redTop:"#ff4a2b", redBot:"#e43b36", midTop:"#ff8a00", midBot:"#ff6a00", core0:"#ffd86f", core1:"#ffc94f" },
+  MEDIUM:{ redTop:"#ff6f3c", redBot:"#e25b32", midTop:"#ffb057", midBot:"#ff7a1a", core0:"#ffe3a3", core1:"#ffc86a" },
   HIGH:  { redTop:"#ff3d00", redBot:"#e53935", midTop:"#ff9800", midBot:"#ff6f00", core0:"#fff59d", core1:"#ffd54f" },
   ULTRA: { redTop:"#ff2f00", redBot:"#e0252d", midTop:"#ffa000", midBot:"#ff6a00", core0:"#fff6b0", core1:"#ffe066" },
   EXTREME:{redTop:"#ff2200", redBot:"#d81b24", midTop:"#ffad00", midBot:"#ff6a00", core0:"#fff9c4", core1:"#ffe27a" },
@@ -62,7 +62,7 @@ type Palette = (typeof PALETTES)[keyof typeof PALETTES];
 const PROFILE: Record<FlameLevel, Profile> = {
   NO:      { shape: "stubby",   tilt: 0.5, breathe: 0.02, flicker: [0.01, 0.015, 0.02], nubs: 0, specks: 0, halo: false },
   LOW:     { shape: "stubby",   tilt: 1.0, breathe: 0.04, flicker: [0.03, 0.04, 0.05], nubs: 0, specks: 0, halo: false },
-  MEDIUM:  { shape: "standard", tilt: 2.5, breathe: 0.06, flicker: [0.05, 0.06, 0.07], nubs: 1, specks: 0, halo: false },
+  MEDIUM:  { shape: "standard", tilt: 1.8, breathe: 0.05, flicker: [0.04, 0.05, 0.06], nubs: 1, specks: 0, halo: false },
   HIGH:    { shape: "standard", tilt: 2.8, breathe: 0.06, flicker: [0.06, 0.07, 0.08], nubs: 2, specks: 2, halo: false },
   ULTRA:   { shape: "splitTip", tilt: 4.5, breathe: 0.09, flicker: [0.09, 0.10, 0.11], nubs: 2, specks: 3, halo: true },
   EXTREME: { shape: "waveTip",  tilt: 6.0, breathe: 0.12, flicker: [0.12, 0.13, 0.15], nubs: 2, specks: 4, halo: true },

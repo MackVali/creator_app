@@ -50,6 +50,8 @@ interface SelectProps {
   disablePortal?: boolean;
   /** Optional max height override (pixels). Defaults to viewport-aware measurement. */
   maxHeight?: number;
+  /** Control menu placement. Defaults to auto. */
+  placement?: "auto" | "above" | "below";
 }
 
 const Select = React.forwardRef<HTMLDivElement, SelectProps>(
@@ -68,6 +70,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       openOnTriggerFocus = false,
       disablePortal = false,
       maxHeight,
+      placement = "auto",
     },
     ref
   ) => {
@@ -120,7 +123,11 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       const safeMargin = 12;
       const spaceBelow = Math.max(0, viewportHeight - rect.bottom - gap);
       const spaceAbove = Math.max(0, rect.top - gap);
-      const preferAbove = spaceBelow < 260 && spaceAbove > spaceBelow;
+      const forcedAbove = placement === "above";
+      const forcedBelow = placement === "below";
+      const preferAbove =
+        forcedAbove ||
+        (!forcedBelow && spaceBelow < 260 && spaceAbove > spaceBelow);
       const availableSpace = preferAbove ? spaceAbove : spaceBelow;
       const fallbackMax = Math.max(200, viewportHeight - safeMargin * 2);
       const space = Math.max(availableSpace, 0);
@@ -145,7 +152,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
           maxHeight: computedMaxHeight,
         });
       }
-    }, [isOpen, maxHeight]);
+    }, [isOpen, maxHeight, placement]);
 
     React.useLayoutEffect(() => {
       if (!isOpen) return;
