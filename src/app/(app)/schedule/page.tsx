@@ -5762,6 +5762,62 @@ export default function SchedulePage() {
         .filter(
           (instance): instance is ProjectInstance => instance !== null
         );
+      const scheduledCardsByInstanceId = new Map<string, ProjectTaskCard[]>();
+      for (const projectInstance of dayProjectInstances) {
+        const projectTasks =
+          modelTaskInstancesByProject[projectInstance.project.id] ?? [];
+        const scheduledCards = projectTasks
+          .filter((taskInfo) =>
+            taskMatchesProjectInstance(
+              taskInfo,
+              projectInstance.instance,
+              projectInstance.start,
+              projectInstance.end
+            )
+          )
+          .map((taskInfo) => ({
+            key: `scheduled:${taskInfo.instance.id}`,
+            kind: "scheduled" as const,
+            task: taskInfo.task,
+            start: taskInfo.start,
+            end: taskInfo.end,
+            instanceId: taskInfo.instance.id,
+            displayDurationMinutes: Math.max(
+              1,
+              Math.round(
+                (taskInfo.end.getTime() - taskInfo.start.getTime()) / 60000
+              )
+            ),
+          }));
+        if (scheduledCards.length > 0) {
+          scheduledCardsByInstanceId.set(projectInstance.instance.id, scheduledCards);
+        }
+      }
+      const occupiedSegments: Array<{ start: Date; end: Date }> = [];
+      const addOccupiedSegment = (segmentStart: Date, segmentEnd: Date) => {
+        if (
+          !isValidDate(segmentStart) ||
+          !isValidDate(segmentEnd) ||
+          segmentStart.getTime() >= segmentEnd.getTime()
+        ) {
+          return;
+        }
+        occupiedSegments.push({ start: segmentStart, end: segmentEnd });
+      };
+      dayHabitPlacements.forEach((placement) =>
+        addOccupiedSegment(placement.start, placement.end)
+      );
+      dayProjectInstances.forEach((instance) =>
+        addOccupiedSegment(instance.start, instance.end)
+      );
+      for (const scheduledCards of scheduledCardsByInstanceId.values()) {
+        scheduledCards.forEach((card) =>
+          addOccupiedSegment(card.start, card.end)
+        );
+      }
+      modelStandaloneTaskInstances.forEach((taskInfo) =>
+        addOccupiedSegment(taskInfo.start, taskInfo.end)
+      );
 
       let hasLoggedInstance = false;
 
@@ -5856,17 +5912,15 @@ export default function SchedulePage() {
                 return null;
               }
 
-              const windowOverlapsSegment = (segmentStart: Date, segmentEnd: Date) =>
-                segmentStart < windowBounds.end &&
-                segmentEnd > windowBounds.start;
+              const windowStart = windowBounds.start;
+              const windowEnd = windowBounds.end;
 
-              const hasScheduledContent = dayProjectInstances.some(({ start, end }) =>
-                windowOverlapsSegment(start, end)
-              ) || dayHabitPlacements.some(({ start, end }) =>
-                windowOverlapsSegment(start, end)
+              const hasOverlappingSegment = occupiedSegments.some(
+                (segment) =>
+                  segment.start < windowEnd && segment.end > windowStart
               );
 
-              if (hasScheduledContent) {
+              if (hasOverlappingSegment) {
                 return null;
               }
 
@@ -6361,27 +6415,8 @@ export default function SchedulePage() {
                 const topStyle = toTimelinePosition(startOffsetMinutes);
                 const heightStyle = toTimelinePosition(durationMinutes);
                 const isExpanded = expandedProjects.has(projectId);
-                const projectTaskCandidates =
-                  modelTaskInstancesByProject[projectId] ?? [];
-                const scheduledCards: ProjectTaskCard[] = projectTaskCandidates
-                  .filter((taskInfo) =>
-                    taskMatchesProjectInstance(taskInfo, instance, start, end)
-                  )
-                  .map((taskInfo) => ({
-                    key: `scheduled:${taskInfo.instance.id}`,
-                    kind: "scheduled" as const,
-                    task: taskInfo.task,
-                    start: taskInfo.start,
-                    end: taskInfo.end,
-                    instanceId: taskInfo.instance.id,
-                    displayDurationMinutes: Math.max(
-                      1,
-                      Math.round(
-                        (taskInfo.end.getTime() - taskInfo.start.getTime()) /
-                          60000
-                      )
-                    ),
-                  }));
+                const scheduledCards: ProjectTaskCard[] =
+                  scheduledCardsByInstanceId.get(instance.id) ?? [];
                 const hasScheduledBreakdown = scheduledCards.length > 0;
                 const tasksLabel =
                   project.taskCount > 0
