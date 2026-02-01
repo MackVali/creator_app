@@ -103,46 +103,59 @@ export async function computeEnergyHoursForDateRange(
   return rounded;
 }
 
+
 type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
 
-async function fetchScheduledProjectActivityInRange(
-  start: Date,
-  end: Date,
+type ScheduledInstanceRow = {
+  source_id?: string | null;
+  start_utc?: string | null;
+};
+
+type GoalInstanceTotals = Map<
+  string,
+  {
+    total: number;
+    week: number;
+    month: number;
+    weekCompletionMs: number | null;
+    monthCompletionMs: number | null;
+  }
+>;
+
+async function fetchScheduledInstancesByType(
   userId: string,
-  supabase: ReturnType<typeof getSupabaseBrowser>
-): Promise<{
-  scheduledProjectIds: Set<string>;
-  lastScheduledStartUtcByProjectId: Map<string, Date>;
-}> {
-  const startIso = start.toISOString();
-  const endIso = end.toISOString();
+  supabase: ReturnType<typeof getSupabaseBrowser>,
+  sourceType: Database["public"]["Enums"]["schedule_instance_source_type"]
+): Promise<ScheduledInstanceRow[]> {
   const { data, error } = await supabase
     .from("schedule_instances")
     .select("source_id, start_utc")
     .eq("user_id", userId)
     .eq("status", "scheduled")
-    .eq("source_type", "PROJECT")
-    .gte("start_utc", startIso)
-    .lt("start_utc", endIso);
+    .eq("source_type", sourceType);
   if (error) throw error;
-  const ids = new Set<string>();
-  const lastScheduledStartUtcByProjectId = new Map<string, Date>();
+  return (data ?? []) as ScheduledInstanceRow[];
+}
+
+async function fetchHabitGoalMap(
+  userId: string,
+  supabase: ReturnType<typeof getSupabaseBrowser>
+) {
+  const { data, error } = await supabase
+    .from("habits")
+    .select("id, goal_id")
+    .eq("user_id", userId)
+    .not("goal_id", "is", null);
+  if (error) throw error;
+  const map = new Map<string, string>();
   for (const row of data ?? []) {
-    const id = (row as { source_id?: string | null; start_utc?: string | null })
-      .source_id;
-    if (id) ids.add(id);
-    const startUtc = (row as { start_utc?: string | null }).start_utc;
-    if (startUtc) {
-      const parsed = new Date(startUtc);
-      if (!Number.isNaN(parsed.getTime())) {
-        const prev = lastScheduledStartUtcByProjectId.get(id ?? "");
-        if (!prev || parsed.getTime() > prev.getTime()) {
-          lastScheduledStartUtcByProjectId.set(id ?? "", parsed);
-        }
-      }
+    const habitId = row?.id;
+    const goalId = row?.goal_id;
+    if (habitId && goalId) {
+      map.set(habitId, goalId);
     }
   }
-  return { scheduledProjectIds: ids, lastScheduledStartUtcByProjectId };
+  return map;
 }
 
 async function fetchIncompleteProjectsByGoal(
@@ -166,36 +179,6 @@ async function fetchIncompleteProjectsByGoal(
     map.get(goalId)?.add(project.id);
   }
   return map;
-}
-
-function computeLikelyGoals(
-  incompleteProjectIdsByGoal: Map<string, Set<string>>,
-  scheduledProjectIds: Set<string>,
-  lastScheduledStartUtcByProjectId: Map<string, Date>
-): Array<{ id: string; completionUtc: Date }> {
-  const result: Array<{ id: string; completionUtc: Date }> = [];
-  for (const [goalId, projIds] of incompleteProjectIdsByGoal.entries()) {
-    if (projIds.size === 0) continue;
-    let latest: Date | null = null;
-    for (const pid of projIds) {
-      if (!scheduledProjectIds.has(pid)) {
-        latest = null;
-        break;
-      }
-      const last = lastScheduledStartUtcByProjectId.get(pid);
-      if (!last) {
-        latest = null;
-        break;
-      }
-      if (!latest || last.getTime() > latest.getTime()) {
-        latest = last;
-      }
-    }
-    if (latest) {
-      result.push({ id: goalId, completionUtc: latest });
-    }
-  }
-  return result.sort((a, b) => a.completionUtc.getTime() - b.completionUtc.getTime());
 }
 
 export async function computeProjectedGoalsLikely(
@@ -231,61 +214,145 @@ export async function computeProjectedGoalsLikely(
   if (!supabase) throw new Error("Supabase client not available");
 
   const [
-    weekActivity,
-    monthActivity,
-    incompleteByGoal
+    incompleteByGoal,
+    projectInstances,
+    habitInstances,
+    habitGoalMap,
   ] = await Promise.all([
-    fetchScheduledProjectActivityInRange(weekStart, weekEnd, userId, supabase),
-    fetchScheduledProjectActivityInRange(monthStart, monthEnd, userId, supabase),
     fetchIncompleteProjectsByGoal(userId, supabase),
+    fetchScheduledInstancesByType(userId, supabase, "PROJECT"),
+    fetchScheduledInstancesByType(userId, supabase, "HABIT"),
+    fetchHabitGoalMap(userId, supabase),
   ]);
 
-  const weekGoalMatches = computeLikelyGoals(
-    incompleteByGoal,
-    weekActivity.scheduledProjectIds,
-    weekActivity.lastScheduledStartUtcByProjectId
-  );
-  const weekGoalIds = new Set(weekGoalMatches.map((g) => g.id));
+  const projectToGoal = new Map<string, string>();
+  for (const [goalId, projectIds] of incompleteByGoal.entries()) {
+    for (const projectId of projectIds) {
+      projectToGoal.set(projectId, goalId);
+    }
+  }
 
-  const monthGoalMatchesRaw = computeLikelyGoals(
-    incompleteByGoal,
-    monthActivity.scheduledProjectIds,
-    monthActivity.lastScheduledStartUtcByProjectId
-  );
-  const monthGoalMatches = monthGoalMatchesRaw.filter(
-    (g) => !weekGoalIds.has(g.id)
-  );
-  const monthGoalIds = new Set(monthGoalMatches.map((g) => g.id));
+  const goalTotals: GoalInstanceTotals = new Map();
+  const weekStartMs = weekStart.getTime();
+  const weekEndMs = weekEnd.getTime();
+  const monthStartMs = monthStart.getTime();
+  const monthEndMs = monthEnd.getTime();
+
+  const getTot = (goalId: string) => {
+    const existing = goalTotals.get(goalId);
+    if (existing) return existing;
+    const next = {
+      total: 0,
+      week: 0,
+      month: 0,
+      weekCompletionMs: null,
+      monthCompletionMs: null,
+    };
+    goalTotals.set(goalId, next);
+    return next;
+  };
+
+  const recordItem = (goalId: string, startMs: number) => {
+    const totals = getTot(goalId);
+    totals.total += 1;
+    if (startMs >= weekStartMs && startMs < weekEndMs) {
+      totals.week += 1;
+      if (!totals.weekCompletionMs || startMs > totals.weekCompletionMs) {
+        totals.weekCompletionMs = startMs;
+      }
+    }
+    if (startMs >= monthStartMs && startMs < monthEndMs) {
+      totals.month += 1;
+      if (!totals.monthCompletionMs || startMs > totals.monthCompletionMs) {
+        totals.monthCompletionMs = startMs;
+      }
+    }
+  };
+
+  const toMillis = (instance: ScheduledInstanceRow): number | null => {
+    if (!instance.start_utc) return null;
+    const parsed = Date.parse(instance.start_utc);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  for (const inst of projectInstances) {
+    const projectId = inst.source_id;
+    if (!projectId) continue;
+    const goalId = projectToGoal.get(projectId);
+    if (!goalId) continue;
+    const startMs = toMillis(inst);
+    if (!startMs) continue;
+    recordItem(goalId, startMs);
+  }
+
+  for (const inst of habitInstances) {
+    const habitId = inst.source_id;
+    if (!habitId) continue;
+    const goalId = habitGoalMap.get(habitId);
+    if (!goalId) continue;
+    const startMs = toMillis(inst);
+    if (!startMs) continue;
+    recordItem(goalId, startMs);
+  }
+
+  type LikelyMatchInternal = {
+    id: string;
+    completionUtc: string | null;
+    timeMs: number | null;
+  };
+
+  const buildMatches = (horizon: "week" | "month") => {
+    const matches: LikelyMatchInternal[] = [];
+    for (const [goalId, totals] of goalTotals.entries()) {
+      if (totals.total === 0) continue;
+      const horizonCount = horizon === "week" ? totals.week : totals.month;
+      if (horizonCount === 0 || horizonCount !== totals.total) continue;
+      const completionMs = horizon === "week" ? totals.weekCompletionMs : totals.monthCompletionMs;
+      matches.push({
+        id: goalId,
+        completionUtc: completionMs ? new Date(completionMs).toISOString() : null,
+        timeMs: completionMs,
+      });
+    }
+    matches.sort((a, b) =>
+      (a.timeMs ?? Number.MAX_SAFE_INTEGER) - (b.timeMs ?? Number.MAX_SAFE_INTEGER)
+    );
+    return matches;
+  };
+
+  const weekMatches = buildMatches("week");
+  const weekGoalIds = new Set(weekMatches.map((entry) => entry.id));
+  const monthMatchesRaw = buildMatches("month");
+  const monthMatches = monthMatchesRaw.filter((entry) => !weekGoalIds.has(entry.id));
+  const monthGoalIds = new Set(monthMatches.map((entry) => entry.id));
 
   if (DEBUG_LIKELY_GOALS) {
-    const goalsConsidered = incompleteByGoal.size;
-    const weekCount = weekGoalMatches.length;
-    const monthCount = monthGoalMatches.length;
-    const sampleWeek = weekGoalMatches.slice(0, 5);
-    const sampleMonth = monthGoalMatches.slice(0, 5);
+    const goalsConsidered = goalTotals.size;
+    const weekCount = weekMatches.length;
+    const monthCount = monthMatches.length;
     log("debug", "[ProjectedGoalsLikely]", {
       goalsConsidered,
       weekCount,
       monthCount,
-      sampleWeek,
-      sampleMonth,
+      sampleWeek: weekMatches.slice(0, 5),
+      sampleMonth: monthMatches.slice(0, 5),
     });
   }
 
   return {
     weekGoalIds,
     monthGoalIds,
-    weekLikelyGoals: weekGoalMatches.map((g) => ({
-      id: g.id,
+    weekLikelyGoals: weekMatches.map((entry) => ({
+      id: entry.id,
       title: "",
       emoji: null,
-      completionUtc: g.completionUtc.toISOString(),
+      completionUtc: entry.completionUtc,
     })),
-    monthLikelyGoals: monthGoalMatches.map((g) => ({
-      id: g.id,
+    monthLikelyGoals: monthMatches.map((entry) => ({
+      id: entry.id,
       title: "",
       emoji: null,
-      completionUtc: g.completionUtc.toISOString(),
+      completionUtc: entry.completionUtc,
     })),
   };
 }

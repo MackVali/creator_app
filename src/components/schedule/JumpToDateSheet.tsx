@@ -38,7 +38,14 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { formatDateKeyInTimeZone } from "@/lib/scheduler/timezone";
+import {
+  formatDateKeyInTimeZone,
+  startOfDayInTimeZone,
+  addDaysInTimeZone,
+  weekdayInTimeZone,
+  getDatePartsInTimeZone,
+  makeDateInTimeZone,
+} from "@/lib/scheduler/timezone";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 interface JumpToDateSheetProps {
@@ -78,6 +85,13 @@ const FLAME_LEVELS: FlameLevel[] = [
   "ULTRA",
   "EXTREME",
 ];
+
+type LikelyGoal = {
+  id: string;
+  title: string;
+  emoji?: string | null;
+  completionUtc?: string | null;
+};
 
 const WEEKDAY_LABELS = (() => {
   try {
@@ -171,9 +185,76 @@ export function JumpToDateSheet({
       // ignore write errors
     }
   }, [showTimeBlocks, SHOW_TIME_BLOCKS_KEY]);
+  const resolvedTimeZone =
+    (timeZone && timeZone.trim()) ||
+    Intl.DateTimeFormat().resolvedOptions().timeZone ||
+    "UTC";
   const energyHours = (snapshot?.energyHours ??
     {}) as JumpToDateSnapshot["energyHours"];
   const projected = snapshot?.projected ?? {};
+
+  const weekHorizon = useMemo(() => {
+    const baseDayStart = startOfDayInTimeZone(currentDate, resolvedTimeZone);
+    const weekStart = addDaysInTimeZone(
+      baseDayStart,
+      -weekdayInTimeZone(baseDayStart, resolvedTimeZone),
+      resolvedTimeZone
+    );
+    return {
+      start: weekStart,
+      end: addDaysInTimeZone(weekStart, 7, resolvedTimeZone),
+    };
+  }, [currentDate, resolvedTimeZone]);
+
+  const monthHorizon = useMemo(() => {
+    const dayParts = getDatePartsInTimeZone(currentDate, resolvedTimeZone);
+    const monthAnchor = makeDateInTimeZone(
+      {
+        year: dayParts.year,
+        month: dayParts.month,
+        day: 1,
+        hour: 12,
+        minute: 0,
+      },
+      resolvedTimeZone
+    );
+    const monthStart = startOfDayInTimeZone(monthAnchor, resolvedTimeZone);
+    const daysInMonth = new Date(
+      Date.UTC(dayParts.year, dayParts.month, 0)
+    ).getUTCDate();
+    return {
+      start: monthStart,
+      end: addDaysInTimeZone(monthStart, daysInMonth, resolvedTimeZone),
+    };
+  }, [currentDate, resolvedTimeZone]);
+
+  const weekLikelyGoalsRaw = useMemo(
+    () => (projected.weekLikelyGoals ?? []) as LikelyGoal[],
+    [projected.weekLikelyGoals]
+  );
+  const monthLikelyGoalsRaw = useMemo(
+    () => (projected.monthLikelyGoals ?? []) as LikelyGoal[],
+    [projected.monthLikelyGoals]
+  );
+  const weekLikelyGoals = useMemo(
+    () => filterLikelyGoalsWithinHorizon(weekLikelyGoalsRaw, weekHorizon),
+    [weekLikelyGoalsRaw, weekHorizon]
+  );
+  const weekLikelyGoalIds = useMemo(
+    () => new Set(weekLikelyGoals.map((goal) => goal.id)),
+    [weekLikelyGoals]
+  );
+  const monthLikelyGoalsWithinHorizon = useMemo(
+    () => filterLikelyGoalsWithinHorizon(monthLikelyGoalsRaw, monthHorizon),
+    [monthLikelyGoalsRaw, monthHorizon]
+  );
+  const monthLikelyGoals = useMemo(
+    () =>
+      monthLikelyGoalsWithinHorizon.filter(
+        (goal) => !weekLikelyGoalIds.has(goal.id)
+      ),
+    [monthLikelyGoalsWithinHorizon, weekLikelyGoalIds]
+  );
   type EnergyView = "day" | "week" | "month";
   const [energyView, setEnergyView] = useState<EnergyView>("day");
   const energyViewOrder: EnergyView[] = ["day", "week", "month"];
@@ -537,9 +618,6 @@ export function JumpToDateSheet({
     );
   }
 
-  const weekLikelyGoals = projected.weekLikelyGoals ?? [];
-  const monthLikelyGoals = projected.monthLikelyGoals ?? [];
-
   const formatCompleteBy = (iso?: string | null) => {
     if (!iso) return null;
     const resolvedTz =
@@ -561,16 +639,7 @@ export function JumpToDateSheet({
     return { dateLabel, timeLabel };
   };
 
-  function GoalTickerCard({
-    goal,
-  }: {
-    goal: {
-      id: string;
-      title: string;
-      emoji?: string | null;
-      completionUtc?: string | null;
-    };
-  }) {
+  function GoalTickerCard({ goal }: { goal: LikelyGoal }) {
     const completeBy = formatCompleteBy(goal.completionUtc);
     return (
       <div className="min-w-[110px] sm:min-w-[180px] shrink-0 rounded-lg bg-[var(--surface-elevated)] px-2 py-1 text-white/90 shadow-[0_12px_30px_rgba(5,7,12,0.32)]">
@@ -593,11 +662,6 @@ export function JumpToDateSheet({
       </div>
     );
   }
-  const resolvedTimeZone =
-    (timeZone && timeZone.trim()) ||
-    Intl.DateTimeFormat().resolvedOptions().timeZone ||
-    "UTC";
-
   useEffect(() => {
     if (!open || !isPaintMode) return;
     let cancelled = false;
@@ -2017,4 +2081,30 @@ function parseDateKey(key: string): Date | null {
     return null;
   }
   return new Date(year, month - 1, day);
+}
+
+type HorizonRange = {
+  start: Date;
+  end: Date;
+};
+
+function filterLikelyGoalsWithinHorizon(
+  goals: LikelyGoal[],
+  horizon: HorizonRange
+): LikelyGoal[] {
+  const startMs = horizon.start.getTime();
+  const endMs = horizon.end.getTime();
+  return goals.filter((goal) => {
+    const candidateMs = parseLikelyGoalTimestamp(goal.completionUtc);
+    if (candidateMs === null) {
+      return true;
+    }
+    return candidateMs >= startMs && candidateMs < endMs;
+  });
+}
+
+function parseLikelyGoalTimestamp(value?: string | null): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }

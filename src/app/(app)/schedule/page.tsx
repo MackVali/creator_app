@@ -2468,42 +2468,6 @@ export default function SchedulePage() {
     () => selectionToSchedulerModePayload(modeSelection),
     [modeSelection]
   );
-  const modeIsActive = resolvedModePayload.type !== "REGULAR";
-  const modeLabel = useMemo(() => {
-    switch (modeSelection.type) {
-      case "RUSH":
-        return "Rush mode";
-      case "REST":
-        return "Rest mode";
-      case "MONUMENTAL": {
-        if (!modeSelection.monumentId) return "Monumental mode";
-        const monument = monuments.find(
-          (m) => m.id === modeSelection.monumentId
-        );
-        if (!monument) return "Monumental mode";
-        const detail = monument.emoji
-          ? `${monument.emoji} ${monument.title}`
-          : monument.title;
-        return `Monumental – ${detail}`.trim();
-      }
-      case "SKILLED": {
-        if (modeSelection.skillIds.length === 0) return "Skilled mode";
-        const selected = skills.filter((skill) =>
-          modeSelection.skillIds.includes(skill.id)
-        );
-        if (selected.length === 0) return "Skilled mode";
-        if (selected.length === 1) {
-          return `Skilled – ${selected[0].name}`;
-        }
-        if (selected.length === 2) {
-          return `Skilled – ${selected[0].name}, ${selected[1].name}`;
-        }
-        return `Skilled – ${selected[0].name} +${selected.length - 1}`;
-      }
-      default:
-        return "Regular mode";
-    }
-  }, [modeSelection, monuments, skills]);
   const handleModeTypeChange = useCallback(
     (type: SchedulerModeType) => {
       setModeType(type);
@@ -5879,6 +5843,33 @@ export default function SchedulePage() {
               );
             })}
             {modelWindowReports.map((report) => {
+              const windowBounds = resolveWindowBoundsForDate(
+                report.window,
+                date,
+                effectiveTimeZone
+              );
+
+              if (
+                !isValidDate(windowBounds.start) ||
+                !isValidDate(windowBounds.end)
+              ) {
+                return null;
+              }
+
+              const windowOverlapsSegment = (segmentStart: Date, segmentEnd: Date) =>
+                segmentStart < windowBounds.end &&
+                segmentEnd > windowBounds.start;
+
+              const hasScheduledContent = dayProjectInstances.some(({ start, end }) =>
+                windowOverlapsSegment(start, end)
+              ) || dayHabitPlacements.some(({ start, end }) =>
+                windowOverlapsSegment(start, end)
+              );
+
+              if (hasScheduledContent) {
+                return null;
+              }
+
               const { topMinutes, heightMinutes } = windowRectMinutes(
                 report.window,
                 modelStartHour
@@ -7532,9 +7523,6 @@ export default function SchedulePage() {
           onReschedule={handleRescheduleClick}
           canReschedule={!isScheduling}
           isRescheduling={isScheduling}
-          onOpenModes={() => setIsModeSheetOpen(true)}
-          modeLabel={modeLabel}
-          modeIsActive={modeIsActive}
           onHeightChange={setTopBarHeight}
         />
         <div
