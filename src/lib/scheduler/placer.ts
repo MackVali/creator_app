@@ -1,5 +1,11 @@
 import type { TaskLite } from "./weight";
 import { ENERGY, type Energy } from "./config";
+import {
+  addDaysInTimeZone,
+  normalizeTimeZone,
+  setTimeInTimeZone,
+  startOfDayInTimeZone,
+} from "./timezone";
 
 export type WindowLite = {
   id: string;
@@ -21,29 +27,27 @@ export function addMin(date: Date, n: number): Date {
   return new Date(date.getTime() + n * 60000);
 }
 
-function parseTime(date: Date, time: string): Date {
+function parseTime(date: Date, time: string, timeZone: string): Date {
   const [h = 0, m = 0] = time.split(":").map(Number);
-  const d = new Date(date);
-  d.setHours(h, m, 0, 0);
-  return d;
+  return setTimeInTimeZone(date, timeZone, h, m);
 }
 
 
 export function genSlotsForWindow(
   win: WindowLite,
   date: Date,
-  slotMinutes = 5
+  slotMinutes = 5,
+  timeZone?: string
 ): Slot[] {
-  const base = win.fromPrevDay
-    ? addMin(date, -24 * 60)
-    : date;
-  const start = parseTime(base, win.start_local);
-  let end = parseTime(win.fromPrevDay ? date : base, win.end_local);
+  const zone = normalizeTimeZone(timeZone);
+  const dayStart = startOfDayInTimeZone(date, zone);
+  const dayEnd = addDaysInTimeZone(dayStart, 1, zone);
+  const prevDayStart = addDaysInTimeZone(dayStart, -1, zone);
+  const base = win.fromPrevDay ? prevDayStart : dayStart;
+  const start = parseTime(base, win.start_local, zone);
+  const endBase = win.fromPrevDay ? dayStart : base;
+  let end = parseTime(endBase, win.end_local, zone);
   if (end <= start) end = addMin(end, 24 * 60);
-
-  const dayStart = new Date(date);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = addMin(dayStart, 24 * 60);
 
   let cursor = start < dayStart ? new Date(dayStart) : new Date(start);
   const slots: Slot[] = [];
@@ -89,10 +93,18 @@ export type Schedulable = TaskLite & { weight: number };
 export function placeByEnergyWeight(
   tasks: Schedulable[],
   windows: WindowLite[],
-  date: Date
+  date: Date,
+  timeZone?: string
 ) {
+  const zone = normalizeTimeZone(timeZone);
+  const dayStart = startOfDayInTimeZone(date, zone);
+  const prevDayStart = addDaysInTimeZone(dayStart, -1, zone);
   const startTime = (w: WindowLite) =>
-    parseTime(w.fromPrevDay ? addMin(date, -24 * 60) : date, w.start_local).getTime();
+    parseTime(
+      w.fromPrevDay ? prevDayStart : dayStart,
+      w.start_local,
+      zone
+    ).getTime();
   const windowsSorted = [...windows].sort((a, b) => {
     const aStart = startTime(a);
     const bStart = startTime(b);
@@ -102,7 +114,7 @@ export function placeByEnergyWeight(
 
   const slotsByWindow: Record<string, Slot[]> = {};
   for (const w of windowsSorted) {
-    slotsByWindow[w.id] = genSlotsForWindow(w, date);
+    slotsByWindow[w.id] = genSlotsForWindow(w, date, undefined, zone);
   }
 
   const placements: {
@@ -168,4 +180,3 @@ export function placeByEnergyWeight(
 
   return { placements, unplaced };
 }
-

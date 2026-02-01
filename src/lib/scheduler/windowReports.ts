@@ -1,5 +1,6 @@
 import { ENERGY } from './config'
 import type { ProjectItem } from './projects'
+import { log } from '@/lib/utils/logGate'
 
 export type SchedulerRunFailure = {
   itemId: string
@@ -42,7 +43,7 @@ export function formatSchedulerDetail(detail: unknown): string | null {
             parts.push(text)
           }
         } catch (error) {
-          console.error('Failed to stringify scheduler detail part', error)
+        log('error', 'Failed to stringify scheduler detail part', error)
         }
       }
     }
@@ -50,7 +51,7 @@ export function formatSchedulerDetail(detail: unknown): string | null {
     try {
       return JSON.stringify(detail)
     } catch (error) {
-      console.error('Failed to serialize scheduler detail', error)
+      log('error', 'Failed to serialize scheduler detail', error)
     }
   }
   if (typeof detail === 'object') {
@@ -66,7 +67,7 @@ export function formatSchedulerDetail(detail: unknown): string | null {
             parts.push(`${key}: ${text}`)
           }
         } catch (error) {
-          console.error('Failed to stringify scheduler detail entry', error)
+          log('error', 'Failed to stringify scheduler detail entry', error)
         }
       }
     }
@@ -74,13 +75,13 @@ export function formatSchedulerDetail(detail: unknown): string | null {
     try {
       return JSON.stringify(detail)
     } catch (error) {
-      console.error('Failed to serialize scheduler detail', error)
+      log('error', 'Failed to serialize scheduler detail', error)
     }
   }
   try {
     return JSON.stringify(detail)
   } catch (error) {
-    console.error('Failed to stringify scheduler detail', error)
+    log('error', 'Failed to stringify scheduler detail', error)
   }
   return String(detail)
 }

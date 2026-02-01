@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 
-import { fetchWindowsForDate, type WindowLite } from "../../../src/lib/scheduler/repo";
+import {
+  buildWindowsForDateFromDayTypeBlocks,
+  fetchWindowsForDate,
+  type WindowLite,
+} from "../../../src/lib/scheduler/repo";
+import * as repoModule from "../../../src/lib/scheduler/repo";
 
 describe("fetchWindowsForDate", () => {
   it("includes recurring windows without day restrictions and their prior-day carryover", async () => {
@@ -114,6 +119,197 @@ describe("fetchWindowsForDate", () => {
     expect(containsMock).toHaveBeenCalledWith("days", [2]);
     expect(containsMock).toHaveBeenCalledWith("days", [1]);
     expect(isMock).toHaveBeenCalledWith("days", null);
+  });
+
+  it("does not throw when parity compares signatures", async () => {
+    const date = new Date("2024-01-02T00:00:00Z");
+    const weekday = date.getDay();
+
+    const legacyWindows: WindowLite[] = [
+      {
+        id: "win-1",
+        label: "Legacy Window",
+        energy: "NO",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [weekday],
+      },
+    ];
+
+    const select = vi.fn(() => {
+      const builder: any = {
+        contains: vi.fn(async (_column: string, value: number[]) => {
+          const isToday = value.length === 1 && value[0] === weekday;
+          return { data: isToday ? legacyWindows : [], error: null } as const;
+        }),
+        is: vi.fn(async () => ({ data: [], error: null } as const)),
+      };
+      builder.eq = vi.fn(() => builder);
+      return builder;
+    });
+
+    const client = { from: vi.fn(() => ({ select })) } as const;
+
+    const v2Spy = vi
+      .spyOn(repoModule, "getWindowsForDate_v2")
+      .mockResolvedValue([
+        {
+          id: "win-1",
+          label: "V2 Window",
+          energy: "NO",
+          start_local: "09:00",
+          end_local: "10:00",
+          days: [weekday],
+        },
+      ]);
+
+    await expect(
+      fetchWindowsForDate(date, client as never, "UTC", {
+        userId: "user-1",
+        useDayTypes: true,
+        parity: { enabled: true },
+      })
+    ).resolves.toBeDefined();
+
+    v2Spy.mockRestore();
+  });
+});
+
+describe("buildWindowsForDateFromDayTypeBlocks (v2 parity)", () => {
+  const baseWindow = (
+    overrides: Partial<WindowLite> & Pick<WindowLite, "id">
+  ): WindowLite => ({
+    id: overrides.id,
+    label: overrides.label ?? "",
+    energy: overrides.energy ?? "NO",
+    start_local: overrides.start_local ?? "00:00",
+    end_local: overrides.end_local ?? "00:00",
+    days: overrides.days ?? null,
+    location_context_id: overrides.location_context_id ?? null,
+    location_context_value: overrides.location_context_value ?? null,
+    location_context_name: overrides.location_context_name ?? null,
+    window_kind: overrides.window_kind ?? "DEFAULT",
+  });
+
+  it("filters by weekday and includes always-on blocks", () => {
+    const monday = new Date("2024-01-01T00:00:00Z"); // Monday
+    const tuesday = new Date("2024-01-02T00:00:00Z");
+    const windows: WindowLite[] = [
+      baseWindow({
+        id: "mon-only",
+        start_local: "08:00",
+        end_local: "09:00",
+        days: [1],
+      }),
+      baseWindow({
+        id: "always",
+        start_local: "10:00",
+        end_local: "11:00",
+        days: null,
+      }),
+    ];
+
+    const mondayResult = buildWindowsForDateFromDayTypeBlocks(
+      windows,
+      monday,
+      "UTC"
+    );
+    const tuesdayResult = buildWindowsForDateFromDayTypeBlocks(
+      windows,
+      tuesday,
+      "UTC"
+    );
+
+    expect(mondayResult.map((w) => w.id)).toEqual(["mon-only", "always"]);
+    expect(tuesdayResult.map((w) => w.id)).toEqual(["always"]);
+  });
+
+  it("adds cross-midnight tails from the previous day", () => {
+    const tuesday = new Date("2024-01-02T00:00:00Z");
+    const windows: WindowLite[] = [
+      baseWindow({
+        id: "overnight",
+        start_local: "22:00",
+        end_local: "02:00",
+        days: [1],
+      }),
+    ];
+
+    const result = buildWindowsForDateFromDayTypeBlocks(
+      windows,
+      tuesday,
+      "UTC"
+    );
+
+    const carry = result.find((w) => w.fromPrevDay);
+    expect(carry).toBeDefined();
+    expect(carry?.id).toBe("overnight");
+    expect(carry?.fromPrevDay).toBe(true);
+  });
+
+  it("drops overlapping prev-day tails to match legacy dedupe", () => {
+    const tuesday = new Date("2024-01-02T00:00:00Z");
+    const windows: WindowLite[] = [
+      baseWindow({
+        id: "overnight",
+        start_local: "23:00",
+        end_local: "02:00",
+        days: [1],
+      }),
+      baseWindow({
+        id: "morning",
+        start_local: "01:00",
+        end_local: "03:00",
+        days: [2],
+      }),
+    ];
+
+    const result = buildWindowsForDateFromDayTypeBlocks(
+      windows,
+      tuesday,
+      "UTC"
+    );
+
+    expect(result.some((w) => w.id === "morning")).toBe(true);
+    expect(result.some((w) => w.id === "overnight" && w.fromPrevDay)).toBe(
+      false
+    );
+  });
+
+  it("returns deterministic ordering (start_local then id)", () => {
+    const monday = new Date("2024-01-01T00:00:00Z");
+    const windows: WindowLite[] = [
+      baseWindow({
+        id: "z-two",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [1],
+      }),
+      baseWindow({
+        id: "a-one",
+        start_local: "08:00",
+        end_local: "09:00",
+        days: [1],
+      }),
+      baseWindow({
+        id: "y-overnight",
+        start_local: "22:00",
+        end_local: "01:00",
+        days: [0],
+      }),
+    ];
+
+    const result = buildWindowsForDateFromDayTypeBlocks(
+      windows,
+      monday,
+      "UTC"
+    );
+
+    expect(result.map((w) => `${w.start_local}-${w.id}`)).toEqual([
+      "08:00-a-one",
+      "09:00-z-two",
+      "22:00-y-overnight",
+    ]);
   });
 });
 

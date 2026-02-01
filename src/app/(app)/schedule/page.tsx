@@ -58,7 +58,6 @@ import { SchedulerModeSheet } from "@/components/schedule/SchedulerModeSheet";
 import { type ScheduleView } from "@/components/schedule/viewUtils";
 import {
   updateTaskStage,
-  windowsForDateFromSnapshot,
   type WindowLite as RepoWindow,
 } from "@/lib/scheduler/repo";
 import {
@@ -75,6 +74,7 @@ import {
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
 } from "@/lib/scheduler/habits";
+import { MAX_SCHEDULER_WRITE_DAYS } from "@/lib/scheduler/limits";
 import { normalizeHabitType } from "@/lib/scheduler/habits";
 import { mergeHabitCompletionStateFromInstances } from "@/lib/scheduler/habitCompletionState";
 import {
@@ -93,6 +93,7 @@ import {
   weekdayInTimeZone,
   getDatePartsInTimeZone,
   getSchedulerDayAnchorForNow,
+  normalizeTimeZone,
 } from "@/lib/scheduler/timezone";
 import {
   computeEnergyHoursForDateRange,
@@ -529,6 +530,7 @@ type TaskInstanceInfo = {
 };
 
 type ProjectItem = ReturnType<typeof buildProjectItems>[number];
+type ProjectInstance = ReturnType<typeof computeProjectInstances>[number];
 type DayTimelineModel = {
   date: Date;
   isViewingToday: boolean;
@@ -546,6 +548,8 @@ type DayTimelineModel = {
   standaloneTaskInstances: TaskInstanceInfo[];
   habitPlacements: HabitTimelinePlacement[];
   windowReports: WindowReportEntry[];
+  dayStart: Date;
+  dayEnd: Date;
 };
 
 type DayTimelineRenderOptions = {
@@ -633,6 +637,54 @@ function getDayMinuteOffset(date: Date) {
   if (!Number.isFinite(timestamp)) return 0;
   const baseMinutes = date.getHours() * 60 + date.getMinutes();
   return baseMinutes + date.getSeconds() / 60 + date.getMilliseconds() / 60000;
+}
+
+type LocalDayRange = {
+  dayStart: Date;
+  dayEnd: Date;
+};
+
+function getLocalDayRange(date: Date, timeZone: string): LocalDayRange {
+  const dayParts = getDateTimeParts(date, timeZone);
+  const dayStart = makeZonedDate(
+    {
+      year: dayParts.year,
+      month: dayParts.month,
+      day: dayParts.day,
+      hour: 0,
+      minute: 0,
+      second: 0,
+    },
+    timeZone
+  );
+  const dayEnd = makeZonedDate(
+    {
+      year: dayParts.year,
+      month: dayParts.month,
+      day: dayParts.day + 1,
+      hour: 0,
+      minute: 0,
+      second: 0,
+    },
+    timeZone
+  );
+  return { dayStart, dayEnd };
+}
+
+function clipSegmentToDay(
+  start: Date,
+  end: Date,
+  dayStart: Date,
+  dayEnd: Date
+): { segStart: Date; segEnd: Date } | null {
+  if (!isValidDate(start) || !isValidDate(end)) return null;
+  const clippedStartMs = Math.max(start.getTime(), dayStart.getTime());
+  const clippedEndMs = Math.min(end.getTime(), dayEnd.getTime());
+  if (clippedEndMs <= clippedStartMs) return null;
+  return {
+    segStart: new Date(clippedStartMs),
+    segEnd: new Date(clippedEndMs),
+  };
 }
 
 function computeTimelineStackingIndex(startOffsetMinutes: number) {
@@ -789,7 +841,7 @@ function computeProjectInstances(
         start,
         end,
         assignedWindow: inst.window_id
-          ? windowMap[inst.window_id] ?? null
+          ? (windowMap[inst.window_id] ?? null)
           : null,
       };
     })
@@ -901,7 +953,8 @@ function computeHabitPlacementsForDay({
     .map((window) => {
       const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(
         window,
-        date
+        date,
+        zone
       );
       if (!isValidDate(windowStart) || !isValidDate(windowEnd)) {
         return null;
@@ -1041,7 +1094,7 @@ function computeHabitPlacementsForDay({
         skillId: habit.skillId ?? null,
         practiceContextId:
           normalizedHabitType === "PRACTICE"
-            ? resolvedPracticeContextId ?? null
+            ? (resolvedPracticeContextId ?? null)
             : null,
         currentStreakDays: Math.max(
           0,
@@ -1132,7 +1185,7 @@ function createFallbackWindowForHabitInstance({
 }): RepoWindow {
   const startLocal = formatTimeForWindow(start, timeZone);
   const endLocal = formatTimeForWindow(end, timeZone);
-  const dayStart = startOfDayInTimeZone(end, timeZone);
+  const dayStart = startOfDayInTimeZone(start, timeZone);
   const fromPrevDay = start.getTime() < dayStart.getTime();
   const energySource =
     instance.energy_resolved || habit.energy || habit.window?.energy || "NO";
@@ -1192,6 +1245,7 @@ function computeWindowReportsForDay({
   schedulerTimelinePlacements,
   habitPlacements,
   currentDate,
+  timeZone,
 }: {
   windows: RepoWindow[];
   projectInstances: ReturnType<typeof computeProjectInstances>;
@@ -1202,6 +1256,7 @@ function computeWindowReportsForDay({
   schedulerTimelinePlacements: SchedulerTimelinePlacement[];
   habitPlacements: HabitTimelinePlacement[];
   currentDate: Date;
+  timeZone: string;
 }): WindowReportEntry[] {
   if (windows.length === 0) return [];
   const assignments = new Map<string, number>();
@@ -1259,7 +1314,8 @@ function computeWindowReportsForDay({
   for (const win of windows) {
     const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(
       win,
-      currentDate
+      currentDate,
+      timeZone
     );
     if (!isValidDate(windowStart) || !isValidDate(windowEnd)) {
       continue;
@@ -1417,6 +1473,7 @@ function buildDayTimelineModel({
   localTimeZone: string;
   todayDateKey: string;
 }): DayTimelineModel {
+  const { dayStart, dayEnd } = getLocalDayRange(date, localTimeZone);
   const dayViewDateKey = formatLocalDateKey(date);
   const windowMap = buildWindowMap(windows);
   const projectInstances = computeProjectInstances(
@@ -1454,6 +1511,7 @@ function buildDayTimelineModel({
     schedulerTimelinePlacements,
     habitPlacements,
     currentDate: date,
+    timeZone: localTimeZone ?? "UTC",
   });
   return {
     date,
@@ -1472,6 +1530,8 @@ function buildDayTimelineModel({
     standaloneTaskInstances,
     habitPlacements,
     windowReports,
+    dayStart,
+    dayEnd,
   };
 }
 
@@ -1550,7 +1610,7 @@ function DayPeekOverlays({
     const height = container.offsetHeight;
     const viewportHeightRaw =
       typeof window !== "undefined"
-        ? window.visualViewport?.height ?? window.innerHeight
+        ? (window.visualViewport?.height ?? window.innerHeight)
         : container.offsetHeight;
     const viewportHeight = Number.isFinite(viewportHeightRaw)
       ? viewportHeightRaw
@@ -1572,13 +1632,13 @@ function DayPeekOverlays({
     scrollProgress !== null
       ? scrollProgress
       : overlayCenter !== null && fallbackContainerHeight
-      ? overlayCenter / fallbackContainerHeight
-      : 0.5;
+        ? overlayCenter / fallbackContainerHeight
+        : 0.5;
   const anchorProgress = Math.min(Math.max(anchorProgressRaw, 0), 1);
   const overlayAnchor =
     fallbackContainerHeight !== null
       ? fallbackContainerHeight * anchorProgress
-      : overlayCenter ?? 0;
+      : (overlayCenter ?? 0);
   const overlayStyle: CSSProperties =
     fallbackContainerHeight !== null
       ? { top: overlayAnchor, transform: "translateY(-50%)" }
@@ -1587,7 +1647,7 @@ function DayPeekOverlays({
   const viewportHeight =
     visibleHeight && visibleHeight > 0
       ? visibleHeight
-      : fallbackContainerHeight ?? previewContainerHeight;
+      : (fallbackContainerHeight ?? previewContainerHeight);
   const safeViewportHeight =
     viewportHeight && viewportHeight > 0
       ? viewportHeight
@@ -1819,9 +1879,9 @@ function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
       typeof value.projectId === "string" && value.projectId.trim().length > 0
         ? value.projectId
         : typeof instanceValue.source_id === "string" &&
-          instanceValue.source_id.trim().length > 0
-        ? (instanceValue.source_id as string)
-        : null;
+            instanceValue.source_id.trim().length > 0
+          ? (instanceValue.source_id as string)
+          : null;
     if (!projectId) continue;
     const windowId =
       typeof instanceValue.window_id === "string"
@@ -1930,11 +1990,14 @@ type WindowReportEntry = {
 
 const ENERGY_LABEL_SET = new Set<(typeof ENERGY.LIST)[number]>(ENERGY.LIST);
 const DEFAULT_ENERGY_ID_LOOKUP: Record<string, (typeof ENERGY.LIST)[number]> =
-  ENERGY.LIST.reduce((map, label, index) => {
-    map[String(index + 1)] = label;
-    map[label] = label;
-    return map;
-  }, {} as Record<string, (typeof ENERGY.LIST)[number]>);
+  ENERGY.LIST.reduce(
+    (map, label, index) => {
+      map[String(index + 1)] = label;
+      map[label] = label;
+      return map;
+    },
+    {} as Record<string, (typeof ENERGY.LIST)[number]>
+  );
 let scheduleEnergyLookupMap: Record<string, (typeof ENERGY.LIST)[number]> = {
   ...DEFAULT_ENERGY_ID_LOOKUP,
 };
@@ -2015,14 +2078,17 @@ function formatWindowRange(window: RepoWindow): string {
   )}`;
 }
 
-function resolveWindowBoundsForDate(window: RepoWindow, date: Date) {
-  const dayStart = new Date(date);
-  dayStart.setHours(0, 0, 0, 0);
+function resolveWindowBoundsForDate(
+  window: RepoWindow,
+  date: Date,
+  timeZone: string
+) {
+  const zone = normalizeTimeZone(timeZone);
+  const dayStart = startOfDayInTimeZone(date, zone);
+  const prevDayStart = addDaysInTimeZone(dayStart, -1, zone);
 
-  const start = new Date(dayStart);
-  if (window.fromPrevDay) {
-    start.setDate(start.getDate() - 1);
-  }
+  const startBase = window.fromPrevDay ? prevDayStart : dayStart;
+  const start = new Date(startBase);
   const [startHour = 0, startMinute = 0] = window.start_local
     .split(":")
     .map(Number);
@@ -2156,20 +2222,25 @@ export default function SchedulePage() {
     useState<SyncPairingsByInstanceId>({});
   const [habitCompletionByDate, setHabitCompletionByDate_REAL] =
     useState<HabitCompletionByDate>({});
-  const [windowSnapshot, setWindowSnapshot_REAL] = useState<RepoWindow[]>([]);
   const [windows, setWindows_REAL] = useState<RepoWindow[]>([]);
   const goalMetaById = useMemo(() => {
     const monumentEmojiById = new Map<string, string | null>();
     for (const monument of monuments ?? []) {
-      if (monument?.id) monumentEmojiById.set(monument.id, monument.emoji ?? null);
+      if (monument?.id)
+        monumentEmojiById.set(monument.id, monument.emoji ?? null);
     }
-    const map = new Map<string, { title: string | null; emoji: string | null }>();
-    Object.values(projectGoalRelations ?? {}).forEach(relation => {
+    const map = new Map<
+      string,
+      { title: string | null; emoji: string | null }
+    >();
+    Object.values(projectGoalRelations ?? {}).forEach((relation) => {
       if (!relation?.goalId) return;
       const title = relation.goalName ?? null;
       const emoji =
         relation.goalEmoji ??
-        (relation.goalMonumentId ? monumentEmojiById.get(relation.goalMonumentId) ?? null : null);
+        (relation.goalMonumentId
+          ? (monumentEmojiById.get(relation.goalMonumentId) ?? null)
+          : null);
       map.set(relation.goalId, { title, emoji });
     });
     return map;
@@ -2218,11 +2289,6 @@ export default function SchedulePage() {
   function setHabitCompletionByDate(next) {
     debugger;
     setHabitCompletionByDate_REAL(next);
-  }
-
-  function setWindowSnapshot(next) {
-    debugger;
-    setWindowSnapshot_REAL(next);
   }
 
   function setWindows(next) {
@@ -2510,7 +2576,6 @@ export default function SchedulePage() {
   }, [instances]);
 
   const clearScheduleData = useCallback(() => {
-    setWindowSnapshot([]);
     setWindows([]);
     setAllInstances([]);
     setInstances([]);
@@ -2904,7 +2969,7 @@ export default function SchedulePage() {
   }, []);
   const scheduleDatasetRef = useRef<ScheduleEventDataset | null>(null);
   const PRIMARY_WRITE_WINDOW_DAYS = 28;
-  const FULL_WRITE_WINDOW_DAYS = 365;
+  const FULL_WRITE_WINDOW_DAYS = MAX_SCHEDULER_WRITE_DAYS;
   const isSchedulingRef = useRef(false);
 
   const persistAutoRunDate = useCallback(
@@ -3031,7 +3096,6 @@ export default function SchedulePage() {
 
     const applyDataset = (payload: ScheduleEventDataset) => {
       updateScheduleEnergyLookup(payload.energyLookup);
-      setWindowSnapshot(payload.windowSnapshot);
       setTasks(payload.tasks);
       setPendingBacklogTaskIds(new Set());
       backlogTaskPreviousStageRef.current = new Map();
@@ -3105,22 +3169,45 @@ export default function SchedulePage() {
     logInstanceStatusChange,
   ]);
 
+  // New useEffect to fetch day-type-aware windows from API
   useEffect(() => {
     if (!userId) {
       setWindows([]);
       return;
     }
-    if (windowSnapshot.length === 0) {
-      setWindows([]);
-      return;
+
+    const dayKey = formatLocalDateKey(currentDate);
+    const tz = localTimeZone ?? "UTC";
+
+    async function fetchWindowsForCurrentDate() {
+      try {
+        const params = new URLSearchParams();
+        params.set("dayKey", dayKey);
+        params.set("timeZone", tz);
+
+        const response = await fetch(
+          `/api/windows/for-date?${params.toString()}`,
+          {
+            cache: "no-store",
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch windows (${response.status})`);
+        }
+
+        const payload = await response.json();
+        if (payload.windows) {
+          setWindows(payload.windows);
+        }
+      } catch (error) {
+        console.error("Failed to fetch day-type-aware windows", error);
+        setWindows([]);
+      }
     }
-    const derived = windowsForDateFromSnapshot(
-      windowSnapshot,
-      currentDate,
-      localTimeZone ?? "UTC"
-    );
-    setWindows(derived);
-  }, [windowSnapshot, currentDate, localTimeZone, userId]);
+
+    void fetchWindowsForCurrentDate();
+  }, [userId, currentDate, localTimeZone]);
 
   useEffect(() => {
     if (!userId) {
@@ -3145,11 +3232,19 @@ export default function SchedulePage() {
     const weekEnd = addDaysInTimeZone(weekStart, 7, tz);
     const dayParts = getDatePartsInTimeZone(baseDayStart, tz);
     const monthAnchor = makeDateInTimeZone(
-      { year: dayParts.year, month: dayParts.month, day: 1, hour: 12, minute: 0 },
+      {
+        year: dayParts.year,
+        month: dayParts.month,
+        day: 1,
+        hour: 12,
+        minute: 0,
+      },
       tz
     );
     const monthStart = startOfDayInTimeZone(monthAnchor, tz);
-    const daysInMonth = new Date(Date.UTC(dayParts.year, dayParts.month, 0)).getUTCDate();
+    const daysInMonth = new Date(
+      Date.UTC(dayParts.year, dayParts.month, 0)
+    ).getUTCDate();
     const monthEnd = addDaysInTimeZone(monthStart, daysInMonth, tz);
 
     const weekDays = Array.from({ length: 7 }, (_, index) =>
@@ -3175,7 +3270,10 @@ export default function SchedulePage() {
         weekTotals = week ?? fallbackTotals();
         monthTotals = month ?? fallbackTotals();
       } catch (error) {
-        console.warn("[JumpToDateSnapshot] Failed to compute energy hours", error);
+        console.warn(
+          "[JumpToDateSnapshot] Failed to compute energy hours",
+          error
+        );
       }
 
       let weekGoals: number | undefined;
@@ -3193,11 +3291,24 @@ export default function SchedulePage() {
         completionUtc?: string | null;
       }> = [];
       try {
-        const { weekGoalIds, monthGoalIds, weekLikelyGoals: weekComputed, monthLikelyGoals: monthComputed } =
-          await computeProjectedGoalsLikely(weekStart, weekEnd, monthStart, monthEnd, userId);
+        const {
+          weekGoalIds,
+          monthGoalIds,
+          weekLikelyGoals: weekComputed,
+          monthLikelyGoals: monthComputed,
+        } = await computeProjectedGoalsLikely(
+          weekStart,
+          weekEnd,
+          monthStart,
+          monthEnd,
+          userId
+        );
         weekGoals = weekGoalIds.size;
         monthGoals = monthGoalIds.size;
-        const resolveGoal = (entry: { id: string; completionUtc?: string | null }) => {
+        const resolveGoal = (entry: {
+          id: string;
+          completionUtc?: string | null;
+        }) => {
           const { id, completionUtc } = entry;
           const meta = goalMetaById.get(id);
           return {
@@ -3210,7 +3321,10 @@ export default function SchedulePage() {
         weekLikelyGoals = weekComputed.map(resolveGoal);
         monthLikelyGoals = monthComputed.map(resolveGoal);
       } catch (error) {
-        console.warn("[JumpToDateSnapshot] Failed to compute projected goals", error);
+        console.warn(
+          "[JumpToDateSnapshot] Failed to compute projected goals",
+          error
+        );
       }
 
       if (isCancelled) return;
@@ -3247,31 +3361,9 @@ export default function SchedulePage() {
       if (allInstances.length === 0) {
         return [];
       }
-      const dayParts = getDateTimeParts(date, timeZone);
-      const dayStart = makeZonedDate(
-        {
-          year: dayParts.year,
-          month: dayParts.month,
-          day: dayParts.day,
-          hour: 0,
-          minute: 0,
-          second: 0,
-        },
-        timeZone
-      );
-      const nextDayStart = makeZonedDate(
-        {
-          year: dayParts.year,
-          month: dayParts.month,
-          day: dayParts.day + 1,
-          hour: 0,
-          minute: 0,
-          second: 0,
-        },
-        timeZone
-      );
+      const { dayStart, dayEnd } = getLocalDayRange(date, timeZone);
       const startMs = dayStart.getTime();
-      const endMs = nextDayStart.getTime();
+      const endMs = dayEnd.getTime();
       let filtered = allInstances.filter((instance) => {
         const start = new Date(instance.start_utc ?? "").getTime();
         const end = new Date(instance.end_utc ?? "").getTime();
@@ -3535,12 +3627,12 @@ export default function SchedulePage() {
 
   const editingProjectId =
     editingSnapshot?.source_type === "PROJECT"
-      ? editingSnapshot.projectId ?? null
+      ? (editingSnapshot.projectId ?? null)
       : null;
 
   const editingHabitId =
     editingSnapshot?.source_type === "HABIT"
-      ? editingSnapshot.habitId ?? null
+      ? (editingSnapshot.habitId ?? null)
       : null;
 
   const editingLayoutId = undefined;
@@ -3640,14 +3732,14 @@ export default function SchedulePage() {
           Number.isFinite(entry.durationMin)
             ? entry.durationMin
             : typeof project?.duration_min === "number" &&
-              Number.isFinite(project.duration_min)
-            ? project.duration_min
-            : null;
+                Number.isFinite(project.duration_min)
+              ? project.duration_min
+              : null;
         const energySource =
           typeof entry.energyResolved === "string" &&
           entry.energyResolved.trim().length > 0
             ? entry.energyResolved
-            : project?.energy ?? null;
+            : (project?.energy ?? null);
         const energyLabel = normalizeEnergyLabel(energySource);
 
         placements.push({
@@ -3672,14 +3764,14 @@ export default function SchedulePage() {
           Number.isFinite(entry.durationMin)
             ? entry.durationMin
             : typeof habit?.durationMinutes === "number" &&
-              Number.isFinite(habit.durationMinutes)
-            ? habit.durationMinutes
-            : DEFAULT_HABIT_DURATION_MIN;
+                Number.isFinite(habit.durationMinutes)
+              ? habit.durationMinutes
+              : DEFAULT_HABIT_DURATION_MIN;
         const energySource =
           typeof entry.energyResolved === "string" &&
           entry.energyResolved.trim().length > 0
             ? entry.energyResolved
-            : habit?.window?.energy ?? null;
+            : (habit?.window?.energy ?? null);
         const energyLabel = normalizeEnergyLabel(energySource);
         const habitTypeValue = (habit?.habitType ?? "HABIT").toUpperCase();
         const normalizedHabitType =
@@ -3720,19 +3812,19 @@ export default function SchedulePage() {
     const previousDeps = peekDataDepsRef.current;
     const shouldForceReload = Boolean(
       previousDeps &&
-        (previousDeps.projectMap !== projectMap ||
-          previousDeps.taskMap !== taskMap ||
-          previousDeps.tasksByProjectId !== tasksByProjectId ||
-          previousDeps.habits !== habits ||
-          previousDeps.unscheduledProjects !== unscheduledProjects ||
-          previousDeps.schedulerFailureByProjectId !==
-            schedulerFailureByProjectId ||
-          previousDeps.schedulerDebug !== schedulerDebug ||
-          previousDeps.schedulerTimelinePlacements !==
-            schedulerTimelinePlacements ||
-          previousDeps.timeZoneShortName !== timeZoneShortName ||
-          previousDeps.friendlyTimeZone !== friendlyTimeZone ||
-          previousDeps.effectiveTimeZone !== effectiveTimeZone)
+      (previousDeps.projectMap !== projectMap ||
+        previousDeps.taskMap !== taskMap ||
+        previousDeps.tasksByProjectId !== tasksByProjectId ||
+        previousDeps.habits !== habits ||
+        previousDeps.unscheduledProjects !== unscheduledProjects ||
+        previousDeps.schedulerFailureByProjectId !==
+          schedulerFailureByProjectId ||
+        previousDeps.schedulerDebug !== schedulerDebug ||
+        previousDeps.schedulerTimelinePlacements !==
+          schedulerTimelinePlacements ||
+        previousDeps.timeZoneShortName !== timeZoneShortName ||
+        previousDeps.friendlyTimeZone !== friendlyTimeZone ||
+        previousDeps.effectiveTimeZone !== effectiveTimeZone)
     );
 
     peekDataDepsRef.current = {
@@ -3774,14 +3866,7 @@ export default function SchedulePage() {
       if (!shouldFetch) return;
 
       try {
-        const dayWindows =
-          windowSnapshot.length > 0
-            ? windowsForDateFromSnapshot(
-                windowSnapshot,
-                date,
-                effectiveTimeZone
-              )
-            : [];
+        const dayWindows: RepoWindow[] = [];
         const instancesForDay = filterInstancesForDate(date, effectiveTimeZone);
         if (cancelled) {
           return;
@@ -3835,7 +3920,6 @@ export default function SchedulePage() {
     schedulerFailureByProjectId,
     schedulerDebug,
     schedulerTimelinePlacements,
-    windowSnapshot,
     filterInstancesForDate,
     timeZoneShortName,
     friendlyTimeZone,
@@ -4067,7 +4151,7 @@ export default function SchedulePage() {
           : null;
       const completionIso =
         nextStatus === "completed"
-          ? trimCandidate?.completionIso ?? new Date().toISOString()
+          ? (trimCandidate?.completionIso ?? new Date().toISOString())
           : undefined;
       const allowPastCompletion =
         instance?.source_type === "HABIT" &&
@@ -4185,7 +4269,7 @@ export default function SchedulePage() {
         if (instance?.source_type === "HABIT" && instance.source_id) {
           const completionTimestamp =
             (nextStatus === "completed"
-              ? trimResult?.endUTC ?? completionIso
+              ? (trimResult?.endUTC ?? completionIso)
               : null) ??
             instance.end_utc ??
             instance.start_utc ??
@@ -4596,21 +4680,24 @@ export default function SchedulePage() {
       }
 
       try {
-        const response = await fetch("/api/scheduler/run", {
-          method: "POST",
-          cache: "no-store",
-          keepalive: background,
-          headers: {
-            "Content-Type": "application/json",
+        const response = await fetch(
+          "/api/scheduler/run?writeThroughDays=14&debug=1",
+          {
+            method: "POST",
+            cache: "no-store",
+            keepalive: background,
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              localTimeIso: localNow.toISOString(),
+              timeZone,
+              utcOffsetMinutes,
+              mode: resolvedModePayload,
+              writeThroughDays: args?.writeThroughDays ?? null,
+            }),
           },
-          body: JSON.stringify({
-            localTimeIso: localNow.toISOString(),
-            timeZone,
-            utcOffsetMinutes,
-            mode: resolvedModePayload,
-            writeThroughDays: args?.writeThroughDays ?? null,
-          }),
-        });
+        );
 
         if (background) {
           if (!response.ok) {
@@ -4619,19 +4706,37 @@ export default function SchedulePage() {
           return;
         }
 
-        let payload: unknown = null;
-        let parseError: unknown = null;
-        try {
-          payload = await response.json();
-        } catch (err) {
-          parseError = err;
-        }
+        const contentType = response.headers.get("content-type") ?? "";
+        const raw = await response.text();
 
         if (!response.ok) {
-          console.error(
-            "Scheduler run failed",
-            response.status,
-            payload ?? parseError
+          const errInfo = {
+            status: response.status,
+            statusText: response.statusText,
+            url: response.url,
+            contentType,
+            body: raw.slice(0, 500),
+          };
+          console.error("Scheduler run failed", errInfo);
+          throw new Error(`Scheduler run failed: ${JSON.stringify(errInfo)}`);
+        }
+
+        if (!contentType.includes("application/json")) {
+          throw new Error(
+            `Expected JSON but got ${contentType || "unknown"}. Payload snippet: ${raw
+              .slice(0, 500)
+              .replace(/\s+/g, " ")}`
+          );
+        }
+
+        let payload: unknown;
+        try {
+          payload = JSON.parse(raw);
+        } catch (err) {
+          throw new Error(
+            `Scheduler response JSON parse failed: ${String(err)} | raw snippet: ${raw
+              .slice(0, 500)
+              .replace(/\s+/g, " ")}`
           );
         }
 
@@ -4787,12 +4892,16 @@ export default function SchedulePage() {
 
   const isTouchFromFabOverlay = (event: React.TouchEvent) => {
     const target = event.target as HTMLElement | null;
-    if (target?.closest?.("[data-fab-overlay], [data-fab-reschedule-overlay]")) {
+    if (
+      target?.closest?.("[data-fab-overlay], [data-fab-reschedule-overlay]")
+    ) {
       return true;
     }
-    const path =
-      (event.nativeEvent as TouchEvent | (TouchEvent & { composedPath?: () => EventTarget[] }))
-        ?.composedPath?.();
+    const path = (
+      event.nativeEvent as
+        | TouchEvent
+        | (TouchEvent & { composedPath?: () => EventTarget[] })
+    )?.composedPath?.();
     if (Array.isArray(path)) {
       return path.some(
         (node) =>
@@ -5630,6 +5739,8 @@ export default function SchedulePage() {
         dayViewDateKey,
         dayViewDetails,
         date,
+        dayStart,
+        dayEnd,
         startHour: modelStartHour,
         windows: modelWindows,
         projectInstances: modelProjectInstances,
@@ -5650,6 +5761,43 @@ export default function SchedulePage() {
       const viewDateComparison = dayViewDateKey.localeCompare(todayDateKey);
       const viewIsPastDay = viewDateComparison < 0;
       const viewIsFutureDay = viewDateComparison > 0;
+
+      const dayHabitPlacements = modelHabitPlacements
+        .map((placement) => {
+          const clipped = clipSegmentToDay(
+            placement.start,
+            placement.end,
+            dayStart,
+            dayEnd
+          );
+          if (!clipped) return null;
+          return {
+            ...placement,
+            start: clipped.segStart,
+            end: clipped.segEnd,
+          };
+        })
+        .filter(
+          (placement): placement is HabitTimelinePlacement => placement !== null
+        );
+      const dayProjectInstances = modelProjectInstances
+        .map((projectInstance) => {
+          const clipped = clipSegmentToDay(
+            projectInstance.start,
+            projectInstance.end,
+            dayStart,
+            dayEnd
+          );
+          if (!clipped) return null;
+          return {
+            ...projectInstance,
+            start: clipped.segStart,
+            end: clipped.segEnd,
+          };
+        })
+        .filter(
+          (instance): instance is ProjectInstance => instance !== null
+        );
 
       let hasLoggedInstance = false;
 
@@ -5675,8 +5823,8 @@ export default function SchedulePage() {
 
       const { habitLayouts, projectLayouts } =
         computeTimelineLayoutForSyncHabits({
-          habitPlacements: modelHabitPlacements,
-          projectInstances: modelProjectInstances,
+          habitPlacements: dayHabitPlacements,
+          projectInstances: dayProjectInstances,
           syncPairingsByInstanceId: syncPairings,
         });
 
@@ -5773,7 +5921,7 @@ export default function SchedulePage() {
                 </div>
               );
             })}
-            {modelHabitPlacements.map((placement, index) => {
+            {dayHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end))
                 return null;
               const rawHabitType = placement.habitType || "HABIT";
@@ -5953,12 +6101,12 @@ export default function SchedulePage() {
               }
               const practiceContextIdForPlacement =
                 normalizedHabitType === "PRACTICE"
-                  ? placement.practiceContextId ?? null
+                  ? (placement.practiceContextId ?? null)
                   : null;
               const practiceContextLabel = practiceContextIdForPlacement
-                ? practiceContextDisplayById.get(
+                ? (practiceContextDisplayById.get(
                     practiceContextIdForPlacement
-                  ) ?? null
+                  ) ?? null)
                 : null;
               const habitPaddingClass = practiceContextLabel
                 ? "pt-4 pb-2"
@@ -6180,8 +6328,8 @@ export default function SchedulePage() {
                           streakDays >= 7
                             ? "HIGH"
                             : streakDays >= 4
-                            ? "MEDIUM"
-                            : "LOW"
+                              ? "MEDIUM"
+                              : "LOW"
                         }
                         size="xs"
                         className="drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
@@ -6192,7 +6340,7 @@ export default function SchedulePage() {
                 </motion.div>
               );
             })}
-            {modelProjectInstances.map(
+            {dayProjectInstances.map(
               ({ instance, project, start, end, assignedWindow }, index) => {
                 if (!isValidDate(start) || !isValidDate(end)) return null;
                 const projectId = project.id;
@@ -6770,9 +6918,9 @@ export default function SchedulePage() {
                                   pendingStatus !== undefined;
                                 const status =
                                   kind === "scheduled" && instanceId
-                                    ? pendingStatus ??
+                                    ? (pendingStatus ??
                                       instanceStatusById[instanceId] ??
-                                      "scheduled"
+                                      "scheduled")
                                     : null;
                                 const scheduledCanToggle =
                                   kind === "scheduled" &&
@@ -6794,8 +6942,8 @@ export default function SchedulePage() {
                                   isCompleted
                                     ? completedTaskClasses
                                     : isFallbackCard
-                                    ? fallbackTaskClasses
-                                    : shinyTaskClasses
+                                      ? fallbackTaskClasses
+                                      : shinyTaskClasses
                                 }`;
                                 const progressValue =
                                   kind === "scheduled"
@@ -6808,13 +6956,13 @@ export default function SchedulePage() {
                                         )
                                       )
                                     : isCompleted
-                                    ? 100
-                                    : 0;
+                                      ? 100
+                                      : 0;
                                 const progressBarClass = isCompleted
                                   ? "absolute left-0 bottom-0 h-[3px] bg-emerald-300/80"
                                   : kind === "scheduled"
-                                  ? "absolute left-0 bottom-0 h-[3px] bg-white/40"
-                                  : "absolute left-0 bottom-0 h-[3px] bg-white/25";
+                                    ? "absolute left-0 bottom-0 h-[3px] bg-white/40"
+                                    : "absolute left-0 bottom-0 h-[3px] bg-white/25";
                                 const hasInteractiveRole =
                                   isFallbackCard ||
                                   (kind === "scheduled" && !!instanceId);
@@ -6828,8 +6976,8 @@ export default function SchedulePage() {
                                   editingHabitId !== null;
                                 const hideForEdit = Boolean(
                                   editorMounted &&
-                                    editingInstance?.id === instanceId &&
-                                    longPressTriggeredRef.current
+                                  editingInstance?.id === instanceId &&
+                                  longPressTriggeredRef.current
                                 );
 
                                 if (hideForEdit) {
@@ -7111,10 +7259,10 @@ export default function SchedulePage() {
 
                   const hideForEdit = Boolean(
                     editingSnapshot &&
-                      editingInstance?.id &&
-                      editingInstance.id === instance.id &&
-                      !editingProjectId &&
-                      !editingHabitId
+                    editingInstance?.id &&
+                    editingInstance.id === instance.id &&
+                    !editingProjectId &&
+                    !editingHabitId
                   );
 
                   const instanceLayoutId = getScheduleInstanceLayoutId(
@@ -7483,7 +7631,6 @@ export default function SchedulePage() {
         timeZone={effectiveTimeZone}
         onSelectDate={handleJumpToDateSelect}
         snapshot={jumpToDateSnapshot ?? undefined}
-        windowSnapshot={windowSnapshot}
       />
       <ScheduleSearchSheet
         open={isSearchOpen}

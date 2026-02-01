@@ -1,8 +1,24 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, useCallback, useRef, type CSSProperties } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+  type CSSProperties,
+} from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, CalendarDays, Paintbrush, Droplet, MapPin } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
+  Paintbrush,
+  Droplet,
+  MapPin,
+  ChevronDown,
+} from "lucide-react";
 import type { JumpToDateSnapshot } from "@/lib/scheduler/snapshot";
 import { ENERGY_LEVELS } from "@/lib/scheduler/energy";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
@@ -31,12 +47,37 @@ interface JumpToDateSheetProps {
   currentDate: Date;
   onSelectDate: (date: Date) => void;
   timeZone?: string | null;
-  dayMetaByDateKey?: Record<string, { color?: string; kind?: string; label?: string }>;
+  dayMetaByDateKey?: Record<
+    string,
+    { color?: string; kind?: string; label?: string }
+  >;
   snapshot?: JumpToDateSnapshot;
-  windowSnapshot?: WindowLite[];
 }
 
 type BlockType = "FOCUS" | "BREAK" | "PRACTICE";
+type PaintDayType = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  days: number[];
+  schedulerMode?: string | null;
+};
+const BLOCK_TYPES: BlockType[] = ["FOCUS", "BREAK", "PRACTICE"];
+const SCHEDULER_MODES = [
+  "REGULAR",
+  "RUSH",
+  "MONUMENTAL",
+  "SKILLED",
+  "REST",
+] as const;
+const FLAME_LEVELS: FlameLevel[] = [
+  "NO",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "ULTRA",
+  "EXTREME",
+];
 
 const WEEKDAY_LABELS = (() => {
   try {
@@ -63,11 +104,12 @@ export function JumpToDateSheet({
   timeZone,
   dayMetaByDateKey,
   snapshot,
-  windowSnapshot: _windowSnapshot,
 }: JumpToDateSheetProps) {
   const router = useRouter();
   const [isPaintMode, setIsPaintMode] = useState(false);
-  const [paintSelectionKey, setPaintSelectionKey] = useState<string | null>(null);
+  const [paintSelectionKey, setPaintSelectionKey] = useState<string | null>(
+    null
+  );
   const [isDayTypesMenuOpen, setIsDayTypesMenuOpen] = useState(false);
   const SHOW_TIME_BLOCKS_KEY = "jump-to-date-show-time-blocks";
   const [showTimeBlocks, setShowTimeBlocks] = useState(() => {
@@ -80,31 +122,57 @@ export function JumpToDateSheet({
       return true;
     }
   });
-  const [dayTypes, setDayTypes] = useState<
-    Array<{ id: string; name: string; isDefault: boolean; days: number[] }>
-  >([]);
+  const [dayTypes, setDayTypes] = useState<Array<PaintDayType>>([]);
   const [isLoadingDayTypes, setIsLoadingDayTypes] = useState(false);
   const [dayTypeError, setDayTypeError] = useState<string | null>(null);
   const [timeBlocks, setTimeBlocks] = useState<
-    Array<{ id: string; label?: string | null; start_local: string; end_local: string }>
+    Array<{
+      id: string;
+      label?: string | null;
+      start_local: string;
+      end_local: string;
+    }>
   >([]);
-  const [dayTypeBlockMap, setDayTypeBlockMap] = useState<Map<string, Set<string>>>(() => new Map());
-  const [blockEnergy, setBlockEnergy] = useState<Map<string, FlameLevel>>(() => new Map());
-  const [blockTypeMap, setBlockTypeMap] = useState<Map<string, BlockType>>(() => new Map());
-  const [blockLocation, setBlockLocation] = useState<Map<string, { label: string; value: string } | null>>(
+  const [dayTypeBlockMap, setDayTypeBlockMap] = useState<
+    Map<string, Set<string>>
+  >(() => new Map());
+  const [blockEnergy, setBlockEnergy] = useState<Map<string, FlameLevel>>(
     () => new Map()
   );
+  const [blockTypeMap, setBlockTypeMap] = useState<Map<string, BlockType>>(
+    () => new Map()
+  );
+  const [blockLocation, setBlockLocation] = useState<
+    Map<string, { label: string; value: string } | null>
+  >(() => new Map());
+  const [overrideDates, setOverrideDates] = useState<Set<string>>(new Set());
   const [isLoadingTimeBlocks, setIsLoadingTimeBlocks] = useState(false);
   const [timeBlockError, setTimeBlockError] = useState<string | null>(null);
+  const [assignmentDayTypeId, setAssignmentDayTypeId] = useState<string | null>(
+    null
+  );
+  const [assignmentId, setAssignmentId] = useState<string | null>(null);
+  const [selectedDayTypeId, setSelectedDayTypeId] = useState<string | null>(
+    null
+  );
+  const [hasPendingAssignment, setHasPendingAssignment] = useState(false);
+  const [isLoadingAssignment, setIsLoadingAssignment] = useState(false);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [savingBlockId, setSavingBlockId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      window.localStorage.setItem(SHOW_TIME_BLOCKS_KEY, showTimeBlocks ? "1" : "0");
+      window.localStorage.setItem(
+        SHOW_TIME_BLOCKS_KEY,
+        showTimeBlocks ? "1" : "0"
+      );
     } catch {
       // ignore write errors
     }
   }, [showTimeBlocks, SHOW_TIME_BLOCKS_KEY]);
-  const energyHours = (snapshot?.energyHours ?? {}) as JumpToDateSnapshot["energyHours"];
+  const energyHours = (snapshot?.energyHours ??
+    {}) as JumpToDateSnapshot["energyHours"];
   const projected = snapshot?.projected ?? {};
   type EnergyView = "day" | "week" | "month";
   const [energyView, setEnergyView] = useState<EnergyView>("day");
@@ -119,7 +187,10 @@ export function JumpToDateSheet({
   const [isPrevFading, setIsPrevFading] = useState(false);
   const [isEnteringEnergy, setIsEnteringEnergy] = useState(false);
   const cycleEnergyView = () => {
-    const next = energyViewOrder[(energyViewOrder.indexOf(energyView) + 1) % energyViewOrder.length];
+    const next =
+      energyViewOrder[
+        (energyViewOrder.indexOf(energyView) + 1) % energyViewOrder.length
+      ];
     setPrevEnergyView(energyView);
     setIsPrevFading(false);
     setEnergyView(next);
@@ -151,7 +222,7 @@ export function JumpToDateSheet({
   };
 
   const togglePaintMode = () => {
-    setIsPaintMode(prev => {
+    setIsPaintMode((prev) => {
       const next = !prev;
       if (!next) {
         setPaintSelectionKey(null);
@@ -178,17 +249,19 @@ export function JumpToDateSheet({
         }
         const { data, error } = await supabase
           .from("day_types")
-          .select("id,name,is_default,days")
+          .select("id,name,is_default,days,scheduler_mode")
           .eq("user_id", user.id);
         if (error) throw error;
         if (cancelled) return;
         const normalized =
-          data?.flatMap(entry => {
+          data?.flatMap((entry) => {
             if (!entry?.id || typeof entry.name !== "string") return [];
             const days = Array.isArray(entry.days)
               ? entry.days
-                  .map(day => Number(day))
-                  .filter(day => Number.isInteger(day) && day >= 0 && day <= 6)
+                  .map((day) => Number(day))
+                  .filter(
+                    (day) => Number.isInteger(day) && day >= 0 && day <= 6
+                  )
               : [];
             return [
               {
@@ -196,6 +269,7 @@ export function JumpToDateSheet({
                 name: entry.name,
                 isDefault: entry.is_default ?? false,
                 days,
+                schedulerMode: entry.scheduler_mode ?? null,
               },
             ];
           }) ?? [];
@@ -219,6 +293,26 @@ export function JumpToDateSheet({
   useEffect(() => {
     if (!open || !isPaintMode) return;
     let cancelled = false;
+    const fetchLinks = async (
+      supabase: ReturnType<typeof getSupabaseBrowser>,
+      userId: string
+    ) => {
+      const columns =
+        "day_type_id,time_block_id,energy,block_type,location_context_id,location_context:location_contexts(value,label)";
+      const { data, error } = await supabase
+        .from("day_type_time_blocks")
+        .select(columns)
+        .eq("user_id", userId);
+      if (!error) return { data, error: null };
+      // Fallback if location_contexts relation is missing in this project.
+      const retry = await supabase
+        .from("day_type_time_blocks")
+        .select(
+          "day_type_id,time_block_id,energy,block_type,location_context_id"
+        )
+        .eq("user_id", userId);
+      return { data: retry.data, error: retry.error };
+    };
     const loadTimeBlocks = async () => {
       setIsLoadingTimeBlocks(true);
       setTimeBlockError(null);
@@ -241,19 +335,14 @@ export function JumpToDateSheet({
             .from("time_blocks")
             .select("id,label,start_local,end_local")
             .eq("user_id", user.id),
-          supabase
-            .from("day_type_time_blocks")
-            .select(
-              "day_type_id,time_block_id,energy,block_type,location_context_id,location_context:location_contexts(value,label)"
-            )
-            .eq("user_id", user.id),
+          fetchLinks(supabase, user.id),
         ]);
         if (blocksResult.error) throw blocksResult.error;
         if (linksResult.error) throw linksResult.error;
         if (cancelled) return;
 
         const normalizedBlocks =
-          blocksResult.data?.flatMap(entry => {
+          blocksResult.data?.flatMap((entry) => {
             if (!entry?.id) return [];
             return [
               {
@@ -268,33 +357,54 @@ export function JumpToDateSheet({
         const byDayType = new Map<string, Set<string>>();
         const energyMap = new Map<string, FlameLevel>();
         const typeMap = new Map<string, BlockType>();
-        const locationMap = new Map<string, { label: string; value: string } | null>();
-        (linksResult.data ?? []).forEach(row => {
-          const dayTypeId = (row as { day_type_id?: string | null })?.day_type_id;
-          const blockId = (row as { time_block_id?: string | null })?.time_block_id;
+        const locationMap = new Map<
+          string,
+          { label: string; value: string } | null
+        >();
+        (linksResult.data ?? []).forEach((row) => {
+          const dayTypeId = (row as { day_type_id?: string | null })
+            ?.day_type_id;
+          const blockId = (row as { time_block_id?: string | null })
+            ?.time_block_id;
           if (!dayTypeId || !blockId) return;
           const existing = byDayType.get(dayTypeId) ?? new Set<string>();
           existing.add(blockId);
           byDayType.set(dayTypeId, existing);
           const level = (row as { energy?: string | null })?.energy ?? "NO";
-          energyMap.set(blockId, normalizeFlameLevel(level));
-          const type = ((row as { block_type?: string | null })?.block_type ?? "FOCUS").toUpperCase();
+          energyMap.set(`${dayTypeId}:${blockId}`, normalizeFlameLevel(level));
+          const type = (
+            (row as { block_type?: string | null })?.block_type ?? "FOCUS"
+          ).toUpperCase();
           if (type === "BREAK" || type === "PRACTICE" || type === "FOCUS") {
-            typeMap.set(blockId, type);
+            typeMap.set(`${dayTypeId}:${blockId}`, type);
           } else {
-            typeMap.set(blockId, "FOCUS");
+            typeMap.set(`${dayTypeId}:${blockId}`, "FOCUS");
           }
-          const locationContext = (row as { location_context?: { value?: string | null; label?: string | null } | null })
-            ?.location_context;
-          const locationId = (row as { location_context_id?: string | null })?.location_context_id;
+          const locationContext = (
+            row as {
+              location_context?: {
+                value?: string | null;
+                label?: string | null;
+              } | null;
+            }
+          )?.location_context;
+          const locationId = (row as { location_context_id?: string | null })
+            ?.location_context_id;
           if (locationId) {
             const value =
-              typeof locationContext?.value === "string" ? locationContext.value.trim().toUpperCase() : locationId;
+              typeof locationContext?.value === "string"
+                ? locationContext.value.trim().toUpperCase()
+                : locationId;
             const label =
-              typeof locationContext?.label === "string" ? locationContext.label.trim() : locationContext?.value ?? value;
-            locationMap.set(blockId, { label: label ?? locationId, value });
+              typeof locationContext?.label === "string"
+                ? locationContext.label.trim()
+                : (locationContext?.value ?? value);
+            locationMap.set(`${dayTypeId}:${blockId}`, {
+              label: label ?? locationId,
+              value,
+            });
           } else {
-            locationMap.set(blockId, null);
+            locationMap.set(`${dayTypeId}:${blockId}`, null);
           }
         });
 
@@ -343,10 +453,12 @@ export function JumpToDateSheet({
   const formatWindowHours = (value?: number) =>
     Number.isFinite(value ?? NaN) ? `${(value as number).toFixed(1)}h` : "0h";
   const normalizeFlameLevel = (value?: string | null): FlameLevel => {
-    const upper = String(value ?? "MEDIUM").trim().toUpperCase();
-    return (["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"] as const).includes(
-      upper as FlameLevel
-    )
+    const upper = String(value ?? "MEDIUM")
+      .trim()
+      .toUpperCase();
+    return (
+      ["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"] as const
+    ).includes(upper as FlameLevel)
       ? (upper as FlameLevel)
       : "MEDIUM";
   };
@@ -355,7 +467,9 @@ export function JumpToDateSheet({
     return trimmed.length > 0 ? trimmed.toUpperCase() : null;
   };
   const timeStringToMinutes = (time?: string | null) => {
-    const [h, m] = String(time ?? "").split(":").map(Number);
+    const [h, m] = String(time ?? "")
+      .split(":")
+      .map(Number);
     const hh = Number.isFinite(h) ? Math.min(Math.max(h, 0), 24) : 0;
     const mm = Number.isFinite(m) ? Math.min(Math.max(m, 0), 59) : 0;
     const clampedHour = hh === 24 && mm > 0 ? 23 : hh;
@@ -450,7 +564,12 @@ export function JumpToDateSheet({
   function GoalTickerCard({
     goal,
   }: {
-    goal: { id: string; title: string; emoji?: string | null; completionUtc?: string | null };
+    goal: {
+      id: string;
+      title: string;
+      emoji?: string | null;
+      completionUtc?: string | null;
+    };
   }) {
     const completeBy = formatCompleteBy(goal.completionUtc);
     return (
@@ -463,7 +582,9 @@ export function JumpToDateSheet({
         </div>
         {completeBy ? (
           <div className="mt-1 flex items-center gap-1 text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.12em] sm:tracking-[0.14em] text-white/60 leading-tight">
-            <span className="whitespace-nowrap">COMPLETE BY {completeBy.dateLabel}</span>
+            <span className="whitespace-nowrap">
+              COMPLETE BY {completeBy.dateLabel}
+            </span>
             <span className="text-[9px] sm:text-[9px] font-normal uppercase text-white/45 leading-none">
               {completeBy.timeLabel}
             </span>
@@ -476,6 +597,104 @@ export function JumpToDateSheet({
     (timeZone && timeZone.trim()) ||
     Intl.DateTimeFormat().resolvedOptions().timeZone ||
     "UTC";
+
+  useEffect(() => {
+    if (!open || !isPaintMode) return;
+    let cancelled = false;
+    const cleanupTemporary = async () => {
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) return;
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const userId = user?.id ?? null;
+        if (!userId) return;
+        const todayKey = formatDateKeyInTimeZone(new Date(), resolvedTimeZone);
+        await supabase
+          .from("day_types")
+          .delete()
+          .eq("user_id", userId)
+          .eq("is_temporary", true)
+          .lt("temporary_expires_at", todayKey);
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Unable to clean up temporary day types", error);
+        }
+      }
+    };
+    void cleanupTemporary();
+    return () => {
+      cancelled = true;
+    };
+  }, [isPaintMode, open, resolvedTimeZone]);
+
+  useEffect(() => {
+    if (!open || !isPaintMode || !paintSelectionKey || dayTypes.length === 0) {
+      setAssignmentDayTypeId(null);
+      setAssignmentError(null);
+      setSelectedDayTypeId(null);
+      setHasPendingAssignment(false);
+      return;
+    }
+    if (hasPendingAssignment || selectedDayTypeId) {
+      // Preserve unsaved/pending selection; avoid resetting to default/assignment.
+      return;
+    }
+    let cancelled = false;
+    const loadAssignment = async () => {
+      setIsLoadingAssignment(true);
+      setAssignmentError(null);
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) throw new Error("Supabase client not available");
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user?.id) {
+          setAssignmentDayTypeId(null);
+          return;
+        }
+        const { data: existing, error: existingError } = await supabase
+          .from("day_type_assignments")
+          .select("id, day_type_id")
+          .eq("user_id", user.id)
+          .eq("date_key", paintSelectionKey)
+          .maybeSingle();
+        if (existingError) throw existingError;
+        if (cancelled) return;
+        if (existing?.day_type_id) {
+          setAssignmentDayTypeId(existing.day_type_id);
+          setSelectedDayTypeId(existing.day_type_id);
+        } else {
+          setAssignmentDayTypeId(null);
+          setSelectedDayTypeId(null);
+        }
+        setHasPendingAssignment(false);
+      } catch (error) {
+        console.warn("Unable to ensure day type assignment", error);
+        if (!cancelled) {
+          setAssignmentError("Unable to prepare this date.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingAssignment(false);
+        }
+      }
+    };
+    void loadAssignment();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    dayTypes,
+    hasPendingAssignment,
+    isPaintMode,
+    normalizeFlameLevel,
+    open,
+    paintSelectionKey,
+    selectedDayTypeId,
+  ]);
 
   const initialMonth = useMemo(() => {
     const base = new Date(currentDate);
@@ -499,6 +718,56 @@ export function JumpToDateSheet({
       setTodayKey(computeTodayKey());
     }
   }, [open, initialMonth, computeTodayKey]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const loadOverrides = async () => {
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) return;
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const userId = user?.id ?? null;
+        if (!userId) return;
+        const monthStart = new Date(visibleMonth);
+        monthStart.setDate(1);
+        const monthEnd = new Date(
+          visibleMonth.getFullYear(),
+          visibleMonth.getMonth() + 1,
+          0
+        );
+        const startKey = formatDateKeyInTimeZone(monthStart, resolvedTimeZone);
+        const endKey = formatDateKeyInTimeZone(monthEnd, resolvedTimeZone);
+        const { data, error } = await supabase
+          .from("day_type_assignments")
+          .select("date_key")
+          .eq("user_id", userId)
+          .gte("date_key", startKey)
+          .lte("date_key", endKey);
+        if (error) throw error;
+        if (cancelled) return;
+        const next = new Set<string>();
+        (data ?? []).forEach((row) => {
+          const key = (row as { date_key?: string | null })?.date_key;
+          if (typeof key === "string" && key.trim()) {
+            next.add(key.trim());
+          }
+        });
+        setOverrideDates(next);
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Unable to load override dates", error);
+          setOverrideDates(new Set());
+        }
+      }
+    };
+    void loadOverrides();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, resolvedTimeZone, visibleMonth]);
 
   const selectedDateKey = useMemo(
     () => formatDateKeyInTimeZone(currentDate, resolvedTimeZone),
@@ -542,7 +811,9 @@ export function JumpToDateSheet({
 
   const paintSelectionLabel = useMemo(() => {
     if (!paintSelectionDate) return null;
-    const dayName = paintSelectionDate.toLocaleDateString(undefined, { weekday: "long" });
+    const dayName = paintSelectionDate.toLocaleDateString(undefined, {
+      weekday: "long",
+    });
     const dateLabel = paintSelectionDate.toLocaleDateString(undefined, {
       month: "long",
       day: "numeric",
@@ -551,39 +822,478 @@ export function JumpToDateSheet({
     return { dayName, dateLabel };
   }, [paintSelectionDate]);
 
-  const paintDayType = useMemo(() => {
+  const defaultDayTypeForSelection = useMemo(() => {
     if (!paintSelectionDate || dayTypes.length === 0) return null;
     const dayIndex = paintSelectionDate.getDay();
-    const matches = dayTypes.filter(dayType => dayType.days.includes(dayIndex));
+    const matches = dayTypes.filter((dayType) =>
+      dayType.days.includes(dayIndex)
+    );
     if (matches.length === 0) return null;
-    const preferred = matches.find(dayType => dayType.isDefault);
+    const preferred = matches.find((dayType) => dayType.isDefault);
     return preferred ?? matches[0];
   }, [dayTypes, paintSelectionDate]);
+
+  const paintDayType = useMemo(() => {
+    if (!paintSelectionDate || dayTypes.length === 0) return null;
+    if (selectedDayTypeId) {
+      return (
+        dayTypes.find((dayType) => dayType.id === selectedDayTypeId) ??
+        defaultDayTypeForSelection
+      );
+    }
+    return defaultDayTypeForSelection;
+  }, [
+    dayTypes,
+    defaultDayTypeForSelection,
+    paintSelectionDate,
+    selectedDayTypeId,
+  ]);
 
   const paintTimeBlocks = useMemo(() => {
     if (!isPaintMode || !paintDayType) return [];
     const linkedBlocks = dayTypeBlockMap.get(paintDayType.id);
     if (!linkedBlocks) return [];
     return timeBlocks
-      .filter(block => linkedBlocks.has(block.id))
-      .map(block => ({
+      .filter((block) => linkedBlocks.has(block.id))
+      .map((block) => ({
         ...block,
-        energy: blockEnergy.get(block.id) ?? null,
-        blockType: blockTypeMap.get(block.id) ?? "FOCUS",
-        location: blockLocation.get(block.id) ?? null,
+        energy: blockEnergy.get(`${paintDayType.id}:${block.id}`) ?? null,
+        blockType:
+          blockTypeMap.get(`${paintDayType.id}:${block.id}`) ?? "FOCUS",
+        location: blockLocation.get(`${paintDayType.id}:${block.id}`) ?? null,
       }));
-  }, [blockEnergy, blockLocation, blockTypeMap, dayTypeBlockMap, isPaintMode, paintDayType, timeBlocks]);
+  }, [
+    blockEnergy,
+    blockLocation,
+    blockTypeMap,
+    dayTypeBlockMap,
+    isPaintMode,
+    paintDayType,
+    timeBlocks,
+  ]);
+
+  const assignDayTypeToSelection = useCallback(
+    async (
+      dayTypeId: string,
+      options?: {
+        supabaseInstance?: ReturnType<typeof getSupabaseBrowser>;
+        userId?: string | null;
+      }
+    ) => {
+      if (!paintSelectionKey) return null;
+      const supabase = options?.supabaseInstance ?? getSupabaseBrowser();
+      if (!supabase) throw new Error("Supabase client not available");
+      let userId = options?.userId ?? null;
+      if (!userId) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        userId = user?.id ?? null;
+      }
+      if (!userId) throw new Error("User not found");
+
+      const { error } = await supabase.from("day_type_assignments").upsert(
+        {
+          user_id: userId,
+          date_key: paintSelectionKey,
+          day_type_id: dayTypeId,
+        },
+        {
+          onConflict: "user_id,date_key",
+        }
+      );
+      if (error) throw error;
+      setAssignmentError(null);
+      setAssignmentDayTypeId(dayTypeId);
+      setSelectedDayTypeId(dayTypeId);
+      setHasPendingAssignment(false);
+      setOverrideDates((prev) => {
+        const next = new Set(prev);
+        next.add(paintSelectionKey);
+        return next;
+      });
+      router.refresh();
+      return dayTypeId;
+    },
+    [paintSelectionKey, router]
+  );
+
+  const ensureCustomDayTypeForDate = useCallback(
+    async (options?: {
+      baseDayTypeId?: string | null;
+      assign?: boolean;
+      supabaseInstance?: ReturnType<typeof getSupabaseBrowser>;
+      userId?: string | null;
+    }) => {
+      if (!paintSelectionKey) return null;
+      const supabase = options?.supabaseInstance ?? getSupabaseBrowser();
+      if (!supabase) throw new Error("Supabase client not available");
+      let userId = options?.userId ?? null;
+      if (!userId) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        userId = user?.id ?? null;
+      }
+      if (!userId) throw new Error("User not found");
+
+      const baseId =
+        options?.baseDayTypeId ??
+        selectedDayTypeId ??
+        assignmentDayTypeId ??
+        defaultDayTypeForSelection?.id ??
+        null;
+      if (
+        assignmentDayTypeId &&
+        (!options?.baseDayTypeId ||
+          options.baseDayTypeId === assignmentDayTypeId)
+      ) {
+        if (options?.assign) {
+          try {
+            await assignDayTypeToSelection(assignmentDayTypeId, {
+              supabaseInstance: supabase,
+              userId,
+            });
+          } catch (error) {
+            console.warn("Unable to ensure assignment for selection", error);
+            setHasPendingAssignment(true);
+          }
+        }
+        return assignmentDayTypeId;
+      }
+
+      const selectionDate = parseDateKey(paintSelectionKey);
+      if (!selectionDate) throw new Error("Invalid date");
+      const weekday = selectionDate.getDay();
+      const template =
+        (options?.baseDayTypeId &&
+          dayTypes.find((dt) => dt.id === options.baseDayTypeId)) ||
+        (baseId && dayTypes.find((dt) => dt.id === baseId)) ||
+        dayTypes.find((dt) => dt.days.includes(weekday) && dt.isDefault) ||
+        dayTypes.find((dt) => dt.days.includes(weekday)) ||
+        dayTypes.find((dt) => dt.isDefault) ||
+        dayTypes[0];
+      if (!template) throw new Error("No template day type available");
+
+      const { data: templateRow, error: templateError } = await supabase
+        .from("day_types")
+        .select("id, name, scheduler_mode")
+        .eq("id", template.id)
+        .single();
+      if (templateError) throw templateError;
+
+      const baseName = templateRow?.name ?? "Day";
+      const composedName = `${baseName} • ${paintSelectionKey}`;
+      const expiresAt = (() => {
+        const base = selectionDate ? new Date(selectionDate) : new Date();
+        base.setHours(0, 0, 0, 0);
+        base.setDate(base.getDate() + 7);
+        return base.toISOString().split("T")[0];
+      })();
+
+      const { data: newDayType, error: insertDayTypeError } = await supabase
+        .from("day_types")
+        .insert({
+          user_id: userId,
+          name: composedName,
+          is_default: false,
+          days: [],
+          scheduler_mode:
+            (templateRow as { scheduler_mode?: string | null })
+              ?.scheduler_mode ?? "REGULAR",
+          is_temporary: true,
+          temporary_date_key: paintSelectionKey,
+          temporary_expires_at: expiresAt,
+        })
+        .select("id, name, scheduler_mode")
+        .single();
+      if (insertDayTypeError) throw insertDayTypeError;
+
+      const fetchTemplateLinks = async () => {
+        const columns =
+          "time_block_id, energy, block_type, location_context_id, location_context:location_contexts(value,label)";
+        const primary = await supabase
+          .from("day_type_time_blocks")
+          .select(columns)
+          .eq("user_id", userId)
+          .eq("day_type_id", template.id);
+        if (!primary.error) return primary;
+        // Fallback if location_contexts relation is missing.
+        const retry = await supabase
+          .from("day_type_time_blocks")
+          .select("time_block_id, energy, block_type, location_context_id")
+          .eq("user_id", userId)
+          .eq("day_type_id", template.id);
+        return retry;
+      };
+
+      const { data: templateLinks, error: linksError } =
+        await fetchTemplateLinks();
+      if (linksError) throw linksError;
+
+      const payload =
+        templateLinks?.flatMap((link) => {
+          const blockId = (link as { time_block_id?: string | null })
+            ?.time_block_id;
+          if (!blockId) return [];
+          return [
+            {
+              user_id: userId,
+              day_type_id: newDayType.id,
+              time_block_id: blockId,
+              energy: (link as { energy?: string | null })?.energy ?? "NO",
+              block_type:
+                (link as { block_type?: string | null })?.block_type ?? "FOCUS",
+              location_context_id:
+                (link as { location_context_id?: string | null })
+                  ?.location_context_id ?? null,
+            },
+          ];
+        }) ?? [];
+
+      if (payload.length > 0) {
+        const { error: copyError } = await supabase
+          .from("day_type_time_blocks")
+          .insert(payload);
+        if (copyError) throw copyError;
+      }
+
+      const blockIds =
+        templateLinks
+          ?.map(
+            (link) => (link as { time_block_id?: string | null })?.time_block_id
+          )
+          .filter((id): id is string => typeof id === "string") ?? [];
+      setDayTypeBlockMap((prev) => {
+        const next = new Map(prev);
+        next.set(newDayType.id, new Set(blockIds));
+        return next;
+      });
+      setBlockEnergy((prev) => {
+        const next = new Map(prev);
+        (templateLinks ?? []).forEach((link) => {
+          const blockId = (link as { time_block_id?: string | null })
+            ?.time_block_id;
+          if (!blockId) return;
+          const level = (link as { energy?: string | null })?.energy ?? "NO";
+          next.set(`${newDayType.id}:${blockId}`, normalizeFlameLevel(level));
+        });
+        return next;
+      });
+      setBlockTypeMap((prev) => {
+        const next = new Map(prev);
+        (templateLinks ?? []).forEach((link) => {
+          const blockId = (link as { time_block_id?: string | null })
+            ?.time_block_id;
+          if (!blockId) return;
+          const rawType =
+            (link as { block_type?: string | null })?.block_type ?? "FOCUS";
+          const upper = rawType.toUpperCase();
+          next.set(
+            `${newDayType.id}:${blockId}`,
+            upper === "BREAK" || upper === "PRACTICE"
+              ? (upper as BlockType)
+              : "FOCUS"
+          );
+        });
+        return next;
+      });
+      setBlockLocation((prev) => {
+        const next = new Map(prev);
+        (templateLinks ?? []).forEach((link) => {
+          const blockId = (link as { time_block_id?: string | null })
+            ?.time_block_id;
+          if (!blockId) return;
+          const locationId =
+            (link as { location_context_id?: string | null })
+              ?.location_context_id ?? null;
+          const ctx = (
+            link as {
+              location_context?: {
+                value?: string | null;
+                label?: string | null;
+              } | null;
+            }
+          )?.location_context;
+          if (locationId) {
+            const value =
+              typeof ctx?.value === "string"
+                ? ctx.value.trim().toUpperCase()
+                : locationId;
+            const label =
+              typeof ctx?.label === "string"
+                ? ctx.label.trim()
+                : (ctx?.value ?? value);
+            next.set(`${newDayType.id}:${blockId}`, {
+              label: label ?? locationId,
+              value,
+            });
+          } else {
+            next.set(`${newDayType.id}:${blockId}`, null);
+          }
+        });
+        return next;
+      });
+      setDayTypes((prev) => [
+        ...prev,
+        {
+          id: newDayType.id,
+          name: newDayType.name ?? composedName,
+          isDefault: false,
+          days: [],
+          schedulerMode:
+            (newDayType as { scheduler_mode?: string | null })
+              ?.scheduler_mode ?? "REGULAR",
+        },
+      ]);
+      setSelectedDayTypeId(newDayType.id);
+      if (options?.assign) {
+        try {
+          await assignDayTypeToSelection(newDayType.id, {
+            supabaseInstance: supabase,
+            userId,
+          });
+        } catch (error) {
+          console.warn("Unable to assign day type to selection", error);
+          setHasPendingAssignment(true);
+        }
+      } else {
+        setHasPendingAssignment(true);
+      }
+      return newDayType.id;
+    },
+    [
+      assignmentDayTypeId,
+      assignDayTypeToSelection,
+      dayTypes,
+      defaultDayTypeForSelection?.id,
+      normalizeFlameLevel,
+      paintDayType?.id,
+      paintSelectionKey,
+      selectedDayTypeId,
+    ]
+  );
+
+  const saveBlockSettings = useCallback(
+    async (
+      blockId: string,
+      updates: { energy?: FlameLevel; blockType?: BlockType }
+    ) => {
+      if (!paintSelectionKey) {
+        setSaveError("Select a date in paint mode first.");
+        return;
+      }
+      setSavingBlockId(blockId);
+      setSaveError(null);
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) throw new Error("Supabase client not available");
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const userId = user?.id ?? null;
+        if (!userId) throw new Error("User not found");
+        const dayTypeId =
+          assignmentDayTypeId ??
+          (await ensureCustomDayTypeForDate({
+            baseDayTypeId: paintDayType?.id ?? null,
+            assign: true,
+            supabaseInstance: supabase,
+            userId,
+          }));
+        if (!dayTypeId) throw new Error("Unable to prepare day type");
+        const payload: Record<string, string | null> = {
+          user_id: userId,
+          day_type_id: dayTypeId,
+          time_block_id: blockId,
+        };
+        if (updates.energy) payload.energy = updates.energy;
+        if (updates.blockType) payload.block_type = updates.blockType;
+        const { error } = await supabase
+          .from("day_type_time_blocks")
+          .upsert(payload, {
+            onConflict: "day_type_id,time_block_id",
+          });
+        if (error) throw error;
+
+        if (updates.energy) {
+          setBlockEnergy((prev) => {
+            const next = new Map(prev);
+            next.set(
+              `${dayTypeId}:${blockId}`,
+              normalizeFlameLevel(updates.energy)
+            );
+            return next;
+          });
+        }
+        if (updates.blockType) {
+          setBlockTypeMap((prev) => {
+            const next = new Map(prev);
+            next.set(`${dayTypeId}:${blockId}`, updates.blockType ?? "FOCUS");
+            return next;
+          });
+        }
+        await assignDayTypeToSelection(dayTypeId, {
+          supabaseInstance: supabase,
+          userId,
+        });
+      } catch (error: any) {
+        console.warn("Unable to save block settings", error);
+        const message =
+          (error?.message as string) ??
+          (typeof error === "string" ? error : null) ??
+          "Unable to save changes right now.";
+        setSaveError(message);
+      } finally {
+        setSavingBlockId(null);
+      }
+    },
+    [
+      assignmentDayTypeId,
+      assignDayTypeToSelection,
+      ensureCustomDayTypeForDate,
+      normalizeFlameLevel,
+      paintDayType?.id,
+      selectedDayTypeId,
+    ]
+  );
+
+  const cycleEnergy = useCallback(
+    async (blockId: string) => {
+      const levels = FLAME_LEVELS;
+      const key = `${paintDayType?.id}:${blockId}`;
+      const current = key ? (blockEnergy.get(key) ?? "NO") : "NO";
+      const nextLevel = levels[(levels.indexOf(current) + 1) % levels.length];
+      setSaveError(null);
+      await saveBlockSettings(blockId, { energy: nextLevel });
+    },
+    [blockEnergy, paintDayType?.id, saveBlockSettings]
+  );
+
+  const cycleBlockType = useCallback(
+    async (blockId: string) => {
+      const sequence: BlockType[] = ["FOCUS", "BREAK", "PRACTICE"];
+      const key = `${paintDayType?.id}:${blockId}`;
+      const current = key ? (blockTypeMap.get(key) ?? "FOCUS") : "FOCUS";
+      const nextType =
+        sequence[(sequence.indexOf(current) + 1) % sequence.length];
+      setSaveError(null);
+      await saveBlockSettings(blockId, { blockType: nextType });
+    },
+    [blockTypeMap, paintDayType?.id, saveBlockSettings]
+  );
 
   const handleSelect = (date: Date, dateKey?: string) => {
     if (isPaintMode && dateKey) {
       setPaintSelectionKey(dateKey);
+      setSaveError(null);
       return;
     }
     onSelectDate(new Date(date));
   };
 
   const goToOffsetMonth = (offset: number) => {
-    setVisibleMonth(prev => {
+    setVisibleMonth((prev) => {
       const next = new Date(prev);
       next.setMonth(prev.getMonth() + offset);
       next.setDate(1);
@@ -599,6 +1309,87 @@ export function JumpToDateSheet({
     }
   };
 
+  const handleChangeDayType = useCallback(
+    async (nextDayTypeId: string) => {
+      if (!paintSelectionKey || !nextDayTypeId) return;
+      setAssignmentError(null);
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) throw new Error("Supabase client not available");
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const userId = user?.id ?? null;
+        if (!userId) throw new Error("User not found");
+        await assignDayTypeToSelection(nextDayTypeId, {
+          supabaseInstance: supabase,
+          userId,
+        });
+        setSelectedDayTypeId(nextDayTypeId);
+      } catch (error) {
+        console.warn("Unable to change day type", error);
+        setAssignmentError("Unable to change day type right now.");
+      }
+    },
+    [assignDayTypeToSelection, paintSelectionKey]
+  );
+
+  const handleChangeMode = useCallback(
+    async (nextMode: string) => {
+      if (!paintSelectionKey) return;
+      setSaveError(null);
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) throw new Error("Supabase client not available");
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const userId = user?.id ?? null;
+        if (!userId) throw new Error("User not found");
+        const dayTypeId =
+          assignmentDayTypeId ??
+          (await ensureCustomDayTypeForDate({
+            baseDayTypeId: paintDayType?.id ?? null,
+            assign: true,
+            supabaseInstance: supabase,
+            userId,
+          }));
+        if (!dayTypeId) throw new Error("Unable to prepare day type");
+        const { error } = await supabase
+          .from("day_types")
+          .update({ scheduler_mode: nextMode })
+          .eq("id", dayTypeId)
+          .eq("user_id", userId);
+        if (error) throw error;
+        setDayTypes((prev) =>
+          prev.map((dt) =>
+            dt.id === dayTypeId
+              ? {
+                  ...dt,
+                  schedulerMode: nextMode,
+                }
+              : dt
+          )
+        );
+        setSelectedDayTypeId(dayTypeId);
+        await assignDayTypeToSelection(dayTypeId, {
+          supabaseInstance: supabase,
+          userId,
+        });
+      } catch (error) {
+        console.warn("Unable to change mode", error);
+        setSaveError("Unable to change mode right now.");
+      }
+    },
+    [
+      assignmentDayTypeId,
+      assignDayTypeToSelection,
+      ensureCustomDayTypeForDate,
+      paintDayType?.id,
+      paintSelectionKey,
+    ]
+  );
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -608,7 +1399,9 @@ export function JumpToDateSheet({
         <SheetHeader className="sticky top-0 z-20 border-b border-white/10 bg-[var(--surface-elevated)]/90 px-4 pt-3 pb-2 backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="flex flex-col gap-1">
-              <SheetTitle className="text-base font-semibold tracking-tight text-white">Jump to date</SheetTitle>
+              <SheetTitle className="text-base font-semibold tracking-tight text-white">
+                Jump to date
+              </SheetTitle>
             </div>
           </div>
         </SheetHeader>
@@ -647,16 +1440,112 @@ export function JumpToDateSheet({
                     <div className="pt-1 space-y-0.5 text-[12px] sm:text-sm font-semibold text-white/75">
                       <div className="flex items-center justify-between gap-2">
                         <span>Day type</span>
-                        <span className="text-white/90">
-                          {dayTypeError
-                            ? "Unavailable"
-                            : isLoadingDayTypes
-                              ? "Loading…"
-                              : paintDayType?.name ?? "None set"}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                disabled={isLoadingDayTypes}
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-[11px] sm:text-xs font-semibold text-white/90 shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:border-white/20 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70",
+                                  isLoadingDayTypes && "opacity-60"
+                                )}
+                              >
+                                <span className="truncate max-w-[180px] sm:max-w-[220px]">
+                                  {paintDayType?.name ??
+                                    defaultDayTypeForSelection?.name ??
+                                    (dayTypeError
+                                      ? "Unavailable"
+                                      : "Select day type")}
+                                </span>
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                              align="end"
+                              side="bottom"
+                              sideOffset={6}
+                              collisionPadding={12}
+                              className="z-[20000] min-w-[220px] max-w-[260px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
+                            >
+                              {dayTypes.map((dt) => (
+                                <DropdownMenuItem
+                                  key={dt.id}
+                                  className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    void handleChangeDayType(dt.id);
+                                  }}
+                                >
+                                  {dt.name}
+                                </DropdownMenuItem>
+                              ))}
+                              <DropdownMenuItem
+                                className="text-xs text-white/80 focus:bg-white/10 focus:text-white"
+                                onSelect={(event) => {
+                                  event.preventDefault();
+                                  handleCreateDayType();
+                                }}
+                              >
+                                Create new day type
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
-                      <div>
-                        Mode: <span className="text-white/90">Default</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <span>Mode</span>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              disabled={isLoadingDayTypes}
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-[11px] sm:text-xs font-semibold text-white/90 shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:border-white/20 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70",
+                                isLoadingDayTypes && "opacity-60"
+                              )}
+                            >
+                              <span className="truncate max-w-[140px] sm:max-w-[160px]">
+                                {(
+                                  (paintDayType?.schedulerMode ??
+                                    defaultDayTypeForSelection?.schedulerMode ??
+                                    "REGULAR") as string
+                                )
+                                  .charAt(0)
+                                  .concat(
+                                    (
+                                      (paintDayType?.schedulerMode ??
+                                        defaultDayTypeForSelection?.schedulerMode ??
+                                        "REGULAR") as string
+                                    )
+                                      .slice(1)
+                                      .toLowerCase()
+                                  )}
+                              </span>
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            side="bottom"
+                            sideOffset={6}
+                            collisionPadding={12}
+                            className="z-[20000] min-w-[180px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
+                          >
+                            {SCHEDULER_MODES.map((mode) => (
+                              <DropdownMenuItem
+                                key={mode}
+                                className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
+                                onSelect={(event) => {
+                                  event.preventDefault();
+                                  void handleChangeMode(mode);
+                                }}
+                              >
+                                {mode.charAt(0) + mode.slice(1).toLowerCase()}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                     <div className="rounded-md border border-white/10 bg-white/5 p-2.5 sm:p-3 space-y-1.5">
@@ -667,11 +1556,62 @@ export function JumpToDateSheet({
                             type="checkbox"
                             className="h-3.5 w-3.5 rounded border border-white/40 bg-white/5 accent-white/80"
                             checked={showTimeBlocks}
-                            onChange={e => setShowTimeBlocks(e.target.checked)}
+                            onChange={(e) =>
+                              setShowTimeBlocks(e.target.checked)
+                            }
                           />
                           <span>View time blocks</span>
                         </label>
                       </div>
+                      {hasPendingAssignment ? (
+                        <div className="flex items-center justify-between rounded-md border border-emerald-300/30 bg-emerald-300/10 px-2.5 py-1.5 text-[11px] sm:text-xs text-emerald-100">
+                          <span>Changes not applied to this date</span>
+                          <button
+                            type="button"
+                            className="rounded-full border border-emerald-200/40 bg-emerald-200/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-50 hover:bg-emerald-200/25"
+                            onClick={async () => {
+                              setAssignmentError(null);
+                              setSaveError(null);
+                              if (!paintSelectionKey) return;
+                              try {
+                                const supabase = getSupabaseBrowser();
+                                if (!supabase)
+                                  throw new Error(
+                                    "Supabase client not available"
+                                  );
+                                const {
+                                  data: { user },
+                                } = await supabase.auth.getUser();
+                                const userId = user?.id ?? null;
+                                if (!userId) throw new Error("User not found");
+                                const applyId =
+                                  selectedDayTypeId ??
+                                  assignmentDayTypeId ??
+                                  paintDayType?.id ??
+                                  (await ensureCustomDayTypeForDate({
+                                    baseDayTypeId: paintDayType?.id ?? null,
+                                    assign: true,
+                                    supabaseInstance: supabase,
+                                    userId,
+                                  }));
+                                if (!applyId)
+                                  throw new Error("No day type to assign");
+                                await assignDayTypeToSelection(applyId, {
+                                  supabaseInstance: supabase,
+                                  userId,
+                                });
+                              } catch (error) {
+                                console.warn("Unable to apply day type", error);
+                                setAssignmentError(
+                                  "Unable to save this date right now."
+                                );
+                              }
+                            }}
+                          >
+                            Save for this date
+                          </button>
+                        </div>
+                      ) : null}
                       {!showTimeBlocks ? null : timeBlockError ? (
                         <div className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
                           {timeBlockError}
@@ -685,41 +1625,76 @@ export function JumpToDateSheet({
                           No time blocks for this day type.
                         </div>
                       ) : (
-                        <div className="space-y-1">
-                          {paintTimeBlocks.map(block => {
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {saveError ? (
+                            <div className="col-span-full rounded-md border border-amber-200/40 bg-amber-200/10 px-2.5 py-1.5 text-[12px] sm:text-sm text-amber-100">
+                              {saveError}
+                            </div>
+                          ) : null}
+                          {paintTimeBlocks.map((block) => {
                             const hours = windowDurationHours(block);
                             const typeLabel =
                               (block.blockType ?? "FOCUS").charAt(0) +
-                              (block.blockType ?? "FOCUS").slice(1).toLowerCase();
+                              (block.blockType ?? "FOCUS")
+                                .slice(1)
+                                .toLowerCase();
+                            const energyLevel = normalizeFlameLevel(
+                              block.energy
+                            );
                             return (
                               <div
                                 key={block.id}
-                                className="flex items-center justify-between gap-2 rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5"
+                                className="flex w-full flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.28)]"
                               >
-                                <div className="min-w-0 space-y-0.5">
-                                  <div className="truncate text-[13px] sm:text-sm font-semibold text-white/90">
-                                    {block.label || "Time block"}
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-1.5 text-[10px] sm:text-[11px] text-white/60">
-                                    <span>
-                                      {block.start_local} – {block.end_local}
-                                    </span>
-                                    {block.location ? (
-                                      <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-white/65">
-                                        <MapPin className="h-3 w-3" />
-                                        <span className="truncate max-w-[120px] sm:max-w-[200px]">
-                                          {block.location.label ?? block.location.value}
-                                        </span>
+                                <div className="flex items-center justify-between">
+                                  <div className="space-y-0.5">
+                                    <div className="text-sm font-semibold text-white/90">
+                                      {block.label || "Time block"}
+                                    </div>
+                                    <div className="text-[10px] uppercase tracking-[0.16em] text-white/50">
+                                      {block.start_local} → {block.end_local}
+                                    </div>
+                                    <div className="flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] text-white/55">
+                                      <MapPin className="h-3 w-3 text-white/55" />
+                                      <span className="truncate max-w-[140px] sm:max-w-[200px]">
+                                        {(
+                                          block.location?.label ??
+                                          block.location?.value ??
+                                          "Anywhere"
+                                        ).toString()}
                                       </span>
-                                    ) : null}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void cycleBlockType(block.id)
+                                      }
+                                      className="flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:border-white/25 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60"
+                                      aria-label={`Cycle block type for ${block.label ?? "time block"}`}
+                                    >
+                                      {typeLabel}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void cycleEnergy(block.id)}
+                                      className="flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:border-white/25 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60"
+                                      aria-label={`Cycle energy for ${block.label ?? "time block"}`}
+                                    >
+                                      <FlameEmber
+                                        level={energyLevel}
+                                        size="sm"
+                                        className="scale-90"
+                                      />
+                                      <span>{energyLevel}</span>
+                                    </button>
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1 text-[11px] sm:text-[12px] font-semibold text-white/90 whitespace-nowrap">
-                                  <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/75">
-                                    {typeLabel}
-                                  </span>
-                                  <span>{formatWindowHours(hours)}</span>
-                                  <EnergyFlame level={normalizeFlameLevel(block.energy)} />
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 text-[11px] text-white/70">
+                                    <span>{formatWindowHours(hours)}</span>
+                                  </div>
                                 </div>
                               </div>
                             );
@@ -761,15 +1736,20 @@ export function JumpToDateSheet({
                         <div
                           className={cn(
                             "absolute inset-0 grid grid-cols-[minmax(74px,1fr)_minmax(90px,140px)] items-center justify-start gap-x-1.5 sm:gap-x-3 gap-y-0.5 sm:gap-y-1.5 transition-all duration-250 ease-out pointer-events-none",
-                            isPrevFading ? "opacity-0 translate-y-1" : "opacity-100 translate-y-0"
+                            isPrevFading
+                              ? "opacity-0 translate-y-1"
+                              : "opacity-100 translate-y-0"
                           )}
                         >
-                          {visibleLevels.map(level => (
+                          {visibleLevels.map((level) => (
                             <Fragment key={`${prevEnergyView}-${level}`}>
                               <span className="text-white uppercase text-[10px] sm:text-[12px] leading-none">
                                 {level}
                               </span>
-                              <EnergyHoursCell value={energyHours[prevEnergyView]?.[level]} level={level} />
+                              <EnergyHoursCell
+                                value={energyHours[prevEnergyView]?.[level]}
+                                level={level}
+                              />
                             </Fragment>
                           ))}
                         </div>
@@ -777,15 +1757,20 @@ export function JumpToDateSheet({
                       <div
                         className={cn(
                           "grid grid-cols-[minmax(74px,1fr)_minmax(90px,140px)] items-center justify-start gap-x-1.5 sm:gap-x-3 gap-y-0.5 sm:gap-y-1.5 transition-all duration-250 ease-out",
-                          isEnteringEnergy ? "opacity-0 translate-y-1" : "opacity-100 translate-y-0"
+                          isEnteringEnergy
+                            ? "opacity-0 translate-y-1"
+                            : "opacity-100 translate-y-0"
                         )}
                       >
-                        {visibleLevels.map(level => (
+                        {visibleLevels.map((level) => (
                           <Fragment key={`${energyView}-${level}`}>
                             <span className="text-white uppercase text-[10px] sm:text-[12px] leading-none">
                               {level}
                             </span>
-                            <EnergyHoursCell value={energyHours[energyView]?.[level]} level={level} />
+                            <EnergyHoursCell
+                              value={energyHours[energyView]?.[level]}
+                              level={level}
+                            />
                           </Fragment>
                         ))}
                       </div>
@@ -812,7 +1797,10 @@ export function JumpToDateSheet({
                           speed={40}
                           trackClassName="flex flex-nowrap gap-1 sm:gap-2.5 pb-1 will-change-transform"
                           renderItem={(goal, index) => (
-                            <GoalTickerCard key={`${goal.id}-${index}`} goal={goal} />
+                            <GoalTickerCard
+                              key={`${goal.id}-${index}`}
+                              goal={goal}
+                            />
                           )}
                         />
                       )}
@@ -832,7 +1820,10 @@ export function JumpToDateSheet({
                           speed={40}
                           trackClassName="flex flex-nowrap gap-1 sm:gap-2.5 pb-1 will-change-transform"
                           renderItem={(goal, index) => (
-                            <GoalTickerCard key={`${goal.id}-${index}`} goal={goal} />
+                            <GoalTickerCard
+                              key={`${goal.id}-${index}`}
+                              goal={goal}
+                            />
                           )}
                         />
                       )}
@@ -852,13 +1843,17 @@ export function JumpToDateSheet({
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <DropdownMenu open={isDayTypesMenuOpen} onOpenChange={setIsDayTypesMenuOpen}>
+              <DropdownMenu
+                open={isDayTypesMenuOpen}
+                onOpenChange={setIsDayTypesMenuOpen}
+              >
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
                     className={cn(
                       "rounded-full p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white",
-                      isDayTypesMenuOpen && "bg-white/15 text-white shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+                      isDayTypesMenuOpen &&
+                        "bg-white/15 text-white shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
                     )}
                     aria-pressed={isDayTypesMenuOpen}
                     aria-label="Day types coming soon"
@@ -891,7 +1886,8 @@ export function JumpToDateSheet({
                 onClick={togglePaintMode}
                 className={cn(
                   "rounded-full p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white",
-                  isPaintMode && "bg-white/15 text-white shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+                  isPaintMode &&
+                    "bg-white/15 text-white shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
                 )}
                 aria-pressed={isPaintMode}
                 aria-label="Toggle day selection paint mode"
@@ -913,7 +1909,7 @@ export function JumpToDateSheet({
             <table className="w-full border-collapse table-fixed text-[13px] min-w-[300px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-[0.22em] text-white/60">
-                  {WEEKDAY_LABELS.map(label => (
+                  {WEEKDAY_LABELS.map((label) => (
                     <th key={label} className="py-2 text-center font-medium">
                       {label}
                     </th>
@@ -927,12 +1923,18 @@ export function JumpToDateSheet({
                       if (!day) {
                         return <td key={`empty-${weekIndex}-${dayIndex}`} />;
                       }
-                      const dayKey = formatDateKeyInTimeZone(day, resolvedTimeZone);
+                      const dayKey = formatDateKeyInTimeZone(
+                        day,
+                        resolvedTimeZone
+                      );
                       const meta = dayMetaByDateKey?.[dayKey];
                       const isToday = todayKey ? dayKey === todayKey : false;
                       const isSelected = dayKey === selectedDateKey;
-                      const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                      const isPaintSelected = isPaintMode && paintSelectionKey === dayKey;
+                      const isWeekend =
+                        day.getDay() === 0 || day.getDay() === 6;
+                      const isPaintSelected =
+                        isPaintMode && paintSelectionKey === dayKey;
+                      const hasOverride = overrideDates.has(dayKey);
                       const circleClass = cn(
                         "flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-md text-[13px] font-medium",
                         isSelected
@@ -940,10 +1942,17 @@ export function JumpToDateSheet({
                           : "bg-white/10 text-white/80",
                         isToday && !isSelected && "ring-1 ring-white/40",
                         isWeekend && !isSelected && "text-white/60",
-                        isPaintSelected && "ring-2 ring-white/70 shadow-[0_0_0_4px_rgba(255,255,255,0.14)]"
+                        isPaintSelected &&
+                          "ring-2 ring-white/70 shadow-[0_0_0_4px_rgba(255,255,255,0.14)]",
+                        hasOverride &&
+                          !isSelected &&
+                          "ring-2 ring-[var(--accent-red)] ring-offset-2 ring-offset-transparent"
                       );
                       return (
-                        <td key={day.toISOString()} className="px-[4px] py-[4px] sm:py-1.25">
+                        <td
+                          key={day.toISOString()}
+                          className="px-[4px] py-[4px] sm:py-1.25"
+                        >
                           <button
                             type="button"
                             onClick={() => handleSelect(day, dayKey)}
@@ -962,7 +1971,11 @@ export function JumpToDateSheet({
                           >
                             <span
                               className={circleClass}
-                              style={meta?.color && !isSelected ? { backgroundColor: meta.color } : undefined}
+                              style={
+                                meta?.color && !isSelected
+                                  ? { backgroundColor: meta.color }
+                                  : undefined
+                              }
                             >
                               {day.getDate()}
                             </span>

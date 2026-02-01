@@ -5,6 +5,7 @@ import {
   getDateTimeParts,
   setTimeInTimeZone,
 } from './timezone'
+import { log } from '@/lib/utils/logGate'
 
 export type GeoCoordinates = {
   latitude: number
@@ -89,7 +90,7 @@ export function resolveSunlightBounds(
         dusk: normalize(times.dusk ?? times.sunset ?? null),
       }
     } catch (error) {
-      console.warn('SunCalc failed to resolve sunlight bounds', error)
+      log('warn', 'SunCalc failed to resolve sunlight bounds', error)
     }
   }
 

@@ -1,6 +1,7 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Database } from "../../../types/supabase";
+import { log } from "@/lib/utils/logGate";
 
 export const DEFAULT_HABIT_DURATION_MIN = 15;
 
@@ -179,7 +180,8 @@ export async function fetchHabitsForSchedule(
     if (primary.error) {
       if (isGoalMetadataMissingError(primary.error)) {
         if (cachedGoalMetadataSupport !== "unsupported") {
-          console.warn(
+          log(
+            "warn",
             "Failed to load habit schedule metadata with goal fields, falling back",
             primary.error
           );

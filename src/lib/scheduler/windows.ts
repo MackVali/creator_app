@@ -1,5 +1,11 @@
 import { getSupabaseBrowser } from "../../../lib/supabase";
 import type { Database } from "../../../types/supabase";
+import {
+  addDaysInTimeZone,
+  normalizeTimeZone,
+  setTimeInTimeZone,
+  startOfDayInTimeZone,
+} from "./timezone";
 
 export type WindowRow = Database["public"]["Tables"]["windows"]["Row"];
 
@@ -71,24 +77,22 @@ export interface Slot {
 
 export function genSlots(
   date: Date,
-  windows: (WindowRow & { fromPrevDay?: boolean })[]
+  windows: (WindowRow & { fromPrevDay?: boolean })[],
+  timeZone?: string
 ): Slot[] {
   const slots: Slot[] = [];
   const slotMinutes = 5;
-  const dayStart = new Date(date);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60000);
+  const zone = normalizeTimeZone(timeZone);
+  const dayStart = startOfDayInTimeZone(date, zone);
+  const dayEnd = addDaysInTimeZone(dayStart, 1, zone);
+  const prevDayStart = addDaysInTimeZone(dayStart, -1, zone);
   for (const w of windows) {
     const [sh, sm] = (w.start_local || "0:0").split(":").map(Number);
     const [eh, em] = (w.end_local || "0:0").split(":").map(Number);
-    const startBase = w.fromPrevDay
-      ? new Date(dayStart.getTime() - 24 * 60 * 60000)
-      : dayStart;
-    const windowStart = new Date(startBase);
-    windowStart.setHours(sh, sm, 0, 0);
+    const startBase = w.fromPrevDay ? prevDayStart : dayStart;
+    const windowStart = setTimeInTimeZone(startBase, zone, sh, sm);
     const windowEndBase = w.fromPrevDay ? dayStart : startBase;
-    let windowEnd = new Date(windowEndBase);
-    windowEnd.setHours(eh, em, 0, 0);
+    let windowEnd = setTimeInTimeZone(windowEndBase, zone, eh, em);
     if (windowEnd <= windowStart) {
       windowEnd = new Date(windowEnd.getTime() + 24 * 60 * 60000);
     }

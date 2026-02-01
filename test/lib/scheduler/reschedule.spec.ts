@@ -1,11 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { scheduleBacklog } from "../../../src/lib/scheduler/reschedule";
+import {
+  fetchCompatibleWindowsForItem,
+  scheduleBacklog,
+} from "../../../src/lib/scheduler/reschedule";
 import * as instanceRepo from "../../../src/lib/scheduler/instanceRepo";
 import * as repo from "../../../src/lib/scheduler/repo";
 import * as placement from "../../../src/lib/scheduler/placement";
 import * as habitsRepo from "../../../src/lib/scheduler/habits";
 import {
+  addDaysInTimeZone,
   getDatePartsInTimeZone,
+  getDateTimeParts,
   startOfDayInTimeZone,
 } from "../../../src/lib/scheduler/timezone";
 import type { ScheduleInstance } from "../../../src/lib/scheduler/instanceRepo";
@@ -257,6 +262,7 @@ describe("scheduleBacklog", () => {
   let fetchInstancesForRangeSpy: ReturnType<typeof vi.spyOn>;
   let attemptedProjectIds: string[];
   let fetchHabitsForScheduleSpy: ReturnType<typeof vi.spyOn>;
+  let fetchWindowsForDateSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     instances = [
@@ -349,7 +355,7 @@ describe("scheduleBacklog", () => {
     });
     vi.spyOn(repo, "fetchProjectSkillsForProjects").mockResolvedValue({});
     vi.spyOn(repo, "fetchGoalsForUser").mockResolvedValue([]);
-    vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
+    fetchWindowsForDateSpy = vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
       makeWindow({
         id: "win-1",
         label: "Any",
@@ -376,6 +382,109 @@ describe("scheduleBacklog", () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
+  });
+
+  it("runs without throwing when parity and debug flags are off", async () => {
+    const { client } = createSupabaseMock();
+    await expect(scheduleBacklog(userId, baseDate, client)).resolves.toBeDefined();
+  });
+
+  it("runs without throwing when parity flag is on", async () => {
+    const { client } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, client, { parity: true });
+    expect(result.paritySummary).not.toBeNull();
+  });
+
+  it("runs without throwing when debug flag is on", async () => {
+    const { client } = createSupabaseMock();
+    await expect(
+      scheduleBacklog(userId, baseDate, client, { debug: true })
+    ).resolves.toBeDefined();
+  });
+
+
+  it("schedules habits and survives blockerCache being optional in project helpers", async () => {
+    const habitWindow: repo.WindowLite = {
+      id: "win-habit",
+      label: "Habit Window",
+      energy: "LOW",
+      start_local: "07:00",
+      end_local: "08:00",
+      days: null,
+      window_kind: "DEFAULT",
+      location_context_id: null,
+      location_context_value: null,
+      location_context_name: null,
+    };
+
+    fetchWindowsForDateSpy.mockResolvedValue([habitWindow]);
+    vi.spyOn(repo, "fetchWindowsSnapshot").mockResolvedValue([habitWindow]);
+    instances = [];
+
+    const habit: habitsRepo.HabitScheduleItem = {
+      id: "habit-optional-blocker",
+      name: "Habit Blocker",
+      durationMinutes: 15,
+      createdAt: baseDate.toISOString(),
+      updatedAt: baseDate.toISOString(),
+      lastCompletedAt: null,
+      currentStreakDays: 0,
+      longestStreakDays: 0,
+      habitType: "HABIT",
+      windowId: null,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: null,
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+    const placeSpy = vi
+      .spyOn(placement, "placeItemInWindows")
+      .mockResolvedValue({
+        data: createInstanceRecord({
+          id: `inst-${habit.id}`,
+          source_id: habit.id,
+          source_type: "HABIT",
+          start_utc: baseDate.toISOString(),
+          end_utc: new Date(baseDate.getTime() + 15 * 60 * 1000).toISOString(),
+          window_id: habitWindow.id,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      });
+
+    const { client } = createSupabaseMock();
+    await expect(scheduleBacklog(userId, baseDate, client)).resolves.toBeDefined();
+    expect(placeSpy).toHaveBeenCalled();
+  });
+
+  it("limits window preparation to the override horizon", async () => {
+    const preparedDays = new Set<string>();
+    fetchWindowsForDateSpy.mockImplementation(async (day: Date) => {
+      preparedDays.add(day.toISOString().split("T")[0]);
+      return [
+        makeWindow({
+          id: `win-override-${preparedDays.size}`,
+        }),
+      ];
+    });
+    const { client } = createSupabaseMock();
+    await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 7,
+    });
+    expect(preparedDays.size).toBe(7);
   });
 
   it("processes projects in descending weight order", async () => {
@@ -516,6 +625,157 @@ describe("scheduleBacklog", () => {
 
     expect(attemptedProjectIds).toHaveLength(0);
     expect(canceledIds).toContain("inst-light");
+  });
+
+  it("schedules skill-restricted day-type windows for unlabeled projects", async () => {
+    const { client: supabase } = createSupabaseMock();
+    const testBaseDate = schedNow("2024-01-02T12:00:00Z");
+    instances = [];
+
+    const backlogResponse: BacklogResponse = {
+      data: [
+        createInstanceRecord({
+          id: "inst-backlog-a",
+          source_id: "proj-a",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "NO",
+        }),
+        createInstanceRecord({
+          id: "inst-backlog-b",
+          source_id: "proj-b",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "NO",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+    (
+      instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock
+    ).mockResolvedValue(backlogResponse);
+
+    const projects = {
+      "proj-a": {
+        id: "proj-a",
+        name: "Project A",
+        priority: "HIGH",
+        stage: "BUILD",
+        energy: "NO",
+        duration_min: 60,
+      },
+      "proj-b": {
+        id: "proj-b",
+        name: "Project B",
+        priority: "MEDIUM",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+    };
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue(projects);
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue(projects);
+
+    (repo.fetchGoalsForUser as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    const dayWindow = makeWindow({
+      id: "win-daytype",
+      label: "Day Type",
+      energy: "LOW",
+      start_local: "09:00",
+      end_local: "10:00",
+      days: null,
+      window_kind: "DEFAULT",
+      dayTypeTimeBlockId: "day-type-1",
+      allowAllHabitTypes: true,
+      allowAllSkills: false,
+      allowAllMonuments: true,
+      allowedSkillIds: ["skill-special"],
+    });
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      dayWindow,
+    ]);
+
+    const habitPayload = [
+      {
+        id: "habit-1",
+        name: "Daily Habit",
+        durationMinutes: 15,
+        createdAt: testBaseDate.toISOString(),
+        updatedAt: testBaseDate.toISOString(),
+        lastCompletedAt: null,
+        currentStreakDays: 0,
+        longestStreakDays: 0,
+        habitType: "HABIT",
+        windowId: null,
+        energy: "NO",
+        recurrence: "daily",
+        recurrenceDays: null,
+        skillId: null,
+        goalId: null,
+        completionTarget: null,
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+        daylightPreference: null,
+        windowEdgePreference: null,
+        nextDueOverride: null,
+        window: null,
+      },
+    ];
+    vi.spyOn(habits, "fetchHabitsForSchedule").mockResolvedValue(habitPayload);
+
+    let placementCallCount = 0;
+    vi.spyOn(placement, "placeItemInWindows").mockImplementation(
+      async ({ item }) => {
+        const offsetHours = placementCallCount + 1;
+        placementCallCount += 1;
+        const start = new Date(
+          testBaseDate.getTime() + offsetHours * 60 * 60 * 1000
+        );
+        const durationMin =
+          typeof item.duration_min === "number" && Number.isFinite(item.duration_min)
+            ? item.duration_min
+            : 60;
+        const durationMs = Math.max(1, durationMin) * 60000;
+        const end = new Date(start.getTime() + durationMs);
+        return {
+          status: 200,
+          statusText: "OK",
+          count: null,
+          data: createInstanceRecord({
+            id: `inst-${item.id}`,
+            source_id: item.id,
+            source_type: item.sourceType,
+            status: "scheduled",
+            start_utc: start.toISOString(),
+            end_utc: end.toISOString(),
+            duration_min: durationMin,
+            window_id: dayWindow.id,
+            energy_resolved: item.energy,
+          }),
+          error: null,
+        };
+      }
+    );
+
+    const result = await scheduleBacklog(userId, testBaseDate, supabase, {
+      debug: true,
+    });
+    const placedIds = result.placed.map((inst) => inst.source_id);
+    expect(placedIds).toEqual(
+      expect.arrayContaining(["proj-a", "proj-b"])
+    );
+    const projectPlacements = result.timeline.filter(
+      (entry) => entry.type === "PROJECT"
+    );
+    expect(projectPlacements).toHaveLength(2);
+    expect(result.projectDebugSummary?.skippedNoWindows).toBe(0);
+    expect(result.projectDebugSummary?.exampleProjectId).toBeUndefined();
   });
 
   it("cancels lower-priority overlaps even across different windows", async () => {
@@ -685,6 +945,87 @@ describe("scheduleBacklog", () => {
           entry.type === "HABIT" && entry.instanceId === habitInstance.id
       )
     ).toBe(true);
+  });
+
+  it("writes day-type fields instead of legacy window_ids when habits occupy day-type blocks", async () => {
+    instances = [];
+    fetchInstancesForRangeSpy.mockResolvedValue({
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    } satisfies InstancesResponse);
+
+    const dayWindow = makeWindow({
+      id: "time-block-day",
+      label: "Day Focus",
+      energy: "LOW",
+      start_local: "08:00",
+      end_local: "08:30",
+      days: [2],
+      window_kind: "DEFAULT",
+      dayTypeTimeBlockId: "dttb-day",
+    });
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([dayWindow]);
+    vi.spyOn(repo, "fetchWindowsSnapshot").mockResolvedValue([dayWindow]);
+    const habit: habitsRepo.HabitScheduleItem = {
+      id: "habit-daytype",
+      name: "Day Type Habit",
+      durationMinutes: 15,
+      createdAt: baseDate.toISOString(),
+      updatedAt: baseDate.toISOString(),
+      lastCompletedAt: null,
+      currentStreakDays: 0,
+      longestStreakDays: 0,
+      habitType: "HABIT",
+      windowId: null,
+      window: null,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      nextDueOverride: null,
+      practiceContextId: null,
+    };
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+    const createdInstance = createInstanceRecord({
+      id: "inst-daytype-habit",
+      source_id: habit.id,
+      source_type: "HABIT",
+      start_utc: "2024-01-02T08:00:00Z",
+      end_utc: "2024-01-02T08:15:00Z",
+      duration_min: 15,
+      energy_resolved: "LOW",
+    });
+    const createInstanceSpy = vi
+      .spyOn(instanceRepo, "createInstance")
+      .mockResolvedValue(createdInstance);
+    vi.spyOn(placement, "placeItemInWindows").mockImplementation(
+      realPlaceItemInWindows
+    );
+
+    const { client } = createSupabaseMock();
+    await scheduleBacklog(userId, baseDate, client);
+
+    expect(createInstanceSpy).toHaveBeenCalled();
+    const habitArgs = createInstanceSpy.mock.calls.find(
+      (call) => call[0].sourceId === habit.id
+    );
+    expect(habitArgs).toBeDefined();
+    const payload = habitArgs?.[0];
+    expect(payload?.windowId).toBeNull();
+    expect(payload?.dayTypeTimeBlockId).toBe(dayWindow.dayTypeTimeBlockId);
+    expect(payload?.timeBlockId).toBe(dayWindow.id);
   });
 
   it("blocks non-sync habit overlaps while allowing sync overlays", async () => {
@@ -5972,5 +6313,285 @@ describe("scheduleBacklog", () => {
     );
     expect(projectInstances).toHaveLength(1);
     expect(projectInstances[0]?.source_id).toBe("proj-locked");
+  });
+
+  it("reschedules projects even when windows restrict habit types", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-daytype": {
+        id: "proj-daytype",
+        name: "DayType Project",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+    });
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-daytype": {
+        id: "proj-daytype",
+        name: "DayType Project",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+    });
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue(
+      {}
+    );
+    (repo.fetchGoalsForUser as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      makeWindow({
+        id: "win-habit-only",
+        label: "Habit Only",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+        allowAllHabitTypes: false,
+        allowedHabitTypes: ["HABIT"],
+      }),
+    ]);
+
+    const habit: HabitScheduleItem = {
+      id: "habit-daytype",
+      name: "DayType Habit",
+      durationMinutes: 60,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      currentStreakDays: 0,
+      longestStreakDays: 0,
+      habitType: "HABIT",
+      windowId: "win-habit-only",
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: "win-habit-only",
+        label: "Habit Only",
+        energy: "LOW",
+        startLocal: "09:00",
+        endLocal: "10:00",
+        days: [2],
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+    const placementCalls: ScheduleInstance[] = [];
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async (params) => {
+        const isHabit = params.item.sourceType === "HABIT";
+        const start = new Date(
+          isHabit ? "2024-01-02T09:00:00Z" : "2024-01-02T10:00:00Z"
+        );
+        const end = new Date(
+          start.getTime() + (params.item.duration_min ?? 0) * 60_000
+        );
+        const instance = createInstanceRecord({
+          id: isHabit
+            ? "inst-habit-daytype"
+            : "inst-project-daytype",
+          source_id: params.item.id,
+          source_type: params.item.sourceType,
+          status: "scheduled",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min ?? 60,
+          window_id: "win-habit-only",
+          energy_resolved:
+            typeof params.item.energy === "string"
+              ? params.item.energy
+              : (params.item as any).resolvedEnergy ?? "LOW",
+        });
+        placementCalls.push(instance);
+        return {
+          data: instance,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      }
+    );
+
+    const { client } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(result.failures).toHaveLength(0);
+    expect(result.placed.some((inst) => inst.source_type === "PROJECT")).toBe(
+      true
+    );
+    expect(result.placed.some((inst) => inst.source_type === "HABIT")).toBe(true);
+    expect(placementCalls).toHaveLength(2);
+  });
+});
+
+describe("fetchCompatibleWindowsForItem", () => {
+  it("covers the after-midnight slice as part of the prior 4am day", async () => {
+    const tz = "America/Chicago";
+    const dayStart = startOfDayInTimeZone(
+      new Date("2026-01-26T12:00:00Z"),
+      tz
+    );
+    const testUserId = "user-midnight";
+    const earlyWindow: repo.WindowLite = {
+      id: "win-early",
+      label: "After-Midnight",
+      energy: "LOW",
+      start_local: "01:00",
+      end_local: "02:00",
+      days: [1],
+      window_kind: "DEFAULT",
+      location_context_id: null,
+      location_context_value: null,
+      location_context_name: null,
+      allowAllHabitTypes: true,
+      allowAllSkills: true,
+      allowAllMonuments: true,
+    };
+    const { client } = createSupabaseMock();
+    const compatible = await fetchCompatibleWindowsForItem(
+      client,
+      dayStart,
+      {
+        energy: "LOW",
+        duration_min: 30,
+      },
+      tz,
+      {
+        userId: testUserId,
+        allowedWindowKinds: ["DEFAULT"],
+        preloadedWindows: [earlyWindow],
+      }
+    );
+    expect(compatible).toHaveLength(1);
+    const candidate = compatible[0];
+    const timeParts = getDateTimeParts(candidate.startLocal, tz);
+    expect(timeParts.hour).toBe(1);
+    const candidateDayStart = startOfDayInTimeZone(candidate.startLocal, tz);
+    const expectedDayStart = addDaysInTimeZone(dayStart, -1, tz);
+    expect(candidateDayStart.getTime()).toBe(expectedDayStart.getTime());
+  });
+
+  it("accepts day-type focus blocks when only DEFAULT windows are allowed", async () => {
+    const dayStart = startOfDayInTimeZone(
+      new Date("2026-01-30T00:00:00Z"),
+      "UTC"
+    );
+    const chillWindow: repo.WindowLite = {
+      id: "win-daytype-chill",
+      label: "Chill",
+      energy: "LOW",
+      start_local: "01:00",
+      end_local: "02:00",
+      days: [4],
+      window_kind: "FOCUS" as unknown as repo.WindowKind,
+      location_context_id: null,
+      location_context_value: null,
+      location_context_name: null,
+      allowAllHabitTypes: true,
+      allowAllSkills: true,
+      allowAllMonuments: true,
+      dayTypeTimeBlockId: "dttb-chill",
+    };
+    (chillWindow as any).block_type = "FOCUS";
+
+    expect(
+      placement.getWindowsForDateFromAll([chillWindow], dayStart, "UTC")
+    ).toHaveLength(1);
+
+    const { client } = createSupabaseMock();
+    const compatible = await fetchCompatibleWindowsForItem(
+      client,
+      dayStart,
+      {
+        energy: "LOW",
+        duration_min: 30,
+      },
+      "UTC",
+      {
+        userId: "proj-daytype",
+        allowedWindowKinds: ["DEFAULT"],
+        preloadedWindows: [chillWindow],
+      }
+    );
+
+    expect(compatible).toHaveLength(1);
+    expect(compatible[0].dayTypeTimeBlockId).toBe("dttb-chill");
+  });
+
+  it("blocks projects without a location from location-locked windows and allows matching ones", async () => {
+    const dayStart = startOfDayInTimeZone(
+      new Date("2026-01-05T00:00:00Z"),
+      "UTC"
+    );
+    const locationWindow: repo.WindowLite = {
+      id: "win-location-work",
+      label: "Work Block",
+      energy: "LOW",
+      start_local: "09:00",
+      end_local: "10:00",
+      days: [0, 1, 2, 3, 4, 5, 6],
+      window_kind: "DEFAULT",
+      location_context_id: "loc-work",
+      location_context_value: "WORK",
+      location_context_name: "Work",
+      allowAllHabitTypes: true,
+      allowAllSkills: true,
+      allowAllMonuments: true,
+    };
+    const { client } = createSupabaseMock();
+
+    const withoutLocation = await fetchCompatibleWindowsForItem(
+      client,
+      dayStart,
+      {
+        energy: "LOW",
+        duration_min: 30,
+      },
+      "UTC",
+      {
+        userId: "proj-locationless",
+        allowedWindowKinds: ["DEFAULT"],
+        preloadedWindows: [locationWindow],
+      }
+    );
+    expect(withoutLocation).toHaveLength(0);
+
+    const withMatchingLocation = await fetchCompatibleWindowsForItem(
+      client,
+      dayStart,
+      {
+        energy: "LOW",
+        duration_min: 30,
+      },
+      "UTC",
+      {
+        userId: "proj-location-match",
+        allowedWindowKinds: ["DEFAULT"],
+        preloadedWindows: [locationWindow],
+        locationContextId: "loc-work",
+        locationContextValue: "WORK",
+        hasExplicitLocationContext: true,
+      }
+    );
+    expect(withMatchingLocation).toHaveLength(1);
   });
 });
