@@ -9,6 +9,7 @@ import {
   type WindowLite,
 } from "@/lib/scheduler/repo";
 import type { ProjectLite, TaskLite } from "@/lib/scheduler/weight";
+import { log } from "@/lib/utils/logGate";
 
 type SchedulerMetaResult = {
   tasks: TaskLite[];
@@ -45,8 +46,8 @@ export function useSchedulerMeta(): SchedulerMetaState {
     refetchInterval: 5 * 60 * 1000,
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
-    onError: err => {
-      console.error("Failed to load scheduler context", err);
+    onError: (err) => {
+      log("error", "Failed to load scheduler context", err);
     },
   });
 

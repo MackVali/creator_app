@@ -9,6 +9,9 @@ import {
   type EnergyLevel,
   type EnergyTotals,
 } from "@/lib/scheduler/energy";
+import { log } from "@/lib/utils/logGate";
+
+export const EMPTY_ENERGY_TOTALS: EnergyTotals = emptyEnergyTotals();
 
 export type JumpToDateSnapshot = {
   energyHours: {
@@ -260,8 +263,7 @@ export async function computeProjectedGoalsLikely(
     const monthCount = monthGoalMatches.length;
     const sampleWeek = weekGoalMatches.slice(0, 5);
     const sampleMonth = monthGoalMatches.slice(0, 5);
-    // eslint-disable-next-line no-console
-    console.log("[ProjectedGoalsLikely]", {
+    log("debug", "[ProjectedGoalsLikely]", {
       goalsConsidered,
       weekCount,
       monthCount,

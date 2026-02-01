@@ -4,6 +4,7 @@ import type { Database } from "../../../types/supabase";
 import type { FlameLevel } from "@/components/FlameEmber";
 import type { WindowLite as RepoWindow } from "@/lib/scheduler/repo";
 import { safeDate } from "@/lib/scheduler/safeDate";
+import { log } from "@/lib/utils/logGate";
 
 export type ScheduleInstance =
   Database["public"]["Tables"]["schedule_instances"]["Row"];
@@ -54,7 +55,8 @@ export async function fetchInstancesForRange(
   userId: string,
   startUTC: string,
   endUTC: string,
-  client?: Client
+  client?: Client,
+  options?: { suppressQueryLog?: boolean }
 ) {
   const supabase = await ensureClient(client);
   const safeStart = safeDate(startUTC);
@@ -78,16 +80,14 @@ export async function fetchInstancesForRange(
   const endParam = safeEnd.toISOString();
 
   const overlapClause = `and(start_utc.gte.${startParam},start_utc.lt.${endParam}),and(start_utc.lt.${startParam},end_utc.gt.${startParam})`;
-  console.log(
-    "[QUERY] range=%s..%s where=%s",
-    startParam,
-    endParam,
-    overlapClause
-  );
+  if (!options?.suppressQueryLog) {
+    log(
+      "debug",
+      `[QUERY] range=${startParam}..${endParam} where=${overlapClause}`
+    );
+  }
 
-  const query = base
-    .or(overlapClause)
-    .order("start_utc", { ascending: true });
+  const query = base.or(overlapClause).order("start_utc", { ascending: true });
 
   return await query;
 }
@@ -121,6 +121,8 @@ export async function createInstance(
     sourceId: string;
     sourceType: ScheduleInstance["source_type"];
     windowId?: string | null;
+    dayTypeTimeBlockId?: string | null;
+    timeBlockId?: string | null;
     startUTC: string;
     endUTC: string;
     durationMin: number;
@@ -133,21 +135,37 @@ export async function createInstance(
   },
   client?: Client
 ) {
-  const hasStart = typeof input.startUTC === "string" && input.startUTC.length > 0;
+  const hasStart =
+    typeof input.startUTC === "string" && input.startUTC.length > 0;
   const hasEnd = typeof input.endUTC === "string" && input.endUTC.length > 0;
   const hasDuration =
     typeof input.durationMin === "number" && Number.isFinite(input.durationMin);
-  if ((hasStart || hasEnd || hasDuration) && !(hasStart && hasEnd && hasDuration)) {
-    throw new Error("createInstance payload missing startUTC/endUTC/durationMin");
+  if (
+    (hasStart || hasEnd || hasDuration) &&
+    !(hasStart && hasEnd && hasDuration)
+  ) {
+    throw new Error(
+      "createInstance payload missing startUTC/endUTC/durationMin"
+    );
   }
   const supabase = await ensureClient(client);
+  const isDayTypeScheduling = Boolean(input.dayTypeTimeBlockId);
+  const windowIdValue = isDayTypeScheduling ? null : input.windowId ?? null;
+  const dayTypeTimeBlockIdValue = isDayTypeScheduling
+    ? input.dayTypeTimeBlockId ?? null
+    : null;
+  const timeBlockIdValue = isDayTypeScheduling
+    ? input.timeBlockId ?? input.windowId ?? null
+    : null;
   const { data, error } = await supabase
     .from("schedule_instances")
     .insert({
       user_id: input.userId,
       source_type: input.sourceType,
       source_id: input.sourceId,
-      window_id: input.windowId ?? null,
+      window_id: windowIdValue,
+      day_type_time_block_id: dayTypeTimeBlockIdValue,
+      time_block_id: timeBlockIdValue,
       start_utc: input.startUTC,
       end_utc: input.endUTC,
       duration_min: input.durationMin,
@@ -175,7 +193,7 @@ export async function createInstance(
       locked: input.locked ?? false,
       scheduled_at: null,
     };
-    console.log("[CREATE_INSTANCE_FAIL]", {
+    log("debug", "[CREATE_INSTANCE_FAIL]", {
       payload,
       error: {
         message: error.message,
@@ -193,6 +211,8 @@ export async function rescheduleInstance(
   id: string,
   input: {
     windowId?: string | null;
+    dayTypeTimeBlockId?: string | null;
+    timeBlockId?: string | null;
     startUTC: string;
     endUTC: string;
     durationMin: number;
@@ -206,6 +226,14 @@ export async function rescheduleInstance(
   client?: Client
 ) {
   const supabase = await ensureClient(client);
+  const isDayTypeScheduling = Boolean(input.dayTypeTimeBlockId);
+  const windowIdValue = isDayTypeScheduling ? null : input.windowId ?? null;
+  const dayTypeTimeBlockIdValue = isDayTypeScheduling
+    ? input.dayTypeTimeBlockId ?? null
+    : null;
+  const timeBlockIdValue = isDayTypeScheduling
+    ? input.timeBlockId ?? input.windowId ?? null
+    : null;
   const payload: Partial<ScheduleInstance> & {
     window_id?: string | null;
     start_utc: string;
@@ -216,7 +244,9 @@ export async function rescheduleInstance(
     energy_resolved: string;
     completed_at: null;
   } = {
-    window_id: input.windowId ?? null,
+    window_id: windowIdValue,
+    day_type_time_block_id: dayTypeTimeBlockIdValue,
+    time_block_id: timeBlockIdValue,
     start_utc: input.startUTC,
     end_utc: input.endUTC,
     duration_min: input.durationMin,
@@ -259,7 +289,7 @@ export async function updateInstanceStatus(
   const supabase = await ensureClient(client);
   const completedAt =
     status === "completed"
-      ? options?.completedAtUTC ?? new Date().toISOString()
+      ? (options?.completedAtUTC ?? new Date().toISOString())
       : null;
   const payload: {
     status: ScheduleInstanceStatus;
@@ -289,19 +319,12 @@ export async function updateInstanceStatus(
     .maybeSingle();
 
   if (!response.data) {
-    console.log("[WRITE] id=%s matched=0 filter={id:%s}", id, id);
+    log("debug", `[WRITE] id=${id} matched=0 filter={id:${id}}`);
   } else {
     const row = response.data;
-    console.log(
-      "[WRITE] id=%s matched=1 status=%s completed_at=%s src=%s start=%s end=%s duration=%s user=%s",
-      row.id,
-      row.status,
-      row.completed_at,
-      row.source_type,
-      row.start_utc,
-      row.end_utc,
-      row.duration_min,
-      row.user_id
+    log(
+      "debug",
+      `[WRITE] id=${row.id} matched=1 status=${row.status} completed_at=${row.completed_at} src=${row.source_type} start=${row.start_utc} end=${row.end_utc} duration=${row.duration_min} user=${row.user_id}`
     );
   }
 
@@ -341,8 +364,9 @@ export async function markProjectMissed(
     missed_reason: reason ?? null,
     start_utc: null,
     end_utc: null,
-    duration_min: null,
     window_id: null,
+    day_type_time_block_id: null,
+    time_block_id: null,
   };
   return await supabase
     .from("schedule_instances")

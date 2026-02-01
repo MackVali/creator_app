@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { buildScheduleEventDataset } from "@/lib/scheduler/dataset";
+import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "@/lib/scheduler/limits";
 
 export const runtime = "nodejs";
 
@@ -60,7 +61,7 @@ function parseLookaheadDays(value: string | null): number | undefined {
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return undefined;
   }
-  return Math.min(365, Math.max(1, parsed));
+  return Math.min(MAX_SCHEDULE_LOOKAHEAD_DAYS, Math.max(1, parsed));
 }
 
 function extractUserTimeZone(user: {

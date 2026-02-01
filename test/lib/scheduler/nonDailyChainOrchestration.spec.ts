@@ -208,9 +208,6 @@ describe("non-daily chain orchestration", () => {
     vi.spyOn(repo, "fetchWindowsForDate").mockImplementation(async () => [
       windowRecord,
     ]);
-    vi.spyOn(placement, "fetchWindowsForRange").mockResolvedValue([
-      windowRecord,
-    ]);
     vi.spyOn(habits, "fetchHabitsForSchedule").mockResolvedValue([habit]);
 
     vi.spyOn(reschedule, "fetchCompatibleWindowsForItem").mockImplementation(

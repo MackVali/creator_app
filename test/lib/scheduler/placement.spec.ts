@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+import type { ScheduleInstance } from "../../../src/lib/scheduler/instanceRepo";
 
 vi.mock("../../../src/lib/scheduler/instanceRepo", async (importOriginal) => {
   const actual = await importOriginal<
@@ -123,6 +124,41 @@ describe("placeItemInWindows", () => {
     expect(capturedStartUTC).toBe(threshold.toISOString());
   });
 
+  it("runs without a provided cache", async () => {
+    const createInstanceMock = instanceRepo.createInstance as unknown as vi.Mock;
+    createInstanceMock.mockResolvedValueOnce({
+      data: { id: "inst-cache" },
+      error: null,
+      count: null,
+      status: 201,
+      statusText: "Created",
+    });
+
+    const windowStart = new Date("2024-01-02T08:00:00Z");
+    const windowEnd = new Date("2024-01-02T09:00:00Z");
+
+    const result = await placeItemInWindows({
+      userId: "user-1",
+      item: {
+        id: "proj-1",
+        sourceType: "PROJECT",
+        duration_min: 30,
+        energy: "MEDIUM",
+        weight: 1,
+      },
+      windows: [
+        {
+          id: "win-1",
+          startLocal: windowStart,
+          endLocal: windowEnd,
+        },
+      ],
+      date: windowStart,
+    });
+
+    expect(result).toBeDefined();
+  });
+
   it("chooses the window whose actual opening is earliest", async () => {
     const fetchInstancesMock = instanceRepo.fetchInstancesForRange as unknown as vi.Mock;
     const createInstanceMock = instanceRepo.createInstance as unknown as vi.Mock;
@@ -132,27 +168,19 @@ describe("placeItemInWindows", () => {
     const secondWindowStart = new Date("2024-01-02T10:00:00Z");
     const secondWindowEnd = new Date("2024-01-02T12:00:00Z");
 
-    fetchInstancesMock
-      .mockImplementationOnce(async () => ({
-        data: [
-          {
-            id: "inst-existing",
-            start_utc: "2024-01-02T09:00:00Z",
-            end_utc: "2024-01-02T16:00:00Z",
-          },
-        ],
-        error: null,
-        count: null,
-        status: 200,
-        statusText: "OK",
-      }))
-      .mockImplementationOnce(async () => ({
-        data: [],
-        error: null,
-        count: null,
-        status: 200,
-        statusText: "OK",
-      }));
+    fetchInstancesMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "inst-existing",
+          start_utc: "2024-01-02T09:00:00Z",
+          end_utc: "2024-01-02T16:00:00Z",
+        },
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    });
 
     let capturedStartUTC: string | null = null;
     createInstanceMock.mockImplementation(async (input: { startUTC: string }) => {
@@ -191,7 +219,7 @@ describe("placeItemInWindows", () => {
     });
 
     expect(capturedStartUTC).toBe(new Date("2024-01-02T09:00:00Z").toISOString());
-    expect(fetchInstancesMock).toHaveBeenCalledTimes(2);
+    expect(fetchInstancesMock).toHaveBeenCalledTimes(1);
   });
 
   it("ignores queued project blocks when instructed", async () => {
@@ -470,5 +498,46 @@ describe("placeItemInWindows", () => {
 
     expect(capturedStarts[0]).toBe("2024-01-02T02:00:00.000Z");
     expect(capturedStarts[1]).toBe("2024-01-02T02:30:00.000Z");
+  });
+
+  it("reuses blocker cache entries for the same day/timezone", async () => {
+    const fetchInstancesMock = instanceRepo.fetchInstancesForRange as unknown as vi.Mock;
+    fetchInstancesMock.mockResolvedValue({
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    });
+
+    const blockerCache = new Map<string, ScheduleInstance[]>();
+    const day = new Date("2024-01-04T08:00:00Z");
+    const windowEnd = new Date("2024-01-04T10:00:00Z");
+
+    const buildParams = () => ({
+      userId: "user-1",
+      item: {
+        id: "proj-cache",
+        sourceType: "PROJECT",
+        duration_min: 30,
+        energy: "MEDIUM",
+        weight: 1,
+      },
+      windows: [
+        {
+          id: "win-cache",
+          startLocal: day,
+          endLocal: windowEnd,
+        },
+      ],
+      date: day,
+      timeZone: "America/Chicago",
+      blockerCache,
+    });
+
+    await placeItemInWindows(buildParams());
+    await placeItemInWindows(buildParams());
+
+    expect(fetchInstancesMock).toHaveBeenCalledTimes(1);
   });
 });

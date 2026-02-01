@@ -5,9 +5,7 @@ import {
   fetchProjectSkillsForProjects,
   fetchGoalsForUser,
   fetchReadyTasks,
-  fetchWindowsSnapshot,
   fetchPriorityEnergyLookups,
-  type WindowLite,
   type GoalSummary,
 } from "./repo";
 import { fetchHabitsForSchedule, type HabitScheduleItem } from "./habits";
@@ -22,12 +20,14 @@ import {
   normalizeTimeZone,
   startOfDayInTimeZone,
 } from "./timezone";
+import { DEFAULT_SCHEDULE_LOOKAHEAD_DAYS } from "./limits";
 import { toZonedTime } from "date-fns-tz";
 import { dayKeyFromUtc } from "../time/tz";
 import type { TaskLite, ProjectLite } from "./weight";
 import { ENERGY } from "./config";
 import type { SkillRow } from "@/lib/types/skill";
 import type { Monument } from "@/lib/queries/monuments";
+import { log } from "@/lib/utils/logGate";
 
 type Client = SupabaseClient<Database>;
 
@@ -36,7 +36,6 @@ export type ScheduleEventDataset = {
   rangeStartUTC: string;
   rangeEndUTC: string;
   lookaheadDays: number;
-  windowSnapshot: WindowLite[];
   tasks: TaskLite[];
   projects: ProjectLite[];
   projectSkillIds: Record<string, string[]>;
@@ -150,8 +149,7 @@ async function fetchSyncPairingsForInstances({
     if (!syncInstanceId) continue;
     const partnerIds = Array.isArray(row.partner_instance_ids)
       ? row.partner_instance_ids.filter(
-          (id: unknown): id is string =>
-            typeof id === "string" && id.length > 0
+          (id: unknown): id is string => typeof id === "string" && id.length > 0
         )
       : [];
     pairings[syncInstanceId] = partnerIds;
@@ -165,7 +163,7 @@ export async function buildScheduleEventDataset({
   client,
   baseDate,
   timeZone,
-  lookaheadDays = 365,
+  lookaheadDays = DEFAULT_SCHEDULE_LOOKAHEAD_DAYS,
 }: {
   userId: string;
   client: Client;
@@ -202,7 +200,6 @@ export async function buildScheduleEventDataset({
   };
 
   const [
-    windowSnapshot,
     tasks,
     projectMap,
     habits,
@@ -212,7 +209,6 @@ export async function buildScheduleEventDataset({
     goals,
     priorityEnergyLookups,
   ] = await Promise.all([
-    fetchWindowsSnapshot(userId, client),
     fetchReadyTasks(client),
     fetchProjectsMap(client),
     fetchHabitsForSchedule(userId, client),
@@ -331,19 +327,15 @@ export async function buildScheduleEventDataset({
   const scheduledCount = normalizedInstances.filter(
     (inst) => inst.status === "scheduled"
   ).length;
-  console.log(
-    "[LOAD] day=%s total=%s habit=%s nonhabit=%s completed=%s scheduled=%s",
-    loadDay,
-    normalizedInstances.length,
-    habitCount,
-    normalizedInstances.length - habitCount,
-    completedCount,
-    scheduledCount
+  const nonHabitCount = normalizedInstances.length - habitCount;
+  log(
+    "debug",
+    `[LOAD] day=${loadDay} total=${normalizedInstances.length} habit=${habitCount} nonhabit=${nonHabitCount} completed=${completedCount} scheduled=${scheduledCount}`
   );
 
   if (process.env.NODE_ENV !== "production") {
     const inst = normalizedInstances[0];
-    console.log("SCHEDULER CREATE", {
+    log("debug", "SCHEDULER CREATE", {
       start_utc: inst.start_utc,
       timeZone,
       dayKey: dayKeyFromUtc(inst.start_utc, normalizedTz),
@@ -383,7 +375,6 @@ export async function buildScheduleEventDataset({
     rangeStartUTC: rangeStart.toISOString(),
     rangeEndUTC: rangeEnd.toISOString(),
     lookaheadDays,
-    windowSnapshot,
     tasks,
     projects: projectList,
     projectSkillIds,

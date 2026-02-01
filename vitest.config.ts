@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import { defineConfig } from "vitest/config";
@@ -11,6 +12,7 @@ export default defineConfig({
     include: [
       "test/**/*.spec.ts",
       "src/lib/scheduler/__tests__/**/*.spec.ts",
+      "src/lib/scheduler/**/*.test.ts",
     ],      // your tests
     reporters: ["default"],
     coverage: {
@@ -22,8 +24,20 @@ export default defineConfig({
     alias: [
       { find: "@/components", replacement: path.resolve(projectRoot, "src/components") },
       { find: "@/lib/scheduler", replacement: path.resolve(projectRoot, "src/lib/scheduler") },
-      { find: "@/lib", replacement: path.resolve(projectRoot, "lib") },
       { find: "@/types", replacement: path.resolve(projectRoot, "src/types") },
+      {
+        find: /^@\/lib\/(.*)$/,
+        replacement: (importPath: string) => {
+          const relativePath = importPath.replace(/^@\/lib\//, "");
+          const srcPath = path.resolve(projectRoot, "src/lib", relativePath);
+          const libPath = path.resolve(projectRoot, "lib", relativePath);
+          const extensions = ["", ".ts", ".tsx", ".js", ".jsx", ".cjs", ".mjs"];
+          const existsInSrc = extensions.some((ext) =>
+            fs.existsSync(srcPath + ext)
+          );
+          return existsInSrc ? srcPath : libPath;
+        },
+      },
       { find: "@", replacement: path.resolve(projectRoot, "src") },
     ],
   },

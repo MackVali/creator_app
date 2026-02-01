@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { ChevronUp, ChevronDown, MoreVertical, Pencil, Trash2, Wand2, MapPin } from "lucide-react";
+import { ChevronUp, ChevronDown, MoreVertical, Pencil, Trash2, Wand2, MapPin, Check } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +24,11 @@ import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { ENERGY } from "@/lib/scheduler/config";
 import { useLocationContexts, type LocationContextOption } from "@/lib/hooks/useLocationContexts";
 import { normalizeLocationValue, resolveLocationContextId } from "@/lib/location-metadata";
+import type { SchedulerModeType } from "@/lib/scheduler/modes";
+import { HABIT_TYPE_OPTIONS } from "@/components/habits/habit-form-fields";
+import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
+import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
+import { Input } from "@/components/ui/input";
 
 type TimeBlock = {
   id: string;
@@ -48,13 +53,18 @@ type DayType = {
   name: string;
   is_default: boolean;
   days: number[];
+  scheduler_mode?: SchedulerModeType | null;
 };
 
 type DayTypeBlockLink = {
+  id?: string;
   day_type_id: string;
   time_block_id: string;
   energy?: FlameLevel | null;
   block_type?: BlockType | null;
+  allow_all_habit_types?: boolean | null;
+  allow_all_skills?: boolean | null;
+  allow_all_monuments?: boolean | null;
 };
 
 type BlockType = "FOCUS" | "BREAK" | "PRACTICE";
@@ -87,6 +97,14 @@ const DAY_INDEX_TO_LABEL = DAYS_OF_WEEK.reduce<Record<number, string>>((acc, day
   acc[day.index] = day.label;
   return acc;
 }, {});
+
+const SCHEDULER_MODE_OPTIONS: Array<{ value: SchedulerModeType; label: string; description: string }> = [
+  { value: "REGULAR", label: "Regular", description: "Balance focus and flexibility." },
+  { value: "RUSH", label: "Rush", description: "Tighten durations to move faster." },
+  { value: "MONUMENTAL", label: "Monumental", description: "Prioritize big milestone work." },
+  { value: "SKILLED", label: "Skilled", description: "Concentrate on skill-building work." },
+  { value: "REST", label: "Rest", description: "Keep the day light and recovery-friendly." },
+];
 
 type CoverageStatus =
   | { ok: true }
@@ -139,6 +157,21 @@ function normalizeLabel(value?: string | null): string | null {
   return trimmed.toUpperCase();
 }
 
+function normalizeSchedulerMode(value?: string | null): SchedulerModeType {
+  const normalized = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (normalized === "RUSH") return "RUSH";
+  if (normalized === "MONUMENTAL") return "MONUMENTAL";
+  if (normalized === "SKILLED") return "SKILLED";
+  if (normalized === "REST") return "REST";
+  return "REGULAR";
+}
+
+function normalizeHabitTypeValue(value?: string | null): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toUpperCase();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function sortTimeBlocks(blocks: TimeBlock[]): TimeBlock[] {
   const score = (block: TimeBlock) => parseTimeToMinutes(block.start_local) ?? 0;
   return [...blocks].sort((a, b) => {
@@ -153,6 +186,64 @@ function nudgeTime(value: string, deltaMinutes: number): string {
   if (minutes === null) return value;
   const wrapped = (minutes + deltaMinutes + 1440) % 1440;
   return minutesToLabel(wrapped);
+}
+
+async function resolveLocationIdsForBlocks({
+  supabase,
+  userId,
+  blockIds,
+  blockLocations,
+  selectableLocations,
+}: {
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>;
+  userId: string;
+  blockIds: string[];
+  blockLocations: Map<string, LocationContextOption | null>;
+  selectableLocations: LocationContextOption[];
+}) {
+  const cache = new Map<string, string | null>();
+  const resolved = new Map<string, string | null>();
+
+  const normalizeId = (candidate?: string | null) =>
+    candidate && candidate !== "__any__" ? candidate : null;
+
+  for (const blockId of blockIds) {
+    const option = blockLocations.get(blockId);
+    const normalized = normalizeLocationValue(option?.value ?? option?.label ?? null);
+    if (!normalized) {
+      resolved.set(blockId, null);
+      continue;
+    }
+
+    const directId = normalizeId(option?.id);
+    if (directId) {
+      resolved.set(blockId, directId);
+      cache.set(normalized, directId);
+      continue;
+    }
+
+    const matchedOption =
+      selectableLocations.find((opt) => normalizeLocationValue(opt.value) === normalized) ??
+      selectableLocations.find((opt) => normalizeId(opt.id) === normalizeId(option?.id));
+
+    const matchedId = normalizeId(matchedOption?.id);
+    if (matchedId) {
+      resolved.set(blockId, matchedId);
+      cache.set(normalized, matchedId);
+      continue;
+    }
+
+    if (cache.has(normalized)) {
+      resolved.set(blockId, cache.get(normalized) ?? null);
+      continue;
+    }
+
+    const resolvedId = await resolveLocationContextId(supabase, userId, normalized);
+    cache.set(normalized, resolvedId);
+    resolved.set(blockId, resolvedId);
+  }
+
+  return resolved;
 }
 
 function TimeInput({ label, value, onChange, helper, ariaLabel }: TimeInputProps) {
@@ -245,7 +336,6 @@ export default function NewDayTypePage() {
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
   const [dayTypes, setDayTypes] = useState<DayType[]>([]);
   const [dayTypeBlockMap, setDayTypeBlockMap] = useState<Map<string, Set<string>>>(() => new Map());
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [selectedDays, setSelectedDays] = useState<Set<string>>(() => new Set());
@@ -259,6 +349,7 @@ export default function NewDayTypePage() {
   const [dayTypeName, setDayTypeName] = useState("Default day");
   const [hasDefaultDayType, setHasDefaultDayType] = useState(false);
   const [isDefault, setIsDefault] = useState(true);
+  const [schedulerMode, setSchedulerMode] = useState<SchedulerModeType>("REGULAR");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -270,14 +361,34 @@ export default function NewDayTypePage() {
     () => new Map()
   );
   const [blockType, setBlockType] = useState<Map<string, BlockType>>(() => new Map());
+  const [blockAllowAllHabitTypes, setBlockAllowAllHabitTypes] = useState<Map<string, boolean>>(
+    () => new Map()
+  );
+  const [blockAllowAllSkills, setBlockAllowAllSkills] = useState<Map<string, boolean>>(
+    () => new Map()
+  );
+  const [blockAllowAllMonuments, setBlockAllowAllMonuments] = useState<Map<string, boolean>>(
+    () => new Map()
+  );
+  const [blockAllowedHabitTypes, setBlockAllowedHabitTypes] = useState<Map<string, Set<string>>>(
+    () => new Map()
+  );
+  const [blockAllowedSkillIds, setBlockAllowedSkillIds] = useState<Map<string, Set<string>>>(
+    () => new Map()
+  );
+  const [blockAllowedMonumentIds, setBlockAllowedMonumentIds] = useState<Map<string, Set<string>>>(
+    () => new Map()
+  );
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [monuments, setMonuments] = useState<Monument[]>([]);
+  const [monumentsLoading, setMonumentsLoading] = useState(false);
+  const [skillSearch, setSkillSearch] = useState("");
+  const [monumentSearch, setMonumentSearch] = useState("");
 
   const FLAME_LEVELS = ENERGY.LIST as FlameLevel[];
   const isEditingBlock = Boolean(editingBlockId);
   const hasBlocks = timeBlocks.length > 0;
-  const constraintLabel = useMemo(
-    () => (constraintsTarget ? normalizeLabel(constraintsTarget.label) ?? "TIME BLOCK" : null),
-    [constraintsTarget]
-  );
   const { options: locationOptions, loading: loadingLocations } = useLocationContexts();
   const selectableLocations = useMemo(() => locationOptions ?? [], [locationOptions]);
 
@@ -332,16 +443,98 @@ export default function NewDayTypePage() {
       });
       return next;
     });
+    setBlockAllowAllHabitTypes((prev) => {
+      const next = new Map(prev);
+      blocks.forEach((block) => {
+        if (!next.has(block.id)) {
+          next.set(block.id, true);
+        }
+      });
+      Array.from(next.keys()).forEach((id) => {
+        if (!blocks.find((block) => block.id === id)) {
+          next.delete(id);
+        }
+      });
+      return next;
+    });
+    setBlockAllowAllSkills((prev) => {
+      const next = new Map(prev);
+      blocks.forEach((block) => {
+        if (!next.has(block.id)) {
+          next.set(block.id, true);
+        }
+      });
+      Array.from(next.keys()).forEach((id) => {
+        if (!blocks.find((block) => block.id === id)) {
+          next.delete(id);
+        }
+      });
+      return next;
+    });
+    setBlockAllowAllMonuments((prev) => {
+      const next = new Map(prev);
+      blocks.forEach((block) => {
+        if (!next.has(block.id)) {
+          next.set(block.id, true);
+        }
+      });
+      Array.from(next.keys()).forEach((id) => {
+        if (!blocks.find((block) => block.id === id)) {
+          next.delete(id);
+        }
+      });
+      return next;
+    });
+    setBlockAllowedHabitTypes((prev) => {
+      const next = new Map(prev);
+      blocks.forEach((block) => {
+        if (!next.has(block.id)) {
+          next.set(block.id, new Set());
+        }
+      });
+      Array.from(next.keys()).forEach((id) => {
+        if (!blocks.find((block) => block.id === id)) {
+          next.delete(id);
+        }
+      });
+      return next;
+    });
+    setBlockAllowedSkillIds((prev) => {
+      const next = new Map(prev);
+      blocks.forEach((block) => {
+        if (!next.has(block.id)) {
+          next.set(block.id, new Set());
+        }
+      });
+      Array.from(next.keys()).forEach((id) => {
+        if (!blocks.find((block) => block.id === id)) {
+          next.delete(id);
+        }
+      });
+      return next;
+    });
+    setBlockAllowedMonumentIds((prev) => {
+      const next = new Map(prev);
+      blocks.forEach((block) => {
+        if (!next.has(block.id)) {
+          next.set(block.id, new Set());
+        }
+      });
+      Array.from(next.keys()).forEach((id) => {
+        if (!blocks.find((block) => block.id === id)) {
+          next.delete(id);
+        }
+      });
+      return next;
+    });
   }, []);
 
   const cycleEnergy = (id: string) => {
     setBlockEnergy((prev) => {
-      const next = new Map(prev);
-      const current = next.get(id) ?? "NO";
+      const current = prev.get(id) ?? "NO";
       const idx = FLAME_LEVELS.indexOf(current);
       const nextLevel = FLAME_LEVELS[(idx + 1) % FLAME_LEVELS.length];
-      next.set(id, nextLevel);
-      return next;
+      return new Map(prev).set(id, nextLevel);
     });
   };
 
@@ -353,13 +546,35 @@ export default function NewDayTypePage() {
     });
   };
 
+  const syncResolvedLocations = useCallback(
+    (blockIds: string[], resolved: Map<string, string | null>) => {
+      setBlockLocation((prev) => {
+        const next = new Map(prev);
+        blockIds.forEach((id) => {
+          const resolvedId = resolved.get(id);
+          if (resolvedId) {
+            const current = prev.get(id);
+            const value = normalizeLocationValue(current?.value ?? current?.label ?? null) ?? "";
+            const label = current?.label ?? current?.value ?? value;
+            next.set(id, {
+              id: resolvedId,
+              value: value || resolvedId,
+              label: label || resolvedId,
+            });
+          }
+        });
+        return next;
+      });
+    },
+    []
+  );
+
   const makeId = () =>
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2);
 
   const loadBlocks = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       if (!supabase) {
@@ -392,8 +607,6 @@ export default function NewDayTypePage() {
       console.error(err);
       setError("Unable to load time blocks right now.");
       setTimeBlocks([]);
-    } finally {
-      setLoading(false);
     }
   }, [supabase, syncEnergyMap]);
 
@@ -412,12 +625,14 @@ export default function NewDayTypePage() {
       }
       const { data, error: fetchError } = await supabase
         .from("day_types")
-        .select("id,name,is_default,days")
+        .select("id,name,is_default,days,scheduler_mode")
         .eq("user_id", user.id)
+        .eq("is_temporary", false)
         .order("created_at", { ascending: true });
       if (fetchError) throw fetchError;
       const normalized = (data as DayType[] | null)?.map((dt) => ({
         ...dt,
+        scheduler_mode: normalizeSchedulerMode((dt as DayType)?.scheduler_mode as string | null),
         days: (dt.days ?? [])
           .map((n) => Number(n))
           .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) as number[],
@@ -446,7 +661,7 @@ export default function NewDayTypePage() {
       const { data, error: fetchError } = await supabase
         .from("day_type_time_blocks")
         .select(
-          "day_type_id,time_block_id,energy,block_type,location_context_id,location_context:location_contexts(value,label)"
+          "id,day_type_id,time_block_id,energy,block_type,location_context_id,allow_all_habit_types,allow_all_skills,allow_all_monuments,location_context:location_contexts(value,label)"
         )
         .eq("user_id", user.id);
       if (fetchError) throw fetchError;
@@ -454,7 +669,17 @@ export default function NewDayTypePage() {
       const energyMap = new Map<string, FlameLevel>();
       const locationMap = new Map<string, LocationContextOption | null>();
       const typeMap = new Map<string, BlockType>();
+      const allowHabitMap = new Map<string, boolean>();
+      const allowSkillMap = new Map<string, boolean>();
+      const allowMonumentMap = new Map<string, boolean>();
+      const dttbToBlockId = new Map<string, string>();
+      const allowedHabitMap = new Map<string, Set<string>>();
+      const allowedSkillMap = new Map<string, Set<string>>();
+      const allowedMonumentMap = new Map<string, Set<string>>();
       (data as DayTypeBlockLink[] | null)?.forEach((row) => {
+        if (row.id && row.time_block_id) {
+          dttbToBlockId.set(row.id, row.time_block_id);
+        }
         const existing = next.get(row.day_type_id) ?? new Set<string>();
         existing.add(row.time_block_id);
         next.set(row.day_type_id, existing);
@@ -462,15 +687,21 @@ export default function NewDayTypePage() {
         energyMap.set(row.time_block_id, level);
         const type = (row.block_type as BlockType | undefined) ?? "FOCUS";
         typeMap.set(row.time_block_id, type);
+        allowHabitMap.set(row.time_block_id, row.allow_all_habit_types !== false);
+        allowSkillMap.set(row.time_block_id, row.allow_all_skills !== false);
+        allowMonumentMap.set(row.time_block_id, row.allow_all_monuments !== false);
         if (row.location_context_id) {
+          const locationContext = (
+            row as {
+              location_context?: { value?: string | null; label?: string | null };
+            }
+          )?.location_context;
           const value =
-            typeof (row as any)?.location_context?.value === "string"
-              ? (row as any).location_context.value.trim().toUpperCase()
+            typeof locationContext?.value === "string"
+              ? locationContext.value.trim().toUpperCase()
               : null;
           const label =
-            typeof (row as any)?.location_context?.label === "string"
-              ? (row as any).location_context.label.trim()
-              : value;
+            typeof locationContext?.label === "string" ? locationContext.label.trim() : value;
           locationMap.set(row.time_block_id, {
             id: row.location_context_id,
             value: value ?? row.location_context_id,
@@ -480,6 +711,59 @@ export default function NewDayTypePage() {
           locationMap.set(row.time_block_id, null);
         }
       });
+      const dttbIds = Array.from(dttbToBlockId.keys());
+      if (dttbIds.length > 0) {
+        const [habitWhitelist, skillWhitelist, monumentWhitelist] = await Promise.all([
+          supabase
+            .from("day_type_time_block_allowed_habit_types")
+            .select("day_type_time_block_id, habit_type")
+            .in("day_type_time_block_id", dttbIds),
+          supabase
+            .from("day_type_time_block_allowed_skills")
+            .select("day_type_time_block_id, skill_id")
+            .in("day_type_time_block_id", dttbIds),
+          supabase
+            .from("day_type_time_block_allowed_monuments")
+            .select("day_type_time_block_id, monument_id")
+            .in("day_type_time_block_id", dttbIds),
+        ]);
+        if (habitWhitelist.error) throw habitWhitelist.error;
+        if (skillWhitelist.error) throw skillWhitelist.error;
+        if (monumentWhitelist.error) throw monumentWhitelist.error;
+
+        (habitWhitelist.data ?? []).forEach((row) => {
+          const blockId = row.day_type_time_block_id
+            ? dttbToBlockId.get(row.day_type_time_block_id)
+            : null;
+          const normalized = normalizeHabitTypeValue(
+            (row as { habit_type?: string | null })?.habit_type ?? null
+          );
+          if (!blockId || !normalized) return;
+          const existing = allowedHabitMap.get(blockId) ?? new Set<string>();
+          existing.add(normalized);
+          allowedHabitMap.set(blockId, existing);
+        });
+        (skillWhitelist.data ?? []).forEach((row) => {
+          const blockId = row.day_type_time_block_id
+            ? dttbToBlockId.get(row.day_type_time_block_id)
+            : null;
+          const skillId = (row as { skill_id?: string | null })?.skill_id?.trim();
+          if (!blockId || !skillId) return;
+          const existing = allowedSkillMap.get(blockId) ?? new Set<string>();
+          existing.add(skillId);
+          allowedSkillMap.set(blockId, existing);
+        });
+        (monumentWhitelist.data ?? []).forEach((row) => {
+          const blockId = row.day_type_time_block_id
+            ? dttbToBlockId.get(row.day_type_time_block_id)
+            : null;
+          const monumentId = (row as { monument_id?: string | null })?.monument_id?.trim();
+          if (!blockId || !monumentId) return;
+          const existing = allowedMonumentMap.get(blockId) ?? new Set<string>();
+          existing.add(monumentId);
+          allowedMonumentMap.set(blockId, existing);
+        });
+      }
       setBlockEnergy((prev) => {
         const merged = new Map(prev);
         energyMap.forEach((level, id) => merged.set(id, level));
@@ -495,6 +779,36 @@ export default function NewDayTypePage() {
         typeMap.forEach((type, id) => merged.set(id, type));
         return merged;
       });
+      setBlockAllowAllHabitTypes((prev) => {
+        const merged = new Map(prev);
+        allowHabitMap.forEach((value, id) => merged.set(id, value));
+        return merged;
+      });
+      setBlockAllowAllSkills((prev) => {
+        const merged = new Map(prev);
+        allowSkillMap.forEach((value, id) => merged.set(id, value));
+        return merged;
+      });
+      setBlockAllowAllMonuments((prev) => {
+        const merged = new Map(prev);
+        allowMonumentMap.forEach((value, id) => merged.set(id, value));
+        return merged;
+      });
+      setBlockAllowedHabitTypes((prev) => {
+        const merged = new Map(prev);
+        allowedHabitMap.forEach((value, id) => merged.set(id, new Set(value)));
+        return merged;
+      });
+      setBlockAllowedSkillIds((prev) => {
+        const merged = new Map(prev);
+        allowedSkillMap.forEach((value, id) => merged.set(id, new Set(value)));
+        return merged;
+      });
+      setBlockAllowedMonumentIds((prev) => {
+        const merged = new Map(prev);
+        allowedMonumentMap.forEach((value, id) => merged.set(id, new Set(value)));
+        return merged;
+      });
       setDayTypeBlockMap(next);
     } catch (err) {
       console.error(err);
@@ -502,11 +816,51 @@ export default function NewDayTypePage() {
     }
   }, [supabase]);
 
+  const loadConstraintOptions = useCallback(async () => {
+    try {
+      if (!supabase) {
+        setSkills([]);
+        setMonuments([]);
+        return;
+      }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) {
+        setSkills([]);
+        setMonuments([]);
+        return;
+      }
+      setSkillsLoading(true);
+      setMonumentsLoading(true);
+      const [skillsData, monumentsData] = await Promise.all([
+        getSkillsForUser(user.id).catch((error) => {
+          console.warn("Unable to load skills", error);
+          return [];
+        }),
+        getMonumentsForUser(user.id).catch((error) => {
+          console.warn("Unable to load monuments", error);
+          return [];
+        }),
+      ]);
+      setSkills(skillsData ?? []);
+      setMonuments(monumentsData ?? []);
+    } catch (err) {
+      console.error(err);
+      setSkills([]);
+      setMonuments([]);
+    } finally {
+      setSkillsLoading(false);
+      setMonumentsLoading(false);
+    }
+  }, [supabase]);
+
   useEffect(() => {
     void loadBlocks();
     void loadDayTypes();
     void loadDayTypeBlockLinks();
-  }, [loadBlocks, loadDayTypes, loadDayTypeBlockLinks]);
+    void loadConstraintOptions();
+  }, [loadBlocks, loadDayTypes, loadDayTypeBlockLinks, loadConstraintOptions]);
 
   useEffect(() => {
     if (!hasBlocks && isCreatingDayType) {
@@ -521,6 +875,7 @@ export default function NewDayTypePage() {
       setSelectedDayTypeId(defaultType.id);
       setDayTypeName(defaultType.name);
       setIsDefault(defaultType.is_default);
+      setSchedulerMode(defaultType.scheduler_mode ?? "REGULAR");
       const defaults = defaultType.days.map((n) => DAY_INDEX_TO_KEY[n]).filter((d): d is string => Boolean(d));
       setSelectedDays(new Set(defaults));
       return;
@@ -529,6 +884,7 @@ export default function NewDayTypePage() {
       setSelectedDayTypeId(null);
       setDayTypeName("");
       setIsDefault(true);
+      setSchedulerMode("REGULAR");
       setShowCreateForm(false);
       setIsCreatingDayType(false);
       setIsEditingExisting(false);
@@ -547,6 +903,7 @@ export default function NewDayTypePage() {
     if (current) {
       setDayTypeName(current.name);
       setIsDefault(current.is_default);
+      setSchedulerMode(current.scheduler_mode ?? "REGULAR");
       const defaults = current.days.map((n) => DAY_INDEX_TO_KEY[n]).filter((d): d is string => Boolean(d));
       setSelectedDays(new Set(defaults));
     }
@@ -707,6 +1064,36 @@ export default function NewDayTypePage() {
           next.set(optimistic.id, "FOCUS");
           return next;
         });
+        setBlockAllowAllHabitTypes((prev) => {
+          const next = new Map(prev);
+          next.set(optimistic.id, true);
+          return next;
+        });
+        setBlockAllowAllSkills((prev) => {
+          const next = new Map(prev);
+          next.set(optimistic.id, true);
+          return next;
+        });
+        setBlockAllowAllMonuments((prev) => {
+          const next = new Map(prev);
+          next.set(optimistic.id, true);
+          return next;
+        });
+        setBlockAllowedHabitTypes((prev) => {
+          const next = new Map(prev);
+          next.set(optimistic.id, new Set());
+          return next;
+        });
+        setBlockAllowedSkillIds((prev) => {
+          const next = new Map(prev);
+          next.set(optimistic.id, new Set());
+          return next;
+        });
+        setBlockAllowedMonumentIds((prev) => {
+          const next = new Map(prev);
+          next.set(optimistic.id, new Set());
+          return next;
+        });
       } else {
         const {
           data: { user },
@@ -745,6 +1132,36 @@ export default function NewDayTypePage() {
         setBlockType((prev) => {
           const next = new Map(prev);
           next.set(inserted.id, prev.get(inserted.id) ?? "FOCUS");
+          return next;
+        });
+        setBlockAllowAllHabitTypes((prev) => {
+          const next = new Map(prev);
+          next.set(inserted.id, prev.get(inserted.id) ?? true);
+          return next;
+        });
+        setBlockAllowAllSkills((prev) => {
+          const next = new Map(prev);
+          next.set(inserted.id, prev.get(inserted.id) ?? true);
+          return next;
+        });
+        setBlockAllowAllMonuments((prev) => {
+          const next = new Map(prev);
+          next.set(inserted.id, prev.get(inserted.id) ?? true);
+          return next;
+        });
+        setBlockAllowedHabitTypes((prev) => {
+          const next = new Map(prev);
+          next.set(inserted.id, prev.get(inserted.id) ?? new Set());
+          return next;
+        });
+        setBlockAllowedSkillIds((prev) => {
+          const next = new Map(prev);
+          next.set(inserted.id, prev.get(inserted.id) ?? new Set());
+          return next;
+        });
+        setBlockAllowedMonumentIds((prev) => {
+          const next = new Map(prev);
+          next.set(inserted.id, prev.get(inserted.id) ?? new Set());
           return next;
         });
       }
@@ -828,6 +1245,36 @@ export default function NewDayTypePage() {
         return next;
       });
       setBlockType((prev) => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+      setBlockAllowAllHabitTypes((prev) => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+      setBlockAllowAllSkills((prev) => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+      setBlockAllowAllMonuments((prev) => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+      setBlockAllowedHabitTypes((prev) => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+      setBlockAllowedSkillIds((prev) => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+      setBlockAllowedMonumentIds((prev) => {
         const next = new Map(prev);
         next.delete(id);
         return next;
@@ -916,6 +1363,7 @@ export default function NewDayTypePage() {
 
   const handleSaveDayType = useCallback(async () => {
     if (!canSaveDayType) return;
+    const energyById = new Map<string, string>(blockEnergy);
     setSaving(true);
     setSaveMessage(null);
     try {
@@ -934,6 +1382,104 @@ export default function NewDayTypePage() {
 
       const name = dayTypeName.trim();
 
+      const insertWhitelists = async (
+        links: Array<{ id?: string | null; time_block_id?: string | null }>
+      ) => {
+        const linkMap = new Map<string, string>();
+        links.forEach((row) => {
+          const linkId = (row.id ?? "").trim();
+          const blockId = (row.time_block_id ?? "").trim();
+          if (linkId && blockId) {
+            linkMap.set(blockId, linkId);
+          }
+        });
+
+        if (linkMap.size === 0) return;
+
+        const habitRows: Array<{
+          user_id: string;
+          day_type_time_block_id: string;
+          habit_type: string;
+        }> = [];
+        const skillRows: Array<{
+          user_id: string;
+          day_type_time_block_id: string;
+          skill_id: string;
+        }> = [];
+        const monumentRows: Array<{
+          user_id: string;
+          day_type_time_block_id: string;
+          monument_id: string;
+        }> = [];
+
+        linkMap.forEach((linkId, blockId) => {
+          const allowHabits = blockAllowAllHabitTypes.get(blockId) ?? true;
+          const allowSkills = blockAllowAllSkills.get(blockId) ?? true;
+          const allowMonuments = blockAllowAllMonuments.get(blockId) ?? true;
+
+          if (!allowHabits) {
+            const allowed = blockAllowedHabitTypes.get(blockId) ?? new Set<string>();
+            allowed.forEach((habitType) => {
+              const normalized = normalizeHabitTypeValue(habitType);
+              if (normalized) {
+                habitRows.push({
+                  user_id: user.id,
+                  day_type_time_block_id: linkId,
+                  habit_type: normalized,
+                });
+              }
+            });
+          }
+
+          if (!allowSkills) {
+            const allowed = blockAllowedSkillIds.get(blockId) ?? new Set<string>();
+            allowed.forEach((skillId) => {
+              const normalized = skillId.trim();
+              if (normalized) {
+                skillRows.push({
+                  user_id: user.id,
+                  day_type_time_block_id: linkId,
+                  skill_id: normalized,
+                });
+              }
+            });
+          }
+
+          if (!allowMonuments) {
+            const allowed = blockAllowedMonumentIds.get(blockId) ?? new Set<string>();
+            allowed.forEach((monumentId) => {
+              const normalized = monumentId.trim();
+              if (normalized) {
+                monumentRows.push({
+                  user_id: user.id,
+                  day_type_time_block_id: linkId,
+                  monument_id: normalized,
+                });
+              }
+            });
+          }
+        });
+
+        if (habitRows.length > 0) {
+          const { error } = await supabase
+            .from("day_type_time_block_allowed_habit_types")
+            .insert(habitRows);
+          if (error) throw error;
+        }
+        if (skillRows.length > 0) {
+          const { error } = await supabase
+            .from("day_type_time_block_allowed_skills")
+            .insert(skillRows);
+          if (error) throw error;
+        }
+        if (monumentRows.length > 0) {
+          const { error } = await supabase
+            .from("day_type_time_block_allowed_monuments")
+            .insert(monumentRows);
+          if (error) throw error;
+        }
+      };
+
       if (isEditingExisting && selectedDayTypeId) {
         const { data: updated, error: updateError } = await supabase
           .from("day_types")
@@ -946,9 +1492,10 @@ export default function NewDayTypePage() {
                     .map((key) => DAY_KEY_TO_INDEX[key])
                     .filter((idx): idx is number => typeof idx === "number")
                 : [],
+            scheduler_mode: schedulerMode,
           })
           .eq("id", selectedDayTypeId)
-          .select("id,is_default,days")
+          .select("id,is_default,days,scheduler_mode")
           .single();
 
         if (updateError) throw updateError;
@@ -960,40 +1507,39 @@ export default function NewDayTypePage() {
         if (deleteLinksError) throw deleteLinksError;
 
         const blockIds = Array.from(selectedIds);
-        const locationCache = new Map<string, string | null>();
-        const resolveLocationIds = async () => {
-          const result = new Map<string, string | null>();
-          for (const blockId of blockIds) {
-            const option = blockLocation.get(blockId);
-            const normalized = normalizeLocationValue(option?.value ?? option?.label ?? null);
-            if (!normalized) {
-              result.set(blockId, null);
-              continue;
-            }
-            if (locationCache.has(normalized)) {
-              result.set(blockId, locationCache.get(normalized) ?? null);
-              continue;
-            }
-            const resolved = await resolveLocationContextId(supabase, user.id, normalized);
-            locationCache.set(normalized, resolved);
-            result.set(blockId, resolved);
-          }
-          return result;
-        };
-
-        const resolvedLocations = await resolveLocationIds();
+        const resolvedLocations = await resolveLocationIdsForBlocks({
+          supabase,
+          userId: user.id,
+          blockIds,
+          blockLocations: blockLocation,
+          selectableLocations,
+        });
         if (blockIds.length > 0) {
-          const payload = blockIds.map((id) => ({
-            user_id: user.id,
-            day_type_id: selectedDayTypeId,
-            time_block_id: id,
-            energy: blockEnergy.get(id) ?? "NO",
-            block_type: blockType.get(id) ?? "FOCUS",
-            location_context_id: resolvedLocations.get(id) ?? null,
-          }));
+          const payload = blockIds.map((id) => {
+            const energy = energyById.get(id) ?? "NO";
+            return {
+              user_id: user.id,
+              day_type_id: selectedDayTypeId,
+              time_block_id: id,
+              energy,
+              block_type: blockType.get(id) ?? "FOCUS",
+              location_context_id: resolvedLocations.get(id) ?? null,
+              allow_all_habit_types: blockAllowAllHabitTypes.get(id) ?? true,
+              allow_all_skills: blockAllowAllSkills.get(id) ?? true,
+              allow_all_monuments: blockAllowAllMonuments.get(id) ?? true,
+            };
+          });
 
-          const { error: linkError } = await supabase.from("day_type_time_blocks").insert(payload);
+          const { data: linksInserted, error: linkError } = await supabase
+            .from("day_type_time_blocks")
+            .insert(payload)
+            .select("id,time_block_id");
           if (linkError) throw linkError;
+
+          if (linksInserted) {
+            await insertWhitelists(linksInserted as { id?: string | null; time_block_id?: string | null }[]);
+          }
+          syncResolvedLocations(blockIds, resolvedLocations);
         }
 
         setDayTypeBlockMap((prev) => {
@@ -1020,6 +1566,9 @@ export default function NewDayTypePage() {
                   name,
                   is_default: updated?.is_default ?? dt.is_default,
                   days: updatedDays,
+                  scheduler_mode: normalizeSchedulerMode(
+                    (updated?.scheduler_mode as string | null) ?? schedulerMode
+                  ),
                 }
               : dt
           );
@@ -1050,45 +1599,41 @@ export default function NewDayTypePage() {
                     .map((key) => DAY_KEY_TO_INDEX[key])
                     .filter((idx): idx is number => typeof idx === "number")
                 : [],
+            scheduler_mode: schedulerMode,
           })
-          .select("id,is_default,days")
+          .select("id,is_default,days,scheduler_mode")
           .single();
 
         if (insertError) throw insertError;
 
         const blockIds = Array.from(selectedIds);
-        const locationCache = new Map<string, string | null>();
-        const resolveLocationIds = async () => {
-          const result = new Map<string, string | null>();
-          for (const blockId of blockIds) {
-            const option = blockLocation.get(blockId);
-            const normalized = normalizeLocationValue(option?.value ?? option?.label ?? null);
-            if (!normalized) {
-              result.set(blockId, null);
-              continue;
-            }
-            if (locationCache.has(normalized)) {
-              result.set(blockId, locationCache.get(normalized) ?? null);
-              continue;
-            }
-            const resolved = await resolveLocationContextId(supabase, user.id, normalized);
-            locationCache.set(normalized, resolved);
-            result.set(blockId, resolved);
-          }
-          return result;
-        };
-        const resolvedLocations = await resolveLocationIds();
+        const resolvedLocations = await resolveLocationIdsForBlocks({
+          supabase,
+          userId: user.id,
+          blockIds,
+          blockLocations: blockLocation,
+          selectableLocations,
+        });
         if (blockIds.length > 0) {
-          const payload = blockIds.map((id) => ({
-            user_id: user.id,
-            day_type_id: inserted.id,
-            time_block_id: id,
-            energy: blockEnergy.get(id) ?? "NO",
-            block_type: blockType.get(id) ?? "FOCUS",
-            location_context_id: resolvedLocations.get(id) ?? null,
-          }));
+          const payload = blockIds.map((id) => {
+            const energy = energyById.get(id) ?? "NO";
+            return {
+              user_id: user.id,
+              day_type_id: inserted.id,
+              time_block_id: id,
+              energy,
+              block_type: blockType.get(id) ?? "FOCUS",
+              location_context_id: resolvedLocations.get(id) ?? null,
+              allow_all_habit_types: blockAllowAllHabitTypes.get(id) ?? true,
+              allow_all_skills: blockAllowAllSkills.get(id) ?? true,
+              allow_all_monuments: blockAllowAllMonuments.get(id) ?? true,
+            };
+          });
 
-          const { error: linkError } = await supabase.from("day_type_time_blocks").insert(payload);
+          const { data: linksInserted, error: linkError } = await supabase
+            .from("day_type_time_blocks")
+            .insert(payload)
+            .select("id,time_block_id");
           if (linkError) throw linkError;
 
         setDayTypeBlockMap((prev) => {
@@ -1096,6 +1641,11 @@ export default function NewDayTypePage() {
           next.set(inserted.id, new Set(blockIds));
           return next;
         });
+
+          if (linksInserted) {
+            await insertWhitelists(linksInserted as { id?: string | null; time_block_id?: string | null }[]);
+          }
+          syncResolvedLocations(blockIds, resolvedLocations);
         }
 
         const insertedDays =
@@ -1114,12 +1664,14 @@ export default function NewDayTypePage() {
               name,
               is_default: inserted.is_default,
               days: insertedDays,
+              scheduler_mode: normalizeSchedulerMode(inserted.scheduler_mode as string | null),
             },
           ];
           return nextDayTypes;
         });
         setHasDefaultDayType(nextDayTypes.some((dt) => dt.is_default && dt.days.length > 0));
         setSelectedDayTypeId(inserted.id);
+        setSchedulerMode(normalizeSchedulerMode(inserted.scheduler_mode as string | null));
         setEditingBlockId(null);
         setConstraintsTarget(null);
         setMenuOpenId(null);
@@ -1137,7 +1689,28 @@ export default function NewDayTypePage() {
     } finally {
       setSaving(false);
     }
-  }, [canSaveDayType, dayTypeName, dayTypes, isDefault, isEditingExisting, selectedDayTypeId, selectedDays, selectedIds, supabase]);
+  }, [
+    blockEnergy,
+    blockLocation,
+    blockType,
+    blockAllowAllHabitTypes,
+    blockAllowAllSkills,
+    blockAllowAllMonuments,
+    blockAllowedHabitTypes,
+    blockAllowedSkillIds,
+    blockAllowedMonumentIds,
+    canSaveDayType,
+    dayTypeName,
+    isDefault,
+    isEditingExisting,
+    selectedDayTypeId,
+    selectedDays,
+    selectedIds,
+    schedulerMode,
+    selectableLocations,
+    supabase,
+    syncResolvedLocations,
+  ]);
 
   return (
     <ProtectedRoute>
@@ -1187,7 +1760,10 @@ export default function NewDayTypePage() {
                       if (current) {
                         setDayTypeName(current.name);
                         setIsDefault(current.is_default);
+                        setSchedulerMode(current.scheduler_mode ?? "REGULAR");
                       }
+                    } else {
+                      setSchedulerMode("REGULAR");
                     }
                   }}
                   className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
@@ -1291,13 +1867,46 @@ export default function NewDayTypePage() {
                       </span>
                     ) : null}
                   </div>
-                  <div className="flex flex-wrap items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={handleSaveDayType}
-                      disabled={!isCreatingDayType || !canSaveDayType || saving}
+                  <div className="flex flex-col items-end gap-3">
+                    <div className="w-full min-w-[220px] sm:w-[260px]">
+                      <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/60">
+                        <span>Scheduler mode</span>
+                        <span className="text-[9px] text-white/40">per day type</span>
+                      </div>
+                      <Select
+                        value={schedulerMode}
+                        onValueChange={(next) => setSchedulerMode(normalizeSchedulerMode(next))}
+                        disabled={!isCreatingDayType}
+                      >
+                        <SelectTrigger className="mt-1 h-11 w-full rounded-xl border border-white/15 bg-black/30 px-3 text-left text-sm font-semibold text-white/85 hover:border-white/25 focus:ring-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="border-white/10 bg-[#0F0F15]/95 text-white shadow-[0_18px_48px_rgba(0,0,0,0.45)] p-0">
+                          {SCHEDULER_MODE_OPTIONS.map((option) => (
+                            <SelectItem
+                              key={option.value}
+                              value={option.value}
+                              label={option.label}
+                              className="text-sm text-white focus:bg-white/10 focus:text-white"
+                            >
+                              <div className="flex flex-col gap-0.5">
+                                <span className="font-semibold">{option.label}</span>
+                                <span className="text-[11px] text-white/60">{option.description}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    <p className="mt-1 text-[11px] text-white/50">
+                      Applied automatically whenever this day type is used.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveDayType}
+                    disabled={!isCreatingDayType || !canSaveDayType || saving}
                     className={cn(
-                      "rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white/90 transition",
+                      "w-full min-w-[220px] rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white/90 transition sm:w-auto",
                       isCreatingDayType
                         ? "bg-white/15 hover:border-white/25 hover:bg-white/20"
                         : "bg-white/10 opacity-60",
@@ -1309,7 +1918,7 @@ export default function NewDayTypePage() {
                   {saveMessage ? (
                     <span className="text-xs text-white/60">{saveMessage}</span>
                   ) : null}
-                </div>
+                  </div>
               </div>
               </div>
             ) : (
@@ -1329,6 +1938,7 @@ export default function NewDayTypePage() {
                     setSelectedDayTypeId(null);
                     setSelectedIds(new Set());
                     setDayTypeName("");
+                    setSchedulerMode("REGULAR");
                     setIsDefault(nextIsDefault);
                     setSelectedDays(nextIsDefault ? new Set(availableForNewDefault) : new Set());
                     setSaveMessage(null);
@@ -1359,6 +1969,7 @@ export default function NewDayTypePage() {
                         if (current) {
                           setDayTypeName(current.name);
                           setIsDefault(current.is_default);
+                          setSchedulerMode(current.scheduler_mode ?? "REGULAR");
                         }
                         const mapped = dayTypeBlockMap.get(selectedDayTypeId);
                         setSelectedIds(new Set(mapped ?? []));
@@ -1396,6 +2007,7 @@ export default function NewDayTypePage() {
                           setSelectedDayTypeId(dt.id);
                           const mapped = dayTypeBlockMap.get(dt.id);
                           setSelectedIds(new Set(mapped ?? []));
+                          setSchedulerMode(dt.scheduler_mode ?? "REGULAR");
                           const defaults = dt.days
                             .map((n) => DAY_INDEX_TO_KEY[n])
                             .filter((d): d is string => Boolean(d));
@@ -1650,8 +2262,24 @@ export default function NewDayTypePage() {
                   const selected = selectedIds.has(block.id);
                   const label = normalizeLabel(block.label) ?? "TIME BLOCK";
                   const energyLevel = blockEnergy.get(block.id) ?? "NO";
-                  const typeValue = blockType.get(block.id) ?? "FOCUS";
                   const locationOption = blockLocation.get(block.id);
+                  const allowAllHabits = blockAllowAllHabitTypes.get(block.id) ?? true;
+                  const allowAllSkills = blockAllowAllSkills.get(block.id) ?? true;
+                  const allowAllMonuments = blockAllowAllMonuments.get(block.id) ?? true;
+                  const allowedHabitTypes = blockAllowedHabitTypes.get(block.id) ?? new Set<string>();
+                  const allowedSkillIds = blockAllowedSkillIds.get(block.id) ?? new Set<string>();
+                  const allowedMonumentIds =
+                    blockAllowedMonumentIds.get(block.id) ?? new Set<string>();
+                  const filteredSkills = skills
+                    .filter((skill) =>
+                      (skill.name ?? "").toLowerCase().includes(skillSearch.toLowerCase())
+                    )
+                    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+                  const filteredMonuments = monuments
+                    .filter((monument) =>
+                      (monument.title ?? "").toLowerCase().includes(monumentSearch.toLowerCase())
+                    )
+                    .sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
                   return (
                     <div
                       key={block.id}
@@ -1769,7 +2397,7 @@ export default function NewDayTypePage() {
                       {constraintsTarget?.id === block.id ? (
                         <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 shadow-[0_10px_28px_rgba(0,0,0,0.3)]">
                           <div className="flex items-start justify-between gap-3">
-                            <div className="space-y-3">
+                            <div className="space-y-4">
                               <div className="text-[11px] uppercase tracking-[0.16em] text-white/55">
                                 Constraints
                               </div>
@@ -1814,8 +2442,20 @@ export default function NewDayTypePage() {
                                       }
                                       const match =
                                         selectableLocations.find((opt) => opt.id === value) ??
-                                        selectableLocations.find((opt) => opt.value === value);
-                                      updateLocationForBlock(block.id, match ?? null);
+                                        selectableLocations.find(
+                                          (opt) => normalizeLocationValue(opt.value) === normalizeLocationValue(value)
+                                        );
+
+                                      if (match) {
+                                        updateLocationForBlock(block.id, match);
+                                      } else {
+                                        const normalized = normalizeLocationValue(value) ?? value;
+                                        updateLocationForBlock(block.id, {
+                                          id: value,
+                                          value: normalized,
+                                          label: match?.label ?? value,
+                                        });
+                                      }
                                     }}
                                     disabled={loadingLocations}
                                   >
@@ -1837,6 +2477,234 @@ export default function NewDayTypePage() {
                                     Match this block only when you&apos;re at the selected location. Default is Anywhere.
                                   </div>
                                 </div>
+                              </div>
+
+                              <div className="grid gap-3 md:grid-cols-2">
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
+                                    <span>Habits</span>
+                                    <label className="flex items-center gap-2 text-xs text-white/70">
+                                      <input
+                                        type="checkbox"
+                                        checked={allowAllHabits}
+                                        onChange={(event) =>
+                                          setBlockAllowAllHabitTypes((prev) => {
+                                            const next = new Map(prev);
+                                            next.set(block.id, event.target.checked);
+                                            return next;
+                                          })
+                                        }
+                                        className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
+                                      />
+                                      <span>Allow all habit types</span>
+                                    </label>
+                                  </div>
+                                  {!allowAllHabits ? (
+                                    <>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        {HABIT_TYPE_OPTIONS.map((option) => {
+                                          const selectedHabit = allowedHabitTypes.has(option.value);
+                                          return (
+                                            <button
+                                              key={option.value}
+                                              type="button"
+                                              onClick={() =>
+                                                setBlockAllowedHabitTypes((prev) => {
+                                                  const next = new Map(prev);
+                                                  const set = new Set(next.get(block.id) ?? []);
+                                                  if (set.has(option.value)) {
+                                                    set.delete(option.value);
+                                                  } else {
+                                                    set.add(option.value);
+                                                  }
+                                                  next.set(block.id, set);
+                                                  return next;
+                                                })
+                                              }
+                                              className={cn(
+                                                "flex items-center justify-between rounded-lg border px-3 py-2 text-xs transition",
+                                                selectedHabit
+                                                  ? "border-white/40 bg-white/15 text-white"
+                                                  : "border-white/10 bg-black/20 text-white/70 hover:border-white/20"
+                                              )}
+                                            >
+                                              <span className="truncate">{option.label}</span>
+                                              {selectedHabit ? <Check className="h-4 w-4" /> : null}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                      {allowedHabitTypes.size === 0 ? (
+                                        <div className="text-xs text-amber-200/80">
+                                          Nothing allowed in this block for habits.
+                                        </div>
+                                      ) : null}
+                                    </>
+                                  ) : null}
+                                </div>
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
+                                    <span>Skills</span>
+                                    <label className="flex items-center gap-2 text-xs text-white/70">
+                                      <input
+                                        type="checkbox"
+                                        checked={allowAllSkills}
+                                        onChange={(event) =>
+                                          setBlockAllowAllSkills((prev) => {
+                                            const next = new Map(prev);
+                                            next.set(block.id, event.target.checked);
+                                            return next;
+                                          })
+                                        }
+                                        className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
+                                      />
+                                      <span>Allow all skills</span>
+                                    </label>
+                                  </div>
+                                  {!allowAllSkills ? (
+                                    <>
+                                      <Input
+                                        value={skillSearch}
+                                        onChange={(event) => setSkillSearch(event.target.value)}
+                                        placeholder="Search skills..."
+                                        className="h-10 rounded-lg border border-white/10 bg-black/25 text-sm text-white placeholder:text-white/40"
+                                      />
+                                      <div className="max-h-48 overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-2">
+                                        {skillsLoading ? (
+                                          <p className="px-2 py-1 text-xs text-white/60">Loading skills…</p>
+                                        ) : filteredSkills.length === 0 ? (
+                                          <p className="px-2 py-1 text-xs text-white/60">No skills found.</p>
+                                        ) : (
+                                          <div className="grid gap-1">
+                                            {filteredSkills.map((skill) => {
+                                              const selectedSkill = allowedSkillIds.has(skill.id);
+                                              return (
+                                                <button
+                                                  key={skill.id}
+                                                  type="button"
+                                                  onClick={() =>
+                                                    setBlockAllowedSkillIds((prev) => {
+                                                      const next = new Map(prev);
+                                                      const set = new Set(next.get(block.id) ?? []);
+                                                      if (set.has(skill.id)) {
+                                                        set.delete(skill.id);
+                                                      } else {
+                                                        set.add(skill.id);
+                                                      }
+                                                      next.set(block.id, set);
+                                                      return next;
+                                                    })
+                                                  }
+                                                  className={cn(
+                                                    "flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition",
+                                                    selectedSkill
+                                                      ? "bg-white/15 text-white"
+                                                      : "text-white/75 hover:bg-white/10"
+                                                  )}
+                                                >
+                                                  <span className="flex items-center gap-2 truncate">
+                                                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-sm">
+                                                      {(skill.icon ?? "🎯").trim() || "🎯"}
+                                                    </span>
+                                                    <span className="truncate">{skill.name}</span>
+                                                  </span>
+                                                  {selectedSkill ? <Check className="h-4 w-4" /> : null}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                      {allowedSkillIds.size === 0 ? (
+                                        <div className="text-xs text-amber-200/80">
+                                          Nothing allowed in this block for skills.
+                                        </div>
+                                      ) : null}
+                                    </>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
+                                  <span>Monuments</span>
+                                  <label className="flex items-center gap-2 text-xs text-white/70">
+                                    <input
+                                      type="checkbox"
+                                      checked={allowAllMonuments}
+                                      onChange={(event) =>
+                                        setBlockAllowAllMonuments((prev) => {
+                                          const next = new Map(prev);
+                                          next.set(block.id, event.target.checked);
+                                          return next;
+                                        })
+                                      }
+                                      className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
+                                    />
+                                    <span>Allow all monuments</span>
+                                  </label>
+                                </div>
+                                {!allowAllMonuments ? (
+                                  <>
+                                    <Input
+                                      value={monumentSearch}
+                                      onChange={(event) => setMonumentSearch(event.target.value)}
+                                      placeholder="Search monuments..."
+                                      className="h-10 rounded-lg border border-white/10 bg-black/25 text-sm text-white placeholder:text-white/40"
+                                    />
+                                    <div className="max-h-40 overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-2">
+                                      {monumentsLoading ? (
+                                        <p className="px-2 py-1 text-xs text-white/60">Loading monuments…</p>
+                                      ) : filteredMonuments.length === 0 ? (
+                                        <p className="px-2 py-1 text-xs text-white/60">No monuments found.</p>
+                                      ) : (
+                                        <div className="grid gap-1">
+                                          {filteredMonuments.map((monument) => {
+                                            const selectedMonument = allowedMonumentIds.has(monument.id);
+                                            return (
+                                              <button
+                                                key={monument.id}
+                                                type="button"
+                                                onClick={() =>
+                                                  setBlockAllowedMonumentIds((prev) => {
+                                                    const next = new Map(prev);
+                                                    const set = new Set(next.get(block.id) ?? []);
+                                                    if (set.has(monument.id)) {
+                                                      set.delete(monument.id);
+                                                    } else {
+                                                      set.add(monument.id);
+                                                    }
+                                                    next.set(block.id, set);
+                                                    return next;
+                                                  })
+                                                }
+                                                className={cn(
+                                                  "flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition",
+                                                  selectedMonument
+                                                    ? "bg-white/15 text-white"
+                                                    : "text-white/75 hover:bg-white/10"
+                                                )}
+                                              >
+                                                <span className="flex items-center gap-2 truncate">
+                                                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-sm">
+                                                    {(monument.emoji ?? "🗿").trim() || "🗿"}
+                                                  </span>
+                                                  <span className="truncate">{monument.title}</span>
+                                                </span>
+                                                {selectedMonument ? <Check className="h-4 w-4" /> : null}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {allowedMonumentIds.size === 0 ? (
+                                      <div className="text-xs text-amber-200/80">
+                                        Nothing allowed in this block for monuments.
+                                      </div>
+                                    ) : null}
+                                  </>
+                                ) : null}
                               </div>
                             </div>
                             <button

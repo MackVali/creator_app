@@ -119,7 +119,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const viewportHeight = window.innerHeight || 0;
-      const gap = 8;
+      const gap = 0;
       const safeMargin = 12;
       const spaceBelow = Math.max(0, viewportHeight - rect.bottom - gap);
       const spaceAbove = Math.max(0, rect.top - gap);
@@ -277,7 +277,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
                 trigger
               ) : (
                 <span className="block truncate">
-                  {selectedLabel || placeholder || "Select option..."}
+                  {selectedLabel || placeholder || ""}
                 </span>
               )}
             </div>
@@ -318,7 +318,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
                         selectedValue,
                       });
                     }
-                    return child;
+                    return null;
                   })}
                 </div>,
                 document.body
@@ -343,7 +343,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
                     selectedValue,
                   });
                 }
-                return child;
+                return null;
               })}
             </div>
           ) : null}
@@ -387,7 +387,7 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
       <div
         ref={ref}
         className={cn(
-          "max-h-60 overflow-y-auto overflow-x-hidden overscroll-contain p-1",
+          "max-h-60 overflow-y-auto overflow-x-hidden overscroll-contain",
           className
         )}
       >

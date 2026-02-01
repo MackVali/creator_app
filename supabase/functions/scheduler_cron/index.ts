@@ -12,6 +12,8 @@ import {
   startOfDayInTimeZone,
   weekdayInTimeZone,
 } from "../../../src/lib/scheduler/timezone.ts";
+import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "../../../src/lib/scheduler/limits.ts";
+import { log } from "../../../src/lib/utils/logGate.ts";
 
 type Client = SupabaseClient<Database>;
 type ScheduleInstance =
@@ -29,8 +31,6 @@ const ENERGY_ORDER = [
 ] as const;
 const BASE_LOOKAHEAD_DAYS = 28;
 const LOOKAHEAD_PER_ITEM_DAYS = 7;
-const MAX_LOOKAHEAD_DAYS = 365;
-
 serve(async (req) => {
   try {
     const { searchParams } = new URL(req.url);
@@ -57,7 +57,7 @@ serve(async (req) => {
 
     const missedResult = await markMissedAndQueue(supabase, userId, now);
     if (missedResult.error) {
-      console.error("markMissedAndQueue error", missedResult.error);
+      log("error", "markMissedAndQueue error", missedResult.error);
       return new Response(JSON.stringify(missedResult), { status: 500 });
     }
 
@@ -69,13 +69,13 @@ serve(async (req) => {
       timeZoneValue
     );
     if (scheduleResult.error) {
-      console.error("scheduleBacklog error", scheduleResult.error);
+      log("error", "scheduleBacklog error", scheduleResult.error);
       return new Response(JSON.stringify(scheduleResult), { status: 500 });
     }
 
     const cleanupResult = await cleanupOldHabitInstances(supabase, userId, now);
     if (cleanupResult?.error) {
-      console.error("cleanupOldHabitInstances error", cleanupResult.error);
+      log("error", "cleanupOldHabitInstances error", cleanupResult.error);
     }
 
     return new Response(JSON.stringify(scheduleResult), {
@@ -83,7 +83,7 @@ serve(async (req) => {
       headers: { "content-type": "application/json" },
     });
   } catch (error) {
-    console.error("scheduler_cron failure", error);
+    log("error", "scheduler_cron failure", error);
     return new Response("internal error", { status: 500 });
   }
 });
@@ -100,15 +100,15 @@ async function resolveUserTimeZone(client: Client, userId: string) {
       if (tz) return tz;
     }
   } catch (error) {
-    console.error("resolveUserTimeZone profile lookup failed", error);
+    log("error", "resolveUserTimeZone profile lookup failed", error);
   }
 
   try {
     const { data, error } = await client.auth.admin.getUserById(userId);
-    if (error) {
-      console.error("resolveUserTimeZone error", error);
-      return null;
-    }
+      if (error) {
+        log("error", "resolveUserTimeZone error", error);
+        return null;
+      }
     const user = data?.user ?? null;
     if (!user) return null;
     const meta =
@@ -123,7 +123,7 @@ async function resolveUserTimeZone(client: Client, userId: string) {
       }
     }
   } catch (error) {
-    console.error("resolveUserTimeZone failure", error);
+    log("error", "resolveUserTimeZone failure", error);
   }
   return null;
 }
@@ -368,7 +368,7 @@ async function scheduleBacklog(
   const windowAvailability = new Map<string, Date>();
   const windowCache = new Map<string, WindowRecord[]>();
   const lookaheadDays = Math.min(
-    MAX_LOOKAHEAD_DAYS,
+    MAX_SCHEDULE_LOOKAHEAD_DAYS,
     BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS
   );
 
@@ -477,7 +477,7 @@ async function getLookupMaps(client: Client): Promise<PriorityEnergyLookups> {
 
   const priority: Record<string, string> = {};
   if (priorityRes.error) {
-    console.warn("priority lookup error", priorityRes.error);
+    log("warn", "priority lookup error", priorityRes.error);
   } else {
     for (const row of priorityRes.data ?? []) {
       if (!row?.id || typeof row.name !== "string") continue;
@@ -486,7 +486,7 @@ async function getLookupMaps(client: Client): Promise<PriorityEnergyLookups> {
   }
   const energy: Record<string, string> = {};
   if (energyRes.error) {
-    console.warn("energy lookup error", energyRes.error);
+    log("warn", "energy lookup error", energyRes.error);
   } else {
     for (const row of energyRes.data ?? []) {
       if (!row?.id || typeof row.name !== "string") continue;
@@ -518,7 +518,7 @@ async function fetchReadyTasks(
   ]);
 
   if (error) {
-    console.error("fetchReadyTasks error", error);
+    log("error", "fetchReadyTasks error", error);
     return [];
   }
 
@@ -560,7 +560,7 @@ async function fetchProjectsMap(
   ]);
 
   if (error) {
-    console.error("fetchProjectsMap error", error);
+    log("error", "fetchProjectsMap error", error);
     return {};
   }
 
@@ -630,7 +630,7 @@ async function fetchGoalWeights(
     .eq("user_id", userId);
 
   if (error) {
-    console.error("fetchGoalWeights error", error);
+    log("error", "fetchGoalWeights error", error);
     return {};
   }
 
@@ -969,10 +969,10 @@ async function fetchWindowsForDate(
       .is("days", null),
   ]);
 
-  if (errToday) console.error("fetchWindowsForDate error (today)", errToday);
-  if (errPrev) console.error("fetchWindowsForDate error (prev)", errPrev);
+  if (errToday) log("error", "fetchWindowsForDate error (today)", errToday);
+  if (errPrev) log("error", "fetchWindowsForDate error (prev)", errPrev);
   if (errRecurring)
-    console.error("fetchWindowsForDate error (recurring)", errRecurring);
+    log("error", "fetchWindowsForDate error (recurring)", errRecurring);
 
   const crosses = (window: WindowRecord) => {
     const [sh = 0, sm = 0] = window.start_local.split(":").map(Number);
@@ -1049,7 +1049,7 @@ async function placeItemInWindows(
       .neq("status", "canceled");
 
     if (error) {
-      console.error("fetchInstancesForRange error", error);
+      log("error", "fetchInstancesForRange error", error);
       continue;
     }
 
@@ -1139,7 +1139,9 @@ async function persistPlacement(
   start: Date,
   durationMin: number,
   reuseInstanceId?: string | null,
-  eventName?: string
+  eventName?: string,
+  dayTypeTimeBlockId?: string | null,
+  timeBlockId?: string | null
 ): Promise<ScheduleInstance | null> {
   const startUTC = start.toISOString();
   const endUTC = addMin(start, durationMin).toISOString();
@@ -1153,6 +1155,8 @@ async function persistPlacement(
       weightSnapshot: item.weight,
       energyResolved: item.energy,
       eventName: eventName ?? item.eventName,
+      dayTypeTimeBlockId,
+      timeBlockId,
     });
   }
 
@@ -1164,7 +1168,9 @@ async function persistPlacement(
     startUTC,
     endUTC,
     durationMin,
-    eventName ?? item.eventName
+    eventName ?? item.eventName,
+    dayTypeTimeBlockId,
+    timeBlockId
   );
 }
 
@@ -1183,7 +1189,9 @@ async function createInstance(
   startUTC: string,
   endUTC: string,
   durationMin: number,
-  eventName?: string
+  eventName?: string,
+  dayTypeTimeBlockId?: string | null,
+  timeBlockId?: string | null
 ) {
   const { data, error } = await client
     .from("schedule_instances")
@@ -1191,7 +1199,9 @@ async function createInstance(
       user_id: userId,
       source_type: "PROJECT",
       source_id: item.id,
-      window_id: windowId,
+      window_id: dayTypeTimeBlockId ? null : windowId,
+      day_type_time_block_id: dayTypeTimeBlockId ?? null,
+      time_block_id: timeBlockId ?? null,
       start_utc: startUTC,
       end_utc: endUTC,
       duration_min: durationMin,
@@ -1204,7 +1214,7 @@ async function createInstance(
     .single();
 
   if (error) {
-    console.error("createInstance error", error);
+    log("error", "createInstance error", error);
     return null;
   }
 
@@ -1216,6 +1226,8 @@ async function rescheduleInstance(
   id: string,
   input: {
     windowId: string;
+    dayTypeTimeBlockId?: string | null;
+    timeBlockId?: string | null;
     startUTC: string;
     endUTC: string;
     durationMin: number;
@@ -1227,7 +1239,9 @@ async function rescheduleInstance(
   const { data, error } = await client
     .from("schedule_instances")
     .update({
-      window_id: input.windowId,
+      window_id: input.dayTypeTimeBlockId ? null : input.windowId,
+      day_type_time_block_id: input.dayTypeTimeBlockId ?? null,
+      time_block_id: input.timeBlockId ?? null,
       start_utc: input.startUTC,
       end_utc: input.endUTC,
       duration_min: input.durationMin,
@@ -1242,7 +1256,7 @@ async function rescheduleInstance(
     .single();
 
   if (error) {
-    console.error("rescheduleInstance error", error);
+    log("error", "rescheduleInstance error", error);
     return null;
   }
 

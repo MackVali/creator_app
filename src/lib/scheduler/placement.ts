@@ -11,20 +11,78 @@ import {
 } from "./instanceRepo";
 import { addMin } from "./placer";
 import {
+  addDaysInTimeZone,
+  formatDateKeyInTimeZone,
   getDateTimeParts,
   makeZonedDate,
-  addDaysInTimeZone,
   setTimeInTimeZone,
+  startOfDayInTimeZone,
   weekdayInTimeZone,
 } from "./timezone";
 import { safeDate } from "./safeDate";
+import { overlapsHalfOpen } from "./intervals";
 import { fetchWindowsForDate, type WindowLite } from "./repo";
+import { log } from "@/lib/utils/logGate";
+import { getAvailabilityWindowKey } from "./windowKey";
 
 type Client = SupabaseClient<Database>;
 
+export type PlacementFailureStage =
+  | "availabilityBounds"
+  | "overlap"
+  | "durationTooLong"
+  | "nowConstraint"
+  | "other";
+
+export type PlacementDebugTrace = {
+  windowsConsidered: number;
+  longestWindowMinutes: number;
+  availabilityGapMinutes: number;
+  gapWithBlockersMinutes: number | null;
+  overlapBlockers: number;
+  notBeforeApplied: boolean;
+  failureStage: PlacementFailureStage;
+};
+
+type PlacementFailurePayloadError = "NO_FIT" | Error;
+
+export type PlacementFailureWindowDiagnostic = {
+  blockId: string;
+  windowId?: string | null;
+  dateIso: string;
+  freeSegmentMs: number;
+  collisionCount: number;
+  firstCollision?: {
+    itemId: string;
+    type: "PROJECT" | "HABIT";
+    start: string;
+    end: string;
+  };
+};
+
+type PlacementFailureDebug = {
+  windowDiagnostics: PlacementFailureWindowDiagnostic[];
+  largestFreeSegmentMs?: number | null;
+};
+
+type PlacementFailurePayload = {
+  error: PlacementFailurePayloadError;
+  maxGapMs?: number | null;
+  skippedDueToMaxGap?: boolean;
+  debug?: PlacementFailureDebug;
+};
+
 type PlacementResult =
   | PostgrestSingleResponse<ScheduleInstance>
-  | { error: "NO_FIT" | Error };
+  | PlacementFailurePayload;
+
+export type BlockerCache = Map<string, ScheduleInstance[]>;
+
+function buildBlockerCacheKey(dayKey: string, timeZone?: string | null) {
+  const resolvedZone =
+    typeof timeZone === "string" && timeZone.trim() ? timeZone.trim() : "UTC";
+  return `${dayKey}|${resolvedZone}`;
+}
 
 export async function fetchWindowsForRange(
   supabase: Client,
@@ -41,7 +99,7 @@ export async function fetchWindowsForRange(
     .eq("user_id", userId);
 
   if (error) {
-    console.error("fetchWindowsForRange error", error);
+    log("error", "fetchWindowsForRange error", error);
     return [];
   }
 
@@ -56,11 +114,203 @@ export async function fetchWindowsForRange(
     location_context_value:
       typeof record.location_context_id === "string" &&
       record.location_context_id.trim().length > 0
-        ? record.location_context?.value ?? null
+        ? (record.location_context?.value ?? null)
         : null,
     location_context_name: record.location_context?.label ?? null,
     window_kind: record.window_kind ?? "DEFAULT",
   })) as WindowLite[];
+}
+
+type MaxGapCacheOptions = {
+  notBeforeMs: number | null;
+  ignoreProjectIds?: Set<string>;
+  reuseInstanceId?: string | null;
+  ignoreSelfSourceId?: string | null;
+  ignoreSelfSourceType?: ScheduleInstance["source_type"] | null;
+};
+
+function buildMaxGapCacheKey(
+  date: Date,
+  windows: PlaceParams["windows"],
+  options: MaxGapCacheOptions
+) {
+  const dayKey = date.toISOString();
+  const windowFingerprint = windows
+    .map((win) => {
+      const windowKey = getAvailabilityWindowKey({
+        dayTypeTimeBlockId: win.dayTypeTimeBlockId ?? null,
+        windowId: win.dayTypeTimeBlockId ? null : win.id,
+        timeBlockId: win.dayTypeTimeBlockId ? win.id : win.timeBlockId ?? null,
+        startLocal: win.startLocal,
+        endLocal: win.endLocal,
+      });
+      const start = win.startLocal.toISOString();
+      const end = win.endLocal.toISOString();
+      const availableStart =
+        win.availableStartLocal?.toISOString() ?? win.startLocal.toISOString();
+      return `${windowKey}:${start}:${end}:${availableStart}`;
+    })
+    .join("|");
+  const ignoreKey = options.ignoreProjectIds
+    ? Array.from(options.ignoreProjectIds)
+        .sort()
+        .join(",")
+    : "";
+  const reuseKey = options.reuseInstanceId ?? "";
+  const notBeforeKey =
+    typeof options.notBeforeMs === "number"
+      ? options.notBeforeMs.toString()
+      : "none";
+  const selfBlockerKey =
+    options.ignoreSelfSourceId && options.ignoreSelfSourceId.length > 0
+      ? `${options.ignoreSelfSourceType ?? "ANY"}:${options.ignoreSelfSourceId}`
+      : "";
+  return `${dayKey}|${windowFingerprint}|${notBeforeKey}|${ignoreKey}|${reuseKey}|${selfBlockerKey}`;
+}
+
+function computeMaxGapMs(
+  windowRecords: Array<WindowGapRecord | null>,
+  instancesByWindow: ScheduleInstance[][],
+  options: MaxGapCacheOptions
+) {
+  let maxGapMs = 0;
+  for (const [index, record] of windowRecords.entries()) {
+    if (!record) continue;
+    const { startMs, endMs, availableStartMs } = record;
+    const windowStart = Math.max(
+      availableStartMs,
+      options.notBeforeMs ?? availableStartMs
+    );
+    if (windowStart >= endMs) continue;
+    const segments: Array<{ start: number; end: number }> = [];
+    const instances = instancesByWindow[index] ?? [];
+    for (const inst of instances) {
+      if (inst.status !== "scheduled") continue;
+      if (!shouldInstanceContributeToGap(inst, options)) continue;
+      const instStart = safeDate(inst.start_utc);
+      const instEnd = safeDate(inst.end_utc);
+      if (!instStart || !instEnd) continue;
+      const instStartMs = instStart.getTime();
+      const instEndMs = instEnd.getTime();
+      if (!overlapsHalfOpen(startMs, endMs, instStartMs, instEndMs)) continue;
+      segments.push({
+        start: Math.max(instStartMs, startMs),
+        end: Math.min(instEndMs, endMs),
+      });
+    }
+    segments.sort((a, b) => a.start - b.start);
+    let cursor = windowStart;
+    for (const segment of segments) {
+      if (segment.end <= cursor) continue;
+      if (segment.start > cursor) {
+        maxGapMs = Math.max(maxGapMs, segment.start - cursor);
+      }
+      cursor = Math.max(cursor, segment.end);
+      if (cursor >= endMs) break;
+    }
+    if (cursor < endMs) {
+      maxGapMs = Math.max(maxGapMs, endMs - cursor);
+    }
+  }
+  return maxGapMs;
+}
+
+function shouldInstanceContributeToGap(
+  inst: ScheduleInstance,
+  options: MaxGapCacheOptions
+): boolean {
+  if (!inst) return false;
+  if (
+    options.reuseInstanceId &&
+    inst.id &&
+    options.reuseInstanceId === inst.id
+  ) {
+    return false;
+  }
+  if (
+    options.ignoreSelfSourceId &&
+    inst.source_id === options.ignoreSelfSourceId &&
+    (!options.ignoreSelfSourceType ||
+      inst.source_type === options.ignoreSelfSourceType)
+  ) {
+    return false;
+  }
+  if (options.ignoreProjectIds && inst.source_type === "PROJECT") {
+    const projectId = inst.source_id ?? "";
+    if (projectId && options.ignoreProjectIds.has(projectId)) {
+      return false;
+    }
+  }
+  return inst.status === "scheduled";
+}
+
+function hasValidInstanceBounds(inst: ScheduleInstance) {
+  const instStart = safeDate(inst.start_utc);
+  const instEnd = safeDate(inst.end_utc);
+  return (
+    Boolean(instStart && instEnd) &&
+    instEnd.getTime() > instStart.getTime()
+  );
+}
+
+function describeInstanceCollision(
+  inst?: ScheduleInstance | null
+): {
+  itemId: string;
+  type: "PROJECT" | "HABIT";
+  start: string;
+  end: string;
+} | undefined {
+  if (!inst) return undefined;
+  const start = inst.start_utc ?? inst.startUtc ?? inst.start ?? null;
+  const end = inst.end_utc ?? inst.endUtc ?? inst.end ?? null;
+  if (!start || !end) return undefined;
+  const itemId = inst.source_id ?? inst.id ?? "";
+  const type = inst.source_type === "HABIT" ? "HABIT" : "PROJECT";
+  return {
+    itemId,
+    type,
+    start,
+    end,
+  };
+}
+
+function computeLargestGapMs(
+  windowStartMs: number,
+  windowEndMs: number,
+  blockers: ScheduleInstance[]
+) {
+  let largest = 0;
+  const segments = blockers
+    .map((inst) => {
+      const instStart = safeDate(inst.start_utc);
+      const instEnd = safeDate(inst.end_utc);
+      if (!instStart || !instEnd) return null;
+      const startMs = Math.max(instStart.getTime(), windowStartMs);
+      const endMs = Math.min(instEnd.getTime(), windowEndMs);
+      if (endMs <= startMs) return null;
+      return { startMs, endMs };
+    })
+    .filter(
+      (segment): segment is { startMs: number; endMs: number } => Boolean(segment)
+    )
+    .sort((a, b) => a.startMs - b.startMs);
+
+  let cursor = windowStartMs;
+  for (const segment of segments) {
+    if (segment.endMs <= cursor) continue;
+    if (segment.startMs > cursor) {
+      largest = Math.max(largest, segment.startMs - cursor);
+    }
+    cursor = Math.max(cursor, segment.endMs);
+    if (cursor >= windowEndMs) {
+      break;
+    }
+  }
+  if (cursor < windowEndMs) {
+    largest = Math.max(largest, windowEndMs - cursor);
+  }
+  return largest;
 }
 
 function crosses(win: WindowLite): boolean {
@@ -114,6 +364,12 @@ type PlaceParams = {
     availableStartLocal?: Date;
     key?: string;
     fromPrevDay?: boolean;
+    dayTypeTimeBlockId?: string | null;
+    timeBlockId?: string | null;
+    start_local?: string | null;
+    end_local?: string | null;
+    dayTypeStartUtcMs?: number | null;
+    dayTypeEndUtcMs?: number | null;
   }>;
   date: Date;
   timeZone?: string | null;
@@ -127,7 +383,113 @@ type PlaceParams = {
   projectGlobalRankMap?: Map<string, number | null>;
   windowEdgePreference?: string | null;
   metadata?: ScheduleInstance["metadata"];
+  maxGapCache?: Map<string, number>;
+  blockerCache?: BlockerCache;
+  debugEnabled?: boolean;
+  debugOnFailure?: (info: PlacementDebugTrace) => void;
 };
+
+type PlaceWindow = PlaceParams["windows"][number];
+
+type WindowGapRecord = {
+  startMs: number;
+  endMs: number;
+  availableStartMs: number;
+};
+
+function parseLocalClock(value?: string | null): { hour: number; minute: number } | null {
+  if (!value || typeof value !== "string") return null;
+  const parts = value.split(":").map((part) => Number.parseInt(part, 10));
+  if (parts.length === 0) return null;
+  const [hour = 0, minute = 0] = parts;
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return { hour, minute };
+}
+
+function isIsoLikeTimestamp(value?: string | null): boolean {
+  if (!value || typeof value !== "string") return false;
+  return /^\d{4}-\d{2}-\d{2}/.test(value);
+}
+
+function anchorDayForPlacementWindow(
+  date: Date,
+  timeZone: string,
+  fromPrevDay?: boolean
+) {
+  const baseDay = startOfDayInTimeZone(date, timeZone);
+  return fromPrevDay
+    ? addDaysInTimeZone(baseDay, 1, timeZone)
+    : baseDay;
+}
+
+function resolveWindowStartInstant(
+  win: PlaceWindow,
+  date: Date,
+  timeZone: string
+): Date | null {
+  if (typeof win.dayTypeStartUtcMs === "number") {
+    const fromMs = new Date(win.dayTypeStartUtcMs);
+    return Number.isFinite(fromMs.getTime()) ? fromMs : null;
+  }
+  const clock = parseLocalClock(win.start_local);
+  if (clock) {
+    const anchorDay = anchorDayForPlacementWindow(
+      date,
+      timeZone,
+      win.fromPrevDay ?? false
+    );
+    return setTimeInTimeZone(anchorDay, timeZone, clock.hour, clock.minute);
+  }
+  if (win.startLocal instanceof Date) {
+    return safeDate(win.startLocal);
+  }
+  return null;
+}
+
+function resolveWindowEndInstant(
+  win: PlaceWindow,
+  date: Date,
+  timeZone: string,
+  startInstant: Date
+): Date | null {
+  if (typeof win.dayTypeEndUtcMs === "number") {
+    const fromMs = new Date(win.dayTypeEndUtcMs);
+    return Number.isFinite(fromMs.getTime()) ? fromMs : null;
+  }
+  const clock = parseLocalClock(win.end_local);
+  if (clock) {
+    const anchorDay = anchorDayForPlacementWindow(
+      date,
+      timeZone,
+      win.fromPrevDay ?? false
+    );
+    let endDate = setTimeInTimeZone(anchorDay, timeZone, clock.hour, clock.minute);
+    if (endDate <= startInstant) {
+      const nextDay = addDaysInTimeZone(anchorDay, 1, timeZone);
+      endDate = setTimeInTimeZone(nextDay, timeZone, clock.hour, clock.minute);
+    }
+    return endDate;
+  }
+  if (win.endLocal instanceof Date) {
+    return safeDate(win.endLocal);
+  }
+  return null;
+}
+
+function resolveAvailableStartInstant(
+  win: PlaceWindow,
+  fallback: Date
+): Date {
+  const candidate = win.availableStartLocal;
+  if (candidate instanceof Date) {
+    const clone = new Date(candidate.getTime());
+    if (Number.isFinite(clone.getTime())) return clone;
+  } else if (typeof candidate === "string" && isIsoLikeTimestamp(candidate)) {
+    const parsed = new Date(candidate);
+    if (Number.isFinite(parsed.getTime())) return parsed;
+  }
+  return fallback;
+}
 
 const normalizeHabitTypeValue = (value?: string | null) => {
   const raw = (value ?? "HABIT").toUpperCase();
@@ -141,19 +503,19 @@ function logPlacementFailure(params: {
   finalAvailabilityBounds?: { startMs: number; endMs: number } | null;
   windowEdgePreference?: string | null;
   failureReason: string;
+  debugEnabled?: boolean;
 }) {
+  if (params.debugEnabled) return;
   if (params.item.sourceType !== "HABIT") return; // Suppress PROJECT failures
-  console.log(
-    JSON.stringify({
-      habit_id: params.item.id,
-      habit_type: params.habitType,
-      duration_minutes: params.item.duration_min,
-      window_ids_attempted: params.windowIdsAttempted,
-      final_availability_bounds: params.finalAvailabilityBounds,
-      window_edge_preference: params.windowEdgePreference,
-      exact_check_failed: params.failureReason,
-    })
-  );
+  log("debug", "[PLACEMENT_FAILURE]", {
+    habit_id: params.item.id,
+    habit_type: params.habitType,
+    duration_minutes: params.item.duration_min,
+    window_ids_attempted: params.windowIdsAttempted,
+    final_availability_bounds: params.finalAvailabilityBounds,
+    window_edge_preference: params.windowEdgePreference,
+    exact_check_failed: params.failureReason,
+  });
 }
 
 function rankOrInf(
@@ -190,6 +552,53 @@ function pickEvictionLoser(
   if (incomingW !== existingW)
     return incomingW > existingW ? "existing" : "incoming";
   return incoming.id.localeCompare(existing.id) < 0 ? "existing" : "incoming";
+}
+
+function determinePlacementFailureStage(params: {
+  durationMs: number;
+  longestWindowMs: number;
+  availabilityGapMs: number;
+  maxGapMs: number | null;
+  dayBlockingInstances: ScheduleInstance[];
+  notBeforeMs: number | null;
+  windowRecords: WindowGapRecord[];
+}): PlacementFailureStage {
+  const {
+    durationMs,
+    longestWindowMs,
+    availabilityGapMs,
+    maxGapMs,
+    dayBlockingInstances,
+    notBeforeMs,
+    windowRecords,
+  } = params;
+  const durationPositive = durationMs > 0;
+  if (windowRecords.length === 0) {
+    return "other";
+  }
+  if (durationPositive && availabilityGapMs < durationMs) {
+    return "availabilityBounds";
+  }
+  if (durationPositive && maxGapMs !== null && maxGapMs < durationMs) {
+    return "overlap";
+  }
+  if (durationPositive && longestWindowMs > 0 && durationMs > longestWindowMs) {
+    return "durationTooLong";
+  }
+  if (
+    durationPositive &&
+    notBeforeMs !== null &&
+    windowRecords.every((record) => {
+      const start = Math.max(record.availableStartMs, notBeforeMs);
+      return start + durationMs > record.endMs;
+    })
+  ) {
+    return "nowConstraint";
+  }
+  if (dayBlockingInstances.length > 0) {
+    return "overlap";
+  }
+  return "other";
 }
 
 type ScheduleInstanceLite = {
@@ -260,18 +669,24 @@ export async function findEarliestHighSlot(
         if (!inst) return false;
         const instStart = safeDate(inst.start_utc);
         if (!instStart) return false;
-        const instDayParts = getDateTimeParts(instStart, resolvedTimeZone);
-        if (
-          instDayParts.year !== targetDayParts.year ||
-          instDayParts.month !== targetDayParts.month ||
-          instDayParts.day !== targetDayParts.day
-        ) {
-          return false;
+        if (win.fromPrevDay !== true) {
+          const instDayParts = getDateTimeParts(instStart, resolvedTimeZone);
+          if (
+            instDayParts.year !== targetDayParts.year ||
+            instDayParts.month !== targetDayParts.month ||
+            instDayParts.day !== targetDayParts.day
+          ) {
+            return false;
+          }
         }
+        if (inst.status !== "scheduled") return false;
         if (!isBlockingStatus(inst.status)) return false;
         const instStartMs = instStart.getTime();
-        const instEndMs = new Date(inst.end_utc).getTime();
-        return instEndMs > startMs && instStartMs < windowEndMs;
+        const instEnd = safeDate(inst.end_utc);
+        if (!instEnd) return false;
+        const instEndMs = instEnd.getTime();
+        if (!Number.isFinite(instEndMs)) return false;
+        return overlapsHalfOpen(startMs, windowEndMs, instStartMs, instEndMs);
       });
     }
 
@@ -319,6 +734,7 @@ export async function placeItemInWindows(
     userId,
     item,
     windows,
+    date,
     timeZone,
     client,
     reuseInstanceId,
@@ -329,7 +745,12 @@ export async function placeItemInWindows(
     projectGlobalRankMap,
     windowEdgePreference,
     metadata,
+    maxGapCache,
+    blockerCache,
+    debugEnabled,
+    debugOnFailure,
   } = params;
+  const cache = blockerCache ?? null;
   let best: null | {
     window: (typeof windows)[number];
     windowIndex: number;
@@ -337,143 +758,416 @@ export async function placeItemInWindows(
   } = null;
 
   const resolvedTimeZone = timeZone ?? "UTC";
-  const targetDayParts = getDateTimeParts(params.date, resolvedTimeZone);
 
   const notBeforeMs = notBefore ? notBefore.getTime() : null;
   const durationMs = Math.max(0, item.duration_min) * 60000;
   const candidateIsSync =
     item.sourceType === "HABIT" &&
     normalizeHabitTypeValue(habitTypeById?.get(item.id) ?? "HABIT") === "SYNC";
+  const isBlockingStatus = (status?: ScheduleInstance["status"] | null) =>
+    status === "scheduled";
+  const selfBlockingSourceId =
+    item.sourceType === "PROJECT" ? item.id : null;
+  const selfBlockingSourceType =
+    selfBlockingSourceId !== null ? item.sourceType : null;
+  const shouldIgnoreSelfBlocker = (inst?: ScheduleInstance | null) => {
+    if (!inst || !selfBlockingSourceId) return false;
+    if (
+      selfBlockingSourceType &&
+      inst.source_type !== selfBlockingSourceType
+    ) {
+      return false;
+    }
+    return inst.source_id === selfBlockingSourceId;
+  };
 
-  for (const [index, w] of windows.entries()) {
-    const windowStart = new Date(w.availableStartLocal ?? w.startLocal);
-    const windowEnd = new Date(w.endLocal);
+  // Build per-window records using the same time resolution logic as the rest of placement.
+  // IMPORTANT: start_local/end_local are "HH:mm" strings; never use new Date("HH:mm").
+  const windowRecordsByWindow: Array<WindowGapRecord | null> = windows.map((win) => {
+    const startInstant = resolveWindowStartInstant(win, date, resolvedTimeZone);
+    if (!startInstant) return null;
 
-    const windowStartMs = windowStart.getTime();
-    const windowEndMs = windowEnd.getTime();
+    const endInstant = resolveWindowEndInstant(
+      win,
+      date,
+      resolvedTimeZone,
+      startInstant
+    );
+    if (!endInstant) return null;
 
-    if (typeof notBeforeMs === "number" && windowEndMs <= notBeforeMs) {
-      continue;
+    const startMs = startInstant.getTime();
+    const endMs = endInstant.getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+      return null;
     }
 
-    const startMs =
-      typeof notBeforeMs === "number"
-        ? Math.max(windowStartMs, notBeforeMs)
-        : windowStartMs;
-    const rangeStart = new Date(startMs);
+    const availableStartInstant = resolveAvailableStartInstant(win, startInstant);
+    const availableStartMs = availableStartInstant.getTime();
+    const safeAvailableStartMs = Number.isFinite(availableStartMs)
+      ? availableStartMs
+      : startMs;
 
-    let taken: ScheduleInstance[] = [];
-    const isBlockingStatus = (status?: ScheduleInstance["status"] | null) =>
-      status === "scheduled";
+    return { startMs, endMs, availableStartMs: Math.max(startMs, safeAvailableStartMs) };
+  });
+  const windowRecords: WindowGapRecord[] = windowRecordsByWindow.filter(
+    (rec): rec is WindowGapRecord => rec !== null
+  );
 
+  const availabilityGapMs = windowRecords.reduce((max, record) => {
+    const start =
+      notBeforeMs !== null
+        ? Math.max(record.availableStartMs, notBeforeMs)
+        : record.availableStartMs;
+    const gap = Math.max(0, record.endMs - start);
+    return Math.max(max, gap);
+  }, 0);
+  const longestWindowMs = windowRecords.reduce(
+    (max, record) => Math.max(max, record.endMs - record.startMs),
+    0
+  );
+
+  const rangeStartMs = windowRecords.reduce(
+    (min, record) => Math.min(min, record.startMs),
+    Number.POSITIVE_INFINITY
+  );
+  const rangeEndMs = windowRecords.reduce(
+    (max, record) => Math.max(max, record.endMs),
+    Number.NEGATIVE_INFINITY
+  );
+
+  const dayKey = formatDateKeyInTimeZone(date, resolvedTimeZone);
+  const rangeValid =
+    Number.isFinite(rangeStartMs) &&
+    Number.isFinite(rangeEndMs) &&
+    rangeEndMs > rangeStartMs;
+  const cacheKey =
+    cache && rangeValid
+      ? buildBlockerCacheKey(dayKey, resolvedTimeZone)
+      : null;
+
+  const scheduleDateIso = params.date.toISOString();
+  const windowDiagnostics: PlacementFailureWindowDiagnostic[] = [];
+  const recordWindowDiagnostic = (
+    diag: Omit<PlacementFailureWindowDiagnostic, "dateIso">
+  ) => {
+    const entry: PlacementFailureWindowDiagnostic = {
+      ...diag,
+      dateIso: scheduleDateIso,
+    };
+    const diagnosticsList = Array.isArray(windowDiagnostics)
+      ? windowDiagnostics
+      : [];
+    diagnosticsList.push(entry);
+    diagnosticsList.sort((a, b) => b.freeSegmentMs - a.freeSegmentMs);
+    if (diagnosticsList.length > 3) {
+      diagnosticsList.length = 3;
+    }
+  };
+
+  async function loadDayBlockingInstances(
+    cacheInstance: BlockerCache | null,
+    cacheKeyValue: string | null
+  ): Promise<ScheduleInstance[]> {
     if (existingInstances) {
-      taken = existingInstances.filter((inst): inst is ScheduleInstance => {
-        if (!inst) return false;
-        const instStart = safeDate(inst.start_utc);
-        if (!instStart) return false;
-        const instDayParts = getDateTimeParts(instStart, resolvedTimeZone);
-        if (
-          instDayParts.year !== targetDayParts.year ||
-          instDayParts.month !== targetDayParts.month ||
-          instDayParts.day !== targetDayParts.day
-        ) {
-          return false;
-        }
-        if (!isBlockingStatus(inst.status)) return false;
-        const instStartMs = instStart.getTime();
-        const instEndMs = new Date(inst.end_utc ?? "").getTime();
-        return instEndMs > startMs && instStartMs < windowEndMs;
-      });
-    } else {
-      const { data, error } = await fetchInstancesForRange(
-        userId,
-        rangeStart.toISOString(),
-        windowEnd.toISOString(),
-        client
-      );
-      if (error) {
-        return { error };
+      if (!rangeValid) {
+        return [];
       }
-      taken = (data ?? []).filter(
-        (inst) =>
-          inst && isBlockingStatus(inst.status) && inst.status !== "canceled"
+      return existingInstances.filter(
+        (inst): inst is ScheduleInstance => {
+          if (
+            !inst ||
+            !isBlockingStatus(inst.status) ||
+            inst.status === "canceled" ||
+            !hasValidInstanceBounds(inst)
+          ) {
+            return false;
+          }
+          const instStart = safeDate(inst.start_utc);
+          const instEnd = safeDate(inst.end_utc);
+          if (!instStart || !instEnd) {
+            return false;
+          }
+          return overlapsHalfOpen(
+            rangeStartMs,
+            rangeEndMs,
+            instStart.getTime(),
+            instEnd.getTime()
+          );
+        }
       );
     }
 
-    const capacityBlockers: ScheduleInstance[] = [];
-    const syncBlockers: ScheduleInstance[] = [];
-    const projectBlockers: ScheduleInstance[] = [];
+    if (!rangeValid) {
+      return [];
+    }
 
-    for (const inst of taken) {
-      if (!inst) continue;
-      if (inst.id === reuseInstanceId) continue;
+    const cached = cacheKeyValue && cacheInstance ? cacheInstance.get(cacheKeyValue) : null;
+    if (cached) {
+      return cached;
+    }
+
+    const { data, error } = await fetchInstancesForRange(
+      userId,
+      new Date(rangeStartMs).toISOString(),
+      new Date(rangeEndMs).toISOString(),
+      client,
+      { suppressQueryLog: Boolean(debugEnabled) }
+    );
+    if (error) {
+      throw error;
+    }
+
+    const filtered = (data ?? []).filter(
+      (inst): inst is ScheduleInstance =>
+        Boolean(inst) &&
+        isBlockingStatus(inst.status) &&
+        inst.status !== "canceled" &&
+        hasValidInstanceBounds(inst)
+    );
+
+    if (cacheKeyValue && cacheInstance) {
+      cacheInstance.set(cacheKeyValue, filtered);
+    }
+
+    return filtered;
+  }
+
+  let dayBlockingInstances: ScheduleInstance[];
+  try {
+    dayBlockingInstances = await loadDayBlockingInstances(cache, cacheKey);
+  } catch (error) {
+    return { error: error as Error };
+  }
+
+  const filterBlockersForWindow = (
+    windowStartMs: number,
+    windowEndMs: number
+  ): ScheduleInstance[] =>
+    dayBlockingInstances.filter((inst) => {
+      if (!inst) return false;
+      if (inst.status !== "scheduled") return false;
+      if (inst.status === "canceled") return false;
+      if (!hasValidInstanceBounds(inst)) return false;
+      if (shouldIgnoreSelfBlocker(inst)) return false;
+      if (inst.id === reuseInstanceId) return false;
       if (ignoreProjectIds && inst.source_type === "PROJECT") {
         const projectId = inst.source_id ?? "";
         if (projectId && ignoreProjectIds.has(projectId)) {
-          continue;
+          return false;
         }
       }
-      if (inst.source_type === "HABIT") {
-        const habitType = normalizeHabitTypeValue(
-          habitTypeById?.get(inst.source_id ?? "") ?? "HABIT"
-        );
-        if (habitType === "SYNC") {
-          syncBlockers.push(inst);
-        } else {
-          capacityBlockers.push(inst);
+      const instStart = safeDate(inst.start_utc);
+      const instEnd = safeDate(inst.end_utc);
+      if (!instStart || !instEnd) return false;
+      const instStartMs = instStart.getTime();
+      const instEndMs = instEnd.getTime();
+      if (instStartMs >= windowEndMs || instEndMs <= windowStartMs) {
+        return false;
+      }
+      return true;
+    });
+
+  const windowScopedBlockersByWindow = windowRecordsByWindow.map((record) =>
+    record ? filterBlockersForWindow(record.startMs, record.endMs) : []
+  );
+
+  const shouldEvaluateMaxGap =
+    !candidateIsSync && windowRecords.length > 0 && durationMs > 0;
+  const gapCache = maxGapCache ?? new Map<string, number>();
+  let skipDayForMaxGap = false;
+  let computedMaxGapMs: number | null = null;
+  if (shouldEvaluateMaxGap) {
+    const baseCacheKey = buildMaxGapCacheKey(params.date, windows, {
+      notBeforeMs,
+      ignoreProjectIds,
+      reuseInstanceId,
+      ignoreSelfSourceId: selfBlockingSourceId,
+      ignoreSelfSourceType: selfBlockingSourceType,
+    });
+    const cacheKey = `${baseCacheKey}:${item.duration_min}`;
+    let maxGapMs = gapCache.get(cacheKey);
+    if (maxGapMs === undefined) {
+      maxGapMs = computeMaxGapMs(
+        windowRecordsByWindow,
+        windowScopedBlockersByWindow,
+        {
+          notBeforeMs,
+          ignoreProjectIds,
+          reuseInstanceId,
+          ignoreSelfSourceId: selfBlockingSourceId,
+          ignoreSelfSourceType: selfBlockingSourceType,
         }
+      );
+      gapCache.set(cacheKey, maxGapMs);
+    }
+    computedMaxGapMs = maxGapMs;
+    skipDayForMaxGap = maxGapMs < durationMs;
+  }
+
+  if (skipDayForMaxGap) {
+    const failureStage = determinePlacementFailureStage({
+      durationMs,
+      longestWindowMs,
+      availabilityGapMs,
+      maxGapMs: computedMaxGapMs,
+      dayBlockingInstances,
+      notBeforeMs,
+      windowRecords,
+    });
+    debugOnFailure?.({
+      windowsConsidered: windows.length,
+      longestWindowMinutes: Math.round(longestWindowMs / 60000),
+      availabilityGapMinutes: Math.round(availabilityGapMs / 60000),
+      gapWithBlockersMinutes:
+        computedMaxGapMs !== null
+          ? Math.round(computedMaxGapMs / 60000)
+          : null,
+      overlapBlockers: dayBlockingInstances.length,
+      notBeforeApplied: notBeforeMs !== null,
+      failureStage,
+    });
+    if (windowRecordsByWindow.length > 0) {
+      for (const [index, record] of windowRecordsByWindow.entries()) {
+        if (!record) continue;
+        const windowDef = windows[index];
+        if (!windowDef) continue;
+        const taken = filterBlockersForWindow(record.startMs, record.endMs);
+        const freeSegmentMs = computeLargestGapMs(
+          record.startMs,
+          record.endMs,
+          taken
+        );
+        recordWindowDiagnostic({
+          blockId: windowDef.key ?? windowDef.id,
+          windowId: windowDef.id ?? null,
+          freeSegmentMs,
+          collisionCount: taken.length,
+          firstCollision: describeInstanceCollision(taken[0]),
+        });
+      }
+    }
+    return {
+      error: "NO_FIT",
+      skippedDueToMaxGap: true,
+      maxGapMs: computedMaxGapMs,
+      debug: {
+        windowDiagnostics: windowDiagnostics.slice(),
+        largestFreeSegmentMs: computedMaxGapMs ?? null,
+      },
+    };
+  }
+
+  if (!skipDayForMaxGap) {
+    for (const [index, w] of windows.entries()) {
+      const windowRecord = windowRecordsByWindow[index];
+      if (!windowRecord) {
         continue;
       }
-      if (inst.source_type === "PROJECT") {
-        projectBlockers.push(inst);
+      const windowStartMs = windowRecord.startMs;
+      const windowEndMs = windowRecord.endMs;
+      const effectiveWindowStartMs = Math.max(
+        windowStartMs,
+        windowRecord.availableStartMs
+      );
+
+      if (typeof notBeforeMs === "number" && windowEndMs <= notBeforeMs) {
+        continue;
       }
-      capacityBlockers.push(inst);
-    }
 
-    const sorted = (candidateIsSync ? [] : capacityBlockers).sort(
-      (a, b) =>
-        new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
-    );
-    const hardBlockers = candidateIsSync ? [] : capacityBlockers;
+      const startMs =
+        typeof notBeforeMs === "number"
+          ? Math.max(effectiveWindowStartMs, notBeforeMs)
+          : effectiveWindowStartMs;
 
-    const hasSyncOverlapLimit = (
-      startMs: number,
-      endMs: number,
-      blocks: ScheduleInstance[],
-      limit: number
-    ) => {
-      const events: Array<{ time: number; delta: number }> = [];
-      for (const block of blocks) {
-        const blockStartMs = new Date(block.start_utc).getTime();
-        const blockEndMs = new Date(block.end_utc).getTime();
-        if (!Number.isFinite(blockStartMs) || !Number.isFinite(blockEndMs)) {
+      const taken = filterBlockersForWindow(windowStartMs, windowEndMs);
+      const windowBlockId = w.key ?? w.id;
+      const freeSegmentMs = computeLargestGapMs(
+        windowStartMs,
+        windowEndMs,
+        taken
+      );
+      recordWindowDiagnostic({
+        blockId: windowBlockId,
+        windowId: w.id ?? null,
+        freeSegmentMs,
+        collisionCount: taken.length,
+        firstCollision: describeInstanceCollision(taken[0]),
+      });
+
+      const capacityBlockers: ScheduleInstance[] = [];
+      const syncBlockers: ScheduleInstance[] = [];
+      const projectBlockers: ScheduleInstance[] = [];
+
+      for (const inst of taken) {
+        if (!inst) continue;
+        if (inst.id === reuseInstanceId) continue;
+        if (ignoreProjectIds && inst.source_type === "PROJECT") {
+          const projectId = inst.source_id ?? "";
+          if (projectId && ignoreProjectIds.has(projectId)) {
+            continue;
+          }
+        }
+        if (inst.source_type === "HABIT") {
+          const habitType = normalizeHabitTypeValue(
+            habitTypeById?.get(inst.source_id ?? "") ?? "HABIT"
+          );
+          if (habitType === "SYNC") {
+            syncBlockers.push(inst);
+          } else {
+            capacityBlockers.push(inst);
+          }
           continue;
         }
-        if (blockEndMs <= startMs || blockStartMs >= endMs) continue;
-        const overlapStart = Math.max(blockStartMs, startMs);
-        const overlapEnd = Math.min(blockEndMs, endMs);
-        if (overlapEnd <= overlapStart) continue;
-        events.push({ time: overlapStart, delta: 1 });
-        events.push({ time: overlapEnd, delta: -1 });
-      }
-      if (events.length === 0) return false;
-      events.sort((a, b) => a.time - b.time || a.delta - b.delta);
-      let active = 0;
-      let prevTime = startMs;
-      let index = 0;
-      while (index < events.length) {
-        const time = events[index].time;
-        if (active >= limit && time > prevTime) {
-          return true;
+        if (inst.source_type === "PROJECT") {
+          projectBlockers.push(inst);
         }
-        while (index < events.length && events[index].time === time) {
-          active += events[index].delta;
-          index += 1;
-        }
-        prevTime = time;
+        capacityBlockers.push(inst);
       }
-      return active >= limit;
-    };
+
+      const sorted = (candidateIsSync ? [] : capacityBlockers).sort(
+        (a, b) =>
+          new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
+      );
+      const hardBlockers = candidateIsSync ? [] : capacityBlockers;
+
+      const hasSyncOverlapLimit = (
+        startMs: number,
+        endMs: number,
+        blocks: ScheduleInstance[],
+        limit: number
+      ) => {
+        const events: Array<{ time: number; delta: number }> = [];
+        for (const block of blocks) {
+          const blockStartMs = new Date(block.start_utc).getTime();
+          const blockEndMs = new Date(block.end_utc).getTime();
+          if (!Number.isFinite(blockStartMs) || !Number.isFinite(blockEndMs)) {
+            continue;
+          }
+          if (!overlapsHalfOpen(startMs, endMs, blockStartMs, blockEndMs)) continue;
+          const overlapStart = Math.max(blockStartMs, startMs);
+          const overlapEnd = Math.min(blockEndMs, endMs);
+          if (overlapEnd <= overlapStart) continue;
+          events.push({ time: overlapStart, delta: 1 });
+          events.push({ time: overlapEnd, delta: -1 });
+        }
+        if (events.length === 0) return false;
+        events.sort((a, b) => a.time - b.time || a.delta - b.delta);
+        let active = 0;
+        let prevTime = startMs;
+        let index = 0;
+        while (index < events.length) {
+          const time = events[index].time;
+          if (active >= limit && time > prevTime) {
+            return true;
+          }
+          while (index < events.length && events[index].time === time) {
+            active += events[index].delta;
+            index += 1;
+          }
+          prevTime = time;
+        }
+        return active >= limit;
+      };
 
     const findSyncCandidate = () => {
       if (durationMs <= 0) {
@@ -613,7 +1307,7 @@ export async function placeItemInWindows(
         process.env.DEBUG_OVERNIGHT === "true" &&
         item.id.startsWith("proj-overnight")
       ) {
-        console.log("overnight candidate", {
+        log("debug", "overnight candidate", {
           itemId: item.id,
           windowId: w.id,
           start: candidate.toISOString(),
@@ -623,22 +1317,53 @@ export async function placeItemInWindows(
     }
   }
 
+  }
+
   if (!best) {
     logPlacementFailure({
       item,
       habitType: habitTypeById?.get(item.id),
       windowIdsAttempted: windows.map((w) => w.id),
       finalAvailabilityBounds:
-        windows.length > 0
+        windowRecords.length > 0
           ? {
-              startMs: windows[0].availableStartLocal?.getTime() ?? null,
-              endMs: windows[0].endLocal?.getTime() ?? null,
+              startMs: windowRecords[0].availableStartMs,
+              endMs: windowRecords[0].endMs,
             }
           : null,
       windowEdgePreference,
       failureReason: "no_compatible_window_found",
+      debugEnabled: params.debugEnabled,
     });
-    return { error: "NO_FIT" };
+    const failureStage = determinePlacementFailureStage({
+      durationMs,
+      longestWindowMs,
+      availabilityGapMs,
+      maxGapMs: computedMaxGapMs,
+      dayBlockingInstances,
+      notBeforeMs,
+      windowRecords,
+    });
+    debugOnFailure?.({
+      windowsConsidered: windows.length,
+      longestWindowMinutes: Math.round(longestWindowMs / 60000),
+      availabilityGapMinutes: Math.round(availabilityGapMs / 60000),
+      gapWithBlockersMinutes:
+        computedMaxGapMs !== null
+          ? Math.round(computedMaxGapMs / 60000)
+          : null,
+      overlapBlockers: dayBlockingInstances.length,
+      notBeforeApplied: notBeforeMs !== null,
+      failureStage,
+    });
+    return {
+      error: "NO_FIT",
+      maxGapMs: computedMaxGapMs,
+      debug: {
+        windowDiagnostics: windowDiagnostics.slice(),
+        largestFreeSegmentMs: computedMaxGapMs ?? null,
+      },
+    };
   }
 
   let startUtc = safeDate(best.start);
@@ -650,8 +1375,9 @@ export async function placeItemInWindows(
       finalAvailabilityBounds: null,
       windowEdgePreference,
       failureReason: "invalid_start_date",
+      debugEnabled: params.debugEnabled,
     });
-    return { error: "NO_FIT" };
+    return { error: "NO_FIT", maxGapMs: computedMaxGapMs };
   }
   let endUtc = safeDate(addMin(best.start, item.duration_min));
   if (!endUtc) {
@@ -662,8 +1388,9 @@ export async function placeItemInWindows(
       finalAvailabilityBounds: null,
       windowEdgePreference,
       failureReason: "invalid_end_date",
+      debugEnabled: params.debugEnabled,
     });
-    return { error: "NO_FIT" };
+    return { error: "NO_FIT", maxGapMs: computedMaxGapMs };
   }
   let durationMin = item.duration_min;
   // Only apply day boundary clamp for HABIT items, not PROJECT items
@@ -688,7 +1415,7 @@ export async function placeItemInWindows(
     if (endUtc.getTime() > maxEndMs) {
       endUtc = safeDate(new Date(maxEndMs));
       if (!endUtc) {
-        return { error: "NO_FIT" };
+        return { error: "NO_FIT", maxGapMs: computedMaxGapMs };
       }
       const durationMs = endUtc.getTime() - startUtc.getTime();
       if (durationMs <= 0) {
@@ -699,8 +1426,9 @@ export async function placeItemInWindows(
           finalAvailabilityBounds: null,
           windowEdgePreference,
           failureReason: "day_boundary_clamp_exceeded",
+          debugEnabled: params.debugEnabled,
         });
-        return { error: "NO_FIT" };
+        return { error: "NO_FIT", maxGapMs: computedMaxGapMs };
       }
       durationMin = Math.max(1, Math.round(durationMs / 60000));
     }
@@ -713,21 +1441,63 @@ export async function placeItemInWindows(
       const instStart = safeDate(inst.start_utc);
       const instEnd = safeDate(inst.end_utc);
       if (!instStart || !instEnd) return false;
-      return (
-        instEnd.getTime() > startUtc.getTime() &&
-        instStart.getTime() < endUtc.getTime()
+      return overlapsHalfOpen(
+        startUtc.getTime(),
+        endUtc.getTime(),
+        instStart.getTime(),
+        instEnd.getTime()
       );
     });
     if (hasOverlap) {
-      return { error: "NO_FIT" };
+      return { error: "NO_FIT", maxGapMs: computedMaxGapMs };
     }
   }
+
+  // Helper function to extract window references from window-like objects
+  function extractWindowRefs(winLike: any): {
+    legacyWindowId: string | null;
+    dayTypeTimeBlockId: string | null;
+    timeBlockId: string | null;
+  } {
+    // Try to find the WindowLite object at common locations
+    const w = winLike.window ?? winLike.baseWindow ?? winLike;
+
+    // Read the dayTypeTimeBlockId (try both camelCase and snake_case)
+    const dttbId = w.dayTypeTimeBlockId ?? w.day_type_time_block_id ?? null;
+    const timeBlockId =
+      (w as any).timeBlockId ?? w.time_block_id ?? w.id ?? null;
+
+    // Determine legacy vs day-type window
+    if (dttbId !== null && dttbId !== undefined) {
+      // Day-type window
+      return {
+        legacyWindowId: null,
+        dayTypeTimeBlockId: dttbId,
+        timeBlockId: timeBlockId,
+      };
+    } else {
+      // Legacy window
+      return {
+        legacyWindowId: timeBlockId, // The legacy windows.id
+        dayTypeTimeBlockId: null,
+        timeBlockId: null,
+      };
+    }
+  }
+
+  // Extract window references from the best.window occurrence
+  // Note: best.window is a window occurrence object of type:
+  // {id: string, startLocal: Date, endLocal: Date, ...}
+  // The underlying WindowLite properties (including dayTypeTimeBlockId) are available directly on the occurrence object
+  const windowRefs = extractWindowRefs(best.window);
 
   return await persistPlacement(
     {
       userId,
       item,
-      windowId: best.window.id,
+      windowId: windowRefs.legacyWindowId,
+      dayTypeTimeBlockId: windowRefs.dayTypeTimeBlockId,
+      timeBlockId: windowRefs.timeBlockId,
       startUTC: startUtc.toISOString(),
       endUTC: endUtc.toISOString(),
       durationMin,
@@ -740,19 +1510,32 @@ export async function placeItemInWindows(
 }
 
 function resolveWindowStart(win: WindowLite, date: Date, timeZone: string) {
+  if (typeof win.dayTypeStartUtcMs === "number") {
+    return new Date(win.dayTypeStartUtcMs);
+  }
   const [hour = 0, minute = 0] = win.start_local.split(":").map(Number);
-  const baseDay = win.fromPrevDay
-    ? addDaysInTimeZone(date, -1, timeZone)
-    : date;
-  return setTimeInTimeZone(baseDay, timeZone, hour, minute);
+  const anchorDay = anchorDayForPlacementWindow(
+    date,
+    timeZone,
+    win.fromPrevDay ?? false
+  );
+  return setTimeInTimeZone(anchorDay, timeZone, hour, minute);
 }
 
 function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
+  if (typeof win.dayTypeEndUtcMs === "number") {
+    return new Date(win.dayTypeEndUtcMs);
+  }
   const [hour = 0, minute = 0] = win.end_local.split(":").map(Number);
-  let end = setTimeInTimeZone(date, timeZone, hour, minute);
+  const anchorDay = anchorDayForPlacementWindow(
+    date,
+    timeZone,
+    win.fromPrevDay ?? false
+  );
+  let end = setTimeInTimeZone(anchorDay, timeZone, hour, minute);
   const start = resolveWindowStart(win, date, timeZone);
   if (end <= start) {
-    const nextDay = addDaysInTimeZone(date, 1, timeZone);
+    const nextDay = addDaysInTimeZone(anchorDay, 1, timeZone);
     end = setTimeInTimeZone(nextDay, timeZone, hour, minute);
   }
   return end;
@@ -762,7 +1545,9 @@ async function persistPlacement(
   params: {
     userId: string;
     item: PlaceParams["item"];
-    windowId: string;
+    windowId: string | null;
+    dayTypeTimeBlockId?: string | null;
+    timeBlockId?: string | null;
     startUTC: string;
     endUTC: string;
     durationMin: number;
@@ -776,6 +1561,8 @@ async function persistPlacement(
     userId,
     item,
     windowId,
+    dayTypeTimeBlockId,
+    timeBlockId,
     startUTC,
     endUTC,
     reuseInstanceId,
@@ -794,6 +1581,8 @@ async function persistPlacement(
       reuseInstanceId,
       {
         windowId,
+        dayTypeTimeBlockId,
+        timeBlockId,
         startUTC,
         endUTC,
         durationMin: computedDurationMin,
@@ -813,6 +1602,8 @@ async function persistPlacement(
         sourceId: item.id,
         sourceType: item.sourceType,
         windowId,
+        dayTypeTimeBlockId,
+        timeBlockId,
         startUTC,
         endUTC,
         durationMin: computedDurationMin,

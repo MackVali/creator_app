@@ -6,6 +6,7 @@ import {
   weekdayInTimeZone,
 } from "./timezone";
 import { resolveEveryXDaysInterval } from "@/lib/recurrence";
+import { log } from "@/lib/utils/logGate";
 
 export type HabitDueEvaluation = {
   isDue: boolean;
@@ -268,7 +269,7 @@ export function evaluateHabitDueOnDate(
 
   // Debug logging guarded by env flag
   if (process.env.DEBUG_LAST_COMPLETED_AT === "true") {
-    console.log("LAST_COMPLETED_AT_DEBUG", {
+    log("debug", "LAST_COMPLETED_AT_DEBUG", {
       habitId: habit.id,
       lastCompletedAtMerged: habit.lastCompletedAt,
       evalDate: date.toISOString(),

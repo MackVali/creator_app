@@ -19,6 +19,7 @@ import { NotesGrid } from "@/components/notes/NotesGrid";
 import { Button } from "@/components/ui/button";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import { normalizeTimeZone } from "@/lib/scheduler/timezone";
+import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "@/lib/scheduler/limits";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 import {
   mapRowToProgress,
@@ -46,7 +47,7 @@ interface HabitSummary {
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const MAX_LOOKAHEAD_DAYS = 365;
+const MAX_LOOKAHEAD_DAYS = MAX_SCHEDULE_LOOKAHEAD_DAYS;
 
 function normalizeRecurrenceDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {

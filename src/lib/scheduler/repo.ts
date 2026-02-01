@@ -1,9 +1,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseBrowser } from "../../../lib/supabase";
 import type { Database } from "../../../types/supabase";
-import { normalizeTimeZone, weekdayInTimeZone } from "./timezone";
+import {
+  addDaysInTimeZone,
+  formatDateKeyInTimeZone,
+  GLOBAL_DAY_START_HOUR,
+  normalizeTimeZone,
+  setTimeInTimeZone,
+  startOfDayInTimeZone,
+  weekdayInTimeZone,
+} from "./timezone";
 import { ENERGY, type Energy } from "./config";
 import type { TaskLite, ProjectLite } from "./weight";
+import { log } from "@/lib/utils/logGate";
 
 const PRIORITY_VALUES = [
   "NO",
@@ -33,6 +42,9 @@ type LookupCacheState = {
 const LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000;
 let lookupCache: LookupCacheState | null = null;
 
+const USE_DAY_TYPES_FLAG = process.env.SCHEDULER_USE_DAY_TYPES === "true";
+const WINDOWS_DEBUG_LOGGING = process.env.SCHEDULER_DEBUG_WINDOWS === "true";
+
 export async function fetchPriorityEnergyLookups(
   client: Client
 ): Promise<PriorityEnergyLookups> {
@@ -48,7 +60,7 @@ export async function fetchPriorityEnergyLookups(
 
   const priority: Record<string, string> = {};
   if (priorityRes.error) {
-    console.warn("Failed to load priority lookup values", priorityRes.error);
+    log("warn", "Failed to load priority lookup values", priorityRes.error);
   } else {
     for (const row of (priorityRes.data ?? []) as {
       id?: number | null;
@@ -61,7 +73,7 @@ export async function fetchPriorityEnergyLookups(
 
   const energy: Record<string, string> = {};
   if (energyRes.error) {
-    console.warn("Failed to load energy lookup values", energyRes.error);
+    log("warn", "Failed to load energy lookup values", energyRes.error);
   } else {
     for (const row of (energyRes.data ?? []) as {
       id?: number | null;
@@ -180,6 +192,18 @@ export type WindowLite = {
   location_context_name: string | null;
   fromPrevDay?: boolean;
   window_kind: WindowKind;
+  dayTypeTimeBlockId?: string | null;
+  dayTypeStartUtcMs?: number | null;
+  dayTypeEndUtcMs?: number | null;
+  allowAllHabitTypes?: boolean;
+  allowAllSkills?: boolean;
+  allowAllMonuments?: boolean;
+  allowedHabitTypes?: string[] | null;
+  allowedSkillIds?: string[] | null;
+  allowedMonumentIds?: string[] | null;
+  allowedHabitTypesSet?: Set<string>;
+  allowedSkillIdsSet?: Set<string>;
+  allowedMonumentIdsSet?: Set<string>;
 };
 
 type WindowRecord = {
@@ -191,6 +215,13 @@ type WindowRecord = {
   days?: number[] | null;
   location_context_id?: string | null;
   window_kind?: string | null;
+  day_type_time_block_id?: string | null;
+  allow_all_habit_types?: boolean | null;
+  allow_all_skills?: boolean | null;
+  allow_all_monuments?: boolean | null;
+  allowed_habit_types?: string[] | null;
+  allowed_skill_ids?: string[] | null;
+  allowed_monument_ids?: string[] | null;
   location_context?: {
     id?: string | null;
     value?: string | null;
@@ -221,6 +252,32 @@ function normalizeWindowKind(value?: string | null): WindowKind {
     : "DEFAULT";
 }
 
+function normalizeStrings(items?: string[] | null): string[] {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((entry) => String(entry ?? "").trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function buildHabitTypeSet(items: string[]): Set<string> | undefined {
+  if (items.length === 0) return undefined;
+  const set = new Set<string>();
+  for (const entry of items) {
+    const upper = entry.toUpperCase();
+    if (upper) set.add(upper);
+  }
+  return set.size ? set : undefined;
+}
+
+function buildIdSet(items: string[]): Set<string> | undefined {
+  if (items.length === 0) return undefined;
+  const set = new Set<string>();
+  for (const entry of items) {
+    if (entry) set.add(entry);
+  }
+  return set.size ? set : undefined;
+}
+
 function mapWindowRecord(record: WindowRecord): WindowLite {
   const hasLocationContextId =
     typeof record.location_context_id === "string" &&
@@ -230,6 +287,9 @@ function mapWindowRecord(record: WindowRecord): WindowLite {
       ? String(record.location_context.value).toUpperCase().trim()
       : null;
   const label = record.location_context?.label ?? (value ? value : null);
+  const allowedHabitTypes = normalizeStrings(record.allowed_habit_types);
+  const allowedSkillIds = normalizeStrings(record.allowed_skill_ids);
+  const allowedMonumentIds = normalizeStrings(record.allowed_monument_ids);
 
   return {
     id: record.id,
@@ -242,6 +302,16 @@ function mapWindowRecord(record: WindowRecord): WindowLite {
     location_context_value: value,
     location_context_name: label,
     window_kind: normalizeWindowKind(record.window_kind),
+    dayTypeTimeBlockId: record.day_type_time_block_id ?? null,
+    allowAllHabitTypes: record.allow_all_habit_types !== false,
+    allowAllSkills: record.allow_all_skills !== false,
+    allowAllMonuments: record.allow_all_monuments !== false,
+    allowedHabitTypes,
+    allowedSkillIds,
+    allowedMonumentIds,
+    allowedHabitTypesSet: buildHabitTypeSet(allowedHabitTypes),
+    allowedSkillIdsSet: buildIdSet(allowedSkillIds),
+    allowedMonumentIdsSet: buildIdSet(allowedMonumentIds),
   };
 }
 
@@ -333,75 +403,145 @@ const overlapsPrevCross = (base: WindowLite, prev: WindowLite): boolean => {
   return baseStart < prevEnd && baseEnd > 0;
 };
 
+const sortWindowsByStartThenId = (
+  a: Pick<WindowLite, "start_local" | "id">,
+  b: Pick<WindowLite, "start_local" | "id">
+) => {
+  const [ah = 0, am = 0] = a.start_local.split(":").map(Number);
+  const [bh = 0, bm = 0] = b.start_local.split(":").map(Number);
+  if (ah !== bh) return ah - bh;
+  if (am !== bm) return am - bm;
+  return a.id.localeCompare(b.id);
+};
+
+function parseLocalTimeParts(value?: string | null) {
+  const [hours = 0, minutes = 0] = String(value ?? "00:00")
+    .split(":")
+    .map(Number);
+  return {
+    hours: Number.isFinite(hours) ? hours : 0,
+    minutes: Number.isFinite(minutes) ? minutes : 0,
+  };
+}
+
+const MIDNIGHT_LOCAL = "00:00";
+const DAY_END_LOCAL = "24:00";
+const NEXT_DAY_WINDOW_SUFFIX = "::next-day";
+
+const splitCrossMidnightWindow = (window: WindowLite) => {
+  const nextId = `${window.id}${NEXT_DAY_WINDOW_SUFFIX}`;
+  return {
+    dayPortion: {
+      ...window,
+      end_local: DAY_END_LOCAL,
+      fromPrevDay: false,
+    },
+    nextDayPortion: {
+      ...window,
+      id: nextId,
+      start_local: MIDNIGHT_LOCAL,
+      fromPrevDay: true,
+    },
+  };
+};
+
 function buildWindowsForDateFromSnapshot(
   snapshot: WindowLite[],
   date: Date,
   timeZone: string
 ): WindowLite[] {
-  const weekday = weekdayInTimeZone(date, timeZone);
-  const prevWeekday = (weekday + 6) % 7;
+  const dayStartLocal = startOfDayInTimeZone(date, timeZone);
+  const weekday = weekdayInTimeZone(dayStartLocal, timeZone);
+  const nextDayStartLocal = addDaysInTimeZone(dayStartLocal, 1, timeZone);
 
-  const today: WindowLite[] = [];
-  const prev: WindowLite[] = [];
-  const always: WindowLite[] = [];
+  const applicableWindows = [...(snapshot ?? [])]
+    .filter((window) => {
+      const days = window.days ?? null;
+      return days === null || (days?.includes(weekday) ?? false);
+    })
+    .sort(sortWindowsByStartThenId);
 
-  for (const window of snapshot) {
-    const days = window.days ?? null;
-    const crosses = crossesMidnight(window);
+  const mapped = applicableWindows.map((window) => {
+    const startMinutes = timeToMinutes(window.start_local);
+    const endMinutes = timeToMinutes(window.end_local);
+    const { hours: startHours, minutes: startMinutesPart } =
+      parseLocalTimeParts(window.start_local);
+    const { hours: endHours, minutes: endMinutesPart } =
+      parseLocalTimeParts(window.end_local);
 
-    if (days === null) {
-      always.push({ ...window, fromPrevDay: false });
-    } else if (days.includes(weekday)) {
-      today.push({ ...window, fromPrevDay: false });
-    }
+    const startBase =
+      startMinutes < GLOBAL_DAY_START_HOUR * 60
+        ? nextDayStartLocal
+        : dayStartLocal;
+    const startDate = setTimeInTimeZone(
+      startBase,
+      timeZone,
+      startHours,
+      startMinutesPart
+    );
 
-    const appliesToPrev =
-      days === null || (days?.includes(prevWeekday) ?? false);
-    if (crosses && appliesToPrev) {
-      prev.push({ ...window, fromPrevDay: true });
-    }
-  }
+    const endBase =
+      endMinutes <= startMinutes
+        ? addDaysInTimeZone(startBase, 1, timeZone)
+        : startBase;
+    const endDate = setTimeInTimeZone(
+      endBase,
+      timeZone,
+      endHours,
+      endMinutesPart
+    );
 
-  const base = new Map<string, WindowLite>();
-  for (const window of [...today, ...always]) {
-    if (!base.has(window.id)) {
-      base.set(window.id, { ...window, fromPrevDay: false });
-    }
-  }
+    return {
+      ...window,
+      fromPrevDay: false,
+      dayTypeStartUtcMs: startDate.getTime(),
+      dayTypeEndUtcMs: endDate.getTime(),
+    } as WindowLite;
+  });
 
-  const baseWindows = [...base.values()];
-  const prevCross = [
-    ...prev,
-    ...always.filter(crossesMidnight).map((w) => ({ ...w, fromPrevDay: true })),
-  ].filter(
-    (prevWindow) =>
-      !baseWindows.some((baseWindow) =>
-        overlapsPrevCross(baseWindow, prevWindow)
-      )
-  );
-
-  return [...baseWindows, ...prevCross];
+  return mapped.sort((a, b) => {
+    const aStart = a.dayTypeStartUtcMs ?? 0;
+    const bStart = b.dayTypeStartUtcMs ?? 0;
+    if (aStart !== bStart) return aStart - bStart;
+    return a.id.localeCompare(b.id);
+  });
 }
 
-export async function fetchWindowsForDate(
+export function buildWindowsForDateFromDayTypeBlocks(
+  snapshot: WindowLite[],
   date: Date,
-  client?: Client,
-  timeZone?: string | null,
-  options?: { userId?: string | null; snapshot?: WindowLite[] }
+  timeZone: string
+): WindowLite[] {
+  const ordered = [...snapshot].sort(sortWindowsByStartThenId);
+  return buildWindowsForDateFromSnapshot(ordered, date, timeZone);
+}
+
+export type FetchWindowsParityPayload = {
+  mismatch: boolean;
+  context?: string | null;
+};
+
+export type FetchWindowsParityOptions = {
+  enabled?: boolean;
+  onCheck?: (payload: FetchWindowsParityPayload) => void;
+};
+
+export type FetchWindowsOptions = {
+  userId?: string | null;
+  snapshot?: WindowLite[];
+  useDayTypes?: boolean;
+  parity?: FetchWindowsParityOptions | null;
+};
+
+async function fetchWindowsForDateLegacy(
+  date: Date,
+  client: Client | undefined,
+  timeZone: string,
+  options?: FetchWindowsOptions
 ): Promise<WindowLite[]> {
-  const normalizedTimeZone = normalizeTimeZone(timeZone);
-
-  if (options?.snapshot) {
-    return buildWindowsForDateFromSnapshot(
-      options.snapshot,
-      date,
-      normalizedTimeZone
-    );
-  }
-
   const supabase = ensureClient(client);
 
-  const weekday = weekdayInTimeZone(date, normalizedTimeZone);
+  const weekday = weekdayInTimeZone(date, timeZone);
   const prevWeekday = (weekday + 6) % 7;
   const contextJoin = "location_context:location_contexts(id, value, label)";
   const columns = `id, label, energy, start_local, end_local, days, location_context_id, window_kind, ${contextJoin}`;
@@ -409,7 +549,7 @@ export async function fetchWindowsForDate(
   const userId = options?.userId ?? null;
   const selectWindows = () => supabase.from("windows").select(columns);
   const applyUserFilter = <
-    T extends { eq: (column: string, value: string) => T }
+    T extends { eq: (column: string, value: string) => T },
   >(
     builder: T
   ): T => {
@@ -459,6 +599,423 @@ export async function fetchWindowsForDate(
   return [...baseWindows, ...prevCross];
 }
 
+// These tables may not be present in generated types yet; fall back to any to avoid type errors during migration rollout.
+type DayTypeAssignmentRow = Database["public"]["Tables"] extends {
+  day_type_assignments: { Row: infer R };
+}
+  ? R
+  : any;
+type DayTypeRow = Database["public"]["Tables"] extends {
+  day_types: { Row: infer R };
+}
+  ? R
+  : any;
+type DayTypeTimeBlockRow = Database["public"]["Tables"] extends {
+  day_type_time_blocks: { Row: infer R };
+}
+  ? R
+  : any;
+type TimeBlockRow = Database["public"]["Tables"] extends {
+  time_blocks: { Row: infer R };
+}
+  ? R
+  : any;
+
+export const normalizeBlockType = (value?: string | null): WindowKind => {
+  const raw = typeof value === "string" ? value.toUpperCase().trim() : "FOCUS";
+  if (raw === "BREAK") return "BREAK";
+  if (raw === "PRACTICE") return "PRACTICE";
+  return "DEFAULT";
+};
+
+export async function getWindowsForDate_v2(
+  date: Date,
+  client?: Client,
+  timeZone?: string | null,
+  options?: FetchWindowsOptions
+): Promise<WindowLite[]> {
+  const normalizedTimeZone = normalizeTimeZone(timeZone);
+  const userId = options?.userId ?? null;
+  if (!userId) return [];
+  const supabase = ensureClient(client);
+
+  const anchor = startOfDayInTimeZone(date, normalizedTimeZone);
+  const dateKey = formatDateKeyInTimeZone(anchor, normalizedTimeZone);
+  const weekday = weekdayInTimeZone(anchor, normalizedTimeZone);
+  const weekdayKey = String(weekday);
+
+  const { data: assignmentRow, error: assignmentError } = await supabase
+    .from("day_type_assignments")
+    .select("day_type_id")
+    .eq("user_id", userId)
+    .eq("date_key", dateKey)
+    .maybeSingle();
+
+  if (assignmentError) throw assignmentError;
+
+  let dayTypeId =
+    (assignmentRow as Pick<DayTypeAssignmentRow, "day_type_id"> | null)
+    ?.day_type_id ?? null;
+
+  let dayTypeName: string | null = null;
+  let dayTypeMatchSource: "assignment" | "weekday" | "fallback" | "none" =
+    dayTypeId ? "assignment" : "none";
+
+  if (!dayTypeId) {
+    const { data: defaults, error: defaultsError } = await supabase
+      .from("day_types")
+      .select("id, name, days, is_default, created_at")
+      .eq("user_id", userId)
+      .eq("is_default", true);
+    if (defaultsError) throw defaultsError;
+    const matchesWeekday = (defaults ?? []).find((row) => {
+      const days = (row as DayTypeRow).days ?? null;
+      if (!Array.isArray(days)) return false;
+      return days.some((day) => String(day) === weekdayKey);
+    });
+    if (matchesWeekday?.id) {
+      dayTypeId = matchesWeekday.id;
+      dayTypeName = (matchesWeekday as DayTypeRow).name ?? null;
+      dayTypeMatchSource = "weekday";
+    } else if (defaults && defaults.length > 0) {
+      const sortedDefaults = [...defaults].sort((a, b) => {
+        const aCreated = (a as DayTypeRow).created_at ?? "";
+        const bCreated = (b as DayTypeRow).created_at ?? "";
+        return String(aCreated).localeCompare(String(bCreated));
+      });
+      const fallbackRow = sortedDefaults[0] as DayTypeRow;
+      dayTypeId = fallbackRow.id ?? null;
+      dayTypeName = fallbackRow.name ?? null;
+      dayTypeMatchSource = "fallback";
+    }
+  }
+
+  if (!dayTypeId) return [];
+
+  const contextJoin = "location_context:location_contexts(id, value, label)";
+  const columns = `id, day_type_id, energy, block_type, location_context_id, time_block_id, allow_all_habit_types, allow_all_skills, allow_all_monuments, time_blocks ( id, label, start_local, end_local, days ), ${contextJoin}`;
+  const { data: linkRows, error: linksError } = await supabase
+    .from("day_type_time_blocks")
+    .select(columns)
+    .eq("day_type_id", dayTypeId)
+    .eq("user_id", userId);
+
+  if (linksError) throw linksError;
+
+  const dttbIds = (linkRows ?? [])
+    .map((row) => (row as { id?: string | null }).id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  type HabitWhitelistRow = {
+    day_type_time_block_id: string | null;
+    habit_type: string | null;
+  };
+  type SkillWhitelistRow = {
+    day_type_time_block_id: string | null;
+    skill_id: string | null;
+  };
+  type MonumentWhitelistRow = {
+    day_type_time_block_id: string | null;
+    monument_id: string | null;
+  };
+
+  const [habitWhitelist, skillWhitelist, monumentWhitelist] =
+    dttbIds.length > 0
+      ? await Promise.all([
+          supabase
+            .from("day_type_time_block_allowed_habit_types")
+            .select("day_type_time_block_id, habit_type")
+            .in("day_type_time_block_id", dttbIds),
+          supabase
+            .from("day_type_time_block_allowed_skills")
+            .select("day_type_time_block_id, skill_id")
+            .in("day_type_time_block_id", dttbIds),
+          supabase
+            .from("day_type_time_block_allowed_monuments")
+            .select("day_type_time_block_id, monument_id")
+            .in("day_type_time_block_id", dttbIds),
+        ])
+      : [
+          { data: [] as HabitWhitelistRow[] | null, error: null },
+          { data: [] as SkillWhitelistRow[] | null, error: null },
+          { data: [] as MonumentWhitelistRow[] | null, error: null },
+        ];
+
+  if (habitWhitelist.error) throw habitWhitelist.error;
+  if (skillWhitelist.error) throw skillWhitelist.error;
+  if (monumentWhitelist.error) throw monumentWhitelist.error;
+
+  const habitAllowMap = new Map<string, Set<string>>();
+  for (const row of (habitWhitelist.data ?? []) as HabitWhitelistRow[]) {
+    const key = row.day_type_time_block_id ?? "";
+    if (!key || !row.habit_type) continue;
+    const normalized = row.habit_type.toUpperCase().trim();
+    if (!normalized) continue;
+    const existing = habitAllowMap.get(key) ?? new Set<string>();
+    existing.add(normalized);
+    habitAllowMap.set(key, existing);
+  }
+
+  const skillAllowMap = new Map<string, Set<string>>();
+  for (const row of (skillWhitelist.data ?? []) as SkillWhitelistRow[]) {
+    const key = row.day_type_time_block_id ?? "";
+    if (!key || !row.skill_id) continue;
+    const normalized = row.skill_id.trim();
+    if (!normalized) continue;
+    const existing = skillAllowMap.get(key) ?? new Set<string>();
+    existing.add(normalized);
+    skillAllowMap.set(key, existing);
+  }
+
+  const monumentAllowMap = new Map<string, Set<string>>();
+  for (const row of (monumentWhitelist.data ?? []) as MonumentWhitelistRow[]) {
+    const key = row.day_type_time_block_id ?? "";
+    if (!key || !row.monument_id) continue;
+    const normalized = row.monument_id.trim();
+    if (!normalized) continue;
+    const existing = monumentAllowMap.get(key) ?? new Set<string>();
+    existing.add(normalized);
+    monumentAllowMap.set(key, existing);
+  }
+
+  const baseWindows = (
+    (linkRows ?? []) as (DayTypeTimeBlockRow & {
+      time_blocks?: TimeBlockRow | null;
+      location_context?: {
+        id?: string | null;
+        value?: string | null;
+        label?: string | null;
+      } | null;
+    })[]
+  )
+    .map((row) => {
+      const block = row.time_blocks;
+      if (!block) return null;
+      const hasLocationContextId =
+        typeof row.location_context_id === "string" &&
+        row.location_context_id.trim().length > 0;
+      const locationValue =
+        hasLocationContextId && row.location_context?.value
+          ? String(row.location_context.value).toUpperCase().trim()
+          : null;
+      const locationLabel =
+        row.location_context?.label ?? (locationValue ? locationValue : null);
+
+      const allowAllHabitTypes = row.allow_all_habit_types !== false;
+      const allowAllSkills = row.allow_all_skills !== false;
+      const allowAllMonuments = row.allow_all_monuments !== false;
+      const dttbId = (row as { id?: string | null }).id ?? null;
+
+      return {
+        dayTypeId: row.day_type_id ?? null,
+        id: block.id,
+        label: block.label ?? "",
+        energy:
+          typeof row.energy === "string" && row.energy.trim().length > 0
+            ? row.energy.trim().toUpperCase()
+            : null,
+        start_local: block.start_local ?? "00:00",
+        end_local: block.end_local ?? "00:00",
+        // Day type already defines applicability; do not let time_blocks.days filter these out.
+        days: null,
+        location_context_id: row.location_context_id ?? null,
+        locationContextId: row.location_context_id ?? null,
+        location_context_value: locationValue,
+        location_context_name: locationLabel,
+        window_kind: normalizeBlockType(row.block_type),
+        block_type: row.block_type ?? null,
+        blockType: row.block_type ?? null,
+        dayTypeTimeBlockId: dttbId,
+       allowAllHabitTypes,
+        allowAllSkills,
+        allowAllMonuments,
+        allowedHabitTypes: dttbId
+          ? Array.from(habitAllowMap.get(dttbId) ?? [])
+          : null,
+        allowedSkillIds: dttbId
+          ? Array.from(skillAllowMap.get(dttbId) ?? [])
+          : null,
+        allowedMonumentIds: dttbId
+          ? Array.from(monumentAllowMap.get(dttbId) ?? [])
+          : null,
+      } as WindowLite;
+    })
+    .filter(Boolean)
+    .sort(sortWindowsByStartThenId) as WindowLite[];
+
+  const result = buildWindowsForDateFromSnapshot(
+    baseWindows,
+    anchor,
+    normalizedTimeZone
+  );
+
+  if (WINDOWS_DEBUG_LOGGING) {
+    log("info", "scheduler_windows_debug", {
+      kind: "scheduler_windows_debug",
+      flag: USE_DAY_TYPES_FLAG,
+      date: dateKey,
+      dayTypeId,
+      dayTypeName,
+      dayTypeMatchSource,
+      weekday,
+      count: result.length,
+    });
+  }
+
+  return result;
+}
+
+type WindowSignature = {
+  startLocal: string;
+  endLocal: string;
+  duration: number;
+  fromPrevDay: boolean;
+  energy: Energy;
+  windowKind: WindowKind;
+  locationContextValue: string | null;
+  locationContextName: string | null;
+  allowAllHabitTypes: boolean;
+  allowAllSkills: boolean;
+  allowAllMonuments: boolean;
+  allowedHabitTypes: string[] | null;
+  allowedSkillIds: string[] | null;
+  allowedMonumentIds: string[] | null;
+};
+
+const normalizeStringArray = (values?: string[] | null): string[] | null => {
+  if (!Array.isArray(values) || values.length === 0) return null;
+  const normalized = values
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter((value) => value.length > 0);
+  if (normalized.length === 0) return null;
+  const unique = Array.from(new Set(normalized));
+  unique.sort((a, b) => a.localeCompare(b));
+  return unique.length > 0 ? unique : null;
+};
+
+const computeWindowDuration = (startLocal: string, endLocal: string): number => {
+  const startMinutes = timeToMinutes(startLocal);
+  let endMinutes = timeToMinutes(endLocal);
+  if (endMinutes <= startMinutes) {
+    endMinutes += 24 * 60;
+  }
+  return Math.max(0, endMinutes - startMinutes);
+};
+
+const compareSignaturesByTime = (
+  a: WindowSignature,
+  b: WindowSignature
+): number => {
+  const startDiff = timeToMinutes(a.startLocal) - timeToMinutes(b.startLocal);
+  if (startDiff !== 0) return startDiff;
+  const endDiff = timeToMinutes(a.endLocal) - timeToMinutes(b.endLocal);
+  if (endDiff !== 0) return endDiff;
+  if (a.fromPrevDay !== b.fromPrevDay) {
+    return Number(a.fromPrevDay) - Number(b.fromPrevDay);
+  }
+  return 0;
+};
+
+const buildWindowSignature = (win: WindowLite): WindowSignature => {
+  const startLocal = win.start_local ?? "00:00";
+  const endLocal = win.end_local ?? "00:00";
+  return {
+    startLocal,
+    endLocal,
+    duration: computeWindowDuration(startLocal, endLocal),
+    fromPrevDay: win.fromPrevDay ?? false,
+    energy: normalizeEnergyValue(win.energy ?? null),
+    windowKind: win.window_kind ?? "DEFAULT",
+    locationContextValue: win.location_context_value ?? null,
+    locationContextName: win.location_context_name ?? null,
+    allowAllHabitTypes: win.allowAllHabitTypes ?? true,
+    allowAllSkills: win.allowAllSkills ?? true,
+    allowAllMonuments: win.allowAllMonuments ?? true,
+    allowedHabitTypes: normalizeStringArray(win.allowedHabitTypes),
+    allowedSkillIds: normalizeStringArray(win.allowedSkillIds),
+    allowedMonumentIds: normalizeStringArray(win.allowedMonumentIds),
+  };
+};
+
+const sortSignaturesByTime = (signatures: WindowSignature[]) =>
+  [...signatures].sort(compareSignaturesByTime);
+
+const signatureToJson = (sig: unknown): string => {
+  try {
+    return JSON.stringify(sig);
+  } catch {
+    return String(sig);
+  }
+};
+
+const areSignaturesEqual = (a: WindowSignature, b: WindowSignature): boolean =>
+  signatureToJson(a) === signatureToJson(b);
+
+const findFirstSignatureMismatchIndex = (
+  legacy: WindowSignature[],
+  v2: WindowSignature[]
+): number => {
+  const minLength = Math.min(legacy.length, v2.length);
+  for (let index = 0; index < minLength; index++) {
+    if (!areSignaturesEqual(legacy[index], v2[index])) return index;
+  }
+  if (legacy.length !== v2.length) return minLength;
+  return -1;
+};
+
+export async function fetchWindowsForDate(
+  date: Date,
+  client?: Client,
+  timeZone?: string | null,
+  options?: FetchWindowsOptions
+): Promise<WindowLite[]> {
+  const normalizedTimeZone = normalizeTimeZone(timeZone);
+
+  if (options?.snapshot) {
+    return buildWindowsForDateFromSnapshot(
+      options.snapshot,
+      date,
+      normalizedTimeZone
+    );
+  }
+
+  const useDayTypes = options?.useDayTypes ?? USE_DAY_TYPES_FLAG;
+  const parityEnabled = options?.parity?.enabled === true;
+
+  if (!useDayTypes) {
+    return fetchWindowsForDateLegacy(date, client, normalizedTimeZone, options);
+  }
+
+  if (!parityEnabled) {
+    return getWindowsForDate_v2(date, client, normalizedTimeZone, options);
+  }
+
+  const [legacy, v2] = await Promise.all([
+    fetchWindowsForDateLegacy(date, client, normalizedTimeZone, options),
+    getWindowsForDate_v2(date, client, normalizedTimeZone, options),
+  ]);
+
+  const legacySignatures = sortSignaturesByTime(
+    legacy.map(buildWindowSignature)
+  );
+  const v2Signatures = sortSignaturesByTime(v2.map(buildWindowSignature));
+  const firstDiffIndex = findFirstSignatureMismatchIndex(
+    legacySignatures,
+    v2Signatures
+  );
+
+  const parityContext = formatDateKeyInTimeZone(
+    startOfDayInTimeZone(date, normalizedTimeZone),
+    normalizedTimeZone
+  );
+  options?.parity?.onCheck?.({
+    mismatch: firstDiffIndex !== -1,
+    context: firstDiffIndex !== -1 ? parityContext : null,
+  });
+
+  return v2;
+}
+
 export async function fetchWindowsSnapshot(
   userId: string,
   client?: Client
@@ -468,7 +1025,7 @@ export async function fetchWindowsSnapshot(
   const { data, error } = await supabase
     .from("windows")
     .select(
-      `id, label, energy, start_local, end_local, days, location_context_id, window_kind, ${contextJoin}`
+      `id, label, energy, start_local, end_local, days, location_context_id, window_kind, day_type_time_block_id, allow_all_habit_types, allow_all_skills, allow_all_monuments, allowed_habit_types, allowed_skill_ids, allowed_monument_ids, ${contextJoin}`
     )
     .eq("user_id", userId);
 
@@ -492,7 +1049,7 @@ export async function fetchAllWindows(client?: Client): Promise<WindowLite[]> {
   const { data, error } = await supabase
     .from("windows")
     .select(
-      `id, label, energy, start_local, end_local, days, location_context_id, window_kind, ${contextJoin}`
+      `id, label, energy, start_local, end_local, days, location_context_id, window_kind, day_type_time_block_id, allow_all_habit_types, allow_all_skills, allow_all_monuments, allowed_habit_types, allowed_skill_ids, allowed_monument_ids, ${contextJoin}`
     );
 
   if (error) throw error;
@@ -511,6 +1068,7 @@ export async function fetchProjectsMap(
     "stage",
     "energy",
     "duration_min",
+    "effective_duration_min",
     "goal_id",
     "due_date",
     "global_rank",
@@ -539,6 +1097,7 @@ export async function fetchProjectsMap(
     const priorityName = resolvePriorityLabel(p.priority, lookups.priority);
     const energyName = resolveEnergyLabel(p.energy, lookups.energy);
     const duration = Number(p.duration_min ?? 0);
+    const effectiveDuration = Number(p.effective_duration_min ?? 0);
     const parsedGlobalRank =
       typeof p.global_rank === "number" ? p.global_rank : Number(p.global_rank);
     map[p.id] = {
@@ -548,6 +1107,9 @@ export async function fetchProjectsMap(
       stage: normalizeStageValue(p.stage, "BUILD"),
       energy: normalizeEnergyValue(energyName),
       duration_min: Number.isFinite(duration) ? duration : null,
+      effective_duration_min: Number.isFinite(effectiveDuration)
+        ? effectiveDuration
+        : null,
       goal_id: p.goal_id ?? null,
       due_date: p.due_date ?? null,
       globalRank: Number.isFinite(parsedGlobalRank) ? parsedGlobalRank : null,
@@ -567,6 +1129,7 @@ export async function fetchAllProjectsMap(
     "stage",
     "energy",
     "duration_min",
+    "effective_duration_min",
     "goal_id",
     "due_date",
     "global_rank",
@@ -595,6 +1158,7 @@ export async function fetchAllProjectsMap(
     const priorityName = resolvePriorityLabel(p.priority, lookups.priority);
     const energyName = resolveEnergyLabel(p.energy, lookups.energy);
     const duration = Number(p.duration_min ?? 0);
+    const effectiveDuration = Number(p.effective_duration_min ?? 0);
     const parsedGlobalRank =
       typeof p.global_rank === "number" ? p.global_rank : Number(p.global_rank);
     map[p.id] = {
@@ -604,6 +1168,9 @@ export async function fetchAllProjectsMap(
       stage: normalizeStageValue(p.stage, "BUILD"),
       energy: normalizeEnergyValue(energyName),
       duration_min: Number.isFinite(duration) ? duration : null,
+      effective_duration_min: Number.isFinite(effectiveDuration)
+        ? effectiveDuration
+        : null,
       goal_id: p.goal_id ?? null,
       due_date: p.due_date ?? null,
       globalRank: Number.isFinite(parsedGlobalRank) ? parsedGlobalRank : null,

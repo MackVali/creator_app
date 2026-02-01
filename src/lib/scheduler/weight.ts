@@ -26,6 +26,7 @@ export type ProjectLite = {
   stage: string;
   energy?: string | null;
   duration_min?: number | null;
+  effective_duration_min?: number | null;
   goal_id?: string | null;
   due_date?: string | null;
   dueDate?: string | null;

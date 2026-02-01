@@ -11,6 +11,7 @@ import { type WindowLite } from "@/lib/scheduler/repo";
 import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
 import { toLocal } from "@/lib/time/tz";
 import { useSchedulerMeta } from "@/lib/scheduler/useSchedulerMeta";
+import { MAX_SCHEDULER_WRITE_DAYS } from "@/lib/scheduler/limits";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Lock } from "lucide-react";
 
@@ -79,6 +80,8 @@ export default function SchedulerPage() {
   const [error, setError] = useState<string | null>(null);
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft | null>(null);
   const [lastRunAt, setLastRunAt] = useState<Date | null>(null);
+  const [debugSummary, setDebugSummary] = useState<any>(null);
+  const [debugError, setDebugError] = useState<string | null>(null);
 
   const { tasks, projects, windowMap, status: metaStatus, error: metaError } =
     useSchedulerMeta();
@@ -219,20 +222,24 @@ export default function SchedulerPage() {
   });
 
   const PRIMARY_WRITE_WINDOW_DAYS = 7;
-  const FULL_WRITE_WINDOW_DAYS = 365;
+  const FULL_WRITE_WINDOW_DAYS = MAX_SCHEDULER_WRITE_DAYS;
 
   async function handleReschedule() {
     setStatus("pending");
     setError(null);
 
     try {
+      const debugSchedulerRun = true; // TEMPORARY
+      const schedulerRunUrl = debugSchedulerRun
+        ? "/api/scheduler/run?debug=1"
+        : "/api/scheduler/run";
       const localNow = new Date();
       const timeZone =
         typeof Intl !== "undefined"
           ? Intl.DateTimeFormat().resolvedOptions().timeZone ?? null
           : null;
 
-      const response = await fetch("/api/scheduler/run", {
+      const response = await fetch(schedulerRunUrl, {
         method: "POST",
         cache: "no-store",
         headers: {
@@ -245,35 +252,38 @@ export default function SchedulerPage() {
         }),
       });
 
-      let payload: unknown = null;
-      try {
-        payload = await response.json();
-      } catch (parseError) {
-        if (response.ok) {
-          console.warn("Failed to parse scheduler response", parseError);
-        }
-      }
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        const message =
-          typeof payload === "object" && payload !== null && "error" in payload
+        const errorMessage =
+          typeof data === "object" && data !== null && "error" in data
             ? String(
-                (payload as { error?: unknown }).error ??
-                  "Failed to trigger reschedule",
+                (data as { error?: unknown }).error ?? "Scheduler run failed",
               )
-            : "Failed to trigger reschedule";
-        throw new Error(message);
+            : "Scheduler run failed";
+        setDebugError(errorMessage);
+        setDebugSummary(null);
+        throw new Error(errorMessage);
       }
 
-      if (payload && typeof payload === "object" && "schedule" in payload) {
+      const summaryValue =
+        data && typeof data === "object"
+          ? (data as { debugSummary?: unknown; debug?: unknown }).debugSummary ??
+            (data as { debug?: unknown }).debug ??
+            null
+          : null;
+      setDebugError(null);
+      setDebugSummary(summaryValue);
+
+      if (data && typeof data === "object" && "schedule" in data) {
         const parsed = parseScheduleDraft(
-          (payload as { schedule?: unknown }).schedule,
+          (data as { schedule?: unknown }).schedule,
         );
         setScheduleDraft(
           parsed ?? { placed: [], failures: [], timeline: [] },
         );
       } else {
-      setScheduleDraft(null);
+        setScheduleDraft(null);
       }
 
       setLastRunAt(new Date());
@@ -333,6 +343,25 @@ export default function SchedulerPage() {
         )}
         {status === "error" && error && (
           <p className="text-sm text-red-400">{error}</p>
+        )}
+        {debugError && (
+          <p className="text-sm text-red-400">{debugError}</p>
+        )}
+        {debugSummary && (
+          <details open style={{ marginTop: 12 }}>
+            <summary>Scheduler Debug Summary</summary>
+            <pre
+              style={{
+                maxHeight: 300,
+                overflow: "auto",
+                fontSize: 12,
+                backgroundColor: "transparent",
+                color: "inherit",
+              }}
+            >
+              {JSON.stringify(debugSummary, null, 2)}
+            </pre>
+          </details>
         )}
 
         <section className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">

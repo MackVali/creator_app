@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
+  Bug,
   ChevronLeft,
   Calendar,
   Search,
@@ -100,6 +101,9 @@ export function ScheduleTopBar({
   const rescheduleButtonClass =
     "group relative hidden sm:inline-flex items-center gap-2 rounded-full bg-[var(--accent-red)] px-5 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(190,18,60,0.45)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(190,18,60,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:pointer-events-none disabled:translate-y-0 disabled:opacity-60 disabled:shadow-none";
 
+  const debugButtonClass =
+    "hidden sm:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-[var(--text-primary)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]";
+
   const actions = [
     { label: "Add Task", icon: CheckSquare, onClick: () => router.push("/tasks/new") },
     { label: "Quick Project", icon: FolderPlus, onClick: () => router.push("/projects/new") },
@@ -191,6 +195,23 @@ export function ScheduleTopBar({
             </button>
           </>
         ) : null}
+        <button
+          type="button"
+          onClick={() => router.push("/schedule/debug")}
+          aria-label="Open schedule debug"
+          className={debugButtonClass}
+        >
+          <Bug className="h-4 w-4 text-[var(--accent-red)]" />
+          <span>Schedule Debug</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push("/schedule/debug")}
+          aria-label="Schedule Debug"
+          className={cn(iconButtonClass, "sm:hidden")}
+        >
+          <Bug className="h-5 w-5 text-[var(--accent-red)]" />
+        </button>
         <button
           type="button"
           onClick={() => onOpenJumpToDate?.()}

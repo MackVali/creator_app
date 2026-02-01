@@ -50,22 +50,31 @@ export function getSupabaseBrowser() {
   return browserClient;
 }
 
+export type SupabaseServerOptions = {
+  fetch?: typeof globalThis.fetch;
+};
+
 type CookieStore = {
   get(name: string): { name: string; value: string } | undefined;
   set?: (name: string, value: string, options: CookieOptions) => void;
 };
 
-export function getSupabaseServer(cookies: CookieStore) {
+export function getSupabaseServer(
+  cookies: CookieStore,
+  options?: SupabaseServerOptions
+) {
   const { url, key } = getEnv();
   if (!url || !key) return null;
+  const fetchOverride = options?.fetch ?? globalThis.fetch;
   return createServerClient<Database>(url, key, {
     cookies: {
       get: (name) => cookies.get(name)?.value,
-      set: (name, value, options) => {
+      set: (name, value, opts) => {
         if (typeof cookies.set === "function") {
-          cookies.set(name, value, options);
+          cookies.set(name, value, opts);
         }
       },
     },
+    ...(fetchOverride ? { global: { fetch: fetchOverride } } : {}),
   });
 }
