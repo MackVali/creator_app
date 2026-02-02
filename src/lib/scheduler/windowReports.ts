@@ -144,6 +144,8 @@ export function describeEmptyWindowReport({
   windowStart,
   windowEnd,
   futurePlacements,
+  segmentStart,
+  segmentEnd,
 }: {
   windowLabel: string
   energyLabel: (typeof ENERGY.LIST)[number]
@@ -164,10 +166,14 @@ export function describeEmptyWindowReport({
   }>
 }): { summary: string; details: string[] } {
   const details: string[] = []
+  const effectiveSegmentStart = segmentStart ?? windowStart
+  const effectiveSegmentEnd = segmentEnd ?? windowEnd
+  const segmentStartMs = effectiveSegmentStart.getTime()
+  const segmentEndMs = effectiveSegmentEnd.getTime()
 
   if (durationMinutes <= 0) {
     return {
-      summary: `${windowLabel} does not offer any usable minutes on this day, so nothing can be scheduled here.`,
+      summary: `${windowLabel} has no remaining minutes in this gap on the selected day, so nothing can be scheduled here.`,
       details,
     }
   }
@@ -175,8 +181,8 @@ export function describeEmptyWindowReport({
   if (unscheduledProjects.length === 0) {
     if (futurePlacements.length > 0) {
       const runStartedAtMs = runStartedAt?.getTime()
-      const windowStartMs = windowStart.getTime()
-      const windowEndMs = windowEnd.getTime()
+      const windowStartMs = segmentStartMs
+      const windowEndMs = segmentEndMs
       const allTooLong = futurePlacements.every(entry => entry.fits === false)
       if (allTooLong) {
         const durations = futurePlacements
