@@ -2468,42 +2468,6 @@ export default function SchedulePage() {
     () => selectionToSchedulerModePayload(modeSelection),
     [modeSelection]
   );
-  const modeIsActive = resolvedModePayload.type !== "REGULAR";
-  const modeLabel = useMemo(() => {
-    switch (modeSelection.type) {
-      case "RUSH":
-        return "Rush mode";
-      case "REST":
-        return "Rest mode";
-      case "MONUMENTAL": {
-        if (!modeSelection.monumentId) return "Monumental mode";
-        const monument = monuments.find(
-          (m) => m.id === modeSelection.monumentId
-        );
-        if (!monument) return "Monumental mode";
-        const detail = monument.emoji
-          ? `${monument.emoji} ${monument.title}`
-          : monument.title;
-        return `Monumental – ${detail}`.trim();
-      }
-      case "SKILLED": {
-        if (modeSelection.skillIds.length === 0) return "Skilled mode";
-        const selected = skills.filter((skill) =>
-          modeSelection.skillIds.includes(skill.id)
-        );
-        if (selected.length === 0) return "Skilled mode";
-        if (selected.length === 1) {
-          return `Skilled – ${selected[0].name}`;
-        }
-        if (selected.length === 2) {
-          return `Skilled – ${selected[0].name}, ${selected[1].name}`;
-        }
-        return `Skilled – ${selected[0].name} +${selected.length - 1}`;
-      }
-      default:
-        return "Regular mode";
-    }
-  }, [modeSelection, monuments, skills]);
   const handleModeTypeChange = useCallback(
     (type: SchedulerModeType) => {
       setModeType(type);
@@ -5798,6 +5762,62 @@ export default function SchedulePage() {
         .filter(
           (instance): instance is ProjectInstance => instance !== null
         );
+      const scheduledCardsByInstanceId = new Map<string, ProjectTaskCard[]>();
+      for (const projectInstance of dayProjectInstances) {
+        const projectTasks =
+          modelTaskInstancesByProject[projectInstance.project.id] ?? [];
+        const scheduledCards = projectTasks
+          .filter((taskInfo) =>
+            taskMatchesProjectInstance(
+              taskInfo,
+              projectInstance.instance,
+              projectInstance.start,
+              projectInstance.end
+            )
+          )
+          .map((taskInfo) => ({
+            key: `scheduled:${taskInfo.instance.id}`,
+            kind: "scheduled" as const,
+            task: taskInfo.task,
+            start: taskInfo.start,
+            end: taskInfo.end,
+            instanceId: taskInfo.instance.id,
+            displayDurationMinutes: Math.max(
+              1,
+              Math.round(
+                (taskInfo.end.getTime() - taskInfo.start.getTime()) / 60000
+              )
+            ),
+          }));
+        if (scheduledCards.length > 0) {
+          scheduledCardsByInstanceId.set(projectInstance.instance.id, scheduledCards);
+        }
+      }
+      const occupiedSegments: Array<{ start: Date; end: Date }> = [];
+      const addOccupiedSegment = (segmentStart: Date, segmentEnd: Date) => {
+        if (
+          !isValidDate(segmentStart) ||
+          !isValidDate(segmentEnd) ||
+          segmentStart.getTime() >= segmentEnd.getTime()
+        ) {
+          return;
+        }
+        occupiedSegments.push({ start: segmentStart, end: segmentEnd });
+      };
+      dayHabitPlacements.forEach((placement) =>
+        addOccupiedSegment(placement.start, placement.end)
+      );
+      dayProjectInstances.forEach((instance) =>
+        addOccupiedSegment(instance.start, instance.end)
+      );
+      for (const scheduledCards of scheduledCardsByInstanceId.values()) {
+        scheduledCards.forEach((card) =>
+          addOccupiedSegment(card.start, card.end)
+        );
+      }
+      modelStandaloneTaskInstances.forEach((taskInfo) =>
+        addOccupiedSegment(taskInfo.start, taskInfo.end)
+      );
 
       let hasLoggedInstance = false;
 
@@ -5879,6 +5899,31 @@ export default function SchedulePage() {
               );
             })}
             {modelWindowReports.map((report) => {
+              const windowBounds = resolveWindowBoundsForDate(
+                report.window,
+                date,
+                effectiveTimeZone
+              );
+
+              if (
+                !isValidDate(windowBounds.start) ||
+                !isValidDate(windowBounds.end)
+              ) {
+                return null;
+              }
+
+              const windowStart = windowBounds.start;
+              const windowEnd = windowBounds.end;
+
+              const hasOverlappingSegment = occupiedSegments.some(
+                (segment) =>
+                  segment.start < windowEnd && segment.end > windowStart
+              );
+
+              if (hasOverlappingSegment) {
+                return null;
+              }
+
               const { topMinutes, heightMinutes } = windowRectMinutes(
                 report.window,
                 modelStartHour
@@ -6370,27 +6415,8 @@ export default function SchedulePage() {
                 const topStyle = toTimelinePosition(startOffsetMinutes);
                 const heightStyle = toTimelinePosition(durationMinutes);
                 const isExpanded = expandedProjects.has(projectId);
-                const projectTaskCandidates =
-                  modelTaskInstancesByProject[projectId] ?? [];
-                const scheduledCards: ProjectTaskCard[] = projectTaskCandidates
-                  .filter((taskInfo) =>
-                    taskMatchesProjectInstance(taskInfo, instance, start, end)
-                  )
-                  .map((taskInfo) => ({
-                    key: `scheduled:${taskInfo.instance.id}`,
-                    kind: "scheduled" as const,
-                    task: taskInfo.task,
-                    start: taskInfo.start,
-                    end: taskInfo.end,
-                    instanceId: taskInfo.instance.id,
-                    displayDurationMinutes: Math.max(
-                      1,
-                      Math.round(
-                        (taskInfo.end.getTime() - taskInfo.start.getTime()) /
-                          60000
-                      )
-                    ),
-                  }));
+                const scheduledCards: ProjectTaskCard[] =
+                  scheduledCardsByInstanceId.get(instance.id) ?? [];
                 const hasScheduledBreakdown = scheduledCards.length > 0;
                 const tasksLabel =
                   project.taskCount > 0
@@ -7532,9 +7558,6 @@ export default function SchedulePage() {
           onReschedule={handleRescheduleClick}
           canReschedule={!isScheduling}
           isRescheduling={isScheduling}
-          onOpenModes={() => setIsModeSheetOpen(true)}
-          modeLabel={modeLabel}
-          modeIsActive={modeIsActive}
           onHeightChange={setTopBarHeight}
         />
         <div

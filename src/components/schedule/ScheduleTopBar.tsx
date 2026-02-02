@@ -16,7 +16,6 @@ import {
   ListChecks,
   RefreshCcw,
   PanelsTopLeft,
-  Gauge,
   Sparkles,
 } from "lucide-react";
 import {
@@ -35,9 +34,6 @@ interface ScheduleTopBarProps {
   onReschedule?: () => void;
   canReschedule?: boolean;
   isRescheduling?: boolean;
-  onOpenModes?: () => void;
-  modeLabel?: string;
-  modeIsActive?: boolean;
   onHeightChange?: (height: number) => void;
 }
 
@@ -51,9 +47,6 @@ export function ScheduleTopBar({
   onReschedule,
   canReschedule = true,
   isRescheduling = false,
-  onOpenModes,
-  modeLabel,
-  modeIsActive = false,
   onHeightChange,
 }: ScheduleTopBarProps) {
   const router = useRouter();
@@ -143,26 +136,6 @@ export function ScheduleTopBar({
         {year}
       </button>
       <div className="flex items-center gap-2">
-        {onOpenModes ? (
-          <button
-            type="button"
-            onClick={onOpenModes}
-            aria-label={modeLabel ? `Scheduler mode (${modeLabel})` : "Open scheduler modes"}
-            title={modeLabel ?? "Scheduler modes"}
-            className={cn(
-              iconButtonClass,
-              modeIsActive &&
-                "bg-gradient-to-br from-[#510A1E] via-[#350810] to-[#110005] text-white shadow-[0_12px_25px_rgba(81,10,30,0.55)] ring-2 ring-[#7C102D]/70 ring-offset-2 ring-offset-[var(--surface-elevated)]"
-            )}
-          >
-            <Gauge
-              className={cn(
-                "h-5 w-5 transition-colors",
-                modeIsActive ? "text-[#F6E7E9]" : "text-[var(--accent-red)]"
-              )}
-            />
-          </button>
-        ) : null}
         {onReschedule ? (
           <>
             <button
