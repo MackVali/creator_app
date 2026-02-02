@@ -68,7 +68,7 @@ import {
 } from "@/lib/scheduler/instanceRepo";
 import { TaskLite, ProjectLite } from "@/lib/scheduler/weight";
 import { buildProjectItems } from "@/lib/scheduler/projects";
-import { windowRectMinutes, timeToMin } from "@/lib/scheduler/windowRect";
+import { windowRectMinutes } from "@/lib/scheduler/windowRect";
 import { ENERGY } from "@/lib/scheduler/config";
 import {
   DEFAULT_HABIT_DURATION_MIN,
@@ -85,6 +85,7 @@ import {
 import type { ScheduleEventDataset } from "@/lib/scheduler/dataset";
 import { formatLocalDateKey, toLocal, dayKeyFromUtc } from "@/lib/time/tz";
 import {
+  GLOBAL_DAY_START_HOUR,
   startOfDayInTimeZone,
   addDaysInTimeZone,
   makeDateInTimeZone,
@@ -109,6 +110,22 @@ import {
   formatDurationLabel,
   type SchedulerRunFailure,
 } from "@/lib/scheduler/windowReports";
+import {
+  clipSegmentToDay,
+  computeWindowReportsForDay,
+  getLocalDayRange,
+  isValidDate,
+  normalizeEnergyLabel,
+  resolveWindowBoundsForDate as resolveWindowBoundsForDateLib,
+  updateScheduleEnergyLookup,
+} from "@/lib/scheduler/dayWindowReports";
+import type {
+  HabitTimelinePlacement,
+  SchedulerDebugState,
+  SchedulerTimelineEntry,
+  SchedulerTimelinePlacement,
+  WindowReportEntry,
+} from "@/lib/scheduler/dayWindowReports";
 import type { SkillRow } from "@/lib/types/skill";
 import type { Monument } from "@/lib/queries/monuments";
 import {
@@ -449,78 +466,6 @@ const MAX_FALLBACK_TASKS = 12;
 
 type LoadStatus = "idle" | "loading" | "loaded";
 
-type SchedulerTimelineEntry =
-  | {
-      type: "PROJECT";
-      instanceId: string;
-      projectId: string;
-      windowId: string | null;
-      decision: "kept" | "new" | "rescheduled" | "skipped";
-      startUTC: string;
-      endUTC: string;
-      durationMin: number | null;
-      energyResolved: string | null;
-      scheduledDayOffset: number | null;
-      availableStartLocal: string | null;
-      windowStartLocal: string | null;
-      locked: boolean;
-    }
-  | {
-      type: "HABIT";
-      habitId: string;
-      habitName: string | null;
-      windowId: string | null;
-      decision: "kept" | "new" | "rescheduled" | "skipped";
-      startUTC: string;
-      endUTC: string;
-      durationMin: number | null;
-      energyResolved: string | null;
-      scheduledDayOffset: number | null;
-      availableStartLocal: string | null;
-      windowStartLocal: string | null;
-      clipped: boolean;
-      practiceContextId?: string | null;
-    };
-
-type SchedulerTimelinePlacement =
-  | {
-      type: "PROJECT";
-      projectId: string;
-      projectName: string;
-      locked: boolean;
-      start: Date;
-      end: Date;
-      startUtc: Date;
-      rawStart: string;
-      rawEnd: string;
-      durationMinutes: number | null;
-      energyLabel: (typeof ENERGY.LIST)[number];
-      decision: SchedulerTimelineEntry["decision"];
-    }
-  | {
-      type: "HABIT";
-      habitId: string;
-      habitName: string;
-      start: Date;
-      end: Date;
-      startUtc: Date;
-      rawStart: string;
-      rawEnd: string;
-      durationMinutes: number | null;
-      energyLabel: (typeof ENERGY.LIST)[number];
-      decision: SchedulerTimelineEntry["decision"];
-      clipped: boolean;
-      practiceContextId: string | null;
-    };
-
-type SchedulerDebugState = {
-  runAt: string;
-  failures: SchedulerRunFailure[];
-  placedCount: number;
-  placedProjectIds: string[];
-  timeline: SchedulerTimelineEntry[];
-  error: unknown;
-};
 
 type TaskInstanceInfo = {
   instance: ScheduleInstance;
@@ -539,6 +484,7 @@ type DayTimelineModel = {
   dayViewDetails: ReturnType<typeof resolveDayViewDetails>;
   timeZoneShortName: string;
   friendlyTimeZone: string;
+  viewTimeZone: string;
   startHour: number;
   pxPerMin: number;
   windows: RepoWindow[];
@@ -632,11 +578,10 @@ function isValidDate(value: unknown): value is Date {
   return value instanceof Date && !Number.isNaN(value.getTime());
 }
 
-function getDayMinuteOffset(date: Date) {
-  const timestamp = date.getTime();
-  if (!Number.isFinite(timestamp)) return 0;
-  const baseMinutes = date.getHours() * 60 + date.getMinutes();
-  return baseMinutes + date.getSeconds() / 60 + date.getMilliseconds() / 60000;
+function getDayMinuteOffset(date: Date, dayStart: Date) {
+  const ms = date.getTime() - dayStart.getTime();
+  if (!Number.isFinite(ms)) return 0;
+  return ms / 60000;
 }
 
 type LocalDayRange = {
@@ -645,30 +590,35 @@ type LocalDayRange = {
 };
 
 function getLocalDayRange(date: Date, timeZone: string): LocalDayRange {
-  const dayParts = getDateTimeParts(date, timeZone);
+  const { year, month, day } = getDateTimeParts(date, timeZone);
   const dayStart = makeZonedDate(
     {
-      year: dayParts.year,
-      month: dayParts.month,
-      day: dayParts.day,
-      hour: 0,
+      year,
+      month,
+      day,
+      hour: GLOBAL_DAY_START_HOUR,
       minute: 0,
       second: 0,
     },
     timeZone
   );
-  const dayEnd = makeZonedDate(
-    {
-      year: dayParts.year,
-      month: dayParts.month,
-      day: dayParts.day + 1,
-      hour: 0,
-      minute: 0,
-      second: 0,
-    },
-    timeZone
-  );
+  const dayEnd = addDaysInTimeZone(dayStart, 1, timeZone);
   return { dayStart, dayEnd };
+}
+
+function getRenderDayStart(date: Date, timeZone: string): Date {
+  const parts = getDateTimeParts(date, timeZone);
+  return makeZonedDate(
+    {
+      year: parts.year,
+      month: parts.month,
+      day: parts.day,
+      hour: 0,
+      minute: 0,
+      second: 0,
+    },
+    timeZone
+  );
 }
 
 function clipSegmentToDay(
@@ -685,6 +635,143 @@ function clipSegmentToDay(
     segStart: new Date(clippedStartMs),
     segEnd: new Date(clippedEndMs),
   };
+}
+
+function resolveWindowBoundsForRenderDay(
+  window: RepoWindow,
+  date: Date,
+  timeZone: string
+): { start: Date; end: Date } {
+  const parts = getDateTimeParts(date, timeZone);
+  const renderDayStart = makeZonedDate(
+    {
+      year: parts.year,
+      month: parts.month,
+      day: parts.day,
+      hour: 0,
+      minute: 0,
+      second: 0,
+    },
+    timeZone
+  );
+  const prevRenderDayStart = addDaysInTimeZone(renderDayStart, -1, timeZone);
+
+  const startBase = window.fromPrevDay ? prevRenderDayStart : renderDayStart;
+  const start = new Date(startBase);
+  const [startHour = 0, startMinute = 0] = window.start_local
+    .split(":")
+    .map(Number);
+  start.setHours(startHour, startMinute, 0, 0);
+
+  const end = new Date(renderDayStart);
+  const [endHour = 0, endMinute = 0] = window.end_local.split(":").map(Number);
+  end.setHours(endHour, endMinute, 0, 0);
+
+  if (end <= start) {
+    end.setDate(end.getDate() + 1);
+  }
+
+  return { start, end };
+}
+
+type OccupiedSegment = { start: Date; end: Date };
+
+function buildTimelineOccupiedSegments({
+  projectInstances,
+  habitPlacements,
+  standaloneTaskInstances,
+  taskInstancesByProject,
+}: {
+  projectInstances: ReturnType<typeof computeProjectInstances>;
+  habitPlacements: HabitTimelinePlacement[];
+  standaloneTaskInstances: TaskInstanceInfo[];
+  taskInstancesByProject: Record<string, TaskInstanceInfo[]>;
+}): OccupiedSegment[] {
+  const segments: OccupiedSegment[] = [];
+  const addSegment = (start: Date, end: Date) => {
+    if (!isValidDate(start) || !isValidDate(end)) return;
+    if (end.getTime() <= start.getTime()) return;
+    segments.push({ start, end });
+  };
+
+  for (const instance of projectInstances) {
+    addSegment(instance.start, instance.end);
+  }
+  for (const placement of habitPlacements) {
+    addSegment(placement.start, placement.end);
+  }
+  for (const task of standaloneTaskInstances) {
+    addSegment(task.start, task.end);
+  }
+  for (const bucket of Object.values(taskInstancesByProject)) {
+    for (const task of bucket) {
+      addSegment(task.start, task.end);
+    }
+  }
+
+  return segments;
+}
+
+function buildTimelineGaps({
+  occupiedSegments,
+  currentDate,
+  timeZone,
+}: {
+  occupiedSegments: OccupiedSegment[];
+  currentDate: Date;
+  timeZone: string;
+}): Array<{ start: Date; end: Date }> {
+  const renderDayStart = getRenderDayStart(currentDate, timeZone);
+  const renderDayEnd = addDaysInTimeZone(renderDayStart, 1, timeZone);
+
+  const clippedSegments = occupiedSegments
+    .map((segment) =>
+      clipSegmentToDay(segment.start, segment.end, renderDayStart, renderDayEnd)
+    )
+    .filter(
+      (
+        value
+      ): value is {
+        segStart: Date;
+        segEnd: Date;
+      } => value !== null
+    )
+    .map(({ segStart, segEnd }) => ({ start: segStart, end: segEnd }))
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  const mergedSegments: Array<{ start: Date; end: Date }> = [];
+  for (const segment of clippedSegments) {
+    if (mergedSegments.length === 0) {
+      mergedSegments.push({ start: segment.start, end: segment.end });
+      continue;
+    }
+    const lastSegment = mergedSegments[mergedSegments.length - 1];
+    if (segment.start.getTime() <= lastSegment.end.getTime()) {
+      const mergedEndMs = Math.max(
+        lastSegment.end.getTime(),
+        segment.end.getTime()
+      );
+      lastSegment.end = new Date(mergedEndMs);
+      continue;
+    }
+    mergedSegments.push({ start: segment.start, end: segment.end });
+  }
+
+  const gaps: Array<{ start: Date; end: Date }> = [];
+  let cursor = new Date(renderDayStart);
+  for (const segment of mergedSegments) {
+    if (segment.start.getTime() > cursor.getTime()) {
+      gaps.push({ start: cursor, end: segment.start });
+    }
+    if (segment.end.getTime() > cursor.getTime()) {
+      cursor = new Date(segment.end);
+    }
+  }
+  if (cursor.getTime() < renderDayEnd.getTime()) {
+    gaps.push({ start: cursor, end: renderDayEnd });
+  }
+
+  return gaps;
 }
 
 function computeTimelineStackingIndex(startOffsetMinutes: number) {
@@ -951,11 +1038,8 @@ function computeHabitPlacementsForDay({
 
   const windowEntries = windows
     .map((window) => {
-      const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(
-        window,
-        date,
-        zone
-      );
+      const { start: windowStart, end: windowEnd } =
+        resolveWindowBoundsForDateLib(window, date, zone);
       if (!isValidDate(windowStart) || !isValidDate(windowEnd)) {
         return null;
       }
@@ -1235,10 +1319,9 @@ function addAnchorStart(
   }
 }
 
-function computeWindowReportsForDay({
+export function computeWindowReportsForDay({
   windows,
   projectInstances,
-  startHour,
   unscheduledProjects,
   schedulerFailureByProjectId,
   schedulerDebug,
@@ -1246,10 +1329,10 @@ function computeWindowReportsForDay({
   habitPlacements,
   currentDate,
   timeZone,
+  gaps,
 }: {
   windows: RepoWindow[];
   projectInstances: ReturnType<typeof computeProjectInstances>;
-  startHour: number;
   unscheduledProjects: ProjectItem[];
   schedulerFailureByProjectId: Record<string, SchedulerRunFailure[]>;
   schedulerDebug: SchedulerDebugState | null;
@@ -1257,137 +1340,111 @@ function computeWindowReportsForDay({
   habitPlacements: HabitTimelinePlacement[];
   currentDate: Date;
   timeZone: string;
+  gaps: Array<{ start: Date; end: Date }>;
 }): WindowReportEntry[] {
   if (windows.length === 0) return [];
-  const assignments = new Map<string, number>();
-  const projectSpans = projectInstances
-    .map(({ instance, start, end, assignedWindow }) => {
+  const windowBounds = windows
+    .map((win) => {
+      const { start, end } = resolveWindowBoundsForRenderDay(
+        win,
+        currentDate,
+        timeZone
+      );
       if (!isValidDate(start) || !isValidDate(end)) return null;
-      const windowId = instance.window_id || assignedWindow?.id || null;
-      if (windowId) {
-        assignments.set(windowId, (assignments.get(windowId) ?? 0) + 1);
-      }
-      return { windowId, start, end };
+      if (end.getTime() <= start.getTime()) return null;
+      return { window: win, windowStart: start, windowEnd: end };
     })
     .filter(
       (
-        value
-      ): value is {
-        windowId: string | null;
-        start: Date;
-        end: Date;
-      } => value !== null
-    );
-
-  for (const habit of habitPlacements) {
-    assignments.set(
-      habit.window.id,
-      (assignments.get(habit.window.id) ?? 0) + 1
-    );
-  }
-
-  const scheduledSpans = [
-    ...projectSpans,
-    ...habitPlacements.map((placement) => ({
-      windowId: placement.window.id,
-      start: placement.start,
-      end: placement.end,
-    })),
-    ...schedulerTimelinePlacements
-      .map(({ start, end }) => {
-        if (!isValidDate(start) || !isValidDate(end)) return null;
-        const startMs = start.getTime();
-        const endMs = end.getTime();
-        if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
-        return { windowId: null, start, end };
-      })
-      .filter(
-        (value): value is { windowId: string | null; start: Date; end: Date } =>
-          value !== null
-      ),
-  ];
+        entry
+      ): entry is { window: RepoWindow; windowStart: Date; windowEnd: Date } =>
+        entry !== null
+    )
+    .sort((a, b) => a.windowStart.getTime() - b.windowStart.getTime());
 
   const diagnosticsAvailable = Boolean(schedulerDebug);
   const runStartedAt = schedulerDebug ? new Date(schedulerDebug.runAt) : null;
   const reports: WindowReportEntry[] = [];
 
-  for (const win of windows) {
-    const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(
-      win,
-      currentDate,
-      timeZone
-    );
-    if (!isValidDate(windowStart) || !isValidDate(windowEnd)) {
-      continue;
-    }
-    const assigned = assignments.get(win.id) ?? 0;
-    if (assigned > 0) continue;
-
-    const windowHasScheduledProject = scheduledSpans.some((span) => {
-      if (span.windowId === win.id) return true;
-      return span.start < windowEnd && span.end > windowStart;
-    });
-    if (windowHasScheduledProject) continue;
-
-    const durationMinutes = windowDurationForDay(win, startHour);
-    if (durationMinutes <= 0) continue;
-    const windowLabel = win.label?.trim() || "Untitled window";
-    const energyLabel = normalizeEnergyLabel(win.energy);
+  for (const entry of windowBounds) {
+    const { window, windowStart, windowEnd } = entry;
+    const windowLabel = window.label?.trim() || "Untitled window";
+    const energyLabel = normalizeEnergyLabel(window.energy);
     const windowEnergyIndex = energyIndexFromLabel(energyLabel);
-    const futurePlacements = schedulerTimelinePlacements
-      .filter(
-        (
-          entry
-        ): entry is Extract<SchedulerTimelinePlacement, { type: "PROJECT" }> =>
-          entry.type === "PROJECT"
-      )
-      .filter((entry) => entry.start.getTime() >= windowEnd.getTime())
-      .filter((entry) => {
-        const entryEnergyIndex = energyIndexFromLabel(entry.energyLabel);
-        return entryEnergyIndex !== -1 && entryEnergyIndex <= windowEnergyIndex;
-      })
-      .map((entry) => ({
-        projectId: entry.projectId,
-        projectName: entry.projectName,
-        start: entry.start,
-        durationMinutes: entry.durationMinutes,
-        sameDay:
-          formatLocalDateKey(entry.start) === formatLocalDateKey(windowEnd),
-        fits:
-          typeof entry.durationMinutes === "number" &&
-          Number.isFinite(entry.durationMinutes)
-            ? entry.durationMinutes <= durationMinutes
+
+    for (const gap of gaps) {
+      const segmentStartMs = Math.max(
+        gap.start.getTime(),
+        windowStart.getTime()
+      );
+      const segmentEndMs = Math.min(gap.end.getTime(), windowEnd.getTime());
+      if (segmentEndMs <= segmentStartMs) continue;
+
+      const segmentStart = new Date(segmentStartMs);
+      const segmentEnd = new Date(segmentEndMs);
+      const durationMinutes = Math.max(
+        0,
+        Math.round((segmentEndMs - segmentStartMs) / 60000)
+      );
+      if (durationMinutes <= 0) continue;
+
+      const futurePlacements = schedulerTimelinePlacements
+        .filter(
+          (
+            entry
+          ): entry is Extract<SchedulerTimelinePlacement, { type: "PROJECT" }> =>
+            entry.type === "PROJECT"
+        )
+        .filter((entry) => entry.start.getTime() >= segmentEnd.getTime())
+        .filter((entry) => {
+          const entryEnergyIndex = energyIndexFromLabel(entry.energyLabel);
+          return entryEnergyIndex !== -1 && entryEnergyIndex <= windowEnergyIndex;
+        })
+        .map((entry) => ({
+          projectId: entry.projectId,
+          projectName: entry.projectName,
+          start: entry.start,
+          durationMinutes: entry.durationMinutes,
+          sameDay:
+            formatLocalDateKey(entry.start) === formatLocalDateKey(segmentEnd),
+          fits:
+            typeof entry.durationMinutes === "number" &&
+            Number.isFinite(entry.durationMinutes)
+              ? entry.durationMinutes <= durationMinutes
+              : null,
+        }));
+
+      const description = describeEmptyWindowReport({
+        windowLabel,
+        energyLabel,
+        durationMinutes,
+        unscheduledProjects,
+        schedulerFailureByProjectId,
+        diagnosticsAvailable,
+        runStartedAt:
+          runStartedAt && !Number.isNaN(runStartedAt.getTime())
+            ? runStartedAt
             : null,
-      }));
+        windowStart,
+        windowEnd,
+        futurePlacements,
+        segmentStart,
+        segmentEnd,
+      });
 
-    const description = describeEmptyWindowReport({
-      windowLabel,
-      energyLabel,
-      durationMinutes,
-      unscheduledProjects,
-      schedulerFailureByProjectId,
-      diagnosticsAvailable,
-      runStartedAt:
-        runStartedAt && !Number.isNaN(runStartedAt.getTime())
-          ? runStartedAt
-          : null,
-      windowStart,
-      windowEnd,
-      futurePlacements,
-    });
-
-    reports.push({
-      key: `${win.id}-${win.fromPrevDay ? "prev" : "curr"}-${win.start_local}-${
-        win.end_local
-      }`,
-      window: win,
-      windowLabel,
-      summary: description.summary,
-      details: description.details,
-      energyLabel,
-      durationLabel: formatDurationLabel(durationMinutes),
-      rangeLabel: formatWindowRange(win),
-    });
+      reports.push({
+        key: `${window.id}-${segmentStart.toISOString()}-${segmentEnd.toISOString()}`,
+        window,
+        windowLabel,
+        summary: description.summary,
+        details: description.details,
+        energyLabel,
+        durationLabel: formatDurationLabel(durationMinutes),
+        rangeLabel: formatGapRangeLabel(segmentStart, segmentEnd),
+        rangeStart: segmentStart,
+        rangeEnd: segmentEnd,
+      });
+    }
   }
 
   return reports;
@@ -1501,10 +1558,20 @@ function buildDayTimelineModel({
     schedulerTimelinePlacements,
     instances,
   });
+  const occupiedSegments = buildTimelineOccupiedSegments({
+    projectInstances,
+    habitPlacements,
+    standaloneTaskInstances,
+    taskInstancesByProject,
+  });
+  const timelineGaps = buildTimelineGaps({
+    occupiedSegments,
+    currentDate: date,
+    timeZone: localTimeZone ?? "UTC",
+  });
   const windowReports = computeWindowReportsForDay({
     windows,
     projectInstances,
-    startHour,
     unscheduledProjects,
     schedulerFailureByProjectId,
     schedulerDebug,
@@ -1512,6 +1579,7 @@ function buildDayTimelineModel({
     habitPlacements,
     currentDate: date,
     timeZone: localTimeZone ?? "UTC",
+    gaps: timelineGaps,
   });
   return {
     date,
@@ -1521,6 +1589,7 @@ function buildDayTimelineModel({
     dayViewDetails: resolveDayViewDetails(date, localTimeZone),
     timeZoneShortName,
     friendlyTimeZone,
+    viewTimeZone: localTimeZone ?? "UTC",
     startHour,
     pxPerMin,
     windows,
@@ -1986,6 +2055,8 @@ type WindowReportEntry = {
   energyLabel: (typeof ENERGY.LIST)[number];
   durationLabel: string;
   rangeLabel: string;
+  rangeStart: Date;
+  rangeEnd: Date;
 };
 
 const ENERGY_LABEL_SET = new Set<(typeof ENERGY.LIST)[number]>(ENERGY.LIST);
@@ -2052,61 +2123,8 @@ function updateScheduleEnergyLookup(
   }
 }
 
-function windowDurationForDay(window: RepoWindow, startHour: number): number {
-  const startMin = timeToMin(window.start_local);
-  const endMin = timeToMin(window.end_local);
-  const dayStartMin = startHour * 60;
-  if (window.fromPrevDay) {
-    return Math.max(0, endMin - dayStartMin);
-  }
-  if (endMin <= startMin) {
-    return Math.max(0, 24 * 60 - startMin);
-  }
-  return Math.max(0, endMin - startMin);
-}
-
-function formatClockLabel(localTime: string): string {
-  const [hour = 0, minute = 0] = localTime.split(":").map(Number);
-  const d = new Date();
-  d.setHours(hour, minute, 0, 0);
-  return TIME_FORMATTER.format(d);
-}
-
-function formatWindowRange(window: RepoWindow): string {
-  return `${formatClockLabel(window.start_local)} – ${formatClockLabel(
-    window.end_local
-  )}`;
-}
-
-function resolveWindowBoundsForDate(
-  window: RepoWindow,
-  date: Date,
-  timeZone: string
-) {
-  const zone = normalizeTimeZone(timeZone);
-  const dayStart = startOfDayInTimeZone(date, zone);
-  const prevDayStart = addDaysInTimeZone(dayStart, -1, zone);
-
-  const startBase = window.fromPrevDay ? prevDayStart : dayStart;
-  const start = new Date(startBase);
-  const [startHour = 0, startMinute = 0] = window.start_local
-    .split(":")
-    .map(Number);
-  start.setHours(startHour, startMinute, 0, 0);
-
-  const end = new Date(dayStart);
-  const [endHour = 0, endMinute = 0] = window.end_local.split(":").map(Number);
-  end.setHours(endHour, endMinute, 0, 0);
-
-  if (!window.fromPrevDay && end <= start) {
-    end.setDate(end.getDate() + 1);
-  }
-
-  if (window.fromPrevDay && end <= start) {
-    end.setDate(end.getDate() + 1);
-  }
-
-  return { start, end };
+function formatGapRangeLabel(start: Date, end: Date): string {
+  return `${TIME_FORMATTER.format(start)} – ${TIME_FORMATTER.format(end)}`;
 }
 
 export default function SchedulePage() {
@@ -3899,17 +3917,29 @@ export default function SchedulePage() {
       for (const direction of ["previous", "next"] as const) {
         const entry = prev[direction];
         if (!entry) continue;
-        const windowReports = computeWindowReportsForDay({
-          windows: entry.windows,
-          projectInstances: entry.projectInstances,
-          startHour,
-          unscheduledProjects,
-          schedulerFailureByProjectId,
-          schedulerDebug,
-          schedulerTimelinePlacements,
-          habitPlacements: entry.habitPlacements,
-          currentDate: entry.date,
-        });
+      const occupiedSegments = buildTimelineOccupiedSegments({
+        projectInstances: entry.projectInstances,
+        habitPlacements: entry.habitPlacements,
+        standaloneTaskInstances: entry.standaloneTaskInstances,
+        taskInstancesByProject: entry.taskInstancesByProject,
+      });
+      const timelineGaps = buildTimelineGaps({
+        occupiedSegments,
+        currentDate: entry.date,
+        timeZone: effectiveTimeZone,
+      });
+      const windowReports = computeWindowReportsForDay({
+        windows: entry.windows,
+        projectInstances: entry.projectInstances,
+        unscheduledProjects,
+        schedulerFailureByProjectId,
+        schedulerDebug,
+        schedulerTimelinePlacements,
+        habitPlacements: entry.habitPlacements,
+        currentDate: entry.date,
+        timeZone: effectiveTimeZone,
+        gaps: timelineGaps,
+      });
         nextState[direction] = {
           ...entry,
           startHour,
@@ -3928,6 +3958,7 @@ export default function SchedulePage() {
     schedulerTimelinePlacements,
     userId,
     view,
+    effectiveTimeZone,
   ]);
 
   const instanceStatusById = useMemo(() => {
@@ -5713,7 +5744,10 @@ export default function SchedulePage() {
         standaloneTaskInstances: modelStandaloneTaskInstances,
         habitPlacements: modelHabitPlacements,
         windowReports: modelWindowReports,
+        viewTimeZone,
       } = model;
+      const renderDayStart = getRenderDayStart(date, viewTimeZone);
+      const renderDayEnd = addDaysInTimeZone(renderDayStart, 1, viewTimeZone);
 
       const modelPxPerMin = pxPerMin;
       const todayDateKey = model.todayDateKey;
@@ -5731,8 +5765,8 @@ export default function SchedulePage() {
           const clipped = clipSegmentToDay(
             placement.start,
             placement.end,
-            dayStart,
-            dayEnd
+            renderDayStart,
+            renderDayEnd
           );
           if (!clipped) return null;
           return {
@@ -5749,8 +5783,8 @@ export default function SchedulePage() {
           const clipped = clipSegmentToDay(
             projectInstance.start,
             projectInstance.end,
-            dayStart,
-            dayEnd
+            renderDayStart,
+            renderDayEnd
           );
           if (!clipped) return null;
           return {
@@ -5899,35 +5933,19 @@ export default function SchedulePage() {
               );
             })}
             {modelWindowReports.map((report) => {
-              const windowBounds = resolveWindowBoundsForDate(
-                report.window,
-                date,
-                effectiveTimeZone
-              );
-
-              if (
-                !isValidDate(windowBounds.start) ||
-                !isValidDate(windowBounds.end)
-              ) {
+              const { rangeStart, rangeEnd } = report;
+              if (!isValidDate(rangeStart) || !isValidDate(rangeEnd)) {
                 return null;
               }
-
-              const windowStart = windowBounds.start;
-              const windowEnd = windowBounds.end;
-
-              const hasOverlappingSegment = occupiedSegments.some(
-                (segment) =>
-                  segment.start < windowEnd && segment.end > windowStart
+              const renderRangeStartMin = getDayMinuteOffset(
+                rangeStart,
+                renderDayStart
               );
-
-              if (hasOverlappingSegment) {
-                return null;
-              }
-
-              const { topMinutes, heightMinutes } = windowRectMinutes(
-                report.window,
-                modelStartHour
-              );
+              const renderRangeEndMin = getDayMinuteOffset(rangeEnd, renderDayStart);
+              const startMin = renderRangeStartMin - modelStartHour * 60;
+              const endMin = renderRangeEndMin - modelStartHour * 60;
+              const topMinutes = Math.max(0, startMin);
+              const heightMinutes = Math.max(0, endMin - Math.max(0, startMin));
               if (!Number.isFinite(heightMinutes) || heightMinutes <= 0) {
                 return null;
               }
@@ -5974,7 +5992,7 @@ export default function SchedulePage() {
                 rawHabitType === "ASYNC" ? "SYNC" : rawHabitType;
               const displayStart = placement.start;
               const displayEnd = placement.end;
-              const startMin = getDayMinuteOffset(displayStart);
+              const startMin = getDayMinuteOffset(displayStart, renderDayStart);
               const startOffsetMinutes = startMin;
               let durationMinutes = Math.max(
                 0,
@@ -6389,7 +6407,7 @@ export default function SchedulePage() {
               ({ instance, project, start, end, assignedWindow }, index) => {
                 if (!isValidDate(start) || !isValidDate(end)) return null;
                 const projectId = project.id;
-                const startMin = getDayMinuteOffset(start);
+                const startMin = getDayMinuteOffset(start, renderDayStart);
                 const startOffsetMinutes = startMin;
                 const durationMinutes = Math.max(
                   0,
@@ -7203,7 +7221,7 @@ export default function SchedulePage() {
               {modelStandaloneTaskInstances.map(
                 ({ instance, task, start, end }) => {
                   if (!isValidDate(start) || !isValidDate(end)) return null;
-                  const startMin = getDayMinuteOffset(start);
+                  const startMin = getDayMinuteOffset(start, renderDayStart);
                   const startOffsetMinutes = startMin;
                   const durationMinutes = Math.max(
                     0,
