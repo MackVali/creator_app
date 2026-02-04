@@ -47,6 +47,7 @@ import {
   makeDateInTimeZone,
 } from "@/lib/scheduler/timezone";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { OverlayWindowModal } from "@/components/schedule/OverlayWindowModal";
 
 interface JumpToDateSheetProps {
   open: boolean;
@@ -174,6 +175,10 @@ export function JumpToDateSheet({
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [savingBlockId, setSavingBlockId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [isOverlayModalOpen, setIsOverlayModalOpen] = useState(false);
+  const [overlayStartReference, setOverlayStartReference] = useState<Date | null>(
+    null
+  );
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -886,6 +891,31 @@ export function JumpToDateSheet({
     return { dayName, dateLabel };
   }, [paintSelectionDate]);
 
+  const computeOverlayStartDate = useCallback(
+    (preferred?: Date | null) => {
+      if (preferred && !Number.isNaN(preferred.getTime())) {
+        return new Date(preferred);
+      }
+      if (paintSelectionDate) return new Date(paintSelectionDate);
+      if (currentDate && !Number.isNaN(currentDate.getTime())) {
+        return new Date(currentDate);
+      }
+      return roundToNearestQuarterHour(new Date());
+    },
+    [paintSelectionDate, currentDate]
+  );
+
+  const handleOpenOverlayModal = useCallback(
+    (preferred?: Date | null) => {
+      setOverlayStartReference(computeOverlayStartDate(preferred ?? null));
+      setIsOverlayModalOpen(true);
+    },
+    [computeOverlayStartDate]
+  );
+
+  const overlayModalStart =
+    overlayStartReference ?? computeOverlayStartDate();
+
   const defaultDayTypeForSelection = useMemo(() => {
     if (!paintSelectionDate || dayTypes.length === 0) return null;
     const dayIndex = paintSelectionDate.getDay();
@@ -1455,7 +1485,8 @@ export function JumpToDateSheet({
   );
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
         className="bg-gradient-to-b from-[var(--surface-elevated)] via-[var(--surface-elevated)]/95 to-[#0b0f16] border-t border-white/10 p-0 text-[var(--text-primary)] rounded-t-[22px] sm:rounded-t-2xl max-h-[92vh] sm:max-h-[88vh] overflow-hidden shadow-[0_-22px_50px_rgba(0,0,0,0.45)] backdrop-blur"
@@ -1937,6 +1968,15 @@ export function JumpToDateSheet({
                   >
                     Create day type
                   </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-sm text-white/90 focus:bg-white/10 focus:text-white"
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      handleOpenOverlayModal(currentDate);
+                    }}
+                  >
+                    Create overlay window
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -2065,6 +2105,13 @@ export function JumpToDateSheet({
         </div>
       </SheetContent>
     </Sheet>
+    <OverlayWindowModal
+      open={isOverlayModalOpen}
+      onOpenChange={(nextOpen) => setIsOverlayModalOpen(nextOpen)}
+      start={overlayModalStart}
+      timeZone={resolvedTimeZone}
+    />
+    </>
   );
 }
 
@@ -2107,4 +2154,12 @@ function parseLikelyGoalTimestamp(value?: string | null): number | null {
   if (!value) return null;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function roundToNearestQuarterHour(date: Date): Date {
+  const result = new Date(date);
+  const minutes = result.getMinutes();
+  const roundedMinutes = Math.round(minutes / 15) * 15;
+  result.setMinutes(roundedMinutes, 0, 0);
+  return result;
 }
