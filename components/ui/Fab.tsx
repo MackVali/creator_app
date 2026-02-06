@@ -969,6 +969,7 @@ export function Fab({
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSavingFab, setIsSavingFab] = useState(false);
+  const fabSavePendingRef = useRef(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -3977,171 +3978,176 @@ export function Fab({
   ]);
 
   const handleFabSave = useCallback(async () => {
-    if (isSavingFab || !selected) return;
-    setSaveError(null);
-    const supabase = getSupabaseBrowser();
-    if (!supabase) {
-      setSaveError("Supabase client not available.");
-      return;
-    }
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-    if (userError) {
-      setSaveError("Unable to resolve user.");
-      return;
-    }
-    if (!user) {
-      setSaveError("You need to be signed in to save.");
-      return;
-    }
-    const trimmedName =
-      selected === "GOAL"
-        ? goalName.trim()
-        : selected === "PROJECT"
-        ? projectName.trim()
-        : selected === "TASK"
-        ? taskName.trim()
-        : habitName.trim();
-    if (trimmedName.length === 0) {
-      setSaveError("Please enter a name.");
-      return;
-    }
-    if (selected === "GOAL") {
-      if (!goalMonumentId) {
-        setSaveError("Link this goal to a monument before saving.");
-        return;
-      }
-      if (!goalEnergy) {
-        setSaveError("Select an energy level before saving.");
-        return;
-      }
-      if (!goalPriority) {
-        setSaveError("Select a priority before saving.");
-        return;
-      }
-    }
-    if (selected === "PROJECT") {
-      if (!projectGoalId) {
-        setSaveError("Link this project to a goal before saving.");
-        return;
-      }
-      if (projectSkillIds.length === 0) {
-        setSaveError("Link at least one skill before saving.");
-        return;
-      }
-    }
-    if (selected === "TASK") {
-      if (!taskProjectId) {
-        setSaveError("Link this task to a project before saving.");
-        return;
-      }
-      if (!taskSkillId) {
-        setSaveError("Link this task to a skill before saving.");
-        return;
-      }
-    }
-    if (selected === "HABIT") {
-      if (!habitEnergy) {
-        setSaveError("Select an energy level before saving.");
-        return;
-      }
-      if (!habitRecurrence) {
-        setSaveError("Select a recurrence before saving.");
-        return;
-      }
-      if (!habitType) {
-        setSaveError("Select a habit type before saving.");
-        return;
-      }
-      if (!habitSkillId) {
-        setSaveError("Link this habit to a skill before saving.");
-        return;
-      }
-    }
-    setIsSavingFab(true);
+    if (fabSavePendingRef.current || isSavingFab || !selected) return;
+    fabSavePendingRef.current = true;
     try {
+      setSaveError(null);
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        setSaveError("Supabase client not available.");
+        return;
+      }
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) {
+        setSaveError("Unable to resolve user.");
+        return;
+      }
+      if (!user) {
+        setSaveError("You need to be signed in to save.");
+        return;
+      }
+      const trimmedName =
+        selected === "GOAL"
+          ? goalName.trim()
+          : selected === "PROJECT"
+          ? projectName.trim()
+          : selected === "TASK"
+          ? taskName.trim()
+          : habitName.trim();
+      if (trimmedName.length === 0) {
+        setSaveError("Please enter a name.");
+        return;
+      }
       if (selected === "GOAL") {
-        const { error } = await supabase.from("goals").insert({
-          user_id: user.id,
-          name: trimmedName,
-          priority: goalPriority,
-          energy: goalEnergy,
-          why: goalWhy?.trim() || null,
-          monument_id: goalMonumentId || null,
-          due_date: goalDue ?? null,
-        });
-        if (error) throw error;
-      } else if (selected === "PROJECT") {
-        const { data: projectData, error } = await supabase
-          .from("projects")
-          .insert({
+        if (!goalMonumentId) {
+          setSaveError("Link this goal to a monument before saving.");
+          return;
+        }
+        if (!goalEnergy) {
+          setSaveError("Select an energy level before saving.");
+          return;
+        }
+        if (!goalPriority) {
+          setSaveError("Select a priority before saving.");
+          return;
+        }
+      }
+      if (selected === "PROJECT") {
+        if (!projectGoalId) {
+          setSaveError("Link this project to a goal before saving.");
+          return;
+        }
+        if (projectSkillIds.length === 0) {
+          setSaveError("Link at least one skill before saving.");
+          return;
+        }
+      }
+      if (selected === "TASK") {
+        if (!taskProjectId) {
+          setSaveError("Link this task to a project before saving.");
+          return;
+        }
+        if (!taskSkillId) {
+          setSaveError("Link this task to a skill before saving.");
+          return;
+        }
+      }
+      if (selected === "HABIT") {
+        if (!habitEnergy) {
+          setSaveError("Select an energy level before saving.");
+          return;
+        }
+        if (!habitRecurrence) {
+          setSaveError("Select a recurrence before saving.");
+          return;
+        }
+        if (!habitType) {
+          setSaveError("Select a habit type before saving.");
+          return;
+        }
+        if (!habitSkillId) {
+          setSaveError("Link this habit to a skill before saving.");
+          return;
+        }
+      }
+      setIsSavingFab(true);
+      try {
+        if (selected === "GOAL") {
+          const { error } = await supabase.from("goals").insert({
             user_id: user.id,
             name: trimmedName,
-            goal_id: projectGoalId || null,
-            priority: projectPriority,
-            energy: projectEnergy,
-            stage: projectStage,
-            why: projectWhy?.trim() || null,
-            duration_min:
-              typeof projectDuration === "number" &&
-              Number.isFinite(projectDuration)
-                ? projectDuration
-                : normalizedProjectDuration || null,
-          })
-          .select("id")
-          .single();
-        if (error) throw error;
-        if (projectData?.id && projectSkillIds.length > 0) {
-          const { error: projectSkillsError } = await supabase
-            .from("project_skills")
-            .insert(
-              projectSkillIds.map((skillId) => ({
-                project_id: projectData.id,
-                skill_id: skillId,
-              }))
-            );
-          if (projectSkillsError) throw projectSkillsError;
+            priority: goalPriority,
+            energy: goalEnergy,
+            why: goalWhy?.trim() || null,
+            monument_id: goalMonumentId || null,
+            due_date: goalDue ?? null,
+          });
+          if (error) throw error;
+        } else if (selected === "PROJECT") {
+          const { data: projectData, error } = await supabase
+            .from("projects")
+            .insert({
+              user_id: user.id,
+              name: trimmedName,
+              goal_id: projectGoalId || null,
+              priority: projectPriority,
+              energy: projectEnergy,
+              stage: projectStage,
+              why: projectWhy?.trim() || null,
+              duration_min:
+                typeof projectDuration === "number" &&
+                Number.isFinite(projectDuration)
+                  ? projectDuration
+                  : normalizedProjectDuration || null,
+            })
+            .select("id")
+            .single();
+          if (error) throw error;
+          if (projectData?.id && projectSkillIds.length > 0) {
+            const { error: projectSkillsError } = await supabase
+              .from("project_skills")
+              .insert(
+                projectSkillIds.map((skillId) => ({
+                  project_id: projectData.id,
+                  skill_id: skillId,
+                }))
+              );
+            if (projectSkillsError) throw projectSkillsError;
+          }
+        } else if (selected === "TASK") {
+          const { error } = await supabase.from("tasks").insert({
+            user_id: user.id,
+            name: trimmedName,
+            project_id: taskProjectId || null,
+            stage: taskStage,
+            skill_id: taskSkillId || null,
+          });
+          if (error) throw error;
+        } else if (selected === "HABIT") {
+          const parsedDuration = Number.parseInt(habitDuration || "0", 10);
+          const duration = Number.isFinite(parsedDuration)
+            ? parsedDuration
+            : null;
+          const { error } = await supabase.from("habits").insert({
+            user_id: user.id,
+            name: trimmedName,
+            type: habitType,
+            habit_type: habitType,
+            recurrence: habitRecurrence,
+            duration_minutes: duration,
+            energy: habitEnergy,
+            skill_id: habitSkillId || null,
+            routine_id: habitRoutineId || null,
+            goal_id: habitGoalId || null,
+          });
+          if (error) throw error;
+          await notifySchedulerOfChange();
         }
-      } else if (selected === "TASK") {
-        const { error } = await supabase.from("tasks").insert({
-          user_id: user.id,
-          name: trimmedName,
-          project_id: taskProjectId || null,
-          stage: taskStage,
-          skill_id: taskSkillId || null,
-        });
-        if (error) throw error;
-      } else if (selected === "HABIT") {
-        const parsedDuration = Number.parseInt(habitDuration || "0", 10);
-        const duration = Number.isFinite(parsedDuration)
-          ? parsedDuration
-          : null;
-        const { error } = await supabase.from("habits").insert({
-          user_id: user.id,
-          name: trimmedName,
-          type: habitType,
-          habit_type: habitType,
-          recurrence: habitRecurrence,
-          duration_minutes: duration,
-          energy: habitEnergy,
-          skill_id: habitSkillId || null,
-          routine_id: habitRoutineId || null,
-          goal_id: habitGoalId || null,
-        });
-        if (error) throw error;
-        await notifySchedulerOfChange();
+        setExpanded(false);
+        setSelected(null);
+      } catch (error: any) {
+        console.error("Failed to save item", error);
+        const errorMessage =
+          error?.message || error?.error?.message || "Unable to save right now.";
+        setSaveError(errorMessage);
+      } finally {
+        setIsSavingFab(false);
       }
-      setExpanded(false);
-      setSelected(null);
-    } catch (error: any) {
-      console.error("Failed to save item", error);
-      const errorMessage =
-        error?.message || error?.error?.message || "Unable to save right now.";
-      setSaveError(errorMessage);
     } finally {
-      setIsSavingFab(false);
+      fabSavePendingRef.current = false;
     }
   }, [
     habitDuration,

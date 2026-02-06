@@ -125,33 +125,39 @@ function DraggableGoalCard({
           <button
             type="button"
             onClick={() => onOpenChange?.(true)}
-            className="w-full flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-white transition hover:bg-white/[0.04] text-left"
+            className="flex w-full items-center gap-4 rounded-[18px] border border-white/10 bg-white/[0.05] px-3 py-3 text-left text-white transition-colors hover:border-white/30 hover:bg-white/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 backdrop-blur-sm"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-sm font-semibold">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/[0.08] text-sm font-semibold">
               {displayEmoji}
             </div>
-            <div className="flex-1 min-w-0">
-              <h4 className="font-medium text-sm truncate">{goal.title}</h4>
-              <div className="flex items-center gap-2 mt-1">
+            <div className="flex flex-1 min-w-0 flex-col gap-1">
+              <p className="text-sm font-semibold leading-tight text-white truncate">
+                {goal.title}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
                 <FlameEmber level={flameLevel} size="xs" />
-                <span className="text-xs text-white/60 uppercase tracking-wide">
-                  {goal.energy}
+                <span className="uppercase tracking-[0.3em]">{goal.energy}</span>
+                <span className="text-white/30">•</span>
+                <span className="uppercase tracking-[0.3em]">
+                  {goal.priority}
                 </span>
-                <span className="text-xs text-white/70">{goal.progress}%</span>
                 {goal.dueDate && (
-                  <span className="text-xs text-white/60">
-                    Due {new Date(goal.dueDate).toLocaleDateString()}
-                  </span>
+                  <>
+                    <span className="text-white/30">•</span>
+                    <span className="whitespace-nowrap text-[10px] text-white/60 normal-case">
+                      Due {new Date(goal.dueDate).toLocaleDateString()}
+                    </span>
+                  </>
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-16 bg-white/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.min(100, goal.progress)}%` }}
-                />
-              </div>
+            <div className="flex flex-col items-end gap-0.5 whitespace-nowrap text-right text-[11px]">
+              <span className="text-sm font-semibold text-white">
+                {Math.round(Math.min(100, goal.progress))}%
+              </span>
+              <span className="text-xs uppercase tracking-[0.3em] text-white/70">
+                {goal.status}
+              </span>
             </div>
           </button>
         )}
@@ -554,26 +560,39 @@ function CompactGoalsOverlay({
     ? Math.min(640, Math.max(anchorRect.width + 64, 300))
     : undefined;
 
+  const emojiBadge = roadmap.emoji ?? roadmap.title.slice(0, 2);
+  const goalsLabel = `${goals.length} ${goals.length === 1 ? "goal" : "goals"}`;
+
   const header = (
-    <div className="flex items-center justify-between px-5 py-4">
-      <h4
-        id={headingId}
-        className="text-xs font-semibold uppercase tracking-[0.28em] text-white/70"
-      >
-        {roadmap.title}
-      </h4>
+    <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-3">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/15 bg-white/[0.08] text-lg font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.2)]">
+          {emojiBadge}
+        </div>
+        <div className="flex flex-col gap-1">
+          <h4
+            id={headingId}
+            className="text-base font-semibold leading-tight text-white"
+          >
+            {roadmap.title}
+          </h4>
+          <p className="text-[11px] text-white/60 uppercase tracking-[0.32em]">
+            {goalsLabel}
+          </p>
+        </div>
+      </div>
       <button
         type="button"
         onClick={onClose}
-        className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/80 transition hover:border-white/30 hover:text-white"
+        className="self-start rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70 transition hover:border-white/30 hover:text-white"
       >
         Close
       </button>
     </div>
   );
 
-  const goalsContent = (
-    <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
+  const listArea = (
+    <div className="mt-4 max-h-[60vh] overflow-y-auto pb-3 sm:max-h-[70vh]">
       {openGoalId ? (
         <GoalCard
           goal={localGoals.find((g) => g.id === openGoalId)!}
@@ -624,13 +643,7 @@ function CompactGoalsOverlay({
           }}
         >
           <SortableContext items={localGoals.map((g) => g.id)}>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-              }}
-            >
+            <div className="flex flex-col gap-3">
               {localGoals.map((goal, index) => (
                 <DraggableGoalCard
                   key={goal.id}
@@ -656,8 +669,9 @@ function CompactGoalsOverlay({
     </div>
   );
 
+  const panelPadding = "p-4 sm:p-5";
   const basePanelClass =
-    "overflow-hidden rounded-2xl border border-white/15 bg-black shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)]";
+    "relative overflow-hidden rounded-[30px] border border-white/15 bg-black/[0.68] shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9)] backdrop-blur-sm text-white/90";
 
   const goalCardContent = openGoalId ? (
     <GoalCard
@@ -683,18 +697,18 @@ function CompactGoalsOverlay({
           onClick={onClose}
         />
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-10">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={headingId}
-            className={`w-full max-w-sm ${basePanelClass}`}
-            style={
-              computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined
-            }
-          >
-            {header}
-            {goalsContent}
-          </div>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={headingId}
+          className={`w-full max-w-sm ${basePanelClass} ${panelPadding}`}
+          style={
+            computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined
+          }
+        >
+          {header}
+          {listArea}
+        </div>
         </div>
         {goalCardContent}
       </>,
@@ -715,11 +729,11 @@ function CompactGoalsOverlay({
           role="dialog"
           aria-modal="true"
           aria-labelledby={headingId}
-          className={`w-full max-w-xl ${basePanelClass}`}
+          className={`w-full max-w-xl ${basePanelClass} ${panelPadding}`}
           style={computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined}
         >
           {header}
-          {goalsContent}
+          {listArea}
         </div>
       </div>
       {goalCardContent}
