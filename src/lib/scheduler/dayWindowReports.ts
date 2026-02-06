@@ -5,6 +5,7 @@ import type { ProjectItem } from "@/lib/scheduler/projects";
 import {
   addDaysInTimeZone,
   getDateTimeParts,
+  makeDateInTimeZone,
   makeZonedDate,
   normalizeTimeZone,
   startOfDayInTimeZone,
@@ -77,28 +78,60 @@ export function resolveWindowBoundsForDate(
   timeZone: string
 ) {
   const zone = normalizeTimeZone(timeZone);
-  const dayStart = startOfDayInTimeZone(date, zone);
-  const prevDayStart = addDaysInTimeZone(dayStart, -1, zone);
+  const dayParts = getDateTimeParts(date, zone);
+  const dayStart = makeDateInTimeZone(
+    {
+      year: dayParts.year,
+      month: dayParts.month,
+      day: dayParts.day,
+      hour: 0,
+      minute: 0,
+    },
+    zone
+  );
+  const prevDayStart = new Date(dayStart);
+  prevDayStart.setUTCDate(prevDayStart.getUTCDate() - 1);
+  const startAnchor = window.fromPrevDay ? prevDayStart : dayStart;
+  const endAnchor = window.fromPrevDay ? prevDayStart : dayStart;
 
-  const startBase = window.fromPrevDay ? prevDayStart : dayStart;
-  const start = new Date(startBase);
   const [startHour = 0, startMinute = 0] = window.start_local
     .split(":")
     .map(Number);
-  start.setHours(startHour, startMinute, 0, 0);
-
-  const end = new Date(dayStart);
   const [endHour = 0, endMinute = 0] = window.end_local
     .split(":")
     .map(Number);
-  end.setHours(endHour, endMinute, 0, 0);
 
-  if (!window.fromPrevDay && end <= start) {
-    end.setDate(end.getDate() + 1);
+  const startParts = getDateTimeParts(startAnchor, zone);
+  const endParts = getDateTimeParts(endAnchor, zone);
+
+  const start = makeZonedDate(
+    {
+      year: startParts.year,
+      month: startParts.month,
+      day: startParts.day,
+      hour: startHour,
+      minute: startMinute,
+    },
+    zone
+  );
+
+  let end = makeZonedDate(
+    {
+      year: endParts.year,
+      month: endParts.month,
+      day: endParts.day,
+      hour: endHour,
+      minute: endMinute,
+    },
+    zone
+  );
+
+  if (!window.fromPrevDay && end.getTime() <= start.getTime()) {
+    end = addDaysInTimeZone(end, 1, zone);
   }
 
-  if (window.fromPrevDay && end <= start) {
-    end.setDate(end.getDate() + 1);
+  if (window.fromPrevDay && end.getTime() <= start.getTime()) {
+    end = addDaysInTimeZone(end, 1, zone);
   }
 
   return { start, end };
@@ -364,7 +397,6 @@ export function computeWindowReportsForDay({
   const diagnosticsAvailable = Boolean(schedulerDebug);
   const runStartedAt = schedulerDebug ? new Date(schedulerDebug.runAt) : null;
   const reports: WindowReportEntry[] = [];
-
   for (const entry of windowBounds) {
     const { window, windowStart, windowEnd } = entry;
     const windowLabel = window.label?.trim() || "Untitled window";
@@ -426,8 +458,8 @@ export function computeWindowReportsForDay({
         futurePlacements,
         segmentStart,
         segmentEnd,
+        window,
       });
-
       reports.push({
         key: `${window.id}-${segmentStart.toISOString()}-${segmentEnd.toISOString()}`,
         window,
@@ -442,6 +474,5 @@ export function computeWindowReportsForDay({
       });
     }
   }
-
   return reports;
 }

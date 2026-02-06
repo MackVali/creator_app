@@ -1430,6 +1430,7 @@ export function computeWindowReportsForDay({
         futurePlacements,
         segmentStart,
         segmentEnd,
+        window,
       });
 
       reports.push({
@@ -5959,20 +5960,20 @@ export default function SchedulePage() {
                     height: toTimelinePosition(heightMinutes),
                   }}
                 >
-                  <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
-                    <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
+                  <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-white/30 bg-black/50 px-3 py-2 text-slate-50 shadow-[0_18px_38px_rgba(0,0,0,0.55)] backdrop-blur-sm">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-white/90">
                       Window report · {report.windowLabel}
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-white/80">
                       <span>{report.rangeLabel}</span>
                       <span>Energy: {report.energyLabel}</span>
                       <span>Duration: {report.durationLabel}</span>
                     </div>
-                    <p className="mt-2 text-[11px] leading-snug text-sky-50">
+                    <p className="mt-2 text-[11px] leading-snug text-white">
                       {report.summary}
                     </p>
                     {report.details.length > 0 && (
-                      <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
+                      <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-white/80">
                         {report.details.map((detail, index) => (
                           <li key={`${report.key}-detail-${index}`}>
                             {detail}
@@ -6936,7 +6937,7 @@ export default function SchedulePage() {
                                 const shinyTaskClasses =
                                   "bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur";
                                 const completedTaskClasses =
-                                  "bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.88)_100%)] text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 backdrop-blur";
+                                  "bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] text-emerald-50 shadow-[0_18px_38px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 backdrop-blur";
                                 const fallbackTaskClasses =
                                   "bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]";
                                 const isFallbackCard = kind === "fallback";

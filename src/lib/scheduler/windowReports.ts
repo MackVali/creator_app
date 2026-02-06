@@ -1,5 +1,6 @@
 import { ENERGY } from './config'
 import type { ProjectItem } from './projects'
+import type { RepoWindow } from './repo'
 import { log } from '@/lib/utils/logGate'
 
 export type SchedulerRunFailure = {
@@ -146,6 +147,7 @@ export function describeEmptyWindowReport({
   futurePlacements,
   segmentStart,
   segmentEnd,
+  window,
 }: {
   windowLabel: string
   energyLabel: (typeof ENERGY.LIST)[number]
@@ -164,18 +166,41 @@ export function describeEmptyWindowReport({
     durationMinutes: number | null
     start: Date
   }>
+  segmentStart: Date | null
+  segmentEnd: Date | null
+  window: RepoWindow
 }): { summary: string; details: string[] } {
   const details: string[] = []
+  const constraintNotes = describeWindowConstraints(window)
+  const finalizeReport = (
+    summary: string,
+    detailItems: string[] = details
+  ): { summary: string; details: string[] } => ({
+    summary,
+    details:
+      constraintNotes.length > 0 ? [...detailItems, ...constraintNotes] : detailItems,
+  })
+
+  if (window.window_kind === 'BREAK') {
+    return finalizeReport(
+      `${windowLabel} is a break block—take a breather. The scheduler intentionally keeps this slot empty.`
+    )
+  }
+
   const effectiveSegmentStart = segmentStart ?? windowStart
   const effectiveSegmentEnd = segmentEnd ?? windowEnd
   const segmentStartMs = effectiveSegmentStart.getTime()
   const segmentEndMs = effectiveSegmentEnd.getTime()
+  if (segmentEndMs <= Date.now()) {
+    return finalizeReport(
+      `${windowLabel} is in the past, so nothing new can be scheduled within it.`
+    )
+  }
 
   if (durationMinutes <= 0) {
-    return {
-      summary: `${windowLabel} has no remaining minutes in this gap on the selected day, so nothing can be scheduled here.`,
-      details,
-    }
+    return finalizeReport(
+      `${windowLabel} has no remaining minutes in this gap on the selected day, so nothing can be scheduled here.`
+    )
   }
 
   if (unscheduledProjects.length === 0) {
@@ -198,7 +223,7 @@ export function describeEmptyWindowReport({
             : 'unknown length'
           return `${entry.projectName} · ${lengthLabel} · ${DATE_WITH_TIME_FORMATTER.format(entry.start)}`
         })
-        return { summary, details: detailItems }
+        return finalizeReport(summary, detailItems)
       }
 
       if (
@@ -225,7 +250,7 @@ export function describeEmptyWindowReport({
                 : 'unknown length'
               return `${entry.projectName} · ${lengthLabel} · ${TIME_FORMATTER.format(entry.start)}`
             })
-            return { summary, details: detailItems }
+            return finalizeReport(summary, detailItems)
           }
         }
       }
@@ -243,7 +268,7 @@ export function describeEmptyWindowReport({
             : 'unknown length'
           return `${entry.projectName} · ${lengthLabel} · ${TIME_FORMATTER.format(entry.start)}`
         })
-        return { summary, details: detailItems }
+        return finalizeReport(summary, detailItems)
       }
 
       const futureDay = futurePlacements.filter(
@@ -257,21 +282,19 @@ export function describeEmptyWindowReport({
             : 'unknown length'
           return `${entry.projectName} · ${lengthLabel} · ${DATE_WITH_TIME_FORMATTER.format(entry.start)}`
         })
-        return { summary, details: detailItems }
+        return finalizeReport(summary, detailItems)
       }
     }
 
     if (runStartedAt && runStartedAt >= windowEnd) {
-      return {
-        summary: `${windowLabel} began at ${TIME_FORMATTER.format(windowStart)}, but the scheduler last ran at ${TIME_FORMATTER.format(runStartedAt)}, after this window ended.`,
-        details,
-      }
+      return finalizeReport(
+        `${windowLabel} began at ${TIME_FORMATTER.format(windowStart)}, but the scheduler last ran at ${TIME_FORMATTER.format(runStartedAt)}, after this window ended.`
+      )
     }
 
-    return {
-      summary: `${windowLabel} remained open after the last scheduler run. Trigger a reschedule to reevaluate this slot.`,
-      details,
-    }
+    return finalizeReport(
+      `${windowLabel} remained open after the last scheduler run. Trigger a reschedule to reevaluate this slot.`
+    )
   }
 
   const windowEnergyIndex = energyIndexFromLabel(energyLabel)
@@ -284,15 +307,13 @@ export function describeEmptyWindowReport({
     const maxEnergyIdx = Math.max(...unscheduledProjects.map(project => energyIndexFromLabel(project.energy)))
     if (maxEnergyIdx >= 0) {
       const requiredEnergy = ENERGY.LIST[maxEnergyIdx]
-      return {
-        summary: `Remaining projects require ${requiredEnergy} energy or higher, which ${windowLabel} cannot provide.`,
-        details,
-      }
+      return finalizeReport(
+        `Remaining projects require ${requiredEnergy} energy or higher, which ${windowLabel} cannot provide.`
+      )
     }
-    return {
-      summary: `Remaining projects do not have a compatible energy rating for ${windowLabel}.`,
-      details,
-    }
+    return finalizeReport(
+      `Remaining projects do not have a compatible energy rating for ${windowLabel}.`
+    )
   }
 
   const durationMatches = energyMatches.filter(project => {
@@ -308,15 +329,13 @@ export function describeEmptyWindowReport({
       })
     )
     if (!Number.isFinite(shortestDuration)) {
-      return {
-        summary: `Projects matching ${windowLabel}'s energy are missing duration estimates, so the scheduler skipped this window.`,
-        details,
-      }
+      return finalizeReport(
+        `Projects matching ${windowLabel}'s energy are missing duration estimates, so the scheduler skipped this window.`
+      )
     }
-    return {
-      summary: `Projects matching ${windowLabel}'s energy need at least ${formatDurationLabel(shortestDuration)}, but this window has only ${formatDurationLabel(durationMinutes)} available.`,
-      details,
-    }
+    return finalizeReport(
+      `Projects matching ${windowLabel}'s energy need at least ${formatDurationLabel(shortestDuration)}, but this window has only ${formatDurationLabel(durationMinutes)} available.`
+    )
   }
 
   const diagnostics: string[] = []
@@ -345,23 +364,85 @@ export function describeEmptyWindowReport({
   }
 
   if (diagnostics.length > 0) {
-    return {
-      summary: `Scheduler could not fit ${durationMatches.length} compatible project${
+    return finalizeReport(
+      `Scheduler could not fit ${durationMatches.length} compatible project${
         durationMatches.length === 1 ? '' : 's'
       } into ${windowLabel}.`,
-      details: diagnostics.slice(0, 4),
-    }
+      diagnostics.slice(0, 4)
+    )
   }
 
   if (diagnosticsAvailable) {
-    return {
-      summary: `${durationMatches.length} compatible project${durationMatches.length === 1 ? '' : 's'} are still waiting to be scheduled elsewhere.`,
-      details: fallbackDetails,
-    }
+    return finalizeReport(
+      `${durationMatches.length} compatible project${durationMatches.length === 1 ? '' : 's'} are still waiting to be scheduled elsewhere.`,
+      fallbackDetails
+    )
   }
 
-  return {
-    summary: `${windowLabel} remained open because matching projects still need to be rescheduled. Run the scheduler to capture diagnostics.`,
-    details: fallbackDetails,
+  return finalizeReport(
+    `${windowLabel} remained open because matching projects still need to be rescheduled. Run the scheduler to capture diagnostics.`,
+    fallbackDetails
+  )
+}
+
+function describeWindowConstraints(window: RepoWindow): string[] {
+  const notes: string[] = []
+
+  const locationLabel =
+    window.location_context_name?.trim() ||
+    window.location_context_value?.trim() ||
+    (window.location_context_id ? `ID ${window.location_context_id}` : '')
+
+  if (locationLabel) {
+    notes.push(`Requires location context "${locationLabel}".`)
   }
+
+  const habitTypes = normalizeConstraintValues(
+    window.allowedHabitTypes ?? window.allowedHabitTypesSet ?? null
+  )
+  if (window.allowAllHabitTypes === false || habitTypes.length > 0) {
+    notes.push(
+      habitTypes.length > 0
+        ? `Habit types limited to ${habitTypes.join(', ')}.`
+        : 'Habit types are restricted for this block.'
+    )
+  }
+
+  const skillIds = normalizeConstraintValues(
+    window.allowedSkillIds ?? window.allowedSkillIdsSet ?? null
+  )
+  if (window.allowAllSkills === false || skillIds.length > 0) {
+    notes.push(
+      skillIds.length > 0
+        ? `Skills must match: ${skillIds.join(', ')}.`
+        : 'Specific skills are required for this block.'
+    )
+  }
+
+  const monumentIds = normalizeConstraintValues(
+    window.allowedMonumentIds ?? window.allowedMonumentIdsSet ?? null
+  )
+  if (window.allowAllMonuments === false || monumentIds.length > 0) {
+    notes.push(
+      monumentIds.length > 0
+        ? `Monuments must match: ${monumentIds.join(', ')}.`
+        : 'Specific monuments are required for this block.'
+    )
+  }
+
+  if (window.dayTypeTimeBlockId && notes.length > 0) {
+    notes.unshift('Day-type time block constraints apply to this slot.')
+  }
+
+  return notes
+}
+
+function normalizeConstraintValues(
+  input?: string[] | null | Set<string>
+): string[] {
+  if (!input) return []
+  const values = input instanceof Set ? Array.from(input) : [...input]
+  return values
+    .map(value => (typeof value === 'string' ? value.trim() : String(value)))
+    .filter(value => value.length > 0)
 }
