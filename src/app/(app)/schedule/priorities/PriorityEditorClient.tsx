@@ -5,20 +5,30 @@ import {
   useEffect,
   useMemo,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import {
+  CollisionDetection,
   DndContext,
   DragEndEvent,
-  MouseSensor,
+  DragStartEvent,
+  DragOverlay,
+  MeasuringStrategy,
   PointerSensor,
   TouchSensor,
   closestCorners,
-  useDraggable,
+  pointerWithin,
   useDroppable,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -47,6 +57,11 @@ const VIEW_OPTIONS: Array<{ id: PriorityView; label: string }> = [
   { id: "goals", label: "Goals" },
 ];
 
+const collisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  return pointerCollisions.length ? pointerCollisions : closestCorners(args);
+};
+
 export default function PriorityEditorClient({
   initialProjects,
   initialGoals = [],
@@ -62,16 +77,16 @@ export default function PriorityEditorClient({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [priorityUpdateError, setPriorityUpdateError] = useState<string | null>(null);
   const [view, setView] = useState<PriorityView>("projects");
+  const [activeId, setActiveId] = useState<string | null>(null);
 
-  const pointerSensor = useSensor(PointerSensor, {
-    activationConstraint: { delay: 200, tolerance: 6 },
-  });
-  const mouseSensor = useSensor(MouseSensor);
-  const touchSensor = useSensor(TouchSensor);
-  const sensors = useSensors(pointerSensor, mouseSensor, touchSensor);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
+  );
 
-  const handleDragStart = useCallback(() => {
+  const handleDragStart = useCallback((event: DragStartEvent) => {
     setPriorityUpdateError(null);
+    setActiveId(event.active.id);
   }, []);
 
   useEffect(() => {
@@ -129,6 +144,7 @@ export default function PriorityEditorClient({
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {
       const { active, over } = event;
+      setActiveId(null);
       const draggablePayload = parseDraggableId(active.id);
       const targetBucket = parsePriorityDroppableId(over?.id);
       if (!draggablePayload || !targetBucket) {
@@ -193,6 +209,10 @@ export default function PriorityEditorClient({
     },
     [goals, projects],
   );
+
+  const handleDragCancel = useCallback(() => {
+    setActiveId(null);
+  }, []);
 
   const handleRecalculate = async () => {
     const supabase = getSupabaseBrowser();
@@ -292,9 +312,11 @@ export default function PriorityEditorClient({
         )}
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCorners}
+          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+          collisionDetection={collisionDetection}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {PRIORITY_ORDER.map((bucketId) => {
@@ -312,6 +334,13 @@ export default function PriorityEditorClient({
               const totalItems = isProjectView ? totalProjects : totalGoals;
               const itemLabel = isProjectView ? "project" : "goal";
               const emptyLabel = isProjectView ? "projects" : "goals";
+              const bucketSortableItems = isProjectView
+                ? STAGE_ORDER.flatMap((stageId) =>
+                    stageBuckets[stageId].map((project) =>
+                      buildDraggableId("project", project.id),
+                    ),
+                  )
+                : goalItems.map((goal) => buildDraggableId("goal", goal.id));
 
               return (
                 <PriorityBucketColumn
@@ -320,6 +349,7 @@ export default function PriorityEditorClient({
                   totalItems={totalItems}
                   itemLabel={itemLabel}
                   emptyLabel={emptyLabel}
+                  sortableItems={bucketSortableItems}
                 >
                   {isProjectView ? (
                     stageGroups.map((group) => {
@@ -352,6 +382,15 @@ export default function PriorityEditorClient({
               );
             })}
           </div>
+          <DragOverlay>
+            {activeId && (
+              <ActiveItemOverlay
+                activeId={activeId}
+                projects={projects}
+                goals={goals}
+              />
+            )}
+          </DragOverlay>
         </DndContext>
       </div>
     </>
@@ -364,16 +403,22 @@ type PriorityItemCardProps =
 
 function PriorityItemCard({ type, item }: PriorityItemCardProps) {
   const draggableId = buildDraggableId(type, item.id);
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: draggableId,
-  });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: draggableId });
 
   const stageLabel = item.stage ? `Stage: ${formatEnumLabel(item.stage)}` : null;
-  const style = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-      }
-    : undefined;
+  const transformStyle = transform ? CSS.Transform.toString(transform) : undefined;
+  const style: CSSProperties = {
+    touchAction: "none",
+    ...(transformStyle ? { transform: transformStyle } : undefined),
+    transition,
+  };
 
   return (
     <div
@@ -381,8 +426,8 @@ function PriorityItemCard({ type, item }: PriorityItemCardProps) {
       {...listeners}
       {...attributes}
       style={style}
-      className={`flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-[var(--surface)] px-3 py-2 transition ${
-        isDragging ? "shadow-2xl shadow-black/40" : ""
+      className={`select-none flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-[var(--surface)] px-3 py-2 transition ${
+        isDragging ? "shadow-2xl shadow-black/40 opacity-0" : ""
       } cursor-grab active:cursor-grabbing`}
     >
       <div>
@@ -403,6 +448,7 @@ interface PriorityBucketColumnProps {
   totalItems: number;
   itemLabel: string;
   emptyLabel: string;
+  sortableItems: string[];
   children: ReactNode;
 }
 
@@ -412,6 +458,7 @@ function PriorityBucketColumn({
   itemLabel,
   emptyLabel,
   children,
+  sortableItems,
 }: PriorityBucketColumnProps) {
   const droppableId = buildPriorityDroppableId(bucketId);
   const { isOver, setNodeRef } = useDroppable({ id: droppableId });
@@ -436,8 +483,63 @@ function PriorityBucketColumn({
         {totalItems === 0 ? (
           <p className="text-sm text-zinc-500">No {emptyLabel}</p>
         ) : (
-          children
+          <SortableContext
+            items={sortableItems}
+            strategy={verticalListSortingStrategy}
+          >
+            {children}
+          </SortableContext>
         )}
+      </div>
+    </div>
+  );
+}
+
+interface ActiveItemOverlayProps {
+  activeId: string;
+  projects: PriorityProject[];
+  goals: PriorityGoal[];
+}
+
+function ActiveItemOverlay({
+  activeId,
+  projects,
+  goals,
+}: ActiveItemOverlayProps) {
+  const payload = parseDraggableId(activeId);
+  if (!payload) return null;
+
+  const sharedClasses =
+    "pointer-events-none select-none flex w-full items-center justify-between gap-3 rounded-xl border border-white/5 bg-[var(--surface)] px-3 py-2 shadow-2xl shadow-black/40 opacity-90";
+
+  if (payload.type === "project") {
+    const project = projects.find((entry) => entry.id === payload.id);
+    if (!project) return null;
+
+    const stageLabel = project.stage ? `Stage: ${formatEnumLabel(project.stage)}` : null;
+
+    return (
+      <div className={sharedClasses}>
+        <div>
+          <p className="text-sm font-semibold text-white">{project.name}</p>
+          {stageLabel && <p className="text-xs text-zinc-500">{stageLabel}</p>}
+        </div>
+        {project.globalRank !== undefined && (
+          <span className="text-xs font-semibold text-[var(--accent-red)]">
+            #{project.globalRank}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  const goal = goals.find((entry) => entry.id === payload.id);
+  if (!goal) return null;
+
+  return (
+    <div className={sharedClasses}>
+      <div>
+        <p className="text-sm font-semibold text-white">{goal.name}</p>
       </div>
     </div>
   );
