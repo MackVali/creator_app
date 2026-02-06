@@ -46,6 +46,7 @@ type PreviewSegment = {
   title: string;
   blockType: BlockType;
   overlapped: boolean;
+  hasConstraints: boolean;
 };
 
 type DayType = {
@@ -1303,12 +1304,20 @@ export default function NewDayTypePage() {
   );
 
   const previewSegments = useMemo(() => {
-    const segments = selectedBlocks.flatMap((block) =>
-      blockToSegments(block).map((segment) => ({
+    const segments = selectedBlocks.flatMap((block) => {
+      const blockId = block.id;
+      const allowAllSkills = blockAllowAllSkills.get(blockId) ?? true;
+      const allowAllMonuments = blockAllowAllMonuments.get(blockId) ?? true;
+      const allowedHabitTypes = blockAllowedHabitTypes.get(blockId);
+      const allowsChores = allowedHabitTypes?.has("CHORE") ?? false;
+      const hasConstraints = !allowAllSkills || !allowAllMonuments || allowsChores;
+
+      return blockToSegments(block).map((segment) => ({
         ...segment,
-        blockType: blockType.get(block.id) ?? "FOCUS",
-      }))
-    );
+        blockType: blockType.get(blockId) ?? "FOCUS",
+        hasConstraints,
+      }));
+    });
     const sorted = [...segments].sort((a, b) => a.startMin - b.startMin);
     const overlaps = new Set<string>();
     let last = sorted[0];
@@ -1328,7 +1337,13 @@ export default function NewDayTypePage() {
       ...segment,
       overlapped: overlaps.has(segment.id),
     }));
-  }, [blockType, selectedBlocks]);
+  }, [
+    blockAllowAllMonuments,
+    blockAllowAllSkills,
+    blockAllowedHabitTypes,
+    blockType,
+    selectedBlocks,
+  ]);
 
   const coverageStatus: CoverageStatus = useMemo(() => {
     const segments = selectedBlocks
@@ -2085,6 +2100,7 @@ export default function NewDayTypePage() {
                     const topPct = (segment.startMin / 1440) * 100;
                     const isBreak = segment.blockType === "BREAK";
                     const isPractice = segment.blockType === "PRACTICE";
+                    const isConstrained = !segment.overlapped && segment.hasConstraints;
                     return (
                       <div
                         key={`bar-${segment.id}`}
@@ -2092,11 +2108,13 @@ export default function NewDayTypePage() {
                           "absolute inset-x-3 rounded-md shadow-[0_14px_38px_rgba(0,0,0,0.35)]",
                           segment.overlapped
                             ? "border border-red-400/70 bg-red-500/25"
-                            : isBreak
-                              ? "border border-sky-300/70 bg-sky-400/20"
-                              : isPractice
-                                ? "border border-white/12 bg-white/10"
-                                : "border border-white/15 bg-white/15"
+                            : isConstrained
+                              ? "border border-amber-400/80 bg-amber-400/25"
+                              : isBreak
+                                ? "border border-sky-300/70 bg-sky-400/20"
+                                : isPractice
+                                  ? "border border-white/12 bg-white/10"
+                                  : "border border-white/15 bg-white/15"
                         )}
                         style={{
                           top: `${topPct}%`,
@@ -2109,11 +2127,13 @@ export default function NewDayTypePage() {
                               "font-semibold",
                               segment.overlapped
                                 ? "text-red-50"
-                                : isBreak
-                                  ? "text-sky-50"
-                                  : isPractice
-                                    ? "text-white/80"
-                                    : "text-white"
+                                : isConstrained
+                                  ? "text-amber-50"
+                                  : isBreak
+                                    ? "text-sky-50"
+                                    : isPractice
+                                      ? "text-white/80"
+                                      : "text-white"
                             )}
                           >
                             {segment.label}
@@ -2122,11 +2142,13 @@ export default function NewDayTypePage() {
                             className={
                               segment.overlapped
                                 ? "text-red-100/80"
-                                : isBreak
-                                  ? "text-sky-100/75"
-                                  : isPractice
-                                    ? "text-white/60"
-                                    : "text-white/55"
+                                : isConstrained
+                                  ? "text-amber-100/80"
+                                  : isBreak
+                                    ? "text-sky-100/75"
+                                    : isPractice
+                                      ? "text-white/60"
+                                      : "text-white/55"
                             }
                           >
                             {segment.title.replace(`${segment.label} `, "")}
