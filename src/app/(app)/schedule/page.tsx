@@ -5960,7 +5960,7 @@ export default function SchedulePage() {
                     height: toTimelinePosition(heightMinutes),
                   }}
                 >
-                  <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-white/30 bg-black/50 px-3 py-2 text-slate-50 shadow-[0_18px_38px_rgba(0,0,0,0.55)] backdrop-blur-sm">
+                  <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-black bg-black/10 px-3 py-2 text-slate-50 shadow-[0_16px_24px_rgba(0,0,0,0.25)] backdrop-blur-sm">
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-white/90">
                       Window report · {report.windowLabel}
                     </div>
