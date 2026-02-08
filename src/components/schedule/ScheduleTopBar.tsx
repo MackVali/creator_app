@@ -16,6 +16,7 @@ import {
   ListChecks,
   RefreshCcw,
   PanelsTopLeft,
+  SortAsc,
   Sparkles,
 } from "lucide-react";
 import {
@@ -107,6 +108,11 @@ export function ScheduleTopBar({
       label: "Scheduler",
       icon: RefreshCcw,
       onClick: () => router.push("/schedule/scheduler"),
+    },
+    {
+      label: "Priority Editor",
+      icon: SortAsc,
+      onClick: () => router.push("/schedule/priorities"),
     },
     { label: "NEXUS", icon: Sparkles, onClick: () => router.push("/schedule/nexus") },
     { label: "Windows", icon: PanelsTopLeft, onClick: () => router.push("/windows") },
