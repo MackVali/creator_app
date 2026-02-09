@@ -1420,13 +1420,22 @@ export function GoalDrawer({
               </Button>
             </div>
           ) : (
-            <div className="flex w-full flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-sm text-white/70 hover:text-white"
+                onClick={onClose}
+                disabled={deleteLoading}
+              >
+                Cancel
+              </Button>
+              <div className="flex w-full gap-3 sm:w-auto">
                 {showDeleteAction ? (
                   <Button
                     type="button"
                     variant="destructive"
-                    className="bg-red-600 text-white hover:bg-red-500 disabled:opacity-70"
+                    className="flex-1 bg-red-600 text-white hover:bg-red-500 disabled:opacity-70 sm:flex-auto"
                     onClick={handleDeleteGoal}
                     disabled={deleteLoading}
                   >
@@ -1434,23 +1443,14 @@ export function GoalDrawer({
                   </Button>
                 ) : null}
                 <Button
-                  type="button"
-                  variant="ghost"
-                  className="text-sm text-white/70 hover:text-white"
-                  onClick={onClose}
-                  disabled={deleteLoading}
+                  type="submit"
+                  form={formId}
+                  className="flex-1 bg-white text-sm font-semibold text-[#05070c] hover:bg-white/90 disabled:opacity-60 sm:flex-auto"
+                  disabled={!canSubmit || deleteLoading}
                 >
-                  Cancel
+                  Save goal
                 </Button>
               </div>
-              <Button
-                type="submit"
-                form={formId}
-                className="bg-white text-sm font-semibold text-[#05070c] hover:bg-white/90 disabled:opacity-60"
-                disabled={!canSubmit || deleteLoading}
-              >
-                Save goal
-              </Button>
             </div>
           )}
         </SheetFooter>

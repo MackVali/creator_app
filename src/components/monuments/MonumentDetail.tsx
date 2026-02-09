@@ -162,15 +162,9 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
           >
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
             <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div className="space-y-1">
+              <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-white/60">
                   Notes
-                </p>
-                <h2 className="text-lg font-semibold text-white sm:text-xl">
-                  Quick captures
-                </h2>
-                <p className="text-xs text-white/70 sm:text-sm">
-                  Save ideas, links, and reminders while they&apos;re fresh.
                 </p>
               </div>
             </header>

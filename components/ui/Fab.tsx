@@ -25,7 +25,16 @@ import {
   useReducedMotion,
   type PanInfo,
 } from "framer-motion";
-import { Check, Clock, Filter, Loader2, Plus, Search, X } from "lucide-react";
+import {
+  Check,
+  Clock,
+  Filter,
+  Loader2,
+  Plus,
+  Search,
+  Sparkles,
+  X,
+} from "lucide-react";
 import FlameEmber, { type FlameEmberProps } from "@/components/FlameEmber";
 import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
@@ -56,6 +65,22 @@ import {
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
 } from "@/components/habits/habit-form-fields";
+import {
+  SCHEDULER_PRIORITY_LABELS,
+} from "@/lib/types/ai";
+import type {
+  AiApplyCandidate,
+  AiApplyErrorResponse,
+  AiApplyField,
+  AiIntent,
+  AiIntentParsePath,
+  AiIntentResponse,
+  AiScope,
+  AiSchedulerOp,
+  AiThreadMessage,
+  AiThreadPayload,
+  SchedulerOpPreview,
+} from "@/lib/types/ai";
 
 function ErrorBoundary({ children }: { children: React.ReactNode }) {
   const [err, setErr] = React.useState<Error | null>(null);
@@ -134,6 +159,64 @@ type FabSearchCursor = {
 };
 
 const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
+
+const AUTO_SCOPE_CREATION_KEYWORDS = ["goal", "project", "task"];
+const AUTO_SCOPE_SCHEDULE_KEYWORDS = [
+  "day type",
+  "time block",
+  "priority",
+  "reschedule",
+  "move",
+];
+
+type ScopeSelection = AiScope | "auto";
+
+const SCOPE_OPTIONS: ScopeSelection[] = [
+  "auto",
+  "read_only",
+  "draft_creation",
+  "schedule_edit",
+];
+
+const SCOPE_LABELS: Record<ScopeSelection, string> = {
+  auto: "AUTO",
+  read_only: "Read only",
+  draft_creation: "Draft creation",
+  schedule_edit: "Schedule edit",
+};
+
+const QUICK_START_PROMPTS = [
+  "What should I do right now?",
+  "Help me create a goal",
+  "Set my day type tomorrow to Workday",
+  "Help me create a new day type",
+  "Create a task for today",
+  "Show my top priorities",
+  "Plan my next 2 hours",
+] as const;
+
+function determineAutoScopeFromPrompt(prompt: string): AiScope {
+  const normalized = prompt.toLowerCase();
+  const mentionsCreate =
+    normalized.includes("create") &&
+    AUTO_SCOPE_CREATION_KEYWORDS.some((keyword) =>
+      normalized.includes(keyword)
+    );
+
+  if (mentionsCreate) {
+    return "draft_creation";
+  }
+
+  if (
+    AUTO_SCOPE_SCHEDULE_KEYWORDS.some((keyword) =>
+      normalized.includes(keyword)
+    )
+  ) {
+    return "schedule_edit";
+  }
+
+  return "read_only";
+}
 
 // Keeps taps single-action on iOS by acting on pointerup and ignoring the
 // synthetic click that follows; real clicks (keyboard/AT) still fire onClick.
@@ -256,6 +339,637 @@ function useOverhangLT(
   return pos;
 }
 
+type Candidate = {
+  id: string;
+  title: string;
+  score: number;
+};
+
+type PreviewMatches = {
+  applied: { type: AiIntent["type"]; ids: string[] };
+  message?: string;
+};
+
+type PreviewResult = {
+  warnings: string[];
+  candidates?: {
+    goals?: Candidate[];
+    projects?: Candidate[];
+  };
+  suggested_links?: {
+    goal_id?: string;
+    project_id?: string;
+  };
+  ops?: SchedulerOpPreview[];
+  matches?: PreviewMatches;
+};
+
+const formatSchedulerPriorityLabel = (value: number) => {
+  const index = Math.max(
+    0,
+    Math.min(value - 1, SCHEDULER_PRIORITY_LABELS.length - 1)
+  );
+  return SCHEDULER_PRIORITY_LABELS[index] ?? "NO";
+};
+
+const describeSchedulerOp = (op: AiSchedulerOp) => {
+  switch (op.type) {
+    case "SET_DAY_TYPE_ASSIGNMENT":
+      return `Set day type for ${op.date} to ${op.day_type_name}`;
+    case "SET_GOAL_PRIORITY_BY_NAME":
+      return `Set goal "${op.goal_title}" priority to ${formatSchedulerPriorityLabel(
+        op.priority
+      )} (${op.priority})`;
+    case "SET_PROJECT_PRIORITY_BY_NAME":
+      return `Set project "${op.project_title}" priority to ${formatSchedulerPriorityLabel(
+        op.priority
+      )} (${op.priority})`;
+    case "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL":
+      return `Update time block "${op.block_label}" for day type "${op.day_type_name}"`;
+  }
+};
+
+const ACTION_FIELD_LABELS: Record<AiApplyField, string> = {
+  day_type_name: "day type",
+  goal_title: "goal",
+  project_title: "project",
+  time_block_label: "time block",
+};
+
+const createProposalKey = (intent: AiIntent, assistantMessage: string) => {
+  const value = `${intent.type}|${intent.title}|${intent.message}|${assistantMessage}`;
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = Math.imul(31, hash) + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return `ai-${Math.abs(hash).toString(36)}`;
+};
+
+const MINUTES_PER_DAY = 24 * 60;
+
+const formatTimeLabel = (minutes: number) => {
+  if (minutes >= MINUTES_PER_DAY) {
+    return "24:00";
+  }
+  const hour = Math.floor(minutes / 60) % 24;
+  const minute = minutes % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+};
+
+const parseTimeToMinutes = (value?: string | null) => {
+  if (!value) return null;
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (
+    Number.isNaN(hour) ||
+    Number.isNaN(minute) ||
+    hour < 0 ||
+    hour > 24 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return null;
+  }
+  if (hour === 24 && minute !== 0) {
+    return null;
+  }
+  return hour === 24 ? MINUTES_PER_DAY : hour * 60 + minute;
+};
+
+type DayTypePreviewSegment = {
+  id: string;
+  label: string;
+  dayTypeName: string;
+  blockType?: string;
+  energy?: string;
+  topPercent: number;
+  heightPercent: number;
+  startMin: number;
+  endMin: number;
+  timeRange: string;
+};
+
+const buildDayTypePreviewSegments = (ops?: AiSchedulerOp[]) => {
+  if (!ops || ops.length === 0) return [];
+  const blocks: Array<{
+    id: string;
+    label: string;
+    dayTypeName: string;
+    blockType?: string;
+    energy?: string;
+    start?: string | null;
+    end?: string | null;
+  }> = [];
+  let counter = 0;
+  for (const op of ops) {
+    if (op.type === "CREATE_DAY_TYPE_TIME_BLOCK") {
+      blocks.push({
+        id: `create-${counter}-${op.day_type_name}-${op.label}`,
+        label: op.label ?? "DAY BLOCK",
+        dayTypeName: op.day_type_name ?? "DAY TYPE",
+        blockType: op.block_type,
+        energy: op.energy,
+        start: op.start_local,
+        end: op.end_local,
+      });
+      counter += 1;
+    } else if (op.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL") {
+      const start = op.patch.start_local?.trim();
+      const end = op.patch.end_local?.trim();
+      if (!start && !end) continue;
+      blocks.push({
+        id: `update-${counter}-${op.day_type_name}-${op.block_label}`,
+        label: op.block_label ?? "DAY BLOCK",
+        dayTypeName: op.day_type_name ?? "DAY TYPE",
+        start,
+        end,
+      });
+      counter += 1;
+    }
+  }
+  const segments: DayTypePreviewSegment[] = [];
+  for (const block of blocks) {
+    const startMinutes = parseTimeToMinutes(block.start);
+    const endMinutes = parseTimeToMinutes(block.end);
+    if (startMinutes === null || endMinutes === null) continue;
+    const normalizedEnd =
+      endMinutes <= startMinutes ? endMinutes + MINUTES_PER_DAY : endMinutes;
+    const firstSegmentEnd = Math.min(normalizedEnd, MINUTES_PER_DAY);
+    const firstHeight = ((firstSegmentEnd - startMinutes) / MINUTES_PER_DAY) * 100;
+    if (firstHeight <= 0) continue;
+    const dayTypeName = (block.dayTypeName ?? "DAY TYPE").toUpperCase();
+    const blockLabel = (block.label ?? "BLOCK").toUpperCase();
+    const blockType = block.blockType?.toUpperCase();
+    const energy = block.energy?.toUpperCase();
+    segments.push({
+      id: `${block.id}-a`,
+      label: blockLabel,
+      dayTypeName,
+      blockType,
+      energy,
+      topPercent: (startMinutes / MINUTES_PER_DAY) * 100,
+      heightPercent: Math.max(firstHeight, 1.5),
+      startMin: startMinutes,
+      endMin: firstSegmentEnd,
+      timeRange: `${formatTimeLabel(startMinutes)} - ${formatTimeLabel(
+        firstSegmentEnd
+      )}`,
+    });
+    if (normalizedEnd > MINUTES_PER_DAY) {
+      const overflow = normalizedEnd - MINUTES_PER_DAY;
+      const secondHeight = (overflow / MINUTES_PER_DAY) * 100;
+      if (secondHeight > 0) {
+        segments.push({
+          id: `${block.id}-b`,
+          label: blockLabel,
+          dayTypeName,
+          blockType,
+          energy,
+          topPercent: 0,
+          heightPercent: Math.max(secondHeight, 1.5),
+          startMin: 0,
+          endMin: overflow,
+          timeRange: `${formatTimeLabel(0)} - ${formatTimeLabel(overflow)}`,
+        });
+      }
+    }
+  }
+  return segments.sort((a, b) => a.topPercent - b.topPercent);
+};
+
+function DayTypeTimelinePreview({
+  segments,
+  title,
+}: {
+  segments: DayTypePreviewSegment[];
+  title: string;
+}) {
+  const timelineHeightPx = 560;
+  const LANE_WIDTH = 16;
+  const MAX_DISPLAY_LANE = 4;
+
+  const laneSegments = useMemo(() => {
+    const sorted = [...segments].sort((a, b) => {
+      if (a.startMin !== b.startMin) return a.startMin - b.startMin;
+      const aDuration = a.endMin - a.startMin;
+      const bDuration = b.endMin - b.startMin;
+      return bDuration - aDuration;
+    });
+    const lanes: number[] = [];
+    return sorted.map((segment) => {
+      let laneIndex = lanes.findIndex((lastEnd) => segment.startMin >= lastEnd);
+      if (laneIndex === -1) {
+        laneIndex = lanes.length;
+        lanes.push(segment.endMin);
+      } else {
+        lanes[laneIndex] = segment.endMin;
+      }
+      return {
+        ...segment,
+        lane: Math.min(laneIndex, MAX_DISPLAY_LANE),
+      };
+    });
+  }, [segments]);
+
+  const labelHours = Array.from({ length: 25 }, (_, index) => index);
+
+  return (
+    <div className="space-y-3 rounded-[28px] border border-white/15 bg-gradient-to-br from-[#020205]/90 via-[#05070d]/90 to-[#03030b]/90 p-4 shadow-[0_20px_45px_rgba(0,0,0,0.65)]">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-[0.35em] text-white/60">
+          ILAV 24-HOUR DAY TYPE PREVIEW
+        </span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white">
+          {title.toUpperCase()}
+        </span>
+      </div>
+      <div
+        className="relative flex h-[560px] w-full overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-slate-950/90 via-slate-900/80 to-black/80"
+        style={{ minHeight: timelineHeightPx }}
+      >
+        <div className="flex h-full w-full">
+          <div
+            className="relative flex-shrink-0 w-12 border-r border-white/5 px-1"
+            style={{ minHeight: timelineHeightPx }}
+          >
+            <div className="relative h-full">
+              {labelHours.map((hour) => {
+                if (hour === 24) {
+                  return (
+                    <span
+                      key={`label-${hour}`}
+                      className="absolute right-1 text-[9px] uppercase tracking-[0.3em] text-white/30"
+                      style={{ bottom: 0 }}
+                    >
+                      {String(hour).padStart(2, "0")}
+                    </span>
+                  );
+                }
+                if (hour === 0) {
+                  return (
+                    <span
+                      key={`label-${hour}`}
+                      className="absolute right-1 text-[9px] uppercase tracking-[0.3em] text-white/30"
+                      style={{ top: 0 }}
+                    >
+                      {String(hour).padStart(2, "0")}
+                    </span>
+                  );
+                }
+                return (
+                  <span
+                    key={`label-${hour}`}
+                    className="absolute right-1 -translate-y-1/2 text-[9px] uppercase tracking-[0.3em] text-white/30"
+                    style={{ top: `${(hour / 24) * 100}%` }}
+                  >
+                    {String(hour).padStart(2, "0")}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+          <div
+            className="relative flex-1 overflow-y-auto"
+            style={{ height: timelineHeightPx }}
+          >
+            {Array.from({ length: 25 }, (_, index) => (
+              <div
+                key={`line-${index}`}
+                className="pointer-events-none absolute left-0 right-0 h-px bg-white/10"
+                style={{ top: `${(index / 24) * 100}%` }}
+              />
+            ))}
+            {laneSegments.map((segment) => {
+              const blockHeightPx = Math.max(
+                (segment.heightPercent / 100) * timelineHeightPx,
+                0
+              );
+              const showTime = blockHeightPx >= 22;
+              const showMetadata = blockHeightPx >= 44;
+              const leftOffset = segment.lane * LANE_WIDTH;
+              return (
+                <div
+                  key={segment.id}
+                  className="pointer-events-auto absolute flex max-w-full flex-col gap-0.5 overflow-hidden rounded-2xl border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-[0.2em] shadow-[0_10px_30px_rgba(0,0,0,0.65)]"
+                  style={{
+                    top: `${segment.topPercent}%`,
+                    height: `${segment.heightPercent}%`,
+                    left: `${leftOffset}px`,
+                    width: `calc(100% - ${leftOffset}px)`,
+                    zIndex: 10,
+                  }}
+                >
+                  <p className="truncate whitespace-nowrap text-[11px] font-semibold leading-tight text-white shadow-[0_1px_0_rgba(255,255,255,0.25)]">
+                    {segment.label}
+                  </p>
+                  {showTime ? (
+                    <p className="leading-tight text-[10px] text-white/70">
+                      {segment.timeRange}
+                    </p>
+                  ) : null}
+                  {showMetadata && (segment.blockType || segment.energy) ? (
+                    <p className="leading-tight text-[8px] text-white/50">
+                      {segment.blockType ?? "BLOCK"}
+                      {segment.energy ? ` • ${segment.energy}` : ""}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function renderAiProposal({
+  intent,
+  assistantMessage,
+  feedbackMessage,
+  onCopy,
+  previewWarnings,
+  previewMatches,
+  goalCandidates,
+  projectCandidates,
+  selectedGoalId,
+  selectedProjectId,
+  onGoalChange,
+  onProjectChange,
+  previewOps,
+  suggestedLinks,
+  actionNeeded,
+  onActionCandidateSelect,
+  debugParsePath,
+}: {
+  intent: AiIntent;
+  assistantMessage: string;
+  feedbackMessage: string | null;
+  onCopy: () => void;
+  previewWarnings: string[];
+  previewMatches: PreviewMatches | null;
+  goalCandidates: Candidate[];
+  projectCandidates: Candidate[];
+  selectedGoalId: string | null;
+  selectedProjectId: string | null;
+  onGoalChange: (value: string | null) => void;
+  onProjectChange: (value: string | null) => void;
+  previewOps?: PreviewResult["ops"];
+  suggestedLinks?: PreviewResult["suggested_links"];
+  actionNeeded?: AiApplyErrorResponse | null;
+  onActionCandidateSelect: (candidate: AiApplyCandidate) => void;
+  debugParsePath?: AiIntentParsePath | null;
+}) {
+  const confidence =
+    typeof intent.confidence === "number"
+      ? intent.confidence
+      : Number.isFinite(intent.confidence)
+      ? intent.confidence
+      : 0;
+  const confidenceLabel =
+    confidence <= 1 ? Math.round(confidence * 100) : Math.round(confidence);
+  const schedulerOps =
+    intent.type === "DRAFT_SCHEDULER_INPUT_OPS" ? intent.ops : [];
+  const schedulerPreviewOps = previewOps ?? [];
+  const dayTypePreviewSegments = buildDayTypePreviewSegments(intent.ops);
+  const dayTypePreviewTitle =
+    dayTypePreviewSegments[0]?.dayTypeName ?? "DAY TYPE";
+
+  return (
+    <div className="space-y-4 rounded-[30px] border border-white/5 bg-gradient-to-b from-slate-900/80 via-slate-950/85 to-slate-950/95 p-4 shadow-[0_25px_45px_rgba(0,0,0,0.45)] backdrop-blur">
+      <div className="flex items-start justify-between gap-5">
+        <div className="space-y-1">
+          <p className="text-[8px] uppercase tracking-[0.4em] text-white/50">
+            Details
+          </p>
+          <p className="text-base font-semibold leading-tight text-white">
+            {intent.title}
+          </p>
+          {debugParsePath ? (
+            <p className="text-[10px] uppercase tracking-[0.35em] text-white/40">
+              AI parse: {debugParsePath}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-col items-end gap-2 text-right">
+          <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[6px] uppercase tracking-[0.35em] text-white/80">
+            {intent.type}
+          </span>
+          <span className="text-[11px] text-white/60">
+            {confidenceLabel}% confidence
+          </span>
+        </div>
+      </div>
+      <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent p-5 shadow-[inset 0 1px 20px rgba(255,255,255,0.1),0_15px_40px_rgba(0,0,0,0.45)]">
+        <div className="flex items-center gap-3">
+          <span className="text-[9px] uppercase tracking-[0.4em] text-white/60">
+            Proposed action
+          </span>
+          <span className="flex-1 h-px bg-white/10" />
+        </div>
+        <p className="mt-3 text-xs font-medium leading-relaxed text-white/90">
+          {assistantMessage}
+        </p>
+      </div>
+      {dayTypePreviewSegments.length > 0 ? (
+        <DayTypeTimelinePreview
+          segments={dayTypePreviewSegments}
+          title={dayTypePreviewTitle}
+        />
+      ) : null}
+      <details className="group rounded-[26px] border border-white/10 bg-black/30">
+        <summary className="cursor-pointer px-4 py-3 text-[10px] uppercase tracking-[0.35em] text-white/60">
+          Details
+        </summary>
+        <div className="max-h-44 overflow-auto border-t border-white/5 px-4 pb-3 pt-2 text-[11px] text-white/70">
+          <pre>{JSON.stringify(intent, null, 2)}</pre>
+        </div>
+      </details>
+      <div className="space-y-3 rounded-[28px] border border-white/10 bg-white/5 p-4 shadow-[inset 0 1px 0 rgba(255,255,255,0.08)]">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onCopy}
+            className="rounded-xl border border-white/20 bg-transparent px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/70 transition hover:border-white/40 hover:text-white disabled:opacity-60"
+          >
+            Copy Draft JSON
+          </button>
+        </div>
+        {previewMatches ? (
+          <div className="space-y-1 rounded-2xl border border-white/10 bg-gradient-to-tr from-slate-800/80 to-slate-900/80 px-4 py-3 text-xs text-white shadow-[0_10px_25px_rgba(0,0,0,0.35)]">
+            <p className="font-semibold text-white">Preview match</p>
+            <p className="text-[11px] text-white/70">
+              {previewMatches.message ?? "Intent was already applied."}
+            </p>
+            {previewMatches.applied.ids.length > 0 ? (
+              <p className="text-[11px] text-white/70">
+                IDs: {previewMatches.applied.ids.join(", ")}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {previewWarnings.length > 0 ? (
+          <div className="space-y-1 rounded-2xl border border-white/10 bg-gradient-to-tr from-[#4b1c45]/70 to-[#0b0d16]/70 px-4 py-3 text-xs text-white shadow-[0_10px_25px_rgba(0,0,0,0.45)]">
+            <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">
+              Preview warnings
+            </p>
+            <ul className="space-y-1 text-[10px] text-white/70">
+              {previewWarnings.map((warning, index) => (
+                <li key={`${warning}-${index}`}>• {warning}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {actionNeeded ? (
+          <div className="space-y-2 rounded-2xl border border-white/20 bg-gradient-to-br from-[#1f2937]/80 to-[#05060a]/80 px-4 py-3 text-xs text-white shadow-[0_10px_25px_rgba(0,0,0,0.5)]">
+            <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">
+              Action needed
+            </p>
+            <p className="text-[12px] text-white/80">{actionNeeded.message}</p>
+            {actionNeeded.candidates && actionNeeded.candidates.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {actionNeeded.candidates.map((candidate) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    onClick={() => onActionCandidateSelect(candidate)}
+                    className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-white transition hover:bg-white/10"
+                  >
+                    {candidate.title}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[10px] text-white/70">
+                Adjust the request and rerun Preview.
+              </p>
+            )}
+            <p className="text-[10px] text-white/60">
+              Select a candidate and press Preview again.
+            </p>
+          </div>
+        ) : null}
+        {schedulerOps.length > 0 ? (
+          <div className="space-y-2 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">
+              Scheduler operations
+            </p>
+            <ul className="space-y-1 text-[12px] text-white/80">
+              {schedulerOps.map((op, index) => (
+                <li key={`${op.type}-${index}`} className="list-disc pl-4">
+                  {describeSchedulerOp(op)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {schedulerPreviewOps.length > 0 ? (
+          <div className="space-y-2 rounded-2xl border border-white/15 bg-black/30 px-4 py-3 text-sm text-white">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">
+              Preview changes
+            </p>
+            <div className="space-y-2">
+              {schedulerPreviewOps.map((preview, index) => (
+                <div
+                  key={`${preview.type}-${index}`}
+                  className="rounded-xl border border-white/10 bg-white/5 p-3"
+                >
+                  <p className="text-[11px] font-semibold text-white">
+                    {preview.description}
+                  </p>
+                  {preview.resolvedId ? (
+                    <p className="text-[11px] text-white/50">
+                      ID: {preview.resolvedId}
+                    </p>
+                  ) : null}
+                  {(preview.before || preview.after) ? (
+                    <div className="mt-1 space-y-0.5 text-[11px] text-white/70">
+                      {preview.before ? <p>Before: {preview.before}</p> : null}
+                      {preview.after ? <p>After: {preview.after}</p> : null}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {goalCandidates.length > 0 ? (
+          <div className="space-y-1 rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-xs text-white">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">
+              Link to existing goal
+            </p>
+            <select
+              value={selectedGoalId ?? ""}
+              onChange={(event) =>
+                onGoalChange(event.target.value ? event.target.value : null)
+              }
+              className="w-full rounded-xl border border-white/10 bg-black/10 px-2 py-1 text-xs text-white"
+            >
+              <option value="">None</option>
+              {goalCandidates.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.title} ({Math.round(candidate.score * 100)}%)
+                </option>
+              ))}
+            </select>
+            {suggestedLinks?.goal_id ? (
+              <p className="text-[10px] text-white/60">
+                Suggested link:{" "}
+                {
+                  goalCandidates.find(
+                    (candidate) => candidate.id === suggestedLinks.goal_id
+                  )?.title
+                }
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {projectCandidates.length > 0 ? (
+          <div className="space-y-1 rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-xs text-white">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">
+              Link to existing project
+            </p>
+            <select
+              value={selectedProjectId ?? ""}
+              onChange={(event) =>
+                onProjectChange(
+                  event.target.value ? event.target.value : null
+                )
+              }
+              className="w-full rounded-xl border border-white/10 bg-black/10 px-2 py-1 text-xs text-white"
+            >
+              <option value="">None</option>
+              {projectCandidates.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.title} ({Math.round(candidate.score * 100)}%)
+                </option>
+              ))}
+            </select>
+            {suggestedLinks?.project_id ? (
+              <p className="text-[10px] text-white/60">
+                Suggested link:{" "}
+                {
+                  projectCandidates.find(
+                    (candidate) => candidate.id === suggestedLinks.project_id
+                  )?.title
+                }
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {feedbackMessage ? (
+          <p className="text-xs uppercase tracking-[0.3em] text-white/60">
+            {feedbackMessage}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function Fab({
   className = "",
   menuVariant = "default",
@@ -263,6 +977,286 @@ export function Fab({
   ...wrapperProps
 }: FabProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiScope, setAiScope] = useState<AiScope>("read_only");
+  const [scopeSelection, setScopeSelection] =
+    useState<ScopeSelection>("auto");
+  const [autoModeActive, setAutoModeActive] = useState(true);
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
+  const scopeMenuRef = useRef<HTMLDivElement | null>(null);
+  const scopeToggleRef = useRef<HTMLButtonElement | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiResponse, setAiResponse] = useState<AiIntentResponse | null>(null);
+  const [aiShowSnapshot, setAiShowSnapshot] = useState(false);
+  const [aiThread, setAiThread] = useState<AiThreadMessage[]>([]);
+  const [proposalFeedback, setProposalFeedback] = useState<string | null>(null);
+  const [proposalExpanded, setProposalExpanded] = useState(true);
+  const [intentApplyLoading, setIntentApplyLoading] = useState(false);
+  const [proposalIdempotencyKey, setProposalIdempotencyKey] = useState<
+    string | null
+  >(null);
+  const [previewResult, setPreviewResult] = useState<PreviewResult | null>(
+    null
+  );
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null
+  );
+  const [selectedDayTypeId, setSelectedDayTypeId] = useState<string | null>(null);
+  const [selectedDayTypeTimeBlockId, setSelectedDayTypeTimeBlockId] = useState<
+    string | null
+  >(null);
+  const [actionNeeded, setActionNeeded] =
+    useState<AiApplyErrorResponse | null>(null);
+  const followUps = useMemo(() => {
+    const values = aiResponse?.follow_ups;
+    if (!Array.isArray(values)) return [];
+    return values
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }, [aiResponse?.follow_ups]);
+  const clarificationQuestions = useMemo(() => {
+    if (aiResponse?.intent.type !== "NEEDS_CLARIFICATION") return [];
+    const values = aiResponse.intent.questions;
+    if (!Array.isArray(values)) return [];
+    return values
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }, [aiResponse?.intent]);
+  const chipSuggestions =
+    clarificationQuestions.length > 0 ? clarificationQuestions : followUps;
+  const previewWarnings = previewResult?.warnings ?? [];
+  const previewMatches = previewResult?.matches ?? null;
+  const scopeLabel = useMemo(() => {
+    let label: string;
+    switch (aiScope) {
+      case "draft_creation":
+        label = "Draft creation";
+        break;
+      case "schedule_edit":
+        label = "Schedule edit";
+        break;
+      default:
+        label = "Read only";
+    }
+    return autoModeActive ? `${label} (AUTO)` : label;
+  }, [aiScope, autoModeActive]);
+  const aiDebugParsePath = aiResponse?._debug?.parse_path ?? null;
+  const shouldShowWelcomePanel =
+    aiThread.length === 0 && aiPrompt.trim().length === 0;
+  const resetAiHelperState = useCallback(() => {
+    setAiThread([]);
+    setAiResponse(null);
+    setAiError(null);
+    setAiShowSnapshot(false);
+    setAiPrompt("");
+    setAiScope("read_only");
+    setScopeSelection("auto");
+    setAutoModeActive(true);
+    setScopeMenuOpen(false);
+    setPreviewResult(null);
+    setPreviewLoading(false);
+    setSelectedGoalId(null);
+    setSelectedProjectId(null);
+    setSelectedDayTypeId(null);
+    setSelectedDayTypeTimeBlockId(null);
+    setActionNeeded(null);
+    setProposalFeedback("");
+    setProposalExpanded(true);
+    setProposalIdempotencyKey(null);
+    setIntentApplyLoading(false);
+    setAiLoading(false);
+  }, []);
+  const closeAiOverlay = useCallback(() => {
+    resetAiHelperState();
+    setAiOpen(false);
+  }, [resetAiHelperState]);
+  const handleCopyIntent = useCallback(async (intent: AiIntent) => {
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard) {
+        throw new Error("Clipboard not available");
+      }
+      await navigator.clipboard.writeText(JSON.stringify(intent, null, 2));
+      setProposalFeedback("Draft JSON copied");
+    } catch {
+      setProposalFeedback("Unable to copy draft JSON");
+    }
+  }, []);
+  const handleConfirmIntent = useCallback(
+    async (
+      scope: AiScope,
+      intent: AiIntent,
+      idempotencyKey: string | null
+    ) => {
+      if (!idempotencyKey) {
+        setProposalFeedback("Missing proposal identifier");
+        return;
+      }
+      setProposalFeedback(null);
+      setIntentApplyLoading(true);
+      try {
+        const overrides: Record<string, string> = {};
+        if (selectedGoalId) overrides.goal_id = selectedGoalId;
+        if (selectedProjectId) overrides.project_id = selectedProjectId;
+        if (selectedDayTypeId) overrides.day_type_id = selectedDayTypeId;
+        if (selectedDayTypeTimeBlockId)
+          overrides.day_type_time_block_id = selectedDayTypeTimeBlockId;
+        const body: Record<string, unknown> = {
+          scope,
+          intent,
+          idempotency_key: idempotencyKey,
+        };
+        if (Object.keys(overrides).length > 0) {
+          body.link_overrides = overrides;
+        }
+        const response = await fetch("/api/ai/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          const structuredError = payload as AiApplyErrorResponse | null;
+          if (structuredError?.ok === false && structuredError.error_code) {
+            setActionNeeded(structuredError);
+            setProposalFeedback(
+              structuredError.message ?? "Action needed to continue"
+            );
+            return;
+          }
+          throw new Error(payload?.error ?? "Unable to apply intent");
+        }
+        setProposalFeedback(payload?.message ?? "Intent applied");
+        setPreviewResult(null);
+        setAiPrompt("");
+        setSelectedGoalId(null);
+        setSelectedProjectId(null);
+        setSelectedDayTypeId(null);
+        setSelectedDayTypeTimeBlockId(null);
+        setActionNeeded(null);
+      } catch (error) {
+        setProposalFeedback(
+          error instanceof Error ? error.message : "Unable to apply intent"
+        );
+      } finally {
+        setIntentApplyLoading(false);
+      }
+    },
+    [selectedGoalId, selectedProjectId]
+  );
+  const handlePreviewIntent = useCallback(
+    async (
+      scope: AiScope,
+      intent: AiIntent,
+      idempotencyKey: string | null
+    ) => {
+      if (!idempotencyKey) {
+        setProposalFeedback("Missing proposal identifier");
+        return;
+      }
+      setProposalFeedback(null);
+      setPreviewLoading(true);
+      try {
+        const overrides: Record<string, string> = {};
+        if (selectedGoalId) overrides.goal_id = selectedGoalId;
+        if (selectedProjectId) overrides.project_id = selectedProjectId;
+        if (selectedDayTypeId) overrides.day_type_id = selectedDayTypeId;
+        if (selectedDayTypeTimeBlockId)
+          overrides.day_type_time_block_id = selectedDayTypeTimeBlockId;
+        const requestBody: Record<string, unknown> = {
+          scope,
+          intent,
+          idempotency_key: idempotencyKey,
+          dry_run: true,
+        };
+        if (Object.keys(overrides).length > 0) {
+          requestBody.link_overrides = overrides;
+        }
+        const response = await fetch("/api/ai/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          const structuredError = payload as AiApplyErrorResponse | null;
+          if (structuredError?.ok === false && structuredError.error_code) {
+            setActionNeeded(structuredError);
+            setPreviewResult(null);
+            setProposalFeedback(
+              structuredError.message ?? "Action needed to continue"
+            );
+            return;
+          }
+          throw new Error(payload?.error ?? "Unable to preview intent");
+        }
+        const previewPayload = (payload?.preview as PreviewResult) ?? {
+          warnings: [],
+        };
+        setActionNeeded(null);
+        setPreviewResult(previewPayload);
+        setSelectedGoalId(previewPayload?.suggested_links?.goal_id ?? null);
+        setSelectedProjectId(previewPayload?.suggested_links?.project_id ?? null);
+        setProposalFeedback(
+          previewPayload?.matches?.message ?? "Preview ready"
+        );
+      } catch (error) {
+        setProposalFeedback(
+          error instanceof Error ? error.message : "Unable to preview intent"
+        );
+      } finally {
+        setPreviewLoading(false);
+      }
+    },
+    []
+  );
+  const handleActionCandidateSelect = useCallback(
+    (candidate: AiApplyCandidate) => {
+      if (!actionNeeded) return;
+      const fieldLabel = ACTION_FIELD_LABELS[actionNeeded.field] ?? "value";
+      switch (actionNeeded.field) {
+        case "goal_title":
+          setSelectedGoalId(candidate.id);
+          break;
+        case "project_title":
+          setSelectedProjectId(candidate.id);
+          break;
+        case "day_type_name":
+          setSelectedDayTypeId(candidate.id);
+          break;
+        case "time_block_label":
+          setSelectedDayTypeTimeBlockId(candidate.id);
+          if (actionNeeded.suggested_overrides?.day_type_id) {
+            setSelectedDayTypeId(actionNeeded.suggested_overrides.day_type_id);
+          }
+          break;
+      }
+      setAiPrompt(
+        `Use ${candidate.title} for ${fieldLabel} and run Preview again.`
+      );
+      setProposalFeedback(
+        `Linked ${fieldLabel} to ${candidate.title}. Press Preview again.`
+      );
+    },
+    [actionNeeded]
+  );
+  useEffect(() => {
+    if (!proposalFeedback) return;
+    const timer = setTimeout(() => setProposalFeedback(null), 3000);
+    return () => clearTimeout(timer);
+  }, [proposalFeedback]);
+  const aiOverlayRef = useRef<HTMLDivElement | null>(null);
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (chatLogRef.current) {
+      chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
+    }
+  }, [aiThread]);
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<
     "GOAL" | "PROJECT" | "TASK" | "HABIT" | null
@@ -1843,11 +2837,11 @@ export function Fab({
                                       >
                                         Highest weight
                                       </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
+                    </div>
+                  </div>
+                </div>
+            </div>
+          </div>
                           ) : null}
                           {goalsLoading ? (
                             <SelectItem value="" disabled>
@@ -3144,12 +4138,106 @@ export function Fab({
     }
   };
 
-  const toggleMenu = () => {
-    setIsOpen((prev) => !prev);
+  const handleFabButtonClick = () => {
+    if (!isOpen) {
+      setIsOpen(true);
+      return;
+    }
+    setAiOpen(true);
   };
 
-  const handleFabButtonClick = () => {
-    toggleMenu();
+  useEffect(() => {
+    if (!scopeMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (
+        scopeMenuRef.current?.contains(target) ||
+        scopeToggleRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setScopeMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [scopeMenuOpen]);
+
+  const handleRunAi = async () => {
+    const trimmedPrompt = aiPrompt.trim();
+    if (!trimmedPrompt) return;
+
+    const isAutoMode = autoModeActive || scopeSelection === "auto";
+    const effectiveScope: AiScope = isAutoMode
+      ? determineAutoScopeFromPrompt(trimmedPrompt)
+      : (scopeSelection as AiScope);
+
+    if (isAutoMode) {
+      setScopeSelection("auto");
+    } else {
+      setScopeSelection(effectiveScope);
+    }
+    setAiScope(effectiveScope);
+    setAutoModeActive(isAutoMode);
+
+    const userThreadMessage: AiThreadMessage = {
+      role: "user",
+      content: trimmedPrompt,
+      ts: Date.now(),
+    };
+    const nextThread = [...aiThread, userThreadMessage];
+    setAiThread(nextThread);
+    const threadPayload: AiThreadPayload[] = nextThread
+      .slice(-10)
+      .map(({ role, content }) => ({ role, content }));
+
+    setAiLoading(true);
+    setAiError(null);
+    setAiResponse(null);
+    try {
+      const response = await fetch("/api/ai/intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: trimmedPrompt,
+          scope: effectiveScope,
+          thread: threadPayload,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to fetch AI intent");
+      }
+      setAiResponse(payload);
+      if (payload?.assistant_message) {
+        setAiThread((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: payload.assistant_message,
+            ts: Date.now(),
+          },
+        ]);
+      }
+      if (payload?.intent && typeof payload.intent === "object") {
+        setProposalIdempotencyKey(
+          createProposalKey(payload.intent, payload.assistant_message ?? "")
+        );
+      } else {
+        setProposalIdempotencyKey(null);
+      }
+      setPreviewResult(null);
+      setSelectedGoalId(null);
+      setSelectedProjectId(null);
+      setPreviewLoading(false);
+      setProposalFeedback(null);
+    } catch (error) {
+      console.error("ILAV overlay error", error);
+      setAiError(
+        error instanceof Error ? error.message : "Unable to reach ILAV"
+      );
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const interpretWheelGesture = (deltaY: number) => {
@@ -4243,7 +5331,15 @@ export function Fab({
         !buttonRef.current.contains(event.target as Node)
       ) {
         if (expanded) return;
+        if (aiOpen && aiOverlayRef.current?.contains(event.target as Node)) {
+          return;
+        }
         setIsOpen(false);
+        if (aiOpen) {
+          closeAiOverlay();
+        } else {
+          setAiOpen(false);
+        }
       }
     };
 
@@ -4251,14 +5347,16 @@ export function Fab({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [expanded, isOpen, rescheduleTarget]);
+  }, [expanded, isOpen, rescheduleTarget, aiOpen, closeAiOverlay]);
 
   useEffect(() => {
-    if (!isOpen) {
-      setExpanded(false);
-      setSelected(null);
+    if (isOpen) return;
+    setExpanded(false);
+    setSelected(null);
+    if (aiOpen) {
+      closeAiOverlay();
     }
-  }, [isOpen]);
+  }, [isOpen, aiOpen, closeAiOverlay]);
 
   const shouldRenderNeighbor = isDragging && dragTargetPage !== null;
   const neighborPage = shouldRenderNeighbor ? dragTargetPage : null;
@@ -4514,10 +5612,8 @@ export function Fab({
                       size="iconSquare"
                       disabled={isSaveDisabled}
                       className={cn(
-                        "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation",
-                        isSaveDisabled
-                          ? "btn-3d--amber bg-gradient-to-b from-amber-500 to-amber-700 hover:from-amber-500 hover:to-amber-800 active:from-amber-600 active:to-amber-800 disabled:opacity-100"
-                          : ""
+                        "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation bg-white/10 text-white transition hover:bg-white/20",
+                        isSaveDisabled ? "opacity-50" : ""
                       )}
                       {...overhangSaveTapHandlers}
                     >
@@ -4538,7 +5634,7 @@ export function Fab({
       <motion.button
         ref={buttonRef}
         onClick={handleFabButtonClick}
-        aria-label={isOpen ? "Close add events menu" : "Add new item"}
+        aria-label={isOpen ? "Open ILAV" : "Add new item"}
         className={`relative flex items-center justify-center h-14 w-14 rounded-full text-white shadow-lg hover:scale-110 transition ${
           isOpen ? "rotate-45" : ""
         }`}
@@ -4549,14 +5645,13 @@ export function Fab({
         whileTap={{ scale: 0.9 }}
         transition={{ type: "spring", stiffness: 500, damping: 25 }}
         style={{
-          background:
-            "linear-gradient(145deg, rgba(75, 85, 99, 0.95) 0%, rgba(31, 41, 55, 0.98) 55%, rgba(15, 23, 42, 1) 100%)",
+          background: "linear-gradient(145deg, #1f2937 0%, #0f172a 60%, #020617 100%)",
           boxShadow:
-            "0 18px 36px rgba(15, 23, 42, 0.55), 0 8px 18px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+            "0 18px 36px rgba(0, 0, 0, 0.65), 0 8px 18px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)",
         }}
       >
         {isOpen ? (
-          <X className="h-8 w-8" aria-hidden="true" />
+          <Sparkles className="h-8 w-8" aria-hidden="true" />
         ) : (
           <Plus className="h-8 w-8" aria-hidden="true" />
         )}
@@ -4575,6 +5670,309 @@ export function Fab({
         onClose={() => setComingSoon(null)}
         label={comingSoon || ""}
       />
+      {aiOpen
+        ? createPortal(
+            <div
+              ref={aiOverlayRef}
+              className="fixed inset-0 z-[2147483655] flex items-center justify-center overflow-hidden bg-black/80 backdrop-blur-sm p-4"
+            >
+                <div className="relative flex h-full max-h-[85vh] w-full max-w-[min(720px,92vw)] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[#020205]/95 text-white shadow-xl">
+                <header className="flex flex-row items-center justify-between border-b border-white/10 px-6 py-4">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] leading-tight text-white">
+                      ILAV
+                    </p>
+                    <div className="relative flex flex-col gap-1">
+                      <button
+                        ref={scopeToggleRef}
+                        type="button"
+                        onClick={() => setScopeMenuOpen((prev) => !prev)}
+                        aria-haspopup="true"
+                        aria-expanded={scopeMenuOpen}
+                        className="cursor-pointer text-[9px] uppercase tracking-[0.3em] leading-none text-white/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+                      >
+                        Scope:{" "}
+                        <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/90">
+                          {scopeLabel}
+                        </span>
+                      </button>
+                      {scopeMenuOpen ? (
+                        <div
+                          ref={scopeMenuRef}
+                          className="absolute left-0 top-full z-10 mt-2 w-40 rounded-2xl border border-white/20 bg-[#050507]/95 p-2 shadow-lg"
+                        >
+                          {SCOPE_OPTIONS.map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => {
+                                setScopeSelection(option);
+                                if (option === "auto") {
+                                  setAutoModeActive(true);
+                                } else {
+                                  setAutoModeActive(false);
+                                  setAiScope(option);
+                                }
+                                setScopeMenuOpen(false);
+                              }}
+                              className={cn(
+                                "block w-full rounded-xl px-3 py-1 text-left text-xs font-semibold uppercase tracking-[0.3em] transition",
+                                option === scopeSelection
+                                  ? "border border-white/40 bg-white/10 text-white"
+                                  : "text-white/70 hover:text-white"
+                              )}
+                            >
+                              {SCOPE_LABELS[option]}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeAiOverlay}
+                    aria-label="Close ILAV"
+                    className="rounded-full p-2 text-white/70 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+                  >
+                    <X className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                </header>
+                <div className="flex h-full flex-1 flex-col overflow-hidden">
+                  {/* REVIEW REGION (outside chat thread) */}
+                  {aiResponse?.intent ? (
+                    <div className="shrink-0 border-b border-white/15 bg-black/60 shadow-[0_12px_20px_rgba(0,0,0,0.35)]">
+                      <div className="flex items-center justify-between px-6 py-2">
+                        <div className="flex items-center gap-3">
+                          <p className="text-[7px] uppercase tracking-[0.35em] text-white/60">
+                            Review
+                          </p>
+                          {/* optional: compact intent badge */}
+                          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[6px] font-semibold uppercase tracking-[0.25em] text-white/70">
+                            {aiResponse.intent.type.replaceAll("_", " ")}
+                          </span>
+                          {aiDebugParsePath ? (
+                            <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[7px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                              AI:{" "}
+                              {aiDebugParsePath === "autopilot"
+                                ? "AUTOPILOT"
+                                : "LIVE"}
+                            </span>
+                          ) : null}
+                        </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setProposalExpanded((prev) => !prev)}
+                            aria-expanded={proposalExpanded}
+                            className="rounded-full border border-white/20 px-3 py-1 text-[7px] font-semibold uppercase tracking-[0.3em] text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+                          >
+                            {proposalExpanded ? "Hide" : "Details"}
+                          </button>
+                      </div>
+
+                      <div className="px-6 pb-4 max-h-[60vh] overflow-y-auto">
+                        {proposalExpanded ? (
+                          renderAiProposal({
+                            intent: aiResponse.intent,
+                            assistantMessage: aiResponse.assistant_message,
+                            feedbackMessage: proposalFeedback,
+                            onCopy: () => handleCopyIntent(aiResponse.intent),
+                            onPreview: () =>
+                              handlePreviewIntent(
+                                aiScope,
+                                aiResponse.intent,
+                                proposalIdempotencyKey
+                              ),
+                            previewLoading,
+                            previewWarnings,
+                            previewMatches,
+                            goalCandidates:
+                              previewResult?.candidates?.goals ?? [],
+                            projectCandidates:
+                              previewResult?.candidates?.projects ?? [],
+                            selectedGoalId,
+                            selectedProjectId,
+                            onGoalChange: (value) =>
+                              setSelectedGoalId(value),
+                            onProjectChange: (value) =>
+                              setSelectedProjectId(value),
+                            previewOps: previewResult?.ops,
+                            suggestedLinks: previewResult?.suggested_links,
+                            actionNeeded,
+                            onActionCandidateSelect:
+                              handleActionCandidateSelect,
+                            onConfirm: () =>
+                              handleConfirmIntent(
+                                aiScope,
+                                aiResponse.intent,
+                                proposalIdempotencyKey
+                              ),
+                            confirmLoading: intentApplyLoading,
+                            debugParsePath: aiDebugParsePath,
+                          })
+                        ) : (
+                          <p className="text-sm text-white/70">
+                            {aiResponse.intent.message}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                  {/* CHAT REGION (thread only) */}
+                  <div className="flex-1 overflow-y-auto overscroll-contain">
+                    <div className="px-6 py-4 space-y-5">
+                      {shouldShowWelcomePanel ? (
+                        <section className="rounded-2xl border border-white/20 bg-gradient-to-br from-[#0f111a]/90 via-[#050507]/80 to-black/70 p-5 shadow-[0_25px_60px_rgba(5,6,18,0.8)] backdrop-blur">
+                          <div className="space-y-2">
+                            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-white">
+                              ILAV
+                            </h3>
+                            <p className="text-sm text-white/70">
+                              What are we doing right now, Mack?
+                            </p>
+                          </div>
+                          <div className="mt-4 space-y-2">
+                            <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">
+                              Quick starts
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {QUICK_START_PROMPTS.map((prompt) => (
+                                <button
+                                  key={prompt}
+                                  type="button"
+                                  onClick={() => setAiPrompt(prompt)}
+                                  className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] font-semibold text-white/90 transition hover:border-white/40 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+                                >
+                                  {prompt}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </section>
+                      ) : null}
+                      {aiError ? (
+                        <div className="rounded-2xl border border-white/20 bg-black/60 p-3 text-sm text-white/80 shadow-inner">
+                          {aiError}
+                        </div>
+                      ) : null}
+                      {(aiThread.length > 0 || aiResponse?.assistant_message) && (
+                        <section className="space-y-3 pt-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">
+                              Conversation
+                            </p>
+                          </div>
+                          <div
+                            ref={chatLogRef}
+                            className="space-y-3"
+                          >
+                            {aiThread.map((message, index) => (
+                              <div
+                                key={`${message.role}-${message.ts}-${index}`}
+                                className={cn(
+                                  "flex max-w-[80%] gap-2 transition",
+                                  message.role === "user"
+                                    ? "ml-auto justify-end"
+                                    : "justify-start"
+                                )}
+                              >
+                                <div
+                                  className={cn(
+                                    "rounded-[20px] px-4 py-3 text-sm leading-relaxed shadow-[0_10px_30px_rgba(0,0,0,0.35)]",
+                                    message.role === "user"
+                                      ? "border border-white/10 bg-white/10 text-white md:rounded-tl-[4px] md:rounded-bl-[20px]"
+                                      : "border border-white/5 bg-white/5 text-white/90 md:rounded-tr-[4px] md:rounded-bl-[20px]"
+                                  )}
+                                >
+                                  <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">
+                                    {message.role === "user" ? "You" : "ILAV"}
+                                  </p>
+                                  <p className="mt-1 text-sm text-white/90">
+                                    {message.content}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                      )}
+                      {chipSuggestions.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">
+                            {clarificationQuestions.length > 0
+                              ? "Clarification prompts"
+                              : "Follow-ups"}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {chipSuggestions.map((value, index) => (
+                              <button
+                                key={`${value}-${index}`}
+                                type="button"
+                                onClick={() => {
+                                  console.log("chip click", value);
+                                  setAiPrompt(value);
+                                }}
+                                className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs font-semibold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+                              >
+                                {value}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {aiResponse?.snapshot ? (
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => setAiShowSnapshot((prev) => !prev)}
+                            className="text-[10px] uppercase tracking-[0.4em] text-white/60 hover:text-white"
+                          >
+                            {aiShowSnapshot ? "Hide snapshot" : "Show snapshot"}
+                          </button>
+                          {aiShowSnapshot ? (
+                            <pre className="max-h-[220px] overflow-auto rounded-xl border border-white/10 bg-black/50 p-3 text-[11px] text-white/80 whitespace-pre-wrap">
+                              {JSON.stringify(aiResponse.snapshot, null, 2)}
+                            </pre>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+                <div className="border-t border-white/10 px-6 py-3">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="text"
+                      value={aiPrompt}
+                      onChange={(event) => setAiPrompt(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          handleRunAi();
+                        }
+                      }}
+                      placeholder="Describe what you need help with…"
+                      className="flex-1 rounded-full border border-white/20 bg-black/60 px-4 py-2 text-sm text-white placeholder:text-white/50 focus:border-white/40 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRunAi}
+                      disabled={aiLoading || !aiPrompt.trim()}
+                      className={cn(
+                        "rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:cursor-not-allowed disabled:opacity-60",
+                        aiLoading ? "opacity-70" : ""
+                      )}
+                    >
+                      {aiLoading ? "Sending…" : "Send"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
       <FabRescheduleOverlay
         open={Boolean(rescheduleTarget)}
         target={rescheduleTarget}
@@ -4708,19 +6106,15 @@ function FabNexus({
               const cardClassName = cn(
                 "flex flex-col gap-1 rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
                 isCompletedProject
-                  ? "border-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)]"
+                  ? "border-white/20 bg-white/5 text-white/90 shadow-[0_22px_42px_rgba(0,0,0,0.45)]"
                   : "border-white/5 bg-black/60 text-white/85 hover:bg-black/70",
                 isDisabled && "cursor-not-allowed"
               );
-              const nameTextClass = isCompletedProject
-                ? "text-emerald-50"
-                : "text-white";
-              const metaLabelClass = isCompletedProject
-                ? "text-[4px] uppercase tracking-[0.4em] text-emerald-100/70"
-                : "text-[4px] uppercase tracking-[0.4em] text-white/45";
-              const statusLabelClass = isCompletedProject
-                ? "text-[4px] uppercase tracking-[0.4em] text-emerald-100/80 break-words leading-tight"
-                : "text-[4px] uppercase tracking-[0.4em] text-white/50 break-words leading-tight";
+              const nameTextClass = "text-white";
+              const metaLabelClass =
+                "text-[4px] uppercase tracking-[0.4em] text-white/50";
+              const statusLabelClass =
+                "text-[4px] uppercase tracking-[0.4em] text-white/50 break-words leading-tight";
               return (
                 <button
                   key={`${result.type}-${result.id}`}

@@ -60,11 +60,11 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
           <div
             className={cn(
               monumentNoteTileInnerClass,
-              "flex flex-col justify-center gap-1 bg-white text-center"
+              "flex flex-col justify-center gap-1 text-center"
             )}
           >
-            <p className="text-sm font-semibold text-slate-900">No notes yet</p>
-            <p className="text-xs font-medium text-slate-600">
+            <p className="text-sm font-semibold text-slate-50">No notes yet</p>
+            <p className="text-xs font-medium text-slate-300">
               Capture your first thought here and keep ideas close at hand.
             </p>
           </div>
@@ -99,10 +99,10 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
                   isBarVariant ? "min-h-[4.5rem] flex-row text-left" : "flex-col"
                 )}
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950/10 text-slate-900">
+                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-800/60 text-slate-200">
                   <Plus className="h-4 w-4" aria-hidden="true" />
                 </div>
-                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">
                   {hasNotes ? "Add note" : "Create note"}
                 </span>
               </div>
