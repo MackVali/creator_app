@@ -81,6 +81,7 @@ export async function GET(request: Request) {
     .order("friend_display_name", { ascending: true });
 
   const trimmed = query.trim();
+  const maxDiscoveryResults = 25;
   if (trimmed) {
     const escaped = escapeForILike(trimmed);
     friendsQuery.or(
@@ -112,7 +113,7 @@ export async function GET(request: Request) {
       "id, username, display_name, avatar_url, role, highlight, reason, mutual_friends"
     )
     .order(trimmed ? "mutual_friends" : "created_at", { ascending: false })
-    .limit(12);
+    .limit(maxDiscoveryResults);
 
   if (trimmed) {
     const escaped = escapeForILike(trimmed);
@@ -127,27 +128,35 @@ export async function GET(request: Request) {
     console.error("Failed to load friend discovery profiles", discoveryError);
   }
 
-  let profileRows: Array<{ id: string; user_id: string | null; username: string }> = [];
-  if (trimmed) {
-    const escapedProfiles = escapeForILike(trimmed);
-    const { data: profileData, error: profilesError } = await supabase
-      .from("profiles")
-      .select("id, user_id, username")
-      .ilike("username", `%${escapedProfiles}%`)
-      .limit(12);
+  const { data: profileData, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id, user_id, username")
+    .not("username", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(maxDiscoveryResults);
 
-    if (profilesError) {
-      console.error("Failed to search profiles for discovery", profilesError);
-    } else if (profileData) {
-      profileRows = profileData;
-    }
+  let profileRows: Array<{ id: string; user_id: string | null; username: string }> = [];
+  if (profilesError) {
+    console.error("Failed to search profiles for discovery", profilesError);
+  } else if (profileData) {
+    profileRows = profileData;
+  }
+
+  if (trimmed) {
+    const normalizedQuery = trimmed.toLowerCase();
+    profileRows = profileRows.filter((row) =>
+      row.username?.toLowerCase().includes(normalizedQuery)
+    );
   }
 
   const seenUsernames = friendUsernames;
   const aggregated: ReturnType<typeof mapDiscoveryProfile>[] = [];
 
-  if (trimmed && profileRows.length) {
+  if (profileRows.length) {
     for (const row of profileRows) {
+      if (aggregated.length >= maxDiscoveryResults) {
+        break;
+      }
       const rawUsername = row.username ?? "";
       const username = rawUsername.trim();
       if (!username) {
@@ -167,7 +176,7 @@ export async function GET(request: Request) {
         displayName: username,
         avatarUrl: buildAvatarFromSeed(username),
         mutualFriends: 0,
-        highlight: `Search match for “${trimmed}”`,
+        highlight: trimmed ? `Search match for “${trimmed}”` : "Creator profile",
         role: "Creator",
       });
       seenUsernames.add(normalized);
@@ -175,6 +184,9 @@ export async function GET(request: Request) {
   }
 
   for (const row of discoveryRows ?? []) {
+    if (aggregated.length >= maxDiscoveryResults) {
+      break;
+    }
     const profile = mapDiscoveryProfile(row);
     const normalized = profile.username.toLowerCase();
     if (seenUsernames.has(normalized)) {
