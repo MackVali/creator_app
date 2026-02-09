@@ -43,6 +43,7 @@ function DraggableGoalCard({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  onCreateProject,
 }: {
   goal: Goal;
   index: number;
@@ -51,6 +52,7 @@ function DraggableGoalCard({
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  onCreateProject?: (goal: Goal) => void;
 }) {
   const {
     attributes,
@@ -120,6 +122,7 @@ function DraggableGoalCard({
               onGoalToggleActive ? () => onGoalToggleActive(goal) : undefined
             }
             onDelete={onGoalDelete ? () => onGoalDelete(goal) : undefined}
+            onCreateProject={onCreateProject ? () => onCreateProject(goal) : undefined}
           />
         ) : (
           <button
@@ -175,6 +178,7 @@ interface RoadmapCardProps {
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  onCreateProject?: (goal: Goal) => void;
 }
 
 function RoadmapCardImpl({
@@ -186,6 +190,7 @@ function RoadmapCardImpl({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  onCreateProject,
 }: RoadmapCardProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -622,6 +627,14 @@ function CompactGoalsOverlay({
               ? () => onGoalDelete(localGoals.find((g) => g.id === openGoalId)!)
               : undefined
           }
+          onCreateProject={
+            onCreateProject
+              ? () =>
+                  onCreateProject(
+                    localGoals.find((g) => g.id === openGoalId)!
+                  )
+              : undefined
+          }
         />
       ) : (
         <DndContext
@@ -660,6 +673,7 @@ function CompactGoalsOverlay({
                   onGoalEdit={onGoalEdit}
                   onGoalToggleActive={onGoalToggleActive}
                   onGoalDelete={onGoalDelete}
+                  onCreateProject={onCreateProject}
                 />
               ))}
             </div>
@@ -684,6 +698,11 @@ function CompactGoalsOverlay({
       onOpenChange={(isOpen) => {
         if (!isOpen) setOpenGoalId(null);
       }}
+      onCreateProject={
+        onCreateProject
+          ? () => onCreateProject(localGoals.find((g) => g.id === openGoalId)!)
+          : undefined
+      }
     />
   ) : null;
 

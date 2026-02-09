@@ -23,6 +23,7 @@ interface RoadmapDrawerProps {
   onGoalDelete?: (goal: Goal) => void;
   onProjectUpdated?: (goalId: string, projectId: string, updates: Partial<import("../types").Project>) => void;
   onProjectDeleted?: (goalId: string, projectId: string) => void;
+  onCreateProject?: (goal: Goal) => void;
 }
 
 export function RoadmapDrawer({
@@ -35,6 +36,7 @@ export function RoadmapDrawer({
   onGoalDelete,
   onProjectUpdated,
   onProjectDeleted,
+  onCreateProject,
 }: RoadmapDrawerProps) {
   const [openGoalIds, setOpenGoalIds] = useState<Set<string>>(new Set());
 
@@ -105,6 +107,7 @@ export function RoadmapDrawer({
                     }
                     open={openGoalIds.has(goal.id)}
                     onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
+                    onCreateProject={() => onCreateProject?.(goal)}
                   />
                 </div>
               ))}
@@ -115,4 +118,3 @@ export function RoadmapDrawer({
     </Sheet>
   );
 }
-

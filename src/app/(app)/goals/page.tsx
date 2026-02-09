@@ -1560,6 +1560,7 @@ export default function GoalsPage() {
                           setSelectedRoadmap(roadmap);
                           setRoadmapDrawer(true);
                         }}
+                        onCreateProject={handleCreateProject}
                       />
                     </div>
                   );
@@ -1656,6 +1657,7 @@ export default function GoalsPage() {
           onGoalDelete={handleDelete}
           onProjectUpdated={handleProjectUpdated}
           onProjectDeleted={handleProjectDeleted}
+          onCreateProject={handleCreateProject}
         />
       </div>
     </ProtectedRoute>
