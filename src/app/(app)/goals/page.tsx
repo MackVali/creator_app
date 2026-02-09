@@ -695,21 +695,52 @@ export default function GoalsPage() {
     [getMonumentEmoji]
   );
 
+  const buildProjectFromUpdates = useCallback(
+    (projectId: string, updates: Partial<Project>): Project => ({
+      id: projectId,
+      name: updates.name ?? "New project",
+      status: updates.status ?? "In-Progress",
+      progress: updates.progress ?? 0,
+      dueDate: updates.dueDate,
+      energy: updates.energy ?? "No",
+      emoji: updates.emoji ?? null,
+      tasks: updates.tasks ?? [],
+      stage: updates.stage ?? "BUILD",
+      energyCode: updates.energyCode ?? "NO",
+      priorityCode: updates.priorityCode ?? "NO",
+      durationMinutes: updates.durationMinutes ?? null,
+      skillIds: updates.skillIds ?? [],
+      weight: updates.weight,
+      isNew: updates.isNew,
+    }),
+    []
+  );
+
   const handleProjectUpdated = useCallback(
     (goalId: string, projectId: string, updates: Partial<Project>) => {
       setGoals((prev) =>
         prev.map((goal) => {
           if (goal.id !== goalId) return goal;
+          const existingProject = goal.projects.find(
+            (project) => project.id === projectId
+          );
           return {
             ...goal,
-            projects: goal.projects.map((project) =>
-              project.id === projectId ? { ...project, ...updates } : project
-            ),
+            projects: existingProject
+              ? goal.projects.map((project) =>
+                  project.id === projectId
+                    ? { ...project, ...updates }
+                    : project
+                )
+              : [
+                  ...goal.projects,
+                  buildProjectFromUpdates(projectId, updates),
+                ],
           };
         })
       );
     },
-    []
+    [buildProjectFromUpdates]
   );
 
   const handleProjectDeleted = useCallback(

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useMemo, useRef, type PointerEvent } from "react";
-import Link from "next/link";
 import { ProjectRow, type ProjectCardMorphOrigin } from "./ProjectRow";
 import type { Project } from "../types";
 import { Progress } from "@/components/ui/Progress";
@@ -15,6 +14,8 @@ interface ProjectsDropdownProps {
   onProjectLongPress?: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   projectTasksOnly?: boolean;
+  onAddProject?: () => void;
+  addingProject?: boolean;
   onTaskToggleCompletion?: (
     goalId: string,
     projectId: string,
@@ -35,6 +36,8 @@ export function ProjectsDropdown({
   onProjectLongPress,
   onProjectUpdated,
   projectTasksOnly = false,
+  onAddProject,
+  addingProject = false,
   onTaskToggleCompletion,
 }: ProjectsDropdownProps) {
   const taskEntries = useMemo(() => {
@@ -96,13 +99,18 @@ export function ProjectsDropdown({
             No projects linked yet. Head to Projects to tether the first track.
           </div>
         )}
-        <Link
-          href="/projects"
-          className="mt-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/60 transition hover:text-white"
+        <button
+          type="button"
+          onClick={onAddProject}
+          disabled={addingProject || !onAddProject}
+          className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.06] px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/70 transition hover:border-white/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          View all projects
-          <span aria-hidden className="h-px w-8 bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-        </Link>
+          {addingProject ? "Adding project" : "Add a new project"}
+          <span
+            aria-hidden
+            className="h-px w-8 bg-gradient-to-r from-transparent via-white/60 to-transparent"
+          />
+        </button>
       </div>
     </div>
   );
