@@ -204,6 +204,7 @@ export default function SearchFriends({
 
   const trimmedQuery = q.trim();
   const hasQuery = trimmedQuery.length > 0;
+  const shouldShowDiscovery = discovery.length > 0 || hasQuery;
 
   const handleConnect = useCallback(
     (profile: DiscoveryProfileState) => {
@@ -523,9 +524,9 @@ export default function SearchFriends({
             isLoading={isSearching}
             error={searchError}
           />
-          {hasQuery ? discoveryPanel : null}
+          {shouldShowDiscovery ? discoveryPanel : null}
         </>
-      ) : hasQuery ? (
+      ) : shouldShowDiscovery ? (
         discoveryPanel
       ) : (
         <div className="rounded-xl bg-white/5 ring-1 ring-white/10 p-6 text-center text-sm text-white/60">

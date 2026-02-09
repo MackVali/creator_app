@@ -7,6 +7,7 @@ import {
   mapFriendConnection,
 } from "@/lib/friends/mappers";
 import { getSupabaseServer } from "@/lib/supabase";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const QuerySchema = z.object({
   q: z
@@ -82,6 +83,7 @@ export async function GET(request: Request) {
 
   const trimmed = query.trim();
   const maxDiscoveryResults = 25;
+  const profileClient = createAdminClient() ?? supabase;
   if (trimmed) {
     const escaped = escapeForILike(trimmed);
     friendsQuery.or(
@@ -128,25 +130,33 @@ export async function GET(request: Request) {
     console.error("Failed to load friend discovery profiles", discoveryError);
   }
 
-  const { data: profileData, error: profilesError } = await supabase
+  const profileQuery = profileClient
     .from("profiles")
-    .select("id, user_id, username")
+    .select("id, user_id, username, display_name, avatar_url")
     .not("username", "is", null)
     .order("created_at", { ascending: false })
     .limit(maxDiscoveryResults);
 
-  let profileRows: Array<{ id: string; user_id: string | null; username: string }> = [];
+  if (trimmed) {
+    const escapedProfiles = escapeForILike(trimmed);
+    profileQuery.or(
+      `username.ilike.%${escapedProfiles}%,display_name.ilike.%${escapedProfiles}%`
+    );
+  }
+
+  const { data: profileData, error: profilesError } = await profileQuery;
+
+  let profileRows: Array<{
+    id: string;
+    user_id: string | null;
+    username: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  }> = [];
   if (profilesError) {
     console.error("Failed to search profiles for discovery", profilesError);
   } else if (profileData) {
     profileRows = profileData;
-  }
-
-  if (trimmed) {
-    const normalizedQuery = trimmed.toLowerCase();
-    profileRows = profileRows.filter((row) =>
-      row.username?.toLowerCase().includes(normalizedQuery)
-    );
   }
 
   const seenUsernames = friendUsernames;
@@ -170,11 +180,12 @@ export async function GET(request: Request) {
         continue;
       }
 
+      const displayName = row.display_name ?? username;
       aggregated.push({
         id: row.id,
         username,
-        displayName: username,
-        avatarUrl: buildAvatarFromSeed(username),
+        displayName,
+        avatarUrl: row.avatar_url ?? buildAvatarFromSeed(displayName),
         mutualFriends: 0,
         highlight: trimmed ? `Search match for “${trimmed}”` : "Creator profile",
         role: "Creator",
