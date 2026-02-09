@@ -26,6 +26,7 @@ import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 
 type ProjectQuickEditDialogProps = {
   project: Project | null;
+  goalId?: string;
   origin?: ProjectCardMorphOrigin | null;
   onClose: () => void;
   onUpdated?: (projectId: string, updates: Partial<Project>) => void;
@@ -149,6 +150,7 @@ const formatEnergyLabel = (code: string): Project["energy"] => {
 
 export function ProjectQuickEditDialog({
   project,
+  goalId,
   origin,
   onClose,
   onUpdated,
@@ -409,21 +411,60 @@ export function ProjectQuickEditDialog({
     const energyCode = energyToDbValue(energy);
     const priorityCode = priority;
     const dueDateValue = fromDateInputValue(dueDateInput);
-    const { error: updateError } = await supabase
-      .from("projects")
-      .update({
-        name: trimmed,
-        stage: nextStage,
-        energy: energyCode,
-        priority: priorityCode,
-        duration_min: parsedDuration,
-        due_date: dueDateValue,
-      })
-      .eq("id", project.id);
-    if (updateError) {
-      setError("Failed to update this project. Try again in a moment.");
-      setSaving(false);
-      return;
+    const isNewProject = Boolean(project.isNew);
+    let projectId = project.id;
+    if (isNewProject) {
+      if (!goalId) {
+        setError("Unable to create this project yet. Try again.");
+        setSaving(false);
+        return;
+      }
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError || !user) {
+        setError("Unable to resolve user for this project.");
+        setSaving(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("projects")
+        .insert({
+          name: trimmed,
+          goal_id: goalId,
+          user_id: user.id,
+          stage: nextStage,
+          energy: energyCode,
+          priority: priorityCode,
+          duration_min: parsedDuration,
+          due_date: dueDateValue,
+        })
+        .select("id")
+        .single();
+      if (error || !data) {
+        setError("Failed to create this project. Try again in a moment.");
+        setSaving(false);
+        return;
+      }
+      projectId = data.id;
+    } else {
+      const { error: updateError } = await supabase
+        .from("projects")
+        .update({
+          name: trimmed,
+          stage: nextStage,
+          energy: energyCode,
+          priority: priorityCode,
+          duration_min: parsedDuration,
+          due_date: dueDateValue,
+        })
+        .eq("id", project.id);
+      if (updateError) {
+        setError("Failed to update this project. Try again in a moment.");
+        setSaving(false);
+        return;
+      }
     }
     let nextEmoji = project.emoji ?? null;
     if (selectedSkillId !== initialSkillId) {
@@ -431,11 +472,11 @@ export function ProjectQuickEditDialog({
         await supabase
           .from("project_skills")
           .delete()
-          .eq("project_id", project.id);
+          .eq("project_id", projectId);
         if (selectedSkillId) {
           await supabase
             .from("project_skills")
-            .insert({ project_id: project.id, skill_id: selectedSkillId });
+            .insert({ project_id: projectId, skill_id: selectedSkillId });
           const selectedSkill = skillOptions.find(
             (skill) => skill.id === selectedSkillId
           );
@@ -447,7 +488,7 @@ export function ProjectQuickEditDialog({
         console.error("Failed to update project skill relation", skillErr);
       }
     }
-    onUpdated?.(project.id, {
+    onUpdated?.(projectId, {
       name: trimmed,
       stage: nextStage,
       status: projectStageToStatus(nextStage),
@@ -459,14 +500,14 @@ export function ProjectQuickEditDialog({
       emoji: nextEmoji,
       dueDate: dueDateValue ?? undefined,
     });
-    if (project) {
-      const wasRelease = project.stage === "RELEASE";
+    if (projectId) {
+      const wasRelease = !isNewProject && project.stage === "RELEASE";
       const isRelease = nextStage === "RELEASE";
       if (!wasRelease && isRelease) {
         void recordProjectCompletion(
           {
-            projectId: project.id,
-            projectSkillIds: project.skillIds,
+            projectId,
+            projectSkillIds: isNewProject ? [] : project.skillIds,
             taskSkillIds: (project.tasks ?? []).map((task) => task.skillId),
           },
           "complete"
@@ -474,7 +515,7 @@ export function ProjectQuickEditDialog({
       } else if (wasRelease && !isRelease) {
         void recordProjectCompletion(
           {
-            projectId: project.id,
+            projectId,
             projectSkillIds: project.skillIds,
             taskSkillIds: (project.tasks ?? []).map((task) => task.skillId),
           },
