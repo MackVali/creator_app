@@ -48,6 +48,7 @@ export default function SkillsCarousel() {
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
   const activeIndexRef = useRef(0);
   const scrollFrame = useRef<number | null>(null);
+  const scrollEndTimeout = useRef<number | null>(null);
 
   const [categories, setCategories] = useState(fetchedCategories);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -186,9 +187,9 @@ export default function SkillsCarousel() {
     [categories, router, search]
   );
 
-  const syncToNearestCard = useCallback(() => {
+  const findNearestIndex = useCallback(() => {
     const track = trackRef.current;
-    if (!track || categories.length === 0) return;
+    if (!track || categories.length === 0) return activeIndexRef.current;
 
     const trackRect = track.getBoundingClientRect();
     const center = trackRect.left + trackRect.width / 2;
@@ -209,6 +210,12 @@ export default function SkillsCarousel() {
       }
     });
 
+    return nearest;
+  }, [categories.length]);
+
+  const syncToNearestCard = useCallback(() => {
+    const nearest = findNearestIndex();
+
     if (nearest !== activeIndexRef.current) {
       activeIndexRef.current = nearest;
       setActiveIndex((prev) => (prev === nearest ? prev : nearest));
@@ -222,7 +229,12 @@ export default function SkillsCarousel() {
         });
       }
     }
-  }, [categories, router, search]);
+  }, [categories, findNearestIndex, router, search]);
+
+  const snapToNearestCard = useCallback(() => {
+    const nearest = findNearestIndex();
+    scrollToIndex(nearest, { skipUrl: true });
+  }, [findNearestIndex, scrollToIndex]);
 
   useEffect(() => {
     cardRefs.current = cardRefs.current.slice(0, categories.length);
@@ -275,6 +287,14 @@ export default function SkillsCarousel() {
         scrollFrame.current = null;
         syncToNearestCard();
       });
+
+      if (scrollEndTimeout.current != null) {
+        window.clearTimeout(scrollEndTimeout.current);
+      }
+      scrollEndTimeout.current = window.setTimeout(() => {
+        scrollEndTimeout.current = null;
+        snapToNearestCard();
+      }, 140);
     };
 
     handleScroll();
@@ -285,9 +305,13 @@ export default function SkillsCarousel() {
         cancelAnimationFrame(scrollFrame.current);
         scrollFrame.current = null;
       }
+      if (scrollEndTimeout.current != null) {
+        window.clearTimeout(scrollEndTimeout.current);
+        scrollEndTimeout.current = null;
+      }
       track.removeEventListener("scroll", handleScroll);
     };
-  }, [categories.length, syncToNearestCard]);
+  }, [categories.length, snapToNearestCard, syncToNearestCard]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -519,6 +543,11 @@ export default function SkillsCarousel() {
           className={`relative flex snap-x gap-5 overflow-x-auto overflow-y-hidden px-2 sm:px-3 ${
             skillDragging ? "snap-none touch-none" : "snap-mandatory touch-pan-x"
           }`}
+          style={{ scrollBehavior: "smooth", scrollPaddingInline: "12px" }}
+          onPointerUp={snapToNearestCard}
+          onPointerCancel={snapToNearestCard}
+          onTouchEnd={snapToNearestCard}
+          onMouseUp={snapToNearestCard}
         >
           {categories.map((category, idx) => {
             const isActive = idx === activeIndex;
@@ -647,4 +676,3 @@ export default function SkillsCarousel() {
     </div>
   );
 }
-
