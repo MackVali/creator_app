@@ -15,6 +15,7 @@ import { ChevronDown, MoreHorizontal, Sparkles } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { Goal, Project } from "../types";
 import type { ProjectCardMorphOrigin } from "./ProjectRow";
+import { getSupabaseBrowser } from "@/lib/supabase";
 // Lazy-load dropdown contents to reduce initial bundle and re-render cost
 const ProjectsDropdown = dynamic(
   () => import("./ProjectsDropdown").then((m) => m.ProjectsDropdown),
@@ -59,6 +60,17 @@ const energyAccent: Record<Goal["energy"], { dot: string; bar: string }> = {
     dot: "bg-yellow-300",
     bar: "linear-gradient(90deg, rgba(250,204,21,0.9), rgba(244,63,94,0.45))",
   },
+};
+
+const projectStageToStatus = (stage: string): Project["status"] => {
+  switch (stage) {
+    case "RESEARCH":
+      return "Todo";
+    case "RELEASE":
+      return "Done";
+    default:
+      return "In-Progress";
+  }
 };
 
 interface GoalCardProps {
@@ -116,6 +128,7 @@ function GoalCardImpl({
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editingProjectOrigin, setEditingProjectOrigin] =
     useState<ProjectCardMorphOrigin | null>(null);
+  const [addingProject, setAddingProject] = useState(false);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [overlayRect, setOverlayRect] = useState<DOMRect | null>(null);
 
@@ -202,6 +215,63 @@ function GoalCardImpl({
     projectLongPressTriggeredRef.current = false;
     setIsHolding(false);
   }, [cancelProjectLongPress]);
+
+  const handleAddProject = useCallback(async () => {
+    if (addingProject) return;
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    setAddingProject(true);
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error("Unable to resolve user for new project", userError);
+        return;
+      }
+      const stage = "BUILD";
+      const { data, error } = await supabase
+        .from("projects")
+        .insert({
+          name: "New project",
+          goal_id: goal.id,
+          user_id: user.id,
+          stage,
+          energy: "NO",
+          priority: "NO",
+        })
+        .select("id, name, stage, energy, priority, due_date, duration_min")
+        .single();
+
+      if (error || !data) {
+        console.error("Failed to create project", error);
+        return;
+      }
+
+      const nextProject: Project = {
+        id: data.id,
+        name: data.name ?? "New project",
+        status: projectStageToStatus(data.stage ?? stage),
+        progress: 0,
+        dueDate: data.due_date ?? undefined,
+        energy: "No",
+        emoji: null,
+        tasks: [],
+        stage: data.stage ?? stage,
+        energyCode: "NO",
+        priorityCode: data.priority ?? "NO",
+        durationMinutes: data.duration_min ?? null,
+        skillIds: [],
+      };
+
+      onProjectUpdated?.(nextProject.id, nextProject);
+      setEditingProjectOrigin(null);
+      setEditingProject(nextProject);
+    } finally {
+      setAddingProject(false);
+    }
+  }, [addingProject, goal.id, onProjectUpdated]);
 
   const handleProjectLongPress = useCallback(
     (project: Project, origin: ProjectCardMorphOrigin | null) => {
@@ -312,6 +382,8 @@ function GoalCardImpl({
                   onClose={toggle}
                   onProjectLongPress={handleProjectLongPress}
                   onProjectUpdated={onProjectUpdated}
+                  onAddProject={handleAddProject}
+                  addingProject={addingProject}
                   anchorRect={overlayRect}
                   projectDropdownMode={projectDropdownMode}
                   goalId={goal.id}
@@ -393,6 +465,8 @@ function GoalCardImpl({
                 onClose={toggle}
                 onProjectLongPress={handleProjectLongPress}
                 onProjectUpdated={onProjectUpdated}
+                onAddProject={handleAddProject}
+                addingProject={addingProject}
                 anchorRect={overlayRect}
                 projectDropdownMode={projectDropdownMode}
                 goalId={goal.id}
@@ -632,6 +706,8 @@ function GoalCardImpl({
                 onProjectUpdated={onProjectUpdated}
                 goalId={goal.id}
                 projectTasksOnly={projectDropdownMode === "tasks-only"}
+                onAddProject={handleAddProject}
+                addingProject={addingProject}
                 onTaskToggleCompletion={onTaskToggleCompletion}
               />
             </div>
@@ -661,6 +737,8 @@ type CompactProjectsOverlayProps = {
     origin: ProjectCardMorphOrigin | null
   ) => void;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
+  onAddProject?: () => void;
+  addingProject?: boolean;
   projectDropdownMode?: "default" | "tasks-only";
   goalId: string;
   onEdit?: () => void;
@@ -679,6 +757,8 @@ function CompactProjectsOverlay({
   anchorRect,
   onProjectLongPress,
   onProjectUpdated,
+  onAddProject,
+  addingProject = false,
   projectDropdownMode = "default",
   goalId,
   onEdit,
@@ -762,6 +842,8 @@ function CompactProjectsOverlay({
         onProjectUpdated={onProjectUpdated}
         projectTasksOnly={projectDropdownMode === "tasks-only"}
         goalId={goalId}
+        onAddProject={onAddProject}
+        addingProject={addingProject}
         onTaskToggleCompletion={onTaskToggleCompletion}
       />
     </div>
