@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import FriendsList from "./FriendsList";
 import type { DiscoveryProfile, Friend } from "@/types/friends";
+import { DEFAULT_AVATAR_URL } from "@/lib/friends/avatar";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 type SearchFriendsProps = {
@@ -67,7 +68,7 @@ export default function SearchFriends({
           "Me";
         const avatarUrl =
           (user.user_metadata?.avatar_url as string | undefined) ||
-          "https://i.pravatar.cc/96?img=67";
+          DEFAULT_AVATAR_URL;
 
         setMe({
           id: user.id,
@@ -457,7 +458,7 @@ export default function SearchFriends({
               className="flex items-center gap-3 rounded-2xl bg-white/[0.08] px-3 py-3 ring-1 ring-white/10"
             >
               <Image
-                src={profile.avatarUrl}
+                src={profile.avatarUrl || DEFAULT_AVATAR_URL}
                 alt={`${profile.displayName} avatar`}
                 width={48}
                 height={48}

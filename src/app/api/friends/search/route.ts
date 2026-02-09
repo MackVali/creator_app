@@ -6,6 +6,7 @@ import {
   mapDiscoveryProfile,
   mapFriendConnection,
 } from "@/lib/friends/mappers";
+import { DEFAULT_AVATAR_URL } from "@/lib/friends/avatar";
 import { getSupabaseServer } from "@/lib/supabase";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -21,9 +22,8 @@ function escapeForILike(value: string) {
   return value.replace(/[\\%_]/g, "\\$&");
 }
 
-function buildAvatarFromSeed(seedSource: string) {
-  const seed = seedSource.trim().length ? seedSource : "Creator";
-  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed)}`;
+function buildAvatarFromSeed(_seedSource: string) {
+  return DEFAULT_AVATAR_URL;
 }
 
 export async function GET(request: Request) {
