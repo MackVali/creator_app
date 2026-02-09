@@ -240,16 +240,24 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
   const thermometerHeight = Math.max(chargePercent, hasEvents ? 6 : 0);
 
   return (
-    <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 text-white shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_65%)]" />
-      <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-white/60">
-            Activity
-          </p>
-          <h3 className="text-lg font-semibold text-white sm:text-xl">Momentum build log</h3>
+    <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101011] to-[#1d1c20] p-6 text-white shadow-[0_30px_110px_-48px_rgba(0,0,0,0.82)] sm:p-7">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(147,197,253,0.16),_transparent_58%)]" />
+      <div className="absolute -top-24 right-10 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_70%)] blur-3xl" />
+      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.32em] text-sky-100/80">
+              Momentum
+            </span>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-white/50">
+              Activity
+            </p>
+          </div>
+          <h3 className="text-lg font-semibold text-white sm:text-xl">
+            Momentum build log
+          </h3>
           <p className="text-xs text-white/70 sm:text-sm">
-            Completed goals, fresh notes, and XP surges roll into a chronological log so you can see how the monument is taking shape.
+            Completed goals, fresh notes, and XP surges roll into a curated timeline so you can see how the monument is taking shape.
           </p>
         </div>
         {summary.lastUpdated ? (
@@ -260,7 +268,8 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
       </div>
 
       <div className="relative mt-6 grid gap-6 2xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
-        <div className="relative rounded-3xl border border-white/10 bg-black/20 p-5 backdrop-blur">
+        <div className="relative rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 via-white/5 to-transparent p-5 backdrop-blur">
+          <div className="absolute inset-0 rounded-3xl bg-[radial-gradient(circle_at_top_left,_rgba(148,163,184,0.14),_transparent_55%)]" />
           {loading ? (
             <div className="flex flex-col gap-4">
               {Array.from({ length: 3 }).map((_, index) => (
@@ -283,7 +292,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
               </div>
             </div>
           ) : hasPinnedNotes || hasEvents ? (
-            <div className="space-y-6">
+            <div className="relative space-y-6">
               {hasPinnedNotes ? (
                 <section className="rounded-2xl border border-sky-400/40 bg-sky-500/10 px-4 py-4 text-sky-50 shadow-[0_10px_45px_-30px_rgba(14,165,233,0.8)]">
                   <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -338,7 +347,15 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
               ) : null}
 
               {hasEvents ? (
-                <div className="relative">
+                <div className="relative rounded-2xl border border-white/10 bg-black/20 px-4 py-5">
+                  <div className="mb-4 flex items-center justify-between">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/55">
+                      Timeline
+                    </p>
+                    <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-white/40">
+                      {events.length} moments
+                    </p>
+                  </div>
                   <div className="absolute left-[22px] top-5 bottom-5 w-px bg-gradient-to-b from-white/0 via-white/20 to-white/0" aria-hidden="true" />
                   <div className="space-y-6">
                     {groupedEvents.map(({ label, items }) => (
