@@ -246,22 +246,22 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
       <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.32em] text-sky-100/80">
+            <span className="rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.32em] text-sky-100/80">
               Momentum
             </span>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-white/50">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.32em] text-white/50">
               Activity
             </p>
           </div>
-          <h3 className="text-base font-semibold text-white sm:text-lg">
+          <h3 className="text-sm font-semibold text-white sm:text-base">
             Momentum build log
           </h3>
-          <p className="text-xs text-white/70 sm:text-[13px]">
+          <p className="text-[11px] text-white/70 sm:text-xs">
             Completed goals, fresh notes, and XP surges roll into a curated timeline so you can see how the monument is taking shape.
           </p>
         </div>
         {summary.lastUpdated ? (
-          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.24em] text-white/50">
+          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[9px] font-medium uppercase tracking-[0.24em] text-white/50">
             Updated {formatRelativeTime(new Date(summary.lastUpdated))}
           </div>
         ) : null}
@@ -349,10 +349,10 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
               {hasEvents ? (
                 <div className="relative rounded-2xl border border-white/10 bg-black/20 px-4 py-5">
                   <div className="mb-4 flex items-center justify-between">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/55">
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/55">
                       Timeline
                     </p>
-                    <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-white/40">
+                    <p className="text-[9px] font-medium uppercase tracking-[0.28em] text-white/40">
                       {events.length} moments
                     </p>
                   </div>
@@ -361,7 +361,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                     {groupedEvents.map(({ label, items }) => (
                       <section key={label} className="relative pl-12">
                         <div className="mb-4 flex items-center gap-3">
-                          <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/50">
+                          <span className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/50">
                             {label}
                           </span>
                           <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
@@ -386,11 +386,15 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                                   <div className="flex-1 space-y-1.5 sm:space-y-2">
                                     <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
                                       <div className="space-y-1">
-                                        <p className="text-[13px] font-semibold text-white sm:text-sm">{event.title}</p>
+                                        <p className="text-[11px] font-semibold text-white sm:text-[13px]">
+                                          {event.title}
+                                        </p>
                                         {event.detail ? (
-                                          <p className="text-[11px] text-white/65 sm:text-xs">{event.detail}</p>
+                                          <p className="text-[10px] text-white/65 sm:text-[11px]">
+                                            {event.detail}
+                                          </p>
                                         ) : null}
-                                        <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-white/35 sm:text-[11px] sm:tracking-[0.24em]">
+                                        <p className="text-[9px] font-medium uppercase tracking-[0.22em] text-white/35 sm:text-[10px] sm:tracking-[0.24em]">
                                           {attributionLabel}
                                         </p>
                                       </div>
@@ -400,7 +404,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                                             type="button"
                                             onClick={() => togglePin(event.noteId!)}
                                             className={cn(
-                                              "rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] transition sm:px-3 sm:text-[11px] sm:tracking-[0.28em]",
+                                              "rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.24em] transition sm:px-3 sm:text-[10px] sm:tracking-[0.28em]",
                                               isPinned
                                                 ? "border-sky-300/70 bg-sky-500/20 text-sky-100 shadow-[0_10px_30px_-18px_rgba(56,189,248,0.75)]"
                                                 : "border-white/15 bg-white/0 text-white/50 hover:border-sky-200/60 hover:bg-sky-400/10 hover:text-sky-100"
@@ -420,7 +424,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                                             {isPinned ? "Pinned" : "Pin"}
                                           </button>
                                         ) : null}
-                                        <span className="text-[10px] font-medium uppercase tracking-[0.24em] text-white/40 sm:text-[11px] sm:tracking-[0.28em]">
+                                        <span className="text-[9px] font-medium uppercase tracking-[0.24em] text-white/40 sm:text-[10px] sm:tracking-[0.28em]">
                                           {event.timeLabel}
                                         </span>
                                       </div>
