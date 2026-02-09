@@ -97,51 +97,68 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
         <div style={{ position: "absolute", bottom: "16px", left: "24px" }}>
           <div
             style={{
-              fontSize: "24px",
-              fontWeight: "900",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              color: "#E0E0E0",
-            }}
-          >
-            LEVEL {userStats.level}
-          </div>
-          <div
-            style={{
-              marginTop: "8px",
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              flexWrap: "wrap",
+              background: "linear-gradient(145deg, #1A1A1A, #2E2E2E)",
+              borderRadius: "16px",
+              padding: "12px 16px",
+              border: "1px solid #3A3A3A",
+              boxShadow:
+                "0 10px 24px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -2px 8px rgba(0, 0, 0, 0.7)",
             }}
           >
             <div
               style={{
-                width: "192px", // Smaller for mobile
-                height: "12px",
-                background: "#333", // Exact dark grey from mockup
-                borderRadius: "9999px",
-                overflow: "hidden",
+                fontSize: "24px",
+                fontWeight: "900",
+                textTransform: "uppercase",
+                letterSpacing: "0.14em",
+                color: "#F2F2F2",
+                textShadow: "0 2px 4px rgba(0, 0, 0, 0.6)",
+              }}
+            >
+              LEVEL {userStats.level}
+            </div>
+            <div
+              style={{
+                marginTop: "10px",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                flexWrap: "wrap",
               }}
             >
               <div
                 style={{
-                  height: "100%",
-                  background: "#BBB", // Exact light grey from mockup
+                  width: "192px", // Smaller for mobile
+                  height: "12px",
+                  background: "linear-gradient(180deg, #1F1F1F, #2D2D2D)",
                   borderRadius: "9999px",
-                  transition: "width 0.5s ease-out",
-                  width: `${(userStats.xp_current / userStats.xp_max) * 100}%`,
+                  overflow: "hidden",
+                  border: "1px solid #3A3A3A",
+                  boxShadow:
+                    "inset 0 1px 2px rgba(0, 0, 0, 0.75), inset 0 -1px 0 rgba(255, 255, 255, 0.06)",
                 }}
-              ></div>
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    background: "linear-gradient(90deg, #B5B5B5, #F5F5F5)",
+                    borderRadius: "9999px",
+                    transition: "width 0.5s ease-out",
+                    width: `${(userStats.xp_current / userStats.xp_max) * 100}%`,
+                    boxShadow:
+                      "0 0 8px rgba(255, 255, 255, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.6)",
+                  }}
+                ></div>
+              </div>
+              <span
+                style={{
+                  fontSize: "12px",
+                  color: "#A7A7A7", // Exact color from mockup
+                }}
+              >
+                {userStats.xp_current} / {userStats.xp_max}
+              </span>
             </div>
-            <span
-              style={{
-                fontSize: "12px",
-                color: "#A0A0A0", // Exact color from mockup
-              }}
-            >
-              {userStats.xp_current} / {userStats.xp_max}
-            </span>
           </div>
         </div>
       </div>
