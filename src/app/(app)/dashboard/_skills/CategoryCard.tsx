@@ -145,25 +145,26 @@ export default function CategoryCard({
     const base = color || "#6366f1";
     const on = getOnColor(base);
     const surface = active
-      ? `linear-gradient(135deg, ${withAlpha(lighten(base, 0.18), 0.94)} 0%, ${withAlpha(base, 0.88)} 55%, ${withAlpha(
-          darken(base, 0.12),
-          0.78
+      ? `linear-gradient(145deg, ${withAlpha(lighten(base, 0.2), 0.96)} 0%, ${withAlpha(base, 0.9)} 52%, ${withAlpha(
+          darken(base, 0.14),
+          0.82
         )} 100%)`
-      : `linear-gradient(140deg, ${withAlpha(lighten(base, 0.12), 0.58)} 0%, ${withAlpha(base, 0.6)} 50%, ${withAlpha(
-          darken(base, 0.16),
-          0.52
+      : `linear-gradient(150deg, ${withAlpha(lighten(base, 0.14), 0.64)} 0%, ${withAlpha(base, 0.62)} 48%, ${withAlpha(
+          darken(base, 0.18),
+          0.54
         )} 100%)`;
-    const halo = withAlpha(lighten(base, 0.4), active ? 0.3 : 0.18);
-    const frame = withAlpha(on === "#fff" ? "#ffffff" : "#0f172a", active ? 0.22 : 0.16);
-    const track = on === "#fff" ? withAlpha("#ffffff", 0.2) : withAlpha("#0f172a", 0.24);
-    const fill = on === "#fff" ? withAlpha("#ffffff", 0.86) : withAlpha("#0f172a", 0.72);
-    const listBg = withAlpha(on === "#fff" ? "#020817" : "#ffffff", 0.14);
-    const badgeBg = withAlpha(on === "#fff" ? "#ffffff" : "#0f172a", 0.16);
-    const badgeBorder = withAlpha(on === "#fff" ? "#ffffff" : "#0f172a", 0.24);
+    const halo = withAlpha(lighten(base, 0.42), active ? 0.32 : 0.18);
+    const frame = withAlpha(on === "#fff" ? "#ffffff" : "#0f172a", active ? 0.26 : 0.18);
+    const track = on === "#fff" ? withAlpha("#ffffff", 0.22) : withAlpha("#0f172a", 0.26);
+    const fill = on === "#fff" ? withAlpha("#ffffff", 0.88) : withAlpha("#0f172a", 0.74);
+    const listBg = withAlpha(on === "#fff" ? "#020817" : "#ffffff", 0.16);
+    const badgeBg = withAlpha(on === "#fff" ? "#ffffff" : "#0f172a", 0.18);
+    const badgeBorder = withAlpha(on === "#fff" ? "#ffffff" : "#0f172a", 0.28);
     const dropShadow = active
-      ? `0 26px 60px ${withAlpha(darken(base, 0.6), 0.48)}`
-      : "0 14px 32px rgba(15, 23, 42, 0.42)";
-    const sheen = `linear-gradient(120deg, rgba(255,255,255,${active ? "0.32" : "0.2"}) 0%, rgba(255,255,255,0) 70%)`;
+      ? `0 22px 45px ${withAlpha(darken(base, 0.55), 0.42)}, 0 10px 18px ${withAlpha("#0f172a", 0.22)}`
+      : "0 14px 30px rgba(15, 23, 42, 0.38), 0 6px 12px rgba(15, 23, 42, 0.24)";
+    const sheen = `linear-gradient(120deg, rgba(255,255,255,${active ? "0.38" : "0.24"}) 0%, rgba(255,255,255,0) 72%)`;
+    const edgeGlow = withAlpha(lighten(base, 0.55), active ? 0.26 : 0.16);
 
     return {
       base,
@@ -178,6 +179,7 @@ export default function CategoryCard({
       badgeBorder,
       dropShadow,
       sheen,
+      edgeGlow,
     };
   }, [active, color]);
 
@@ -227,6 +229,7 @@ export default function CategoryCard({
           background: palette.surface,
           borderColor: palette.frame,
           boxShadow: palette.dropShadow,
+          transform: active ? "translateY(-2px)" : "translateY(0)",
           opacity: active ? 1 : 0.92,
         }}
       >
@@ -242,6 +245,14 @@ export default function CategoryCard({
             style={{
               border: `1px solid ${withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", active ? 0.24 : 0.14)}`,
               opacity: active ? 0.75 : 0.5,
+            }}
+          />
+          <span
+            aria-hidden
+            className="absolute inset-[6px] rounded-[20px] transition-opacity duration-300"
+            style={{
+              boxShadow: `inset 0 0 0 1px ${palette.edgeGlow}`,
+              opacity: active ? 0.7 : 0.45,
             }}
           />
           <span
@@ -427,7 +438,8 @@ export default function CategoryCard({
             className="flex-1 overflow-y-auto overscroll-contain rounded-2xl px-3 pb-5 pt-4 backdrop-blur-sm"
             style={{
               backgroundColor: palette.listBg,
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1)",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -10px 18px rgba(15, 23, 42, 0.12)",
+              border: `1px solid ${withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", 0.18)}`,
             }}
           >
             {localSkills.length === 0 ? (
@@ -457,4 +469,3 @@ export default function CategoryCard({
     </div>
   );
 }
-
