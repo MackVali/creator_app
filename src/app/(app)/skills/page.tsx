@@ -416,35 +416,35 @@ function SkillsPageContent() {
     <div className="pb-24 text-white">
       <section className="relative px-4 pt-6">
         <div className="mx-auto max-w-6xl">
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#05060a] via-[#10121a] to-[#191c29] p-8 shadow-[0_45px_140px_-60px_rgba(15,23,42,0.85)]">
+          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#05060a] via-[#10121a] to-[#191c29] p-5 shadow-[0_45px_140px_-60px_rgba(15,23,42,0.85)]">
             <div className="absolute inset-0">
               <div className="absolute -right-28 -top-24 h-64 w-64 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.28),_transparent_65%)] blur-3xl" />
               <div className="absolute -bottom-32 left-8 h-72 w-72 rounded-full bg-[radial-gradient(circle,_rgba(56,189,248,0.22),_transparent_65%)] blur-3xl" />
             </div>
-            <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-              <div className="max-w-2xl space-y-6">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.35em] text-white/70 backdrop-blur">
+            <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-2xl space-y-4">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70 backdrop-blur">
                   Skill library
                 </div>
-                <div className="space-y-3">
-                  <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl">Your skills headquarters</h1>
-                  <p className="text-sm leading-relaxed text-white/70 sm:text-base">
+                <div className="space-y-2">
+                  <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">Your skills headquarters</h1>
+                  <p className="text-xs leading-relaxed text-white/70 sm:text-sm">
                     Orchestrate every ability you&apos;re building. Track categories, link monuments, and open the drawer to spin up something new in seconds.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-3">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     onClick={() => setOpen(true)}
-                    className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-slate-900 shadow-[0_15px_40px_-20px_rgba(148,163,184,0.9)] transition hover:bg-white/90"
+                    className="h-9 rounded-full bg-white px-3 text-xs font-semibold text-slate-900 shadow-[0_15px_40px_-20px_rgba(148,163,184,0.9)] transition hover:bg-white/90"
                   >
-                    <Plus className="mr-2 h-4 w-4" />
+                    <Plus className="mr-2 h-3.5 w-3.5" />
                     Add a skill
                   </Button>
                   <Button
                     asChild
                     variant="outline"
                     size="sm"
-                    className="rounded-full border-white/30 bg-white/10 px-4 text-sm font-semibold text-white backdrop-blur hover:border-white/40 hover:bg-white/15"
+                    className="h-9 rounded-full border-white/30 bg-white/10 px-3 text-xs font-semibold text-white backdrop-blur hover:border-white/40 hover:bg-white/15"
                   >
                     <Link href="/dashboard">Return to dashboard</Link>
                   </Button>
@@ -454,19 +454,19 @@ function SkillsPageContent() {
                 {heroStats.map(({ label, value, description, icon: Icon }) => (
                   <div
                     key={label}
-                    className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-5 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur transition hover:border-white/20 hover:bg-white/10"
+                    className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur transition hover:border-white/20 hover:bg-white/10"
                   >
                     <div className="pointer-events-none absolute -right-12 -top-12 h-28 w-28 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.14),_transparent_60%)] opacity-0 transition group-hover:opacity-100" />
                     <div className="relative flex items-start justify-between gap-3">
                       <div>
-                        <dt className="text-xs font-medium uppercase tracking-[0.25em] text-white/60">{label}</dt>
-                        <dd className="mt-3 text-2xl font-semibold text-white">{value}</dd>
+                        <dt className="text-[10px] font-medium uppercase tracking-[0.25em] text-white/60">{label}</dt>
+                        <dd className="mt-2 text-xl font-semibold text-white">{value}</dd>
                       </div>
-                      <span className="flex size-9 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/80">
-                        <Icon className="h-4 w-4" aria-hidden="true" />
+                      <span className="flex size-8 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/80">
+                        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
                       </span>
                     </div>
-                    <p className="relative mt-3 text-xs leading-relaxed text-white/60">{description}</p>
+                    <p className="relative mt-2 text-[11px] leading-relaxed text-white/60">{description}</p>
                   </div>
                 ))}
               </dl>
@@ -475,9 +475,9 @@ function SkillsPageContent() {
         </div>
       </section>
 
-      <section className="relative z-[1] -mt-12 px-4">
+      <section className="relative z-[1] -mt-10 px-4">
         <div className="mx-auto max-w-6xl">
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0d0f18]/90 p-5 shadow-[0_40px_120px_-70px_rgba(15,23,42,0.85)] backdrop-blur">
+          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0d0f18]/90 p-4 shadow-[0_40px_120px_-70px_rgba(15,23,42,0.85)] backdrop-blur">
             <div className="absolute inset-0">
               <div className="absolute -left-16 top-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(79,70,229,0.18),_transparent_65%)] blur-2xl" />
             </div>
@@ -487,13 +487,13 @@ function SkillsPageContent() {
                   placeholder="Search skills..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="h-12 flex-1 rounded-2xl border border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-white/30 focus:ring-white/30"
+                  className="h-10 flex-1 rounded-2xl border border-white/10 bg-white/5 text-sm text-white placeholder:text-white/40 focus:border-white/30 focus:ring-white/30"
                 />
               </div>
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value)}
-                className="h-11 min-w-[180px] rounded-2xl border border-white/15 bg-white/5 px-4 text-sm font-medium text-white/80 focus:border-white/30 focus:outline-none"
+                className="h-10 min-w-[160px] rounded-2xl border border-white/15 bg-white/5 px-3 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 focus:border-white/30 focus:outline-none"
               >
                 <option value="name" className="bg-slate-900 text-white">
                   Alphabetical
@@ -509,7 +509,7 @@ function SkillsPageContent() {
                 </option>
               </select>
             </div>
-            <div className="relative mt-5 flex flex-wrap gap-2">
+            <div className="relative mt-4 flex flex-wrap gap-2">
               {allCats.map((cat) => {
                 const count =
                   cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0;
@@ -519,7 +519,7 @@ function SkillsPageContent() {
                     <button
                       type="button"
                       onClick={() => setSelectedCat(cat.id)}
-                      className={`group inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
+                      className={`group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] transition ${
                         isActive
                           ? "border-white bg-white text-slate-900 shadow-[0_18px_40px_-28px_rgba(148,163,184,0.85)]"
                           : "border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:bg-white/10"
