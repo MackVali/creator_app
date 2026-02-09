@@ -273,10 +273,10 @@ export function NotesGrid({ skillId }: NotesGridProps) {
                   isBarVariant ? "min-h-[4.5rem] flex-row text-left" : "flex-col"
                 )}
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950/10 text-slate-900">
+                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
                   <Plus className="h-4 w-4" aria-hidden="true" />
                 </div>
-                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-950">
                   {hasAnyNotes ? "Add note" : "Create note"}
                 </span>
               </div>
