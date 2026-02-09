@@ -359,6 +359,8 @@ function GoalCardImpl({
                   anchorRect={overlayRect}
                   projectDropdownMode={projectDropdownMode}
                   goalId={goal.id}
+                  onAddProject={handleAddProject}
+                  addingProject={addingProject}
                   onEdit={onEdit}
                   onTaskToggleCompletion={onTaskToggleCompletion}
                 />
@@ -441,6 +443,8 @@ function GoalCardImpl({
                 anchorRect={overlayRect}
                 projectDropdownMode={projectDropdownMode}
                 goalId={goal.id}
+                onAddProject={handleAddProject}
+                addingProject={addingProject}
                 onEdit={onEdit}
                 onTaskToggleCompletion={onTaskToggleCompletion}
               />
@@ -712,6 +716,8 @@ type CompactProjectsOverlayProps = {
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   projectDropdownMode?: "default" | "tasks-only";
   goalId: string;
+  onAddProject: () => void;
+  addingProject: boolean;
   onEdit?: () => void;
   onTaskToggleCompletion?: (
     goalId: string,
@@ -730,6 +736,8 @@ function CompactProjectsOverlay({
   onProjectUpdated,
   projectDropdownMode = "default",
   goalId,
+  onAddProject,
+  addingProject,
   onEdit,
   onTaskToggleCompletion,
 }: CompactProjectsOverlayProps) {
@@ -811,7 +819,7 @@ function CompactProjectsOverlay({
         onProjectUpdated={onProjectUpdated}
         projectTasksOnly={projectDropdownMode === "tasks-only"}
         goalId={goalId}
-        onAddProject={handleAddProject}
+        onAddProject={onAddProject}
         addingProject={addingProject}
         onTaskToggleCompletion={onTaskToggleCompletion}
       />
