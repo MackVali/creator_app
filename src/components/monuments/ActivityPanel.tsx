@@ -379,28 +379,28 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                                 <span className="absolute -left-[30px] top-6 flex h-3 w-3 items-center justify-center">
                                   <span className="size-3 rounded-full bg-white/70 shadow-[0_0_12px_rgba(255,255,255,0.35)]" />
                                 </span>
-                                <article className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 transition hover:border-white/20 hover:bg-white/10">
-                                  <span className={cn("mt-0.5 flex h-10 w-10 items-center justify-center rounded-full", style.badge)}>
-                                    <Icon className="size-4" aria-hidden="true" />
+                                <article className="flex gap-2 rounded-2xl border border-white/10 bg-white/5 px-2.5 py-2 transition hover:border-white/20 hover:bg-white/10 sm:gap-3 sm:px-4 sm:py-4">
+                                  <span className={cn("mt-0.5 flex h-7 w-7 items-center justify-center rounded-full sm:h-10 sm:w-10", style.badge)}>
+                                    <Icon className="size-3 sm:size-4" aria-hidden="true" />
                                   </span>
-                                  <div className="flex-1 space-y-2">
-                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="flex-1 space-y-1.5 sm:space-y-2">
+                                    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
                                       <div className="space-y-1">
-                                        <p className="text-sm font-semibold text-white">{event.title}</p>
+                                        <p className="text-[13px] font-semibold text-white sm:text-sm">{event.title}</p>
                                         {event.detail ? (
-                                          <p className="text-xs text-white/65">{event.detail}</p>
+                                          <p className="text-[11px] text-white/65 sm:text-xs">{event.detail}</p>
                                         ) : null}
-                                        <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-white/35">
+                                        <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-white/35 sm:text-[11px] sm:tracking-[0.24em]">
                                           {attributionLabel}
                                         </p>
                                       </div>
-                                      <div className="flex items-center gap-2">
+                                      <div className="flex flex-wrap items-center gap-2">
                                         {event.noteId ? (
                                           <button
                                             type="button"
                                             onClick={() => togglePin(event.noteId!)}
                                             className={cn(
-                                              "rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] transition",
+                                              "rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] transition sm:px-3 sm:text-[11px] sm:tracking-[0.28em]",
                                               isPinned
                                                 ? "border-sky-300/70 bg-sky-500/20 text-sky-100 shadow-[0_10px_30px_-18px_rgba(56,189,248,0.75)]"
                                                 : "border-white/15 bg-white/0 text-white/50 hover:border-sky-200/60 hover:bg-sky-400/10 hover:text-sky-100"
@@ -411,7 +411,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                                             <span className="mr-2 inline-flex items-center justify-center">
                                               <Pin
                                                 className={cn(
-                                                  "size-3.5 transition",
+                                                  "size-3 transition sm:size-3.5",
                                                   isPinned ? "-rotate-45" : ""
                                                 )}
                                                 aria-hidden="true"
@@ -420,7 +420,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                                             {isPinned ? "Pinned" : "Pin"}
                                           </button>
                                         ) : null}
-                                        <span className="text-[11px] font-medium uppercase tracking-[0.28em] text-white/40">
+                                        <span className="text-[10px] font-medium uppercase tracking-[0.24em] text-white/40 sm:text-[11px] sm:tracking-[0.28em]">
                                           {event.timeLabel}
                                         </span>
                                       </div>
