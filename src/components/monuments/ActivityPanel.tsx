@@ -253,10 +253,10 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
               Activity
             </p>
           </div>
-          <h3 className="text-lg font-semibold text-white sm:text-xl">
+          <h3 className="text-base font-semibold text-white sm:text-lg">
             Momentum build log
           </h3>
-          <p className="text-xs text-white/70 sm:text-sm">
+          <p className="text-xs text-white/70 sm:text-[13px]">
             Completed goals, fresh notes, and XP surges roll into a curated timeline so you can see how the monument is taking shape.
           </p>
         </div>
