@@ -164,6 +164,10 @@ export default function CategoryCard({
       ? `0 26px 60px ${withAlpha(darken(base, 0.6), 0.48)}`
       : "0 14px 32px rgba(15, 23, 42, 0.42)";
     const sheen = `linear-gradient(120deg, rgba(255,255,255,${active ? "0.32" : "0.2"}) 0%, rgba(255,255,255,0) 70%)`;
+    const pedestal = withAlpha(darken(base, 0.6), active ? 0.45 : 0.3);
+    const cardTransform = active
+      ? "translateY(-6px) rotateX(2.5deg) scale(1.01)"
+      : "translateY(4px) rotateX(-1.5deg) scale(0.985)";
 
     return {
       base,
@@ -178,6 +182,8 @@ export default function CategoryCard({
       badgeBorder,
       dropShadow,
       sheen,
+      pedestal,
+      cardTransform,
     };
   }, [active, color]);
 
@@ -219,17 +225,24 @@ export default function CategoryCard({
   };
 
   return (
-    <div className="relative h-full">
+    <div className="relative h-full" style={{ perspective: "1200px" }}>
       <article
-        className="relative flex h-full flex-col rounded-[26px] border px-3 pb-4 pt-5 shadow-lg transition-all duration-200 sm:px-4"
+        className="relative flex h-full flex-col rounded-[26px] border px-3 pb-4 pt-5 shadow-lg transition-all duration-300 sm:px-4"
         style={{
           color: palette.on,
           background: palette.surface,
           borderColor: palette.frame,
           boxShadow: palette.dropShadow,
           opacity: active ? 1 : 0.92,
+          transform: palette.cardTransform,
+          transformStyle: "preserve-3d",
         }}
       >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -bottom-6 left-6 right-6 h-8 rounded-full blur-2xl"
+          style={{ background: palette.pedestal, transform: "translateZ(-1px)" }}
+        />
         <span
           aria-hidden
           className="pointer-events-none absolute -inset-12 rounded-[34px] blur-3xl transition-opacity duration-300"
@@ -457,4 +470,3 @@ export default function CategoryCard({
     </div>
   );
 }
-
