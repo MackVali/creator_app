@@ -74,6 +74,7 @@ interface GoalCardProps {
   showEnergyInCompact?: boolean;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   onProjectDeleted?: (projectId: string) => void;
+  onCreateProject?: (goalId: string) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   projectDropdownMode?: "default" | "tasks-only";
@@ -103,6 +104,7 @@ function GoalCardImpl({
   showEnergyInCompact = false,
   onProjectUpdated,
   onProjectDeleted,
+  onCreateProject,
   open: openProp,
   onOpenChange,
   projectDropdownMode = "default",
@@ -316,6 +318,7 @@ function GoalCardImpl({
                   projectDropdownMode={projectDropdownMode}
                   goalId={goal.id}
                   onEdit={onEdit}
+                  onCreateProject={onCreateProject}
                   onTaskToggleCompletion={onTaskToggleCompletion}
                 />
               )}
@@ -397,6 +400,7 @@ function GoalCardImpl({
                 projectDropdownMode={projectDropdownMode}
                 goalId={goal.id}
                 onEdit={onEdit}
+                onCreateProject={onCreateProject}
                 onTaskToggleCompletion={onTaskToggleCompletion}
               />
             )}
@@ -633,6 +637,7 @@ function GoalCardImpl({
                 goalId={goal.id}
                 projectTasksOnly={projectDropdownMode === "tasks-only"}
                 onTaskToggleCompletion={onTaskToggleCompletion}
+                onCreateProject={onCreateProject}
               />
             </div>
           )}
@@ -664,6 +669,7 @@ type CompactProjectsOverlayProps = {
   projectDropdownMode?: "default" | "tasks-only";
   goalId: string;
   onEdit?: () => void;
+  onCreateProject?: (goalId: string) => void;
   onTaskToggleCompletion?: (
     goalId: string,
     projectId: string,
@@ -682,6 +688,7 @@ function CompactProjectsOverlay({
   projectDropdownMode = "default",
   goalId,
   onEdit,
+  onCreateProject,
   onTaskToggleCompletion,
 }: CompactProjectsOverlayProps) {
   const [mounted, setMounted] = useState(false);
@@ -763,6 +770,7 @@ function CompactProjectsOverlay({
         projectTasksOnly={projectDropdownMode === "tasks-only"}
         goalId={goalId}
         onTaskToggleCompletion={onTaskToggleCompletion}
+        onCreateProject={onCreateProject}
       />
     </div>
   );

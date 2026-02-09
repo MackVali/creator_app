@@ -663,6 +663,10 @@ export default function GoalsPage() {
   const [skill, setSkill] = useState<string>("All");
   const [drawer, setDrawer] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
+  const [autoAddProjectGoalId, setAutoAddProjectGoalId] = useState<
+    string | null
+  >(null);
+  const [autoAddProjectNonce, setAutoAddProjectNonce] = useState<number>(0);
   const [roadmapDrawer, setRoadmapDrawer] = useState(false);
   const [selectedRoadmap, setSelectedRoadmap] = useState<Roadmap | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1393,6 +1397,15 @@ export default function GoalsPage() {
   const handleEdit = (goal: Goal) => {
     setEditing(goal);
     setDrawer(true);
+    setAutoAddProjectGoalId(null);
+    router.push(`/goals?edit=${goal.id}`);
+  };
+
+  const handleCreateProject = (goal: Goal) => {
+    setEditing(goal);
+    setDrawer(true);
+    setAutoAddProjectGoalId(goal.id);
+    setAutoAddProjectNonce(Date.now());
     router.push(`/goals?edit=${goal.id}`);
   };
 
@@ -1547,6 +1560,7 @@ export default function GoalsPage() {
                           setSelectedRoadmap(roadmap);
                           setRoadmapDrawer(true);
                         }}
+                        onCreateProject={handleCreateProject}
                       />
                     </div>
                   );
@@ -1568,6 +1582,7 @@ export default function GoalsPage() {
                       onProjectDeleted={(projectId) =>
                         handleProjectDeleted(goal.id, projectId)
                       }
+                      onCreateProject={() => handleCreateProject(goal)}
                     />
                   </div>
                 ))}
@@ -1595,11 +1610,14 @@ export default function GoalsPage() {
           onClose={() => {
             setDrawer(false);
             setEditing(null);
+            setAutoAddProjectGoalId(null);
             router.replace("/goals");
           }}
           onAdd={addGoal}
           initialGoal={editing}
           monuments={monuments}
+          autoAddProjectGoalId={autoAddProjectGoalId}
+          autoAddProjectNonce={autoAddProjectNonce}
           onUpdate={async (goal, context) => {
             const supabase = getSupabaseBrowser();
             if (supabase) {
@@ -1639,6 +1657,7 @@ export default function GoalsPage() {
           onGoalDelete={handleDelete}
           onProjectUpdated={handleProjectUpdated}
           onProjectDeleted={handleProjectDeleted}
+          onCreateProject={handleCreateProject}
         />
       </div>
     </ProtectedRoute>
