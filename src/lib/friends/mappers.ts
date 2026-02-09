@@ -1,4 +1,5 @@
 import type { Database } from "@/types/supabase";
+import { DEFAULT_AVATAR_URL } from "@/lib/friends/avatar";
 import type {
   ContactImportStatus,
   DiscoveryProfile,
@@ -17,9 +18,8 @@ type FriendDiscoveryProfileRow =
 type FriendContactImportRow =
   Database["public"]["Tables"]["friend_contact_imports"]["Row"];
 
-function fallbackAvatar(seedSource: string | null | undefined) {
-  const seed = seedSource && seedSource.trim().length ? seedSource : "Creator";
-  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed)}`;
+function fallbackAvatar(_seedSource?: string | null) {
+  return DEFAULT_AVATAR_URL;
 }
 
 function formatRelativeTimeFromNow(value: string | null): string | null {

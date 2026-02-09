@@ -8,6 +8,7 @@ import type {
   SentInvite,
   SuggestedFriend,
 } from "@/types/friends";
+import { DEFAULT_AVATAR_URL } from "@/lib/friends/avatar";
 
 const actionButtonClass =
   "rounded-xl px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40";
@@ -169,7 +170,7 @@ export default function RequestsInvites({
                 className="flex items-start gap-3 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10"
               >
                 <Image
-                  src={req.avatarUrl}
+                  src={req.avatarUrl || DEFAULT_AVATAR_URL}
                   alt={`${req.displayName} avatar`}
                   width={52}
                   height={52}
@@ -327,7 +328,7 @@ export default function RequestsInvites({
               className="flex items-start gap-3 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10"
             >
               <Image
-                src={suggestion.avatarUrl}
+                src={suggestion.avatarUrl || DEFAULT_AVATAR_URL}
                 alt={`${suggestion.displayName} avatar`}
                 width={48}
                 height={48}

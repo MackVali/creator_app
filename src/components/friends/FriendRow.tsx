@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Friend } from "@/types/friends";
+import { DEFAULT_AVATAR_URL } from "@/lib/friends/avatar";
 
 import MessageFriendButton from "./MessageFriendButton";
 
@@ -40,8 +41,7 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
     : "bg-white/40";
   const statusTextClass = f.isOnline ? "text-emerald-300" : "text-white/40";
   const displayName = f.displayName || f.username;
-  const avatarSrc =
-    f.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName)}`;
+  const avatarSrc = f.avatarUrl || DEFAULT_AVATAR_URL;
 
   const linkBody = (
     <>

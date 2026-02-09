@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import MessageFriendButton from "@/components/friends/MessageFriendButton";
+import { DEFAULT_AVATAR_URL } from "@/lib/friends/avatar";
 import { mapFriendConnection } from "@/lib/friends/mappers";
 import { getSupabaseServer } from "@/lib/supabase";
 import type { Friend } from "@/types/friends";
@@ -89,9 +90,7 @@ export default async function FriendProfilePage({
     ? /^https?:\/\//i.test(friend.profileUrl)
     : false;
   const firstName = displayName.split(" ")[0] || displayName;
-  const avatarSrc =
-    friend.avatarUrl ??
-    `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName)}`;
+  const avatarSrc = friend.avatarUrl ?? DEFAULT_AVATAR_URL;
 
   let externalDomain: string | null = null;
   if (isExternalProfile && friend.profileUrl) {
