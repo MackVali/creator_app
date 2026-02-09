@@ -49,7 +49,7 @@ type SkillCompactCardProps = {
   categoryName?: string | null;
   linkedMonument?: string | null;
   startEdit: (skill: Skill) => void;
-  handleRemoveSkill: (id: string) => void;
+  handleRemoveSkill: (skill: Skill) => void;
 };
 
 function SkillCompactCard({
@@ -125,7 +125,7 @@ function SkillCompactCard({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              handleRemoveSkill(skill.id);
+              handleRemoveSkill(skill);
             }}
           >
             Remove skill
@@ -280,16 +280,21 @@ function SkillsPageContent() {
       toast.error("Error", error.message || "Failed to create skill");
       return;
     }
-    setSkills((prev) => [
-      ...prev,
-      {
-        ...skill,
-        id: data!.id,
-        cat_id: catIdToUse,
-        monument_id: skill.monument_id ?? null,
-        created_at: data!.created_at,
-      },
-    ]);
+    setSkills((prev) => {
+      if (prev.some((existing) => existing.id === data!.id)) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          ...skill,
+          id: data!.id,
+          cat_id: catIdToUse,
+          monument_id: skill.monument_id ?? null,
+          created_at: data!.created_at,
+        },
+      ];
+    });
   };
   const updateSkill = async (skill: Skill) => {
     setSkills((prev) => prev.map((s) => (s.id === skill.id ? skill : s)));
@@ -322,11 +327,16 @@ function SkillsPageContent() {
     setEditing(skill);
     setOpen(true);
   };
-  const handleRemoveSkill = async (id: string) => {
-    setSkills((prev) => prev.filter((s) => s.id !== id));
-    const { error } = await deleteRecord("skills", id);
+  const handleRemoveSkill = async (skill: Skill) => {
+    const confirmed = window.confirm(
+      `Remove "${skill.name}"? This will permanently delete the skill.`
+    );
+    if (!confirmed) return;
+    setSkills((prev) => prev.filter((s) => s.id !== skill.id));
+    const { error } = await deleteRecord("skills", skill.id);
     if (error) {
       console.error("Error deleting skill:", error);
+      toast.error("Error", error.message || "Failed to delete skill");
     }
   };
 
