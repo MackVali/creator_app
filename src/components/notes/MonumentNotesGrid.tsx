@@ -99,10 +99,10 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
                   isBarVariant ? "min-h-[4.5rem] flex-row text-left" : "flex-col"
                 )}
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-800/60 text-slate-200">
+                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
                   <Plus className="h-4 w-4" aria-hidden="true" />
                 </div>
-                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">
+                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-950">
                   {hasNotes ? "Add note" : "Create note"}
                 </span>
               </div>
