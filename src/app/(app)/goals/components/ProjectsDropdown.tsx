@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useMemo, useRef, type PointerEvent } from "react";
-import Link from "next/link";
 import { ProjectRow, type ProjectCardMorphOrigin } from "./ProjectRow";
 import type { Project } from "../types";
 import { Progress } from "@/components/ui/Progress";
@@ -15,6 +14,7 @@ interface ProjectsDropdownProps {
   onProjectLongPress?: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   projectTasksOnly?: boolean;
+  onCreateProject?: (goalId: string) => void;
   onTaskToggleCompletion?: (
     goalId: string,
     projectId: string,
@@ -35,6 +35,7 @@ export function ProjectsDropdown({
   onProjectLongPress,
   onProjectUpdated,
   projectTasksOnly = false,
+  onCreateProject,
   onTaskToggleCompletion,
 }: ProjectsDropdownProps) {
   const taskEntries = useMemo(() => {
@@ -96,13 +97,14 @@ export function ProjectsDropdown({
             No projects linked yet. Head to Projects to tether the first track.
           </div>
         )}
-        {goalId ? (
-          <Link
-            href={`/goals/${goalId}/plan`}
+        {goalId && onCreateProject ? (
+          <button
+            type="button"
+            onClick={() => onCreateProject(goalId)}
             className="mt-3 inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70 transition hover:border-white/40 hover:text-white"
           >
             Create new projects
-          </Link>
+          </button>
         ) : null}
       </div>
     </div>

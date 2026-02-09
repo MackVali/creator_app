@@ -47,6 +47,8 @@ interface GoalDrawerProps {
   monuments?: { id: string; title: string; emoji?: string | null }[];
   roadmaps?: { id: string; title: string; emoji?: string | null }[];
   hideProjects?: boolean;
+  autoAddProjectGoalId?: string | null;
+  autoAddProjectNonce?: number;
 }
 
 const PRIORITY_OPTIONS: {
@@ -272,6 +274,8 @@ export function GoalDrawer({
   monuments = [],
   roadmaps = undefined,
   hideProjects = false,
+  autoAddProjectGoalId,
+  autoAddProjectNonce,
 }: GoalDrawerProps) {
   console.log(
     "🎯 GoalDrawer render - open:",
@@ -304,6 +308,8 @@ export function GoalDrawer({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const monumentSelectionRef = useRef<string>("");
+  const projectsSectionRef = useRef<HTMLDivElement | null>(null);
+  const autoAddProjectNonceRef = useRef<number | null>(null);
 
   const editing = Boolean(initialGoal);
   const showDeleteAction = editing && Boolean(onDelete && initialGoal);
@@ -518,7 +524,7 @@ export function GoalDrawer({
     }
   };
 
-  const handleAddProject = () => {
+  const handleAddProject = useCallback(() => {
     const stage = DEFAULT_PROJECT_STAGE;
     const nextProject: EditableProject = {
       id: generateId(),
@@ -534,7 +540,27 @@ export function GoalDrawer({
       isNew: true,
     };
     setProjectsState((projects) => [...projects, nextProject]);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!open || !autoAddProjectGoalId || !initialGoal) return;
+    if (initialGoal.id !== autoAddProjectGoalId) return;
+    if (autoAddProjectNonceRef.current === autoAddProjectNonce) return;
+    autoAddProjectNonceRef.current = autoAddProjectNonce ?? null;
+    handleAddProject();
+    requestAnimationFrame(() => {
+      projectsSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [
+    autoAddProjectGoalId,
+    autoAddProjectNonce,
+    handleAddProject,
+    initialGoal,
+    open,
+  ]);
 
   const handleProjectNameChange = (projectId: string, value: string) => {
     setProjectsState((projects) =>
@@ -1084,7 +1110,7 @@ export function GoalDrawer({
               </div>
 
               {!hideProjects && (
-                <div className="space-y-4">
+                <div ref={projectsSectionRef} className="space-y-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
