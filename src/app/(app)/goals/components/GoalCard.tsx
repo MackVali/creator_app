@@ -61,6 +61,17 @@ const energyAccent: Record<Goal["energy"], { dot: string; bar: string }> = {
   },
 };
 
+const projectStageToStatus = (stage: string): Project["status"] => {
+  switch (stage) {
+    case "RESEARCH":
+      return "Todo";
+    case "RELEASE":
+      return "Done";
+    default:
+      return "In-Progress";
+  }
+};
+
 interface GoalCardProps {
   goal: Goal;
   onEdit?(): void;
@@ -116,6 +127,7 @@ function GoalCardImpl({
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editingProjectOrigin, setEditingProjectOrigin] =
     useState<ProjectCardMorphOrigin | null>(null);
+  const [addingProject, setAddingProject] = useState(false);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [overlayRect, setOverlayRect] = useState<DOMRect | null>(null);
 
@@ -202,6 +214,38 @@ function GoalCardImpl({
     projectLongPressTriggeredRef.current = false;
     setIsHolding(false);
   }, [cancelProjectLongPress]);
+
+  const handleAddProject = useCallback(async () => {
+    if (addingProject) return;
+    setAddingProject(true);
+    try {
+      const draftId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `draft-${Date.now()}`;
+      const stage = "BUILD";
+      const draftProject: Project = {
+        id: draftId,
+        name: "",
+        status: projectStageToStatus(stage),
+        progress: 0,
+        dueDate: undefined,
+        energy: "No",
+        emoji: null,
+        tasks: [],
+        stage,
+        energyCode: "NO",
+        priorityCode: "NO",
+        durationMinutes: null,
+        skillIds: [],
+        isNew: true,
+      };
+      setEditingProjectOrigin(null);
+      setEditingProject(draftProject);
+    } finally {
+      setAddingProject(false);
+    }
+  }, [addingProject]);
 
   const handleProjectLongPress = useCallback(
     (project: Project, origin: ProjectCardMorphOrigin | null) => {
@@ -323,6 +367,7 @@ function GoalCardImpl({
           </div>
           <ProjectQuickEditDialog
             project={editingProject}
+            goalId={goal.id}
             origin={editingProjectOrigin}
             onClose={closeProjectEditor}
             onUpdated={(projectId, updates) =>
@@ -404,6 +449,7 @@ function GoalCardImpl({
         </div>
         <ProjectQuickEditDialog
           project={editingProject}
+          goalId={goal.id}
           origin={editingProjectOrigin}
           onClose={closeProjectEditor}
           onUpdated={(projectId, updates) =>
@@ -632,6 +678,8 @@ function GoalCardImpl({
                 onProjectUpdated={onProjectUpdated}
                 goalId={goal.id}
                 projectTasksOnly={projectDropdownMode === "tasks-only"}
+                onAddProject={handleAddProject}
+                addingProject={addingProject}
                 onTaskToggleCompletion={onTaskToggleCompletion}
               />
             </div>
@@ -640,6 +688,7 @@ function GoalCardImpl({
       </div>
       <ProjectQuickEditDialog
         project={editingProject}
+        goalId={goalId}
         origin={editingProjectOrigin}
         onClose={closeProjectEditor}
         onUpdated={(projectId, updates) => {
@@ -762,6 +811,8 @@ function CompactProjectsOverlay({
         onProjectUpdated={onProjectUpdated}
         projectTasksOnly={projectDropdownMode === "tasks-only"}
         goalId={goalId}
+        onAddProject={handleAddProject}
+        addingProject={addingProject}
         onTaskToggleCompletion={onTaskToggleCompletion}
       />
     </div>
