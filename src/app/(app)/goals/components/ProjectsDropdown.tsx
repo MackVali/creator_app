@@ -96,13 +96,14 @@ export function ProjectsDropdown({
             No projects linked yet. Head to Projects to tether the first track.
           </div>
         )}
-        <Link
-          href="/projects"
-          className="mt-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/60 transition hover:text-white"
-        >
-          View all projects
-          <span aria-hidden className="h-px w-8 bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-        </Link>
+        {goalId ? (
+          <Link
+            href={`/goals/${goalId}/plan`}
+            className="mt-3 inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70 transition hover:border-white/40 hover:text-white"
+          >
+            Create new projects
+          </Link>
+        ) : null}
       </div>
     </div>
   );
