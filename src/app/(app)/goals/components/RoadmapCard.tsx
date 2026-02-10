@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, GripVertical } from "lucide-react";
 import { createPortal } from "react-dom";
 import {
@@ -517,6 +517,10 @@ function CompactGoalsOverlay({
   const [mounted, setMounted] = useState(false);
   const [localGoals, setLocalGoals] = useState(goals);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const selectedGoal = useMemo(
+    () => localGoals.find((goal) => goal.id === openGoalId) ?? null,
+    [localGoals, openGoalId]
+  );
 
   const handleGoalClick = useCallback((goalId: string) => {
     setOpenGoalId((current) => (current === goalId ? null : goalId));
@@ -534,6 +538,13 @@ function CompactGoalsOverlay({
   useEffect(() => {
     setLocalGoals(goals);
   }, [goals]);
+
+  useEffect(() => {
+    if (!openGoalId) return;
+    if (!localGoals.some((goal) => goal.id === openGoalId)) {
+      setOpenGoalId(null);
+    }
+  }, [localGoals, openGoalId]);
 
   useEffect(() => {
     setMounted(true);
@@ -593,9 +604,9 @@ function CompactGoalsOverlay({
 
   const listArea = (
     <div className="mt-4 max-h-[60vh] overflow-y-auto pb-3 sm:max-h-[70vh]">
-      {openGoalId ? (
+      {selectedGoal ? (
         <GoalCard
-          goal={localGoals.find((g) => g.id === openGoalId)!}
+          goal={selectedGoal}
           variant="default"
           showWeight={false}
           showCreatedAt={false}
@@ -604,22 +615,15 @@ function CompactGoalsOverlay({
           onOpenChange={(isOpen) => {
             if (!isOpen) setOpenGoalId(null);
           }}
-          onEdit={
-            onGoalEdit
-              ? () => onGoalEdit(localGoals.find((g) => g.id === openGoalId)!)
-              : undefined
-          }
+          onEdit={onGoalEdit ? () => onGoalEdit(selectedGoal) : undefined}
           onToggleActive={
             onGoalToggleActive
-              ? () =>
-                  onGoalToggleActive(
-                    localGoals.find((g) => g.id === openGoalId)!
-                  )
+              ? () => onGoalToggleActive(selectedGoal)
               : undefined
           }
           onDelete={
             onGoalDelete
-              ? () => onGoalDelete(localGoals.find((g) => g.id === openGoalId)!)
+              ? () => onGoalDelete(selectedGoal)
               : undefined
           }
         />
@@ -673,9 +677,9 @@ function CompactGoalsOverlay({
   const basePanelClass =
     "relative overflow-hidden rounded-[30px] border border-white/15 bg-black/[0.68] shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9)] backdrop-blur-sm text-white/90";
 
-  const goalCardContent = openGoalId ? (
+  const goalCardContent = selectedGoal ? (
     <GoalCard
-      goal={localGoals.find((g) => g.id === openGoalId)!}
+      goal={selectedGoal}
       variant="default"
       showWeight={false}
       showCreatedAt={false}
