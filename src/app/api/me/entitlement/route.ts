@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 import { getSupabaseServer } from "@/lib/supabase";
 
 const defaultEntitlement = {
