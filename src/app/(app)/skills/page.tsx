@@ -21,9 +21,6 @@ import type { SkillRow } from "@/lib/types/skill";
 import {
   ArrowRight,
   ChevronRight,
-  Clock3,
-  FolderKanban,
-  Goal,
   MoreVertical,
   Plus,
   Sparkles,
@@ -340,21 +337,7 @@ function SkillsPageContent() {
     }
   };
 
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const totalSkills = skills.length;
-  const totalCategories = categories.length;
-  const createdThisMonth = skills.filter((skill) => {
-    if (!skill.created_at) return false;
-    const createdAt = new Date(skill.created_at);
-    return createdAt >= startOfMonth && createdAt <= now;
-  }).length;
-  const trackedMonuments = skills.reduce((set, skill) => {
-    if (skill.monument_id) {
-      set.add(skill.monument_id);
-    }
-    return set;
-  }, new Set<string>()).size;
 
   const categoryLookup = useMemo(() => {
     const map = new Map<string, string>();
@@ -379,24 +362,6 @@ function SkillsPageContent() {
       value: totalSkills,
       description: "Skills you're actively tracking and refining.",
       icon: Sparkles,
-    },
-    {
-      label: "Categories organized",
-      value: totalCategories,
-      description: "Folders giving structure to your practice.",
-      icon: FolderKanban,
-    },
-    {
-      label: "Linked monuments",
-      value: trackedMonuments,
-      description: "Monuments currently tied to your skills.",
-      icon: Goal,
-    },
-    {
-      label: "New this month",
-      value: createdThisMonth,
-      description: "Fresh additions added in the last 30 days.",
-      icon: Clock3,
     },
   ];
 
