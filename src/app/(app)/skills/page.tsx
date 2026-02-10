@@ -19,7 +19,8 @@ import { getSkillsForUser } from "../../../lib/data/skills";
 import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
 import type { SkillRow } from "@/lib/types/skill";
 import {
-  ArrowRight,
+  Check,
+  ChevronDown,
   ChevronRight,
   Goal,
   MoreVertical,
@@ -31,6 +32,15 @@ interface Monument {
   id: string;
   title: string;
 }
+
+const sortOptions = [
+  { value: "name", label: "Alphabetical" },
+  { value: "level", label: "Level (high to low)" },
+  { value: "progress", label: "Progress (high to low)" },
+  { value: "recent", label: "Recently added" },
+] as const;
+
+type SortValue = (typeof sortOptions)[number]["value"];
 
 // simple debounce hook for search
 function useDebounce<T>(value: T, delay: number) {
@@ -64,12 +74,12 @@ function SkillCompactCard({
   return (
     <Link
       href={`/skills/${skill.id}`}
-      className="group relative flex min-h-[175px] flex-col gap-2 overflow-hidden rounded-2xl border border-white/10 bg-black/90 p-3 text-white transition hover:border-white/30 hover:bg-white/5"
+      className="group relative flex min-h-[130px] flex-col gap-1 overflow-hidden rounded-2xl border border-white/10 bg-black/90 p-2 text-white transition hover:border-white/30 hover:bg-white/5"
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(255,255,255,0.08),_transparent_70%)] opacity-40" aria-hidden />
-      <div className="relative z-10 flex items-start justify-between gap-3">
+      <div className="relative z-10 flex items-center gap-2">
         <span
-          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-lg text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
+          className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-base text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
           role="img"
           aria-label={`Skill: ${skill.name}`}
         >
@@ -82,7 +92,7 @@ function SkillCompactCard({
       <h3 className="relative z-10 text-sm font-semibold leading-tight text-white line-clamp-2">
         {skill.name}
       </h3>
-      <div className="relative z-10 flex flex-wrap gap-1 text-[0.55rem] uppercase tracking-[0.3em] text-white/70">
+      <div className="relative z-10 flex flex-wrap gap-1 text-[0.55rem] uppercase tracking-[0.28em] text-white/65">
         <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5">
           {categoryName || "Uncategorized"}
         </span>
@@ -97,9 +107,9 @@ function SkillCompactCard({
       <ChevronRight className="relative z-10 self-end text-white/40 transition group-hover:text-white/70" />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/60 transition hover:border-white/30 hover:text-white"
+        <button
+          type="button"
+          className="absolute right-2.5 top-2.5 inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/60 transition hover:border-white/30 hover:text-white"
             aria-label="More"
             onClick={(e) => {
               e.preventDefault();
@@ -143,7 +153,7 @@ function SkillsPageContent() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 200);
   const [selectedCat, setSelectedCat] = useState("all");
-  const [sort, setSort] = useState("name");
+  const [sort, setSort] = useState<SortValue>("name");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Skill | null>(null);
 
@@ -240,14 +250,6 @@ function SkillsPageContent() {
     }
     return data;
   }, [searchFiltered, selectedCat, sort]);
-
-  const skillPages = useMemo(() => {
-    const pages: Skill[][] = [];
-    for (let i = 0; i < filtered.length; i += 6) {
-      pages.push(filtered.slice(i, i + 6));
-    }
-    return pages;
-  }, [filtered]);
 
   const allCats = useMemo(() => {
     const base = [...categories];
@@ -454,24 +456,49 @@ function SkillsPageContent() {
                   className="h-8 flex-1 rounded-2xl border border-white/10 bg-white/5 px-3 text-[10px] text-white placeholder:text-white/35 focus:border-white/30 focus:ring-white/30 sm:h-9 sm:text-[11px]"
                 />
               </div>
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value)}
-                className="h-8 min-w-[128px] rounded-2xl border border-white/15 bg-white/5 px-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-white/75 focus:border-white/30 focus:outline-none sm:h-9 sm:min-w-[150px] sm:px-2.5 sm:text-[10px] sm:tracking-[0.18em]"
-              >
-                <option value="name" className="bg-slate-900 text-white">
-                  Alphabetical
-                </option>
-                <option value="level" className="bg-slate-900 text-white">
-                  Level (high to low)
-                </option>
-                <option value="progress" className="bg-slate-900 text-white">
-                  Progress (high to low)
-                </option>
-                <option value="recent" className="bg-slate-900 text-white">
-                  Recently added
-                </option>
-              </select>
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-white/85 transition hover:border-white/30 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 sm:text-[10px]"
+                    >
+                      <span className="text-[10px] font-semibold tracking-[0.18em] text-white">
+                        {
+                          sortOptions.find((option) => option.value === sort)
+                            ?.label
+                        }
+                      </span>
+                      <ChevronDown className="h-3 w-3 text-white/70" aria-hidden />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-56 border border-white/10 bg-[#0f111a]/95 p-1"
+                  >
+                    {sortOptions.map((option) => {
+                      const isActive = sort === option.value;
+                      return (
+                        <DropdownMenuItem
+                          key={option.value}
+                          className={`flex items-center justify-between rounded-2xl px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.24em] transition ${
+                            isActive ? "bg-white/5 text-white" : "text-white/70"
+                          }`}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            setSort(option.value);
+                          }}
+                        >
+                          <span>{option.label}</span>
+                          {isActive && (
+                            <Check className="h-4 w-4 text-white/60" aria-hidden />
+                          )}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
             <div className="relative mt-2.5 flex flex-wrap gap-1 sm:mt-3 sm:gap-1.5">
               {allCats.map((cat) => {
@@ -522,43 +549,25 @@ function SkillsPageContent() {
               </div>
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="relative">
-                <div className="pointer-events-none absolute -top-8 right-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-white/60 sm:hidden">
-                  Swipe to browse
-                  <ArrowRight className="h-3 w-3" />
-                </div>
-                <div className="grid auto-cols-[minmax(640px,1fr)] grid-flow-col gap-4 overflow-x-auto pb-6 pr-1 snap-x snap-mandatory sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 sm:snap-none">
-                  {skillPages.map((page, pageIndex) => (
-                    <div
-                      key={`skills-page-${pageIndex}`}
-                      className="snap-start sm:[scroll-snap-align:unset]"
-                      style={{ minWidth: "min(100vw-2rem, 720px)" }}
-                    >
-                      <div className="grid grid-cols-3 gap-3">
-                        {page.map((skill) => {
-                          const categoryName = categoryLookup.get(
-                            skill.cat_id || "uncategorized"
-                          );
-                          const linkedMonument = skill.monument_id
-                            ? monumentLookup.get(skill.monument_id)
-                            : null;
-                          return (
-                            <SkillCompactCard
-                              key={skill.id}
-                              skill={skill}
-                              categoryName={categoryName}
-                              linkedMonument={linkedMonument}
-                              startEdit={startEdit}
-                              handleRemoveSkill={handleRemoveSkill}
-                            />
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {filtered.map((skill) => {
+                const categoryName = categoryLookup.get(
+                  skill.cat_id || "uncategorized"
+                );
+                const linkedMonument = skill.monument_id
+                  ? monumentLookup.get(skill.monument_id)
+                  : null;
+                return (
+                  <SkillCompactCard
+                    key={skill.id}
+                    skill={skill}
+                    categoryName={categoryName}
+                    linkedMonument={linkedMonument}
+                    startEdit={startEdit}
+                    handleRemoveSkill={handleRemoveSkill}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
