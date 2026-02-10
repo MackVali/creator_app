@@ -64,7 +64,7 @@ function SkillCompactCard({
   return (
     <Link
       href={`/skills/${skill.id}`}
-      className="group relative flex min-h-[175px] flex-col gap-2 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0e18]/90 p-3 text-white transition hover:border-white/30 hover:bg-[#13162b]"
+      className="group relative flex min-h-[175px] flex-col gap-2 overflow-hidden rounded-2xl border border-white/10 bg-black/90 p-3 text-white transition hover:border-white/30 hover:bg-white/5"
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(255,255,255,0.08),_transparent_70%)] opacity-40" aria-hidden />
       <div className="relative z-10 flex items-start justify-between gap-3">
@@ -87,7 +87,7 @@ function SkillCompactCard({
           {categoryName || "Uncategorized"}
         </span>
         {linkedMonument && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-emerald-200">
+          <span className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/80">
             <Goal className="h-3 w-3" aria-hidden="true" />
             {linkedMonument}
           </span>
@@ -416,23 +416,21 @@ function SkillsPageContent() {
                   </Button>
                 </div>
               </div>
-              <dl className="grid gap-2 sm:grid-cols-2 sm:gap-3">
+              <dl className="flex flex-wrap gap-2">
                 {heroStats.map(({ label, value, description, icon: Icon }) => (
                   <div
                     key={label}
-                    className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-2.5 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur transition hover:border-white/20 hover:bg-white/10 sm:p-3"
+                    className="group relative inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-white/20 hover:bg-white/10"
+                    title={description}
                   >
-                    <div className="pointer-events-none absolute -right-12 -top-12 h-28 w-28 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.14),_transparent_60%)] opacity-0 transition group-hover:opacity-100" />
-                    <div className="relative flex items-start justify-between gap-3">
-                      <div>
-                        <dt className="text-[9px] font-medium uppercase tracking-[0.2em] text-white/50 sm:text-[10px] sm:tracking-[0.22em]">{label}</dt>
-                        <dd className="mt-1 text-base font-semibold text-white sm:text-lg">{value}</dd>
-                      </div>
-                      <span className="flex size-6 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/70 sm:size-7">
-                        <Icon className="h-3 w-3" aria-hidden="true" />
-                      </span>
+                    <span className="flex size-6 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/70">
+                      <Icon className="h-3 w-3" aria-hidden="true" />
+                    </span>
+                    <div className="flex items-baseline gap-2">
+                      <dt className="text-[9px] font-medium uppercase tracking-[0.2em] text-white/50">{label}</dt>
+                      <dd className="text-sm font-semibold text-white">{value}</dd>
                     </div>
-                    <p className="relative mt-1 text-[9px] leading-relaxed text-white/50 sm:text-[10px]">{description}</p>
+                    <span className="sr-only">{description}</span>
                   </div>
                 ))}
               </dl>
@@ -441,7 +439,7 @@ function SkillsPageContent() {
         </div>
       </section>
 
-      <section className="relative z-[1] -mt-7 px-4 sm:-mt-8">
+      <section className="relative z-[1] mt-6 px-4 sm:mt-8">
         <div className="mx-auto max-w-6xl">
           <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/90 p-2.5 shadow-[0_35px_100px_-80px_rgba(0,0,0,0.85)] backdrop-blur sm:p-3">
             <div className="absolute inset-0">
