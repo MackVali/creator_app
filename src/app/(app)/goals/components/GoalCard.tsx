@@ -692,7 +692,7 @@ function GoalCardImpl({
       </div>
       <ProjectQuickEditDialog
         project={editingProject}
-        goalId={goalId}
+        goalId={goal.id}
         origin={editingProjectOrigin}
         onClose={closeProjectEditor}
         onUpdated={(projectId, updates) => {
