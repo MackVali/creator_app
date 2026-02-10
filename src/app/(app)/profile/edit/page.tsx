@@ -178,7 +178,7 @@ export default function ProfileEditPage() {
     return (
       <div className="min-h-screen bg-[#0F0F12] flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-zinc-200 mx-auto mb-4"></div>
           <p className="text-zinc-400">Loading profile...</p>
         </div>
       </div>
@@ -189,10 +189,10 @@ export default function ProfileEditPage() {
     return (
       <div className="min-h-screen bg-[#0F0F12] flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-400 mb-4">{error}</p>
+          <p className="text-zinc-300 mb-4">{error}</p>
           <button
             onClick={() => router.push("/dashboard")}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="px-4 py-2 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 border border-zinc-700"
           >
             Back to Dashboard
           </button>
@@ -225,13 +225,13 @@ export default function ProfileEditPage() {
       {/* Form */}
       <div className="max-w-2xl mx-auto px-4 py-8">
         {onboarding && (
-          <div className="mb-6 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
+          <div className="mb-6 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-200">
             <p className="font-medium">Complete your profile to continue.</p>
-            <p className="mt-1 text-blue-100/80">
+            <p className="mt-1 text-zinc-400">
               Add your name, username, and details so we can personalize your experience.
             </p>
             {redirectPath && redirectPath.startsWith("/") && (
-              <p className="mt-2 text-xs text-blue-100/70">
+              <p className="mt-2 text-xs text-zinc-500">
                 You&apos;ll be redirected back to {redirectPath} once you&apos;re finished.
               </p>
             )}
@@ -247,23 +247,23 @@ export default function ProfileEditPage() {
 
           <CardContent>
             {success && (
-              <div className="mb-6 p-4 bg-green-900/20 border border-green-700 rounded-lg">
-                <p className="text-green-400 text-center">
+              <div className="mb-6 p-4 bg-white/5 border border-white/10 rounded-lg">
+                <p className="text-zinc-200 text-center">
                   Profile updated successfully! Redirecting...
                 </p>
               </div>
             )}
 
             {error && (
-              <div className="mb-6 p-4 bg-red-900/20 border border-red-700 rounded-lg">
-                <p className="text-red-400 text-center">{error}</p>
+              <div className="mb-6 p-4 bg-white/5 border border-white/10 rounded-lg">
+                <p className="text-zinc-300 text-center">{error}</p>
               </div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Cover Photo */}
               <div className="space-y-2">
-                <Label htmlFor="banner">Cover Photo</Label>
+                <Label htmlFor="banner" className="text-zinc-200">Cover Photo</Label>
                 <div className="w-full h-40 bg-white/10 rounded-lg overflow-hidden">
                   {bannerPreview && (
                     <img
@@ -278,12 +278,13 @@ export default function ProfileEditPage() {
                   type="file"
                   accept="image/*"
                   onChange={handleBannerChange}
+                  className="bg-black text-white border-zinc-700 file:text-zinc-200"
                 />
               </div>
 
               {/* Profile Picture */}
               <div className="space-y-2">
-                <Label htmlFor="avatar">Profile Picture</Label>
+                <Label htmlFor="avatar" className="text-zinc-200">Profile Picture</Label>
                 <div className="flex items-center space-x-4">
                   <Avatar className="h-24 w-24">
                     {avatarPreview && (
@@ -300,6 +301,7 @@ export default function ProfileEditPage() {
                     type="file"
                     accept="image/*"
                     onChange={handleAvatarChange}
+                    className="bg-black text-white border-zinc-700 file:text-zinc-200"
                   />
                 </div>
               </div>
@@ -307,7 +309,7 @@ export default function ProfileEditPage() {
               {/* Name */}
               <div className="space-y-2">
                 <Label htmlFor="name" className="flex items-center space-x-2">
-                  <User className="h-4 w-4 text-blue-600" />
+                  <User className="h-4 w-4 text-zinc-400" />
                   <span>Full Name</span>
                 </Label>
                 <Input
@@ -316,14 +318,14 @@ export default function ProfileEditPage() {
                   value={formData.name}
                   onChange={(e) => handleInputChange("name", e.target.value)}
                   placeholder="Enter your full name"
-                  className="h-12 text-lg"
+                  className="h-12 text-lg bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
                 />
               </div>
 
               {/* Username */}
               <div className="space-y-2">
                 <Label htmlFor="username" className="flex items-center space-x-2">
-                  <User className="h-4 w-4 text-purple-600" />
+                  <User className="h-4 w-4 text-zinc-400" />
                   <span>Username</span>
                 </Label>
                 <Input
@@ -332,7 +334,7 @@ export default function ProfileEditPage() {
                   value={formData.username}
                   onChange={(e) => handleInputChange("username", e.target.value)}
                   placeholder="Choose a unique username"
-                  className="h-12 text-lg"
+                  className="h-12 text-lg bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
                 />
                   <p className="text-sm text-zinc-400">
                     This will be your unique identifier: @{formData.username || "username"}
@@ -342,7 +344,7 @@ export default function ProfileEditPage() {
               {/* Bio */}
               <div className="space-y-2">
                 <Label htmlFor="bio" className="flex items-center space-x-2">
-                  <FileText className="h-4 w-4 text-green-600" />
+                  <FileText className="h-4 w-4 text-zinc-400" />
                   <span>Bio</span>
                 </Label>
                 <Textarea
@@ -350,7 +352,7 @@ export default function ProfileEditPage() {
                   value={formData.bio}
                   onChange={(e) => handleInputChange("bio", e.target.value)}
                   placeholder="Tell us about yourself..."
-                  className="min-h-[100px] text-lg resize-none"
+                  className="min-h-[100px] text-lg resize-none bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:ring-white/20 focus-visible:ring-offset-0"
                 />
                 <p className="text-sm text-zinc-400">
                   Keep it concise and engaging. Example: &ldquo;Dad • Creator • Entrepreneur • Philanthropist&rdquo;
@@ -360,7 +362,7 @@ export default function ProfileEditPage() {
               {/* Date of Birth */}
               <div className="space-y-2">
                 <Label htmlFor="dob" className="flex items-center space-x-2">
-                  <Calendar className="h-4 w-4 text-orange-600" />
+                  <Calendar className="h-4 w-4 text-zinc-400" />
                   <span>Date of Birth</span>
                 </Label>
                 <Input
@@ -368,14 +370,14 @@ export default function ProfileEditPage() {
                   type="date"
                   value={formData.dob}
                   onChange={(e) => handleInputChange("dob", e.target.value)}
-                  className="h-12 text-lg"
+                  className="h-12 text-lg bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
                 />
               </div>
 
               {/* City */}
               <div className="space-y-2">
                 <Label htmlFor="city" className="flex items-center space-x-2">
-                  <MapPin className="h-4 w-4 text-red-600" />
+                  <MapPin className="h-4 w-4 text-zinc-400" />
                   <span>City</span>
                 </Label>
                 <Input
@@ -384,7 +386,7 @@ export default function ProfileEditPage() {
                   value={formData.city}
                   onChange={(e) => handleInputChange("city", e.target.value)}
                   placeholder="Where are you located?"
-                  className="h-12 text-lg"
+                  className="h-12 text-lg bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
                 />
               </div>
 
@@ -393,11 +395,11 @@ export default function ProfileEditPage() {
                 <Button
                   type="submit"
                   disabled={saving}
-                  className="w-full h-14 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                  className="w-full h-14 bg-white text-black text-lg font-semibold rounded-xl shadow-lg hover:bg-zinc-200 transition-all duration-200"
                 >
                   {saving ? (
                     <div className="flex items-center space-x-2">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-black"></div>
                       <span>Saving...</span>
                     </div>
                   ) : (
