@@ -534,8 +534,8 @@ export default function SkillDetailPage() {
 
         <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#05060a] via-[#11121a] to-[#1a1c27] p-6 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-8">
           <div className="absolute inset-0">
-            <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.28),_transparent_70%)] blur-3xl" />
-            <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(56,189,248,0.25),_transparent_65%)] blur-3xl" />
+            <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
+            <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(148,163,184,0.18),_transparent_65%)] blur-3xl" />
           </div>
           <div className="relative flex flex-col gap-8 md:flex-row md:items-center">
             <div className="flex items-start gap-5">
@@ -601,7 +601,7 @@ export default function SkillDetailPage() {
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060608] via-[#10121a] to-[#1a1d28] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.75)] sm:p-7">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.18),_transparent_60%)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
             <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">PROJECTS</p>
@@ -626,7 +626,7 @@ export default function SkillDetailPage() {
 
           <section className="relative space-y-6">
             <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#070709] via-[#11131a] to-[#1c1f2b] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.78)] sm:p-7">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.16),_transparent_60%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(148,163,184,0.12),_transparent_60%)]" />
               <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-1">
                   <p className="text-xs font-medium uppercase tracking-[0.3em] text-white/60">Notes</p>
@@ -642,7 +642,7 @@ export default function SkillDetailPage() {
             </div>
 
             <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-white/5 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.7)] backdrop-blur">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.18),_transparent_70%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_70%)]" />
               <CardHeader className="relative pb-2">
                 <CardTitle className="text-base font-semibold text-white">Related habits</CardTitle>
                 <CardDescription className="text-white/70">
@@ -679,7 +679,7 @@ export default function SkillDetailPage() {
             </Card>
 
             <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-white/5 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.7)] backdrop-blur">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(129,140,248,0.14),_transparent_70%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(148,163,184,0.1),_transparent_70%)]" />
               <CardHeader className="relative">
                 <CardTitle className="text-base font-semibold text-white">Need a different view?</CardTitle>
                 <CardDescription className="text-white/70">
