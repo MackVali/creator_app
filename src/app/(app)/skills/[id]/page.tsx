@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CalendarDays, Clock3, Target, ArrowLeft, Award } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import { SkillProjectsList } from "@/components/skills/SkillProjectsList";
 import {
   Card,
@@ -554,9 +553,6 @@ export default function SkillDetailPage() {
                 <h1 id="skill-overview" className="text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
                   {skill.name}
                 </h1>
-                <p className="max-w-xl text-sm text-white/70 sm:text-base">
-                  Everything connected to {skill.name} lives here — goals, notes, and the progress you&apos;re making along the way.
-                </p>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <div className="flex items-center gap-1 text-lg leading-none">
                     {skillBadges.length > 0 ? (
@@ -581,20 +577,20 @@ export default function SkillDetailPage() {
               </div>
             </div>
           </div>
-          <div className="relative mt-8 flex gap-2">
+          <div className="relative mt-8 flex flex-wrap gap-2 md:flex-nowrap">
             {stats.map(({ label, value, icon: Icon }) => (
               <div
                 key={label}
-                className="group flex min-w-0 flex-1 basis-0 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10"
+                className="group flex min-w-[140px] flex-1 basis-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-2 py-1 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10 md:min-w-0"
               >
-                <span className="flex size-6 items-center justify-center rounded-full bg-white/10 text-white/80">
-                  <Icon className="size-3" aria-hidden="true" />
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80">
+                  <Icon className="size-2.5" aria-hidden="true" />
                 </span>
-                <div className="flex min-w-0 flex-col leading-tight">
-                  <span className="text-[8px] font-semibold uppercase tracking-[0.26em] text-white/50">
+                <div className="flex min-w-0 flex-col leading-[1.05]">
+                  <span className="text-[7px] font-semibold uppercase tracking-[0.2em] text-white/50">
                     {label}
                   </span>
-                  <span className="truncate text-[11px] font-semibold text-white">
+                  <span className="break-words text-[9px] font-semibold text-white">
                     {value}
                   </span>
                 </div>
