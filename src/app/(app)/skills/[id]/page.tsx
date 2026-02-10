@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CalendarDays, Clock3, Target, ArrowLeft, Award } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import { SkillProjectsList } from "@/components/skills/SkillProjectsList";
 import {
   Card,
@@ -533,10 +532,10 @@ export default function SkillDetailPage() {
           </Link>
         </Button>
 
-        <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#05060a] via-[#11121a] to-[#1a1c27] p-6 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-8">
+        <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-6 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-8">
           <div className="absolute inset-0">
-            <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.28),_transparent_70%)] blur-3xl" />
-            <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(56,189,248,0.25),_transparent_65%)] blur-3xl" />
+            <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
+            <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.12),_transparent_65%)] blur-3xl" />
           </div>
           <div className="relative flex flex-col gap-8 md:flex-row md:items-center">
             <div className="flex items-start gap-5">
@@ -554,9 +553,6 @@ export default function SkillDetailPage() {
                 <h1 id="skill-overview" className="text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
                   {skill.name}
                 </h1>
-                <p className="max-w-xl text-sm text-white/70 sm:text-base">
-                  Everything connected to {skill.name} lives here — goals, notes, and the progress you&apos;re making along the way.
-                </p>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <div className="flex items-center gap-1 text-lg leading-none">
                     {skillBadges.length > 0 ? (
@@ -581,20 +577,20 @@ export default function SkillDetailPage() {
               </div>
             </div>
           </div>
-          <div className="relative mt-8 flex gap-2">
+          <div className="relative mt-8 flex flex-wrap gap-2 md:flex-nowrap">
             {stats.map(({ label, value, icon: Icon }) => (
               <div
                 key={label}
-                className="group flex min-w-0 flex-1 basis-0 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10"
+                className="group flex min-w-[140px] flex-1 basis-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-2 py-1 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10 md:min-w-0"
               >
-                <span className="flex size-6 items-center justify-center rounded-full bg-white/10 text-white/80">
-                  <Icon className="size-3" aria-hidden="true" />
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80">
+                  <Icon className="size-2.5" aria-hidden="true" />
                 </span>
-                <div className="flex min-w-0 flex-col leading-tight">
-                  <span className="text-[8px] font-semibold uppercase tracking-[0.26em] text-white/50">
+                <div className="flex min-w-0 flex-col leading-[1.05]">
+                  <span className="text-[7px] font-semibold uppercase tracking-[0.2em] text-white/50">
                     {label}
                   </span>
-                  <span className="truncate text-[11px] font-semibold text-white">
+                  <span className="break-words text-[9px] font-semibold text-white">
                     {value}
                   </span>
                 </div>
@@ -604,8 +600,8 @@ export default function SkillDetailPage() {
         </section>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060608] via-[#10121a] to-[#1a1d28] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.75)] sm:p-7">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.18),_transparent_60%)]" />
+          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101010] to-[#1a1a1a] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.75)] sm:p-7">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
             <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">PROJECTS</p>
@@ -629,8 +625,8 @@ export default function SkillDetailPage() {
           </section>
 
           <section className="relative space-y-6">
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#070709] via-[#11131a] to-[#1c1f2b] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.78)] sm:p-7">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.16),_transparent_60%)]" />
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#070707] via-[#121212] to-[#1c1c1c] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.78)] sm:p-7">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.1),_transparent_60%)]" />
               <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-1">
                   <p className="text-xs font-medium uppercase tracking-[0.3em] text-white/60">Notes</p>
