@@ -230,10 +230,6 @@ function RoadmapCardImpl({
     setOpen((prev) => !prev);
   }, []);
 
-  const handleGoalClick = useCallback((goalId: string) => {
-    console.log("🎯 Goal clicked:", goalId);
-    setOpenGoalId((current) => (current === goalId ? null : goalId));
-  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -371,7 +367,6 @@ function RoadmapCardImpl({
               goals={goals}
               onClose={handleToggle}
               anchorRect={null}
-              onGoalClick={handleGoalClick}
               onGoalEdit={onGoalEdit}
               onGoalToggleActive={onGoalToggleActive}
               onGoalDelete={onGoalDelete}
@@ -498,7 +493,6 @@ type CompactGoalsOverlayProps = {
   goals: Goal[];
   onClose: () => void;
   anchorRect: DOMRect | null;
-  onGoalClick?: (goalId: string) => void;
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
@@ -509,7 +503,6 @@ function CompactGoalsOverlay({
   goals,
   onClose,
   anchorRect,
-  onGoalClick,
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
@@ -522,9 +515,6 @@ function CompactGoalsOverlay({
     [localGoals, openGoalId]
   );
 
-  const handleGoalClick = useCallback((goalId: string) => {
-    setOpenGoalId((current) => (current === goalId ? null : goalId));
-  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
