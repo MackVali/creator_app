@@ -50,10 +50,10 @@ const listingStatuses: Record<SourceListing["status"], string> = {
 }
 
 const statusAccent: Record<SourceListing["status"], string> = {
-  draft: "bg-slate-800 text-slate-200",
-  queued: "bg-sky-500/10 text-sky-300 border border-sky-500/30",
-  published: "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30",
-  needs_attention: "bg-amber-500/10 text-amber-300 border border-amber-500/40",
+  draft: "bg-zinc-800 text-zinc-200",
+  queued: "bg-zinc-500/10 text-zinc-300 border border-zinc-500/30",
+  published: "bg-zinc-500/10 text-zinc-300 border border-zinc-500/30",
+  needs_attention: "bg-zinc-500/10 text-zinc-300 border border-zinc-500/40",
 }
 
 const listingTypeLabels: Record<SourceListing["type"], string> = {
@@ -1664,18 +1664,18 @@ export default function Source() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-900/60 bg-slate-950/80 backdrop-blur">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+      <header className="border-b border-zinc-900/60 bg-zinc-950/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+              <p className="text-xs uppercase tracking-[0.3em] text-zinc-400">
                 Source
               </p>
               <h1 className="mt-1 text-3xl font-semibold text-white">
                 Connect your storefronts
               </h1>
-              <p className="mt-3 max-w-3xl text-sm text-slate-300">
+              <p className="mt-3 max-w-3xl text-sm text-zinc-300">
                 Link every website you sell on and publish listings once. Source
                 will send the payload to each integration with the structure and
                 headers you provide.
@@ -1684,19 +1684,19 @@ export default function Source() {
             <div className="flex flex-col gap-2 self-start md:flex-row md:items-center md:gap-3">
               <Button
                 type="button"
-                className="gap-2 bg-sky-500 text-white hover:bg-sky-400"
+                className="gap-2 bg-zinc-500 text-white hover:bg-zinc-400"
                 onClick={() => setIsPostModalOpen(true)}
               >
                 <Send className="size-4" /> Post everywhere
               </Button>
-              <Badge className="h-fit gap-2 bg-amber-500/20 text-amber-200">
+              <Badge className="h-fit gap-2 bg-zinc-500/20 text-zinc-200">
                 <Plug className="size-3" /> Paid upgrade
               </Badge>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
             <div className="flex items-center gap-2">
-              <Plug className="size-4 text-slate-300" />
+              <Plug className="size-4 text-zinc-300" />
               <span>
                 {integrationsQuery.isLoading
                   ? "Loading connections..."
@@ -1706,7 +1706,7 @@ export default function Source() {
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <UploadCloud className="size-4 text-slate-300" />
+              <UploadCloud className="size-4 text-zinc-300" />
               <span>
                 {listingsQuery.isLoading
                   ? "Loading listings..."
@@ -1720,11 +1720,11 @@ export default function Source() {
       </header>
 
       <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10">
-        <section className="overflow-hidden rounded-2xl border border-slate-900/60 bg-slate-950/70 shadow-lg shadow-slate-950/40">
-          <div className="flex flex-col gap-3 border-b border-slate-900/60 px-6 py-5 md:flex-row md:items-center md:justify-between">
+        <section className="overflow-hidden rounded-2xl border border-zinc-900/60 bg-zinc-950/70 shadow-lg shadow-zinc-950/40">
+          <div className="flex flex-col gap-3 border-b border-zinc-900/60 px-6 py-5 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-white">How Source syncs your listings</h2>
-              <p className="text-sm text-slate-300">
+              <p className="text-sm text-zinc-300">
                 Follow these steps to connect storefronts and publish everywhere in minutes.
               </p>
             </div>
@@ -1744,14 +1744,14 @@ export default function Source() {
               return (
                 <div
                   key={step.id}
-                  className="flex gap-3 rounded-xl border border-slate-900/60 bg-slate-950/60 p-4"
+                  className="flex gap-3 rounded-xl border border-zinc-900/60 bg-zinc-950/60 p-4"
                 >
-                  <div className="rounded-lg bg-slate-900/60 p-2">
-                    <Icon className="size-4 text-sky-300" />
+                  <div className="rounded-lg bg-zinc-900/60 p-2">
+                    <Icon className="size-4 text-zinc-300" />
                   </div>
                   <div className="space-y-1 text-sm">
                     <p className="font-medium text-white">{step.title}</p>
-                    <p className="text-xs text-slate-400">{step.description}</p>
+                    <p className="text-xs text-zinc-400">{step.description}</p>
                   </div>
                 </div>
               )
@@ -1765,7 +1765,7 @@ export default function Source() {
               <h2 className="text-xl font-semibold text-white">
                 Connected websites
               </h2>
-              <p className="text-sm text-slate-300">
+              <p className="text-sm text-zinc-300">
                 Each integration defines how Source authenticates, which
                 endpoint receives payloads, and any custom headers you need.
               </p>
@@ -1786,7 +1786,7 @@ export default function Source() {
           </div>
 
           {integrationError && (
-            <div className="rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-sm text-rose-200">
+            <div className="rounded-md border border-zinc-500/40 bg-zinc-950/40 p-3 text-sm text-zinc-200">
               {integrationError}
             </div>
           )}
@@ -1796,12 +1796,12 @@ export default function Source() {
               Array.from({ length: 2 }).map((_, idx) => (
                 <div
                   key={`integration-skeleton-${idx}`}
-                  className="h-40 animate-pulse rounded-xl border border-slate-800/80 bg-slate-900/50"
+                  className="h-40 animate-pulse rounded-xl border border-zinc-800/80 bg-zinc-900/50"
                 />
               ))}
 
             {!integrationsQuery.isLoading && integrations.length === 0 && (
-              <div className="col-span-full rounded-xl border border-slate-800/70 bg-slate-900/40 p-6 text-sm text-slate-300">
+              <div className="col-span-full rounded-xl border border-zinc-800/70 bg-zinc-900/40 p-6 text-sm text-zinc-300">
                 No connections yet. Add your first integration to sync listings
                 anywhere you publish.
               </div>
@@ -1830,7 +1830,7 @@ export default function Source() {
         <section className="grid gap-6 lg:grid-cols-2">
           <form
             id="integration-form"
-            className="rounded-2xl border border-slate-900/60 bg-slate-950/70 p-6 shadow-xl shadow-slate-950/40"
+            className="rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-6 shadow-xl shadow-zinc-950/40"
             onSubmit={(event) => {
               event.preventDefault()
               setIntegrationError(null)
@@ -1847,17 +1847,17 @@ export default function Source() {
                 <h3 className="text-lg font-semibold text-white">
                   Add integration
                 </h3>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-zinc-400">
                   Provide the destination endpoint and any authentication so
                   Source can call it when you publish a listing.
                 </p>
               </div>
             </div>
 
-            <div className="mt-5 space-y-6 rounded-2xl border border-slate-900/70 bg-slate-950/60 p-4">
+            <div className="mt-5 space-y-6 rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4">
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-white">Connector library</p>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-zinc-400">
                   Prefill this form for Shopify, Instagram, TikTok, LinkedIn, Wix,
                   WooCommerce, or trigger automation hooks that fan listings out to
                   Depop, Facebook Marketplace, Craigslist, and more.
@@ -1875,8 +1875,8 @@ export default function Source() {
                         type="button"
                         onClick={() => handlePresetChange(option.id)}
                         className={cn(
-                          "group relative overflow-hidden rounded-2xl border border-slate-900/60 bg-slate-950/70 p-4 text-left transition-all hover:border-slate-800/80 hover:bg-slate-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400",
-                          isActive && "border-sky-400/70 bg-sky-500/10 shadow-lg shadow-sky-500/20"
+                          "group relative overflow-hidden rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-4 text-left transition-all hover:border-zinc-800/80 hover:bg-zinc-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
+                          isActive && "border-zinc-400/70 bg-zinc-500/10 shadow-lg shadow-zinc-500/20"
                         )}
                       >
                         <span
@@ -1896,16 +1896,16 @@ export default function Source() {
                               <p className="flex items-center gap-2 text-sm font-semibold text-white">
                                 {option.label}
                                 {isActive && (
-                                  <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-medium text-sky-100">
+                                  <span className="rounded-full bg-zinc-500/20 px-2 py-0.5 text-[10px] font-medium text-zinc-100">
                                     Selected
                                   </span>
                                 )}
                               </p>
-                              <p className="text-xs text-slate-200/90">{option.description}</p>
+                              <p className="text-xs text-zinc-200/90">{option.description}</p>
                             </div>
                           </div>
                           {option.oauth && (
-                            <Badge className="h-fit rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-100/80">
+                            <Badge className="h-fit rounded-full bg-zinc-900/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-100/80">
                               OAuth
                             </Badge>
                           )}
@@ -1916,11 +1916,11 @@ export default function Source() {
                 </div>
               )}
 
-              <div className="space-y-3 rounded-xl border border-slate-900/60 bg-slate-950/70 p-4">
+              <div className="space-y-3 rounded-xl border border-zinc-900/60 bg-zinc-950/70 p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="space-y-1">
                     <p className="text-sm font-medium text-white">Browse everything</p>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-zinc-400">
                       Prefer a different storefront? Pick any preset or return to manual setup.
                     </p>
                   </div>
@@ -1929,7 +1929,7 @@ export default function Source() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="gap-2 text-slate-200 hover:text-white"
+                      className="gap-2 text-zinc-200 hover:text-white"
                       onClick={() => handlePresetChange("manual")}
                     >
                       Reset to manual
@@ -1953,15 +1953,15 @@ export default function Source() {
               </div>
 
               {selectedPreset && (
-                <div className="space-y-4 rounded-xl border border-slate-900/60 bg-slate-950/70 p-4">
+                <div className="space-y-4 rounded-xl border border-zinc-900/60 bg-zinc-950/70 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs text-slate-200/90">{selectedPreset.description}</p>
+                    <p className="text-xs text-zinc-200/90">{selectedPreset.description}</p>
                     {selectedPreset.docsUrl && (
                       <a
                         href={selectedPreset.docsUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-xs font-medium text-sky-300 hover:text-sky-200"
+                        className="text-xs font-medium text-zinc-300 hover:text-zinc-200"
                       >
                         View docs
                       </a>
@@ -1969,7 +1969,7 @@ export default function Source() {
                   </div>
 
                   {selectedPreset.oauthRequired && (
-                    <div className="flex items-start gap-3 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-100">
+                    <div className="flex items-start gap-3 rounded-lg border border-zinc-500/30 bg-zinc-500/10 p-3 text-xs text-zinc-100">
                       <Lock className="mt-0.5 size-3" />
                       <span>
                         This connector uses OAuth. Save the integration, then click
@@ -1979,28 +1979,28 @@ export default function Source() {
                   )}
 
                   {selectedPreset.prerequisites && selectedPreset.prerequisites.length > 0 && (
-                    <div className="space-y-3 rounded-lg border border-slate-800/80 bg-slate-900/50 p-3">
-                      <p className="text-xs font-semibold text-slate-200">Setup checklist</p>
+                    <div className="space-y-3 rounded-lg border border-zinc-800/80 bg-zinc-900/50 p-3">
+                      <p className="text-xs font-semibold text-zinc-200">Setup checklist</p>
                       <ul className="space-y-2">
                         {selectedPreset.prerequisites.map((item) => (
-                          <li key={item.id} className="flex gap-3 text-xs text-slate-300">
-                            <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-sky-400" />
+                          <li key={item.id} className="flex gap-3 text-xs text-zinc-300">
+                            <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-zinc-400" />
                             <span className="space-y-1">
                               {item.href ? (
                                 <a
                                   href={item.href}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="inline-flex items-center gap-1 font-medium text-sky-300 hover:text-sky-200"
+                                  className="inline-flex items-center gap-1 font-medium text-zinc-300 hover:text-zinc-200"
                                 >
                                   {item.label}
                                   <ExternalLink className="size-3" />
                                 </a>
                               ) : (
-                                <span className="font-medium text-slate-200">{item.label}</span>
+                                <span className="font-medium text-zinc-200">{item.label}</span>
                               )}
                               {item.description && (
-                                <p className="text-slate-400">{item.description}</p>
+                                <p className="text-zinc-400">{item.description}</p>
                               )}
                             </span>
                           </li>
@@ -2031,7 +2031,7 @@ export default function Source() {
                           }
                           placeholder={field.placeholder}
                         />
-                        {field.help && <p className="text-xs text-slate-500">{field.help}</p>}
+                        {field.help && <p className="text-xs text-zinc-500">{field.help}</p>}
                       </div>
                     ))}
                   </div>
@@ -2047,11 +2047,11 @@ export default function Source() {
                       Apply details
                     </Button>
                     {presetError ? (
-                      <span className="text-rose-300">{presetError}</span>
+                      <span className="text-zinc-300">{presetError}</span>
                     ) : presetNotice ? (
-                      <span className="text-emerald-300">{presetNotice}</span>
+                      <span className="text-zinc-300">{presetNotice}</span>
                     ) : (
-                      <span className="text-slate-400">
+                      <span className="text-zinc-400">
                         Fill in the required details, then apply to load the integration fields automatically.
                       </span>
                     )}
@@ -2220,18 +2220,18 @@ export default function Source() {
                       </SelectContent>
                     </Select>
                     {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-zinc-400">
                         Stored securely in your Supabase project. Bearer tokens add
                         an Authorization header automatically. API keys let you
                         choose the header name (for example
-                        <code className="mx-1 rounded bg-slate-800 px-1">
+                        <code className="mx-1 rounded bg-zinc-800 px-1">
                           X-Shopify-Access-Token
                         </code>
                         ). Basic auth expects username:password.
                       </p>
                     )}
                     {integrationForm.authMode === "oauth2" && (
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-zinc-400">
                         After saving, Source opens the provider&apos;s consent screen so you can
                         authorize access and capture tokens securely.
                       </p>
@@ -2402,13 +2402,13 @@ export default function Source() {
               </div>
             </div>
 
-            <div className="mt-8 space-y-4 rounded-2xl border border-slate-900/70 bg-slate-950/50 p-4">
+            <div className="mt-8 space-y-4 rounded-2xl border border-zinc-900/70 bg-zinc-950/50 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="space-y-1">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
                     Advanced options
                   </p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-zinc-400">
                     Control custom headers and the JSON body Source sends to your integration.
                   </p>
                 </div>
@@ -2490,7 +2490,7 @@ export default function Source() {
           </form>
 
           <form
-            className="rounded-2xl border border-slate-900/60 bg-slate-950/70 p-6 shadow-xl shadow-slate-950/40"
+            className="rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-6 shadow-xl shadow-zinc-950/40"
             onSubmit={(event) => {
               event.preventDefault()
               setListingError(null)
@@ -2507,7 +2507,7 @@ export default function Source() {
                 <h3 className="text-lg font-semibold text-white">
                   Publish listing
                 </h3>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-zinc-400">
                   Listings publish to every active integration immediately when
                   you choose “Publish now”.
                 </p>
@@ -2515,14 +2515,14 @@ export default function Source() {
             </div>
 
             {listingError && (
-              <div className="mt-4 rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-sm text-rose-200">
+              <div className="mt-4 rounded-md border border-zinc-500/40 bg-zinc-950/40 p-3 text-sm text-zinc-200">
                 {listingError}
               </div>
             )}
 
 
             <div className="mt-5 space-y-6">
-              <div className="rounded-xl border border-slate-900/60 bg-slate-950/60 p-4 text-xs text-slate-300">
+              <div className="rounded-xl border border-zinc-900/60 bg-zinc-950/60 p-4 text-xs text-zinc-300">
                 {activeIntegrationCount > 0 ? (
                   <span>
                     Publishing now will post to
@@ -2723,7 +2723,7 @@ export default function Source() {
               <h2 className="text-xl font-semibold text-white">
                 Recent listings
               </h2>
-              <p className="text-sm text-slate-300">
+              <p className="text-sm text-zinc-300">
                 Track what was sent to each integration and surface payload
                 errors instantly.
               </p>
@@ -2744,7 +2744,7 @@ export default function Source() {
           </div>
 
           {listingsQuery.error && (
-            <div className="rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-sm text-rose-200">
+            <div className="rounded-md border border-zinc-500/40 bg-zinc-950/40 p-3 text-sm text-zinc-200">
               {listingsQuery.error.message}
             </div>
           )}
@@ -2754,12 +2754,12 @@ export default function Source() {
               Array.from({ length: 3 }).map((_, idx) => (
                 <div
                   key={`listing-skeleton-${idx}`}
-                  className="h-32 animate-pulse rounded-xl border border-slate-900/80 bg-slate-950/60"
+                  className="h-32 animate-pulse rounded-xl border border-zinc-900/80 bg-zinc-950/60"
                 />
               ))}
 
             {!listingsQuery.isLoading && listings.length === 0 && (
-              <div className="rounded-xl border border-slate-900/70 bg-slate-950/60 p-6 text-sm text-slate-300">
+              <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-6 text-sm text-zinc-300">
                 No listings yet. When you publish a product or service it will
                 appear here with delivery status per integration.
               </div>
@@ -2786,12 +2786,12 @@ type FieldStackProps = {
 function FieldStack({ label, htmlFor, description, children }: FieldStackProps) {
   return (
     <div className="space-y-2 text-sm">
-      <Label htmlFor={htmlFor} className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+      <Label htmlFor={htmlFor} className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
         {label}
       </Label>
       {children}
       {description && (
-        <p className="text-xs text-slate-500">{description}</p>
+        <p className="text-xs text-zinc-500">{description}</p>
       )}
     </div>
   )
@@ -2805,8 +2805,8 @@ type FormSubheadingProps = {
 function FormSubheading({ title, description }: FormSubheadingProps) {
   return (
     <div className="space-y-1">
-      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">{title}</p>
-      {description && <p className="text-xs text-slate-400">{description}</p>}
+      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-zinc-500">{title}</p>
+      {description && <p className="text-xs text-zinc-400">{description}</p>}
     </div>
   )
 }
@@ -2848,25 +2848,25 @@ function IntegrationCard({ integration, removing, onRemove, onConnect, connectin
   })()
 
   return (
-    <div className="flex h-full flex-col justify-between rounded-2xl border border-slate-900/70 bg-slate-950/60 p-5">
+    <div className="flex h-full flex-col justify-between rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-5">
       <div className="space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <Globe className="size-4 text-slate-300" />
+              <Globe className="size-4 text-zinc-300" />
               <p className="text-sm font-semibold text-white">
                 {integration.display_name || integration.provider}
               </p>
             </div>
-            <p className="break-all text-xs text-slate-400">{integration.connection_url}</p>
+            <p className="break-all text-xs text-zinc-400">{integration.connection_url}</p>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             <Badge
               variant={integration.status === "active" ? "default" : "secondary"}
               className={cn(
                 integration.status === "active"
-                  ? "bg-emerald-500/20 text-emerald-200"
-                  : "bg-slate-800 text-slate-300",
+                  ? "bg-zinc-500/20 text-zinc-200"
+                  : "bg-zinc-800 text-zinc-300",
               )}
             >
               {integration.status === "active" ? "Active" : "Disabled"}
@@ -2877,8 +2877,8 @@ function IntegrationCard({ integration, removing, onRemove, onConnect, connectin
                 className={cn(
                   "gap-1",
                   oauthConnected
-                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-                    : "border-amber-500/40 bg-amber-500/10 text-amber-100",
+                    ? "border-zinc-500/40 bg-zinc-500/10 text-zinc-200"
+                    : "border-zinc-500/40 bg-zinc-500/10 text-zinc-100",
                 )}
               >
                 <Lock className="size-3" />
@@ -2888,32 +2888,32 @@ function IntegrationCard({ integration, removing, onRemove, onConnect, connectin
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-900/70 bg-slate-950/70 p-3 text-xs text-slate-300">
-          <p className="font-semibold text-slate-200">Publish request</p>
-          <p className="mt-1 flex items-center gap-2 break-all font-mono text-[11px] text-slate-400">
-            <span className="rounded bg-slate-900 px-2 py-0.5 uppercase tracking-wide">
+        <div className="rounded-lg border border-zinc-900/70 bg-zinc-950/70 p-3 text-xs text-zinc-300">
+          <p className="font-semibold text-zinc-200">Publish request</p>
+          <p className="mt-1 flex items-center gap-2 break-all font-mono text-[11px] text-zinc-400">
+            <span className="rounded bg-zinc-900 px-2 py-0.5 uppercase tracking-wide">
               {integration.publish_method}
             </span>
             {integration.publish_url}
           </p>
         </div>
 
-        <div className="space-y-2 text-xs text-slate-300">
+        <div className="space-y-2 text-xs text-zinc-300">
           <div>
-            <p className="font-semibold text-slate-200">Authentication</p>
-            <p className="text-slate-400">{authSummary}</p>
+            <p className="font-semibold text-zinc-200">Authentication</p>
+            <p className="text-zinc-400">{authSummary}</p>
           </div>
           {integration.auth_mode === "oauth2" && (
-            <div className="flex flex-col gap-1 text-[11px] text-slate-400">
+            <div className="flex flex-col gap-1 text-[11px] text-zinc-400">
               <div className="flex items-center gap-2">
-                <Lock className={cn("size-3", oauthConnected ? "text-emerald-300" : "text-amber-300")} />
+                <Lock className={cn("size-3", oauthConnected ? "text-zinc-300" : "text-zinc-300")} />
                 <span>{oauthConnected ? "Authorized" : "Not authorized"}</span>
               </div>
               {oauthConnected && oauthExpiryLabel && (
                 <span className="pl-5">Token refresh by {oauthExpiryLabel}</span>
               )}
               {!oauthConnected && (
-                <span className="pl-5 text-amber-200">
+                <span className="pl-5 text-zinc-200">
                   Connect this integration so Source can publish automatically.
                 </span>
               )}
@@ -2922,13 +2922,13 @@ function IntegrationCard({ integration, removing, onRemove, onConnect, connectin
         </div>
 
         {Object.keys(headers).length > 0 && (
-          <div className="space-y-2 text-xs text-slate-300">
-            <p className="font-semibold text-slate-200">Custom headers</p>
+          <div className="space-y-2 text-xs text-zinc-300">
+            <p className="font-semibold text-zinc-200">Custom headers</p>
             <div className="space-y-1">
               {Object.entries(headers).map(([key, value]) => (
                 <div key={key} className="flex items-center gap-3 break-all font-mono text-[11px]">
-                  <span className="rounded bg-slate-900 px-2 py-0.5 text-slate-200">{key}</span>
-                  <span className="text-slate-400">{String(value)}</span>
+                  <span className="rounded bg-zinc-900 px-2 py-0.5 text-zinc-200">{key}</span>
+                  <span className="text-zinc-400">{String(value)}</span>
                 </div>
               ))}
             </div>
@@ -2936,12 +2936,12 @@ function IntegrationCard({ integration, removing, onRemove, onConnect, connectin
         )}
       </div>
 
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-400">
         <a
           href={integration.connection_url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 text-slate-300 hover:text-white"
+          className="inline-flex items-center gap-1 text-zinc-300 hover:text-white"
         >
           Visit site <ExternalLink className="size-3" />
         </a>
@@ -2951,7 +2951,7 @@ function IntegrationCard({ integration, removing, onRemove, onConnect, connectin
               type="button"
               onClick={onConnect}
               disabled={connecting || removing}
-              className="inline-flex items-center gap-2 rounded border border-sky-500/40 px-2 py-1 text-sky-200 transition hover:bg-sky-500/10 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded border border-zinc-500/40 px-2 py-1 text-zinc-200 transition hover:bg-zinc-500/10 disabled:opacity-50"
             >
               {connecting ? (
                 <Loader2 className="size-3 animate-spin" />
@@ -2965,7 +2965,7 @@ function IntegrationCard({ integration, removing, onRemove, onConnect, connectin
             type="button"
             onClick={onRemove}
             disabled={removing}
-            className="inline-flex items-center gap-1 rounded border border-rose-500/40 px-2 py-1 text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded border border-zinc-500/40 px-2 py-1 text-zinc-200 transition hover:bg-zinc-500/10 disabled:opacity-50"
           >
             <X className="size-3" />
             {removing ? "Removing" : "Disconnect"}
@@ -2992,27 +2992,27 @@ function ListingCard({ listing }: ListingCardProps) {
     !postMetadata && listing.metadata && Object.keys(listing.metadata).length > 0
 
   return (
-    <div className="rounded-2xl border border-slate-900/70 bg-slate-950/60 p-5">
+    <div className="rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-lg font-semibold text-white">{listing.title}</h3>
-            <Badge className="bg-slate-800 text-slate-200">
+            <Badge className="bg-zinc-800 text-zinc-200">
               {listingTypeLabels[listing.type]}
             </Badge>
           </div>
-          <p className={cn("text-sm text-slate-300", isPost && "whitespace-pre-wrap break-words")}>{description}</p>
+          <p className={cn("text-sm text-zinc-300", isPost && "whitespace-pre-wrap break-words")}>{description}</p>
         </div>
         <div className="flex flex-col items-end gap-2 text-right">
           <Badge className={cn("border", statusAccent[status])}>
             {listingStatuses[status]}
           </Badge>
           {listing.type !== "post" && listing.price !== null && (
-            <p className="font-mono text-sm text-slate-200">
+            <p className="font-mono text-sm text-zinc-200">
               {formatCurrency(listing.price, listing.currency)}
             </p>
           )}
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-zinc-400">
             Updated {formatRelativeTime(listing.updated_at)}
           </p>
         </div>
@@ -3021,20 +3021,20 @@ function ListingCard({ listing }: ListingCardProps) {
       {postMetadata ? (
         <PostDetails metadata={postMetadata} />
       ) : showGenericMetadata ? (
-        <div className="mt-4 space-y-1 rounded-lg border border-slate-900/60 bg-slate-950/80 p-3 text-xs text-slate-300">
-          <p className="font-semibold text-slate-200">Metadata</p>
-          <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-slate-400">
+        <div className="mt-4 space-y-1 rounded-lg border border-zinc-900/60 bg-zinc-950/80 p-3 text-xs text-zinc-300">
+          <p className="font-semibold text-zinc-200">Metadata</p>
+          <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-zinc-400">
             {JSON.stringify(listing.metadata, null, 2)}
           </pre>
         </div>
       ) : null}
 
       <div className="mt-4 space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
           Delivery log
         </p>
         {publishResults.length === 0 ? (
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-zinc-400">
             Not sent to any integrations yet.
           </p>
         ) : (
@@ -3060,13 +3060,13 @@ function PostDetails({ metadata }: PostDetailsProps) {
   const showSelectedSummary = selectedCount > 0 && selectedCount !== deliveredCount
 
   return (
-    <div className="mt-4 space-y-4 rounded-lg border border-slate-900/60 bg-slate-950/80 p-3 text-xs text-slate-300">
+    <div className="mt-4 space-y-4 rounded-lg border border-zinc-900/60 bg-zinc-950/80 p-3 text-xs text-zinc-300">
       {metadata.mediaTypes.length > 0 ? (
         <div className="space-y-2">
-          <p className="font-semibold text-slate-200">Media focus</p>
+          <p className="font-semibold text-zinc-200">Media focus</p>
           <div className="flex flex-wrap gap-2">
             {metadata.mediaTypes.map((type) => (
-              <Badge key={type} className="bg-slate-900 text-slate-200 capitalize">
+              <Badge key={type} className="bg-zinc-900 text-zinc-200 capitalize">
                 {formatPostMediaType(type)}
               </Badge>
             ))}
@@ -3075,22 +3075,22 @@ function PostDetails({ metadata }: PostDetailsProps) {
       ) : null}
 
       <div className="space-y-2">
-        <p className="font-semibold text-slate-200">Attachments</p>
+        <p className="font-semibold text-zinc-200">Attachments</p>
         {metadata.media.length > 0 ? (
           <ul className="space-y-2">
             {metadata.media.map((media) => (
               <li
                 key={`${media.type}-${media.url}`}
-                className="flex flex-col gap-2 rounded-md border border-slate-900/60 bg-slate-950/70 p-3 text-[11px] sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                className="flex flex-col gap-2 rounded-md border border-zinc-900/60 bg-zinc-950/70 p-3 text-[11px] sm:flex-row sm:items-center sm:justify-between sm:gap-3"
               >
-                <Badge className="w-fit bg-slate-900 text-slate-200 capitalize">
+                <Badge className="w-fit bg-zinc-900 text-zinc-200 capitalize">
                   {formatPostMediaType(media.type)}
                 </Badge>
                 <a
                   href={media.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-1 break-all text-sky-300 hover:text-sky-200"
+                  className="flex items-center gap-1 break-all text-zinc-300 hover:text-zinc-200"
                 >
                   {media.url}
                   <ExternalLink className="size-3" />
@@ -3099,18 +3099,18 @@ function PostDetails({ metadata }: PostDetailsProps) {
             ))}
           </ul>
         ) : (
-          <p className="text-[11px] text-slate-400">No attachments were included.</p>
+          <p className="text-[11px] text-zinc-400">No attachments were included.</p>
         )}
       </div>
 
-      <div className="space-y-1 text-[11px] text-slate-400">
+      <div className="space-y-1 text-[11px] text-zinc-400">
         <p>
-          Delivered to <span className="text-slate-200">{deliveredCount}</span> connection
+          Delivered to <span className="text-zinc-200">{deliveredCount}</span> connection
           {deliveredCount === 1 ? "" : "s"}.
           {showSelectedSummary ? ` Requested ${selectedCount}.` : ""}
         </p>
         {missingCount > 0 ? (
-          <p className="text-amber-300">
+          <p className="text-zinc-300">
             {missingCount} connection{missingCount === 1 ? " was" : "s were"} unavailable when posting.
           </p>
         ) : null}
@@ -3130,8 +3130,8 @@ function PublishRow({ result }: PublishRowProps) {
       className={cn(
         "flex flex-col gap-2 rounded-lg border p-3 text-xs transition",
         ok
-          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-          : "border-amber-500/40 bg-amber-500/10 text-amber-100"
+          ? "border-zinc-500/40 bg-zinc-500/10 text-zinc-200"
+          : "border-zinc-500/40 bg-zinc-500/10 text-zinc-100"
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
