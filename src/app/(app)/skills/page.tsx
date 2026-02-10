@@ -21,8 +21,6 @@ import type { SkillRow } from "@/lib/types/skill";
 import {
   ArrowRight,
   ChevronRight,
-  Clock3,
-  FolderKanban,
   Goal,
   MoreVertical,
   Plus,
@@ -49,7 +47,7 @@ type SkillCompactCardProps = {
   categoryName?: string | null;
   linkedMonument?: string | null;
   startEdit: (skill: Skill) => void;
-  handleRemoveSkill: (id: string) => void;
+  handleRemoveSkill: (skill: Skill) => void;
 };
 
 function SkillCompactCard({
@@ -125,7 +123,7 @@ function SkillCompactCard({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              handleRemoveSkill(skill.id);
+              handleRemoveSkill(skill);
             }}
           >
             Remove skill
@@ -280,16 +278,21 @@ function SkillsPageContent() {
       toast.error("Error", error.message || "Failed to create skill");
       return;
     }
-    setSkills((prev) => [
-      ...prev,
-      {
-        ...skill,
-        id: data!.id,
-        cat_id: catIdToUse,
-        monument_id: skill.monument_id ?? null,
-        created_at: data!.created_at,
-      },
-    ]);
+    setSkills((prev) => {
+      if (prev.some((existing) => existing.id === data!.id)) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          ...skill,
+          id: data!.id,
+          cat_id: catIdToUse,
+          monument_id: skill.monument_id ?? null,
+          created_at: data!.created_at,
+        },
+      ];
+    });
   };
   const updateSkill = async (skill: Skill) => {
     setSkills((prev) => prev.map((s) => (s.id === skill.id ? skill : s)));
@@ -322,29 +325,20 @@ function SkillsPageContent() {
     setEditing(skill);
     setOpen(true);
   };
-  const handleRemoveSkill = async (id: string) => {
-    setSkills((prev) => prev.filter((s) => s.id !== id));
-    const { error } = await deleteRecord("skills", id);
+  const handleRemoveSkill = async (skill: Skill) => {
+    const confirmed = window.confirm(
+      `Remove "${skill.name}"? This will permanently delete the skill.`
+    );
+    if (!confirmed) return;
+    setSkills((prev) => prev.filter((s) => s.id !== skill.id));
+    const { error } = await deleteRecord("skills", skill.id);
     if (error) {
       console.error("Error deleting skill:", error);
+      toast.error("Error", error.message || "Failed to delete skill");
     }
   };
 
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const totalSkills = skills.length;
-  const totalCategories = categories.length;
-  const createdThisMonth = skills.filter((skill) => {
-    if (!skill.created_at) return false;
-    const createdAt = new Date(skill.created_at);
-    return createdAt >= startOfMonth && createdAt <= now;
-  }).length;
-  const trackedMonuments = skills.reduce((set, skill) => {
-    if (skill.monument_id) {
-      set.add(skill.monument_id);
-    }
-    return set;
-  }, new Set<string>()).size;
 
   const categoryLookup = useMemo(() => {
     const map = new Map<string, string>();
@@ -370,24 +364,6 @@ function SkillsPageContent() {
       description: "Skills you're actively tracking and refining.",
       icon: Sparkles,
     },
-    {
-      label: "Categories organized",
-      value: totalCategories,
-      description: "Folders giving structure to your practice.",
-      icon: FolderKanban,
-    },
-    {
-      label: "Linked monuments",
-      value: trackedMonuments,
-      description: "Monuments currently tied to your skills.",
-      icon: Goal,
-    },
-    {
-      label: "New this month",
-      value: createdThisMonth,
-      description: "Fresh additions added in the last 30 days.",
-      icon: Clock3,
-    },
   ];
 
   if (loading) {
@@ -406,57 +382,57 @@ function SkillsPageContent() {
     <div className="pb-24 text-white">
       <section className="relative px-4 pt-6">
         <div className="mx-auto max-w-6xl">
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#05060a] via-[#10121a] to-[#191c29] p-8 shadow-[0_45px_140px_-60px_rgba(15,23,42,0.85)]">
+          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-black via-[#0a0a0a] to-[#151515] p-3 sm:p-4 shadow-[0_40px_120px_-70px_rgba(0,0,0,0.8)]">
             <div className="absolute inset-0">
-              <div className="absolute -right-28 -top-24 h-64 w-64 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.28),_transparent_65%)] blur-3xl" />
-              <div className="absolute -bottom-32 left-8 h-72 w-72 rounded-full bg-[radial-gradient(circle,_rgba(56,189,248,0.22),_transparent_65%)] blur-3xl" />
+              <div className="absolute -right-24 -top-20 h-56 w-56 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.08),_transparent_65%)] blur-3xl" />
+              <div className="absolute -bottom-28 left-6 h-64 w-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.06),_transparent_70%)] blur-3xl" />
             </div>
-            <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-              <div className="max-w-2xl space-y-6">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.35em] text-white/70 backdrop-blur">
+            <div className="relative flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-2xl space-y-2.5">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.26em] text-white/60 sm:px-2.5 sm:text-[10px] sm:tracking-[0.28em]">
                   Skill library
                 </div>
-                <div className="space-y-3">
-                  <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl">Your skills headquarters</h1>
-                  <p className="text-sm leading-relaxed text-white/70 sm:text-base">
+                <div className="space-y-1 sm:space-y-1.5">
+                  <h1 className="text-lg font-semibold tracking-tight text-white sm:text-2xl">Your skills headquarters</h1>
+                  <p className="text-[10px] leading-relaxed text-white/60 sm:text-xs">
                     Orchestrate every ability you&apos;re building. Track categories, link monuments, and open the drawer to spin up something new in seconds.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-3">
+                <div className="flex flex-wrap gap-1.5">
                   <Button
                     onClick={() => setOpen(true)}
-                    className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-slate-900 shadow-[0_15px_40px_-20px_rgba(148,163,184,0.9)] transition hover:bg-white/90"
+                    className="h-7 rounded-full bg-white px-2 text-[10px] font-semibold text-slate-900 shadow-[0_12px_30px_-18px_rgba(255,255,255,0.35)] transition hover:bg-white/90 sm:h-8 sm:px-2.5 sm:text-[11px]"
                   >
-                    <Plus className="mr-2 h-4 w-4" />
+                    <Plus className="mr-1 h-3 w-3 sm:mr-1.5" />
                     Add a skill
                   </Button>
                   <Button
                     asChild
                     variant="outline"
                     size="sm"
-                    className="rounded-full border-white/30 bg-white/10 px-4 text-sm font-semibold text-white backdrop-blur hover:border-white/40 hover:bg-white/15"
+                    className="h-7 rounded-full border-white/25 bg-white/5 px-2 text-[10px] font-semibold text-white/80 hover:border-white/40 hover:bg-white/10 sm:h-8 sm:px-2.5 sm:text-[11px]"
                   >
                     <Link href="/dashboard">Return to dashboard</Link>
                   </Button>
                 </div>
               </div>
-              <dl className="grid gap-4 sm:grid-cols-2">
+              <dl className="grid gap-2 sm:grid-cols-2 sm:gap-3">
                 {heroStats.map(({ label, value, description, icon: Icon }) => (
                   <div
                     key={label}
-                    className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-5 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur transition hover:border-white/20 hover:bg-white/10"
+                    className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-2.5 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur transition hover:border-white/20 hover:bg-white/10 sm:p-3"
                   >
                     <div className="pointer-events-none absolute -right-12 -top-12 h-28 w-28 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.14),_transparent_60%)] opacity-0 transition group-hover:opacity-100" />
                     <div className="relative flex items-start justify-between gap-3">
                       <div>
-                        <dt className="text-xs font-medium uppercase tracking-[0.25em] text-white/60">{label}</dt>
-                        <dd className="mt-3 text-2xl font-semibold text-white">{value}</dd>
+                        <dt className="text-[9px] font-medium uppercase tracking-[0.2em] text-white/50 sm:text-[10px] sm:tracking-[0.22em]">{label}</dt>
+                        <dd className="mt-1 text-base font-semibold text-white sm:text-lg">{value}</dd>
                       </div>
-                      <span className="flex size-9 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/80">
-                        <Icon className="h-4 w-4" aria-hidden="true" />
+                      <span className="flex size-6 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/70 sm:size-7">
+                        <Icon className="h-3 w-3" aria-hidden="true" />
                       </span>
                     </div>
-                    <p className="relative mt-3 text-xs leading-relaxed text-white/60">{description}</p>
+                    <p className="relative mt-1 text-[9px] leading-relaxed text-white/50 sm:text-[10px]">{description}</p>
                   </div>
                 ))}
               </dl>
@@ -465,11 +441,11 @@ function SkillsPageContent() {
         </div>
       </section>
 
-      <section className="relative z-[1] -mt-12 px-4">
+      <section className="relative z-[1] -mt-7 px-4 sm:-mt-8">
         <div className="mx-auto max-w-6xl">
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0d0f18]/90 p-5 shadow-[0_40px_120px_-70px_rgba(15,23,42,0.85)] backdrop-blur">
+          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/90 p-2.5 shadow-[0_35px_100px_-80px_rgba(0,0,0,0.85)] backdrop-blur sm:p-3">
             <div className="absolute inset-0">
-              <div className="absolute -left-16 top-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(79,70,229,0.18),_transparent_65%)] blur-2xl" />
+              <div className="absolute -left-14 top-0 h-36 w-36 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.06),_transparent_65%)] blur-2xl" />
             </div>
             <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:gap-4">
@@ -477,13 +453,13 @@ function SkillsPageContent() {
                   placeholder="Search skills..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="h-12 flex-1 rounded-2xl border border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-white/30 focus:ring-white/30"
+                  className="h-8 flex-1 rounded-2xl border border-white/10 bg-white/5 px-3 text-[10px] text-white placeholder:text-white/35 focus:border-white/30 focus:ring-white/30 sm:h-9 sm:text-[11px]"
                 />
               </div>
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value)}
-                className="h-11 min-w-[180px] rounded-2xl border border-white/15 bg-white/5 px-4 text-sm font-medium text-white/80 focus:border-white/30 focus:outline-none"
+                className="h-8 min-w-[128px] rounded-2xl border border-white/15 bg-white/5 px-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-white/75 focus:border-white/30 focus:outline-none sm:h-9 sm:min-w-[150px] sm:px-2.5 sm:text-[10px] sm:tracking-[0.18em]"
               >
                 <option value="name" className="bg-slate-900 text-white">
                   Alphabetical
@@ -499,7 +475,7 @@ function SkillsPageContent() {
                 </option>
               </select>
             </div>
-            <div className="relative mt-5 flex flex-wrap gap-2">
+            <div className="relative mt-2.5 flex flex-wrap gap-1 sm:mt-3 sm:gap-1.5">
               {allCats.map((cat) => {
                 const count =
                   cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0;
@@ -509,10 +485,10 @@ function SkillsPageContent() {
                     <button
                       type="button"
                       onClick={() => setSelectedCat(cat.id)}
-                      className={`group inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
+                      className={`group inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.16em] transition sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[9px] sm:tracking-[0.18em] ${
                         isActive
                           ? "border-white bg-white text-slate-900 shadow-[0_18px_40px_-28px_rgba(148,163,184,0.85)]"
-                          : "border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:bg-white/10"
+                          : "border-white/10 bg-white/5 text-white/65 hover:border-white/20 hover:bg-white/10"
                       }`}
                     >
                       <span>{cat.name}</span>
