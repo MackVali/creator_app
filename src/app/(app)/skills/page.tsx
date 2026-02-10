@@ -21,6 +21,7 @@ import type { SkillRow } from "@/lib/types/skill";
 import {
   ArrowRight,
   ChevronRight,
+  Goal,
   MoreVertical,
   Plus,
   Sparkles,
