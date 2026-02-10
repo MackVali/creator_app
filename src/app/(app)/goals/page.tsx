@@ -663,6 +663,7 @@ export default function GoalsPage() {
   const [skill, setSkill] = useState<string>("All");
   const [drawer, setDrawer] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
+  const [defaultRoadmapId, setDefaultRoadmapId] = useState<string | null>(null);
   const [roadmapDrawer, setRoadmapDrawer] = useState(false);
   const [selectedRoadmap, setSelectedRoadmap] = useState<Roadmap | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1423,6 +1424,7 @@ export default function GoalsPage() {
 
   const handleEdit = (goal: Goal) => {
     setEditing(goal);
+    setDefaultRoadmapId(null);
     setDrawer(true);
     router.push(`/goals?edit=${goal.id}`);
   };
@@ -1529,7 +1531,13 @@ export default function GoalsPage() {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,80,80,0.12),_transparent_55%)] opacity-60" />
         </div>
         <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 pb-24 pt-10 sm:px-6 lg:px-8">
-          <GoalsHeader stats={goalStats} onCreate={() => setDrawer(true)} />
+          <GoalsHeader
+            stats={goalStats}
+            onCreate={() => {
+              setDefaultRoadmapId(null);
+              setDrawer(true);
+            }}
+          />
           <GoalsUtilityBar
             search={search}
             onSearch={setSearch}
@@ -1577,6 +1585,11 @@ export default function GoalsPage() {
                         onClick={() => {
                           setSelectedRoadmap(roadmap);
                           setRoadmapDrawer(true);
+                        }}
+                        onAddGoal={(roadmapId) => {
+                          setEditing(null);
+                          setDefaultRoadmapId(roadmapId);
+                          setDrawer(true);
                         }}
                       />
                     </div>
@@ -1626,10 +1639,15 @@ export default function GoalsPage() {
           onClose={() => {
             setDrawer(false);
             setEditing(null);
+            setDefaultRoadmapId(null);
             router.replace("/goals");
           }}
-          onAdd={addGoal}
+          onAdd={(goal, context) => {
+            addGoal(goal, context);
+            setDefaultRoadmapId(null);
+          }}
           initialGoal={editing}
+          defaultRoadmapId={defaultRoadmapId}
           monuments={monuments}
           onUpdate={async (goal, context) => {
             const supabase = getSupabaseBrowser();
@@ -1662,6 +1680,7 @@ export default function GoalsPage() {
           }
           onGoalEdit={(goal) => {
             setEditing(goal);
+            setDefaultRoadmapId(null);
             setDrawer(true);
             setRoadmapDrawer(false);
             router.push(`/goals?edit=${goal.id}`);

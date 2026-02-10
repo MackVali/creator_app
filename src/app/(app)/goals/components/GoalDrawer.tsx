@@ -40,6 +40,8 @@ interface GoalDrawerProps {
   onAdd(goal: Goal, context: GoalUpdateContext): void;
   /** Existing goal to edit */
   initialGoal?: Goal | null;
+  /** Preselected roadmap id when creating a new goal */
+  defaultRoadmapId?: string | null;
   /** Callback when updating an existing goal */
   onUpdate?(goal: Goal, context: GoalUpdateContext): void;
   /** Optional delete handler shown only while editing */
@@ -267,6 +269,7 @@ export function GoalDrawer({
   onClose,
   onAdd,
   initialGoal,
+  defaultRoadmapId = null,
   onUpdate,
   onDelete,
   monuments = [],
@@ -379,7 +382,7 @@ export function GoalDrawer({
       setWhy("");
       setMonumentId("");
       monumentSelectionRef.current = "";
-      setRoadmapId("");
+      setRoadmapId(defaultRoadmapId || "");
       setShowCreateRoadmap(false);
       setNewRoadmapTitle("");
       setNewRoadmapEmoji("");
@@ -389,7 +392,7 @@ export function GoalDrawer({
     }
     setRemovedProjectIds([]);
     setRemovedTaskIds([]);
-  }, [initialGoal, open, getMonumentEmojiById]);
+  }, [initialGoal, open, getMonumentEmojiById, defaultRoadmapId]);
 
   useEffect(() => {
     if (monumentSelectionRef.current === monumentId) {

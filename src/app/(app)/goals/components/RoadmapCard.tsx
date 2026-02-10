@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, GripVertical } from "lucide-react";
+import { ChevronDown, GripVertical, Plus } from "lucide-react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -175,6 +175,7 @@ interface RoadmapCardProps {
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  onAddGoal?: (roadmapId: string) => void;
 }
 
 function RoadmapCardImpl({
@@ -186,6 +187,7 @@ function RoadmapCardImpl({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  onAddGoal,
 }: RoadmapCardProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -361,7 +363,7 @@ function RoadmapCardImpl({
             </div>
           </button>
 
-          {open && hasGoals && (
+          {open && (
             <CompactGoalsOverlay
               roadmap={roadmap}
               goals={goals}
@@ -370,6 +372,7 @@ function RoadmapCardImpl({
               onGoalEdit={onGoalEdit}
               onGoalToggleActive={onGoalToggleActive}
               onGoalDelete={onGoalDelete}
+              onAddGoal={onAddGoal}
             />
           )}
         </div>
@@ -423,7 +426,17 @@ function RoadmapCardImpl({
         </div>
 
         {open && (
-          <div className="flex-1">
+          <div className="flex-1 space-y-3">
+            {onAddGoal ? (
+              <button
+                type="button"
+                onClick={() => onAddGoal(roadmap.id)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/[0.04] px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-white/80 transition hover:border-indigo-400/50 hover:text-white"
+              >
+                <Plus className="h-3 w-3" aria-hidden="true" />
+                Add goal
+              </button>
+            ) : null}
             {hasGoals ? (
               <DndContext
                 sensors={dragSensors}
@@ -496,6 +509,7 @@ type CompactGoalsOverlayProps = {
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  onAddGoal?: (roadmapId: string) => void;
 };
 
 function CompactGoalsOverlay({
@@ -506,6 +520,7 @@ function CompactGoalsOverlay({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  onAddGoal,
 }: CompactGoalsOverlayProps) {
   const [mounted, setMounted] = useState(false);
   const [localGoals, setLocalGoals] = useState(goals);
@@ -582,13 +597,25 @@ function CompactGoalsOverlay({
           </p>
         </div>
       </div>
-      <button
+      <div className="flex items-center gap-2">
+        {onAddGoal ? (
+          <button
+            type="button"
+            onClick={() => onAddGoal(roadmap.id)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/[0.05] px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/80 transition hover:border-indigo-400/50 hover:text-white"
+          >
+            <Plus className="h-3 w-3" aria-hidden="true" />
+            Add goal
+          </button>
+        ) : null}
+        <button
         type="button"
         onClick={onClose}
         className="self-start rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70 transition hover:border-white/30 hover:text-white"
       >
         Close
       </button>
+      </div>
     </div>
   );
 
@@ -617,6 +644,10 @@ function CompactGoalsOverlay({
               : undefined
           }
         />
+      ) : localGoals.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/20 bg-white/[0.02] px-4 py-6 text-center text-sm text-white/60">
+          No goals yet
+        </div>
       ) : (
         <DndContext
           sensors={sensors}
