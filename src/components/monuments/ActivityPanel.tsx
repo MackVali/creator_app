@@ -241,8 +241,8 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
 
   return (
     <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101011] to-[#1d1c20] p-6 text-white shadow-[0_30px_110px_-48px_rgba(0,0,0,0.82)] sm:p-7">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(147,197,253,0.16),_transparent_58%)]" />
-      <div className="absolute -top-24 right-10 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_70%)] blur-3xl" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.12),_transparent_58%)]" />
+      <div className="absolute -top-24 right-10 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
       <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
