@@ -1689,6 +1689,13 @@ export default function GoalsPage() {
           onGoalDelete={handleDelete}
           onProjectUpdated={handleProjectUpdated}
           onProjectDeleted={handleProjectDeleted}
+          onAddGoal={(roadmapId) => {
+            setRoadmapDrawer(false);
+            setSelectedRoadmap(null);
+            setEditing(null);
+            setDefaultRoadmapId(roadmapId);
+            setDrawer(true);
+          }}
         />
       </div>
     </ProtectedRoute>

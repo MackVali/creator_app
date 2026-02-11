@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
-import { getSupabaseBrowser } from "@/lib/supabase";
+import { useCallback, useState } from "react";
+import { Plus } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -23,6 +22,7 @@ interface RoadmapDrawerProps {
   onGoalDelete?: (goal: Goal) => void;
   onProjectUpdated?: (goalId: string, projectId: string, updates: Partial<import("../types").Project>) => void;
   onProjectDeleted?: (goalId: string, projectId: string) => void;
+  onAddGoal?: (roadmapId: string) => void;
 }
 
 export function RoadmapDrawer({
@@ -35,6 +35,7 @@ export function RoadmapDrawer({
   onGoalDelete,
   onProjectUpdated,
   onProjectDeleted,
+  onAddGoal,
 }: RoadmapDrawerProps) {
   const [openGoalIds, setOpenGoalIds] = useState<Set<string>>(new Set());
 
@@ -68,15 +69,27 @@ export function RoadmapDrawer({
         className="h-[90vh] w-full max-w-3xl overflow-hidden border border-white/10 bg-[#05070c] text-white shadow-[0_45px_120px_-40px_rgba(5,8,21,0.85)] sm:max-w-4xl"
       >
         <SheetHeader className="border-b border-white/10 px-6 py-5 sm:px-8 sm:py-6">
-          <div className="flex items-center gap-3">
-            {roadmap.emoji && (
-              <span className="text-2xl" aria-hidden="true">
-                {roadmap.emoji}
-              </span>
-            )}
-            <SheetTitle className="text-left text-xl font-semibold text-white tracking-[0.2em] uppercase">
-              {roadmap.title}
-            </SheetTitle>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              {roadmap.emoji && (
+                <span className="text-2xl" aria-hidden="true">
+                  {roadmap.emoji}
+                </span>
+              )}
+              <SheetTitle className="text-left text-xl font-semibold text-white tracking-[0.2em] uppercase">
+                {roadmap.title}
+              </SheetTitle>
+            </div>
+            {onAddGoal ? (
+              <button
+                type="button"
+                onClick={() => onAddGoal(roadmap.id)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/[0.05] px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-white/80 transition hover:border-indigo-400/50 hover:text-white"
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                Add goal
+              </button>
+            ) : null}
           </div>
         </SheetHeader>
         <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-10 pt-6 sm:px-8 sm:pb-12">
