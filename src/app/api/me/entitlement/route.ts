@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-export const runtime = "nodejs";
 
 import { getSupabaseServer } from "@/lib/supabase";
 
