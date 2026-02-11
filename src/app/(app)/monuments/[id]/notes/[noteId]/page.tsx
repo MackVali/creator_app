@@ -104,27 +104,51 @@ export default function MonumentNotePage() {
     }
   };
 
+  const fieldClass =
+    "bg-transparent text-white placeholder:text-white/60 border border-white/20 rounded-[16px] px-4 py-3 text-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50";
+
   return (
-    <main className="p-4 space-y-4">
-      {isLoading ? (
-        <p className="text-sm text-white/60">Loading note…</p>
-      ) : null}
-      <Input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Note title"
-        disabled={isLoading}
-      />
-      <Textarea
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        placeholder="Write your note..."
-        className="min-h-[300px]"
-        disabled={isLoading}
-      />
-      <Button onClick={onSave} disabled={!canSave || isSaving || isLoading} aria-busy={isSaving}>
-        {isSaving ? "Saving…" : "Save"}
-      </Button>
+    <main className="min-h-screen bg-[#010101] text-white px-4 py-10">
+      <div className="mx-auto max-w-4xl space-y-6">
+        <header className="space-y-1">
+          <h1 className="text-3xl font-semibold tracking-tight text-white">
+            {title.trim() || "Untitled note"}
+          </h1>
+        </header>
+
+        <section className="space-y-5">
+          {isLoading ? (
+            <p className="text-sm text-white/70">Loading note…</p>
+          ) : (
+            <>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Title your insight"
+                disabled={isLoading}
+                className={fieldClass + " text-2xl font-semibold tracking-tight"}
+              />
+              <Textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Document what you observed, why it matters, and what comes next..."
+                className={`${fieldClass} min-h-[440px] tracking-tight leading-6 text-base`}
+                disabled={isLoading}
+              />
+            </>
+          )}
+          <div className="flex justify-end pt-4">
+            <Button
+              onClick={onSave}
+              disabled={!canSave || isSaving || isLoading}
+              aria-busy={isSaving}
+              className="h-12 rounded-[18px] border border-white/20 bg-white/10 px-6 text-sm font-semibold uppercase tracking-[0.3em] text-white transition hover:border-white/40 hover:bg-white/20"
+            >
+              {isSaving ? "Saving…" : currentNoteId ? "Update note" : "Save note"}
+            </Button>
+          </div>
+        </section>
+      </div>
     </main>
   );
 }

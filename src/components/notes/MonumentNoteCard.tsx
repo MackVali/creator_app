@@ -27,7 +27,7 @@ export function MonumentNoteCard({ note, monumentId }: MonumentNoteCardProps) {
       className={monumentNoteTileOuterClass}
     >
       <div className={cn(monumentNoteTileInnerClass, "items-center justify-center text-center")}>
-        <p className="line-clamp-3 text-sm font-semibold leading-tight tracking-tight text-slate-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] transition group-hover:text-white">
+        <p className="line-clamp-3 text-sm font-semibold leading-tight tracking-tight text-slate-900 drop-shadow-[0_1px_2px_rgba(255,255,255,0.2)] transition group-hover:text-slate-950">
           {titleLine}
         </p>
       </div>
