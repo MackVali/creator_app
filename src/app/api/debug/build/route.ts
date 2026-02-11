@@ -1,11 +1,10 @@
-export async function GET() {
-  const payload = {
+import { NextResponse } from "next/server";
+
+export function GET() {
+  return NextResponse.json({
     vercel_git_commit_sha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     vercel_env: process.env.VERCEL_ENV ?? null,
-    now: new Date().toISOString(),
-  };
-
-  return new Response(JSON.stringify(payload, null, 2), {
-    headers: { "content-type": "application/json" },
+    node_env: process.env.NODE_ENV ?? null,
+    timestamp: new Date().toISOString(),
   });
 }
