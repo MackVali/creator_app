@@ -408,14 +408,6 @@ function SkillsPageContent() {
                     <Plus className="mr-1 h-3 w-3 sm:mr-1.5" />
                     Add a skill
                   </Button>
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className="h-7 rounded-full border-white/25 bg-white/5 px-2 text-[10px] font-semibold text-white/80 hover:border-white/40 hover:bg-white/10 sm:h-8 sm:px-2.5 sm:text-[11px]"
-                  >
-                    <Link href="/dashboard">Return to dashboard</Link>
-                  </Button>
                 </div>
               </div>
               <dl className="flex flex-wrap gap-2">
