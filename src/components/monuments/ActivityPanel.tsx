@@ -19,15 +19,15 @@ const EVENT_STYLES: Record<MonumentActivityEvent["type"], { icon: ComponentType<
   = {
     note: {
       icon: NotebookPen,
-      badge: "bg-sky-500/20 text-sky-100",
+      badge: "bg-white/10 text-white/85",
     },
     xp: {
       icon: Sparkles,
-      badge: "bg-amber-500/25 text-amber-100",
+      badge: "bg-zinc-200/15 text-zinc-100",
     },
     goal: {
       icon: CheckCircle2,
-      badge: "bg-emerald-500/20 text-emerald-100",
+      badge: "bg-zinc-50/15 text-zinc-100",
     },
   };
 
@@ -241,12 +241,12 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
 
   return (
     <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101011] to-[#1d1c20] p-6 text-white shadow-[0_30px_110px_-48px_rgba(0,0,0,0.82)] sm:p-7">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(147,197,253,0.16),_transparent_58%)]" />
-      <div className="absolute -top-24 right-10 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(59,130,246,0.22),_transparent_70%)] blur-3xl" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.12),_transparent_58%)]" />
+      <div className="absolute -top-24 right-10 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
       <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.32em] text-sky-100/80">
+            <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.32em] text-white/80">
               Momentum
             </span>
             <p className="text-[9px] font-semibold uppercase tracking-[0.32em] text-white/50">
@@ -294,15 +294,15 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
           ) : hasPinnedNotes || hasEvents ? (
             <div className="relative space-y-6">
               {hasPinnedNotes ? (
-                <section className="rounded-2xl border border-sky-400/40 bg-sky-500/10 px-4 py-4 text-sky-50 shadow-[0_10px_45px_-30px_rgba(14,165,233,0.8)]">
+                <section className="rounded-2xl border border-white/20 bg-white/5 px-4 py-4 text-zinc-100 shadow-[0_10px_45px_-30px_rgba(255,255,255,0.35)]">
                   <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-sky-100/80">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/75">
                         Pinned insights
                       </p>
                       <h4 className="text-sm font-semibold">Keep these blueprints within reach</h4>
                     </div>
-                    <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-sky-100/60">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-white/60">
                       {pinnedNotes.length} saved
                     </p>
                   </header>
@@ -329,7 +329,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                               <button
                                 type="button"
                                 onClick={() => togglePin(note.id)}
-                                className="rounded-full border border-sky-300/40 bg-sky-500/10 p-2 text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20"
+                                className="rounded-full border border-white/25 bg-white/10 p-2 text-white transition hover:border-white/60 hover:bg-white/20"
                                 aria-label="Unpin insight"
                               >
                                 <Pin className="size-4 -rotate-45" aria-hidden="true" />
@@ -474,10 +474,10 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                 </div>
               </header>
               <div className="relative h-40 rounded-[22px] border border-white/10 bg-black/30 p-3">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(56,189,248,0.2),_transparent_70%)]" aria-hidden="true" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(255,255,255,0.18),_transparent_70%)]" aria-hidden="true" />
                 <div className="relative flex h-full items-end justify-center">
                   <div
-                    className="w-12 rounded-full bg-gradient-to-t from-cyan-400/70 via-sky-400/70 to-emerald-300/80 shadow-[0_0_25px_rgba(56,189,248,0.4)] transition-all"
+                    className="w-12 rounded-full bg-gradient-to-t from-zinc-700/90 via-zinc-300/80 to-white/95 shadow-[0_0_25px_rgba(255,255,255,0.28)] transition-all"
                     style={{ height: `${thermometerHeight}%` }}
                     aria-hidden="true"
                   />
@@ -492,7 +492,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                       className={cn(
                         "flex items-start gap-3 rounded-2xl border px-4 py-3",
                         reached
-                          ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
+                          ? "border-white/35 bg-white/10 text-white"
                           : "border-white/10 bg-white/5 text-white/70"
                       )}
                     >
