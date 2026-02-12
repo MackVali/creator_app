@@ -58,7 +58,6 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
       <h3 className="mt-2 w-full break-words text-center text-[10px] font-semibold leading-tight">
         NEW MONUMENT
       </h3>
-      <p className="mt-0.5 text-[9px] text-zinc-500">CURATE YOUR PILLAR</p>
     </button>
   );
 
@@ -76,7 +75,6 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
                 <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight opacity-80">
                   NEW MONUMENT
                 </h3>
-                <p className="mt-0.5 text-[9px] text-zinc-500">CURATE YOUR PILLAR</p>
               </button>
             ))
           : monuments.map((m) => (
