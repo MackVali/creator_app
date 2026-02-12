@@ -16,8 +16,11 @@ SELECT
       'name', s.name,
       'icon', COALESCE(s.icon, '💡'),
       'level', COALESCE(s.level, 1),
-      'progress', GREATEST(0, LEAST(100, COALESCE(s.progress, 0)))::int
-    ) ORDER BY COALESCE(s.name, 'Unnamed Skill')
+      'progress', 0,
+      'sort_order', COALESCE(s.sort_order, 0)
+    ) ORDER BY
+      COALESCE(NULLIF(s.sort_order, 0), 2147483647),
+      COALESCE(s.name, 'Unnamed Skill')
   ) FILTER (WHERE s.id IS NOT NULL) as skills
 FROM public.cats c
 LEFT JOIN public.skills s ON c.id = s.cat_id

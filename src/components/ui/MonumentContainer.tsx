@@ -5,17 +5,18 @@ import MonumentGridWithSharedTransition, {
   type Monument as MonumentCard,
 } from "@/components/MonumentGridWithSharedTransition";
 import { MonumentsList } from "@/components/monuments/MonumentsList";
+import { AddMonumentDialog } from "@/components/monuments/AddMonumentDialog";
 
 export function MonumentContainer() {
   return (
     <section className="section mt-2">
-      <div className="mb-3">
+      <div className="mb-3 flex items-center justify-between">
         <Link href="/monuments" className="h-label block">
           Monuments
         </Link>
       </div>
 
-      <MonumentsList limit={8} createHref="/monuments/new">
+      <MonumentsList limit={8} createHref="/monuments/new" renderEmptyChildren>
         {(monuments) => (
           <div className="px-4">
             <MonumentGridWithSharedTransition
@@ -29,7 +30,8 @@ export function MonumentContainer() {
           </div>
         )}
       </MonumentsList>
+
+      <AddMonumentDialog />
     </section>
   );
 }
-

@@ -2,15 +2,20 @@
 
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 
 import CategoryCard from "./CategoryCard";
 import useSkillProgress from "./useSkillProgress";
-import useSkillsData, { type Category } from "./useSkillsData";
+import useSkillsData, { type Category, type Skill } from "./useSkillsData";
 import { deriveInitialIndex } from "./carouselUtils";
 import { updateCatOrder } from "@/lib/data/cats";
+import { createRecord, updateRecord } from "@/lib/db";
+import { useToastHelpers } from "@/components/ui/toast";
+import type { SkillRow } from "@/lib/types/skill";
 
 const FALLBACK_COLOR = "#6366f1";
+const MAX_CATEGORY_SLOTS = 10;
+const DEFAULT_CATEGORY_EMOJI = "⚓";
 
 function parseHex(hex?: string | null) {
   if (!hex) {
@@ -38,11 +43,15 @@ function withAlpha(hex: string | null | undefined, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+const isReorderable = (category: Category) =>
+  category.id !== "uncategorized" && !category.is_locked;
+
 export default function SkillsCarousel() {
-  const { categories: fetchedCategories, skillsByCategory, isLoading } = useSkillsData();
+  const { categories: fetchedCategories, skillsByCategory, isLoading, reload } = useSkillsData();
   const { progressBySkillId } = useSkillProgress();
   const router = useRouter();
   const search = useSearchParams();
+  const toast = useToastHelpers();
 
   const trackRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -57,6 +66,17 @@ export default function SkillsCarousel() {
   >({});
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [draggingSkill, setDraggingSkill] = useState<Skill | null>(null);
+  const [dragOriginCategoryId, setDragOriginCategoryId] = useState<string | null>(null);
+  const [dropTargetCategoryId, setDropTargetCategoryId] = useState<string | null>(null);
+  const [isMovingSkill, setIsMovingSkill] = useState(false);
+  const [isAddCategoryMenuOpen, setIsAddCategoryMenuOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryColor, setNewCategoryColor] = useState(FALLBACK_COLOR);
+  const [newCategoryEmoji, setNewCategoryEmoji] = useState(DEFAULT_CATEGORY_EMOJI);
+  const addCategoryMenuRef = useRef<HTMLDivElement | null>(null);
+  const addCategoryNameRef = useRef<HTMLInputElement | null>(null);
 
   const skeletonCategoryPlaceholders = [0, 1, 2];
   const skeletonChipPlaceholders = [0, 1, 2, 3];
@@ -76,14 +96,138 @@ export default function SkillsCarousel() {
   }, [activeCategory, catOverrides]);
   const canGoPrev = activeIndex > 0;
   const canGoNext = activeIndex < categories.length - 1;
-
-  const firstReorderableIndex = useMemo(
-    () => categories.findIndex((category) => category.id !== "uncategorized"),
+  const actualCategoryCount = useMemo(
+    () => categories.filter((category) => category.id !== "uncategorized").length,
     [categories]
   );
+  const canAddCategory = actualCategoryCount < MAX_CATEGORY_SLOTS;
+
+  useEffect(() => {
+    if (!canAddCategory && isAddCategoryMenuOpen) {
+      setIsAddCategoryMenuOpen(false);
+    }
+  }, [canAddCategory, isAddCategoryMenuOpen]);
+
+  useEffect(() => {
+    if (!isAddCategoryMenuOpen) {
+      setNewCategoryName("");
+      setNewCategoryEmoji(DEFAULT_CATEGORY_EMOJI);
+      setNewCategoryColor(FALLBACK_COLOR);
+    }
+  }, [isAddCategoryMenuOpen]);
+
+  useEffect(() => {
+    if (isAddCategoryMenuOpen) {
+      requestAnimationFrame(() => {
+        addCategoryNameRef.current?.focus();
+      });
+    }
+  }, [isAddCategoryMenuOpen]);
+
+  useEffect(() => {
+    if (!isAddCategoryMenuOpen) return undefined;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (addCategoryMenuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsAddCategoryMenuOpen(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsAddCategoryMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isAddCategoryMenuOpen]);
+
+  const handleSkillDragStart = useCallback((skill: Skill, categoryId: string) => {
+    setDraggingSkill(skill);
+    setDragOriginCategoryId(categoryId);
+  }, []);
+
+  const handleCategoryDragEnter = useCallback(
+    (categoryId: string) => {
+      if (!draggingSkill) return;
+      setDropTargetCategoryId(categoryId);
+    },
+    [draggingSkill]
+  );
+
+  const handleCategoryDragLeave = useCallback(
+    (categoryId: string) => {
+      if (dropTargetCategoryId === categoryId) {
+        setDropTargetCategoryId(null);
+      }
+    },
+    [dropTargetCategoryId]
+  );
+
+  const moveSkillBetweenCategories = useCallback(
+    async (skill: Skill, targetCategoryId: string) => {
+      setIsMovingSkill(true);
+      try {
+        const targetSkills = skillsByCategory[targetCategoryId] ?? [];
+        const nextSortOrder =
+          targetSkills.reduce((max, item) => Math.max(max, item.sort_order ?? 0), 0) + 1;
+        const targetCatId = targetCategoryId === "uncategorized" ? null : targetCategoryId;
+
+        const { error } = await updateRecord<SkillRow>("skills", skill.id, {
+          cat_id: targetCatId,
+          sort_order: nextSortOrder,
+        });
+        if (error) {
+          throw error;
+        }
+        await reload();
+      } catch (error) {
+        console.error("Failed to move skill between categories", error);
+        toast.error("Could not move skill", error instanceof Error ? error.message : "Try again.");
+      } finally {
+        setIsMovingSkill(false);
+      }
+    },
+    [reload, skillsByCategory, toast]
+  );
+
+  const handleSkillDragEnd = useCallback(() => {
+    const skillToMove = draggingSkill;
+    const targetCategoryId = dropTargetCategoryId;
+    const originCategoryId = dragOriginCategoryId;
+    setDraggingSkill(null);
+    setDragOriginCategoryId(null);
+    setDropTargetCategoryId(null);
+
+    if (
+      skillToMove &&
+      targetCategoryId &&
+      originCategoryId &&
+      targetCategoryId !== originCategoryId &&
+      !isMovingSkill
+    ) {
+      void moveSkillBetweenCategories(skillToMove, targetCategoryId);
+    }
+  }, [
+    draggingSkill,
+    dropTargetCategoryId,
+    dragOriginCategoryId,
+    isMovingSkill,
+    moveSkillBetweenCategories,
+  ]);
+
+  const firstReorderableIndex = useMemo(() => categories.findIndex(isReorderable), [categories]);
   const lastReorderableIndex = useMemo(() => {
     for (let idx = categories.length - 1; idx >= 0; idx -= 1) {
-      if (categories[idx]?.id !== "uncategorized") {
+      const category = categories[idx];
+      if (category && isReorderable(category)) {
         return idx;
       }
     }
@@ -300,7 +444,7 @@ export default function SkillsCarousel() {
   }, [scrollToIndex, syncToNearestCard]);
 
   const persistCategoryOrder = useCallback(async (nextCategories: Category[]) => {
-    const reorderable = nextCategories.filter((category) => category.id !== "uncategorized");
+    const reorderable = nextCategories.filter(isReorderable);
     if (reorderable.length === 0) {
       return;
     }
@@ -316,6 +460,51 @@ export default function SkillsCarousel() {
     }
   }, []);
 
+  const handleAddCategoryButtonClick = useCallback(() => {
+    if (!canAddCategory || isCreatingCategory) return;
+    setIsAddCategoryMenuOpen((previous) => {
+      const next = !previous;
+      if (next) {
+        setNewCategoryName("");
+        setNewCategoryColor(activeColor);
+        setNewCategoryEmoji(DEFAULT_CATEGORY_EMOJI);
+      }
+      return next;
+    });
+  }, [activeColor, canAddCategory, isCreatingCategory]);
+
+  const handleCreateCategory = useCallback(async () => {
+    const trimmedName = newCategoryName.trim();
+    if (!trimmedName) {
+      addCategoryNameRef.current?.focus();
+      return;
+    }
+
+    setIsCreatingCategory(true);
+    try {
+      const { data, error } = await createRecord<Category>("cats", {
+        name: trimmedName,
+        color_hex: newCategoryColor,
+        icon: newCategoryEmoji.trim() || null,
+      });
+      if (error || !data) {
+        toast.error("Failed to create category", error?.message || "Please try again.");
+        return;
+      }
+      toast.success("Category created", `${trimmedName} is now available in the carousel.`);
+      reload();
+      setIsAddCategoryMenuOpen(false);
+    } catch (err) {
+      console.error("Failed to create category", err);
+      toast.error(
+        "Failed to create category",
+        err instanceof Error ? err.message : "Please try again."
+      );
+    } finally {
+      setIsCreatingCategory(false);
+    }
+  }, [newCategoryColor, newCategoryEmoji, newCategoryName, reload, toast]);
+
   type ReorderDirection = "left" | "right" | "first" | "last";
 
   const reorderCategory = useCallback(
@@ -326,13 +515,17 @@ export default function SkillsCarousel() {
       setCategories((previous) => {
         const currentIndex = previous.findIndex((category) => category.id === categoryId);
         if (currentIndex === -1) return previous;
+        const currentCategory = previous[currentIndex];
+        if (!currentCategory || !isReorderable(currentCategory)) {
+          return previous;
+        }
         const targetIndex = direction === "left" ? currentIndex - 1 : currentIndex + 1;
-        if (previous[currentIndex]?.id === "uncategorized") return previous;
 
-        const firstReorderableIndex = previous.findIndex((category) => category.id !== "uncategorized");
+        const firstReorderableIndex = previous.findIndex(isReorderable);
         const lastReorderableIndex = (() => {
           for (let idx = previous.length - 1; idx >= 0; idx -= 1) {
-            if (previous[idx]?.id !== "uncategorized") {
+            const category = previous[idx];
+            if (category && isReorderable(category)) {
               return idx;
             }
           }
@@ -349,7 +542,10 @@ export default function SkillsCarousel() {
           if (targetIndex < firstReorderableIndex || targetIndex > lastReorderableIndex) {
             return previous;
           }
-          if (previous[targetIndex]?.id === "uncategorized") return previous;
+          const targetCategory = previous[targetIndex];
+          if (!targetCategory || !isReorderable(targetCategory)) {
+            return previous;
+          }
 
           updated = [...previous];
           [updated[currentIndex], updated[targetIndex]] = [
@@ -399,6 +595,21 @@ export default function SkillsCarousel() {
       }
     },
     [isSavingOrder, persistCategoryOrder]
+  );
+
+  const handleCategoryNameChange = useCallback(
+    (_categoryId: string, _nextName: string) => {
+      reload();
+    },
+    [reload]
+  );
+
+  const handleCategoryDelete = useCallback(
+    (categoryId: string) => {
+      setCategories((previous) => previous.filter((category) => category.id !== categoryId));
+      reload();
+    },
+    [reload]
   );
 
   if (isLoading) {
@@ -454,9 +665,43 @@ export default function SkillsCarousel() {
     );
   }
 
-  if (categories.length === 0) {
-    return <div className="py-8 text-center text-zinc-400">No skills yet</div>;
+  if (!isLoading && categories.length === 0) {
+    const fallbackPlaceholders = [0, 1, 2];
+    return (
+      <div className="relative">
+        <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-4 py-6 shadow-lg sm:px-6">
+          <div className="space-y-1 text-left">
+            <p className="text-xs font-semibold tracking-[0.4em] text-slate-300/70">SKILLS</p>
+            <p className="text-sm text-slate-400">Initializing...</p>
+          </div>
+          <div className="mt-4 flex gap-5 overflow-x-auto px-2 sm:px-3">
+            {fallbackPlaceholders.map((placeholder) => (
+              <div
+                key={placeholder}
+                className="w-[85vw] shrink-0 rounded-[24px] border border-white/5 bg-white/[0.02] p-5 shadow-inner sm:w-[65vw] lg:w-[52vw]"
+                style={{ scrollMarginInline: "12px" }}
+              >
+                <div className="space-y-3">
+                  <div className="h-5 w-3/5 rounded-full bg-white/[0.08]" />
+                  <div className="h-4 w-2/3 rounded-full bg-white/[0.05]" />
+                </div>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {[0, 1, 2, 3].map((chip) => (
+                    <span
+                      key={chip}
+                      className="h-8 w-16 rounded-full bg-white/[0.08]"
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
+
+  const isCreateCategoryDisabled = isCreatingCategory || newCategoryName.trim().length === 0;
 
   return (
     <div
@@ -523,9 +768,11 @@ export default function SkillsCarousel() {
           {categories.map((category, idx) => {
             const isActive = idx === activeIndex;
             const isUncategorized = category.id === "uncategorized";
-            const canMoveLeft = !isUncategorized && idx > firstReorderableIndex && firstReorderableIndex !== -1;
+            const isLocked = Boolean(category.is_locked);
+            const canMoveLeft =
+              !isUncategorized && !isLocked && idx > firstReorderableIndex && firstReorderableIndex !== -1;
             const canMoveRight =
-              !isUncategorized && idx < lastReorderableIndex && lastReorderableIndex !== -1;
+              !isUncategorized && !isLocked && idx < lastReorderableIndex && lastReorderableIndex !== -1;
             return (
               <div
                 key={category.id}
@@ -545,6 +792,12 @@ export default function SkillsCarousel() {
                   colorOverride={getCategoryColor(category)}
                   iconOverride={getCategoryIcon(category)}
                   progressBySkillId={progressBySkillId}
+                  isDropTarget={dropTargetCategoryId === category.id}
+                  isDraggingSkill={Boolean(draggingSkill)}
+                  onSkillDragStart={(skill) => handleSkillDragStart(skill, category.id)}
+                  onSkillDragEnd={handleSkillDragEnd}
+                  onDragCategoryHover={() => handleCategoryDragEnter(category.id)}
+                  onDragCategoryLeave={() => handleCategoryDragLeave(category.id)}
                   menuOpen={openMenuFor === category.id}
                   onMenuOpenChange={(open) => {
                     setOpenMenuFor((current) => {
@@ -574,7 +827,12 @@ export default function SkillsCarousel() {
                       },
                     }))
                   }
-                  onReorder={(direction) => reorderCategory(category.id, direction)}
+                  onNameChange={(name) => handleCategoryNameChange(category.id, name)}
+                  onDeleteCategory={handleCategoryDelete}
+                  onReorder={(direction) => {
+                    if (category.is_locked) return;
+                    reorderCategory(category.id, direction);
+                  }}
                   canMoveLeft={canMoveLeft}
                   canMoveRight={canMoveRight}
                   canMoveToStart={canMoveLeft}
@@ -643,8 +901,141 @@ export default function SkillsCarousel() {
             </button>
           );
         })}
+        {canAddCategory && (
+          <>
+            <div className="inline-flex">
+              <button
+                type="button"
+                className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
+                  isCreatingCategory
+                    ? "border-white/30 bg-white/10 text-white/60 cursor-wait"
+                    : "border-dashed border-white/30 bg-white/5 text-white/80 hover:border-white/50 hover:bg-white/10"
+              } ${isAddCategoryMenuOpen ? "ring-2 ring-white/60" : ""}`}
+              onClick={handleAddCategoryButtonClick}
+              disabled={isCreatingCategory}
+              aria-label="Add a new category"
+              aria-expanded={isAddCategoryMenuOpen}
+              aria-controls="add-category-panel"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add category</span>
+              </button>
+            </div>
+            {isAddCategoryMenuOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+                <div className="absolute inset-0 bg-black/70 backdrop-blur" />
+                <div
+                  ref={addCategoryMenuRef}
+                  id="add-category-panel"
+                  className="relative z-10 w-full max-w-sm rounded-3xl border px-4 py-3 text-white shadow-2xl backdrop-blur"
+                  style={{
+                    background: `linear-gradient(150deg, ${withAlpha(activeColor, 0.35)}, ${withAlpha(
+                      activeColor,
+                      0.08
+                    )})`,
+                    borderColor: withAlpha(activeColor, 0.55),
+                    boxShadow: `0 25px 45px ${withAlpha("#0f172a", 0.55)}, 0 12px 30px ${withAlpha(
+                      activeColor,
+                      0.35
+                    )}`,
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
+                      New category
+                    </p>
+                    <p className="text-base font-semibold">Style & name</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCategoryMenuOpen(false)}
+                    className="rounded-full p-1 text-white/70 transition hover:text-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-3 space-y-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,4fr)] gap-3">
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                        Emoji
+                      </p>
+                      <div className="flex items-center justify-center">
+                        <input
+                          type="text"
+                          value={newCategoryEmoji}
+                          onChange={(event) => setNewCategoryEmoji(event.target.value)}
+                          maxLength={4}
+                          className="aspect-square h-10 w-full max-w-[64px] rounded-[18px] border border-white/20 bg-white/5 px-3 text-center text-lg text-white placeholder-transparent transition focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                          aria-label="Choose an emoji for the category"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="category-name"
+                        className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70"
+                      >
+                        Name
+                      </label>
+                      <input
+                        ref={addCategoryNameRef}
+                        id="category-name"
+                        type="text"
+                        value={newCategoryName}
+                        onChange={(event) => setNewCategoryName(event.target.value)}
+                        placeholder="Example: Flow, Business, Studio"
+                        maxLength={36}
+                        className="w-full rounded-2xl border border-white/20 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/50 transition focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                      Color
+                    </p>
+                    <input
+                      type="color"
+                      value={newCategoryColor}
+                      onChange={(event) => setNewCategoryColor(event.target.value)}
+                      className="h-10 w-10 cursor-pointer rounded-xl border border-white/40 p-0 transition"
+                      aria-label="Pick a color for the new category"
+                    />
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCategoryMenuOpen(false)}
+                    className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/60 transition hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateCategory}
+                    disabled={isCreatingCategory || newCategoryName.trim().length === 0}
+                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] transition ${
+                      isCreatingCategory || newCategoryName.trim().length === 0
+                        ? "cursor-not-allowed bg-white/20 text-white/60"
+                        : "bg-white text-slate-900 shadow-lg shadow-white/40 hover:bg-white/90"
+                    }`}
+                  >
+                    <Plus
+                      className={`h-4 w-4 ${
+                        isCreateCategoryDisabled ? "text-white/60" : "text-slate-900"
+                      }`}
+                    />
+                    Create category
+                  </button>
+                </div>
+              </div>
+            </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
 }
-

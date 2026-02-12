@@ -1,4 +1,6 @@
 import { getSupabaseBrowser } from "../../../lib/supabase";
+import { deleteRecord } from "@/lib/db";
+import { getCurrentUserId } from "@/lib/auth";
 import type { CatRow } from "../types/cat";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -31,6 +33,16 @@ export async function updateCatColor(catId: string, color: string) {
   if (error) throw error;
 }
 
+export async function updateCatName(catId: string, name: string) {
+  const sb = getSupabaseBrowser();
+  if (!sb) throw new Error("Supabase client not available");
+  const { error } = await sb
+    .from("cats")
+    .update({ name })
+    .eq("id", catId);
+  if (error) throw error;
+}
+
 export async function updateCatOrder(catId: string, order: number) {
   const sb = getSupabaseBrowser();
   if (!sb) throw new Error("Supabase client not available");
@@ -49,4 +61,30 @@ export async function updateCatIcon(catId: string, icon: string | null) {
     .update({ icon })
     .eq("id", catId);
   if (error) throw error;
+}
+
+export async function deleteCat(catId: string, options?: { allowLocked?: boolean }) {
+  const sb = getSupabaseBrowser();
+  if (!sb) throw new Error("Supabase client not available");
+
+  const userId = await getCurrentUserId();
+  if (!userId) {
+    throw new Error("User not authenticated");
+  }
+
+  const { error: clearError } = await sb
+    .from("skills")
+    .update({ cat_id: null })
+    .eq("user_id", userId)
+    .eq("cat_id", catId);
+  if (clearError) {
+    throw clearError;
+  }
+
+  const { error } = await deleteRecord("cats", catId, {
+    allowLocked: options?.allowLocked,
+  });
+  if (error) {
+    throw error;
+  }
 }

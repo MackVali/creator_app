@@ -26,33 +26,116 @@ export async function GET() {
   }
 
   // Get skills and categories separately, then join them
-  const [{ data: skillsResponse }, catsResponse] = await Promise.all([
-    supabase
-      .from("skills")
-      .select(
-        "id,name,icon,cat_id,level,monument_id,created_at,updated_at,user_id"
-      )
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false }),
-    supabase
+  const fetchCatsAndSkills = () =>
+    Promise.all([
+      supabase
+        .from("skills")
+        .select(
+          "id,name,icon,cat_id,level,monument_id,created_at,updated_at,user_id,is_default,is_locked"
+        )
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("cats")
+        .select(
+          "id,name,user_id,color_hex,sort_order,icon,is_default,is_locked"
+        )
+        .eq("user_id", user.id)
+        .order("sort_order", { ascending: true, nullsFirst: false }),
+    ]);
+
+  let [skillsResponse, catsResponse] = await fetchCatsAndSkills();
+
+  const shouldSeedDefaults =
+    (catsResponse.data?.length ?? 0) === 0 &&
+    (skillsResponse.data?.length ?? 0) === 0;
+
+  const seedDefaultCatsAndSkills = async () => {
+    const { data: existingCat } = await supabase
       .from("cats")
-      .select("id,name,user_id,color_hex,sort_order,icon")
+      .select("id")
       .eq("user_id", user.id)
-      .order("sort_order", { ascending: true, nullsFirst: false }),
-  ]);
+      .eq("name", "BASIC SKILLS")
+      .maybeSingle();
+
+    let basicCatId = existingCat?.id;
+
+    if (!basicCatId) {
+      const { data: insertedCat } = await supabase
+        .from("cats")
+        .insert({
+          user_id: user.id,
+          name: "BASIC SKILLS",
+          icon: "⚓",
+          color_hex: "#000000",
+          sort_order: 0,
+          is_default: true,
+          is_locked: true,
+        })
+        .select("id")
+        .maybeSingle();
+      basicCatId = insertedCat?.id;
+    }
+
+    if (!basicCatId) {
+      return;
+    }
+
+    const defaultSkills = [
+      { name: "CAREER", icon: "💼" },
+      { name: "FINANCES", icon: "💵" },
+      { name: "HEALTH", icon: "🫀" },
+      { name: "FITNESS", icon: "🦾" },
+    ];
+
+    const { data: existingSkills } = await supabase
+      .from("skills")
+      .select("name")
+      .eq("user_id", user.id)
+      .in(
+        "name",
+        defaultSkills.map((skill) => skill.name)
+      );
+
+    const existingSkillNames = new Set(
+      (existingSkills ?? []).map((skill) => skill.name ?? "")
+    );
+
+    const skillsToInsert = defaultSkills
+      .filter((skill) => !existingSkillNames.has(skill.name))
+      .map((skill) => ({
+        user_id: user.id,
+        name: skill.name,
+        icon: skill.icon,
+        cat_id: basicCatId,
+        level: 1,
+        is_default: true,
+        is_locked: true,
+      }));
+
+    if (skillsToInsert.length > 0) {
+      await supabase.from("skills").insert(skillsToInsert);
+    }
+  };
+
+  if (shouldSeedDefaults) {
+    await seedDefaultCatsAndSkills();
+    [skillsResponse, catsResponse] = await fetchCatsAndSkills();
+  }
 
   // Debug logging for development
   // (commented out to avoid noisy production logs)
   // if (process.env.NODE_ENV !== "production") {
-  //   console.debug("🔍 Debug: skills response length:", skillsResponse?.length || 0);
-  //   console.debug("🔍 Debug: skills response data:", skillsResponse);
+  //   console.debug("🔍 Debug: skills response length:", (skillsResponse.data ?? []).length);
+  //   console.debug("🔍 Debug: skills response data:", skillsResponse.data);
   //   console.debug("🔍 Debug: cats response length:", catsResponse.data?.length || 0);
   //   console.debug("🔍 Debug: cats response data:", catsResponse.data);
   //   console.debug("🔍 Debug: user ID:", user.id);
   // }
 
   // Join the data manually
-  const skillsData = (skillsResponse ?? []).map((skill: SkillRow) => {
+  const skillsRows = skillsResponse.data ?? [];
+  const skillsData = skillsRows.map((skill: SkillRow) => {
     const category = catsResponse.data?.find(
       (cat: {
         id: string;

@@ -1,15 +1,22 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BatteryCharging, Flame } from "lucide-react";
+import { ArrowLeft, BatteryCharging, Flame, MoreHorizontal } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import ActivityPanel from "./ActivityPanel";
 import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
-import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
 import type { MonumentNote } from "@/lib/types/monument-note";
 import { cn } from "@/lib/utils";
+import MonumentEditDialog from "@/components/monuments/MonumentEditDialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
 export interface MonumentDetailMonument {
   id: string;
@@ -24,6 +31,7 @@ interface MonumentDetailProps {
 
 export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
   const { id } = monument;
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   // Always use the compact goal cards on monuments
   const useNewGoalCards = true;
 
@@ -51,6 +59,16 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
 
   return (
     <main className="overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
+      <MonumentEditDialog
+        open={editDialogOpen}
+        monumentId={id}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditDialogOpen(false);
+          }
+        }}
+        onSaved={() => setEditDialogOpen(false)}
+      />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 overflow-x-hidden">
         <Button
           asChild
@@ -75,6 +93,24 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
           <div className="absolute inset-0">
             <div className="absolute inset-x-12 -top-16 h-48 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.18),_transparent_70%)] blur-3xl" />
             <div className="absolute bottom-0 right-0 h-56 w-56 translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.06),_transparent_60%)] blur-3xl" />
+          </div>
+          <div className="absolute top-3 right-3 z-10 flex items-center">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Monument actions"
+                  className="rounded-full border border-white/10 bg-white/5 p-2 text-white/70 transition hover:border-white/20 hover:bg-white/10"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setEditDialogOpen(true)}>
+                  Edit monument
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <div className="relative flex flex-row gap-4 sm:flex-row sm:items-start sm:gap-6">
             <span

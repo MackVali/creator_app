@@ -13,7 +13,7 @@ const defaultEntitlement = {
 };
 
 export async function GET() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const supabase = getSupabaseServer({
     get: (name: string) => cookieStore.get(name),
     set: () => {},

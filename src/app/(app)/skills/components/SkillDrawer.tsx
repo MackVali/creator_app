@@ -10,7 +10,10 @@ export interface Skill {
   progress: number;
   cat_id: string | null;
   monument_id: string | null;
+  sort_order?: number | null;
   created_at?: string | null;
+  is_default?: boolean | null;
+  is_locked?: boolean | null;
 }
 
 export interface Category {
@@ -40,7 +43,7 @@ export function SkillDrawer({
   onUpdate,
 }: SkillDrawerProps) {
   const [name, setName] = useState("");
-  const [emoji, setEmoji] = useState("💡");
+  const [emoji, setEmoji] = useState("");
   const [cat, setCat] = useState("");
   const [newCat, setNewCat] = useState("");
   const [monument, setMonument] = useState("");
@@ -51,12 +54,12 @@ export function SkillDrawer({
   useEffect(() => {
     if (initialSkill) {
       setName(initialSkill.name);
-      setEmoji(initialSkill.icon || "💡");
+      setEmoji(initialSkill.icon ?? "");
       setCat(initialSkill.cat_id || "");
       setMonument(initialSkill.monument_id || "");
     } else {
       setName("");
-      setEmoji("💡");
+      setEmoji("");
       setCat("");
       setNewCat("");
       setMonument("");
@@ -125,19 +128,7 @@ export function SkillDrawer({
           </button>
         </div>
         <form onSubmit={submit} className="flex h-full flex-col gap-3 overflow-y-auto px-4 py-3 sm:gap-4 sm:px-5 sm:py-4">
-          <div className="space-y-2.5">
-            <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-              Skill name
-            </label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              placeholder="e.g. Creative direction"
-              className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
-            />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,4fr)] gap-3">
             <div className="space-y-2.5">
               <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
                 Emoji
@@ -145,26 +136,39 @@ export function SkillDrawer({
               <input
                 value={emoji}
                 onChange={(e) => setEmoji(e.target.value)}
+                placeholder=""
                 className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
               />
             </div>
             <div className="space-y-2.5">
               <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-                Monument
+                Skill name
               </label>
-              <select
-                value={monument}
-                onChange={(e) => setMonument(e.target.value)}
-                className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white/80 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
-              >
-                <option value="">Select...</option>
-                {monuments.map((m) => (
-                  <option key={m.id} value={m.id} className="bg-black text-white">
-                    {m.title}
-                  </option>
-                ))}
-              </select>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                placeholder="e.g. Creative direction"
+                className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
+              />
             </div>
+          </div>
+          <div className="space-y-2.5">
+            <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+              Monument
+            </label>
+            <select
+              value={monument}
+              onChange={(e) => setMonument(e.target.value)}
+              className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white/80 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
+            >
+              <option value="">Select...</option>
+              {monuments.map((m) => (
+                <option key={m.id} value={m.id} className="bg-black text-white">
+                  {m.title}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="space-y-2.5">
             <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">

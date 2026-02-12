@@ -2,8 +2,6 @@
 
 import { useMemo } from "react";
 import { motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
-
 import { useProfile } from "@/lib/hooks/useProfile";
 import { useUserProgress } from "@/lib/hooks/useUserProgress";
 import { calculateLevelProgress } from "@/lib/leveling";
@@ -60,7 +58,13 @@ export function LevelBanner({ className }: LevelBannerProps) {
     >
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-zinc-500/20 via-zinc-400/10 to-zinc-500/20 blur-2xl" />
       <div className="relative z-[1] mb-4 flex flex-wrap items-center gap-3 text-white">
-        <Sparkles className="h-5 w-5 text-zinc-200" />
+        <span
+          role="img"
+          aria-label="Level mark"
+          className="flex h-5 w-5 items-center justify-center text-lg text-zinc-200 drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]"
+        >
+          💠
+        </span>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 text-lg leading-none">{renderedBadges}</div>
           <span className="font-extrabold text-[18px] tracking-wide text-white">LEVEL {levelLabel}</span>

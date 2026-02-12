@@ -62,17 +62,17 @@ VALUES
 ('880e8400-e29b-41d4-a716-446655440008', :my_uid, 'Evening Walk', 'Take a 20-minute walk after dinner', 'HABIT', 'daily', 20, '99de8400-e29b-41d4-a716-446655440003', '990e8400-e29b-41d4-a716-446655440003', NOW(), NOW());
 
 -- Sample Skills
-INSERT INTO skills (id, user_id, name, icon, level, cat_id, created_at, updated_at) VALUES
-('990e8400-e29b-41d4-a716-446655440001', :my_uid, 'Writing', '✍️', 65, 'cc0e8400-e29b-41d4-a716-446655440001', NOW(), NOW()),
-('990e8400-e29b-41d4-a716-446655440002', :my_uid, 'Guitar', '🎸', 35, 'cc0e8400-e29b-41d4-a716-446655440002', NOW(), NOW()),
-('990e8400-e29b-41d4-a716-446655440003', :my_uid, 'Running', '🏃', 55, 'cc0e8400-e29b-41d4-a716-446655440003', NOW(), NOW()),
-('990e8400-e29b-41d4-a716-446655440004', :my_uid, 'Spanish', '🇪🇸', 25, 'cc0e8400-e29b-41d4-a716-446655440004', NOW(), NOW()),
-('990e8400-e29b-41d4-a716-446655440005', :my_uid, 'Business Planning', '💼', 40, 'cc0e8400-e29b-41d4-a716-446655440005', NOW(), NOW()),
-('990e8400-e29b-41d4-a716-446655440006', :my_uid, 'Time Management', '⏰', 60, 'cc0e8400-e29b-41d4-a716-446655440006', NOW(), NOW()),
-('990e8400-e29b-41d4-a716-446655440007', :my_uid, 'Public Speaking', '🎤', 45, 'cc0e8400-e29b-41d4-a716-446655440007', NOW(), NOW()),
-('990e8400-e29b-41d4-a716-446655440008', :my_uid, 'Cooking', '👨‍🍳', 70, 'cc0e8400-e29b-41d4-a716-446655440008', NOW(), NOW()),
-('990e8400-e29b-41d4-a716-446655440009', :my_uid, 'Photography', '📸', 30, 'cc0e8400-e29b-41d4-a716-446655440001', NOW(), NOW()),
-('990e8400-e29b-41d4-a716-446655440010', :my_uid, 'Programming', '💻', 55, 'cc0e8400-e29b-41d4-a716-446655440009', NOW(), NOW());
+INSERT INTO skills (id, user_id, name, icon, level, sort_order, cat_id, created_at, updated_at) VALUES
+('990e8400-e29b-41d4-a716-446655440001', :my_uid, 'Writing', '⚓', 65, 1, 'cc0e8400-e29b-41d4-a716-446655440001', NOW(), NOW()),
+('990e8400-e29b-41d4-a716-446655440002', :my_uid, 'Guitar', '⚓', 35, 2, 'cc0e8400-e29b-41d4-a716-446655440002', NOW(), NOW()),
+('990e8400-e29b-41d4-a716-446655440003', :my_uid, 'Running', '⚓', 55, 3, 'cc0e8400-e29b-41d4-a716-446655440003', NOW(), NOW()),
+('990e8400-e29b-41d4-a716-446655440004', :my_uid, 'Spanish', '⚓', 25, 4, 'cc0e8400-e29b-41d4-a716-446655440004', NOW(), NOW()),
+('990e8400-e29b-41d4-a716-446655440005', :my_uid, 'Business Planning', '⚓', 40, 5, 'cc0e8400-e29b-41d4-a716-446655440005', NOW(), NOW()),
+('990e8400-e29b-41d4-a716-446655440006', :my_uid, 'Time Management', '⚓', 60, 6, 'cc0e8400-e29b-41d4-a716-446655440006', NOW(), NOW()),
+('990e8400-e29b-41d4-a716-446655440007', :my_uid, 'Public Speaking', '⚓', 45, 7, 'cc0e8400-e29b-41d4-a716-446655440007', NOW(), NOW()),
+('990e8400-e29b-41d4-a716-446655440008', :my_uid, 'Cooking', '⚓', 70, 8, 'cc0e8400-e29b-41d4-a716-446655440008', NOW(), NOW()),
+('990e8400-e29b-41d4-a716-446655440009', :my_uid, 'Photography', '⚓', 30, 9, 'cc0e8400-e29b-41d4-a716-440001', NOW(), NOW()),
+('990e8400-e29b-41d4-a716-446655440010', :my_uid, 'Programming', '⚓', 55, 10, 'cc0e8400-e29b-41d4-a716-440009', NOW(), NOW());
 
 -- Sample Monuments
 INSERT INTO monuments (id, user_id, name, description, created_at, updated_at) VALUES

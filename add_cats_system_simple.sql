@@ -55,7 +55,7 @@ SELECT
       'name', s.name,
       'icon', COALESCE(s.icon, '💡'),
       'level', COALESCE(s.level, 1),
-      'progress', GREATEST(0, LEAST(100, COALESCE(s.progress, 0)))::int
+      'progress', 0
     ) ORDER BY s.name
   ) FILTER (WHERE s.id IS NOT NULL) as skills
 FROM public.cats c
@@ -92,7 +92,7 @@ SELECT
   COALESCE(s.level, 1) as level,
   s.cat_id,
   c.name as cat_name,
-  GREATEST(0, LEAST(100, COALESCE(s.progress, 0)))::int as progress
+  0 as progress
 FROM public.skills s
 LEFT JOIN public.cats c ON s.cat_id = c.id;
 
