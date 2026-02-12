@@ -8,6 +8,7 @@ import {
 } from "@/app/api/source/listings/shared";
 import type { PublishResult } from "@/types/source";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { requirePlus } from "@/lib/entitlements/requirePlus";
 
 export const runtime = "nodejs";
 
@@ -29,6 +30,11 @@ type SanitizedMedia = { url: string; type: "text" | "image" | "video" | "link" }
 const ALLOWED_MEDIA_TYPES: SanitizedMedia["type"][] = ["text", "image", "video", "link"];
 
 export async function POST(request: Request) {
+  const gate = await requirePlus();
+  if (gate) {
+    return gate;
+  }
+
   const supabase = await createSupabaseServerClient();
 
   if (!supabase) {

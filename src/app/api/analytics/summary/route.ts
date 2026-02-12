@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { AnalyticsSummary } from "@/lib/analytics/types";
+import { requirePlus } from "@/lib/entitlements/requirePlus";
 
 export async function GET(request: NextRequest) {
+  const gate = await requirePlus();
+  if (gate) {
+    return gate;
+  }
   const url = new URL(request.url);
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");

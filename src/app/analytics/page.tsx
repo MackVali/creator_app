@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { SummaryHeader } from "./_components/SummaryHeader";
+import PlusRoute from "@/components/auth/PlusRoute";
 
 // Lazy load the existing dashboard sections
 const AnalyticsDashboard = dynamic(
@@ -70,7 +71,8 @@ export default function AnalyticsPage() {
   };
 
   return (
-    <div className="relative">
+    <PlusRoute>
+      <div className="relative">
       {/* Sticky Navigation */}
       <nav className="sticky top-0 z-40 border-b border-zinc-900 bg-black/40 backdrop-blur">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
@@ -129,6 +131,7 @@ export default function AnalyticsPage() {
           <div className="mt-4 text-zinc-300">{sidePanelContent}</div>
         </div>
       )}
-    </div>
+      </div>
+    </PlusRoute>
   );
 }

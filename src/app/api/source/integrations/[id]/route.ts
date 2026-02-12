@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { createSupabaseServerClient } from "@/lib/supabase-server"
+import { requirePlus } from "@/lib/entitlements/requirePlus"
 
 export const runtime = "nodejs"
 
@@ -11,6 +12,11 @@ type Params = {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
+  const gate = await requirePlus()
+  if (gate) {
+    return gate
+  }
+
   const { id } = params
 
   if (!id) {

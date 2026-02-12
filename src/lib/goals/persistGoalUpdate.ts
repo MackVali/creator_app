@@ -2,6 +2,47 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import type { GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
 
+export const LIMIT_ERROR_CODES = [
+  "GOAL_LIMIT_REACHED",
+  "PROJECT_LIMIT_REACHED",
+  "PROJECTS_PER_GOAL_LIMIT_REACHED",
+  "TASK_LIMIT_REACHED",
+  "DAY_TYPE_LIMIT_REACHED",
+  "TIME_BLOCK_LIMIT_REACHED",
+  "SKILL_LIMIT_REACHED",
+  "MONUMENT_LIMIT_REACHED",
+] as const;
+export type LimitErrorCode = (typeof LIMIT_ERROR_CODES)[number];
+
+export class LimitReachedError extends Error {
+  public readonly originalError: unknown;
+
+  constructor(public readonly limitCode: LimitErrorCode, originalError: unknown) {
+    super(`Limit reached: ${limitCode}`);
+    this.name = "LimitReachedError";
+    this.originalError = originalError;
+    if (originalError instanceof Error && originalError.stack) {
+      this.stack = originalError.stack;
+    }
+  }
+}
+
+export function getLimitCodeFromError(error: unknown): LimitErrorCode | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  const message =
+    typeof (error as { message?: string }).message === "string"
+      ? (error as { message?: string }).message
+      : "";
+  if (!message) {
+    return null;
+  }
+  return (
+    LIMIT_ERROR_CODES.find((code) => message.includes(code)) ?? null
+  );
+}
+
 const STATUS_TO_DB: Record<Goal["status"], string> = {
   Active: "ACTIVE",
   Completed: "COMPLETED",
@@ -114,6 +155,10 @@ async function syncProjectsAndTasks(
       }))
     );
     if (error) {
+      const limitCode = getLimitCodeFromError(error);
+      if (limitCode) {
+        throw new LimitReachedError(limitCode, error);
+      }
       console.error("Error inserting projects:", error);
     }
   }
@@ -161,6 +206,10 @@ async function syncProjectsAndTasks(
           }))
         );
         if (error) {
+          const limitCode = getLimitCodeFromError(error);
+          if (limitCode) {
+            throw new LimitReachedError(limitCode, error);
+          }
           console.error("Error inserting tasks:", error);
         }
       }

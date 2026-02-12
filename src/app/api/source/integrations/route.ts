@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { createSupabaseServerClient } from "@/lib/supabase-server"
 import type { SourceIntegration } from "@/types/source"
+import { requirePlus } from "@/lib/entitlements/requirePlus"
 
 export const runtime = "nodejs"
 
@@ -35,6 +36,11 @@ const integrationFields =
   "id, provider, display_name, connection_url, publish_url, publish_method, auth_mode, auth_header, headers, payload_template, status, oauth_authorize_url, oauth_token_url, oauth_scopes, oauth_client_id, oauth_access_token, oauth_expires_at, created_at, updated_at"
 
 export async function GET() {
+  const gate = await requirePlus()
+  if (gate) {
+    return gate
+  }
+
   const supabase = await createSupabaseServerClient()
 
   if (!supabase) {
@@ -69,6 +75,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const gate = await requirePlus()
+  if (gate) {
+    return gate
+  }
+
   const supabase = await createSupabaseServerClient()
 
   if (!supabase) {

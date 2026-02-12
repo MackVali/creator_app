@@ -22,6 +22,8 @@ import {
   sanitizePublishResults,
 } from "./shared"
 
+import { requirePlus } from "@/lib/entitlements/requirePlus"
+
 export const runtime = "nodejs"
 
 export type IntegrationRow = {
@@ -48,6 +50,11 @@ export type IntegrationRow = {
 }
 
 export async function GET() {
+  const gate = await requirePlus()
+  if (gate) {
+    return gate
+  }
+
   const supabase = await createSupabaseServerClient()
 
   if (!supabase) {
@@ -83,6 +90,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const gate = await requirePlus()
+  if (gate) {
+    return gate
+  }
+
   const supabase = await createSupabaseServerClient()
 
   if (!supabase) {

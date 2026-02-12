@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 import { getSupabaseServer } from "@/lib/supabase";
 
 const defaultEntitlement = {
-  tier: "FREE",
+  tier: "CREATOR",
   is_active: false,
   current_period_end: null,
 };
