@@ -9,6 +9,25 @@ type DeleteMonumentInput = {
   supabase: SupabaseClient;
 };
 
+type ReassignOrDisconnectInput = {
+  supabase: SupabaseClient;
+  table: string;
+  userId: string;
+  filterColumn: string;
+  monumentId: string;
+  targetColumn: string;
+  uncategorizedId: string;
+};
+
+function isBigintCastError(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  return (
+    error.code === "22P02" ||
+    error.message?.includes("invalid input syntax for type bigint") ||
+    false
+  );
+}
+
 async function ensureUncategorizedMonument({
   monumentId,
   userId,
@@ -51,6 +70,40 @@ async function ensureUncategorizedMonument({
   }
 
   return created.id;
+}
+
+async function reassignOrDisconnectMonumentReference({
+  supabase,
+  table,
+  userId,
+  filterColumn,
+  monumentId,
+  targetColumn,
+  uncategorizedId,
+}: ReassignOrDisconnectInput) {
+  const reassignmentResult = await supabase
+    .from(table)
+    .update({ [targetColumn]: uncategorizedId })
+    .eq("user_id", userId)
+    .eq(filterColumn, monumentId);
+
+  if (!reassignmentResult.error) {
+    return;
+  }
+
+  if (!isBigintCastError(reassignmentResult.error)) {
+    throw new Error(`${table} reassignment failed: ${reassignmentResult.error.message}`);
+  }
+
+  const disconnectResult = await supabase
+    .from(table)
+    .update({ [targetColumn]: null })
+    .eq("user_id", userId)
+    .eq(filterColumn, monumentId);
+
+  if (disconnectResult.error) {
+    throw new Error(`${table} disconnect fallback failed: ${disconnectResult.error.message}`);
+  }
 }
 
 export async function deleteMonumentWithReassignment({
@@ -96,48 +149,72 @@ export async function deleteMonumentWithReassignment({
     }
   }
 
-  const updateOperations = [
-    supabase
-      .from("skills")
-      .update({ monument_id: uncategorizedId })
-      .eq("user_id", userId)
-      .eq("monument_id", monumentId),
-    supabase
-      .from("goals")
-      .update({ monument_id: uncategorizedId })
-      .eq("user_id", userId)
-      .eq("monument_id", monumentId),
-    supabase
-      .from("notes")
-      .update({ monument_id: uncategorizedId })
-      .eq("user_id", userId)
-      .eq("monument_id", monumentId),
-    supabase
-      .from("schedule_instances")
-      .update({ practice_context_monument_id: uncategorizedId })
-      .eq("user_id", userId)
-      .eq("practice_context_monument_id", monumentId),
-    supabase
-      .from("xp_events")
-      .update({ monument_id: uncategorizedId })
-      .eq("user_id", userId)
-      .eq("monument_id", monumentId),
-    supabase
-      .from("monument_skills")
-      .delete()
-      .eq("user_id", userId)
-      .eq("monument_id", monumentId),
-    supabase
-      .from("day_type_time_block_allowed_monuments")
-      .delete()
-      .eq("user_id", userId)
-      .eq("monument_id", monumentId),
-  ];
+  await reassignOrDisconnectMonumentReference({
+    supabase,
+    table: "skills",
+    userId,
+    filterColumn: "monument_id",
+    monumentId,
+    targetColumn: "monument_id",
+    uncategorizedId,
+  });
 
-  const results = await Promise.all(updateOperations);
-  const failedResult = results.find((result) => result.error);
-  if (failedResult?.error) {
-    throw new Error(failedResult.error.message);
+  await reassignOrDisconnectMonumentReference({
+    supabase,
+    table: "goals",
+    userId,
+    filterColumn: "monument_id",
+    monumentId,
+    targetColumn: "monument_id",
+    uncategorizedId,
+  });
+
+  await reassignOrDisconnectMonumentReference({
+    supabase,
+    table: "notes",
+    userId,
+    filterColumn: "monument_id",
+    monumentId,
+    targetColumn: "monument_id",
+    uncategorizedId,
+  });
+
+  await reassignOrDisconnectMonumentReference({
+    supabase,
+    table: "schedule_instances",
+    userId,
+    filterColumn: "practice_context_monument_id",
+    monumentId,
+    targetColumn: "practice_context_monument_id",
+    uncategorizedId,
+  });
+
+  await reassignOrDisconnectMonumentReference({
+    supabase,
+    table: "xp_events",
+    userId,
+    filterColumn: "monument_id",
+    monumentId,
+    targetColumn: "monument_id",
+    uncategorizedId,
+  });
+
+  const { error: deleteMonumentSkillsError } = await supabase
+    .from("monument_skills")
+    .delete()
+    .eq("user_id", userId)
+    .eq("monument_id", monumentId);
+  if (deleteMonumentSkillsError) {
+    throw new Error(deleteMonumentSkillsError.message);
+  }
+
+  const { error: deleteDayTypeAllowlistError } = await supabase
+    .from("day_type_time_block_allowed_monuments")
+    .delete()
+    .eq("user_id", userId)
+    .eq("monument_id", monumentId);
+  if (deleteDayTypeAllowlistError) {
+    throw new Error(deleteDayTypeAllowlistError.message);
   }
 
   const { error: deleteMonumentError } = await supabase
