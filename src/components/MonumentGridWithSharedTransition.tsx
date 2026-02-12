@@ -9,7 +9,6 @@ import {
   type MonumentDetailMonument,
 } from "@/components/monuments/MonumentDetail";
 import { OPEN_MONUMENT_DIALOG_EVENT } from "@/components/monuments/AddMonumentDialog";
-import { useRouter } from "next/navigation";
 
 export interface Monument extends MonumentDetailMonument {
   stats: string; // e.g. "12 Goals"
@@ -21,7 +20,6 @@ interface MonumentGridProps {
 
 export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const router = useRouter();
   const isEmpty = monuments.length === 0;
   const selected = isEmpty ? null : monuments.find((m) => m.id === activeId) || null;
 
@@ -54,11 +52,10 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
       onClick={openDialog}
       className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
     >
-      <div className="text-3xl leading-none">🏛️</div>
-      <h3 className="mt-2 w-full break-words text-center text-[10px] font-semibold leading-tight">
+      <div className="mb-1 text-lg leading-none">🏛️</div>
+      <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight text-zinc-500">
         NEW MONUMENT
       </h3>
-      <p className="mt-0.5 text-[9px] text-zinc-500">CURATE YOUR PILLAR</p>
     </button>
   );
 
@@ -73,10 +70,9 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
                 className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
               >
                 <div className="mb-1 text-lg opacity-60">🏛️</div>
-                <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight opacity-80">
+                <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight text-zinc-500">
                   NEW MONUMENT
                 </h3>
-                <p className="mt-0.5 text-[9px] text-zinc-500">CURATE YOUR PILLAR</p>
               </button>
             ))
           : monuments.map((m) => (
