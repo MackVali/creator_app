@@ -7,13 +7,13 @@ export const runtime = "nodejs";
 import { getSupabaseServer } from "@/lib/supabase";
 
 const defaultEntitlement = {
-  tier: "FREE",
+  tier: "CREATOR",
   is_active: false,
   current_period_end: null,
 };
 
 export async function GET() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const supabase = getSupabaseServer({
     get: (name: string) => cookieStore.get(name),
     set: () => {},

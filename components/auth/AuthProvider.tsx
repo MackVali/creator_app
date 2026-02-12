@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, createContext, useContext } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { initRevenueCatIfCapacitor } from "@/lib/revenuecat/initRevenueCat";
 import type { Session, User } from "@supabase/supabase-js";
 
 const AuthCtx = createContext<{ session: Session | null; user: User | null }>({
@@ -65,6 +66,14 @@ export default function AuthProvider({
       sub?.subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    if (!user?.id) {
+      return
+    }
+
+    void initRevenueCatIfCapacitor(user.id)
+  }, [user?.id])
 
   if (!ready) return null;
   return <AuthCtx.Provider value={{ session, user }}>{children}</AuthCtx.Provider>;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 import { createSupabaseServerClient } from "@/lib/supabase-server"
+import { requirePlus } from "@/lib/entitlements/requirePlus"
 
 import {
   coerceNumber,
@@ -21,6 +22,11 @@ import {
 export const runtime = "nodejs"
 
 export async function GET(request: NextRequest) {
+  const gate = await requirePlus()
+  if (gate) {
+    return gate
+  }
+
   const supabase = await createSupabaseServerClient()
 
   if (!supabase) {

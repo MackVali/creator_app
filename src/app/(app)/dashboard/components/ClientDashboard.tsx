@@ -255,7 +255,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                 border: "1px solid #333",
               }}
             >
-              <div style={{ fontSize: "32px", marginBottom: "8px" }}>⭐</div>
+              <div style={{ fontSize: "32px", marginBottom: "8px" }}>💠</div>
               <div
                 style={{
                   fontWeight: "500",

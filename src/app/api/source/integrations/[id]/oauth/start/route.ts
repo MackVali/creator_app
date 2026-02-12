@@ -3,6 +3,7 @@ import crypto from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 
 import { createSupabaseServerClient } from "@/lib/supabase-server"
+import { requirePlus } from "@/lib/entitlements/requirePlus"
 
 import { isRecord } from "../../../oauth/utils"
 
@@ -15,6 +16,11 @@ type Params = {
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
+  const gate = await requirePlus()
+  if (gate) {
+    return gate
+  }
+
   const { id } = params
 
   if (!id) {

@@ -3,6 +3,7 @@ import type { PostgrestError, PostgrestResponse } from "@supabase/supabase-js";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { startOfDayInTimeZone } from "@/lib/scheduler/timezone";
+import { requirePlus } from "@/lib/entitlements/requirePlus";
 import type {
   AnalyticsActivityEvent,
   AnalyticsHabitSummary,
@@ -161,6 +162,11 @@ type ScheduleSourceType = "PROJECT" | "TASK" | "HABIT";
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export async function GET(request: NextRequest) {
+  const gate = await requirePlus();
+  if (gate) {
+    return gate;
+  }
+
   const url = new URL(request.url);
   const requestedRange = url.searchParams.get("range");
   const range: AnalyticsRange = isAnalyticsRange(requestedRange)

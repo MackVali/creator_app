@@ -56,7 +56,7 @@ export async function POST(request: Request) {
       .eq("id", update.id)
       .eq("user_id", user.id)
       .select(
-        "id, user_id, source_type, status, completed_at, start_utc, end_utc, duration_min"
+        "id, user_id, source_type, source_id, status, completed_at, start_utc, end_utc, duration_min"
       )
       .maybeSingle();
 
@@ -79,6 +79,19 @@ export async function POST(request: Request) {
         data.duration_min,
         data.user_id
       );
+      if (data.source_type === "TASK" && data.source_id) {
+        const { error: taskError } = await supabase
+          .from("tasks")
+          .update({ completed_at: data.completed_at })
+          .eq("id", data.source_id)
+          .eq("user_id", user.id);
+        if (taskError) {
+          errors.push({
+            id: update.id,
+            message: `task sync: ${taskError.message}`,
+          });
+        }
+      }
     }
 
     if (error || status >= 400) {

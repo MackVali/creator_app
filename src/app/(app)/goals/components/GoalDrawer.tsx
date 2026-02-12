@@ -47,6 +47,7 @@ interface GoalDrawerProps {
   monuments?: { id: string; title: string; emoji?: string | null }[];
   roadmaps?: { id: string; title: string; emoji?: string | null }[];
   hideProjects?: boolean;
+  saveDisabled?: boolean;
 }
 
 const PRIORITY_OPTIONS: {
@@ -272,6 +273,7 @@ export function GoalDrawer({
   monuments = [],
   roadmaps = undefined,
   hideProjects = false,
+  saveDisabled = false,
 }: GoalDrawerProps) {
   console.log(
     "🎯 GoalDrawer render - open:",
@@ -1446,7 +1448,7 @@ export function GoalDrawer({
                   type="submit"
                   form={formId}
                   className="flex-1 bg-white text-sm font-semibold text-[#05070c] hover:bg-white/90 disabled:opacity-60 sm:flex-auto"
-                  disabled={!canSubmit || deleteLoading}
+                  disabled={saveDisabled || !canSubmit || deleteLoading}
                 >
                   Save goal
                 </Button>

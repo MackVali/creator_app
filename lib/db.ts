@@ -82,7 +82,8 @@ export async function updateRecord<T>(
 // Generic delete function that ensures user_id matches
 export async function deleteRecord(
   table: string,
-  id: string
+  id: string,
+  options?: { allowLocked?: boolean }
 ): Promise<{ error: PostgrestError | null }> {
   const supabase = getSupabaseBrowser();
   if (!supabase) {
@@ -91,6 +92,30 @@ export async function deleteRecord(
     };
   }
   const userId = await getUserId();
+
+  const tablesWithLock = ["skills", "cats"];
+  const allowLocked = options?.allowLocked ?? false;
+  if (!allowLocked && tablesWithLock.includes(table)) {
+    const {
+      data: lockedRow,
+      error: selectError,
+    } = await supabase
+      .from(table)
+      .select("id,is_locked")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (selectError) {
+      return { error: selectError };
+    }
+
+    if (lockedRow?.is_locked) {
+      return {
+        error: { message: "Locked record" } as PostgrestError,
+      };
+    }
+  }
 
   const { error } = await supabase
     .from(table)

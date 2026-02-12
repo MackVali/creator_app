@@ -6,6 +6,7 @@ export interface Skill {
   icon?: string | null;
   cat_id?: string | null;
   monument_id?: string | null;
+  sort_order?: number | null;
 }
 
 export async function getSkillsForUser(userId: string): Promise<Skill[]> {
@@ -16,8 +17,9 @@ export async function getSkillsForUser(userId: string): Promise<Skill[]> {
 
   const { data, error } = await supabase
     .from("skills")
-    .select("id, name, icon, cat_id, monument_id")
+    .select("id, name, icon, cat_id, monument_id, sort_order")
     .eq("user_id", userId)
+    .order("sort_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -31,5 +33,6 @@ export async function getSkillsForUser(userId: string): Promise<Skill[]> {
     icon: icon ?? null,
     cat_id: cat_id ?? null,
     monument_id: monument_id ?? null,
+    sort_order: sort_order ?? null,
   }));
 }

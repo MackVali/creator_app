@@ -121,6 +121,7 @@ function SkillCompactCard({
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-40 border border-white/10 bg-[#0f111a]/95 text-white">
           <DropdownMenuItem
+            disabled={skill.is_locked}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -129,15 +130,17 @@ function SkillCompactCard({
           >
             Edit skill
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              handleRemoveSkill(skill);
-            }}
-          >
-            Remove skill
-          </DropdownMenuItem>
+          {!skill.is_locked && (
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleRemoveSkill(skill);
+              }}
+            >
+              Remove skill
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </Link>
@@ -184,6 +187,9 @@ function SkillsPageContent() {
           cat_id: s.cat_id,
           monument_id: s.monument_id,
           created_at: s.created_at,
+          is_default: s.is_default ?? false,
+          is_locked: s.is_locked ?? false,
+          sort_order: s.sort_order ?? null,
         }));
         setSkills(formattedSkills);
 
@@ -267,12 +273,21 @@ function SkillsPageContent() {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const catIdToUse =
       skill.cat_id && uuidRegex.test(skill.cat_id) ? skill.cat_id : null;
+    const highestSortOrderInCategory = skills
+      .filter((existing) => {
+        const existingCategory = existing.cat_id || "";
+        const newCategory = catIdToUse || "";
+        return existingCategory === newCategory;
+      })
+      .reduce((max, existing) => Math.max(max, existing.sort_order ?? 0), 0);
+    const nextSortOrder = highestSortOrderInCategory + 1;
 
     const { data, error } = await createRecord<SkillRow>("skills", {
       name: skill.name,
       icon: skill.icon,
       level: skill.level,
       cat_id: catIdToUse,
+      sort_order: nextSortOrder,
       monument_id: skill.monument_id ?? null,
     });
     if (error) {
@@ -291,6 +306,7 @@ function SkillsPageContent() {
           id: data!.id,
           cat_id: catIdToUse,
           monument_id: skill.monument_id ?? null,
+          sort_order: data!.sort_order ?? nextSortOrder,
           created_at: data!.created_at,
         },
       ];
@@ -310,6 +326,10 @@ function SkillsPageContent() {
     }
   };
   const addCategory = async (name: string): Promise<Category | null> => {
+    if (categories.length >= 10) {
+      toast.error("Limit reached", "You can have up to 10 categories.");
+      return null;
+    }
     const { data, error } = await createRecord<Category>("cats", { name });
     if (error || !data) {
       console.error("Error creating category:", error);
@@ -328,6 +348,13 @@ function SkillsPageContent() {
     setOpen(true);
   };
   const handleRemoveSkill = async (skill: Skill) => {
+    if (skill.is_locked) {
+      toast.error(
+        "Locked skill",
+        "This skill is part of your BASIC SKILLS foundation and can't be removed."
+      );
+      return;
+    }
     const confirmed = window.confirm(
       `Remove "${skill.name}"? This will permanently delete the skill.`
     );

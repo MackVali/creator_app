@@ -12,6 +12,7 @@ import "./globals.css";
 import ClientProviders from "@/components/ClientProviders";
 import ErrorBoundary from "@/components/debug/ErrorBoundary";
 import AuthProvider from "@/components/auth/AuthProvider";
+import EntitlementProvider from "@/components/entitlement/EntitlementProvider";
 import React from "react";
 
 export default function RootLayout({
@@ -24,9 +25,11 @@ export default function RootLayout({
       <body className="flex min-h-screen flex-col">
         <ErrorBoundary>
           <AuthProvider>
-            <ClientProviders>
-              <main className="flex-1">{children}</main>
-            </ClientProviders>
+            <EntitlementProvider>
+              <ClientProviders>
+                <main className="flex-1">{children}</main>
+              </ClientProviders>
+            </EntitlementProvider>
           </AuthProvider>
         </ErrorBoundary>
       </body>

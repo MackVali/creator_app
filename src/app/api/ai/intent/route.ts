@@ -69,9 +69,82 @@ function normalizeThread(value: unknown): AiThreadPayload[] {
           };
         }
     }
-    return null;
-  })
-  .filter((item): item is AiThreadPayload => item !== null);
+      return null;
+    })
+    .filter((item): item is AiThreadPayload => item !== null);
+}
+
+function getConfiguredLimit(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const CREATOR_PLUS_AI_DAILY_LIMIT = getConfiguredLimit(
+  process.env.CREATOR_PLUS_AI_DAILY_LIMIT,
+  60
+);
+
+const CREATOR_PLUS_AI_MINUTE_LIMIT = getConfiguredLimit(
+  process.env.CREATOR_PLUS_AI_MINUTE_LIMIT,
+  6
+);
+
+const PAID_TIERS = new Set(
+  [
+    "CREATOR PLUS",
+    "MANAGER",
+    "ENTERPRISE",
+    "ADMIN",
+  ].map((value) => value.toUpperCase())
+);
+
+function truncateToUtcDay(date: Date): Date {
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+  );
+}
+
+function truncateToUtcMinute(date: Date): Date {
+  return new Date(
+    Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth(),
+      date.getUTCDate(),
+      date.getUTCHours(),
+      date.getUTCMinutes(),
+      0,
+      0
+    )
+  );
+}
+
+function inferCounterValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  if (typeof value === "object" && value !== null) {
+    const candidates = ["count", "value", "usage", "total"];
+    for (const key of candidates) {
+      const candidate = (value as Record<string, unknown>)[key];
+      if (typeof candidate === "number" && Number.isFinite(candidate)) {
+        return candidate;
+      }
+      if (typeof candidate === "string") {
+        const parsed = Number.parseInt(candidate, 10);
+        if (Number.isFinite(parsed)) {
+          return parsed;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 type ScheduleSnapshotInstance = {
@@ -175,6 +248,111 @@ export async function POST(request: NextRequest) {
         { error: "Prompt must be a non-empty string" },
         { status: 400 }
       );
+    }
+
+    const entitlementResult = await supabase
+      .from("user_entitlements")
+      .select("tier,is_active,current_period_end")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    let tier = "CREATOR";
+    let isActive = false;
+
+    if (entitlementResult.error) {
+      console.error(
+        "AI intent error loading entitlement",
+        entitlementResult.error
+      );
+    } else if (entitlementResult.data) {
+      const storedTier = entitlementResult.data.tier;
+      if (typeof storedTier === "string" && storedTier.trim()) {
+        tier = storedTier.trim();
+      }
+      if (tier.trim().toUpperCase() === "ADMIN") {
+        isActive = true;
+      } else {
+        isActive = Boolean(entitlementResult.data.is_active);
+      }
+    }
+
+    tier = tier.trim();
+    const normalizedTier = tier.toUpperCase();
+    const isPaidTier = PAID_TIERS.has(normalizedTier);
+    const paidActive =
+      normalizedTier === "ADMIN" || (isPaidTier && isActive);
+
+    if (!paidActive) {
+      return NextResponse.json(
+        { error: "AI requires CREATOR PLUS", tier: normalizedTier },
+        { status: 403 }
+      );
+    }
+
+    if (normalizedTier !== "ADMIN") {
+      const dailyLimit = CREATOR_PLUS_AI_DAILY_LIMIT;
+      const minuteLimit = CREATOR_PLUS_AI_MINUTE_LIMIT;
+      const now = new Date();
+      const bucketDay = truncateToUtcDay(now).toISOString();
+      const bucketMinute = truncateToUtcMinute(now).toISOString();
+
+      let dailyCount: number | null = null;
+      try {
+        const dailyResult = await supabase.rpc("increment_usage_counter", {
+          p_key: "ai_intent:day",
+          p_bucket_start: bucketDay,
+        });
+        if (dailyResult.error) {
+          throw dailyResult.error;
+        }
+        dailyCount = inferCounterValue(dailyResult.data);
+      } catch (limitError) {
+        console.error(
+          "AI intent rate limit RPC failed (daily)",
+          limitError
+        );
+      }
+
+      if (dailyCount !== null && dailyCount > dailyLimit) {
+        return NextResponse.json(
+          {
+            error: "Rate limit exceeded",
+            tier: normalizedTier,
+            dailyLimit,
+            minuteLimit,
+          },
+          { status: 429, headers: { "Retry-After": "60" } }
+        );
+      }
+
+      let minuteCount: number | null = null;
+      try {
+        const minuteResult = await supabase.rpc("increment_usage_counter", {
+          p_key: "ai_intent:minute",
+          p_bucket_start: bucketMinute,
+        });
+        if (minuteResult.error) {
+          throw minuteResult.error;
+        }
+        minuteCount = inferCounterValue(minuteResult.data);
+      } catch (limitError) {
+        console.error(
+          "AI intent rate limit RPC failed (minute)",
+          limitError
+        );
+      }
+
+      if (minuteCount !== null && minuteCount > minuteLimit) {
+        return NextResponse.json(
+          {
+            error: "Rate limit exceeded",
+            tier: normalizedTier,
+            dailyLimit,
+            minuteLimit,
+          },
+          { status: 429, headers: { "Retry-After": "60" } }
+        );
+      }
     }
 
     const maybeScope =

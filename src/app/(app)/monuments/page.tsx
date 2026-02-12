@@ -1,10 +1,38 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { MoreVertical } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import MonumentEditDialog from "@/components/monuments/MonumentEditDialog";
 import { MonumentsList } from "@/components/monuments/MonumentsList";
 
 export default function MonumentsPage() {
+  const router = useRouter();
+  const [editingMonumentId, setEditingMonumentId] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+
+  const handleOpenEdit = (id: string) => {
+    setEditingMonumentId(id);
+    setEditDialogOpen(true);
+  };
+
+  const handleCloseEdit = () => {
+    setEditDialogOpen(false);
+    setEditingMonumentId(null);
+  };
+
+  const handleSaved = () => {
+    handleCloseEdit();
+    router.refresh();
+  };
+
   return (
     <main className="p-4 space-y-4">
       <div className="mb-2 flex items-center justify-between">
@@ -30,18 +58,42 @@ export default function MonumentsPage() {
                   {m.emoji || "\uD83C\uDFDB\uFE0F"}
                 </div>
                 <p className="flex-1 truncate font-medium">{m.title}</p>
-                <Link
-                  href={`/monuments/${m.id}/edit`}
-                  aria-label={`Edit ${m.title}`}
-                  className="rounded-full p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
-                >
-                  <MoreVertical className="h-5 w-5" aria-hidden="true" />
-                </Link>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={`Actions for ${m.title}`}
+                      className="rounded-full p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
+                    >
+                      <MoreVertical className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-[160px]">
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        handleOpenEdit(m.id);
+                      }}
+                    >
+                      Edit monument
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </li>
             ))}
           </ul>
         )}
       </MonumentsList>
+
+      <MonumentEditDialog
+        open={editDialogOpen}
+        monumentId={editingMonumentId}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleCloseEdit();
+          }
+        }}
+        onSaved={handleSaved}
+      />
     </main>
   );
 }

@@ -20,7 +20,7 @@ export default function AuthForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [role, setRole] = useState<"CREATOR" | "MANAGER" | "BUSINESS">(
+  const [role, setRole] = useState<"CREATOR" | "MANAGER" | "ENTERPRISE">(
     "CREATOR"
   );
   const [stay, setStay] = useState(true);
@@ -419,9 +419,9 @@ export default function AuthForm() {
                   onSelect={() => {}}
                 />
                 <RoleOption
-                  title="BUSINESS"
+                  title="ENTERPRISE"
                   desc="Enterprise analytics and team management"
-                  selected={role === "BUSINESS"}
+                  selected={role === "ENTERPRISE"}
                   disabled
                   onSelect={() => {}}
                 />

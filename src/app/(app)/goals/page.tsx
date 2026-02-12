@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ArrowRight } from "lucide-react";
@@ -22,8 +22,10 @@ import type { Goal, Project } from "./types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
   persistGoalUpdate,
+  LimitReachedError,
   isGoalCodeColumnMissingError,
 } from "@/lib/goals/persistGoalUpdate";
+import { presentUpgrade } from "@/lib/revenuecat/presentUpgrade";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
@@ -667,7 +669,9 @@ export default function GoalsPage() {
   const [selectedRoadmap, setSelectedRoadmap] = useState<Roadmap | null>(null);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [saveDisabled, setSaveDisabled] = useState(false);
   const [visibleGoalCount, setVisibleGoalCount] = useState(GOAL_BATCH_SIZE);
+  const seenLimitPopupsRef = useRef<Record<string, boolean>>({});
 
   const getMonumentEmoji = useCallback(
     (monumentId?: string | null) => {
@@ -1642,13 +1646,26 @@ export default function GoalsPage() {
                   userId,
                   onUserResolved: setUserId,
                 });
+                updateGoal(goal);
               } catch (err) {
+                if (err instanceof LimitReachedError) {
+                  const code = err.limitCode;
+
+                  if (!seenLimitPopupsRef.current[code]) {
+                    seenLimitPopupsRef.current[code] = true;
+                    await presentUpgrade();
+                  }
+
+                  setSaveDisabled(true);
+                  return; // do NOT call updateGoal
+                }
+
                 console.error("Unexpected error updating goal:", err);
               }
             }
-            updateGoal(goal);
           }}
           onDelete={handleDelete}
+          saveDisabled={saveDisabled}
         />
         <RoadmapDrawer
           open={roadmapDrawer}

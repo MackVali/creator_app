@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { Reorder } from "framer-motion";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { updateCatColor, updateCatIcon } from "@/lib/data/cats";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { updateCatColor, updateCatIcon, updateCatName, deleteCat } from "@/lib/data/cats";
+import { updateSkillsOrder } from "@/lib/data/skills";
 import DraggableSkill from "./DraggableSkill";
 import type { SkillProgressData } from "./useSkillProgress";
 import type { Category, Skill } from "./useSkillsData";
@@ -64,6 +65,8 @@ interface Props {
   progressBySkillId?: Record<string, SkillProgressData>;
   onColorChange?: (color: string) => void;
   onIconChange?: (icon: string | null) => void;
+  onNameChange?: (name: string) => void;
+  onDeleteCategory?: (categoryId: string) => void;
   menuOpen?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
   onReorder?: (direction: "left" | "right" | "first" | "last") => void;
@@ -72,6 +75,12 @@ interface Props {
   canMoveToStart?: boolean;
   canMoveToEnd?: boolean;
   isReordering?: boolean;
+  isDropTarget?: boolean;
+  isDraggingSkill?: boolean;
+  onSkillDragStart?: (skill: Skill) => void;
+  onSkillDragEnd?: (skill: Skill) => void;
+  onDragCategoryHover?: () => void;
+  onDragCategoryLeave?: () => void;
 }
 
 export default function CategoryCard({
@@ -84,6 +93,8 @@ export default function CategoryCard({
   progressBySkillId,
   onColorChange,
   onIconChange,
+  onNameChange,
+  onDeleteCategory,
   menuOpen: menuOpenProp,
   onMenuOpenChange,
   onReorder,
@@ -92,7 +103,18 @@ export default function CategoryCard({
   canMoveToStart,
   canMoveToEnd,
   isReordering,
+  isDropTarget,
+  isDraggingSkill,
+  onSkillDragStart,
+  onSkillDragEnd,
+  onDragCategoryHover,
+  onDragCategoryLeave,
 }: Props) {
+  const isLocked = Boolean(category.is_locked);
+  const isDefaultCategory = Boolean(category.is_default);
+  const isUncategorized = category.id === "uncategorized";
+  const editingRestricted = isLocked && !isDefaultCategory;
+  const canDeleteCategory = !isUncategorized && (!isLocked || isDefaultCategory);
   const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
   const [menuOpenState, setMenuOpenState] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -101,17 +123,35 @@ export default function CategoryCard({
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
   const [icon, setIcon] = useState<string>(iconOverride || category.icon || "");
   const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon || "");
+  const [isSavingSkillOrder, setIsSavingSkillOrder] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState(category.name || "");
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const dragging = useRef(false);
 
+  const menuControlled = menuOpenProp !== undefined;
   const menuOpen = menuOpenProp ?? menuOpenState;
-  const setMenuOpen = (next: boolean | ((prev: boolean) => boolean)) => {
-    setMenuOpenState((prevState) => {
-      const previous = menuOpenProp ?? prevState;
-      const value = typeof next === "function" ? next(previous) : next;
-      onMenuOpenChange?.(value);
-      return value;
-    });
-  };
+
+  const setMenuOpenStateSafe = useCallback(
+    (next: boolean) => {
+      if (menuControlled) {
+        onMenuOpenChange?.(next);
+      } else {
+        setMenuOpenState(next);
+      }
+    },
+    [menuControlled, onMenuOpenChange]
+  );
+
+  const closeMenu = useCallback(() => {
+    setMenuOpenStateSafe(false);
+  }, [setMenuOpenStateSafe]);
+
+  const toggleMenu = useCallback(() => {
+    setMenuOpenStateSafe(!menuOpen);
+  }, [menuOpen, setMenuOpenStateSafe]);
 
   useEffect(() => {
     setColor(colorOverride || category.color_hex || "#000000");
@@ -124,6 +164,41 @@ export default function CategoryCard({
     setIcon(nextIcon);
     setIconDraft(nextIcon);
   }, [category.icon, iconOverride]);
+
+  useEffect(() => {
+    setNameDraft(category.name ?? "");
+  }, [category.name]);
+
+  useEffect(() => {
+    if (editingRestricted) {
+      setPickerOpen(false);
+      setOrderOpen(false);
+      setIconPickerOpen(false);
+      closeMenu();
+    }
+  }, [editingRestricted, closeMenu]);
+
+  const handleSkillReorder = useCallback(
+    (nextSkills: Skill[]) => {
+      setLocalSkills(nextSkills);
+      if (nextSkills.length === 0) return;
+
+      const updates = nextSkills.map((skill, index) => ({
+        id: skill.id,
+        sort_order: index + 1,
+      }));
+
+      setIsSavingSkillOrder(true);
+      void updateSkillsOrder(updates)
+        .catch((error) => {
+          console.error("Failed to save skill order", error);
+        })
+        .finally(() => {
+          setIsSavingSkillOrder(false);
+        });
+    },
+    []
+  );
 
   const extractFirstGlyph = (value: string): string => {
     if (!value) return "";
@@ -160,6 +235,9 @@ export default function CategoryCard({
     const listBg = withAlpha(on === "#fff" ? "#020817" : "#ffffff", 0.16);
     const badgeBg = withAlpha(on === "#fff" ? "#ffffff" : "#0f172a", 0.18);
     const badgeBorder = withAlpha(on === "#fff" ? "#ffffff" : "#0f172a", 0.28);
+    const badgeNameBase = on === "#fff" ? darken("#ffffff", 0.16) : "#0f172a";
+    const badgeNameBg = withAlpha(badgeNameBase, active ? 0.36 : 0.28);
+    const badgeNameBorder = withAlpha(badgeNameBase, active ? 0.52 : 0.38);
     const dropShadow = active
       ? `0 22px 45px ${withAlpha(darken(base, 0.55), 0.42)}, 0 10px 18px ${withAlpha("#0f172a", 0.22)}`
       : "0 14px 30px rgba(15, 23, 42, 0.38), 0 6px 12px rgba(15, 23, 42, 0.24)";
@@ -177,6 +255,8 @@ export default function CategoryCard({
       listBg,
       badgeBg,
       badgeBorder,
+      badgeNameBg,
+      badgeNameBorder,
       dropShadow,
       sheen,
       edgeGlow,
@@ -188,10 +268,16 @@ export default function CategoryCard({
       setPickerOpen(false);
       setOrderOpen(false);
       setIconPickerOpen(false);
+      setRenameOpen(false);
+      setDeleteConfirmOpen(false);
+      setIsDeleting(false);
     }
   }, [menuOpen]);
 
   const handleColorChange = async (newColor: string) => {
+    if (editingRestricted) {
+      return;
+    }
     setColor(newColor);
     try {
       await updateCatColor(category.id, newColor);
@@ -200,11 +286,14 @@ export default function CategoryCard({
       console.error("Failed to update category color", e);
     } finally {
       setPickerOpen(false);
-      setMenuOpen(false);
+      closeMenu();
     }
   };
 
   const handleIconSave = async (nextIcon: string) => {
+    if (editingRestricted) {
+      return;
+    }
     const trimmed = nextIcon.trim();
     const normalized = trimmed ? extractFirstGlyph(trimmed) : "";
     setIcon(normalized);
@@ -216,19 +305,80 @@ export default function CategoryCard({
       console.error("Failed to update category icon", e);
     } finally {
       setIconPickerOpen(false);
-      setMenuOpen(false);
+      closeMenu();
     }
   };
 
+  const handleRenameSave = async () => {
+    if (editingRestricted) {
+      return;
+    }
+    const trimmedName = nameDraft.trim();
+    if (!trimmedName) {
+      return;
+    }
+    if (trimmedName === category.name) {
+      setRenameOpen(false);
+      return;
+    }
+    setIsRenaming(true);
+    try {
+      await updateCatName(category.id, trimmedName);
+      onNameChange?.(trimmedName);
+      setRenameOpen(false);
+      closeMenu();
+    } catch (error) {
+      console.error("Failed to rename category", error);
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  const handleDeleteCategory = useCallback(async () => {
+    if (isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await deleteCat(category.id, {
+        allowLocked: Boolean(category.is_locked),
+      });
+      onDeleteCategory?.(category.id);
+      setDeleteConfirmOpen(false);
+      closeMenu();
+    } catch (error) {
+      console.error("Failed to delete category", error);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [category.id, category.is_locked, closeMenu, isDeleting, onDeleteCategory]);
+
+  const handlePointerEnter = useCallback(() => {
+    if (isDraggingSkill && !isLocked) {
+      onDragCategoryHover?.();
+    }
+  }, [isDraggingSkill, isLocked, onDragCategoryHover]);
+
+  const handlePointerLeave = useCallback(() => {
+    if (isDraggingSkill && !isLocked) {
+      onDragCategoryLeave?.();
+    }
+  }, [isDraggingSkill, isLocked, onDragCategoryLeave]);
+
+  const borderColor = isDropTarget
+    ? withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", 0.6)
+    : palette.frame;
+  const boxShadow = isDropTarget
+    ? `0 0 0 2px ${withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", 0.35)}, ${palette.dropShadow}`
+    : palette.dropShadow;
+
   return (
-    <div className="relative h-full">
+    <div className="relative h-full" onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
       <article
         className="relative flex h-full flex-col rounded-[26px] border px-3 pb-4 pt-5 shadow-lg transition-all duration-200 sm:px-4"
         style={{
           color: palette.on,
           background: palette.surface,
-          borderColor: palette.frame,
-          boxShadow: palette.dropShadow,
+          borderColor,
+          boxShadow,
           transform: active ? "translateY(-2px)" : "translateY(0)",
           opacity: active ? 1 : 0.92,
         }}
@@ -269,10 +419,11 @@ export default function CategoryCard({
                 className="relative inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors"
                 style={{
                   color: palette.on,
-                  backgroundColor: palette.badgeBg,
-                  border: `1px solid ${palette.badgeBorder}`,
+                  backgroundColor: palette.badgeNameBg,
+                  border: `1px solid ${palette.badgeNameBorder}`,
                 }}
-                onClick={() => setMenuOpen((o) => !o)}
+                  onClick={toggleMenu}
+              aria-disabled={editingRestricted && !canDeleteCategory}
               >
                 {icon && <span className="mr-2 text-lg leading-none">{icon}</span>}
                 <span className="pr-3">{category.name}</span>
@@ -282,37 +433,119 @@ export default function CategoryCard({
                   style={{ background: palette.sheen, mixBlendMode: "screen", opacity: active ? 0.55 : 0.4 }}
                 />
               </button>
-              {menuOpen && (
-                <div className="absolute left-0 top-full z-20 mt-2 w-56 rounded-2xl border border-black/10 bg-white/95 p-3 text-sm text-slate-900 shadow-xl backdrop-blur">
-                  {pickerOpen ? (
+            {menuOpen && (
+              <div
+                className="absolute left-0 top-full z-20 mt-2 w-56 rounded-2xl p-3 text-sm text-slate-400 shadow-xl backdrop-blur"
+                style={{
+                  background: `linear-gradient(180deg, ${withAlpha("#0f172a", 0.92)} 0%, ${withAlpha("#0b1220", 0.85)} 100%)`,
+                  border: "1px solid rgba(0, 0, 0, 0.9)",
+                }}
+              >
+                {deleteConfirmOpen ? (
+                  <div className="space-y-3">
+                    <p className="text-xs text-slate-500">
+                      Removing this category moves its skills to the uncategorized list. The built-in skills remain locked.
+                    </p>
+                    <div className="flex justify-between text-xs font-medium uppercase tracking-wide">
+                      <button
+                        type="button"
+                        className="text-slate-500"
+                        onClick={() => setDeleteConfirmOpen(false)}
+                        disabled={isDeleting}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="text-rose-600"
+                        onClick={handleDeleteCategory}
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? "Deleting…" : "Delete category"}
+                      </button>
+                    </div>
+                  </div>
+                ) : editingRestricted ? (
+                  <div className="space-y-3">
+                    {canDeleteCategory ? (
+                      <>
+                        <p className="text-xs text-slate-500">
+                          This locked category can be deleted, but its skills stay intact and move to Uncategorized.
+                        </p>
+                        <button
+                          type="button"
+                          className="block text-left text-sm font-semibold uppercase tracking-wide text-rose-500 underline"
+                          onClick={() => setDeleteConfirmOpen(true)}
+                          disabled={isDeleting}
+                        >
+                          Delete category
+                        </button>
+                      </>
+                    ) : (
+                      <p className="text-xs font-semibold uppercase text-slate-500">Category locked</p>
+                    )}
+                  </div>
+                ) : renameOpen ? (
+                  <div className="space-y-3">
+                    <label className="block text-xs font-semibold uppercase text-slate-500">
+                      Rename category
+                    </label>
                     <input
-                      type="color"
-                      value={color}
-                      onChange={(e) => handleColorChange(e.target.value)}
-                      className="h-24 w-full cursor-pointer rounded border-0 bg-transparent p-0"
+                      type="text"
+                      value={nameDraft}
+                      onChange={(event) => setNameDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          handleRenameSave();
+                        }
+                      }}
+                      autoFocus
+                      className="w-full rounded border border-black/20 bg-transparent px-2 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring focus:ring-slate-300"
+                      placeholder="Category name"
+                      maxLength={80}
                     />
+                    <div className="flex justify-between text-xs font-medium uppercase tracking-wide">
+                      <button
+                        type="button"
+                        className="text-slate-500"
+                        onClick={() => setRenameOpen(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="text-blue-600"
+                        onClick={handleRenameSave}
+                        disabled={isRenaming || nameDraft.trim().length === 0}
+                      >
+                        {isRenaming ? "Saving…" : "Save"}
+                      </button>
+                    </div>
+                  </div>
+                ) : pickerOpen ? (
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => handleColorChange(e.target.value)}
+                    className="h-24 w-full cursor-pointer rounded border-0 bg-transparent p-0"
+                  />
                   ) : iconPickerOpen ? (
                     <div className="space-y-3">
-                      <label className="block text-xs font-semibold uppercase text-slate-500">Choose an emoji</label>
+                      <label className="block text-xs font-semibold uppercase text-slate-500">
+                        Pick an emoji
+                      </label>
                       <input
                         type="text"
                         value={iconDraft}
                         onChange={(e) => setIconDraft(e.target.value)}
                         maxLength={8}
                         className="w-full rounded border border-black/20 p-2 text-base"
+                        placeholder="Type any emoji"
                       />
-                      <div className="flex flex-wrap gap-2">
-                        {["🐱", "🐈", "😺", "🐾", "✨", "🌟", "🧠", "🛠️"].map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => handleIconSave(emoji)}
-                            className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white text-xl shadow-sm transition hover:border-black/20"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Enter a custom emoji and save; we won’t suggest defaults anymore.
+                      </p>
                       <div className="flex justify-end gap-2 text-xs font-medium uppercase">
                         <button
                           type="button"
@@ -399,6 +632,18 @@ export default function CategoryCard({
                     </div>
                   ) : (
                     <div className="space-y-2">
+                      <button
+                        className="block text-left text-sm font-medium underline"
+                        type="button"
+                        onClick={() => {
+                          setNameDraft(category.name ?? "");
+                          setRenameOpen(true);
+                        }}
+                        disabled={editingRestricted}
+                        aria-disabled={editingRestricted}
+                      >
+                        Rename category
+                      </button>
                       <button className="block text-left text-sm font-medium underline" onClick={() => setPickerOpen(true)}>
                         Change color
                       </button>
@@ -411,12 +656,21 @@ export default function CategoryCard({
                       >
                         Change icon
                       </button>
-                      <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
-                        Change order
+                    <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
+                      Change order
+                    </button>
+                    {canDeleteCategory && (
+                      <button
+                        type="button"
+                        className="block text-left text-sm font-medium underline text-rose-500"
+                        onClick={() => setDeleteConfirmOpen(true)}
+                      >
+                        Delete category
                       </button>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
+              </div>
               )}
             </div>
             <span
@@ -430,10 +684,17 @@ export default function CategoryCard({
               {skills.length} skills
             </span>
           </header>
+          {isSavingSkillOrder && (
+            <div className="mb-2 flex justify-end">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-emerald-300/80">
+                Saving order...
+              </p>
+            </div>
+          )}
           <Reorder.Group
             axis="y"
             values={localSkills}
-            onReorder={setLocalSkills}
+            onReorder={handleSkillReorder}
             as="div"
             className="flex-1 overflow-y-auto overscroll-contain rounded-2xl px-3 pb-5 pt-4 backdrop-blur-sm"
             style={{
@@ -460,6 +721,8 @@ export default function CategoryCard({
                   trackColor={palette.track}
                   fillColor={palette.fill}
                   onDragStateChange={onSkillDrag}
+                  onDragStart={() => onSkillDragStart?.(s)}
+                  onDragEnd={() => onSkillDragEnd?.(s)}
                 />
               ))
             )}

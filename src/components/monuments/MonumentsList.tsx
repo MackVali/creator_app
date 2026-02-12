@@ -16,12 +16,14 @@ export interface Monument {
 interface MonumentsListProps {
   limit?: number;
   createHref?: string;
+  renderEmptyChildren?: boolean;
   children: (monuments: Monument[]) => ReactNode;
 }
 
 export function MonumentsList({
   limit,
   createHref = "/monuments/new",
+  renderEmptyChildren = false,
   children,
 }: MonumentsListProps) {
   const [monuments, setMonuments] = useState<Monument[]>([]);
@@ -104,6 +106,10 @@ export function MonumentsList({
   }
 
   if (monuments.length === 0) {
+    if (renderEmptyChildren) {
+      return <>{children([])}</>;
+    }
+
     return <MonumentsEmptyState onAction={() => router.push(createHref)} />;
   }
 
@@ -111,4 +117,3 @@ export function MonumentsList({
 }
 
 export default MonumentsList;
-
