@@ -4,7 +4,6 @@ import { createServerClient } from "@supabase/ssr";
 
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
-  const isProfileSetupRoute = pathname.startsWith("/profile/edit");
 
   console.log(`[Middleware] Processing ${pathname}`);
 
@@ -100,42 +99,6 @@ export async function middleware(req: NextRequest) {
         redirectResponse.cookies.set(cookie);
       });
       return redirectResponse;
-    }
-
-    if (isAuthenticated && user && !isProfileSetupRoute) {
-      const {
-        data: profileData,
-        error: profileError,
-      } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (profileError) {
-        console.error(
-          `[Middleware] Error checking profile for user ${user.id}:`,
-          profileError
-        );
-      }
-
-      if (!profileData) {
-        const redirectUrl = new URL("/profile/edit", req.url);
-        redirectUrl.searchParams.set("onboarding", "1");
-        redirectUrl.searchParams.set(
-          "redirect",
-          pathname + req.nextUrl.search
-        );
-        console.log(
-          `[Middleware] Redirecting to profile setup: ${redirectUrl.toString()}`
-        );
-
-        const redirectResponse = NextResponse.redirect(redirectUrl);
-        res.cookies.getAll().forEach((cookie) => {
-          redirectResponse.cookies.set(cookie);
-        });
-        return redirectResponse;
-      }
     }
 
     console.log(`[Middleware] Allowing access to ${pathname}`);
