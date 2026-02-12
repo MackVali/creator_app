@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
 import { ensureProfileExists } from "@/lib/db";
 
 export default function ProfilePage() {
@@ -12,7 +13,7 @@ export default function ProfilePage() {
   useEffect(() => {
     async function redirectToHandleProfile() {
       if (!user?.id) {
-        router.push("/auth");
+        router.replace("/auth");
         return;
       }
 
@@ -21,27 +22,20 @@ export default function ProfilePage() {
         const profile = await ensureProfileExists(user.id);
         if (profile?.username) {
           // Redirect to handle-based profile route
-          router.push(`/profile/${profile.username}`);
+          router.replace(`/profile/${profile.username}`);
         } else {
           const params = new URLSearchParams({ onboarding: "1", redirect: "/profile" });
-          router.push(`/profile/edit?${params.toString()}`);
+          router.replace(`/profile/edit?${params.toString()}`);
         }
       } catch (err) {
         console.error("Error loading profile:", err);
-        router.push("/dashboard");
+        router.replace("/dashboard");
       }
     }
 
     redirectToHandleProfile();
   }, [user, router]);
 
-  // Show loading while redirecting
-  return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-white/70">Loading your profile...</p>
-      </div>
-    </div>
-  );
+  // Keep redirect loading state visually consistent with profile loading UI.
+  return <ProfileSkeleton />;
 }
