@@ -4,18 +4,23 @@ import { ProfileModulesSkeleton } from "./modules/ProfileModules";
 
 export function ProfileSkeleton() {
   return (
-    <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)]">
+    <div className="relative min-h-screen bg-black pb-[env(safe-area-inset-bottom)]">
       <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute left-1/2 top-[-20%] h-96 w-96 -translate-x-1/2 rounded-full bg-neutral-500/15 blur-[160px]" />
-        <div className="absolute bottom-[-25%] right-[-15%] h-80 w-80 rounded-full bg-neutral-800/15 blur-[180px]" />
+        <div className="absolute left-1/2 top-[-20%] h-96 w-96 -translate-x-1/2 rounded-full bg-white/10 blur-[160px]" />
+        <div className="absolute bottom-[-25%] right-[-15%] h-80 w-80 rounded-full bg-neutral-400/10 blur-[180px]" />
       </div>
 
       <div className="relative mx-auto w-full max-w-6xl px-4 pt-14">
         <article className="relative overflow-hidden rounded-[30px] border border-white/12 bg-black/70 shadow-[0_70px_140px_-45px_rgba(2,6,23,0.9)] backdrop-blur-xl sm:rounded-[38px] md:rounded-[46px]">
           <div className="absolute inset-0" aria-hidden="true">
-            <div className="absolute inset-0 animate-pulse bg-[radial-gradient(circle_at_20%_-10%,rgba(147,197,253,0.3),transparent_55%),radial-gradient(circle_at_90%_10%,rgba(244,114,182,0.28),transparent_62%),linear-gradient(135deg,#020617_0%,#0b1120_45%,#111827_100%)]" />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/70" />
+            <div className="absolute inset-0 animate-pulse bg-[radial-gradient(circle_at_20%_-10%,rgba(255,255,255,0.2),transparent_55%),radial-gradient(circle_at_90%_10%,rgba(156,163,175,0.18),transparent_62%),linear-gradient(140deg,#030303_0%,#0f0f0f_45%,#171717_100%)]" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/25 to-black/75" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.12),_transparent_58%)]" />
+          </div>
+
+          <div className="absolute left-1/2 top-6 h-2 w-[min(72%,520px)] -translate-x-1/2 overflow-hidden rounded-full border border-white/15 bg-white/5">
+            <div className="relative h-full w-2/5 rounded-full bg-gradient-to-r from-white/80 via-white to-white/80" />
+            <div className="pointer-events-none absolute inset-0 animate-pulse bg-[linear-gradient(110deg,transparent_18%,rgba(255,255,255,0.45)_50%,transparent_82%)]" />
           </div>
 
           <div className="relative flex flex-col gap-10 px-5 pb-10 pt-24 sm:gap-12 sm:px-8 sm:pb-12 sm:pt-28 md:px-12 md:pt-32">
@@ -38,7 +43,7 @@ export function ProfileSkeleton() {
 
                 <div className="relative flex flex-col items-center gap-6 overflow-hidden rounded-[30px] border border-white/12 bg-black/65 px-6 py-8 text-center shadow-[0_45px_120px_-45px_rgba(2,6,23,0.85)] backdrop-blur-2xl sm:rounded-[36px] sm:px-8 sm:py-9 lg:flex-row lg:items-start lg:gap-10 lg:px-10 lg:py-10 lg:text-left">
                   <div className="relative mx-auto w-32 sm:w-36 lg:mx-0">
-                    <div className="pointer-events-none absolute inset-0 -z-10 scale-[1.18] rounded-full bg-[conic-gradient(from_140deg,_rgba(255,255,255,0.4)_0%,_rgba(99,102,241,0.25)_45%,_rgba(236,72,153,0.18)_75%,_transparent_100%)] blur-3xl" />
+                    <div className="pointer-events-none absolute inset-0 -z-10 scale-[1.18] rounded-full bg-[conic-gradient(from_140deg,_rgba(255,255,255,0.35)_0%,_rgba(212,212,216,0.2)_45%,_rgba(161,161,170,0.16)_75%,_transparent_100%)] blur-3xl" />
                     <div className="relative aspect-square overflow-hidden rounded-[26px] border border-white/15 bg-white/10 shadow-[0_40px_90px_rgba(2,6,23,0.65)] sm:rounded-[32px]">
                       <div className="h-full w-full animate-pulse bg-gradient-to-br from-white/10 via-white/5 to-white/0" />
                       <div className="pointer-events-none absolute inset-0 rounded-[26px] ring-1 ring-white/10 sm:rounded-[32px]" />
