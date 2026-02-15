@@ -298,6 +298,7 @@ export async function updateProfile(
       dob: profileData.dob || null,
       city: profileData.city || null,
       bio: profileData.bio || null,
+      is_private: profileData.is_private ?? false,
     };
 
     if (profileData.theme_color !== undefined) {
@@ -435,6 +436,7 @@ export async function createProfile(
         theme_color: "#3B82F6",
         font_family: "Inter",
         accent_color: "#8B5CF6",
+        is_private: profileData.is_private ?? false,
       })
       .select()
       .single();

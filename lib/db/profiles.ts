@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { z } from "zod";
+import type { OnboardingUpdate, Profile } from "@/lib/types";
 
 // Profile schema validation
 export const profileSchema = z.object({
@@ -9,9 +10,10 @@ export const profileSchema = z.object({
     .string()
     .regex(/^[a-z0-9_]{3,20}$/)
     .toLowerCase(),
-  dob: z.string().nullable(),
+  dob: z.string().min(1, "Date of birth is required"),
   city: z.string().max(100).nullable(),
   bio: z.string().max(300).nullable(),
+  is_private: z.boolean().optional().default(false),
 });
 
 export type ProfileFormData = z.infer<typeof profileSchema>;
@@ -178,6 +180,89 @@ export async function updateMyProfile(input: ProfileFormData) {
 
     console.error("Error in updateMyProfile:", error);
     return { success: false, error: "An unexpected error occurred" };
+  }
+}
+
+export async function updateMyOnboarding(
+  input: OnboardingUpdate
+): Promise<{ success: boolean; profile?: Profile; error?: string }> {
+  const cookieStore = await cookies();
+  const supabase = getSupabaseServer(cookieStore);
+  if (!supabase) {
+    return { success: false, error: "Supabase not initialized" };
+  }
+
+  const user = await getCurrentUser();
+  if (!user) {
+    return { success: false, error: "Not authenticated" };
+  }
+
+  const updates: Partial<OnboardingUpdate> = {};
+  if (input.onboarding_version !== undefined) {
+    updates.onboarding_version = input.onboarding_version;
+  }
+  if (input.onboarding_step !== undefined) {
+    updates.onboarding_step = input.onboarding_step;
+  }
+  if (input.onboarding_completed_at !== undefined) {
+    updates.onboarding_completed_at = input.onboarding_completed_at;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return { success: false, error: "No onboarding fields provided" };
+  }
+
+  try {
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id,user_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error("Error updating onboarding:", profileError);
+      return {
+        success: false,
+        error: profileError.message ?? "Failed to update onboarding",
+      };
+    }
+
+    let profileRow = profile;
+    if (!profileRow) {
+      profileRow = await ensureProfile(user.id);
+      if (!profileRow) {
+        console.error(
+          "Error updating onboarding: failed to ensure profile exists for user",
+          user.id
+        );
+        return { success: false, error: "Failed to update onboarding" };
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update(updates)
+      .eq("user_id", user.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error updating onboarding:", error);
+      return {
+        success: false,
+        error: error.message ?? "Failed to update onboarding",
+      };
+    }
+
+    if (!data) {
+      console.error("Error updating onboarding: no profile returned");
+      return { success: false, error: "Failed to update onboarding" };
+    }
+
+    return { success: true, profile: data };
+  } catch (error) {
+    console.error("Error updating onboarding:", error);
+    return { success: false, error: "Failed to update onboarding" };
   }
 }
 

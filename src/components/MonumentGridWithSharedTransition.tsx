@@ -9,6 +9,7 @@ import {
   type MonumentDetailMonument,
 } from "@/components/monuments/MonumentDetail";
 import { OPEN_MONUMENT_DIALOG_EVENT } from "@/components/monuments/AddMonumentDialog";
+import { MAX_MONUMENTS } from "@/lib/monuments/constants";
 
 export interface Monument extends MonumentDetailMonument {
   stats: string; // e.g. "12 Goals"
@@ -16,12 +17,17 @@ export interface Monument extends MonumentDetailMonument {
 
 interface MonumentGridProps {
   monuments: Monument[];
+  showNewCard?: boolean;
 }
 
-export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProps) {
+export function MonumentGridWithSharedTransition({
+  monuments,
+  showNewCard = true,
+}: MonumentGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const isEmpty = monuments.length === 0;
   const selected = isEmpty ? null : monuments.find((m) => m.id === activeId) || null;
+  const allowNewMonumentCard = showNewCard && monuments.length < MAX_MONUMENTS;
 
   const previousFocus = useRef<HTMLElement | null>(null);
 
@@ -59,6 +65,18 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
     </button>
   );
 
+  if (!allowNewMonumentCard && isEmpty) {
+    return (
+      <div className="grid grid-cols-4 gap-1">
+        <div className="card flex aspect-square w-full flex-col items-center justify-center p-1">
+          <p className="text-xs text-white/50">
+            Maximum of {MAX_MONUMENTS} monuments reached.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="grid grid-cols-4 gap-1">
@@ -94,7 +112,7 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
                 <p className="mt-0.5 text-[9px] text-zinc-500">{m.stats}</p>
               </motion.button>
             ))}
-        {renderNewMonumentCard()}
+        {allowNewMonumentCard && renderNewMonumentCard()}
       </div>
 
       <AnimatePresence>

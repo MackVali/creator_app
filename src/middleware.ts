@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
+import type { Database } from "@/types/supabase";
+
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
@@ -41,7 +43,7 @@ export async function middleware(req: NextRequest) {
     // Create Supabase client for auth check
     const res = NextResponse.next();
 
-    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+    const supabase = createServerClient<Database>(supabaseUrl, supabaseKey, {
       cookies: {
         get: (name) => req.cookies.get(name)?.value,
         set: (name, value, options) => {
@@ -89,16 +91,20 @@ export async function middleware(req: NextRequest) {
 
     // If session AND path starts with /auth: redirect → ?redirect or /dashboard
     if (isAuthenticated && isAuthRoute) {
-      const redirectTo =
-        req.nextUrl.searchParams.get("redirect") || "/dashboard";
-      console.log(`[Middleware] Redirecting to: ${redirectTo}`);
-      const redirectResponse = NextResponse.redirect(
-        new URL(redirectTo, req.url)
-      );
-      res.cookies.getAll().forEach((cookie) => {
-        redirectResponse.cookies.set(cookie);
-      });
-      return redirectResponse;
+    const requestedRedirect = req.nextUrl.searchParams.get("redirect");
+    const redirectTarget =
+      requestedRedirect && requestedRedirect.startsWith("/")
+        ? requestedRedirect
+        : "/dashboard";
+
+    console.log(`[Middleware] Redirecting to: ${redirectTarget}`);
+    const redirectResponse = NextResponse.redirect(
+      new URL(redirectTarget, req.url)
+    );
+    res.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie);
+    });
+    return redirectResponse;
     }
 
     console.log(`[Middleware] Allowing access to ${pathname}`);

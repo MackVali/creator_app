@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useProfileContext } from "@/components/ProfileProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
+import { updateMyOnboarding } from "@/lib/db/profiles-client";
 import { Profile, ProfileFormData } from "@/lib/types";
 import { uploadAvatar, uploadBanner } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
@@ -19,11 +21,14 @@ export default function ProfileEditPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  const { refreshProfile } = useProfileContext();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [formData, setFormData] = useState<ProfileFormData>({
     name: "",
@@ -31,6 +36,7 @@ export default function ProfileEditPage() {
     dob: "",
     city: "",
     bio: "",
+    is_private: false,
   });
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -52,18 +58,19 @@ export default function ProfileEditPage() {
         setLoading(true);
         const userProfile = await getProfileByUserId(user.id);
         
-        if (userProfile) {
-          setProfile(userProfile);
-          setFormData({
-            name: userProfile.name || "",
-            username: userProfile.username || "",
-            dob: userProfile.dob || "",
-            city: userProfile.city || "",
-            bio: userProfile.bio || "",
-          });
-          setAvatarPreview(userProfile.avatar_url || null);
-          setBannerPreview(userProfile.banner_url || null);
-        }
+      if (userProfile) {
+        setProfile(userProfile);
+        setFormData({
+          name: userProfile.name || "",
+          username: userProfile.username || "",
+          dob: userProfile.dob || "",
+          city: userProfile.city || "",
+          bio: userProfile.bio || "",
+          is_private: userProfile.is_private ?? false,
+        });
+        setAvatarPreview(userProfile.avatar_url || null);
+        setBannerPreview(userProfile.banner_url || null);
+      }
       } catch (err) {
         console.error("Error loading profile:", err);
         setError("Failed to load profile");
@@ -80,6 +87,32 @@ export default function ProfileEditPage() {
       ...prev,
       [field]: value
     }));
+  };
+
+  const handlePrivacyChange = (checked: boolean) => {
+    setFormData(prev => ({
+      ...prev,
+      is_private: checked
+    }));
+  };
+
+  const validateRequired = () => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.name.trim()) {
+      errors.name = "Name is required";
+    }
+
+    if (!formData.username.trim()) {
+      errors.username = "Username is required";
+    }
+
+    if (!formData.dob.trim()) {
+      errors.dob = "Date of birth is required";
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -108,9 +141,15 @@ export default function ProfileEditPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    setHasAttemptedSubmit(true);
+
     if (!user?.id) {
       setError("Not authenticated");
+      return;
+    }
+
+    if (!validateRequired()) {
+      setError("Please fill out required fields.");
       return;
     }
 
@@ -154,14 +193,42 @@ export default function ProfileEditPage() {
         setAvatarPreview(result.profile.avatar_url || null);
         setBannerPreview(result.profile.banner_url || null);
 
+        if (onboarding) {
+          try {
+            const onboardingRes = await updateMyOnboarding({
+              onboarding_version: 1,
+              onboarding_step: null,
+              onboarding_completed_at: new Date().toISOString(),
+            });
+
+            if (!onboardingRes.success) {
+              console.error(
+                "Failed to persist onboarding completion:",
+                onboardingRes.error
+              );
+              setError(
+                onboardingRes.error ??
+                  "Failed to persist onboarding completion"
+              );
+            }
+          } catch (e) {
+            console.error("Failed to persist onboarding completion:", e);
+          }
+        }
+
+        try {
+          await refreshProfile();
+        } catch (err) {
+          console.error("Failed to refresh profile context:", err);
+        }
+
         const redirectTarget =
           redirectPath && redirectPath.startsWith("/")
             ? redirectPath
             : "/profile";
 
-        // Redirect after a short delay
         setTimeout(() => {
-          router.push(redirectTarget);
+          router.replace(redirectTarget);
         }, 1500);
       } else {
         setError(result.error || "Failed to update profile");
@@ -240,7 +307,7 @@ export default function ProfileEditPage() {
         <Card className="shadow-xl border border-white/5 bg-[#15161A]">
           <CardHeader>
             <CardTitle className="text-center text-2xl">Update Your Profile</CardTitle>
-            <p className="text-center text-zinc-400">
+            <p className="text-center text-zinc-400 text-sm">
               Customize your profile to make it uniquely yours
             </p>
           </CardHeader>
@@ -261,48 +328,65 @@ export default function ProfileEditPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Cover Photo */}
-              <div className="space-y-2">
-                <Label htmlFor="banner" className="text-zinc-200">Cover Photo</Label>
-                <div className="w-full h-40 bg-white/10 rounded-lg overflow-hidden">
-                  {bannerPreview && (
-                    <img
-                      src={bannerPreview}
-                      alt="Cover preview"
-                      className="object-cover w-full h-full"
+              {/* Cover & Profile Photo */}
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                  Cover + Profile
+                </p>
+                <div className="relative">
+                  <label
+                    htmlFor="banner"
+                    className="group block rounded-2xl border border-white/10 bg-white/5 shadow-inner overflow-hidden"
+                  >
+                    <input
+                      id="banner"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleBannerChange}
+                      className="sr-only"
                     />
-                  )}
-                </div>
-                <Input
-                  id="banner"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleBannerChange}
-                  className="bg-black text-white border-zinc-700 file:text-zinc-200"
-                />
-              </div>
+                    <div className="relative h-48 w-full bg-gradient-to-br from-white/10 to-white/0">
+                      {bannerPreview ? (
+                        <img
+                          src={bannerPreview}
+                          alt="Cover preview"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : null}
+                      <div className="absolute inset-0 bg-black/30 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                      <div className="absolute inset-x-0 bottom-2 flex items-center justify-center text-xs font-semibold text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                        Change cover photo
+                      </div>
+                      <div className="absolute inset-x-0 bottom-3 text-center text-xs font-semibold uppercase tracking-[0.35em] text-white/80">
+                        Add a cover photo
+                      </div>
+                    </div>
+                  </label>
 
-              {/* Profile Picture */}
-              <div className="space-y-2">
-                <Label htmlFor="avatar" className="text-zinc-200">Profile Picture</Label>
-                <div className="flex items-center space-x-4">
-                  <Avatar className="h-24 w-24">
-                    {avatarPreview && (
-                      <AvatarImage src={avatarPreview} alt="Avatar preview" />
-                    )}
-                    <AvatarFallback>
-                      {formData.name
-                        ? formData.name.charAt(0)
-                        : formData.username.charAt(0)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <Input
-                    id="avatar"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarChange}
-                    className="bg-black text-white border-zinc-700 file:text-zinc-200"
-                  />
+                  <label
+                    htmlFor="avatar"
+                    className="group absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-[#0F0F12] bg-transparent shadow-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-white/60"
+                  >
+                    <input
+                      id="avatar"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarChange}
+                      className="sr-only"
+                    />
+                    <Avatar className="h-28 w-28 rounded-full border border-white/10 bg-zinc-900/60 ring-4 ring-[#0F0F12] shadow-xl transition duration-200 group-hover:ring-white/60">
+                      {avatarPreview ? (
+                        <AvatarImage src={avatarPreview} alt="Avatar preview" />
+                      ) : (
+                        <AvatarFallback className="text-3xl text-zinc-500">
+                          <User className="h-12 w-12 text-zinc-500" />
+                        </AvatarFallback>
+                      )}
+                    </Avatar>
+                    <div className="pointer-events-none absolute inset-0 flex items-end justify-end p-2 text-[10px] font-semibold uppercase tracking-[0.3em] text-white opacity-0 transition-opacity duration-200 group-hover:opacity-70">
+                      Upload
+                    </div>
+                  </label>
                 </div>
               </div>
 
@@ -310,7 +394,12 @@ export default function ProfileEditPage() {
               <div className="space-y-2">
                 <Label htmlFor="name" className="flex items-center space-x-2">
                   <User className="h-4 w-4 text-zinc-400" />
-                  <span>Full Name</span>
+                  <span>
+                    Full Name
+                    {hasAttemptedSubmit ? (
+                      <span className="text-red-400 ml-1">*</span>
+                    ) : null}
+                  </span>
                 </Label>
                 <Input
                   id="name"
@@ -318,15 +407,27 @@ export default function ProfileEditPage() {
                   value={formData.name}
                   onChange={(e) => handleInputChange("name", e.target.value)}
                   placeholder="Enter your full name"
-                  className="h-12 text-lg bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+                  className={`h-12 text-lg bg-black text-white placeholder:text-zinc-500 ${
+                    hasAttemptedSubmit && fieldErrors.name
+                      ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
+                      : "border-zinc-700 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+                  }`}
                 />
+                {hasAttemptedSubmit && fieldErrors.name ? (
+                  <p className="text-sm text-red-400">{fieldErrors.name}</p>
+                ) : null}
               </div>
 
               {/* Username */}
               <div className="space-y-2">
                 <Label htmlFor="username" className="flex items-center space-x-2">
                   <User className="h-4 w-4 text-zinc-400" />
-                  <span>Username</span>
+                  <span>
+                    Username
+                    {hasAttemptedSubmit ? (
+                      <span className="text-red-400 ml-1">*</span>
+                    ) : null}
+                  </span>
                 </Label>
                 <Input
                   id="username"
@@ -334,11 +435,18 @@ export default function ProfileEditPage() {
                   value={formData.username}
                   onChange={(e) => handleInputChange("username", e.target.value)}
                   placeholder="Choose a unique username"
-                  className="h-12 text-lg bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+                  className={`h-12 text-lg bg-black text-white placeholder:text-zinc-500 ${
+                    hasAttemptedSubmit && fieldErrors.username
+                      ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
+                      : "border-zinc-700 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+                  }`}
                 />
-                  <p className="text-sm text-zinc-400">
-                    This will be your unique identifier: @{formData.username || "username"}
-                  </p>
+                <p className="text-sm text-zinc-400">
+                  This will be your unique identifier: @{formData.username || "username"}
+                </p>
+                {hasAttemptedSubmit && fieldErrors.username ? (
+                  <p className="text-sm text-red-400">{fieldErrors.username}</p>
+                ) : null}
               </div>
 
               {/* Bio */}
@@ -354,24 +462,36 @@ export default function ProfileEditPage() {
                   placeholder="Tell us about yourself..."
                   className="min-h-[100px] text-lg resize-none bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:ring-white/20 focus-visible:ring-offset-0"
                 />
-                <p className="text-sm text-zinc-400">
-                  Keep it concise and engaging. Example: &ldquo;Dad • Creator • Entrepreneur • Philanthropist&rdquo;
-                </p>
               </div>
 
               {/* Date of Birth */}
               <div className="space-y-2">
                 <Label htmlFor="dob" className="flex items-center space-x-2">
                   <Calendar className="h-4 w-4 text-zinc-400" />
-                  <span>Date of Birth</span>
+                  <span>
+                    Date of Birth
+                    {hasAttemptedSubmit ? (
+                      <span className="text-red-400 ml-1">*</span>
+                    ) : null}
+                  </span>
                 </Label>
-                <Input
-                  id="dob"
-                  type="date"
-                  value={formData.dob}
-                  onChange={(e) => handleInputChange("dob", e.target.value)}
-                  className="h-12 text-lg bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
-                />
+                <div className="relative">
+                  <Input
+                    id="dob"
+                    type="date"
+                    value={formData.dob}
+                    onChange={(e) => handleInputChange("dob", e.target.value)}
+                    className={`h-12 w-full rounded-lg border bg-gradient-to-r from-zinc-950 to-zinc-900 text-lg text-white placeholder:text-zinc-500 transition-colors duration-200 appearance-none ${
+                      hasAttemptedSubmit && fieldErrors.dob
+                        ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
+                        : "border-zinc-700 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+                    } pr-12 pl-4`}
+                  />
+                  <Calendar className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-white/70" />
+                </div>
+                {hasAttemptedSubmit && fieldErrors.dob ? (
+                  <p className="text-sm text-red-400">{fieldErrors.dob}</p>
+                ) : null}
               </div>
 
               {/* City */}
@@ -388,6 +508,32 @@ export default function ProfileEditPage() {
                   placeholder="Where are you located?"
                   className="h-12 text-lg bg-black text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:border-zinc-200 focus-visible:ring-white/20"
                 />
+              </div>
+
+              {/* Privacy Toggle */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-zinc-200">
+                    Profile visibility
+                  </span>
+                  <span
+                    className="text-xs uppercase tracking-[0.3em] text-zinc-500"
+                    aria-live="polite"
+                  >
+                    {formData.is_private ? "Private" : "Public"}
+                  </span>
+                </div>
+                <label className="inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="peer sr-only"
+                    checked={formData.is_private ?? false}
+                    onChange={(e) => handlePrivacyChange(e.target.checked)}
+                  />
+                  <span className="relative inline-flex h-6 w-12 flex-none items-center rounded-full bg-zinc-700 transition-colors duration-200 peer-focus-visible:ring-2 peer-focus-visible:ring-white/70 peer-checked:bg-emerald-500">
+                    <span className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 peer-checked:translate-x-5" />
+                  </span>
+                </label>
               </div>
 
               {/* Submit Button */}

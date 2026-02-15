@@ -351,7 +351,7 @@ function SkillsPageContent() {
     if (skill.is_locked) {
       toast.error(
         "Locked skill",
-        "This skill is part of your BASIC SKILLS foundation and can't be removed."
+        "This skill is locked and can't be removed."
       );
       return;
     }

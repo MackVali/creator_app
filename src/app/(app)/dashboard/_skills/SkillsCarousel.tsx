@@ -666,35 +666,24 @@ export default function SkillsCarousel() {
   }
 
   if (!isLoading && categories.length === 0) {
-    const fallbackPlaceholders = [0, 1, 2];
     return (
       <div className="relative">
         <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-4 py-6 shadow-lg sm:px-6">
           <div className="space-y-1 text-left">
             <p className="text-xs font-semibold tracking-[0.4em] text-slate-300/70">SKILLS</p>
-            <p className="text-sm text-slate-400">Initializing...</p>
+            <h3 className="text-xl font-semibold text-white">No skills yet</h3>
+            <p className="text-sm text-slate-400">
+              Set up your skill stack (5 categories, ~25 skills) to personalize CREATOR.
+            </p>
           </div>
-          <div className="mt-4 flex gap-5 overflow-x-auto px-2 sm:px-3">
-            {fallbackPlaceholders.map((placeholder) => (
-              <div
-                key={placeholder}
-                className="w-[85vw] shrink-0 rounded-[24px] border border-white/5 bg-white/[0.02] p-5 shadow-inner sm:w-[65vw] lg:w-[52vw]"
-                style={{ scrollMarginInline: "12px" }}
-              >
-                <div className="space-y-3">
-                  <div className="h-5 w-3/5 rounded-full bg-white/[0.08]" />
-                  <div className="h-4 w-2/3 rounded-full bg-white/[0.05]" />
-                </div>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {[0, 1, 2, 3].map((chip) => (
-                    <span
-                      key={chip}
-                      className="h-8 w-16 rounded-full bg-white/[0.08]"
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="mt-6 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => router.push("/skills")}
+              className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-100 transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+            >
+              VIEW SKILL DASHBOARD
+            </button>
           </div>
         </div>
       </div>

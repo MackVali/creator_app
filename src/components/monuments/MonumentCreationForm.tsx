@@ -16,6 +16,7 @@ import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCatsForUser } from "@/lib/data/cats";
+import { MAX_MONUMENTS } from "@/lib/monuments/constants";
 import type { CatRow } from "@/lib/types/cat";
 import type { SkillRow } from "@/lib/types/skill";
 
@@ -211,6 +212,24 @@ export function MonumentCreationForm({
 
     if (!user) {
       setError("Not authenticated");
+      setLoading(false);
+      return;
+    }
+
+    const { count, error: countError } = await supabase
+      .from("monuments")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id);
+
+    if (countError) {
+      console.error("Failed to count monuments", countError);
+      setError("Unable to verify your monuments right now.");
+      setLoading(false);
+      return;
+    }
+
+    if ((count ?? 0) >= MAX_MONUMENTS) {
+      setError(`You can only have up to ${MAX_MONUMENTS} monuments.`);
       setLoading(false);
       return;
     }

@@ -525,15 +525,71 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               <div
                 style={{
                   textAlign: "center",
-                  padding: "32px",
-                  color: "#808080",
+                padding: "48px 32px",
+                color: "#E0E0E0",
+                background: "#1F1F1F",
+                borderRadius: "16px",
+                border: "1px solid #2E2E2E",
+                boxShadow: "0 12px 24px rgba(0, 0, 0, 0.45)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: "14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "20px",
+                  fontWeight: "700",
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
                 }}
               >
-                No skills found. Create your first skill to get started!
+                No skills yet
               </div>
-            )}
-          </div>
+              <p
+                style={{
+                  margin: 0,
+                  maxWidth: "320px",
+                  fontSize: "14px",
+                  color: "#AEB2B8",
+                  lineHeight: "1.4",
+                }}
+              >
+                Set up your skill stack (5 categories, ~25 skills) to personalize
+                CREATOR.
+              </p>
+              <button
+                type="button"
+                style={{
+                  marginTop: "8px",
+                  padding: "12px 24px",
+                  borderRadius: "999px",
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #F25C5C, #FF9F40, #FFC542)",
+                  color: "#1E1E1E",
+                  fontWeight: "700",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  boxShadow: "0 12px 20px rgba(242, 92, 92, 0.35)",
+                  transition: "transform 0.2s ease",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.transform = "translateY(-1px)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.transform = "translateY(0)")
+                }
+                onClick={() => router.push("/skills")}
+              >
+                LAUNCH SKILLS
+              </button>
+            </div>
+          )}
         </div>
+      </div>
 
         {/* Current Goals Section */}
         <div>

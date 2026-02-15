@@ -357,13 +357,83 @@ export default function SearchFriends({
       });
   };
 
-  const discoveryTitle = dataset.length
-    ? "Looking for someone else?"
-    : `No matches for “${trimmedQuery}”`;
+  const discoveryTitle = hasQuery
+    ? "Search every profile"
+    : dataset.length
+      ? "Looking for someone else?"
+      : `No matches for “${trimmedQuery}”`;
 
-  const discoveryDescription = dataset.length
-    ? "Invite collaborators directly or explore a few creators we think you’ll click with."
-    : "Invite them straight from here or explore creators we handpicked for your scene.";
+  const discoveryDescription = hasQuery
+    ? "We pull matches from every profile on the platform so you can connect with anyone."
+    : dataset.length
+      ? "Invite collaborators directly or explore a few creators we think you’ll click with."
+      : "Invite them straight from here or explore creators we handpicked for your scene.";
+
+  const discoveryResultsTitle = hasQuery
+    ? `Search results for “${trimmedQuery}”`
+    : "Recommended creators";
+
+  const discoveryResultsCount =
+    hasQuery && discovery.length > 0
+      ? `${discovery.length} profile${discovery.length === 1 ? "" : "s"}`
+      : null;
+
+  const discoveryResultsList = discovery.length ? (
+    <div className="space-y-2">
+      {discovery.map((profile) => (
+        <article
+          key={profile.id}
+          className="flex items-center gap-3 rounded-2xl bg-white/[0.08] px-3 py-3 ring-1 ring-white/10"
+        >
+          <Image
+            src={profile.avatarUrl || DEFAULT_AVATAR_URL}
+            alt={`${profile.displayName} avatar`}
+            width={48}
+            height={48}
+            className="h-12 w-12 rounded-full object-cover"
+          />
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex items-baseline justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">{profile.displayName}</p>
+                <p className="truncate text-xs text-white/60">
+                  @{profile.username} • {profile.role}
+                </p>
+              </div>
+              <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                {profile.mutualFriends} mutual
+              </span>
+            </div>
+            <p className="text-xs text-white/70">{profile.highlight}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleConnect(profile)}
+            disabled={profile.status !== "idle"}
+            className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${
+              profile.status === "requested"
+                ? "cursor-default bg-white/10 text-white/70"
+                : profile.status === "sending"
+                  ? "bg-white text-slate-900 opacity-80"
+                  : "bg-white text-slate-900 hover:bg-white/90"
+            } disabled:cursor-not-allowed disabled:opacity-70`}
+          >
+            {profile.status === "requested"
+              ? "Invite sent"
+              : profile.status === "sending"
+                ? "Sending…"
+                : "Connect"}
+          </button>
+        </article>
+      ))}
+    </div>
+  ) : (
+    <p className="text-xs text-white/60">
+      {hasQuery
+        ? `No profiles matched “${trimmedQuery}”. Try a different name and we’ll search every account.`
+        : "Connect with creators to see personalized recommendations in this space."}
+    </p>
+  );
 
   const discoveryPanel = (
     <section className="space-y-5 rounded-2xl bg-slate-900/60 p-5 ring-1 ring-white/10">
@@ -372,130 +442,92 @@ export default function SearchFriends({
         <p className="text-xs text-white/60">{discoveryDescription}</p>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <button
-          type="button"
-          onClick={handleImportContacts}
-          disabled={isImporting}
-          className="flex flex-col items-start gap-2 rounded-xl border border-dashed border-white/15 bg-white/5 p-4 text-left transition hover:border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
-            {contactsImported
-              ? "Imported"
-              : isImporting
-                ? "Importing…"
-                : "Import contacts"}
-          </span>
-          <p className="text-sm font-semibold text-white">
-            {contactsImported ? "Your contacts were added" : "Pull in your address book"}
-          </p>
-          <p className="text-xs text-white/60">
-            {contactsImported
-              ? "We’ll surface matches as soon as they land."
-              : "Discover existing fans and collaborators from your email list."}
-          </p>
-        </button>
-        {importError ? (
-          <p className="text-xs text-rose-300">{importError}</p>
-        ) : null}
-
-        <form
-          onSubmit={handleSendInvite}
-          className="flex flex-col gap-2 rounded-xl bg-white/5 p-4 ring-1 ring-white/10"
-        >
-          <div className="space-y-1">
-            <label
-              htmlFor="invite-email"
-              className="text-xs font-semibold uppercase tracking-wide text-white/60"
-            >
-              Send a direct invite
-            </label>
-            <input
-              id="invite-email"
-              type="email"
-              value={inviteEmail}
-              onChange={(event) => {
-                setInviteEmail(event.target.value);
-                if (inviteError) {
-                  setInviteError(null);
-                }
-                if (inviteSuccess) {
-                  setInviteSuccess(false);
-                }
-              }}
-              placeholder="collaborator@email.com"
-              className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none"
-            />
+      <div className="space-y-5">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-white/60">
+              {discoveryResultsTitle}
+            </h3>
+            {discoveryResultsCount ? (
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-white/50">
+                {discoveryResultsCount}
+              </span>
+            ) : null}
           </div>
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white/90 active:scale-[0.98]"
-          >
-            Send invite
-          </button>
-          {inviteError ? (
-            <p className="text-xs text-rose-300">{inviteError}</p>
+          {connectError ? (
+            <p className="text-xs text-rose-300">{connectError}</p>
           ) : null}
-          {inviteSuccess ? (
-            <p className="text-xs text-emerald-300">Invite sent! We’ll let you know when they join.</p>
-          ) : null}
-        </form>
-      </div>
-
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-white/60">
-            Recommended creators
-          </h3>
+          {discoveryResultsList}
         </div>
-        {connectError ? (
-          <p className="text-xs text-rose-300">{connectError}</p>
-        ) : null}
-        <div className="space-y-2">
-          {discovery.map((profile) => (
-            <article
-              key={profile.id}
-              className="flex items-center gap-3 rounded-2xl bg-white/[0.08] px-3 py-3 ring-1 ring-white/10"
-            >
-              <Image
-                src={profile.avatarUrl || DEFAULT_AVATAR_URL}
-                alt={`${profile.displayName} avatar`}
-                width={48}
-                height={48}
-                className="h-12 w-12 rounded-full object-cover"
-              />
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex items-baseline justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white">{profile.displayName}</p>
-                    <p className="truncate text-xs text-white/60">@{profile.username} • {profile.role}</p>
-                  </div>
-                  <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/60">
-                    {profile.mutualFriends} mutual
-                  </span>
-                </div>
-                <p className="text-xs text-white/70">{profile.highlight}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleConnect(profile)}
-                disabled={profile.status !== "idle"}
-                className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${
-                  profile.status === "requested"
-                    ? "cursor-default bg-white/10 text-white/70"
-                    : profile.status === "sending"
-                      ? "bg-white text-slate-900 opacity-80"
-                      : "bg-white text-slate-900 hover:bg-white/90"
-                } disabled:cursor-not-allowed disabled:opacity-70`}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={handleImportContacts}
+            disabled={isImporting}
+            className="flex flex-col items-start gap-2 rounded-xl border border-dashed border-white/15 bg-white/5 p-4 text-left transition hover:border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
+              {contactsImported
+                ? "Imported"
+                : isImporting
+                  ? "Importing…"
+                  : "Import contacts"}
+            </span>
+            <p className="text-sm font-semibold text-white">
+              {contactsImported ? "Your contacts were added" : "Pull in your address book"}
+            </p>
+            <p className="text-xs text-white/60">
+              {contactsImported
+                ? "We’ll surface matches as soon as they land."
+                : "Discover existing fans and collaborators from your email list."}
+            </p>
+          </button>
+          {importError ? (
+            <p className="text-xs text-rose-300">{importError}</p>
+          ) : null}
+
+          <form
+            onSubmit={handleSendInvite}
+            className="flex flex-col gap-2 rounded-xl bg-white/5 p-4 ring-1 ring-white/10"
+          >
+            <div className="space-y-1">
+              <label
+                htmlFor="invite-email"
+                className="text-xs font-semibold uppercase tracking-wide text-white/60"
               >
-                {profile.status === "requested"
-                  ? "Invite sent"
-                  : profile.status === "sending"
-                    ? "Sending…"
-                    : "Connect"}
-              </button>
-            </article>
-          ))}
+                Send a direct invite
+              </label>
+              <input
+                id="invite-email"
+                type="email"
+                value={inviteEmail}
+                onChange={(event) => {
+                  setInviteEmail(event.target.value);
+                  if (inviteError) {
+                    setInviteError(null);
+                  }
+                  if (inviteSuccess) {
+                    setInviteSuccess(false);
+                  }
+                }}
+                placeholder="collaborator@email.com"
+                className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white/90 active:scale-[0.98]"
+            >
+              Send invite
+            </button>
+            {inviteError ? (
+              <p className="text-xs text-rose-300">{inviteError}</p>
+            ) : null}
+            {inviteSuccess ? (
+              <p className="text-xs text-emerald-300">Invite sent! We’ll let you know when they join.</p>
+            ) : null}
+          </form>
         </div>
       </div>
     </section>
