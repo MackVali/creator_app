@@ -83,7 +83,9 @@ export async function GET(request: Request) {
 
   const trimmed = query.trim();
   const maxDiscoveryResults = 25;
-  const profileClient = createAdminClient() ?? supabase;
+  const admin = createAdminClient();
+  const profileClient = admin ?? supabase;
+  const trimmedLower = trimmed.toLowerCase();
   if (trimmed) {
     const escaped = escapeForILike(trimmed);
     friendsQuery.or(
@@ -112,7 +114,7 @@ export async function GET(request: Request) {
   const discoveryQuery = supabase
     .from("friend_discovery_profiles")
     .select(
-      "id, username, display_name, avatar_url, role, highlight, reason, mutual_friends"
+      "id, username, name, avatar_url, role, highlight, reason, mutual_friends"
     )
     .order(trimmed ? "mutual_friends" : "created_at", { ascending: false })
     .limit(maxDiscoveryResults);
@@ -120,7 +122,7 @@ export async function GET(request: Request) {
   if (trimmed) {
     const escaped = escapeForILike(trimmed);
     discoveryQuery.or(
-      `username.ilike.%${escaped}%,display_name.ilike.%${escaped}%,role.ilike.%${escaped}%`
+      `username.ilike.%${escaped}%,name.ilike.%${escaped}%,role.ilike.%${escaped}%`
     );
   }
 
@@ -132,15 +134,16 @@ export async function GET(request: Request) {
 
   const profileQuery = profileClient
     .from("profiles")
-    .select("id, user_id, username, display_name, avatar_url")
+    .select("id, user_id, username, name, avatar_url")
     .not("username", "is", null)
+    .eq("is_private", false)
     .order("created_at", { ascending: false })
     .limit(maxDiscoveryResults);
 
   if (trimmed) {
     const escapedProfiles = escapeForILike(trimmed);
     profileQuery.or(
-      `username.ilike.%${escapedProfiles}%,display_name.ilike.%${escapedProfiles}%`
+      `username.ilike.%${escapedProfiles}%,name.ilike.%${escapedProfiles}%`
     );
   }
 
@@ -150,7 +153,7 @@ export async function GET(request: Request) {
     id: string;
     user_id: string | null;
     username: string;
-    display_name: string | null;
+    name: string | null;
     avatar_url: string | null;
   }> = [];
   if (profilesError) {
@@ -180,7 +183,7 @@ export async function GET(request: Request) {
         continue;
       }
 
-      const displayName = row.display_name ?? username;
+      const displayName = row.name ?? username;
       aggregated.push({
         id: row.id,
         username,
@@ -198,13 +201,124 @@ export async function GET(request: Request) {
     if (aggregated.length >= maxDiscoveryResults) {
       break;
     }
-    const profile = mapDiscoveryProfile(row);
+    const normalizedRow = {
+      ...row,
+      display_name:
+        (row as any).name ?? (row as any).display_name ?? null,
+    };
+    const profile = mapDiscoveryProfile(normalizedRow);
     const normalized = profile.username.toLowerCase();
     if (seenUsernames.has(normalized)) {
       continue;
     }
     aggregated.push(profile);
     seenUsernames.add(normalized);
+  }
+
+  if (
+    trimmed &&
+    aggregated.length < maxDiscoveryResults &&
+    admin?.auth?.admin?.listUsers
+  ) {
+    try {
+      const { data: adminUsersData, error: adminUsersError } =
+        await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
+
+      if (adminUsersError) {
+        console.error(
+          "Failed to list users for admin discovery fallback",
+          adminUsersError
+        );
+      } else {
+        const adminUsers = adminUsersData?.users ?? [];
+
+        for (const adminUser of adminUsers) {
+          if (aggregated.length >= maxDiscoveryResults) {
+            break;
+          }
+
+          if (adminUser.id === user.id) {
+            continue;
+          }
+
+          const adminMetadata =
+            (adminUser.user_metadata ?? {}) as Record<string, unknown>;
+          const metadataUsername =
+            typeof adminMetadata.username === "string"
+              ? adminMetadata.username.trim()
+              : "";
+          const metadataName =
+            typeof adminMetadata.name === "string"
+              ? adminMetadata.name.trim()
+              : "";
+          const metadataDisplayName =
+            typeof adminMetadata.display_name === "string"
+              ? adminMetadata.display_name.trim()
+              : "";
+          const metadataFullName =
+            typeof adminMetadata.full_name === "string"
+              ? adminMetadata.full_name.trim()
+              : "";
+          const metadataAvatar =
+            typeof adminMetadata.avatar_url === "string" &&
+            adminMetadata.avatar_url.trim().length
+              ? adminMetadata.avatar_url.trim()
+              : null;
+          const email =
+            typeof adminUser.email === "string"
+              ? adminUser.email.trim()
+              : "";
+          const emailPrefix = email.split("@")[0]?.trim() ?? "";
+          const usernameCandidate = metadataUsername || emailPrefix;
+          if (!usernameCandidate) {
+            continue;
+          }
+
+          const normalizedCandidate = usernameCandidate.toLowerCase();
+          if (seenUsernames.has(normalizedCandidate)) {
+            continue;
+          }
+
+          const matchesQuery = [
+            metadataUsername,
+            metadataName,
+            metadataDisplayName,
+            email,
+          ].some(
+            (value) =>
+              value &&
+              value.toLowerCase().includes(trimmedLower)
+          );
+          if (!matchesQuery) {
+            continue;
+          }
+
+          const displayNameCandidate =
+            metadataName ||
+            metadataDisplayName ||
+            metadataFullName ||
+            usernameCandidate;
+          const avatarUrl =
+            metadataAvatar ?? buildAvatarFromSeed(displayNameCandidate);
+
+          aggregated.push({
+            id: adminUser.id,
+            username: usernameCandidate,
+            displayName: displayNameCandidate,
+            avatarUrl,
+            mutualFriends: 0,
+            highlight: `Search match for “${trimmed}”`,
+            role: "Creator",
+          });
+          seenUsernames.add(normalizedCandidate);
+        }
+      }
+    } catch (adminFallbackError) {
+      console.error(
+        "Admin discovery fallback search failed",
+        adminFallbackError
+      );
+    }
   }
 
   const discoveryProfiles = aggregated;

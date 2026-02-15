@@ -23,8 +23,15 @@ export default function AuthCallback() {
         setErr(error.message);
         return;
       }
-      const redirectTo = searchParams.get("redirect") || "/dashboard";
-      router.replace(redirectTo);
+      const redirectTo =
+        searchParams.get("redirect") || "/dashboard";
+
+      const normalizeRedirect = (path?: string | null) =>
+        path && path.startsWith("/") ? path : "/dashboard";
+
+      const finalRedirect = normalizeRedirect(redirectTo);
+
+      router.replace(finalRedirect);
     })();
   }, [router, searchParams]);
   return (

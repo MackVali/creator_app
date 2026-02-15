@@ -2,6 +2,14 @@
 
 import { useState, useEffect } from "react";
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 export interface Skill {
   id: string;
   name: string;
@@ -157,38 +165,42 @@ export function SkillDrawer({
             <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
               Monument
             </label>
-            <select
+            <Select
               value={monument}
-              onChange={(e) => setMonument(e.target.value)}
-              className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white/80 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
+              onValueChange={setMonument}
+              placeholder="Select..."
             >
-              <option value="">Select...</option>
-              {monuments.map((m) => (
-                <option key={m.id} value={m.id} className="bg-black text-white">
-                  {m.title}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-left text-white focus:border-white/30 focus-visible:ring-0 sm:h-11 sm:px-4 sm:text-sm">
+                <SelectValue placeholder="Select..." />
+              </SelectTrigger>
+              <SelectContent className="bg-black text-sm text-white">
+                <SelectItem value="">None</SelectItem>
+                {monuments.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2.5">
             <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
               Category
             </label>
-            <select
-              value={cat}
-              onChange={(e) => setCat(e.target.value)}
-              className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white/80 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
-            >
-              <option value="">Select...</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id} className="bg-black text-white">
-                  {c.name}
-                </option>
-              ))}
-              <option value="new" className="bg-black text-white">
-                + New Category
-              </option>
-            </select>
+            <Select value={cat} onValueChange={setCat} placeholder="Select...">
+              <SelectTrigger className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-left text-white focus:border-white/30 focus-visible:ring-0 sm:h-11 sm:px-4 sm:text-sm">
+                <SelectValue placeholder="Select..." />
+              </SelectTrigger>
+              <SelectContent className="bg-black text-sm text-white">
+                <SelectItem value="">Uncategorized</SelectItem>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+                <SelectItem value="new">+ New Category</SelectItem>
+              </SelectContent>
+            </Select>
             {cat === "new" && (
               <input
                 value={newCat}

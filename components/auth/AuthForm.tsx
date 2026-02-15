@@ -149,7 +149,47 @@ export default function AuthForm() {
           console.error("Error verifying profile after sign-in:", profileCheckError);
         }
 
-        router.replace(destination);
+        const normalizeRedirect = (path?: string | null) =>
+          path && path.startsWith("/") ? path : "/dashboard";
+
+        const finalDestination = normalizeRedirect(destination);
+
+        const shouldCheckSkillStack = !finalDestination.startsWith(
+          "/onboarding/skills"
+        );
+
+        if (shouldCheckSkillStack) {
+          try {
+            const res = await fetch("/api/onboarding/needs-skill-stack", {
+              cache: "no-store",
+            });
+            if (res.ok) {
+              const body = (await res.json()) as {
+                needsSkillStack?: boolean;
+              };
+              if (body.needsSkillStack) {
+                const onboardingRedirect = `/onboarding/skills?redirect=${encodeURIComponent(
+                  finalDestination
+                )}`;
+                router.replace(onboardingRedirect);
+                return;
+              }
+            } else {
+              console.error(
+                "Failed to check skill stack needs after sign-in:",
+                res.status,
+                res.statusText
+              );
+            }
+          } catch (fetchError) {
+            console.error(
+              "Unable to evaluate skill stack requirement after sign-in:",
+              fetchError
+            );
+          }
+        }
+
+        router.replace(finalDestination);
       }
     } catch (err) {
       handleAuthError(err as { message?: string });

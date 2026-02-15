@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,7 @@ interface Profile {
   avatar_url?: string | null;
   created_at: string;
   updated_at: string;
+  is_private?: boolean;
 }
 
 interface ProfileEditFormProps {
@@ -44,6 +45,7 @@ export default function ProfileEditForm({
     dob: profile.dob || "",
     city: profile.city || "",
     bio: profile.bio || "",
+    is_private: profile.is_private ?? false,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -56,8 +58,11 @@ export default function ProfileEditForm({
   const [avatarPreview, setAvatarPreview] = useState<string | null>(
     profile.avatar_url || null
   );
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
 
   const router = useRouter();
+  const params = useSearchParams();
+  const redirectTarget = params.get("redirect") ?? "/profile";
   const toast = useToastHelpers();
 
   // Initialize form data when profile changes
@@ -68,6 +73,7 @@ export default function ProfileEditForm({
       dob: profile.dob || "",
       city: profile.city || "",
       bio: profile.bio || "",
+      is_private: profile.is_private ?? false,
     });
     setAvatarPreview(profile.avatar_url || null);
   }, [profile]);
@@ -119,6 +125,10 @@ export default function ProfileEditForm({
     if (errors[field]) {
       setErrors((prev: Record<string, string>) => ({ ...prev, [field]: "" }));
     }
+  };
+
+  const handlePrivacyToggle = (checked: boolean) => {
+    setFormData((prev) => ({ ...prev, is_private: checked }));
   };
 
   const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -193,6 +203,7 @@ export default function ProfileEditForm({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setHasAttemptedSubmit(true);
 
     if (!validateForm()) {
       return;
@@ -218,7 +229,7 @@ export default function ProfileEditForm({
 
       if (result.success) {
         toast.success("Success", "Profile updated successfully!");
-        router.push("/profile");
+        router.replace(redirectTarget);
       } else {
         toast.error("Error", result.error || "Failed to update profile");
       }
@@ -291,7 +302,12 @@ export default function ProfileEditForm({
             {/* Form Fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Name *</Label>
+                <Label htmlFor="name">
+                  Name
+                  {hasAttemptedSubmit && (
+                    <span className="text-red-500"> *</span>
+                  )}
+                </Label>
                 <Input
                   id="name"
                   value={formData.name}
@@ -299,13 +315,18 @@ export default function ProfileEditForm({
                   placeholder="Enter your full name"
                   className={errors.name ? "border-red-500" : ""}
                 />
-                {errors.name && (
+                {hasAttemptedSubmit && errors.name && (
                   <p className="text-sm text-red-500">{errors.name}</p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="username">Username *</Label>
+                <Label htmlFor="username">
+                  Username
+                  {hasAttemptedSubmit && (
+                    <span className="text-red-500"> *</span>
+                  )}
+                </Label>
                 <Input
                   id="username"
                   value={formData.username}
@@ -332,13 +353,18 @@ export default function ProfileEditForm({
                     Username is available
                   </p>
                 )}
-                {errors.username && (
+                {hasAttemptedSubmit && errors.username && (
                   <p className="text-sm text-red-500">{errors.username}</p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="dob">Date of Birth</Label>
+                <Label htmlFor="dob">
+                  Date of Birth
+                  {hasAttemptedSubmit && (
+                    <span className="text-red-500"> *</span>
+                  )}
+                </Label>
                 <Input
                   id="dob"
                   type="date"
@@ -346,7 +372,7 @@ export default function ProfileEditForm({
                   onChange={(e) => handleInputChange("dob", e.target.value)}
                   className={errors.dob ? "border-red-500" : ""}
                 />
-                {errors.dob && (
+                {hasAttemptedSubmit && errors.dob && (
                   <p className="text-sm text-red-500">{errors.dob}</p>
                 )}
               </div>
@@ -379,6 +405,28 @@ export default function ProfileEditForm({
               {errors.bio && (
                 <p className="text-sm text-red-500">{errors.bio}</p>
               )}
+            </div>
+
+            <div className="flex items-start space-x-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
+              <input
+                id="is_private"
+                type="checkbox"
+                checked={formData.is_private ?? false}
+                onChange={(event) => handlePrivacyToggle(event.target.checked)}
+                className="h-5 w-5 rounded border border-white/20 bg-transparent text-blue-400 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+              />
+              <div>
+                <Label
+                  htmlFor="is_private"
+                  className="text-sm font-semibold text-gray-100"
+                >
+                  Private profile
+                </Label>
+                <p className="text-sm text-gray-400">
+                  Hide your profile from search and discovery until you toggle
+                  it back on.
+                </p>
+              </div>
             </div>
 
             {/* Action Buttons */}

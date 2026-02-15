@@ -7,7 +7,7 @@ export function isProfileSetupIncomplete(profile: Profile | null): boolean {
 
   const hasUsername = profile.username?.trim().length > 0;
   const hasDisplayName = profile.name?.trim().length > 0;
+  const hasDob = profile.dob?.trim().length > 0;
 
-  return !hasUsername || !hasDisplayName;
+  return !hasUsername || !hasDisplayName || !hasDob;
 }
-

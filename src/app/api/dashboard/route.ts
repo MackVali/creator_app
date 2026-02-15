@@ -46,83 +46,6 @@ export async function GET() {
 
   let [skillsResponse, catsResponse] = await fetchCatsAndSkills();
 
-  const shouldSeedDefaults =
-    (catsResponse.data?.length ?? 0) === 0 &&
-    (skillsResponse.data?.length ?? 0) === 0;
-
-  const seedDefaultCatsAndSkills = async () => {
-    const { data: existingCat } = await supabase
-      .from("cats")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("name", "BASIC SKILLS")
-      .maybeSingle();
-
-    let basicCatId = existingCat?.id;
-
-    if (!basicCatId) {
-      const { data: insertedCat } = await supabase
-        .from("cats")
-        .insert({
-          user_id: user.id,
-          name: "BASIC SKILLS",
-          icon: "⚓",
-          color_hex: "#000000",
-          sort_order: 0,
-          is_default: true,
-          is_locked: true,
-        })
-        .select("id")
-        .maybeSingle();
-      basicCatId = insertedCat?.id;
-    }
-
-    if (!basicCatId) {
-      return;
-    }
-
-    const defaultSkills = [
-      { name: "CAREER", icon: "💼" },
-      { name: "FINANCES", icon: "💵" },
-      { name: "HEALTH", icon: "🫀" },
-      { name: "FITNESS", icon: "🦾" },
-    ];
-
-    const { data: existingSkills } = await supabase
-      .from("skills")
-      .select("name")
-      .eq("user_id", user.id)
-      .in(
-        "name",
-        defaultSkills.map((skill) => skill.name)
-      );
-
-    const existingSkillNames = new Set(
-      (existingSkills ?? []).map((skill) => skill.name ?? "")
-    );
-
-    const skillsToInsert = defaultSkills
-      .filter((skill) => !existingSkillNames.has(skill.name))
-      .map((skill) => ({
-        user_id: user.id,
-        name: skill.name,
-        icon: skill.icon,
-        cat_id: basicCatId,
-        level: 1,
-        is_default: true,
-        is_locked: true,
-      }));
-
-    if (skillsToInsert.length > 0) {
-      await supabase.from("skills").insert(skillsToInsert);
-    }
-  };
-
-  if (shouldSeedDefaults) {
-    await seedDefaultCatsAndSkills();
-    [skillsResponse, catsResponse] = await fetchCatsAndSkills();
-  }
-
   // Debug logging for development
   // (commented out to avoid noisy production logs)
   // if (process.env.NODE_ENV !== "production") {
@@ -159,20 +82,29 @@ export async function GET() {
   //   console.debug("🔍 Debug: skillsData after mapping:", skillsData);
   // }
 
-  const [{ data: stats }, { data: monuments }, { data: goals }] =
-    await Promise.all([
-      supabase
-        .from("user_stats_v")
-        .select("level,xp_current,xp_max")
-        .maybeSingle(),
-      supabase.from("monuments_summary_v").select("category,count"),
-      supabase
-        .from("goals")
-        .select("id,name,priority,energy,monument_id,created_at")
-        .order("priority", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(6),
-    ]);
+  const [
+    { data: stats },
+    { data: monuments },
+    { data: goals },
+    { data: profile },
+  ] = await Promise.all([
+    supabase
+      .from("user_stats_v")
+      .select("level,xp_current,xp_max")
+      .maybeSingle(),
+    supabase.from("monuments_summary_v").select("category,count"),
+    supabase
+      .from("goals")
+      .select("id,name,priority,energy,monument_id,created_at")
+      .order("priority", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(6),
+    supabase
+      .from("profiles")
+      .select("onboarding_version,onboarding_step")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+  ]);
 
   const statsOut: UserStats = stats ?? {
     level: 1,
@@ -303,6 +235,10 @@ export async function GET() {
   return NextResponse.json({
     stats: statsOut,
     monuments: mBase,
+    profile: {
+      onboarding_version: profile?.onboarding_version ?? 0,
+      onboarding_step: profile?.onboarding_step ?? null,
+    },
     skillsAndGoals: {
       cats: catsOut,
       goals: goalsOut,

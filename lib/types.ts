@@ -250,6 +250,7 @@ export interface Profile {
   hero_secondary_cta_label?: string | null;
   hero_secondary_cta_url?: string | null;
   verified?: boolean;
+  is_private: boolean;
   avatar_frame_style?: "circle" | "rounded-square" | "halo" | null;
   partner_badges?: ProfilePartnerBadge[] | null;
   quick_action_badges?: ProfileQuickActionBadge[] | null;
@@ -459,11 +460,18 @@ export interface ProfileFormData {
   dob: string;
   city: string;
   bio: string;
+  is_private?: boolean;
   avatar?: File;
   banner?: File;
   theme_color?: string;
   font_family?: string;
   accent_color?: string;
+}
+
+export interface OnboardingUpdate {
+  onboarding_version?: number;
+  onboarding_step?: string | null;
+  onboarding_completed_at?: string | null;
 }
 
 // Linked Account Form Data
