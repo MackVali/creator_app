@@ -23,6 +23,34 @@ export default function AuthCallback() {
         setErr(error.message);
         return;
       }
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        console.error("[AuthCallback] Unable to load user", userError);
+      }
+
+      if (!user) {
+        setErr("Unable to determine authenticated user.");
+        return;
+      }
+
+      const { data: legalAcceptance, error: legalError } = await supabase
+        .from("user_legal_acceptances")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (legalError) {
+        console.error("[AuthCallback] Failed to check legal acceptance", legalError);
+      }
+
+      if (!legalAcceptance) {
+        router.replace("/legal/accept");
+        return;
+      }
       const redirectTo =
         searchParams.get("redirect") || "/dashboard";
 

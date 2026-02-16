@@ -256,6 +256,9 @@ function useTapHandler(onTap: () => void, opts?: { disabled?: boolean }) {
   return { onPointerUp, onClick };
 }
 
+const isTourActive = () =>
+  Boolean((window as any).__CREATOR_TOUR_ACTIVE__);
+
 function useOverhangLT(
   ref: React.RefObject<HTMLElement>,
   deps: any[] = [],
@@ -1596,9 +1599,11 @@ export function Fab({
   useEffect(() => {
     if (!showDurationPicker) return;
     const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (isTourActive()) return;
       const target = event.target as Node | null;
       if (
         !target ||
+        fabRootRef.current?.contains(target) ||
         durationPickerRef.current?.contains(target) ||
         durationTriggerRef.current?.contains(target)
       ) {
@@ -1629,9 +1634,11 @@ export function Fab({
   useEffect(() => {
     if (!showTaskDurationPicker) return;
     const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (isTourActive()) return;
       const target = event.target as Node | null;
       if (
         !target ||
+        fabRootRef.current?.contains(target) ||
         taskDurationPickerRef.current?.contains(target) ||
         taskDurationTriggerRef.current?.contains(target)
       ) {
@@ -1732,9 +1739,11 @@ export function Fab({
   useEffect(() => {
     if (!showHabitDurationPicker) return;
     const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (isTourActive()) return;
       const target = event.target as Node | null;
       if (
         !target ||
+        fabRootRef.current?.contains(target) ||
         habitDurationPickerRef.current?.contains(target) ||
         habitDurationTriggerRef.current?.contains(target)
       ) {
@@ -1966,6 +1975,7 @@ export function Fab({
   const fabSavePendingRef = useRef(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
+  const fabRootRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -2125,10 +2135,16 @@ export function Fab({
   useEffect(() => {
     if (!showGoalFilters) return;
     const handleClick = (event: MouseEvent) => {
+      if (isTourActive()) return;
+      const target = event.target as Node | null;
       if (
-        goalFilterMenuRef.current &&
-        !goalFilterMenuRef.current.contains(event.target as Node)
+        !target ||
+        fabRootRef.current?.contains(target) ||
+        !goalFilterMenuRef.current
       ) {
+        return;
+      }
+      if (!goalFilterMenuRef.current.contains(target)) {
         setShowGoalFilters(false);
       }
     };
@@ -2139,10 +2155,16 @@ export function Fab({
   useEffect(() => {
     if (!showSkillFilters) return;
     const handleClick = (event: MouseEvent) => {
+      if (isTourActive()) return;
+      const target = event.target as Node | null;
       if (
-        skillFilterMenuRef.current &&
-        !skillFilterMenuRef.current.contains(event.target as Node)
+        !target ||
+        fabRootRef.current?.contains(target) ||
+        !skillFilterMenuRef.current
       ) {
+        return;
+      }
+      if (!skillFilterMenuRef.current.contains(target)) {
         setShowSkillFilters(false);
       }
     };
@@ -2152,10 +2174,16 @@ export function Fab({
   useEffect(() => {
     if (!showTaskProjectFilters) return;
     const handleClick = (event: MouseEvent) => {
+      if (isTourActive()) return;
+      const target = event.target as Node | null;
       if (
-        taskProjectFilterMenuRef.current &&
-        !taskProjectFilterMenuRef.current.contains(event.target as Node)
+        !target ||
+        fabRootRef.current?.contains(target) ||
+        !taskProjectFilterMenuRef.current
       ) {
+        return;
+      }
+      if (!taskProjectFilterMenuRef.current.contains(target)) {
         setShowTaskProjectFilters(false);
       }
     };
@@ -4147,10 +4175,27 @@ export function Fab({
   };
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    (window as any).__CREATOR_FAB_IS_OPEN__ = isOpen;
+    if (!isOpen) return;
+    window.dispatchEvent(new CustomEvent("tour:fab-opened"));
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    (window as any).__CREATOR_FAB_AI_IS_OPEN__ = aiOpen;
+    if (!aiOpen) return;
+    window.dispatchEvent(new CustomEvent("tour:fab-ai-opened"));
+  }, [aiOpen]);
+
+  useEffect(() => {
     if (!scopeMenuOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
+      if (isTourActive()) return;
       const target = event.target as Node | null;
       if (
+        !target ||
+        fabRootRef.current?.contains(target) ||
         scopeMenuRef.current?.contains(target) ||
         scopeToggleRef.current?.contains(target)
       ) {
@@ -4642,6 +4687,9 @@ export function Fab({
       setDragTargetPage(null);
       setDragDirection(null);
       setIsAnimatingPageChange(false);
+      if (options?.fromDrag && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("tour:fab-swiped"));
+      }
     },
     [
       activeFabPage,
@@ -5323,15 +5371,24 @@ export function Fab({
   useEffect(() => {
     if (rescheduleTarget) return;
     const handleClickOutside = (event: MouseEvent) => {
+      if (isTourActive()) return;
+      const target = event.target as Node | null;
+      if (
+        !target ||
+        fabRootRef.current?.contains(target) ||
+        !menuRef.current ||
+        !buttonRef.current
+      ) {
+        return;
+      }
+
       if (
         isOpen &&
-        menuRef.current &&
-        !menuRef.current.contains(event.target as Node) &&
-        buttonRef.current &&
-        !buttonRef.current.contains(event.target as Node)
+        !menuRef.current.contains(target) &&
+        !buttonRef.current.contains(target)
       ) {
         if (expanded) return;
-        if (aiOpen && aiOverlayRef.current?.contains(event.target as Node)) {
+        if (aiOpen && aiOverlayRef.current?.contains(target)) {
           return;
         }
         setIsOpen(false);
@@ -5424,7 +5481,11 @@ export function Fab({
     : undefined;
 
   return (
-    <div className={cn("relative", className)} {...wrapperProps}>
+    <div
+      className={cn("relative", className)}
+      ref={fabRootRef}
+      {...wrapperProps}
+    >
       {/* AddEvents Menu */}
       <AnimatePresence>
         {isOpen && (
@@ -5504,6 +5565,7 @@ export function Fab({
                 >
                   <div
                     ref={stageRef}
+                    data-tour="fab-swipe"
                     className="relative h-full w-full rounded-[inherit]"
                   >
                     <motion.div
@@ -5632,6 +5694,7 @@ export function Fab({
 
       {/* FAB Button - Restored to your original styling */}
       <motion.button
+        data-tour="fab"
         ref={buttonRef}
         onClick={handleFabButtonClick}
         aria-label={isOpen ? "Open ILAV" : "Add new item"}
@@ -5957,6 +6020,7 @@ export function Fab({
                     />
                     <button
                       type="button"
+                      data-tour="fab-ai"
                       onClick={handleRunAi}
                       disabled={aiLoading || !aiPrompt.trim()}
                       className={cn(

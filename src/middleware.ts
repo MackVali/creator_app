@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 import type { Database } from "@/types/supabase";
+import { hasAcceptedLegal } from "@/lib/legal";
 
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
@@ -16,6 +17,11 @@ export async function middleware(req: NextRequest) {
     pathname === "/favicon.ico"
   ) {
     console.log(`[Middleware] Skipping ${pathname} (static/API route)`);
+    return NextResponse.next();
+  }
+
+  if (pathname.startsWith("/legal")) {
+    console.log(`[Middleware] Skipping ${pathname} (legal route)`);
     return NextResponse.next();
   }
 
@@ -71,10 +77,11 @@ export async function middleware(req: NextRequest) {
     const user = userResult.user ?? null;
     const isAuthenticated = Boolean(user);
     const isAuthRoute = pathname === "/auth";
+    const isAuthGroup = pathname.startsWith("/auth");
 
     // Log middleware decisions for debugging
     console.log(
-      `[Middleware] ${pathname} - isAuthenticated: ${isAuthenticated}, isAuthRoute: ${isAuthRoute}`
+      `[Middleware] ${pathname} - isAuthenticated: ${isAuthenticated}, isAuthRoute: ${isAuthRoute}, isAuthGroup: ${isAuthGroup}`
     );
 
     // If NO session and path !== /auth: redirect → /auth?redirect=<path+search>
@@ -91,20 +98,38 @@ export async function middleware(req: NextRequest) {
 
     // If session AND path starts with /auth: redirect → ?redirect or /dashboard
     if (isAuthenticated && isAuthRoute) {
-    const requestedRedirect = req.nextUrl.searchParams.get("redirect");
-    const redirectTarget =
-      requestedRedirect && requestedRedirect.startsWith("/")
-        ? requestedRedirect
-        : "/dashboard";
+      const requestedRedirect = req.nextUrl.searchParams.get("redirect");
+      const redirectTarget =
+        requestedRedirect && requestedRedirect.startsWith("/")
+          ? requestedRedirect
+          : "/dashboard";
 
-    console.log(`[Middleware] Redirecting to: ${redirectTarget}`);
-    const redirectResponse = NextResponse.redirect(
-      new URL(redirectTarget, req.url)
-    );
-    res.cookies.getAll().forEach((cookie) => {
-      redirectResponse.cookies.set(cookie);
-    });
-    return redirectResponse;
+      console.log(`[Middleware] Redirecting to: ${redirectTarget}`);
+      const redirectResponse = NextResponse.redirect(
+        new URL(redirectTarget, req.url)
+      );
+      res.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie);
+      });
+      return redirectResponse;
+    }
+
+    const shouldEnforceLegal =
+      isAuthenticated && !isAuthGroup && pathname !== "/";
+    if (shouldEnforceLegal) {
+      const legalAccepted = await hasAcceptedLegal(user.id, supabase);
+      if (!legalAccepted) {
+        console.log(
+          `[Middleware] Redirecting ${pathname} to /legal/accept (legal not accepted)`
+        );
+        const legalRedirect = NextResponse.redirect(
+          new URL("/legal/accept", req.url)
+        );
+        res.cookies.getAll().forEach((cookie) => {
+          legalRedirect.cookies.set(cookie);
+        });
+        return legalRedirect;
+      }
     }
 
     console.log(`[Middleware] Allowing access to ${pathname}`);

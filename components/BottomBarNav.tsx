@@ -33,6 +33,7 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
             onNavigate(item.href);
           }
         }}
+        data-tour={item.href === "/schedule" ? "nav-schedule" : undefined}
         className="flex flex-1 min-w-0 items-center justify-center"
       >
         <div
@@ -82,4 +83,3 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
 }
 
 export default BottomBarNav;
-
