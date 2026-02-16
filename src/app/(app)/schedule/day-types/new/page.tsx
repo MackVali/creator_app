@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { cn } from "@/lib/utils";
@@ -100,11 +100,11 @@ const DAY_INDEX_TO_LABEL = DAYS_OF_WEEK.reduce<Record<number, string>>((acc, day
 }, {});
 
 const SCHEDULER_MODE_OPTIONS: Array<{ value: SchedulerModeType; label: string; description: string }> = [
-  { value: "REGULAR", label: "Regular", description: "Balance focus and flexibility." },
-  { value: "RUSH", label: "Rush", description: "Tighten durations to move faster." },
-  { value: "MONUMENTAL", label: "Monumental", description: "Prioritize big milestone work." },
-  { value: "SKILLED", label: "Skilled", description: "Concentrate on skill-building work." },
-  { value: "REST", label: "Rest", description: "Keep the day light and recovery-friendly." },
+  { value: "REGULAR", label: "REGULAR", description: "Balance focus and flexibility." },
+  { value: "RUSH", label: "RUSH", description: "Tighten durations to move faster." },
+  { value: "MONUMENTAL", label: "MONUMENTAL", description: "Prioritize big milestone work." },
+  { value: "SKILLED", label: "SKILLED", description: "Concentrate on skill-building work." },
+  { value: "REST", label: "REST", description: "Keep the day light and recovery-friendly." },
 ];
 
 type CoverageStatus =
@@ -117,6 +117,7 @@ type TimeInputProps = {
   onChange: (next: string) => void;
   helper?: string;
   ariaLabel?: string;
+  dataTour?: string;
 };
 
 function formatHourLabel(hour: number): string {
@@ -247,7 +248,7 @@ async function resolveLocationIdsForBlocks({
   return resolved;
 }
 
-function TimeInput({ label, value, onChange, helper, ariaLabel }: TimeInputProps) {
+function TimeInput({ label, value, onChange, helper, ariaLabel, dataTour }: TimeInputProps) {
   return (
     <label className="group relative flex flex-col gap-1 text-sm text-white/70">
       <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/50">
@@ -260,6 +261,7 @@ function TimeInput({ label, value, onChange, helper, ariaLabel }: TimeInputProps
           value={value}
           onChange={(e) => onChange(e.target.value)}
           aria-label={ariaLabel ?? label}
+          data-tour={dataTour}
           className="flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white placeholder:text-white/35 transition group-hover:border-white/20 group-focus-within:border-white/25 focus:outline-none"
         />
         <div className="flex flex-col overflow-hidden rounded-lg border border-white/12 bg-white/5 shadow-[0_6px_16px_rgba(0,0,0,0.28)]">
@@ -930,6 +932,23 @@ export default function NewDayTypePage() {
       });
     return map;
   }, [dayTypes]);
+
+  const startCreateDayType = useCallback(() => {
+    const availableForNewDefault = DAYS_OF_WEEK.filter((day) => !dayOwnership.get(day.key)).map(
+      (day) => day.key
+    );
+    const nextIsDefault = availableForNewDefault.length > 0;
+
+    setIsCreatingDayType(true);
+    setSelectedDayTypeId(null);
+    setSelectedIds(new Set());
+    setDayTypeName("");
+    setSchedulerMode("REGULAR");
+    setIsDefault(nextIsDefault);
+    setSelectedDays(nextIsDefault ? new Set(availableForNewDefault) : new Set());
+    setSaveMessage(null);
+    setIsEditingExisting(false);
+  }, [dayOwnership]);
 
   const availableDayKeys = useMemo(
     () =>
@@ -1792,13 +1811,22 @@ export default function NewDayTypePage() {
                   onChange={(e) => setDayTypeName(e.target.value.toUpperCase())}
                   placeholder="Default day"
                   disabled={!isCreatingDayType}
+                  data-tour="day-type-name"
                   className="mt-3 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/20 focus:outline-none"
                 />
-                <div className="mt-2 text-sm">
+                <div className="mt-2 text-sm" data-tour="day-type-coverage">
                   {coverageStatus.ok ? (
                     <span className="text-emerald-200/80">Covers full 24 hours.</span>
                   ) : (
-                    <span className="text-amber-200/80">{coverageStatus.reason}</span>
+                    <span
+                      className={cn(
+                        coverageStatus.reason === "Add time blocks to cover the full 24 hours."
+                          ? "text-red-400/80"
+                          : "text-amber-200/80"
+                      )}
+                    >
+                      {coverageStatus.reason}
+                    </span>
                   )}
                 </div>
                 <div className="mt-3 grid grid-cols-2 items-start gap-3 sm:items-center">
@@ -1883,7 +1911,7 @@ export default function NewDayTypePage() {
                     ) : null}
                   </div>
                   <div className="flex flex-col items-end gap-3">
-                    <div className="w-full min-w-[220px] sm:w-[260px]">
+                    <div className="w-full max-w-[260px] sm:w-[260px]">
                       <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/60">
                         <span>Scheduler mode</span>
                         <span className="text-[9px] text-white/40">per day type</span>
@@ -1912,27 +1940,28 @@ export default function NewDayTypePage() {
                           ))}
                         </SelectContent>
                       </Select>
-                    <p className="mt-1 text-[11px] text-white/50">
-                      Applied automatically whenever this day type is used.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSaveDayType}
-                    disabled={!isCreatingDayType || !canSaveDayType || saving}
-                    className={cn(
-                      "w-full min-w-[220px] rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white/90 transition sm:w-auto",
-                      isCreatingDayType
-                        ? "bg-white/15 hover:border-white/25 hover:bg-white/20"
-                        : "bg-white/10 opacity-60",
-                      "disabled:opacity-50"
-                    )}
-                  >
+                      <p className="mt-1 text-[11px] text-white/50">
+                        Applied automatically whenever this day type is used.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSaveDayType}
+                      disabled={!isCreatingDayType || !canSaveDayType || saving}
+                      data-tour="day-type-save"
+                      className={cn(
+                        "w-full max-w-[220px] rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white/90 transition sm:w-auto",
+                        isCreatingDayType
+                          ? "bg-white/15 hover:border-white/25 hover:bg-white/20"
+                          : "bg-white/10 opacity-60",
+                        "disabled:opacity-50"
+                      )}
+                    >
                       {saving ? "Saving…" : isDefault ? "Save default day type" : "Save day type"}
                     </button>
-                  {saveMessage ? (
-                    <span className="text-xs text-white/60">{saveMessage}</span>
-                  ) : null}
+                    {saveMessage ? (
+                      <span className="text-xs text-white/60">{saveMessage}</span>
+                    ) : null}
                   </div>
               </div>
               </div>
@@ -1944,21 +1973,7 @@ export default function NewDayTypePage() {
                   </div>
                   <button
                     type="button"
-                  onClick={() => {
-                    setIsCreatingDayType(true);
-                    const availableForNewDefault = DAYS_OF_WEEK.filter((day) => !dayOwnership.get(day.key)).map(
-                      (day) => day.key
-                    );
-                    const nextIsDefault = availableForNewDefault.length > 0;
-                    setSelectedDayTypeId(null);
-                    setSelectedIds(new Set());
-                    setDayTypeName("");
-                    setSchedulerMode("REGULAR");
-                    setIsDefault(nextIsDefault);
-                    setSelectedDays(nextIsDefault ? new Set(availableForNewDefault) : new Set());
-                    setSaveMessage(null);
-                    setIsEditingExisting(false);
-                  }}
+                    onClick={startCreateDayType}
                     className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
                   >
                     Create day type
@@ -2164,16 +2179,17 @@ export default function NewDayTypePage() {
 
           {isCreatingDayType ? (
             <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                TIME BLOCKS
-              </h2>
-              {hasBlocks ? (
-                <button
-                  type="button"
-                  onClick={startCreateBlock}
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-white/80 transition hover:border-white/20 hover:bg-white/10"
-                >
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                    TIME BLOCKS
+                  </h2>
+                  {hasBlocks ? (
+                    <button
+                      type="button"
+                      onClick={startCreateBlock}
+                      data-tour="day-type-add-block"
+                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-white/80 transition hover:border-white/20 hover:bg-white/10"
+                    >
                   Create time block
                 </button>
               ) : null}
@@ -2262,6 +2278,7 @@ export default function NewDayTypePage() {
                     ariaLabel="Start time"
                     value={createState.start_local}
                     onChange={(next) => setCreateState((prev) => ({ ...prev, start_local: next }))}
+                    dataTour="day-type-block-start"
                     helper="HH:MM — we’ll handle overnight."
                   />
                   <TimeInput
@@ -2269,6 +2286,7 @@ export default function NewDayTypePage() {
                     ariaLabel="End time"
                     value={createState.end_local}
                     onChange={(next) => setCreateState((prev) => ({ ...prev, end_local: next }))}
+                    dataTour="day-type-block-end"
                     helper="Ends before start? We wrap past midnight."
                   />
                 </div>
@@ -2345,6 +2363,7 @@ export default function NewDayTypePage() {
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="flex items-center gap-2 focus:bg-white/10 focus:text-white"
+                              data-tour="day-type-constraints"
                               onSelect={(event) => {
                                 event.preventDefault();
                                 handleConstraintsClick(block);

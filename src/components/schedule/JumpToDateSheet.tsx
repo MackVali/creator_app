@@ -1492,12 +1492,20 @@ export function JumpToDateSheet({
         className="bg-gradient-to-b from-[var(--surface-elevated)] via-[var(--surface-elevated)]/95 to-[#0b0f16] border-t border-white/10 p-0 text-[var(--text-primary)] rounded-t-[22px] sm:rounded-t-2xl max-h-[92vh] sm:max-h-[88vh] overflow-hidden shadow-[0_-22px_50px_rgba(0,0,0,0.45)] backdrop-blur"
       >
         <SheetHeader className="sticky top-0 z-20 border-b border-white/10 bg-[var(--surface-elevated)]/90 px-4 pt-3 pb-2 backdrop-blur">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col gap-1">
               <SheetTitle className="text-base font-semibold tracking-tight text-white">
                 Jump to date
               </SheetTitle>
             </div>
+            <button
+              type="button"
+              onClick={handleCreateDayType}
+              data-tour="create-day-type"
+              className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-[#05070E] shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+            >
+              Create Day Type
+            </button>
           </div>
         </SheetHeader>
         <div

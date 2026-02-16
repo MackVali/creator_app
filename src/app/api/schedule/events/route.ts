@@ -47,7 +47,26 @@ export async function GET(request: Request) {
     });
     return NextResponse.json(dataset);
   } catch (error) {
-    console.error("Failed to build schedule event dataset", error);
+    const message =
+      error instanceof Error ? error.message : String(error ?? "unknown error");
+    const stack = error instanceof Error ? error.stack ?? null : null;
+    console.error({
+      message,
+      stack,
+      userId: user.id,
+      lookaheadDays,
+      effectiveTimeZone,
+    });
+    if (process.env.NODE_ENV !== "production") {
+      return NextResponse.json(
+        {
+          error: "failed to load schedule data",
+          detail: message,
+          stack,
+        },
+        { status: 500 }
+      );
+    }
     return NextResponse.json(
       { error: "failed to load schedule data" },
       { status: 500 }

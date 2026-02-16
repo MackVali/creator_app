@@ -48,6 +48,7 @@ export type ScheduleEventDataset = {
   syncPairings: SyncPairingsByInstanceId;
   energyLookup: Record<string, (typeof ENERGY.LIST)[number]>;
   priorityLookup: Record<string, string>;
+  needsOnboarding?: boolean;
 };
 
 export type ProjectGoalRelations = Record<
@@ -60,6 +61,56 @@ export type ProjectGoalRelations = Record<
   }
 >;
 
+function buildEmptyScheduleEventDataset({
+  lookaheadDays,
+  rangeStartUTC,
+  rangeEndUTC,
+  tasks,
+  projects,
+  projectSkillIds,
+  projectGoalRelations,
+  habits,
+  skills,
+  monuments,
+  scheduledProjectIds,
+  energyLookup,
+  priorityLookup,
+}: {
+  lookaheadDays: number;
+  rangeStartUTC: string;
+  rangeEndUTC: string;
+  tasks: TaskLite[];
+  projects: ProjectLite[];
+  projectSkillIds: Record<string, string[]>;
+  projectGoalRelations: ProjectGoalRelations;
+  habits: HabitScheduleItem[];
+  skills: SkillRow[];
+  monuments: Monument[];
+  scheduledProjectIds: string[];
+  energyLookup: Record<string, (typeof ENERGY.LIST)[number]>;
+  priorityLookup: Record<string, string>;
+}): ScheduleEventDataset & { needsOnboarding: true } {
+  return {
+    generatedAt: new Date().toISOString(),
+    rangeStartUTC,
+    rangeEndUTC,
+    lookaheadDays,
+    tasks,
+    projects,
+    projectSkillIds,
+    projectGoalRelations,
+    habits,
+    skills,
+    monuments,
+    scheduledProjectIds,
+    instances: [],
+    syncPairings: {},
+    energyLookup,
+    priorityLookup,
+    needsOnboarding: true,
+  };
+}
+
 const COMPLETED_LOOKBACK_DAYS = 3;
 
 function throwDatasetViolation(
@@ -69,6 +120,20 @@ function throwDatasetViolation(
   throw new Error(
     `DATASET_${kind}_VIOLATION\n${JSON.stringify(details, null, 2)}`
   );
+}
+
+function datasetSectionError(section: string, error: unknown): Error {
+  const message =
+    error instanceof Error ? error.message : String(error ?? "unknown error");
+  const annotated = new Error(`[dataset] ${section}: ${message}`);
+  if (error instanceof Error && error.stack) {
+    annotated.stack = error.stack;
+  }
+  return Object.assign(annotated, { cause: error });
+}
+
+function datasetMissing(section: string, thing: string): Error {
+  return new Error(`[dataset] ${section}: missing ${thing}`);
 }
 
 function groupCountByDayKey(
@@ -185,209 +250,261 @@ export async function buildScheduleEventDataset({
   // Use local day boundaries for database fetching
   const effectiveRangeStart = rangeStart;
   const effectiveRangeEnd = addDaysInTimeZone(rangeEnd, 1);
-  const nowMs = baseDate.getTime();
   const retentionCutoffMs = rangeStart.getTime();
 
-  const isAfternoon = (startUtc: string, tz: string): boolean => {
-    const date = new Date(startUtc);
-    const hourStr = date.toLocaleString("en-US", {
-      timeZone: tz,
-      hour: "numeric",
-      hour12: false,
-    });
-    const hour = parseInt(hourStr, 10);
-    return hour >= 12 && hour < 18;
-  };
-
-  const [
-    tasks,
-    projectMap,
-    habits,
-    skills,
-    monuments,
-    scheduledProjectIds,
-    goals,
-    priorityEnergyLookups,
-  ] = await Promise.all([
-    fetchReadyTasks(client),
-    fetchProjectsMap(client),
-    fetchHabitsForSchedule(userId, client),
-    fetchSkillsForUser(userId, client),
-    fetchMonumentsForUser(userId, client),
-    fetchScheduledProjectIds(userId, client),
-    fetchGoalsForUser(userId, client),
-    fetchPriorityEnergyLookups(client),
-  ]);
-
-  const projectIds = Object.keys(projectMap);
-  const projectSkillIds = projectIds.length
-    ? await fetchProjectSkillsForProjects(projectIds, client)
-    : {};
-
-  const { data: instanceRows, error: instanceError } =
-    await fetchInstancesForRange(
-      userId,
-      effectiveRangeStart.toISOString(),
-      effectiveRangeEnd.toISOString(),
-      client
-    );
-  if (instanceError) {
-    throw instanceError;
-  }
-
-  const todayKey = dayKeyFromUtc(baseDate.toISOString(), normalizedTz);
-  const fetchedTodayCount = (instanceRows ?? []).filter(
-    (i) => dayKeyFromUtc(i.start_utc ?? "", normalizedTz) === todayKey
-  ).length;
-  if (fetchedTodayCount === 0) {
-    const fetchedByLocalDayKey = groupCountByDayKey(
-      instanceRows ?? [],
-      normalizedTz
-    );
-    const sampleFetched = sample(instanceRows ?? [], normalizedTz);
-    throwDatasetViolation("FETCH", {
-      tz: normalizedTz,
-      rangeStartUtc: rangeStart.toISOString(),
-      rangeEndUtc: rangeEnd.toISOString(),
-      todayDateKey: todayKey,
-      totalFetched: (instanceRows ?? []).length,
-      totalFiltered: 0, // not yet computed
-      fetchedByLocalDayKey,
-      sampleFetched,
-    });
-  }
-
-  const filteredInstances = (instanceRows ?? []).filter((instance) => {
-    if (instance.status !== "completed") return true;
-    const startMs = Date.parse(
-      instance.start_utc ?? instance.completed_at ?? ""
-    );
-    const endMs = Date.parse(
-      instance.end_utc ?? instance.completed_at ?? instance.start_utc ?? ""
-    );
-    if (!Number.isFinite(startMs) && !Number.isFinite(endMs)) {
-      return false;
+  try {
+    const coreSection = "initial scheduler metadata";
+    let tasks: TaskLite[];
+    let projectMap: Record<string, ProjectLite>;
+    let habits: HabitScheduleItem[];
+    let skills: SkillRow[];
+    let monuments: Monument[];
+    let scheduledProjectIds: string[];
+    let goals: GoalSummary[];
+    let priorityEnergyLookups: Awaited<
+      ReturnType<typeof fetchPriorityEnergyLookups>
+    >;
+    try {
+      [
+        tasks,
+        projectMap,
+        habits,
+        skills,
+        monuments,
+        scheduledProjectIds,
+        goals,
+        priorityEnergyLookups,
+      ] = await Promise.all([
+        fetchReadyTasks(client),
+        fetchProjectsMap(client),
+        fetchHabitsForSchedule(userId, client),
+        fetchSkillsForUser(userId, client),
+        fetchMonumentsForUser(userId, client),
+        fetchScheduledProjectIds(userId, client),
+        fetchGoalsForUser(userId, client),
+        fetchPriorityEnergyLookups(client),
+      ]);
+    } catch (error) {
+      throw datasetSectionError(coreSection, error);
     }
 
-    const effectiveEndMs = Number.isFinite(endMs) ? endMs : startMs;
-    if (Number.isFinite(effectiveEndMs) && effectiveEndMs < retentionCutoffMs) {
-      return false;
+    const projectIds = Object.keys(projectMap);
+    let projectSkillIds: Record<string, string[]> = {};
+    if (projectIds.length > 0) {
+      try {
+        projectSkillIds = await fetchProjectSkillsForProjects(projectIds, client);
+      } catch (error) {
+        throw datasetSectionError("project skills fetch", error);
+      }
     }
-    return true;
-  });
-  const todayInstanceCount = filteredInstances.filter(
-    (instance) =>
-      dayKeyFromUtc(instance.start_utc ?? "", normalizedTz) === todayKey
-  ).length;
-  if (todayInstanceCount === 0) {
-    const fetchedByLocalDayKey = groupCountByDayKey(
-      instanceRows ?? [],
-      normalizedTz
-    );
-    const filteredByLocalDayKey = groupCountByDayKey(
-      filteredInstances,
-      normalizedTz
-    );
-    const sampleFetched = sample(instanceRows ?? [], normalizedTz);
-    const sampleFiltered = sample(filteredInstances, normalizedTz);
-    throwDatasetViolation("CONTRACT", {
-      tz: normalizedTz,
-      rangeStartUtc: rangeStart.toISOString(),
-      rangeEndUtc: rangeEnd.toISOString(),
-      todayDateKey: todayKey,
-      totalFetched: (instanceRows ?? []).length,
-      totalFiltered: filteredInstances.length,
-      fetchedByLocalDayKey,
-      filteredByLocalDayKey,
-      sampleFetched,
-      sampleFiltered,
-    });
-  }
+    projectSkillIds = projectSkillIds ?? {};
+    const resolvedScheduledProjectIds = scheduledProjectIds ?? [];
 
-  const energyLookup = normalizeEnergyLookup(priorityEnergyLookups.energy);
-  const normalizedInstances = normalizeScheduleInstanceEnergy(
-    filteredInstances,
-    energyLookup,
-    projectMap
-  );
-  const syncPairings = await fetchSyncPairingsForInstances({
-    userId,
-    instances: normalizedInstances,
-    habits,
-    client,
-  });
-
-  const loadDay = dayKeyFromUtc(baseDate.toISOString(), normalizedTz);
-  const habitCount = normalizedInstances.filter(
-    (inst) => inst.source_type === "HABIT"
-  ).length;
-  const completedCount = normalizedInstances.filter(
-    (inst) => inst.status === "completed"
-  ).length;
-  const scheduledCount = normalizedInstances.filter(
-    (inst) => inst.status === "scheduled"
-  ).length;
-  const nonHabitCount = normalizedInstances.length - habitCount;
-  log(
-    "debug",
-    `[LOAD] day=${loadDay} total=${normalizedInstances.length} habit=${habitCount} nonhabit=${nonHabitCount} completed=${completedCount} scheduled=${scheduledCount}`
-  );
-
-  if (process.env.NODE_ENV !== "production") {
-    const inst = normalizedInstances[0];
-    log("debug", "SCHEDULER CREATE", {
-      start_utc: inst.start_utc,
-      timeZone,
-      dayKey: dayKeyFromUtc(inst.start_utc, normalizedTz),
-      zoned: toZonedTime(new Date(inst.start_utc), normalizedTz),
-    });
-  }
-
-  const priorityLookup = normalizePriorityLookup(
-    priorityEnergyLookups.priority
-  );
-
-  const projectList = Object.values(projectMap);
-  const goalNameById = new Map<string, GoalSummary["name"]>(
-    goals.map((goal) => [goal.id, goal.name ?? null])
-  );
-  const goalEmojiById = new Map<string, GoalSummary["emoji"]>(
-    goals.map((goal) => [goal.id, goal.emoji ?? null])
-  );
-  const goalMonumentIdById = new Map<string, GoalSummary["monumentId"]>(
-    goals.map((goal) => [goal.id, goal.monumentId ?? null])
-  );
-  const projectGoalRelations: ProjectGoalRelations = {};
-  for (const project of projectList) {
-    const goalId = project.goal_id ?? null;
-    if (!goalId) continue;
-    if (!project.id) continue;
-    projectGoalRelations[project.id] = {
-      goalId,
-      goalName: goalNameById.get(goalId) ?? null,
-      goalEmoji: goalEmojiById.get(goalId) ?? null,
-      goalMonumentId: goalMonumentIdById.get(goalId) ?? null,
+    const lookupResult = priorityEnergyLookups ?? {
+      energy: {},
+      priority: {},
     };
-  }
+    const energyLookup = normalizeEnergyLookup(lookupResult.energy ?? {});
+    const priorityLookup = normalizePriorityLookup(
+      lookupResult.priority ?? {}
+    );
+    const projectList = Object.values(projectMap);
+    const goalNameById = new Map<string, GoalSummary["name"]>(
+      goals.map((goal) => [goal.id, goal.name ?? null])
+    );
+    const goalEmojiById = new Map<string, GoalSummary["emoji"]>(
+      goals.map((goal) => [goal.id, goal.emoji ?? null])
+    );
+    const goalMonumentIdById = new Map<string, GoalSummary["monumentId"]>(
+      goals.map((goal) => [goal.id, goal.monumentId ?? null])
+    );
+    const projectGoalRelations: ProjectGoalRelations = {};
+    for (const project of projectList) {
+      const goalId = project.goal_id ?? null;
+      if (!goalId) continue;
+      if (!project.id) continue;
+      projectGoalRelations[project.id] = {
+        goalId,
+        goalName: goalNameById.get(goalId) ?? null,
+        goalEmoji: goalEmojiById.get(goalId) ?? null,
+        goalMonumentId: goalMonumentIdById.get(goalId) ?? null,
+      };
+    }
 
-  return {
-    generatedAt: new Date().toISOString(),
-    rangeStartUTC: rangeStart.toISOString(),
-    rangeEndUTC: rangeEnd.toISOString(),
-    lookaheadDays,
-    tasks,
-    projects: projectList,
-    projectSkillIds,
-    projectGoalRelations,
-    habits,
-    skills,
-    monuments,
-    scheduledProjectIds,
-    instances: normalizedInstances,
-    syncPairings,
-    energyLookup,
-    priorityLookup,
-  };
+    const instanceSection = "fetch instances for range";
+    let instanceRows: ScheduleInstance[];
+    try {
+      const { data, error: instanceError } = await fetchInstancesForRange(
+        userId,
+        effectiveRangeStart.toISOString(),
+        effectiveRangeEnd.toISOString(),
+        client
+      );
+      if (instanceError) {
+        throw datasetSectionError(instanceSection, instanceError);
+      }
+      if (!data) {
+        throw datasetMissing(instanceSection, "instances");
+      }
+      instanceRows = data;
+    } catch (error) {
+      throw datasetSectionError(instanceSection, error);
+    }
+
+    if (instanceRows.length === 0) {
+      return buildEmptyScheduleEventDataset({
+        lookaheadDays,
+        rangeStartUTC: rangeStart.toISOString(),
+        rangeEndUTC: rangeEnd.toISOString(),
+        tasks,
+        projects: projectList,
+        projectSkillIds,
+        projectGoalRelations,
+        habits,
+        skills,
+        monuments,
+        scheduledProjectIds: resolvedScheduledProjectIds,
+        energyLookup,
+        priorityLookup,
+      });
+    }
+
+    const todayKey = dayKeyFromUtc(baseDate.toISOString(), normalizedTz);
+    const fetchedTodayCount = instanceRows.filter(
+      (i) => dayKeyFromUtc(i.start_utc ?? "", normalizedTz) === todayKey
+    ).length;
+    if (fetchedTodayCount === 0) {
+      const fetchedByLocalDayKey = groupCountByDayKey(
+        instanceRows,
+        normalizedTz
+      );
+      const sampleFetched = sample(instanceRows, normalizedTz);
+      throwDatasetViolation("FETCH", {
+        tz: normalizedTz,
+        rangeStartUtc: rangeStart.toISOString(),
+        rangeEndUtc: rangeEnd.toISOString(),
+        todayDateKey: todayKey,
+        totalFetched: instanceRows.length,
+        totalFiltered: 0, // not yet computed
+        fetchedByLocalDayKey,
+        sampleFetched,
+      });
+    }
+
+    const filteredInstances = instanceRows.filter((instance) => {
+      if (instance.status !== "completed") return true;
+      const startMs = Date.parse(
+        instance.start_utc ?? instance.completed_at ?? ""
+      );
+      const endMs = Date.parse(
+        instance.end_utc ?? instance.completed_at ?? instance.start_utc ?? ""
+      );
+      if (!Number.isFinite(startMs) && !Number.isFinite(endMs)) {
+        return false;
+      }
+
+      const effectiveEndMs = Number.isFinite(endMs) ? endMs : startMs;
+      if (
+        Number.isFinite(effectiveEndMs) &&
+        effectiveEndMs < retentionCutoffMs
+      ) {
+        return false;
+      }
+      return true;
+    });
+    const todayInstanceCount = filteredInstances.filter(
+      (instance) =>
+        dayKeyFromUtc(instance.start_utc ?? "", normalizedTz) === todayKey
+    ).length;
+    if (todayInstanceCount === 0) {
+      const fetchedByLocalDayKey = groupCountByDayKey(
+        instanceRows,
+        normalizedTz
+      );
+      const filteredByLocalDayKey = groupCountByDayKey(
+        filteredInstances,
+        normalizedTz
+      );
+      const sampleFetched = sample(instanceRows, normalizedTz);
+      const sampleFiltered = sample(filteredInstances, normalizedTz);
+      throwDatasetViolation("CONTRACT", {
+        tz: normalizedTz,
+        rangeStartUtc: rangeStart.toISOString(),
+        rangeEndUtc: rangeEnd.toISOString(),
+        todayDateKey: todayKey,
+        totalFetched: instanceRows.length,
+        totalFiltered: filteredInstances.length,
+        fetchedByLocalDayKey,
+        filteredByLocalDayKey,
+        sampleFetched,
+        sampleFiltered,
+      });
+    }
+
+    const normalizedInstances = normalizeScheduleInstanceEnergy(
+      filteredInstances,
+      energyLookup,
+      projectMap
+    );
+    let syncPairings: SyncPairingsByInstanceId = {};
+    try {
+      syncPairings = await fetchSyncPairingsForInstances({
+        userId,
+        instances: normalizedInstances,
+        habits,
+        client,
+      });
+    } catch (error) {
+      throw datasetSectionError("sync pairings fetch", error);
+    }
+
+    const loadDay = dayKeyFromUtc(baseDate.toISOString(), normalizedTz);
+    const habitCount = normalizedInstances.filter(
+      (inst) => inst.source_type === "HABIT"
+    ).length;
+    const completedCount = normalizedInstances.filter(
+      (inst) => inst.status === "completed"
+    ).length;
+    const scheduledCount = normalizedInstances.filter(
+      (inst) => inst.status === "scheduled"
+    ).length;
+    const nonHabitCount = normalizedInstances.length - habitCount;
+    log(
+      "debug",
+      `[LOAD] day=${loadDay} total=${normalizedInstances.length} habit=${habitCount} nonhabit=${nonHabitCount} completed=${completedCount} scheduled=${scheduledCount}`
+    );
+
+    if (process.env.NODE_ENV !== "production") {
+      const inst = normalizedInstances[0];
+      log("debug", "SCHEDULER CREATE", {
+        start_utc: inst.start_utc,
+        timeZone,
+        dayKey: dayKeyFromUtc(inst.start_utc, normalizedTz),
+        zoned: toZonedTime(new Date(inst.start_utc), normalizedTz),
+      });
+    }
+
+    return {
+      generatedAt: new Date().toISOString(),
+      rangeStartUTC: rangeStart.toISOString(),
+      rangeEndUTC: rangeEnd.toISOString(),
+      lookaheadDays,
+      tasks,
+      projects: projectList,
+      projectSkillIds,
+      projectGoalRelations,
+      habits,
+      skills,
+      monuments,
+      scheduledProjectIds: resolvedScheduledProjectIds,
+      instances: normalizedInstances,
+      syncPairings,
+      energyLookup,
+      priorityLookup,
+    };
+  } catch (error) {
+    throw datasetSectionError("buildScheduleEventDataset", error);
+  }
 }
 
 async function fetchSkillsForUser(

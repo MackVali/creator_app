@@ -55,6 +55,7 @@ export function MonumentGridWithSharedTransition({
   const renderNewMonumentCard = () => (
     <button
       type="button"
+      data-tour="new-monument"
       onClick={openDialog}
       className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
     >
@@ -84,6 +85,7 @@ export function MonumentGridWithSharedTransition({
           ? Array.from({ length: 3 }, (_, index) => (
               <button
                 key={`empty-${index}`}
+                data-tour="new-monument"
                 onClick={openDialog}
                 className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
               >

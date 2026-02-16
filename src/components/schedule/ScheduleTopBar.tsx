@@ -193,6 +193,7 @@ export function ScheduleTopBar({
         </button>
         <button
           type="button"
+          data-tour="jump-to-date"
           onClick={() => onOpenJumpToDate?.()}
           aria-label="Open jump to date"
           className={iconButtonClass}

@@ -1213,6 +1213,41 @@ export interface Database {
           updated_at?: string;
         };
       };
+      user_legal_acceptances: {
+        Row: {
+          user_id: string;
+          terms_accepted_at: string;
+          privacy_accepted_at: string;
+          terms_version: string;
+          privacy_version: string;
+          terms_url: string;
+          privacy_url: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          terms_accepted_at: string;
+          privacy_accepted_at: string;
+          terms_version: string;
+          privacy_version: string;
+          terms_url: string;
+          privacy_url: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          terms_accepted_at?: string;
+          privacy_accepted_at?: string;
+          terms_version?: string;
+          privacy_version?: string;
+          terms_url?: string;
+          privacy_url?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
     Views: Record<string, unknown>;
     Functions: {

@@ -56,6 +56,7 @@ import { type ScheduleEditOrigin } from "@/components/schedule/ScheduleMorphDial
 import { scheduleInstanceLayoutTokens } from "@/components/schedule/sharedLayout";
 import { SchedulerModeSheet } from "@/components/schedule/SchedulerModeSheet";
 import { type ScheduleView } from "@/components/schedule/viewUtils";
+import { useTour } from "@/components/tour/TourProvider";
 import {
   updateTaskStage,
   type WindowLite as RepoWindow,
@@ -135,6 +136,7 @@ import {
 } from "@/lib/scheduler/modes";
 import { createMemoNoteForHabit } from "@/lib/notesStorage";
 import { MemoNoteSheet } from "@/components/schedule/MemoNoteSheet";
+import { scheduleTourSteps } from "@/lib/tours/scheduleTour";
 import { useProfile } from "@/lib/hooks/useProfile";
 import { applyStatusTargets, type StatusTarget } from "./statusMutations";
 import {
@@ -2194,6 +2196,21 @@ export default function SchedulePage() {
     () => (userId ? `${HABIT_COMPLETION_STORAGE_PREFIX}:${userId}` : null),
     [userId]
   );
+  const handleScheduleTourComplete = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("tour:schedule:completed", "1");
+  }, []);
+  const { start: startScheduleTour } = useTour(
+    scheduleTourSteps,
+    handleScheduleTourComplete
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem("tour:schedule:pending") !== "1") return;
+    window.localStorage.removeItem("tour:schedule:pending");
+    startScheduleTour();
+  }, [startScheduleTour]);
 
   const initialViewParam = searchParams.get("view") as ScheduleView | null;
   const initialView: ScheduleView =

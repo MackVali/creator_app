@@ -335,17 +335,17 @@ export default function SettingsPage() {
           title="About Creator"
           description="Stay informed about policies and the version you're using."
         >
-          <SettingsStaticRow
+          <SettingsActionRow
             icon={FileText}
             title="Terms of Service"
             description="Read the agreement that keeps everything running smoothly."
-            value="Coming soon"
+            onClick={() => router.push("/legal/terms")}
           />
-          <SettingsStaticRow
+          <SettingsActionRow
             icon={Shield}
             title="Privacy Policy"
             description="Learn how we handle your data and respect your privacy."
-            value="Coming soon"
+            onClick={() => router.push("/legal/privacy")}
           />
           <SettingsStaticRow
             icon={Info}
