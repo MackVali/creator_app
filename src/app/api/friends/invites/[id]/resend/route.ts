@@ -14,11 +14,8 @@ export async function POST(
     return NextResponse.json({ error: "Missing invite id." }, { status: 400 });
   }
 
-  const cookieStore = cookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: () => {},
-  });
+  const cookieStore = await cookies();
+  const supabase = getSupabaseServer(cookieStore);
 
   if (!supabase) {
     return NextResponse.json(

@@ -40,11 +40,8 @@ export async function GET(request: Request) {
   }
 
   const query = parseResult.data.q ?? "";
-  const cookieStore = cookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: () => {},
-  });
+  const cookieStore = await cookies();
+  const supabase = getSupabaseServer(cookieStore);
 
   if (!supabase) {
     return NextResponse.json(

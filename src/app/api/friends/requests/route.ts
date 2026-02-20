@@ -18,16 +18,13 @@ const RequestSchema = z.object({
     .optional(),
 });
 
-function requireSupabase() {
-  const cookieStore = cookies();
-  return getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: () => {},
-  });
+async function requireSupabase() {
+  const cookieStore = await cookies();
+  return getSupabaseServer(cookieStore);
 }
 
 export async function GET() {
-  const supabase = requireSupabase();
+  const supabase = await requireSupabase();
 
   if (!supabase) {
     return NextResponse.json({ requests: [] }, { status: 200 });
@@ -64,7 +61,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const supabase = requireSupabase();
+  const supabase = await requireSupabase();
 
   if (!supabase) {
     return NextResponse.json(

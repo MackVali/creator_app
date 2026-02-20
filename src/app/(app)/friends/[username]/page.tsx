@@ -12,11 +12,8 @@ import type { Friend } from "@/types/friends";
 
 async function fetchFriend(username: string): Promise<Friend | null> {
   const normalized = decodeURIComponent(username).toLowerCase();
-  const cookieStore = cookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: () => {},
-  });
+  const cookieStore = await cookies();
+  const supabase = getSupabaseServer(cookieStore);
 
   if (!supabase) {
     return null;

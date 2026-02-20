@@ -54,13 +54,41 @@ export type SupabaseServerOptions = {
   fetch?: typeof globalThis.fetch;
 };
 
+type CookieWithValue = { name: string; value: string };
+type MaybePromise<T> = T | Promise<T>;
+
 type CookieStore = {
-  get(name: string): { name: string; value: string } | undefined;
-  set?: (name: string, value: string, options: CookieOptions) => void;
+  get(name: string): MaybePromise<CookieWithValue | null | undefined>;
+  set?: (
+    name: string,
+    value: string,
+    options?: CookieOptions
+  ) => MaybePromise<void>;
+  delete?: (name: string, options?: CookieOptions) => MaybePromise<void>;
+  remove?: (name: string, options?: CookieOptions) => MaybePromise<void>;
 };
 
+function isPromiseLike<T>(
+  value: MaybePromise<T>
+): value is PromiseLike<T> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as PromiseLike<T>).then === "function"
+  );
+}
+
+function getCookieValue(
+  result: MaybePromise<CookieWithValue | null | undefined>
+): MaybePromise<string | null> {
+  if (isPromiseLike(result)) {
+    return result.then((cookie) => cookie?.value ?? null);
+  }
+  return result?.value ?? null;
+}
+
 export function getSupabaseServer(
-  cookies: CookieStore,
+  cookieStore: CookieStore,
   options?: SupabaseServerOptions
 ) {
   const { url, key } = getEnv();
@@ -68,10 +96,18 @@ export function getSupabaseServer(
   const fetchOverride = options?.fetch ?? globalThis.fetch;
   return createServerClient<Database>(url, key, {
     cookies: {
-      get: (name) => cookies.get(name)?.value,
+      get: (name) => getCookieValue(cookieStore.get?.(name) ?? null),
       set: (name, value, opts) => {
-        if (typeof cookies.set === "function") {
-          cookies.set(name, value, opts);
+        if (typeof cookieStore.set === "function") {
+          return cookieStore.set(name, value, opts);
+        }
+      },
+      remove: (name, opts) => {
+        if (typeof cookieStore.delete === "function") {
+          return cookieStore.delete(name, opts);
+        }
+        if (typeof cookieStore.remove === "function") {
+          return cookieStore.remove(name, opts);
         }
       },
     },
