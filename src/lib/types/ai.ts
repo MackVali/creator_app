@@ -109,15 +109,25 @@ export type AiIntentParsePath =
   | "disabled"
   | "mock"
   | "autopilot"
+  | "openai"
   | "dev_limit";
 
 export type AiIntentResponse = {
   scope: AiScope;
   intent: AiIntent;
+  intents?: AiIntent[];
   snapshot?: unknown;
   assistant_message: string;
   follow_ups?: string[];
-  _debug?: { parse_path: AiIntentParsePath };
+  quota?: AiIntentQuota;
+  _debug?: { parse_path: AiIntentParsePath; model?: string };
+};
+
+export type AiIntentQuota = {
+  month_start: string;
+  budget_usd: number;
+  used_usd: number;
+  percent_used: number;
 };
 
 export type AiApplyField =

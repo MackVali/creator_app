@@ -14,10 +14,7 @@ const defaultEntitlement = {
 
 export async function GET() {
   const cookieStore = await cookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: () => {},
-  });
+  const supabase = getSupabaseServer(cookieStore);
 
   if (!supabase) {
     return NextResponse.json(defaultEntitlement, { status: 200 });

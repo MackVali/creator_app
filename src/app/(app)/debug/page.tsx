@@ -6,21 +6,7 @@ import { getSupabaseServer } from "@/lib/supabase";
 
 export default async function Page() {
   const cookieStore = await nextCookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: (
-      _name: string,
-      _value: string,
-      _options: {
-        path?: string;
-        domain?: string;
-        maxAge?: number;
-        secure?: boolean;
-        httpOnly?: boolean;
-        sameSite?: "strict" | "lax" | "none";
-      }
-    ) => {},
-  });
+  const supabase = getSupabaseServer(cookieStore);
   const {
     data: { user },
   } = (await supabase?.auth.getUser()) ?? { data: { user: null } };

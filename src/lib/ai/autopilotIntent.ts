@@ -1,4 +1,10 @@
-import type { AiIntent, AiIntentResponse, AiScope, AiSchedulerOp } from "@/lib/types/ai";
+import type {
+  AiIntent,
+  AiIntentResponse,
+  AiScope,
+  AiSchedulerOp,
+  AiThreadPayload,
+} from "@/lib/types/ai";
 
 type AutopilotScheduleInstance = {
   id: string;
@@ -48,7 +54,7 @@ type RunAutopilotIntentArgs = {
   prompt: string;
   scope: AiScope;
   snapshot?: AutopilotSnapshot;
-  thread?: unknown[];
+  thread?: AiThreadPayload[];
 };
 
 const createEmptyDraftPayload = () => ({
@@ -158,6 +164,40 @@ const OVERLAY_PLANNING_PATTERN =
   /(plan(?:ning)?(?: my)? (?:next (?:few|couple|[0-9]+) hours|the next (?:few|[0-9]+) hours)|next (?:few|[0-9]+) hours|overlay window|right now)/i;
 const isOverlayPlanningPrompt = (text: string) =>
   OVERLAY_PLANNING_PATTERN.test(text) || matchesWhatNowIntent(text);
+
+const LIFE_PLANNING_TRIGGER_PATTERN = /(plan my life|organize my life|get my life together|help me figure out my life|help me plan and figure out my life|help me understand my life|i need help understanding my life|understand my life|figure out my life|help me plan|help me organize|i need direction)/i;
+const SHORT_LIFE_PLANNING_PROMPT_PATTERN = /(help me plan|help me organize|help me get (?:my )?life together)/i;
+const GENERIC_HELP_PROMPT_PATTERN = /^help me\b/i;
+const SPECIFIC_ENTITY_PATTERN = /\b(goal|project|task|habit|day\s*-?\s*type|schedule|overlay)\b/i;
+
+const LIFE_PLANNING_CHECK_QUESTIONS = [
+  "What time horizon should we focus on first—today, the next few days, or a longer stretch?",
+  "Which priority area matters most right now: health, relationships, work/app progress, or something else?",
+  "Would you like a full Day Type template (24h) or a Next-3-Hours overlay plan?",
+];
+
+const isVagueLifePlanningPrompt = (text: string): boolean => {
+  if (!text.trim()) return false;
+  if (LIFE_PLANNING_TRIGGER_PATTERN.test(text)) {
+    return true;
+  }
+  const normalized = text.toLowerCase();
+  if (SPECIFIC_ENTITY_PATTERN.test(normalized)) {
+    return false;
+  }
+  if (GENERIC_HELP_PROMPT_PATTERN.test(normalized)) {
+    return true;
+  }
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (
+    words.length > 0 &&
+    words.length <= 4 &&
+    SHORT_LIFE_PLANNING_PROMPT_PATTERN.test(normalized)
+  ) {
+    return true;
+  }
+  return false;
+};
 
 const GOAL_PRIORITY_ORDER = [
   "ULTRA-CRITICAL",
@@ -590,6 +630,104 @@ const createScopeClarificationResponse = (
   );
 };
 
+const findLastAssistantMessage = (thread?: AiThreadPayload[]): string | null => {
+  if (!thread || thread.length === 0) return null;
+  for (let index = thread.length - 1; index >= 0; index -= 1) {
+    const entry = thread[index];
+    if (entry.role === "assistant" && typeof entry.content === "string") {
+      const trimmed = entry.content.trim();
+      if (trimmed) return trimmed;
+    }
+  }
+  return null;
+};
+
+const assistantMessageMentionsKind = (
+  message: string,
+  kind: "goal" | "project" | "task"
+): boolean => {
+  const lower = message.toLowerCase();
+  if (!lower.includes("needs a name")) return false;
+  if (kind === "goal") {
+    return lower.includes("goal creation") || lower.includes("goal ");
+  }
+  if (kind === "project") {
+    return lower.includes("project creation") || lower.includes("project");
+  }
+  return lower.includes("task creation") || lower.includes("task");
+};
+
+const createNameOnlyDraftResponse = (
+  kind: "goal" | "project" | "task",
+  name: string,
+  scope: AiScope,
+  snapshot?: unknown
+): AiIntentResponse => {
+  const draft = { ...createEmptyDraftPayload(), name };
+  let intent: AiIntent;
+  let followUps: string[];
+
+  if (kind === "goal") {
+    intent = createDraftIntent(
+      "DRAFT_CREATE_GOAL",
+      "Autopilot goal draft",
+      `Preparing to create the goal "${name}".`,
+      draft
+    );
+    followUps = ["Review the goal", "Confirm to create it"];
+  } else if (kind === "project") {
+    intent = createDraftIntent(
+      "DRAFT_CREATE_PROJECT",
+      "Autopilot project draft",
+      `Preparing to create the project "${name}".`,
+      draft
+    );
+    followUps = ["Review the project", "Confirm to create it"];
+  } else {
+    intent = createDraftIntent(
+      "DRAFT_CREATE_TASK",
+      "Autopilot task draft",
+      `Preparing to create the task "${name}".`,
+      draft
+    );
+    followUps = ["Review the task", "Confirm to create it"];
+  }
+
+  return buildResponse(
+    scope,
+    intent,
+    `Drafted ${kind}: "${name}". Review the proposal below.`,
+    followUps,
+    snapshot
+  );
+};
+
+const attemptNameOnlyFollowUp = (
+  thread: AiThreadPayload[] | undefined,
+  prompt: string,
+  scope: AiScope,
+  snapshot?: unknown
+): AiIntentResponse | null => {
+  if (!thread || !prompt) return null;
+  const trimmed = prompt.trim();
+  if (!trimmed || trimmed.length > 80) return null;
+
+  const lastAssistant = findLastAssistantMessage(thread);
+  if (!lastAssistant) return null;
+
+  if (assistantMessageMentionsKind(lastAssistant, "goal")) {
+    return createNameOnlyDraftResponse("goal", trimmed, scope, snapshot);
+  }
+  if (assistantMessageMentionsKind(lastAssistant, "project")) {
+    return createNameOnlyDraftResponse("project", trimmed, scope, snapshot);
+  }
+  if (assistantMessageMentionsKind(lastAssistant, "task")) {
+    return createNameOnlyDraftResponse("task", trimmed, scope, snapshot);
+  }
+
+  return null;
+};
+
 const matchesGoalIntent = (text: string) =>
   /(?:create|help me create)(?: a| an)? goal/.test(text) ||
   text.startsWith("create goal");
@@ -751,6 +889,31 @@ const getPriorityNames = (
     }
   }
   return names;
+};
+
+const buildSnapshotCheckLines = (args: {
+  goals?: AutopilotSnapshot["goals"];
+  projects?: AutopilotSnapshot["projects"];
+  windows: NormalizedSnapshotWindow[];
+  dayTypes?: AutopilotSnapshot["dayTypes"];
+  habits?: AutopilotSnapshot["habits"];
+}) => {
+  const goals = Array.isArray(args.goals) ? args.goals : [];
+  const projects = Array.isArray(args.projects) ? args.projects : [];
+  const dayTypes = Array.isArray(args.dayTypes) ? args.dayTypes : [];
+  const habits = Array.isArray(args.habits) ? args.habits : [];
+  const lines = [
+    `- Goals: ${goals.length} tracked`,
+    `- Projects: ${projects.length} active`,
+    `- Windows: ${args.windows.length} scheduled`,
+    `- Day types: ${dayTypes.length} templates`,
+    `- Habits: ${habits.length} recurring anchors`,
+  ];
+  const priorityNames = getPriorityNames(goals, projects, 3);
+  if (priorityNames.length) {
+    lines.push(`- Top priorities: ${priorityNames.join(", ")}`);
+  }
+  return lines.slice(0, 6);
 };
 
 type DayTypeBlock = {
@@ -1132,6 +1295,7 @@ export function runAutopilotIntent({
   prompt,
   scope,
   snapshot,
+  thread,
 }: RunAutopilotIntentArgs): AiIntentResponse {
   const trimmedPrompt = prompt.trim();
   const normalized = trimmedPrompt.toLowerCase();
@@ -1143,6 +1307,39 @@ export function runAutopilotIntent({
   const recurringHabits = Array.isArray(snapshot?.habits)
     ? snapshot.habits
     : [];
+
+  if (isVagueLifePlanningPrompt(trimmedPrompt)) {
+    const snapshotLines = buildSnapshotCheckLines({
+      goals,
+      projects,
+      windows,
+      dayTypes,
+      habits: recurringHabits,
+    });
+    const enumeratedQuestions = LIFE_PLANNING_CHECK_QUESTIONS.map(
+      (question, index) => `${index + 1}. ${question}`
+    );
+    const assistantMessage = [
+      "Snapshot check:",
+      ...snapshotLines,
+      "",
+      "Before we choose a plan, answer:",
+      ...enumeratedQuestions,
+    ].join("\n");
+    const intent = createClarificationIntent(
+      "Life planning kickoff",
+      "Need a life planning kickoff before I can help organize everything.",
+      ["life direction"],
+      LIFE_PLANNING_CHECK_QUESTIONS
+    );
+    return buildResponse(
+      scope,
+      intent,
+      assistantMessage,
+      ["Answer any of the questions above to continue."],
+      snapshot
+    );
+  }
 
   if (isTopPrioritiesPrompt(normalized)) {
     if (!snapshot) {
@@ -1310,7 +1507,10 @@ export function runAutopilotIntent({
     );
   }
 
-  const goalName = extractNameAfterKeyword(trimmedPrompt, "create goal");
+  const goalName =
+    extractNameAfterKeyword(trimmedPrompt, "create goal") ||
+    extractNameAfterKeyword(trimmedPrompt, "create a goal") ||
+    extractNameAfterKeyword(trimmedPrompt, "create new goal");
   if (matchesGoalIntent(normalized)) {
     if (scope === "read_only") {
       const followUps = [
@@ -1647,6 +1847,16 @@ if (matchesDayTypeIntent(normalized)) {
       ["Preview the proposed assignment", "Confirm when ready"],
       snapshot
     );
+  }
+
+  const followUpResponse = attemptNameOnlyFollowUp(
+    thread,
+    trimmedPrompt,
+    scope,
+    snapshot
+  );
+  if (followUpResponse) {
+    return followUpResponse;
   }
 
   const goalCount = goals.length;

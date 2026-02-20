@@ -9,10 +9,20 @@ import {
   type ScheduleInstance,
 } from "@/lib/scheduler/instanceRepo";
 import { addDaysInTimeZone, makeDateInTimeZone } from "@/lib/scheduler/timezone";
-import { runAiIntent } from "@/lib/ai/openaiIntent";
+import { AI_INTENT_MODEL, getAiModelPricing } from "@/lib/ai/config";
+import {
+  runAiIntent,
+  type RunAiIntentResult,
+} from "@/lib/ai/openaiIntent";
+import {
+  fetchAiMonthlyUsage,
+  getAiMonthStart,
+  recordAiMonthlyUsage,
+} from "@/lib/ai/usage";
 import type { AiScope, AiThreadPayload } from "@/lib/types/ai";
 
 const FALLBACK_TIME_ZONE = "America/Chicago";
+const AI_INTENT_TIMEOUT_MS = 45_000;
 
 function parseDayKey(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -98,6 +108,15 @@ const PAID_TIERS = new Set(
     "ADMIN",
   ].map((value) => value.toUpperCase())
 );
+
+const MONTHLY_AI_BUDGET_USD = (() => {
+  const raw = process.env.CREATOR_PLUS_AI_BUDGET_USD;
+  const parsed = Number.parseFloat(raw ?? "");
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return 5;
+})();
 
 function truncateToUtcDay(date: Date): Date {
   return new Date(
@@ -211,8 +230,11 @@ const mapScheduleInstanceToSnapshot = (
 };
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  console.log("AI_INTENT start", startTime);
   try {
     const supabase = await createSupabaseServerClient();
+    console.log("AI_INTENT supabase_ok=%s", Boolean(supabase), Date.now());
     if (!supabase) {
       return NextResponse.json(
         { error: "Supabase client unavailable" },
@@ -223,13 +245,17 @@ export async function POST(request: NextRequest) {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    console.log("AI_INTENT user_present=%s", Boolean(user), Date.now());
 
     if (!user) {
+      console.warn("AI_INTENT unauthorized - returning 401", Date.now());
       return NextResponse.json(
         { error: "Not authenticated" },
         { status: 401 }
       );
     }
+
+    console.log("AI_INTENT authed user_id=%s", user.id, Date.now());
 
     const payload = (await request.json().catch(() => null)) as
       | {
@@ -249,6 +275,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    console.log("AI_INTENT parsed", Date.now());
 
     const entitlementResult = await supabase
       .from("user_entitlements")
@@ -355,11 +383,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const wantsDraft =
+      payload?.scope === "draft_creation" &&
+      /\b(create|add|draft|make)\b/i.test(prompt);
+
     const maybeScope =
-      payload?.scope === "draft_creation" ||
       payload?.scope === "schedule_edit"
-        ? payload.scope
-        : "read_only";
+        ? "schedule_edit"
+        : wantsDraft
+          ? "draft_creation"
+          : "read_only";
 
     const scope: AiScope = maybeScope;
 
@@ -382,6 +415,8 @@ export async function POST(request: NextRequest) {
         dayParts = parsedRequested;
       }
     }
+
+    console.log("AI_INTENT snapshot start", Date.now());
 
     const windowDate = makeDateInTimeZone(
       {
@@ -436,12 +471,19 @@ export async function POST(request: NextRequest) {
 
     const goalsResponse = await supabase
       .from("goals")
-      .select("id,name,priority")
+      .select(
+        "id,name,emoji,priority,energy,priority_code,energy_code,why,created_at,active,status,monument_id,weight,weight_boost,due_date,monument:monuments(emoji)"
+      )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(10);
     const goals =
-      goalsResponse.error || !goalsResponse.data ? [] : goalsResponse.data;
+      goalsResponse.error || !goalsResponse.data
+        ? []
+        : goalsResponse.data.map((goal: any) => ({
+            ...goal,
+            monumentEmoji: goal?.monument?.emoji ?? null,
+          }));
     if (goalsResponse.error) {
       console.error(
         "AI intent snapshot error loading goals",
@@ -451,7 +493,9 @@ export async function POST(request: NextRequest) {
 
     const projectsResponse = await supabase
       .from("projects")
-      .select("id,name,global_rank,completed_at")
+      .select(
+        "id,name,goal_id,priority,energy,stage,why,duration_min,created_at,global_rank,completed_at"
+      )
       .eq("user_id", user.id)
       .order("global_rank", { ascending: true, nullsFirst: false })
       .limit(10);
@@ -466,7 +510,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [dayTypesResponse, dayTypeTimeBlocksResponse] = await Promise.all([
+    const [
+      dayTypesResponse,
+      dayTypeTimeBlocksResponse,
+      habitsResponse,
+    ] = await Promise.all([
       supabase
         .from("day_types")
         .select("id,name")
@@ -477,6 +525,12 @@ export async function POST(request: NextRequest) {
           "id,day_type_id,time_blocks(id,label,start_local,end_local)"
         )
         .eq("user_id", user.id),
+      supabase
+        .from("habits")
+        .select("id,name,duration_minutes,updated_at")
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false })
+        .limit(10),
     ]);
 
     const dayTypes =
@@ -517,28 +571,166 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const snapshot = {
-      dayKey,
-      timeZone,
-      windows,
-      goals,
-      projects,
-      dayTypes,
-      dayTypeTimeBlocks,
-      schedule_instances: scheduleInstances,
-    };
+    const habits =
+      habitsResponse.error || !habitsResponse.data
+        ? []
+        : habitsResponse.data;
+    if (habitsResponse.error) {
+      console.error(
+        "AI intent snapshot error loading habits",
+        habitsResponse.error
+      );
+    }
+
+    const habitSnapshots = habits.map((habit) => ({
+      id: habit.id,
+      name: habit.name ?? null,
+      durationMinutes:
+        typeof habit.duration_minutes === "number" &&
+        Number.isFinite(habit.duration_minutes)
+          ? habit.duration_minutes
+          : null,
+    }));
+
+    let snapshot:
+      | {
+          dayKey: string;
+          timeZone: string;
+          windows: WindowLite[];
+          goals: typeof goals;
+          projects: typeof projects;
+          dayTypes: typeof dayTypes;
+          dayTypeTimeBlocks: typeof dayTypeTimeBlocks;
+          schedule_instances: ScheduleSnapshotInstance[];
+          habits: {
+            id: string;
+            name: string | null;
+            durationMinutes: number | null;
+          }[];
+        }
+      | undefined;
+
+    try {
+      snapshot = {
+        dayKey,
+        timeZone,
+        windows,
+        goals,
+        projects,
+        dayTypes,
+        dayTypeTimeBlocks,
+        schedule_instances: scheduleInstances,
+        habits: habitSnapshots,
+      };
+    } catch (snapshotError) {
+      console.error("AI intent snapshot build failed", snapshotError);
+      snapshot = undefined;
+    }
+
+    console.log("AI_INTENT snapshot done", Date.now());
 
     const sanitizedThread = normalizeThread(payload?.thread);
     const limitedThread = sanitizedThread.slice(-10);
-    const ai = await runAiIntent({
-      prompt,
-      scope,
-      snapshot,
-      thread: limitedThread.length ? limitedThread : undefined,
-    });
-    return NextResponse.json(ai);
+    const aiController = new AbortController();
+    let aiTimeoutId: ReturnType<typeof setTimeout> | undefined;
+    let aiResult: RunAiIntentResult;
+    console.log("AI_INTENT runAiIntent start mode=%s", scope, Date.now());
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        aiTimeoutId = setTimeout(() => {
+          aiController.abort();
+          reject(new Error("AI request timed out"));
+        }, AI_INTENT_TIMEOUT_MS);
+      });
+      aiResult = await Promise.race([
+        runAiIntent({
+          prompt,
+          scope,
+          snapshot,
+          thread: limitedThread.length ? limitedThread : undefined,
+          signal: aiController.signal,
+        }),
+        timeoutPromise,
+      ]);
+      console.log("AI_INTENT runAiIntent done", Date.now());
+    } catch (error) {
+      const isTimedOut =
+        error instanceof Error && error.message === "AI request timed out";
+      const isAbortTimeout =
+        error instanceof Error &&
+        error.name === "AbortError" &&
+        aiController.signal.aborted;
+      if (isTimedOut || isAbortTimeout) {
+        return NextResponse.json(
+          { error: "ILAV timed out. Try a shorter request or retry." },
+          { status: 504 }
+        );
+      }
+      throw error;
+    } finally {
+      if (aiTimeoutId) {
+        clearTimeout(aiTimeoutId);
+      }
+    }
+    const aiResponse = aiResult.ai;
+    const normalizedAiResponse = { ...aiResponse };
+    if (Array.isArray(normalizedAiResponse.intents) && normalizedAiResponse.intents.length) {
+      normalizedAiResponse.intent = normalizedAiResponse.intents[0];
+    }
+    const monthStart = getAiMonthStart(new Date());
+    let usageRow = null;
+    if (aiResult.usage) {
+      const pricing = getAiModelPricing(AI_INTENT_MODEL);
+      const costUsd =
+        (aiResult.usage.input_tokens * pricing.inputUsdPerMillion +
+          aiResult.usage.output_tokens * pricing.outputUsdPerMillion) /
+        1_000_000;
+      usageRow = await recordAiMonthlyUsage({
+        supabase,
+        userId: user.id,
+        monthStart,
+        model: AI_INTENT_MODEL,
+        inputTokens: aiResult.usage.input_tokens,
+        outputTokens: aiResult.usage.output_tokens,
+        costUsd,
+      });
+    }
+    if (!usageRow) {
+      usageRow = await fetchAiMonthlyUsage({
+        supabase,
+        userId: user.id,
+        monthStart,
+        model: AI_INTENT_MODEL,
+      });
+    }
+    const usedUsd = usageRow?.cost_usd ?? 0;
+    const rawPercent =
+      MONTHLY_AI_BUDGET_USD > 0
+        ? (usedUsd / MONTHLY_AI_BUDGET_USD) * 100
+        : usedUsd > 0
+        ? 100
+        : 0;
+    const percentUsed = Number.isFinite(rawPercent) ? rawPercent : 0;
+    const quota = {
+      month_start: monthStart,
+      budget_usd: MONTHLY_AI_BUDGET_USD,
+      used_usd: usedUsd,
+      percent_used: percentUsed,
+    };
+    const response = NextResponse.json({ ...normalizedAiResponse, quota });
+    response.headers.set(
+      "X-ILAV-PARSE-PATH",
+      aiResponse._debug?.parse_path ?? "unknown"
+    );
+    response.headers.set(
+      "X-ILAV-MODEL",
+      aiResponse._debug?.model ?? "unknown"
+    );
+    console.log("AI_INTENT respond ok", Date.now());
+    return response;
   } catch (error) {
-    console.error("AI intent route error", error);
+    const elapsedMs = Date.now() - startTime;
+    console.error("AI_INTENT error", error, elapsedMs);
     return NextResponse.json(
       { error: "Unable to process AI intent" },
       { status: 500 }

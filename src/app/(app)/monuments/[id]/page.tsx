@@ -14,7 +14,7 @@ interface MonumentDetailPageProps {
 export default async function MonumentDetailPage({
   params,
 }: MonumentDetailPageProps) {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const supabase = getSupabaseServer(cookieStore);
 
   if (!supabase) {
@@ -72,4 +72,3 @@ export default async function MonumentDetailPage({
 
   return <MonumentDetail monument={monument} notes={notes} />;
 }
-

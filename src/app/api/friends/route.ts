@@ -5,11 +5,8 @@ import { mapFriendConnection } from "@/lib/friends/mappers";
 import { getSupabaseServer } from "@/lib/supabase";
 
 export async function GET() {
-  const cookieStore = cookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: () => {},
-  });
+  const cookieStore = await cookies();
+  const supabase = getSupabaseServer(cookieStore);
 
   if (!supabase) {
     return NextResponse.json({ friends: [] }, { status: 200 });

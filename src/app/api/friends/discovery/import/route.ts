@@ -22,11 +22,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
   }
 
-  const cookieStore = cookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: () => {},
-  });
+  const cookieStore = await cookies();
+  const supabase = getSupabaseServer(cookieStore);
 
   if (!supabase) {
     return NextResponse.json(

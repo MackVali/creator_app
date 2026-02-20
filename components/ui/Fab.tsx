@@ -69,17 +69,11 @@ import {
   SCHEDULER_PRIORITY_LABELS,
 } from "@/lib/types/ai";
 import type {
-  AiApplyCandidate,
-  AiApplyErrorResponse,
-  AiApplyField,
   AiIntent,
-  AiIntentParsePath,
   AiIntentResponse,
   AiScope,
   AiSchedulerOp,
-  AiThreadMessage,
   AiThreadPayload,
-  SchedulerOpPreview,
 } from "@/lib/types/ai";
 
 function ErrorBoundary({ children }: { children: React.ReactNode }) {
@@ -195,12 +189,100 @@ const QUICK_START_PROMPTS = [
   "Plan my next 2 hours",
 ] as const;
 
+const DRAFT_PROPOSAL_TYPES: AiIntent["type"][] = [
+  "DRAFT_CREATE_GOAL",
+  "DRAFT_CREATE_PROJECT",
+  "DRAFT_CREATE_TASK",
+];
+
+const PROPOSAL_CARD_TYPES: AiIntent["type"][] = [
+  ...DRAFT_PROPOSAL_TYPES,
+  "DRAFT_SCHEDULER_INPUT_OPS",
+];
+
+type ProposalOverrides = {
+  draft?: Record<string, string>;
+  schedulerOps?: AiSchedulerOp[];
+};
+
+type AiThreadTextMessage = {
+  id: string;
+  role: "user" | "assistant";
+  kind: "text";
+  content: string;
+  ts: number;
+};
+
+type AiThreadProposalMessage = {
+  id: string;
+  role: "assistant";
+  kind: "proposal";
+  ai: AiIntentResponse;
+  overrides?: ProposalOverrides;
+  ts: number;
+};
+
+type LocalAiThreadMessage = AiThreadTextMessage | AiThreadProposalMessage;
+
+const isTextThreadMessage = (
+  message: LocalAiThreadMessage
+): message is AiThreadTextMessage => message.kind === "text";
+
+const createThreadMessageId = () =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `msg-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+
+const buildInitialProposalFormValues = (
+  draft?: Record<string, unknown>,
+  overrides?: Record<string, string>,
+  intentType?: AiIntent["type"]
+) => {
+  const keys = new Set<string>([
+    ...Object.keys(draft ?? {}),
+    ...Object.keys(overrides ?? {}),
+  ]);
+  const values: Record<string, string> = {};
+  keys.forEach((key) => {
+    if (overrides && overrides[key] !== undefined) {
+      values[key] = overrides[key];
+      return;
+    }
+    const baseValue = draft ? draft[key] : undefined;
+    values[key] =
+      baseValue === undefined || baseValue === null ? "" : String(baseValue);
+  });
+  if (intentType === "DRAFT_CREATE_GOAL") {
+    values.monument_id ??= "";
+    values.due_date ??= "";
+  }
+  if (intentType === "DRAFT_CREATE_PROJECT") {
+    values.goal_id ??= "";
+    values.skill_ids ??= "";
+    values.stage ??= "";
+  }
+  return values;
+};
+
+const humanizeFieldLabel = (key: string) =>
+  key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase())
+    .trim();
+
 function determineAutoScopeFromPrompt(prompt: string): AiScope {
   const normalized = prompt.toLowerCase();
   const mentionsCreate =
-    normalized.includes("create") &&
-    AUTO_SCOPE_CREATION_KEYWORDS.some((keyword) =>
-      normalized.includes(keyword)
+    (normalized.includes("create") ||
+      normalized.includes("draft") ||
+      normalized.includes("add") ||
+      normalized.includes("make")) &&
+    (
+      AUTO_SCOPE_CREATION_KEYWORDS.some((keyword) =>
+        normalized.includes(keyword)
+      ) ||
+      /\b(goal|project|task|day\s*type|habit)\b/.test(normalized) ||
+      normalized.includes("help me create")
     );
 
   if (mentionsCreate) {
@@ -342,31 +424,6 @@ function useOverhangLT(
   return pos;
 }
 
-type Candidate = {
-  id: string;
-  title: string;
-  score: number;
-};
-
-type PreviewMatches = {
-  applied: { type: AiIntent["type"]; ids: string[] };
-  message?: string;
-};
-
-type PreviewResult = {
-  warnings: string[];
-  candidates?: {
-    goals?: Candidate[];
-    projects?: Candidate[];
-  };
-  suggested_links?: {
-    goal_id?: string;
-    project_id?: string;
-  };
-  ops?: SchedulerOpPreview[];
-  matches?: PreviewMatches;
-};
-
 const formatSchedulerPriorityLabel = (value: number) => {
   const index = Math.max(
     0,
@@ -390,23 +447,6 @@ const describeSchedulerOp = (op: AiSchedulerOp) => {
     case "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL":
       return `Update time block "${op.block_label}" for day type "${op.day_type_name}"`;
   }
-};
-
-const ACTION_FIELD_LABELS: Record<AiApplyField, string> = {
-  day_type_name: "day type",
-  goal_title: "goal",
-  project_title: "project",
-  time_block_label: "time block",
-};
-
-const createProposalKey = (intent: AiIntent, assistantMessage: string) => {
-  const value = `${intent.type}|${intent.title}|${intent.message}|${assistantMessage}`;
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = Math.imul(31, hash) + value.charCodeAt(i);
-    hash |= 0;
-  }
-  return `ai-${Math.abs(hash).toString(36)}`;
 };
 
 const MINUTES_PER_DAY = 24 * 60;
@@ -455,524 +495,6 @@ type DayTypePreviewSegment = {
   timeRange: string;
 };
 
-const buildDayTypePreviewSegments = (ops?: AiSchedulerOp[]) => {
-  if (!ops || ops.length === 0) return [];
-  const blocks: Array<{
-    id: string;
-    label: string;
-    dayTypeName: string;
-    blockType?: string;
-    energy?: string;
-    start?: string | null;
-    end?: string | null;
-  }> = [];
-  let counter = 0;
-  for (const op of ops) {
-    if (op.type === "CREATE_DAY_TYPE_TIME_BLOCK") {
-      blocks.push({
-        id: `create-${counter}-${op.day_type_name}-${op.label}`,
-        label: op.label ?? "DAY BLOCK",
-        dayTypeName: op.day_type_name ?? "DAY TYPE",
-        blockType: op.block_type,
-        energy: op.energy,
-        start: op.start_local,
-        end: op.end_local,
-      });
-      counter += 1;
-    } else if (op.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL") {
-      const start = op.patch.start_local?.trim();
-      const end = op.patch.end_local?.trim();
-      if (!start && !end) continue;
-      blocks.push({
-        id: `update-${counter}-${op.day_type_name}-${op.block_label}`,
-        label: op.block_label ?? "DAY BLOCK",
-        dayTypeName: op.day_type_name ?? "DAY TYPE",
-        start,
-        end,
-      });
-      counter += 1;
-    }
-  }
-  const segments: DayTypePreviewSegment[] = [];
-  for (const block of blocks) {
-    const startMinutes = parseTimeToMinutes(block.start);
-    const endMinutes = parseTimeToMinutes(block.end);
-    if (startMinutes === null || endMinutes === null) continue;
-    const normalizedEnd =
-      endMinutes <= startMinutes ? endMinutes + MINUTES_PER_DAY : endMinutes;
-    const firstSegmentEnd = Math.min(normalizedEnd, MINUTES_PER_DAY);
-    const firstHeight = ((firstSegmentEnd - startMinutes) / MINUTES_PER_DAY) * 100;
-    if (firstHeight <= 0) continue;
-    const dayTypeName = (block.dayTypeName ?? "DAY TYPE").toUpperCase();
-    const blockLabel = (block.label ?? "BLOCK").toUpperCase();
-    const blockType = block.blockType?.toUpperCase();
-    const energy = block.energy?.toUpperCase();
-    segments.push({
-      id: `${block.id}-a`,
-      label: blockLabel,
-      dayTypeName,
-      blockType,
-      energy,
-      topPercent: (startMinutes / MINUTES_PER_DAY) * 100,
-      heightPercent: Math.max(firstHeight, 1.5),
-      startMin: startMinutes,
-      endMin: firstSegmentEnd,
-      timeRange: `${formatTimeLabel(startMinutes)} - ${formatTimeLabel(
-        firstSegmentEnd
-      )}`,
-    });
-    if (normalizedEnd > MINUTES_PER_DAY) {
-      const overflow = normalizedEnd - MINUTES_PER_DAY;
-      const secondHeight = (overflow / MINUTES_PER_DAY) * 100;
-      if (secondHeight > 0) {
-        segments.push({
-          id: `${block.id}-b`,
-          label: blockLabel,
-          dayTypeName,
-          blockType,
-          energy,
-          topPercent: 0,
-          heightPercent: Math.max(secondHeight, 1.5),
-          startMin: 0,
-          endMin: overflow,
-          timeRange: `${formatTimeLabel(0)} - ${formatTimeLabel(overflow)}`,
-        });
-      }
-    }
-  }
-  return segments.sort((a, b) => a.topPercent - b.topPercent);
-};
-
-function DayTypeTimelinePreview({
-  segments,
-  title,
-}: {
-  segments: DayTypePreviewSegment[];
-  title: string;
-}) {
-  const timelineHeightPx = 560;
-  const LANE_WIDTH = 16;
-  const MAX_DISPLAY_LANE = 4;
-
-  const laneSegments = useMemo(() => {
-    const sorted = [...segments].sort((a, b) => {
-      if (a.startMin !== b.startMin) return a.startMin - b.startMin;
-      const aDuration = a.endMin - a.startMin;
-      const bDuration = b.endMin - b.startMin;
-      return bDuration - aDuration;
-    });
-    const lanes: number[] = [];
-    return sorted.map((segment) => {
-      let laneIndex = lanes.findIndex((lastEnd) => segment.startMin >= lastEnd);
-      if (laneIndex === -1) {
-        laneIndex = lanes.length;
-        lanes.push(segment.endMin);
-      } else {
-        lanes[laneIndex] = segment.endMin;
-      }
-      return {
-        ...segment,
-        lane: Math.min(laneIndex, MAX_DISPLAY_LANE),
-      };
-    });
-  }, [segments]);
-
-  const labelHours = Array.from({ length: 25 }, (_, index) => index);
-
-  return (
-    <div className="space-y-3 rounded-[28px] border border-white/15 bg-gradient-to-br from-[#020205]/90 via-[#05070d]/90 to-[#03030b]/90 p-4 shadow-[0_20px_45px_rgba(0,0,0,0.65)]">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-[0.35em] text-white/60">
-          ILAV 24-HOUR DAY TYPE PREVIEW
-        </span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white">
-          {title.toUpperCase()}
-        </span>
-      </div>
-      <div
-        className="relative flex h-[560px] w-full overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-slate-950/90 via-slate-900/80 to-black/80"
-        style={{ minHeight: timelineHeightPx }}
-      >
-        <div className="flex h-full w-full">
-          <div
-            className="relative flex-shrink-0 w-12 border-r border-white/5 px-1"
-            style={{ minHeight: timelineHeightPx }}
-          >
-            <div className="relative h-full">
-              {labelHours.map((hour) => {
-                if (hour === 24) {
-                  return (
-                    <span
-                      key={`label-${hour}`}
-                      className="absolute right-1 text-[9px] uppercase tracking-[0.3em] text-white/30"
-                      style={{ bottom: 0 }}
-                    >
-                      {String(hour).padStart(2, "0")}
-                    </span>
-                  );
-                }
-                if (hour === 0) {
-                  return (
-                    <span
-                      key={`label-${hour}`}
-                      className="absolute right-1 text-[9px] uppercase tracking-[0.3em] text-white/30"
-                      style={{ top: 0 }}
-                    >
-                      {String(hour).padStart(2, "0")}
-                    </span>
-                  );
-                }
-                return (
-                  <span
-                    key={`label-${hour}`}
-                    className="absolute right-1 -translate-y-1/2 text-[9px] uppercase tracking-[0.3em] text-white/30"
-                    style={{ top: `${(hour / 24) * 100}%` }}
-                  >
-                    {String(hour).padStart(2, "0")}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-          <div
-            className="relative flex-1 overflow-y-auto"
-            style={{ height: timelineHeightPx }}
-          >
-            {Array.from({ length: 25 }, (_, index) => (
-              <div
-                key={`line-${index}`}
-                className="pointer-events-none absolute left-0 right-0 h-px bg-white/10"
-                style={{ top: `${(index / 24) * 100}%` }}
-              />
-            ))}
-            {laneSegments.map((segment) => {
-              const blockHeightPx = Math.max(
-                (segment.heightPercent / 100) * timelineHeightPx,
-                0
-              );
-              const showTime = blockHeightPx >= 22;
-              const showMetadata = blockHeightPx >= 44;
-              const leftOffset = segment.lane * LANE_WIDTH;
-              return (
-                <div
-                  key={segment.id}
-                  className="pointer-events-auto absolute flex max-w-full flex-col gap-0.5 overflow-hidden rounded-2xl border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-[0.2em] shadow-[0_10px_30px_rgba(0,0,0,0.65)]"
-                  style={{
-                    top: `${segment.topPercent}%`,
-                    height: `${segment.heightPercent}%`,
-                    left: `${leftOffset}px`,
-                    width: `calc(100% - ${leftOffset}px)`,
-                    zIndex: 10,
-                  }}
-                >
-                  <p className="truncate whitespace-nowrap text-[11px] font-semibold leading-tight text-white shadow-[0_1px_0_rgba(255,255,255,0.25)]">
-                    {segment.label}
-                  </p>
-                  {showTime ? (
-                    <p className="leading-tight text-[10px] text-white/70">
-                      {segment.timeRange}
-                    </p>
-                  ) : null}
-                  {showMetadata && (segment.blockType || segment.energy) ? (
-                    <p className="leading-tight text-[8px] text-white/50">
-                      {segment.blockType ?? "BLOCK"}
-                      {segment.energy ? ` • ${segment.energy}` : ""}
-                    </p>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function renderAiProposal({
-  intent,
-  assistantMessage,
-  feedbackMessage,
-  onCopy,
-  previewWarnings,
-  previewMatches,
-  goalCandidates,
-  projectCandidates,
-  selectedGoalId,
-  selectedProjectId,
-  onGoalChange,
-  onProjectChange,
-  previewOps,
-  suggestedLinks,
-  actionNeeded,
-  onActionCandidateSelect,
-  debugParsePath,
-}: {
-  intent: AiIntent;
-  assistantMessage: string;
-  feedbackMessage: string | null;
-  onCopy: () => void;
-  previewWarnings: string[];
-  previewMatches: PreviewMatches | null;
-  goalCandidates: Candidate[];
-  projectCandidates: Candidate[];
-  selectedGoalId: string | null;
-  selectedProjectId: string | null;
-  onGoalChange: (value: string | null) => void;
-  onProjectChange: (value: string | null) => void;
-  previewOps?: PreviewResult["ops"];
-  suggestedLinks?: PreviewResult["suggested_links"];
-  actionNeeded?: AiApplyErrorResponse | null;
-  onActionCandidateSelect: (candidate: AiApplyCandidate) => void;
-  debugParsePath?: AiIntentParsePath | null;
-}) {
-  const confidence =
-    typeof intent.confidence === "number"
-      ? intent.confidence
-      : Number.isFinite(intent.confidence)
-      ? intent.confidence
-      : 0;
-  const confidenceLabel =
-    confidence <= 1 ? Math.round(confidence * 100) : Math.round(confidence);
-  const schedulerOps =
-    intent.type === "DRAFT_SCHEDULER_INPUT_OPS" ? intent.ops : [];
-  const schedulerPreviewOps = previewOps ?? [];
-  const dayTypePreviewSegments = buildDayTypePreviewSegments(intent.ops);
-  const dayTypePreviewTitle =
-    dayTypePreviewSegments[0]?.dayTypeName ?? "DAY TYPE";
-
-  return (
-    <div className="space-y-4 rounded-[30px] border border-white/5 bg-gradient-to-b from-slate-900/80 via-slate-950/85 to-slate-950/95 p-4 shadow-[0_25px_45px_rgba(0,0,0,0.45)] backdrop-blur">
-      <div className="flex items-start justify-between gap-5">
-        <div className="space-y-1">
-          <p className="text-[8px] uppercase tracking-[0.4em] text-white/50">
-            Details
-          </p>
-          <p className="text-base font-semibold leading-tight text-white">
-            {intent.title}
-          </p>
-          {debugParsePath ? (
-            <p className="text-[10px] uppercase tracking-[0.35em] text-white/40">
-              AI parse: {debugParsePath}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-col items-end gap-2 text-right">
-          <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[6px] uppercase tracking-[0.35em] text-white/80">
-            {intent.type}
-          </span>
-          <span className="text-[11px] text-white/60">
-            {confidenceLabel}% confidence
-          </span>
-        </div>
-      </div>
-      <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent p-5 shadow-[inset 0 1px 20px rgba(255,255,255,0.1),0_15px_40px_rgba(0,0,0,0.45)]">
-        <div className="flex items-center gap-3">
-          <span className="text-[9px] uppercase tracking-[0.4em] text-white/60">
-            Proposed action
-          </span>
-          <span className="flex-1 h-px bg-white/10" />
-        </div>
-        <p className="mt-3 text-xs font-medium leading-relaxed text-white/90">
-          {assistantMessage}
-        </p>
-      </div>
-      {dayTypePreviewSegments.length > 0 ? (
-        <DayTypeTimelinePreview
-          segments={dayTypePreviewSegments}
-          title={dayTypePreviewTitle}
-        />
-      ) : null}
-      <details className="group rounded-[26px] border border-white/10 bg-black/30">
-        <summary className="cursor-pointer px-4 py-3 text-[10px] uppercase tracking-[0.35em] text-white/60">
-          Details
-        </summary>
-        <div className="max-h-44 overflow-auto border-t border-white/5 px-4 pb-3 pt-2 text-[11px] text-white/70">
-          <pre>{JSON.stringify(intent, null, 2)}</pre>
-        </div>
-      </details>
-      <div className="space-y-3 rounded-[28px] border border-white/10 bg-white/5 p-4 shadow-[inset 0 1px 0 rgba(255,255,255,0.08)]">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onCopy}
-            className="rounded-xl border border-white/20 bg-transparent px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/70 transition hover:border-white/40 hover:text-white disabled:opacity-60"
-          >
-            Copy Draft JSON
-          </button>
-        </div>
-        {previewMatches ? (
-          <div className="space-y-1 rounded-2xl border border-white/10 bg-gradient-to-tr from-slate-800/80 to-slate-900/80 px-4 py-3 text-xs text-white shadow-[0_10px_25px_rgba(0,0,0,0.35)]">
-            <p className="font-semibold text-white">Preview match</p>
-            <p className="text-[11px] text-white/70">
-              {previewMatches.message ?? "Intent was already applied."}
-            </p>
-            {previewMatches.applied.ids.length > 0 ? (
-              <p className="text-[11px] text-white/70">
-                IDs: {previewMatches.applied.ids.join(", ")}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        {previewWarnings.length > 0 ? (
-          <div className="space-y-1 rounded-2xl border border-white/10 bg-gradient-to-tr from-[#4b1c45]/70 to-[#0b0d16]/70 px-4 py-3 text-xs text-white shadow-[0_10px_25px_rgba(0,0,0,0.45)]">
-            <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">
-              Preview warnings
-            </p>
-            <ul className="space-y-1 text-[10px] text-white/70">
-              {previewWarnings.map((warning, index) => (
-                <li key={`${warning}-${index}`}>• {warning}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        {actionNeeded ? (
-          <div className="space-y-2 rounded-2xl border border-white/20 bg-gradient-to-br from-[#1f2937]/80 to-[#05060a]/80 px-4 py-3 text-xs text-white shadow-[0_10px_25px_rgba(0,0,0,0.5)]">
-            <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">
-              Action needed
-            </p>
-            <p className="text-[12px] text-white/80">{actionNeeded.message}</p>
-            {actionNeeded.candidates && actionNeeded.candidates.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {actionNeeded.candidates.map((candidate) => (
-                  <button
-                    key={candidate.id}
-                    type="button"
-                    onClick={() => onActionCandidateSelect(candidate)}
-                    className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-white transition hover:bg-white/10"
-                  >
-                    {candidate.title}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="text-[10px] text-white/70">
-                Adjust the request and rerun Preview.
-              </p>
-            )}
-            <p className="text-[10px] text-white/60">
-              Select a candidate and press Preview again.
-            </p>
-          </div>
-        ) : null}
-        {schedulerOps.length > 0 ? (
-          <div className="space-y-2 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">
-              Scheduler operations
-            </p>
-            <ul className="space-y-1 text-[12px] text-white/80">
-              {schedulerOps.map((op, index) => (
-                <li key={`${op.type}-${index}`} className="list-disc pl-4">
-                  {describeSchedulerOp(op)}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        {schedulerPreviewOps.length > 0 ? (
-          <div className="space-y-2 rounded-2xl border border-white/15 bg-black/30 px-4 py-3 text-sm text-white">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">
-              Preview changes
-            </p>
-            <div className="space-y-2">
-              {schedulerPreviewOps.map((preview, index) => (
-                <div
-                  key={`${preview.type}-${index}`}
-                  className="rounded-xl border border-white/10 bg-white/5 p-3"
-                >
-                  <p className="text-[11px] font-semibold text-white">
-                    {preview.description}
-                  </p>
-                  {preview.resolvedId ? (
-                    <p className="text-[11px] text-white/50">
-                      ID: {preview.resolvedId}
-                    </p>
-                  ) : null}
-                  {(preview.before || preview.after) ? (
-                    <div className="mt-1 space-y-0.5 text-[11px] text-white/70">
-                      {preview.before ? <p>Before: {preview.before}</p> : null}
-                      {preview.after ? <p>After: {preview.after}</p> : null}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        {goalCandidates.length > 0 ? (
-          <div className="space-y-1 rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-xs text-white">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">
-              Link to existing goal
-            </p>
-            <select
-              value={selectedGoalId ?? ""}
-              onChange={(event) =>
-                onGoalChange(event.target.value ? event.target.value : null)
-              }
-              className="w-full rounded-xl border border-white/10 bg-black/10 px-2 py-1 text-xs text-white"
-            >
-              <option value="">None</option>
-              {goalCandidates.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.title} ({Math.round(candidate.score * 100)}%)
-                </option>
-              ))}
-            </select>
-            {suggestedLinks?.goal_id ? (
-              <p className="text-[10px] text-white/60">
-                Suggested link:{" "}
-                {
-                  goalCandidates.find(
-                    (candidate) => candidate.id === suggestedLinks.goal_id
-                  )?.title
-                }
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        {projectCandidates.length > 0 ? (
-          <div className="space-y-1 rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-xs text-white">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">
-              Link to existing project
-            </p>
-            <select
-              value={selectedProjectId ?? ""}
-              onChange={(event) =>
-                onProjectChange(
-                  event.target.value ? event.target.value : null
-                )
-              }
-              className="w-full rounded-xl border border-white/10 bg-black/10 px-2 py-1 text-xs text-white"
-            >
-              <option value="">None</option>
-              {projectCandidates.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.title} ({Math.round(candidate.score * 100)}%)
-                </option>
-              ))}
-            </select>
-            {suggestedLinks?.project_id ? (
-              <p className="text-[10px] text-white/60">
-                Suggested link:{" "}
-                {
-                  projectCandidates.find(
-                    (candidate) => candidate.id === suggestedLinks.project_id
-                  )?.title
-                }
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        {feedbackMessage ? (
-          <p className="text-xs uppercase tracking-[0.3em] text-white/60">
-            {feedbackMessage}
-          </p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 export function Fab({
   className = "",
   menuVariant = "default",
@@ -992,28 +514,21 @@ export function Fab({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiResponse, setAiResponse] = useState<AiIntentResponse | null>(null);
+  const rawQuotaPercent = aiResponse?.quota?.percent_used;
+  const quotaPercentValue =
+    typeof rawQuotaPercent === "number" && Number.isFinite(rawQuotaPercent)
+      ? rawQuotaPercent
+      : 0;
+  const quotaDisplayPercent = Math.max(0, Math.round(quotaPercentValue));
+  const quotaExceeded = quotaPercentValue >= 100;
   const [aiShowSnapshot, setAiShowSnapshot] = useState(false);
-  const [aiThread, setAiThread] = useState<AiThreadMessage[]>([]);
-  const [proposalFeedback, setProposalFeedback] = useState<string | null>(null);
-  const [proposalExpanded, setProposalExpanded] = useState(true);
-  const [intentApplyLoading, setIntentApplyLoading] = useState(false);
-  const [proposalIdempotencyKey, setProposalIdempotencyKey] = useState<
-    string | null
-  >(null);
-  const [previewResult, setPreviewResult] = useState<PreviewResult | null>(
-    null
-  );
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
-    null
-  );
-  const [selectedDayTypeId, setSelectedDayTypeId] = useState<string | null>(null);
-  const [selectedDayTypeTimeBlockId, setSelectedDayTypeTimeBlockId] = useState<
-    string | null
-  >(null);
-  const [actionNeeded, setActionNeeded] =
-    useState<AiApplyErrorResponse | null>(null);
+  const [aiThread, setAiThread] = useState<LocalAiThreadMessage[]>([]);
+  const [proposalFormState, setProposalFormState] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [opsPreviewOpenById, setOpsPreviewOpenById] = useState<
+    Record<string, boolean>
+  >({});
   const followUps = useMemo(() => {
     const values = aiResponse?.follow_ups;
     if (!Array.isArray(values)) return [];
@@ -1033,8 +548,6 @@ export function Fab({
   }, [aiResponse?.intent]);
   const chipSuggestions =
     clarificationQuestions.length > 0 ? clarificationQuestions : followUps;
-  const previewWarnings = previewResult?.warnings ?? [];
-  const previewMatches = previewResult?.matches ?? null;
   const scopeLabel = useMemo(() => {
     let label: string;
     switch (aiScope) {
@@ -1049,7 +562,6 @@ export function Fab({
     }
     return autoModeActive ? `${label} (AUTO)` : label;
   }, [aiScope, autoModeActive]);
-  const aiDebugParsePath = aiResponse?._debug?.parse_path ?? null;
   const shouldShowWelcomePanel =
     aiThread.length === 0 && aiPrompt.trim().length === 0;
   const resetAiHelperState = useCallback(() => {
@@ -1062,197 +574,14 @@ export function Fab({
     setScopeSelection("auto");
     setAutoModeActive(true);
     setScopeMenuOpen(false);
-    setPreviewResult(null);
-    setPreviewLoading(false);
-    setSelectedGoalId(null);
-    setSelectedProjectId(null);
-    setSelectedDayTypeId(null);
-    setSelectedDayTypeTimeBlockId(null);
-    setActionNeeded(null);
-    setProposalFeedback("");
-    setProposalExpanded(true);
-    setProposalIdempotencyKey(null);
-    setIntentApplyLoading(false);
+    setProposalFormState({});
+    setOpsPreviewOpenById({});
     setAiLoading(false);
   }, []);
   const closeAiOverlay = useCallback(() => {
     resetAiHelperState();
     setAiOpen(false);
   }, [resetAiHelperState]);
-  const handleCopyIntent = useCallback(async (intent: AiIntent) => {
-    try {
-      if (typeof navigator === "undefined" || !navigator.clipboard) {
-        throw new Error("Clipboard not available");
-      }
-      await navigator.clipboard.writeText(JSON.stringify(intent, null, 2));
-      setProposalFeedback("Draft JSON copied");
-    } catch {
-      setProposalFeedback("Unable to copy draft JSON");
-    }
-  }, []);
-  const handleConfirmIntent = useCallback(
-    async (
-      scope: AiScope,
-      intent: AiIntent,
-      idempotencyKey: string | null
-    ) => {
-      if (!idempotencyKey) {
-        setProposalFeedback("Missing proposal identifier");
-        return;
-      }
-      setProposalFeedback(null);
-      setIntentApplyLoading(true);
-      try {
-        const overrides: Record<string, string> = {};
-        if (selectedGoalId) overrides.goal_id = selectedGoalId;
-        if (selectedProjectId) overrides.project_id = selectedProjectId;
-        if (selectedDayTypeId) overrides.day_type_id = selectedDayTypeId;
-        if (selectedDayTypeTimeBlockId)
-          overrides.day_type_time_block_id = selectedDayTypeTimeBlockId;
-        const body: Record<string, unknown> = {
-          scope,
-          intent,
-          idempotency_key: idempotencyKey,
-        };
-        if (Object.keys(overrides).length > 0) {
-          body.link_overrides = overrides;
-        }
-        const response = await fetch("/api/ai/apply", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          const structuredError = payload as AiApplyErrorResponse | null;
-          if (structuredError?.ok === false && structuredError.error_code) {
-            setActionNeeded(structuredError);
-            setProposalFeedback(
-              structuredError.message ?? "Action needed to continue"
-            );
-            return;
-          }
-          throw new Error(payload?.error ?? "Unable to apply intent");
-        }
-        setProposalFeedback(payload?.message ?? "Intent applied");
-        setPreviewResult(null);
-        setAiPrompt("");
-        setSelectedGoalId(null);
-        setSelectedProjectId(null);
-        setSelectedDayTypeId(null);
-        setSelectedDayTypeTimeBlockId(null);
-        setActionNeeded(null);
-      } catch (error) {
-        setProposalFeedback(
-          error instanceof Error ? error.message : "Unable to apply intent"
-        );
-      } finally {
-        setIntentApplyLoading(false);
-      }
-    },
-    [selectedGoalId, selectedProjectId]
-  );
-  const handlePreviewIntent = useCallback(
-    async (
-      scope: AiScope,
-      intent: AiIntent,
-      idempotencyKey: string | null
-    ) => {
-      if (!idempotencyKey) {
-        setProposalFeedback("Missing proposal identifier");
-        return;
-      }
-      setProposalFeedback(null);
-      setPreviewLoading(true);
-      try {
-        const overrides: Record<string, string> = {};
-        if (selectedGoalId) overrides.goal_id = selectedGoalId;
-        if (selectedProjectId) overrides.project_id = selectedProjectId;
-        if (selectedDayTypeId) overrides.day_type_id = selectedDayTypeId;
-        if (selectedDayTypeTimeBlockId)
-          overrides.day_type_time_block_id = selectedDayTypeTimeBlockId;
-        const requestBody: Record<string, unknown> = {
-          scope,
-          intent,
-          idempotency_key: idempotencyKey,
-          dry_run: true,
-        };
-        if (Object.keys(overrides).length > 0) {
-          requestBody.link_overrides = overrides;
-        }
-        const response = await fetch("/api/ai/apply", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody),
-        });
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          const structuredError = payload as AiApplyErrorResponse | null;
-          if (structuredError?.ok === false && structuredError.error_code) {
-            setActionNeeded(structuredError);
-            setPreviewResult(null);
-            setProposalFeedback(
-              structuredError.message ?? "Action needed to continue"
-            );
-            return;
-          }
-          throw new Error(payload?.error ?? "Unable to preview intent");
-        }
-        const previewPayload = (payload?.preview as PreviewResult) ?? {
-          warnings: [],
-        };
-        setActionNeeded(null);
-        setPreviewResult(previewPayload);
-        setSelectedGoalId(previewPayload?.suggested_links?.goal_id ?? null);
-        setSelectedProjectId(previewPayload?.suggested_links?.project_id ?? null);
-        setProposalFeedback(
-          previewPayload?.matches?.message ?? "Preview ready"
-        );
-      } catch (error) {
-        setProposalFeedback(
-          error instanceof Error ? error.message : "Unable to preview intent"
-        );
-      } finally {
-        setPreviewLoading(false);
-      }
-    },
-    []
-  );
-  const handleActionCandidateSelect = useCallback(
-    (candidate: AiApplyCandidate) => {
-      if (!actionNeeded) return;
-      const fieldLabel = ACTION_FIELD_LABELS[actionNeeded.field] ?? "value";
-      switch (actionNeeded.field) {
-        case "goal_title":
-          setSelectedGoalId(candidate.id);
-          break;
-        case "project_title":
-          setSelectedProjectId(candidate.id);
-          break;
-        case "day_type_name":
-          setSelectedDayTypeId(candidate.id);
-          break;
-        case "time_block_label":
-          setSelectedDayTypeTimeBlockId(candidate.id);
-          if (actionNeeded.suggested_overrides?.day_type_id) {
-            setSelectedDayTypeId(actionNeeded.suggested_overrides.day_type_id);
-          }
-          break;
-      }
-      setAiPrompt(
-        `Use ${candidate.title} for ${fieldLabel} and run Preview again.`
-      );
-      setProposalFeedback(
-        `Linked ${fieldLabel} to ${candidate.title}. Press Preview again.`
-      );
-    },
-    [actionNeeded]
-  );
-  useEffect(() => {
-    if (!proposalFeedback) return;
-    const timer = setTimeout(() => setProposalFeedback(null), 3000);
-    return () => clearTimeout(timer);
-  }, [proposalFeedback]);
   const aiOverlayRef = useRef<HTMLDivElement | null>(null);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -1530,7 +859,7 @@ export function Fab({
       !trigger ||
       typeof window === "undefined" ||
       typeof document === "undefined"
-    ) {
+  ) {
       return;
     }
     const rect = trigger.getBoundingClientRect();
@@ -4207,37 +3536,52 @@ export function Fab({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [scopeMenuOpen]);
 
-  const handleRunAi = async () => {
-    const trimmedPrompt = aiPrompt.trim();
+  const handleRunAi = async (prompt?: string) => {
+    const rawPrompt = typeof prompt === "string" ? prompt : aiPrompt;
+    const trimmedPrompt = rawPrompt.trim();
     if (!trimmedPrompt) return;
+    if (quotaExceeded) return;
 
-    const isAutoMode = autoModeActive || scopeSelection === "auto";
-    const effectiveScope: AiScope = isAutoMode
+    const isForced = typeof prompt === "string";
+    const isAutoMode = isForced
+      ? autoModeActive
+      : autoModeActive || scopeSelection === "auto";
+    const effectiveScope: AiScope = isForced
+      ? aiScope
+      : isAutoMode
       ? determineAutoScopeFromPrompt(trimmedPrompt)
       : (scopeSelection as AiScope);
 
-    if (isAutoMode) {
-      setScopeSelection("auto");
-    } else {
-      setScopeSelection(effectiveScope);
+    if (!isForced) {
+      if (isAutoMode) {
+        setScopeSelection("auto");
+      } else {
+        setScopeSelection(effectiveScope);
+      }
+      setAiScope(effectiveScope);
+      setAutoModeActive(isAutoMode);
     }
-    setAiScope(effectiveScope);
-    setAutoModeActive(isAutoMode);
 
-    const userThreadMessage: AiThreadMessage = {
+    const userThreadMessage: AiThreadTextMessage = {
+      id: createThreadMessageId(),
       role: "user",
+      kind: "text",
       content: trimmedPrompt,
       ts: Date.now(),
     };
     const nextThread = [...aiThread, userThreadMessage];
     setAiThread(nextThread);
     const threadPayload: AiThreadPayload[] = nextThread
+      .filter(isTextThreadMessage)
       .slice(-10)
       .map(({ role, content }) => ({ role, content }));
 
     setAiLoading(true);
     setAiError(null);
     setAiResponse(null);
+    setAiPrompt("");
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 45_000);
     try {
       const response = await fetch("/api/ai/intent", {
         method: "POST",
@@ -4247,42 +3591,176 @@ export function Fab({
           scope: effectiveScope,
           thread: threadPayload,
         }),
+        signal: controller.signal,
       });
       const payload = await response.json().catch(() => null);
+      console.log("ILAV payload debug:", {
+        singleIntentType: payload?.intent?.type,
+        intentsCount: Array.isArray(payload?.intents) ? payload.intents.length : null,
+        intentTypes: Array.isArray(payload?.intents)
+          ? payload.intents.map((i) => i.type)
+          : null,
+      });
       if (!response.ok) {
         throw new Error(payload?.error ?? "Failed to fetch AI intent");
       }
       setAiResponse(payload);
-      if (payload?.assistant_message) {
-        setAiThread((prev) => [
-          ...prev,
-          {
+      const assistantTextMessage = payload?.assistant_message
+        ? {
+            id: createThreadMessageId(),
             role: "assistant",
+            kind: "text",
             content: payload.assistant_message,
             ts: Date.now(),
-          },
-        ]);
-      }
-      if (payload?.intent && typeof payload.intent === "object") {
-        setProposalIdempotencyKey(
-          createProposalKey(payload.intent, payload.assistant_message ?? "")
-        );
-      } else {
-        setProposalIdempotencyKey(null);
-      }
-      setPreviewResult(null);
-      setSelectedGoalId(null);
-      setSelectedProjectId(null);
-      setPreviewLoading(false);
-      setProposalFeedback(null);
-    } catch (error) {
-      console.error("ILAV overlay error", error);
-      setAiError(
-        error instanceof Error ? error.message : "Unable to reach ILAV"
+          }
+        : null;
+      const intents =
+        Array.isArray(payload?.intents) && payload.intents.length
+          ? payload.intents
+          : payload?.intent
+            ? [payload.intent]
+            : [];
+      const proposalIntents = intents.filter((intent) =>
+        PROPOSAL_CARD_TYPES.includes(intent.type)
       );
+      const proposalMessages = payload && proposalIntents.length
+        ? proposalIntents.map((intent) => ({
+            id: createThreadMessageId(),
+            role: "assistant",
+            kind: "proposal",
+            ai: { ...payload, intent },
+            ts: Date.now(),
+          }))
+        : [];
+
+      setAiThread((prev) => {
+        const updated = [...prev];
+        if (assistantTextMessage) {
+          updated.push(assistantTextMessage);
+        }
+        if (proposalMessages.length) {
+          updated.push(...proposalMessages);
+        }
+        return updated;
+      });
+      if (proposalMessages.length) {
+        setProposalFormState((prev) => {
+          const updated = { ...prev };
+          proposalMessages.forEach((proposalMessage) => {
+            updated[proposalMessage.id] = buildInitialProposalFormValues(
+              proposalMessage.ai.intent.draft ?? undefined,
+              undefined,
+              proposalMessage.ai.intent.type
+            );
+          });
+          return updated;
+        });
+      }
+    } catch (error) {
+      const isAbort =
+        (error instanceof DOMException && error.name === "AbortError") ||
+        (error as any)?.name === "AbortError";
+      if (isAbort) {
+        console.error("ILAV overlay timeout", error);
+        setAiError("ILAV timed out. Try again (or send a shorter message).");
+      } else {
+        console.error("ILAV overlay error", error);
+        setAiError(
+          error instanceof Error ? error.message : "Unable to reach ILAV"
+        );
+      }
     } finally {
+      window.clearTimeout(timeoutId);
       setAiLoading(false);
     }
+  };
+
+  const handleProposalFieldChange = (
+    messageId: string,
+    field: string,
+    value: string
+  ) => {
+    setProposalFormState((prev) => ({
+      ...prev,
+      [messageId]: {
+        ...(prev[messageId] ?? {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const getDraftValuesForMessage = (
+    message: AiThreadProposalMessage
+  ): Record<string, string> => {
+    const baseDraft = message.ai.intent.draft ?? {};
+    const overrideDraft = message.overrides?.draft ?? {};
+    const formDraft = proposalFormState[message.id] ?? {};
+    const keys = new Set<string>([
+      ...Object.keys(baseDraft),
+      ...Object.keys(overrideDraft),
+      ...Object.keys(formDraft),
+    ]);
+    const finalDraft: Record<string, string> = {};
+    keys.forEach((key) => {
+      if (formDraft[key] !== undefined) {
+        finalDraft[key] = formDraft[key];
+        return;
+      }
+      if (overrideDraft[key] !== undefined) {
+        finalDraft[key] = overrideDraft[key];
+        return;
+      }
+      const baseValue = baseDraft[key];
+      finalDraft[key] =
+        baseValue === undefined || baseValue === null
+          ? ""
+          : String(baseValue);
+    });
+    return finalDraft;
+  };
+
+  const handleSaveProposalEdits = (message: AiThreadProposalMessage) => {
+    const finalDraft = getDraftValuesForMessage(message);
+    setAiThread((prev) =>
+      prev.map((entry) => {
+        if (entry.kind !== "proposal" || entry.id !== message.id) {
+          return entry;
+        }
+        return {
+          ...entry,
+          overrides: {
+            ...entry.overrides,
+            draft: finalDraft,
+          },
+        };
+      })
+    );
+  };
+
+  const handleSendEditedProposal = (message: AiThreadProposalMessage) => {
+    const finalDraft = getDraftValuesForMessage(message);
+    const payload: Record<string, unknown> = {
+      type: message.ai.intent.type,
+    };
+    if (Object.keys(finalDraft).length > 0) {
+      payload.draft = finalDraft;
+    }
+    const ops =
+      message.overrides?.schedulerOps ?? message.ai.intent.ops ?? [];
+    if (ops.length > 0) {
+      payload.ops = ops;
+    }
+    const approvedPrompt = `APPROVED_PROPOSAL_JSON: ${JSON.stringify(
+      payload
+    )}`;
+    void handleRunAi(approvedPrompt);
+  };
+
+  const toggleOpsPreview = (messageId: string) => {
+    setOpsPreviewOpenById((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId],
+    }));
   };
 
   const interpretWheelGesture = (deltaY: number) => {
@@ -5745,23 +5223,33 @@ export function Fab({
                     <p className="text-[11px] font-semibold uppercase tracking-[0.2em] leading-tight text-white">
                       ILAV
                     </p>
-                    <div className="relative flex flex-col gap-1">
-                      <button
-                        ref={scopeToggleRef}
-                        type="button"
-                        onClick={() => setScopeMenuOpen((prev) => !prev)}
+                      <div className="relative flex flex-col gap-1">
+                        <button
+                          ref={scopeToggleRef}
+                          type="button"
+                          onClick={() => setScopeMenuOpen((prev) => !prev)}
                         aria-haspopup="true"
                         aria-expanded={scopeMenuOpen}
-                        className="cursor-pointer text-[9px] uppercase tracking-[0.3em] leading-none text-white/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-                      >
-                        Scope:{" "}
-                        <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/90">
-                          {scopeLabel}
-                        </span>
-                      </button>
-                      {scopeMenuOpen ? (
-                        <div
-                          ref={scopeMenuRef}
+                          className="cursor-pointer text-[9px] uppercase tracking-[0.3em] leading-none text-white/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+                        >
+                          Scope:{" "}
+                          <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/90">
+                            {scopeLabel}
+                          </span>
+                        </button>
+                        <p
+                          className={cn(
+                            "text-[9px] uppercase tracking-[0.3em]",
+                            quotaExceeded
+                              ? "text-amber-400"
+                              : "text-white/60"
+                          )}
+                        >
+                          AI USED: {quotaDisplayPercent}%
+                        </p>
+                        {scopeMenuOpen ? (
+                          <div
+                            ref={scopeMenuRef}
                           className="absolute left-0 top-full z-10 mt-2 w-40 rounded-2xl border border-white/20 bg-[#050507]/95 p-2 shadow-lg"
                         >
                           {SCOPE_OPTIONS.map((option) => (
@@ -5802,86 +5290,6 @@ export function Fab({
                   </button>
                 </header>
                 <div className="flex h-full flex-1 flex-col overflow-hidden">
-                  {/* REVIEW REGION (outside chat thread) */}
-                  {aiResponse?.intent ? (
-                    <div className="shrink-0 border-b border-white/15 bg-black/60 shadow-[0_12px_20px_rgba(0,0,0,0.35)]">
-                      <div className="flex items-center justify-between px-6 py-2">
-                        <div className="flex items-center gap-3">
-                          <p className="text-[7px] uppercase tracking-[0.35em] text-white/60">
-                            Review
-                          </p>
-                          {/* optional: compact intent badge */}
-                          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[6px] font-semibold uppercase tracking-[0.25em] text-white/70">
-                            {aiResponse.intent.type.replaceAll("_", " ")}
-                          </span>
-                          {aiDebugParsePath ? (
-                            <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[7px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                              AI:{" "}
-                              {aiDebugParsePath === "autopilot"
-                                ? "AUTOPILOT"
-                                : "LIVE"}
-                            </span>
-                          ) : null}
-                        </div>
-
-                          <button
-                            type="button"
-                            onClick={() => setProposalExpanded((prev) => !prev)}
-                            aria-expanded={proposalExpanded}
-                            className="rounded-full border border-white/20 px-3 py-1 text-[7px] font-semibold uppercase tracking-[0.3em] text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-                          >
-                            {proposalExpanded ? "Hide" : "Details"}
-                          </button>
-                      </div>
-
-                      <div className="px-6 pb-4 max-h-[60vh] overflow-y-auto">
-                        {proposalExpanded ? (
-                          renderAiProposal({
-                            intent: aiResponse.intent,
-                            assistantMessage: aiResponse.assistant_message,
-                            feedbackMessage: proposalFeedback,
-                            onCopy: () => handleCopyIntent(aiResponse.intent),
-                            onPreview: () =>
-                              handlePreviewIntent(
-                                aiScope,
-                                aiResponse.intent,
-                                proposalIdempotencyKey
-                              ),
-                            previewLoading,
-                            previewWarnings,
-                            previewMatches,
-                            goalCandidates:
-                              previewResult?.candidates?.goals ?? [],
-                            projectCandidates:
-                              previewResult?.candidates?.projects ?? [],
-                            selectedGoalId,
-                            selectedProjectId,
-                            onGoalChange: (value) =>
-                              setSelectedGoalId(value),
-                            onProjectChange: (value) =>
-                              setSelectedProjectId(value),
-                            previewOps: previewResult?.ops,
-                            suggestedLinks: previewResult?.suggested_links,
-                            actionNeeded,
-                            onActionCandidateSelect:
-                              handleActionCandidateSelect,
-                            onConfirm: () =>
-                              handleConfirmIntent(
-                                aiScope,
-                                aiResponse.intent,
-                                proposalIdempotencyKey
-                              ),
-                            confirmLoading: intentApplyLoading,
-                            debugParsePath: aiDebugParsePath,
-                          })
-                        ) : (
-                          <p className="text-sm text-white/70">
-                            {aiResponse.intent.message}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
                   {/* CHAT REGION (thread only) */}
                   <div className="flex-1 overflow-y-auto overscroll-contain">
                     <div className="px-6 py-4 space-y-5">
@@ -5919,6 +5327,11 @@ export function Fab({
                           {aiError}
                         </div>
                       ) : null}
+                      {quotaExceeded ? (
+                        <div className="rounded-2xl border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-white/80 shadow-inner">
+                          Monthly AI quota reached
+                        </div>
+                      ) : null}
                       {(aiThread.length > 0 || aiResponse?.assistant_message) && (
                         <section className="space-y-3 pt-2">
                           <div className="flex items-center justify-between">
@@ -5926,37 +5339,151 @@ export function Fab({
                               Conversation
                             </p>
                           </div>
-                          <div
-                            ref={chatLogRef}
-                            className="space-y-3"
-                          >
-                            {aiThread.map((message, index) => (
-                              <div
-                                key={`${message.role}-${message.ts}-${index}`}
-                                className={cn(
-                                  "flex max-w-[80%] gap-2 transition",
-                                  message.role === "user"
-                                    ? "ml-auto justify-end"
-                                    : "justify-start"
-                                )}
-                              >
-                                <div
-                                  className={cn(
-                                    "rounded-[20px] px-4 py-3 text-sm leading-relaxed shadow-[0_10px_30px_rgba(0,0,0,0.35)]",
-                                    message.role === "user"
-                                      ? "border border-white/10 bg-white/10 text-white md:rounded-tl-[4px] md:rounded-bl-[20px]"
-                                      : "border border-white/5 bg-white/5 text-white/90 md:rounded-tr-[4px] md:rounded-bl-[20px]"
-                                  )}
-                                >
-                                  <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">
-                                    {message.role === "user" ? "You" : "ILAV"}
-                                  </p>
-                                  <p className="mt-1 text-sm text-white/90">
-                                    {message.content}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
+                          <div ref={chatLogRef} className="space-y-3">
+                            {(() => {
+                              const makeKey = (
+                                message: typeof aiThread[number],
+                                fallbackIndex: number
+                              ) => message.id ?? `${message.role}-${message.ts}-${fallbackIndex}`;
+
+                              const renderItems: Array<
+                                | {
+                                    type: "text";
+                                    key: string;
+                                    message: typeof aiThread[number];
+                                  }
+                                | {
+                                    type: "proposalGroup";
+                                    key: string;
+                                    proposals: typeof aiThread[number][];
+                                    startIndex: number;
+                                  }
+                              > = [];
+
+                              for (let index = 0; index < aiThread.length; index += 1) {
+                                const message = aiThread[index];
+
+                                if (message.kind === "proposal") {
+                                  const startIndex = index;
+                                  const proposals = [message];
+                                  let nextIndex = index + 1;
+
+                                  while (
+                                    nextIndex < aiThread.length &&
+                                    aiThread[nextIndex].kind === "proposal"
+                                  ) {
+                                    proposals.push(aiThread[nextIndex]);
+                                    nextIndex += 1;
+                                  }
+
+                                  const keyParts = proposals.map((proposal, offset) =>
+                                    makeKey(proposal, startIndex + offset)
+                                  );
+
+                                  renderItems.push({
+                                    type: "proposalGroup",
+                                    key: `proposal-group-${startIndex}-${keyParts.join("-")}`,
+                                    proposals,
+                                    startIndex,
+                                  });
+
+                                  index = nextIndex - 1;
+                                  continue;
+                                }
+
+                                renderItems.push({
+                                  type: "text",
+                                  key: makeKey(message, index),
+                                  message,
+                                });
+                              }
+
+                              return renderItems.map((item) => {
+                                if (item.type === "text") {
+                                  const containerClasses = cn(
+                                    "flex gap-2 transition",
+                                    item.message.role === "user"
+                                      ? "ml-auto justify-end max-w-[80%]"
+                                      : "justify-start w-full"
+                                  );
+
+                                  return (
+                                    <div key={item.key} className={containerClasses}>
+                                      <div
+                                        className={cn(
+                                          "rounded-[20px] px-4 py-3 text-sm leading-relaxed shadow-[0_10px_30px_rgba(0,0,0,0.35)]",
+                                          item.message.role === "user"
+                                            ? "border border-white/10 bg-white/10 text-white md:rounded-tl-[4px] md:rounded-bl-[20px]"
+                                            : "border border-white/5 bg-white/5 text-white/90 md:rounded-tr-[4px] md:rounded-bl-[20px]"
+                                        )}
+                                      >
+                                        <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">
+                                          {item.message.role === "user" ? "You" : "ILAV"}
+                                        </p>
+                                        <p className="mt-1 text-sm text-white/90">
+                                          {item.message.content}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                const firstProposal = item.proposals[0];
+                                const containerClasses = cn(
+                                  "flex gap-2 transition",
+                                  firstProposal.role === "user"
+                                    ? "ml-auto justify-end max-w-[80%]"
+                                    : "justify-start w-full"
+                                );
+
+                                return (
+                                  <div key={item.key} className={containerClasses}>
+                                    <div className="w-full overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                      <div className="flex gap-3 snap-x snap-mandatory px-1">
+                                        {item.proposals.map((proposal, proposalIndex) => {
+                                          const proposalSlideKey = makeKey(
+                                            proposal,
+                                            item.startIndex + proposalIndex
+                                          );
+
+                                          return (
+                                            <div
+                                              key={`proposal-slide-${proposalSlideKey}`}
+                                              className="w-full shrink-0 snap-center"
+                                            >
+                                              <ProposalTimelineCard
+                                                message={proposal}
+                                                formState={
+                                                  proposalFormState[proposal.id] ?? {}
+                                                }
+                                                onFieldChange={(field, value) =>
+                                                  handleProposalFieldChange(
+                                                    proposal.id,
+                                                    field,
+                                                    value
+                                                  )
+                                                }
+                                                onSave={() =>
+                                                  handleSaveProposalEdits(proposal)
+                                                }
+                                                onSend={() =>
+                                                  handleSendEditedProposal(proposal)
+                                                }
+                                                opsOpen={opsPreviewOpenById[proposal.id] ?? false}
+                                                onToggleOps={() =>
+                                                  toggleOpsPreview(proposal.id)
+                                                }
+                                                isSending={aiLoading}
+                                              />
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              });
+                            })()}
                           </div>
                         </section>
                       )}
@@ -6022,7 +5549,7 @@ export function Fab({
                       type="button"
                       data-tour="fab-ai"
                       onClick={handleRunAi}
-                      disabled={aiLoading || !aiPrompt.trim()}
+                      disabled={aiLoading || !aiPrompt.trim() || quotaExceeded}
                       className={cn(
                         "rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:cursor-not-allowed disabled:opacity-60",
                         aiLoading ? "opacity-70" : ""
@@ -6052,6 +5579,581 @@ export function Fab({
         onSave={handleRescheduleSave}
         onDelete={handleDeleteEvent}
       />
+    </div>
+  );
+}
+
+type ProposalTimelineCardProps = {
+  message: AiThreadProposalMessage;
+  formState: Record<string, string>;
+  onFieldChange: (field: string, value: string) => void;
+  onSave: (message: AiThreadProposalMessage) => void;
+  onSend: (message: AiThreadProposalMessage) => void;
+  opsOpen: boolean;
+  onToggleOps: () => void;
+  isSending: boolean;
+};
+
+function ProposalTimelineCard({
+  message,
+  formState,
+  onFieldChange,
+  onSave,
+  onSend,
+  opsOpen,
+  onToggleOps,
+  isSending,
+}: ProposalTimelineCardProps) {
+  const baseDraft = message.ai.intent.draft ?? {};
+  const overrideDraft = message.overrides?.draft ?? {};
+  const baseKeys = Object.keys(baseDraft);
+  const overrideOnlyKeys = Object.keys(overrideDraft).filter(
+    (key) => !baseKeys.includes(key)
+  );
+  const fieldKeys = Array.from(new Set([...baseKeys, ...overrideOnlyKeys]));
+  const [detailsOpen, setDetailsOpen] = useState(fieldKeys.length > 0);
+  const ops = message.overrides?.schedulerOps ?? message.ai.intent.ops ?? [];
+  const assistantMessage = message.ai.assistant_message ?? "";
+  const intentMessage = message.ai.intent.message ?? "";
+
+  const getFieldValue = (key: string) => {
+    if (formState[key] !== undefined) {
+      return formState[key];
+    }
+    if (overrideDraft[key] !== undefined) {
+      return overrideDraft[key];
+    }
+    const baseValue = baseDraft[key];
+    if (baseValue === undefined || baseValue === null) return "";
+    return String(baseValue);
+  };
+
+  const isGoalDraft = message.ai.intent.type === "DRAFT_CREATE_GOAL";
+  const isProjectDraft =
+    message.ai.intent.type === "DRAFT_CREATE_PROJECT";
+
+  if (isGoalDraft) {
+    return (
+      <GoalProposalForm
+        message={message}
+        fieldKeys={fieldKeys}
+        getFieldValue={getFieldValue}
+        onFieldChange={onFieldChange}
+        onSave={onSave}
+        onSend={onSend}
+        isSending={isSending}
+      />
+    );
+  }
+
+  if (isProjectDraft) {
+    return (
+      <ProjectProposalForm
+        message={message}
+        fieldKeys={fieldKeys}
+        getFieldValue={getFieldValue}
+        onFieldChange={onFieldChange}
+        onSave={onSave}
+        onSend={onSend}
+        isSending={isSending}
+      />
+    );
+  }
+
+  const renderField = (key: string) => {
+    const lowerKey = key.toLowerCase();
+    const value = getFieldValue(key);
+    const isPriorityField = lowerKey.includes("priority");
+    const isEnergyField = lowerKey.includes("energy");
+    const isTextareaField =
+      lowerKey.includes("notes") ||
+      lowerKey.includes("description") ||
+      lowerKey.includes("why");
+    const isDateField = lowerKey.includes("due") || lowerKey.includes("date");
+    const label = humanizeFieldLabel(key);
+    const handleChange = (next: string) => onFieldChange(key, next);
+
+    return (
+      <div key={key} className="space-y-1">
+        <Label className="text-[10px] uppercase tracking-[0.3em] text-white/60">
+          {label}
+        </Label>
+        {isPriorityField ? (
+          <Select value={value} onValueChange={handleChange}>
+            <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white">
+              <SelectValue placeholder={`Select ${label}`} />
+            </SelectTrigger>
+            <SelectContent className="bg-[#050507] border border-white/10">
+              {SCHEDULER_PRIORITY_LABELS.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : isEnergyField ? (
+          <Select value={value} onValueChange={handleChange}>
+            <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white">
+              <SelectValue placeholder={`Select ${label}`} />
+            </SelectTrigger>
+            <SelectContent className="bg-[#050507] border border-white/10">
+              {ENERGY_OPTIONS_LOCAL.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : isTextareaField ? (
+          <Textarea
+            value={value}
+            onChange={(event) => handleChange(event.target.value)}
+            className="min-h-[120px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/50"
+            placeholder={label}
+          />
+        ) : (
+          <Input
+            type={isDateField ? "date" : "text"}
+            value={value}
+            onChange={(event) => handleChange(event.target.value)}
+            className="h-11 rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/50"
+            placeholder={label}
+          />
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="relative space-y-4 rounded-2xl border border-white/10 bg-gradient-to-b from-white/6 via-white/3 to-black/70 p-5 text-white shadow-[0_20px_45px_rgba(0,0,0,0.55)]">
+      <div className="space-y-4 pb-10">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[8px] uppercase tracking-[0.35em] text-white/60">PROPOSAL</p>
+            <p className="mt-1 text-base font-semibold leading-tight text-white">
+              {message.ai.intent.title}
+            </p>
+          </div>
+          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.35em] text-white/70">
+            {message.ai.intent.type.replaceAll("_", " ")}
+          </span>
+        </div>
+        {assistantMessage ? (
+          <p className="text-sm leading-relaxed text-white">{assistantMessage}</p>
+        ) : null}
+        {intentMessage ? (
+          <p className="text-[11px] leading-relaxed text-white/70">
+            <span className="mr-1 text-[10px] uppercase tracking-[0.25em] text-white/60">
+              Notes
+            </span>
+            {intentMessage}
+          </p>
+        ) : null}
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
+            Details
+          </p>
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((prev) => !prev)}
+            className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70 transition hover:text-white"
+          >
+            {detailsOpen ? "Hide details" : "Edit details"}
+          </button>
+        </div>
+        {detailsOpen ? (
+          <div className="space-y-4">
+            {fieldKeys.length > 0 ? (
+              fieldKeys.map((key) => renderField(key))
+            ) : (
+              <p className="text-[11px] text-white/60">No editable fields detected.</p>
+            )}
+          </div>
+        ) : null}
+        {ops.length > 0 ? (
+          <div className="space-y-2 rounded-2xl border border-white/10 bg-black/35 p-3 text-[11px] text-white/80">
+            <button
+              type="button"
+              onClick={onToggleOps}
+              className="flex w-full items-center justify-between rounded-xl border border-white/10 px-3 py-2 text-[10px] uppercase tracking-[0.35em] text-white/70 transition hover:border-white/30 hover:text-white"
+            >
+              <span>Ops preview</span>
+              <span className="text-[10px] text-white/40">{ops.length} ops</span>
+            </button>
+            {opsOpen ? (
+              <div className="space-y-2">
+                {ops.map((op, index) => (
+                  <div
+                    key={`${op.type}-${index}`}
+                    className="space-y-1 rounded-xl border border-white/10 bg-white/5 p-3"
+                  >
+                    <p className="text-[11px] font-semibold leading-tight text-white">
+                      {describeSchedulerOp(op) ?? op.type}
+                    </p>
+                    <pre className="max-h-32 overflow-auto text-[10px] whitespace-pre-wrap text-white/60">
+                      {JSON.stringify(op, null, 2)}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      <div className="sticky bottom-0 -mx-5 mt-4 border-t border-white/10 bg-[#050507]/80 backdrop-blur px-5 py-3">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            variant="secondary"
+            onClick={() => onSend(message)}
+            disabled={isSending}
+            className="w-full sm:w-auto"
+          >
+            {isSending ? "Sending…" : "Send edited to AI"}
+          </Button>
+          <Button variant="ghost" onClick={() => onSave(message)} className="w-full sm:w-auto">
+            Save
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type GoalProposalFormProps = {
+  message: AiThreadProposalMessage;
+  fieldKeys: string[];
+  getFieldValue: (key: string) => string;
+  onFieldChange: (field: string, value: string) => void;
+  onSave: (message: AiThreadProposalMessage) => void;
+  onSend: (message: AiThreadProposalMessage) => void;
+  isSending: boolean;
+};
+
+function GoalProposalForm({
+  message,
+  fieldKeys,
+  getFieldValue,
+  onFieldChange,
+  onSave,
+  onSend,
+  isSending,
+}: GoalProposalFormProps) {
+  const dueDateKey = fieldKeys.includes("due_date")
+    ? "due_date"
+    : fieldKeys.includes("dueDate")
+    ? "dueDate"
+    : null;
+  const hasWhyKey = fieldKeys.includes("why");
+  const [manualDueValue, setManualDueValue] = useState("");
+  const [manualWhyValue, setManualWhyValue] = useState("");
+
+  const labelClassName =
+    "text-[10px] font-semibold uppercase tracking-[0.35em] text-white/60";
+  const inputClassName =
+    "h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-[12px] text-white placeholder:text-white/60 placeholder:text-[12px] focus:border-blue-400/60 focus-visible:ring-0";
+
+  const dueValue = dueDateKey ? getFieldValue(dueDateKey) : manualDueValue;
+  const handleDueChange = (value: string) => {
+    if (dueDateKey) {
+      onFieldChange(dueDateKey, value);
+      return;
+    }
+    setManualDueValue(value);
+  };
+
+  const whyValue = hasWhyKey ? getFieldValue("why") : manualWhyValue;
+  const handleWhyChange = (value: string) => {
+    if (hasWhyKey) {
+      onFieldChange("why", value);
+      return;
+    }
+    setManualWhyValue(value);
+  };
+
+  return (
+    <div className="mx-auto w-full max-w-[520px]">
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-white/10 to-black/80 p-3 sm:p-4 text-white">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              className="text-[11px] font-semibold uppercase tracking-[0.3em] text-[#f87171] underline decoration-dotted decoration-white/50 underline-offset-4"
+              title="Link to an existing monument"
+            >
+              LINK TO EXISTING MONUMENT +
+            </button>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="sm:col-span-2 space-y-1">
+              <Label className={labelClassName}>Name</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={getFieldValue("name")}
+                  onChange={(event) => onFieldChange("name", event.target.value)}
+                  placeholder="Name this goal"
+                  className={`${inputClassName} flex-1`}
+                />
+                <button
+                  type="button"
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] p-2 text-[11px] text-white shadow-[inset_0_1px_4px_rgba(255,255,255,0.08)] transition hover:border-white/30 hover:bg-white/10"
+                  aria-label="Goal energy"
+                >
+                  <FlameEmber
+                    level="MEDIUM"
+                    size="sm"
+                    className="pointer-events-none"
+                  />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1 min-w-0">
+                <Label className={labelClassName}>Priority</Label>
+                <Select
+                  value={getFieldValue("priority")}
+                  onValueChange={(value) => onFieldChange("priority", value)}
+                >
+                  <SelectTrigger className={inputClassName}>
+                    <SelectValue placeholder="Choose priority" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#050507] border border-white/10">
+                    {SCHEDULER_PRIORITY_LABELS.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1 min-w-0">
+                <Label className={labelClassName}>Due</Label>
+                <Input
+                  type="datetime-local"
+                  value={dueValue}
+                  onChange={(event) => handleDueChange(event.target.value)}
+                  className={inputClassName}
+                />
+              </div>
+            </div>
+
+            <div className="sm:col-span-2 space-y-1">
+              <Label className={labelClassName}>Why?</Label>
+              <Textarea
+                value={whyValue}
+                onChange={(event) => handleWhyChange(event.target.value)}
+                placeholder="Capture the motivation or vision for this goal"
+                className="min-h-[80px] w-full rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-white placeholder:text-white/60 placeholder:text-[12px] focus:border-blue-400/60 focus-visible:ring-0"
+              />
+            </div>
+          </div>
+
+          <div className="mt-1 border-t border-white/10 pt-3">
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => onSend(message)}
+                disabled={isSending}
+                aria-label="Request refinement"
+                title="Request refinement"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ef4444] text-white shadow-[0_8px_20px_rgba(239,68,68,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onSave(message)}
+                disabled={isSending}
+                aria-label="Save goal"
+                title="Save goal"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PROJECT_PROPOSAL_STAGE_OPTIONS = [
+  { value: "RESEARCH", label: "Research" },
+  { value: "TEST", label: "Test" },
+  { value: "BUILD", label: "Build" },
+  { value: "REFINE", label: "Refine" },
+  { value: "RELEASE", label: "Release" },
+];
+
+type ProjectProposalFormProps = {
+  message: AiThreadProposalMessage;
+  fieldKeys: string[];
+  getFieldValue: (key: string) => string;
+  onFieldChange: (field: string, value: string) => void;
+  onSave: (message: AiThreadProposalMessage) => void;
+  onSend: (message: AiThreadProposalMessage) => void;
+  isSending: boolean;
+};
+
+function ProjectProposalForm({
+  message,
+  fieldKeys,
+  getFieldValue,
+  onFieldChange,
+  onSave,
+  onSend,
+  isSending,
+}: ProjectProposalFormProps) {
+  const skillFieldKey =
+    fieldKeys.find((key) => key.toLowerCase().includes("skill")) ?? "skill";
+  const whyFieldKey = fieldKeys.includes("why")
+    ? "why"
+    : fieldKeys.includes("description")
+    ? "description"
+    : "why";
+  const labelClassName =
+    "text-[10px] font-semibold uppercase tracking-[0.35em] text-white/60";
+  const baseInputClassName =
+    "h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] text-[12px] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0";
+  const standardInputClassName = `${baseInputClassName} px-4`;
+  const energyLevel =
+    (getFieldValue("energy") as FlameEmberProps["level"]) || "MEDIUM";
+
+  return (
+    <div className="mx-auto w-full max-w-[520px]">
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-white/10 to-black/80 p-3 sm:p-4 text-white">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              className="text-[11px] font-semibold uppercase tracking-[0.3em] text-[#f87171] underline decoration-dotted decoration-white/50 underline-offset-4"
+              title="Link to an existing goal"
+            >
+              LINK TO EXISTING GOAL +
+            </button>
+          </div>
+
+          <div className="space-y-1">
+            <Label className={labelClassName}>Name</Label>
+            <div className="flex gap-2">
+              <Input
+                value={getFieldValue("name")}
+                onChange={(event) => onFieldChange("name", event.target.value)}
+                placeholder="Name your PROJECT"
+                className={`${standardInputClassName} flex-1`}
+              />
+              <button
+                type="button"
+                className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] p-2 text-[11px] text-white shadow-[inset_0_1px_4px_rgba(255,255,255,0.08)] transition hover:border-white/30 hover:bg-white/10"
+                aria-label="Project energy"
+              >
+                <FlameEmber
+                  level={energyLevel}
+                  size="sm"
+                  className="pointer-events-none"
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1 min-w-0">
+              <Label className={labelClassName}>Priority</Label>
+              <Select
+                value={getFieldValue("priority")}
+                onValueChange={(value) => onFieldChange("priority", value)}
+              >
+                <SelectTrigger className={standardInputClassName}>
+                  <SelectValue placeholder="Choose priority" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#050507] border border-white/10">
+                  {SCHEDULER_PRIORITY_LABELS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 min-w-0">
+              <Label className={labelClassName}>Stage</Label>
+              <Select
+                value={getFieldValue("stage")}
+                onValueChange={(value) => onFieldChange("stage", value)}
+              >
+                <SelectTrigger className={standardInputClassName}>
+                  <SelectValue placeholder="Select stage" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#050507] border border-white/10">
+                  {PROJECT_PROPOSAL_STAGE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className={labelClassName}>Skills</Label>
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
+                <Search className="h-4 w-4 text-white/40" />
+              </span>
+              <Input
+                value={getFieldValue(skillFieldKey)}
+                onChange={(event) =>
+                  onFieldChange(skillFieldKey, event.target.value)
+                }
+                placeholder="Search skills..."
+                className={`${baseInputClassName} pl-10 pr-11`}
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                <Filter className="h-4 w-4 text-white/40" />
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className={labelClassName}>Why?</Label>
+            <Textarea
+              value={getFieldValue(whyFieldKey)}
+              onChange={(event) =>
+                onFieldChange(whyFieldKey, event.target.value)
+              }
+              placeholder="Capture the motivation or success criteria for this project"
+              className="min-h-[80px] w-full rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-white placeholder:text-white/60 placeholder:text-[12px] focus:border-blue-400/60 focus-visible:ring-0"
+            />
+          </div>
+
+          <div className="mt-1 border-t border-white/10 pt-3">
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => onSend(message)}
+                disabled={isSending}
+                aria-label="Request refinement"
+                title="Request refinement"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ef4444] text-white shadow-[0_8px_20px_rgba(239,68,68,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onSave(message)}
+                disabled={isSending}
+                aria-label="Save project"
+                title="Save project"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -9,17 +9,13 @@ const InviteSchema = z.object({
   email: z.string().trim().email("Provide a valid email address"),
 });
 
-function requireSupabase() {
-  const cookieStore = cookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: () => {},
-  });
-  return supabase;
+async function requireSupabase() {
+  const cookieStore = await cookies();
+  return getSupabaseServer(cookieStore);
 }
 
 export async function GET() {
-  const supabase = requireSupabase();
+  const supabase = await requireSupabase();
 
   if (!supabase) {
     return NextResponse.json({ invites: [] }, { status: 200 });
@@ -54,7 +50,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const supabase = requireSupabase();
+  const supabase = await requireSupabase();
 
   if (!supabase) {
     return NextResponse.json(
