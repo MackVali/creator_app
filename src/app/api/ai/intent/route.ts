@@ -275,6 +275,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    const promptLower = prompt.toLowerCase();
 
     console.log("AI_INTENT parsed", Date.now());
 
@@ -383,16 +384,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const dayTypeKeywords = [
+      "day type",
+      "daytype",
+      "workday",
+      "template",
+      "set my day type",
+      "set day type",
+      "assign day type",
+      "time blocks",
+      "schedule my day",
+    ];
+    const dayTypeCreationPattern = /\b(?:create|make|design|build)\b.*\bday\s*type\b/i;
+    const isDayTypeSchedulerIntent =
+      dayTypeKeywords.some((keyword) => promptLower.includes(keyword)) ||
+      dayTypeCreationPattern.test(prompt);
+    // day type creation is a scheduler operation and must use schedule_edit so autopilotIntent and scheduler ops are enabled.
+    const forcedScopeForDayType: AiScope | null = isDayTypeSchedulerIntent
+      ? "schedule_edit"
+      : null;
+
     const wantsDraft =
       payload?.scope === "draft_creation" &&
       /\b(create|add|draft|make)\b/i.test(prompt);
 
     const maybeScope =
-      payload?.scope === "schedule_edit"
+      forcedScopeForDayType ??
+      (payload?.scope === "schedule_edit"
         ? "schedule_edit"
         : wantsDraft
           ? "draft_creation"
-          : "read_only";
+          : "read_only");
 
     const scope: AiScope = maybeScope;
 

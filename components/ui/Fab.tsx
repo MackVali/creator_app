@@ -41,6 +41,10 @@ import { NoteModal } from "./NoteModal";
 import { ComingSoonModal } from "./ComingSoonModal";
 import { PostModal } from "./PostModal";
 import { cn } from "@/lib/utils";
+import {
+  DayType24hPreview,
+  type DayType24hPreviewBlock,
+} from "@/components/schedule/DayType24hPreview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -446,6 +450,74 @@ const describeSchedulerOp = (op: AiSchedulerOp) => {
   }
 };
 
+type DayTypePreviewBlock = {
+  id: string;
+  label?: string;
+  startLabel?: string;
+  endLabel?: string;
+  startMinutes?: number;
+  endMinutes?: number;
+  start_local?: string;
+  end_local?: string;
+  opIndex: number;
+  opType: AiSchedulerOp["type"];
+  hasConstraints?: boolean;
+};
+
+const buildDayTypePreviewBlocks = (ops: AiSchedulerOp[]): DayTypePreviewBlock[] => {
+  const blocks: DayTypePreviewBlock[] = [];
+
+  ops.forEach((op, index) => {
+    if (op.type === "CREATE_DAY_TYPE_TIME_BLOCK") {
+      blocks.push({
+        id: `create-${op.day_type_name}-${op.label}-${index}`,
+        label: op.label,
+        startLabel: op.start_local,
+        endLabel: op.end_local,
+        start_local: op.start_local,
+        end_local: op.end_local,
+        startMinutes: parseTimeToMinutes(op.start_local) ?? undefined,
+        endMinutes: parseTimeToMinutes(op.end_local) ?? undefined,
+        opIndex: index,
+        opType: op.type,
+        hasConstraints:
+          Boolean(op.constraints) && Object.keys(op.constraints).length > 0,
+      });
+      return;
+    }
+
+    if (op.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL") {
+      const { start_local, end_local, constraints } = op.patch;
+      if (!start_local && !end_local) return;
+
+      blocks.push({
+        id: `update-${op.day_type_name}-${op.block_label}-${index}`,
+        label: op.block_label,
+        startLabel: start_local,
+        endLabel: end_local,
+        start_local: start_local ?? undefined,
+        end_local: end_local ?? undefined,
+        startMinutes: start_local
+          ? parseTimeToMinutes(start_local) ?? undefined
+          : undefined,
+        endMinutes: end_local
+          ? parseTimeToMinutes(end_local) ?? undefined
+          : undefined,
+        opIndex: index,
+        opType: op.type,
+        hasConstraints:
+          Boolean(constraints) && Object.keys(constraints).length > 0,
+      });
+    }
+  });
+
+  return blocks.sort(
+    (a, b) =>
+      (a.startMinutes ?? Number.MAX_SAFE_INTEGER) -
+      (b.startMinutes ?? Number.MAX_SAFE_INTEGER)
+  );
+};
+
 const MINUTES_PER_DAY = 24 * 60;
 
 const formatTimeLabel = (minutes: number) => {
@@ -492,6 +564,32 @@ type DayTypePreviewSegment = {
   timeRange: string;
 };
 
+type ProposalFormValues = Record<string, unknown>;
+
+const cloneSchedulerOp = (op: AiSchedulerOp): AiSchedulerOp => {
+  if (op.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL") {
+    const clonedPatch = { ...op.patch };
+    if (clonedPatch.constraints) {
+      clonedPatch.constraints = { ...clonedPatch.constraints };
+    }
+    return {
+      ...op,
+      patch: clonedPatch,
+    };
+  }
+  if (op.type === "CREATE_DAY_TYPE_TIME_BLOCK") {
+    return {
+      ...op,
+      constraints: op.constraints ? { ...op.constraints } : undefined,
+    };
+  }
+  return { ...op };
+};
+
+const normalizeSchedulerOps = (
+  ops?: AiSchedulerOp[] | null
+): AiSchedulerOp[] => (Array.isArray(ops) ? ops : []);
+
 export function Fab({
   className = "",
   menuVariant = "default",
@@ -521,7 +619,7 @@ export function Fab({
   const [aiShowSnapshot, setAiShowSnapshot] = useState(false);
   const [aiThread, setAiThread] = useState<LocalAiThreadMessage[]>([]);
   const [proposalFormState, setProposalFormState] = useState<
-    Record<string, Record<string, string>>
+    Record<string, ProposalFormValues>
   >({});
   const [opsPreviewOpenById, setOpsPreviewOpenById] = useState<
     Record<string, boolean>
@@ -3644,6 +3742,24 @@ export function Fab({
     }));
   };
 
+  const handleSchedulerOpsOverridesChange = useCallback(
+    (messageId: string, ops: AiSchedulerOp[] | undefined) => {
+      setProposalFormState((prev) => {
+        const updated = { ...prev };
+        const entry = { ...(updated[messageId] ?? {}) };
+        const opsArr = normalizeSchedulerOps(ops);
+        if (opsArr.length > 0) {
+          entry.schedulerOpsOverrides = opsArr.map(cloneSchedulerOp);
+        } else {
+          delete entry.schedulerOpsOverrides;
+        }
+        updated[messageId] = entry;
+        return updated;
+      });
+    },
+    []
+  );
+
   const getDraftValuesForMessage = (
     message: AiThreadProposalMessage
   ): Record<string, string> => {
@@ -3657,8 +3773,9 @@ export function Fab({
     ]);
     const finalDraft: Record<string, string> = {};
     keys.forEach((key) => {
-      if (formDraft[key] !== undefined) {
-        finalDraft[key] = formDraft[key];
+      const formValue = formDraft[key];
+      if (typeof formValue === "string") {
+        finalDraft[key] = formValue;
         return;
       }
       if (overrideDraft[key] !== undefined) {
@@ -3674,19 +3791,41 @@ export function Fab({
     return finalDraft;
   };
 
+  const getSchedulerOpsOverridesForMessage = (
+    messageId: string
+  ): AiSchedulerOp[] | undefined => {
+    const entry = proposalFormState[messageId];
+    if (!entry) return undefined;
+    const candidate = entry.schedulerOpsOverrides;
+    if (!Array.isArray(candidate)) return undefined;
+    return candidate as AiSchedulerOp[];
+  };
+
   const handleSaveProposalEdits = (message: AiThreadProposalMessage) => {
     const finalDraft = getDraftValuesForMessage(message);
+    const overrideOpsCandidate = message.overrides?.schedulerOps;
+    const overrideOpsFromMessage = Array.isArray(overrideOpsCandidate)
+      ? overrideOpsCandidate
+      : undefined;
+    const overrideOps =
+      getSchedulerOpsOverridesForMessage(message.id) ?? overrideOpsFromMessage;
     setAiThread((prev) =>
       prev.map((entry) => {
         if (entry.kind !== "proposal" || entry.id !== message.id) {
           return entry;
         }
+        const nextOverrides = {
+          ...entry.overrides,
+          draft: finalDraft,
+        };
+        if (overrideOps && overrideOps.length > 0) {
+          nextOverrides.schedulerOps = overrideOps;
+        } else {
+          nextOverrides.schedulerOps = undefined;
+        }
         return {
           ...entry,
-          overrides: {
-            ...entry.overrides,
-            draft: finalDraft,
-          },
+          overrides: nextOverrides,
         };
       })
     );
@@ -3700,8 +3839,14 @@ export function Fab({
     if (Object.keys(finalDraft).length > 0) {
       payload.draft = finalDraft;
     }
-    const ops =
-      message.overrides?.schedulerOps ?? message.ai.intent.ops ?? [];
+    const overrideOpsCandidate = message.overrides?.schedulerOps;
+    const overrideOpsFromMessage = Array.isArray(overrideOpsCandidate)
+      ? overrideOpsCandidate
+      : undefined;
+    const overrideOps =
+      getSchedulerOpsOverridesForMessage(message.id) ?? overrideOpsFromMessage;
+    const intentOps = normalizeSchedulerOps(message.ai.intent.ops);
+    const ops = overrideOps ?? intentOps;
     if (ops.length > 0) {
       payload.ops = ops;
     }
@@ -5411,6 +5556,12 @@ export function Fab({
                                                   toggleOpsPreview(proposal.id)
                                                 }
                                                 isSending={aiLoading}
+                                                onQueueAiMessage={(prompt) => {
+                                                  void handleRunAi(prompt);
+                                                }}
+                                                onSchedulerOpsOverrideChange={
+                                                  handleSchedulerOpsOverridesChange
+                                                }
                                               />
                                             </div>
                                           );
@@ -5521,13 +5672,18 @@ export function Fab({
 
 type ProposalTimelineCardProps = {
   message: AiThreadProposalMessage;
-  formState: Record<string, string>;
+  formState: ProposalFormValues;
   onFieldChange: (field: string, value: string) => void;
   onSave: (message: AiThreadProposalMessage) => void;
   onSend: (message: AiThreadProposalMessage) => void;
   opsOpen: boolean;
   onToggleOps: () => void;
   isSending: boolean;
+  onQueueAiMessage: (prompt: string) => void;
+  onSchedulerOpsOverrideChange: (
+    messageId: string,
+    ops: AiSchedulerOp[] | undefined
+  ) => void;
 };
 
 function ProposalTimelineCard({
@@ -5539,6 +5695,8 @@ function ProposalTimelineCard({
   opsOpen,
   onToggleOps,
   isSending,
+  onQueueAiMessage,
+  onSchedulerOpsOverrideChange,
 }: ProposalTimelineCardProps) {
   const baseDraft = message.ai.intent.draft ?? {};
   const overrideDraft = message.overrides?.draft ?? {};
@@ -5548,7 +5706,9 @@ function ProposalTimelineCard({
   );
   const fieldKeys = Array.from(new Set([...baseKeys, ...overrideOnlyKeys]));
   const [detailsOpen, setDetailsOpen] = useState(fieldKeys.length > 0);
-  const ops = message.overrides?.schedulerOps ?? message.ai.intent.ops ?? [];
+  const rawOps =
+    message.overrides?.schedulerOps ?? message.ai.intent.ops ?? [];
+  const ops = normalizeSchedulerOps(rawOps);
   const assistantMessage = message.ai.assistant_message ?? "";
   const intentMessage = message.ai.intent.message ?? "";
 
@@ -5565,8 +5725,9 @@ function ProposalTimelineCard({
   };
 
   const isGoalDraft = message.ai.intent.type === "DRAFT_CREATE_GOAL";
-  const isProjectDraft =
-    message.ai.intent.type === "DRAFT_CREATE_PROJECT";
+  const isProjectDraft = message.ai.intent.type === "DRAFT_CREATE_PROJECT";
+  const isSchedulerDraft =
+    message.ai.intent.type === "DRAFT_SCHEDULER_INPUT_OPS";
 
   if (isGoalDraft) {
     return (
@@ -5592,6 +5753,25 @@ function ProposalTimelineCard({
         onSave={onSave}
         onSend={onSend}
         isSending={isSending}
+      />
+    );
+  }
+
+  if (isSchedulerDraft) {
+    return (
+      <DayTypeProposalForm
+        message={message}
+        getFieldValue={getFieldValue}
+        onFieldChange={onFieldChange}
+        onSave={onSave}
+        onSend={onSend}
+        isSending={isSending}
+        ops={ops}
+        formState={formState}
+        onQueueAiMessage={onQueueAiMessage}
+        onSchedulerOpsOverrideChange={(ops) =>
+          onSchedulerOpsOverrideChange(message.id, ops)
+        }
       />
     );
   }
@@ -5807,7 +5987,7 @@ function GoalProposalForm({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[520px]">
+    <div className="w-full sm:mx-auto sm:max-w-[520px]">
       <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-white/10 to-black/80 p-3 sm:p-4 text-white">
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
@@ -6082,6 +6262,452 @@ function ProjectProposalForm({
                 disabled={isSending}
                 aria-label="Save project"
                 title="Save project"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const DAY_TYPE_GENERATE_PROMPT =
+  "Generate the full 24-hour time blocks for this day type based on my snapshot.";
+const DAY_TYPE_QUESTION_PROMPT =
+  "Before you generate blocks, ask me the single most important question.";
+
+type DayTypeProposalFormProps = {
+  message: AiThreadProposalMessage;
+  getFieldValue: (key: string) => string;
+  onFieldChange: (field: string, value: string) => void;
+  onSave: (message: AiThreadProposalMessage) => void;
+  onSend: (message: AiThreadProposalMessage) => void;
+  isSending: boolean;
+  ops: AiSchedulerOp[];
+  formState: ProposalFormValues;
+  onSchedulerOpsOverrideChange: (
+    messageId: string,
+    ops: AiSchedulerOp[] | undefined
+  ) => void;
+  onQueueAiMessage: (prompt: string) => void;
+};
+
+function DayTypeProposalForm({
+  message,
+  getFieldValue,
+  onFieldChange,
+  onSave,
+  onSend,
+  isSending,
+  ops,
+  formState,
+  onQueueAiMessage,
+  onSchedulerOpsOverrideChange,
+}: DayTypeProposalFormProps) {
+  const draft = message.ai.intent.draft ?? {};
+  const headerName = draft.day_type_name ?? "DAY TYPE";
+  const storedOverrideValue = formState["schedulerOpsOverrides"];
+  const storedOverrideOps = Array.isArray(storedOverrideValue)
+    ? (storedOverrideValue as AiSchedulerOp[])
+    : undefined;
+  const [editedOps, setEditedOps] = useState<AiSchedulerOp[]>(() =>
+    (storedOverrideOps ?? ops).map(cloneSchedulerOp)
+  );
+
+  useEffect(() => {
+    const source = storedOverrideOps ?? ops;
+    setEditedOps(source.map(cloneSchedulerOp));
+  }, [storedOverrideOps, ops]);
+
+  useEffect(() => {
+    onSchedulerOpsOverrideChange(message.id, editedOps);
+  }, [editedOps, message.id, onSchedulerOpsOverrideChange]);
+
+  const previewBlocks = useMemo(
+    () => buildDayTypePreviewBlocks(editedOps),
+    [editedOps]
+  );
+  const previewTimelineBlocks = useMemo<DayType24hPreviewBlock[]>(() => {
+    return previewBlocks
+      .filter(
+        (block): block is DayType24hPreviewBlock & {
+          start_local: string;
+          end_local: string;
+        } => Boolean(block.start_local && block.end_local)
+      )
+      .map((block) => ({
+        id: block.id,
+        label: block.label,
+        start_local: block.start_local,
+        end_local: block.end_local,
+        opIndex: block.opIndex,
+        hasConstraints: block.hasConstraints,
+      }));
+  }, [previewBlocks]);
+  const hasTimelineBlocks = previewTimelineBlocks.length > 0;
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const selectedBlock =
+    selectedBlockId === null
+      ? null
+      : previewBlocks.find((block) => block.id === selectedBlockId) ?? null;
+  const selectedBlockIndex =
+    selectedBlock === null
+      ? -1
+      : previewBlocks.findIndex((block) => block.id === selectedBlock.id);
+  const selectedBlockNumber =
+    selectedBlockIndex >= 0 ? selectedBlockIndex + 1 : 0;
+
+  useEffect(() => {
+    if (!selectedBlockId) return;
+    if (!previewBlocks.some((block) => block.id === selectedBlockId)) {
+      setSelectedBlockId(null);
+    }
+  }, [previewBlocks, selectedBlockId]);
+
+  const dayTypeNameValue = getFieldValue("day_type_name");
+  const labelClass =
+    "text-[10px] uppercase tracking-[0.35em] text-white/60";
+  const inputClass =
+    "h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-[12px] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0";
+
+  const selectedOp =
+    selectedBlock?.opIndex !== undefined
+      ? editedOps[selectedBlock.opIndex]
+      : null;
+  const [constraintsInput, setConstraintsInput] = useState("");
+  const [constraintsError, setConstraintsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedOp) {
+      setConstraintsInput("");
+      setConstraintsError(null);
+      return;
+    }
+    const constraintSource =
+      selectedOp.type === "CREATE_DAY_TYPE_TIME_BLOCK"
+        ? selectedOp.constraints
+        : selectedOp.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL"
+        ? selectedOp.patch.constraints
+        : undefined;
+    if (constraintSource && Object.keys(constraintSource).length > 0) {
+      setConstraintsInput(JSON.stringify(constraintSource, null, 2));
+    } else {
+      setConstraintsInput("");
+    }
+    setConstraintsError(null);
+  }, [selectedBlock?.opIndex]);
+
+  const updateSelectedOp = (updater: (op: AiSchedulerOp) => AiSchedulerOp) => {
+    const opIndex = selectedBlock?.opIndex;
+    if (opIndex === undefined) return;
+    setEditedOps((prev) => {
+      const next = [...prev];
+      const target = next[opIndex];
+      if (!target) return prev;
+      next[opIndex] = updater(target);
+      return next;
+    });
+  };
+
+  const handleLabelChange = (value: string) => {
+    updateSelectedOp((op) => {
+      if (op.type === "CREATE_DAY_TYPE_TIME_BLOCK") {
+        return { ...op, label: value };
+      }
+      if (op.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL") {
+        return { ...op, block_label: value };
+      }
+      return op;
+    });
+  };
+
+  const handleTimeChange = (
+    field: "start_local" | "end_local",
+    value: string
+  ) => {
+    updateSelectedOp((op) => {
+      if (op.type === "CREATE_DAY_TYPE_TIME_BLOCK") {
+        return { ...op, [field]: value };
+      }
+      if (op.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL") {
+        return {
+          ...op,
+          patch: {
+            ...op.patch,
+            [field]: value,
+          },
+        };
+      }
+      return op;
+    });
+  };
+
+  const updateConstraints = (constraints?: Record<string, string>) => {
+    updateSelectedOp((op) => {
+      if (op.type === "CREATE_DAY_TYPE_TIME_BLOCK") {
+        return {
+          ...op,
+          constraints: constraints ?? undefined,
+        };
+      }
+      if (op.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL") {
+        const nextPatch = { ...op.patch };
+        if (constraints && Object.keys(constraints).length > 0) {
+          nextPatch.constraints = constraints;
+        } else {
+          delete nextPatch.constraints;
+        }
+        return {
+          ...op,
+          patch: nextPatch,
+        };
+      }
+      return op;
+    });
+  };
+
+  const handleConstraintsInputChange = (value: string) => {
+    setConstraintsInput(value);
+    if (!value.trim()) {
+      setConstraintsError(null);
+      updateConstraints(undefined);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(value);
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        throw new Error("Constraints must be a JSON object");
+      }
+      const normalized: Record<string, string> = {};
+      Object.entries(parsed).forEach(([key, val]) => {
+        if (typeof val !== "string") {
+          throw new Error("Constraint values must be strings");
+        }
+        const trimmedKey = key.trim();
+        const trimmedVal = val.trim();
+        if (!trimmedKey) {
+          throw new Error("Constraint keys must be non-empty");
+        }
+        normalized[trimmedKey] = trimmedVal;
+      });
+      if (Object.keys(normalized).length === 0) {
+        updateConstraints(undefined);
+      } else {
+        updateConstraints(normalized);
+      }
+      setConstraintsError(null);
+    } catch (error) {
+      setConstraintsError(
+        error instanceof Error ? error.message : "Invalid JSON"
+      );
+    }
+  };
+
+  const selectedLabelValue =
+    selectedOp?.type === "CREATE_DAY_TYPE_TIME_BLOCK"
+      ? selectedOp.label
+      : selectedOp?.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL"
+      ? selectedOp.block_label
+      : "";
+  const selectedStartValue =
+    selectedOp?.type === "CREATE_DAY_TYPE_TIME_BLOCK"
+      ? selectedOp.start_local
+      : selectedOp?.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL"
+      ? selectedOp.patch.start_local ?? selectedBlock?.start_local ?? ""
+      : selectedBlock?.start_local ?? "";
+  const selectedEndValue =
+    selectedOp?.type === "CREATE_DAY_TYPE_TIME_BLOCK"
+      ? selectedOp.end_local
+      : selectedOp?.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL"
+      ? selectedOp.patch.end_local ?? selectedBlock?.end_local ?? ""
+      : selectedBlock?.end_local ?? "";
+
+  return (
+    <div className="mx-auto w-full max-w-[520px]">
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-white/10 to-black/80 p-3 sm:p-4 text-white">
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <p className="text-[8px] uppercase tracking-[0.35em] text-white/60">
+              DAY TYPE PROPOSAL
+            </p>
+            <p className="text-[18px] font-bold uppercase tracking-[0.3em] text-white/90 leading-tight">
+              {headerName}
+            </p>
+          </div>
+
+          <div className="space-y-2 rounded-2xl border border-white/10 bg-black/35 p-3 text-white">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/60">
+                24H PREVIEW
+              </p>
+              <span className="text-[10px] uppercase tracking-[0.3em] text-white/40">
+                {editedOps.length} ops
+              </span>
+            </div>
+
+            {previewTimelineBlocks.length > 0 ? (
+              <div className="-mx-3 sm:mx-0">
+                <DayType24hPreview
+                  blocks={previewTimelineBlocks}
+                  selectedId={selectedBlockId}
+                  onSelect={(id) =>
+                    setSelectedBlockId((prev) => (prev === id ? null : id))
+                  }
+                />
+                {selectedBlock ? (
+                  <div className="mt-3 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/60">
+                        {`EDIT BLOCK ${selectedBlockNumber}`}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBlockId(null)}
+                        className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70 transition hover:text-white"
+                        aria-label="Done editing block"
+                      >
+                        Done
+                      </button>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <Label className={labelClass}>Label</Label>
+                        <Input
+                          value={selectedLabelValue}
+                          onChange={(event) =>
+                            handleLabelChange(event.target.value)
+                          }
+                          placeholder={selectedBlock.label ?? "Block label"}
+                          className={inputClass}
+                        />
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label className={labelClass}>Start</Label>
+                          <Input
+                            type="time"
+                            value={selectedStartValue}
+                            onChange={(event) =>
+                              handleTimeChange("start_local", event.target.value)
+                            }
+                            placeholder={selectedBlock.start_local}
+                            className={inputClass}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className={labelClass}>End</Label>
+                          <Input
+                            type="time"
+                            value={selectedEndValue}
+                            onChange={(event) =>
+                              handleTimeChange("end_local", event.target.value)
+                            }
+                            placeholder={selectedBlock.end_local}
+                            className={inputClass}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className={labelClass}>Constraints</Label>
+                        <Textarea
+                          value={constraintsInput}
+                          onChange={(event) =>
+                            handleConstraintsInputChange(event.target.value)
+                          }
+                          placeholder='{"skill":"FITNESS","energy":"HIGH"}'
+                          className="min-h-[70px] w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                        />
+                        {constraintsError ? (
+                          <p className="text-[10px] text-rose-200">
+                            {constraintsError}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : hasTimelineBlocks ? (
+                  <div className="mt-3 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-white/60 text-center">
+                    TAP A BLOCK TO EDIT
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="space-y-3 rounded-2xl border border-dashed border-white/20 bg-white/5 p-3 text-center">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70">
+                  NO TIME BLOCKS YET
+                </p>
+                <p className="text-[11px] text-white/70">
+                  I assigned the day type, but haven’t generated the 24-hour blocks.
+                </p>
+                <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+                  <Button
+                    type="button"
+                    onClick={() => onQueueAiMessage(DAY_TYPE_GENERATE_PROMPT)}
+                    className="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.35em] text-white transition hover:border-white/40 hover:bg-white/20"
+                  >
+                    GENERATE 24H BLOCKS
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => onQueueAiMessage(DAY_TYPE_QUESTION_PROMPT)}
+                    className="w-full rounded-xl border border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.35em] text-white transition hover:border-white/40"
+                  >
+                    ASK ME 1 QUESTION FIRST
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3 border-t border-white/10 pt-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/60">
+                EDIT BLOCKS
+              </p>
+              <p className="text-[12px] text-white/70">
+                Rename it or tweak the blocks below.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <Label className={labelClass}>Day type name</Label>
+              <Input
+                value={dayTypeNameValue}
+                onChange={(event) =>
+                  onFieldChange("day_type_name", event.target.value)
+                }
+                placeholder={headerName}
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <div className="mt-1 border-t border-white/10 pt-3">
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => onSend(message)}
+                disabled={isSending}
+                aria-label="Request refinement"
+                title="Request refinement"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ef4444] text-white shadow-[0_8px_20px_rgba(239,68,68,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onSave(message)}
+                disabled={isSending}
+                aria-label="Save day type"
+                title="Save day type"
                 className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Check className="h-4 w-4" />

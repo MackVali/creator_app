@@ -858,6 +858,113 @@ const matchesNewDayTypeIntent = (text: string) => {
 const isDayTypeCreationPrompt = (text: string) =>
   matchesNewDayTypeIntent(text);
 
+type DayTypeCreationArgs = {
+  normalized: string;
+  trimmedPrompt: string;
+  scope: AiScope;
+  snapshot?: AutopilotSnapshot;
+  dayTypes: AutopilotSnapshot["dayTypes"];
+  goals: AutopilotSnapshot["goals"];
+  projects: AutopilotSnapshot["projects"];
+  windows: NormalizedSnapshotWindow[];
+  recurringHabits: AutopilotSnapshot["habits"];
+};
+
+const tryHandleDayTypeCreationPrompt = ({
+  normalized,
+  trimmedPrompt,
+  scope,
+  snapshot,
+  dayTypes,
+  goals,
+  projects,
+  windows,
+  recurringHabits,
+}: DayTypeCreationArgs): AiIntentResponse | null => {
+  if (!isDayTypeCreationPrompt(normalized)) {
+    return null;
+  }
+
+  if (scope !== "schedule_edit") {
+    const followUps = [
+      "Switch scope to Schedule Edit",
+      "Plan a new day type template",
+    ];
+    return createScopeClarificationResponse(
+      "create a day type",
+      "schedule_edit",
+      scope,
+      snapshot,
+      followUps
+    );
+  }
+
+  const existingDayTypeNames = new Set<string>(
+    dayTypes
+      .map((entry) => normalizeForComparison(entry?.name ?? ""))
+      .filter((value): value is string => Boolean(value))
+  );
+  const priorityNames = getPriorityNames(goals, projects);
+  const extractedName = extractDayTypeNameFromPrompt(trimmedPrompt);
+  const baseName =
+    extractedName || (priorityNames[0] ? `${priorityNames[0]} day type` : "New day type");
+  const formattedBase = formatDayTypeName(baseName);
+  const dayTypeName = ensureUniqueDayTypeName(
+    formattedBase,
+    existingDayTypeNames
+  );
+  const hasAnchorData = windows.length > 0 || recurringHabits.length > 0;
+  if (!snapshot || !hasAnchorData) {
+    const missingItems: string[] = [];
+    if (!snapshot) missingItems.push("snapshot");
+    if (!windows.length) missingItems.push("day windows");
+    if (!recurringHabits.length) missingItems.push("recurring habits");
+    const intent = createClarificationIntent(
+      "Need day type anchors",
+      "I need recurring habit or window data before crafting a full 24-hour day type template.",
+      missingItems,
+      [
+        "What recurring habits anchor your day (sleep, meals, routines)?",
+        "What should a complete day type include for you (meals, anchor windows, focus)?",
+        "Do you have preferences for sleep and meal windows or a day-type schema?",
+      ]
+    );
+    return buildResponse(
+      scope,
+      intent,
+      "Please share the anchor data (habits/windows) so I can draft the day type.",
+      [
+        "Describe your recurring habits and windows",
+        "Share any schema or sleep/mealtime preferences",
+      ],
+      snapshot
+    );
+  }
+  const uppercaseDayTypeName = dayTypeName.toUpperCase();
+  const blockOps = buildFullDayTypeBlockOps({
+    dayTypeName: uppercaseDayTypeName,
+    focusThemes: priorityNames,
+    habits: recurringHabits,
+    windows,
+  });
+  const ops: AiSchedulerOp[] = [
+    { type: "CREATE_DAY_TYPE", name: uppercaseDayTypeName },
+    ...blockOps,
+  ];
+  const focusHighlight = priorityNames[0] ?? "your priorities";
+  const assistantMessage = `Drafted the "${uppercaseDayTypeName}" template with ${blockOps.length} blocks spanning 00:00-24:00, weaving sleep, meals, recurring habits, and focus time for ${focusHighlight}.`;
+  const followUps = [
+    "Review or tweak the block labels and durations",
+    "Assign the new day type when you are ready",
+  ];
+  const intent = createSchedulerIntent(
+    "Autopilot day type template",
+    `Suggesting day type "${uppercaseDayTypeName}".`,
+    ops
+  );
+  return buildResponse(scope, intent, assistantMessage, followUps, snapshot);
+};
+
 const getPriorityNames = (
   goals: AutopilotSnapshot["goals"],
   projects: AutopilotSnapshot["projects"],
@@ -1507,6 +1614,22 @@ export function runAutopilotIntent({
     );
   }
 
+  // "Day type" is explicit, so prioritize scheduling creation before general goal heuristics.
+  const dayTypeCreationResponse = tryHandleDayTypeCreationPrompt({
+    normalized,
+    trimmedPrompt,
+    scope,
+    snapshot,
+    dayTypes,
+    goals,
+    projects,
+    windows,
+    recurringHabits,
+  });
+  if (dayTypeCreationResponse) {
+    return dayTypeCreationResponse;
+  }
+
   const goalName =
     extractNameAfterKeyword(trimmedPrompt, "create goal") ||
     extractNameAfterKeyword(trimmedPrompt, "create a goal") ||
@@ -1705,87 +1828,6 @@ export function runAutopilotIntent({
     projects.map((project) => project.name).filter(Boolean) as string[],
     snapshot
   );
-}
-
-if (isDayTypeCreationPrompt(normalized)) {
-  if (scope !== "schedule_edit") {
-    const followUps = [
-      "Switch scope to Schedule Edit",
-      "Plan a new day type template",
-    ];
-    return createScopeClarificationResponse(
-      "create a day type",
-      "schedule_edit",
-      scope,
-      snapshot,
-      followUps
-    );
-  }
-  const existingDayTypeNames = new Set<string>(
-    dayTypes
-      .map((entry) => normalizeForComparison(entry.name ?? ""))
-      .filter((value): value is string => Boolean(value))
-  );
-  const priorityNames = getPriorityNames(goals, projects);
-  const extractedName = extractDayTypeNameFromPrompt(trimmedPrompt);
-  const baseName =
-    extractedName ||
-    (priorityNames[0] ? `${priorityNames[0]} day type` : "New day type");
-  const formattedBase = formatDayTypeName(baseName);
-  const dayTypeName = ensureUniqueDayTypeName(
-    formattedBase,
-    existingDayTypeNames
-  );
-  const hasAnchorData = windows.length > 0 || recurringHabits.length > 0;
-  if (!snapshot || !hasAnchorData) {
-    const missingItems: string[] = [];
-    if (!snapshot) missingItems.push("snapshot");
-    if (!windows.length) missingItems.push("day windows");
-    if (!recurringHabits.length) missingItems.push("recurring habits");
-    const intent = createClarificationIntent(
-      "Need day type anchors",
-      "I need recurring habit or window data before crafting a full 24-hour day type template.",
-      missingItems,
-      [
-        "What recurring habits anchor your day (sleep, meals, routines)?",
-        "What should a complete day type include for you (meals, anchor windows, focus)?",
-        "Do you have preferences for sleep and meal windows or a day-type schema?",
-      ]
-    );
-    return buildResponse(
-      scope,
-      intent,
-      "Please share the anchor data (habits/windows) so I can draft the day type.",
-      [
-        "Describe your recurring habits and windows",
-        "Share any schema or sleep/mealtime preferences",
-      ],
-      snapshot
-    );
-  }
-  const uppercaseDayTypeName = dayTypeName.toUpperCase();
-  const blockOps = buildFullDayTypeBlockOps({
-    dayTypeName: uppercaseDayTypeName,
-    focusThemes: priorityNames,
-    habits: recurringHabits,
-    windows,
-  });
-  const ops: AiSchedulerOp[] = [
-    { type: "CREATE_DAY_TYPE", name: uppercaseDayTypeName },
-    ...blockOps,
-  ];
-  const focusHighlight = priorityNames[0] ?? "your priorities";
-  const assistantMessage = `Drafted the "${uppercaseDayTypeName}" template with ${blockOps.length} blocks spanning 00:00-24:00, weaving sleep, meals, recurring habits, and focus time for ${focusHighlight}.`;
-  const followUps = [
-    "Review or tweak the block labels and durations",
-    "Assign the new day type when you are ready",
-  ];
-  const intent = createSchedulerIntent(
-    "Autopilot day type template",
-    `Suggesting day type "${uppercaseDayTypeName}".`,
-    ops
-  );
-  return buildResponse(scope, intent, assistantMessage, followUps, snapshot);
 }
 
 if (matchesDayTypeIntent(normalized)) {
