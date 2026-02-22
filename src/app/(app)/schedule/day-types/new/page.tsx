@@ -29,25 +29,12 @@ import { HABIT_TYPE_OPTIONS } from "@/components/habits/habit-form-fields";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { Input } from "@/components/ui/input";
-
-type TimeBlock = {
-  id: string;
-  label?: string | null;
-  start_local: string;
-  end_local: string;
-  day_type_id?: string | null;
-};
-
-type PreviewSegment = {
-  id: string;
-  startMin: number;
-  endMin: number;
-  label: string;
-  title: string;
-  blockType: BlockType;
-  overlapped: boolean;
-  hasConstraints: boolean;
-};
+import {
+  DayType24hPreview,
+  type BlockType,
+  sortTimeBlocks,
+  blockToSegments,
+} from "@/components/schedule/DayType24hPreview";
 
 type DayType = {
   id: string;
@@ -68,15 +55,12 @@ type DayTypeBlockLink = {
   allow_all_monuments?: boolean | null;
 };
 
-type BlockType = "FOCUS" | "BREAK" | "PRACTICE";
 const BLOCK_TYPES: BlockType[] = ["FOCUS", "BREAK", "PRACTICE"];
 const BLOCK_TYPE_LABEL: Record<BlockType, string> = {
   FOCUS: "Focus",
   BREAK: "Break",
   PRACTICE: "Practice",
 };
-
-const HOURS = Array.from({ length: 25 }, (_, idx) => idx);
 const DAYS_OF_WEEK = [
   { key: "sun", label: "S", index: 0 },
   { key: "mon", label: "M", index: 1 },
@@ -119,13 +103,6 @@ type TimeInputProps = {
   ariaLabel?: string;
   dataTour?: string;
 };
-
-function formatHourLabel(hour: number): string {
-  const safe = Math.min(Math.max(Math.floor(hour), 0), 24);
-  const suffix = safe < 12 || safe === 24 ? "am" : "pm";
-  const base = safe % 12 === 0 ? 12 : safe % 12;
-  return `${base}${suffix}`;
-}
 
 function parseTimeToMinutes(value: string): number | null {
   const match = String(value ?? "")
@@ -287,45 +264,6 @@ function TimeInput({ label, value, onChange, helper, ariaLabel, dataTour }: Time
       {helper ? <span className="text-[11px] text-white/35">{helper}</span> : null}
     </label>
   );
-}
-
-function blockToSegments(block: TimeBlock): PreviewSegment[] {
-  const start = parseTimeToMinutes(block.start_local);
-  const end = parseTimeToMinutes(block.end_local);
-  if (start === null || end === null) return [];
-  if (start === end) return [];
-  const label = normalizeLabel(block.label) ?? "TIME BLOCK";
-  const title = `${label} ${block.start_local} → ${block.end_local}`;
-  if (end > start) {
-    return [
-      {
-        id: block.id,
-        startMin: start,
-        endMin: end,
-        label,
-        title,
-        overlapped: false,
-      },
-    ];
-  }
-  return [
-    {
-      id: `${block.id}-a`,
-      startMin: start,
-      endMin: 1440,
-      label,
-      title,
-      overlapped: false,
-    },
-    {
-      id: `${block.id}-b`,
-      startMin: 0,
-      endMin: end,
-      label,
-      title,
-      overlapped: false,
-    },
-  ];
 }
 
 const DEFAULT_FORM = {
@@ -1322,40 +1260,26 @@ export default function NewDayTypePage() {
     [selectedIds, timeBlocks]
   );
 
-  const previewSegments = useMemo(() => {
-    const segments = selectedBlocks.flatMap((block) => {
-      const blockId = block.id;
-      const allowAllSkills = blockAllowAllSkills.get(blockId) ?? true;
-      const allowAllMonuments = blockAllowAllMonuments.get(blockId) ?? true;
-      const allowedHabitTypes = blockAllowedHabitTypes.get(blockId);
-      const allowsChores = allowedHabitTypes?.has("CHORE") ?? false;
-      const hasConstraints = !allowAllSkills || !allowAllMonuments || allowsChores;
+  const previewBlocks = useMemo(() => {
+    return selectedBlocks
+      .map((block) => {
+        const blockId = block.id;
+        const allowAllSkills = blockAllowAllSkills.get(blockId) ?? true;
+        const allowAllMonuments = blockAllowAllMonuments.get(blockId) ?? true;
+        const allowedHabitTypes = blockAllowedHabitTypes.get(blockId);
+        const allowsChores = allowedHabitTypes?.has("CHORE") ?? false;
+        const blockTypeValue = blockType.get(blockId) ?? "FOCUS";
 
-      return blockToSegments(block).map((segment) => ({
-        ...segment,
-        blockType: blockType.get(blockId) ?? "FOCUS",
-        hasConstraints,
-      }));
-    });
-    const sorted = [...segments].sort((a, b) => a.startMin - b.startMin);
-    const overlaps = new Set<string>();
-    let last = sorted[0];
-    for (let i = 1; i < sorted.length; i += 1) {
-      const current = sorted[i];
-      if (current.startMin < last.endMin) {
-        overlaps.add(current.id);
-        overlaps.add(last.id);
-        if (current.endMin > last.endMin) {
-          last = current;
-        }
-      } else {
-        last = current;
-      }
-    }
-    return segments.map((segment) => ({
-      ...segment,
-      overlapped: overlaps.has(segment.id),
-    }));
+        return {
+          id: block.id,
+          label: block.label,
+          start_local: block.start_local,
+          end_local: block.end_local,
+          blockType: blockTypeValue,
+          hasConstraints: !allowAllSkills || !allowAllMonuments || allowsChores,
+        };
+      })
+      .filter((entry) => entry.start_local && entry.end_local);
   }, [
     blockAllowAllMonuments,
     blockAllowAllSkills,
@@ -2079,102 +2003,7 @@ export default function NewDayTypePage() {
                 guide only
               </span>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-[0_16px_32px_rgba(0,0,0,0.28)]">
-              <div className="flex items-start gap-4">
-                <div className="relative h-80 w-12 text-[10px] uppercase tracking-[0.14em] text-white/50">
-                  {HOURS.map((hour) => (
-                    <span
-                      key={`label-${hour}`}
-                      className="absolute right-1 translate-y-[-50%]"
-                      style={{ top: `${(hour / 24) * 100}%` }}
-                      aria-hidden
-                    >
-                      {formatHourLabel(hour)}
-                    </span>
-                  ))}
-                </div>
-                <div className="relative h-80 flex-1 overflow-hidden rounded-lg border border-white/10 bg-black/25">
-                  {HOURS.map((hour) => (
-                    <div
-                      key={`rail-${hour}`}
-                      className={cn(
-                        "absolute left-0 right-0 h-px",
-                        hour % 6 === 0 ? "bg-white/15" : "bg-white/8"
-                      )}
-                      style={{ top: `${(hour / 24) * 100}%` }}
-                      aria-hidden
-                    />
-                  ))}
-                  {previewSegments.length === 0 ? (
-                    <div className="absolute inset-0 flex items-center justify-center text-sm text-white/60">
-                      Select time blocks to preview your day.
-                    </div>
-                  ) : null}
-                  {previewSegments.map((segment) => {
-                    const heightPct = ((segment.endMin - segment.startMin) / 1440) * 100;
-                    const topPct = (segment.startMin / 1440) * 100;
-                    const isBreak = segment.blockType === "BREAK";
-                    const isPractice = segment.blockType === "PRACTICE";
-                    const isConstrained = !segment.overlapped && segment.hasConstraints;
-                    return (
-                      <div
-                        key={`bar-${segment.id}`}
-                        className={cn(
-                          "absolute inset-x-3 rounded-md shadow-[0_14px_38px_rgba(0,0,0,0.35)]",
-                          segment.overlapped
-                            ? "border border-red-400/70 bg-red-500/25"
-                            : isConstrained
-                              ? "border border-amber-400/80 bg-amber-400/25"
-                              : isBreak
-                                ? "border border-sky-300/70 bg-sky-400/20"
-                                : isPractice
-                                  ? "border border-white/12 bg-white/10"
-                                  : "border border-white/15 bg-white/15"
-                        )}
-                        style={{
-                          top: `${topPct}%`,
-                          height: `${Math.max(heightPct, 1.5)}%`,
-                        }}
-                      >
-                        <div className="flex h-full items-center justify-between px-3 text-[11px] uppercase tracking-[0.14em] text-white/80">
-                          <span
-                            className={cn(
-                              "font-semibold",
-                              segment.overlapped
-                                ? "text-red-50"
-                                : isConstrained
-                                  ? "text-amber-50"
-                                  : isBreak
-                                    ? "text-sky-50"
-                                    : isPractice
-                                      ? "text-white/80"
-                                      : "text-white"
-                            )}
-                          >
-                            {segment.label}
-                          </span>
-                          <span
-                            className={
-                              segment.overlapped
-                                ? "text-red-100/80"
-                                : isConstrained
-                                  ? "text-amber-100/80"
-                                  : isBreak
-                                    ? "text-sky-100/75"
-                                    : isPractice
-                                      ? "text-white/60"
-                                      : "text-white/55"
-                            }
-                          >
-                            {segment.title.replace(`${segment.label} `, "")}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+            <DayType24hPreview blocks={previewBlocks} />
           </section>
 
           {isCreatingDayType ? (

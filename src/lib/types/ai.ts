@@ -43,6 +43,7 @@ export type AiSchedulerOp =
       patch: {
         start_local?: string;
         end_local?: string;
+        constraints?: Record<string, string>;
       };
     }
   | {
@@ -55,6 +56,7 @@ export type AiSchedulerOp =
       label: string;
       start_local: string;
       end_local: string;
+      constraints?: Record<string, string>;
       block_type?: "FOCUS" | "PRACTICE" | "BREAK";
       energy?: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME";
       days?: number[];

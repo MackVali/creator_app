@@ -67,6 +67,10 @@ const DAY_TYPE_BLOCK_ENERGY_LEVELS = [
   "EXTREME",
 ] as const;
 
+const CONSTRAINTS_SCHEMA = z
+  .record(z.string().trim().min(1), z.string().trim().min(1))
+  .optional();
+
 const SET_DAY_TYPE_ASSIGNMENT_SCHEMA = z.object({
   type: z.literal("SET_DAY_TYPE_ASSIGNMENT"),
   date: z.string().regex(DATE_PATTERN),
@@ -97,10 +101,16 @@ const TIME_BLOCK_PATCH_SCHEMA = z
   .object({
     start_local: z.string().trim().min(1).optional(),
     end_local: z.string().trim().min(1).optional(),
+    constraints: CONSTRAINTS_SCHEMA,
   })
-  .refine((value) => Boolean(value.start_local || value.end_local), {
-    message: "patch must include at least start_local or end_local",
-  });
+  .refine(
+    (value) =>
+      Boolean(value.start_local || value.end_local) || value.constraints !== undefined,
+    {
+      message:
+        "patch must include at least start_local, end_local, or constraints",
+    }
+  );
 
 const UPDATE_DAY_TYPE_TIME_BLOCK_SCHEMA = z.object({
   type: z.literal("UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL"),
@@ -120,6 +130,7 @@ const CREATE_DAY_TYPE_TIME_BLOCK_SCHEMA = z.object({
   label: z.string().trim().min(1),
   start_local: z.string().trim().min(1),
   end_local: z.string().trim().min(1),
+  constraints: CONSTRAINTS_SCHEMA,
   block_type: z.enum(DAY_TYPE_BLOCK_TYPES).optional(),
   energy: z.enum(DAY_TYPE_BLOCK_ENERGY_LEVELS).optional(),
   days: z
@@ -172,10 +183,12 @@ const AI_APPLY_SCHEMA = z.object({
   link_overrides: LINK_OVERRIDES_SCHEMA,
 });
 
+// Day type drafting flows still create drafts even though they emit scheduler ops.
 const allowDraftCreation = new Set<AiIntent["type"]>([
   "DRAFT_CREATE_GOAL",
   "DRAFT_CREATE_PROJECT",
   "DRAFT_CREATE_TASK",
+  "DRAFT_SCHEDULER_INPUT_OPS",
 ]);
 
 const scheduleEditAllowed = new Set<AiIntent["type"]>([
@@ -471,7 +484,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Draft creation scope only supports DRAFT_CREATE_GOAL/PROJECT/TASK intents",
+          "Draft creation scope only supports DRAFT_CREATE_GOAL/PROJECT/TASK/DRAFT_SCHEDULER_INPUT_OPS intents",
       },
       { status: 400 }
     );
