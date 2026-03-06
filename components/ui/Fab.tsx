@@ -5088,10 +5088,11 @@ export function Fab({
   const isBlendingGradient = isDragging && dragTargetPage !== null;
   const dragConstraintLeft = -normalizedStageWidth;
   const dragConstraintRight = normalizedStageWidth;
+  // Keep the expanded shell anchored to a stable layout viewport height.
+  // Using the live visual viewport while the keyboard animates causes the
+  // fixed panel to continuously resize/reflow (visible as "jank" on mobile).
   const effectiveViewportHeight =
-    expanded && (viewportHeight || stableViewportHeight)
-      ? viewportHeight ?? stableViewportHeight
-      : null;
+    expanded && stableViewportHeight ? stableViewportHeight : null;
   const minHeightExpanded = expanded
     ? effectiveViewportHeight
       ? Math.round(effectiveViewportHeight * 0.58)
@@ -5148,7 +5149,9 @@ export function Fab({
                 borderColor: isBlendingGradient
                   ? blendedBorderColor
                   : staticBorderColor,
-                transition: "border-color 0.1s linear, transform 0.2s ease",
+                transition: expanded
+                  ? "border-color 0.1s linear"
+                  : "border-color 0.1s linear, transform 0.2s ease",
                 transformOrigin:
                   menuVariant === "timeline" ? "bottom right" : "bottom center",
                 minHeight: expanded ? minHeightExpanded : menuContainerHeight,
