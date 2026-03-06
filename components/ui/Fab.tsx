@@ -1428,18 +1428,8 @@ export function Fab({
   );
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
-  const [keyboardLift, setKeyboardLift] = useState(0);
   const [isTextInputFocused, setIsTextInputFocused] = useState(false);
-  const isKeyboardVisible = useMemo(() => {
-    if (!expanded) return false;
-    if (keyboardLift <= 12) return false;
-    if (stableViewportHeight && viewportHeight) {
-      const shrink = stableViewportHeight - viewportHeight;
-      return shrink > 80;
-    }
-    return keyboardLift > 24;
-  }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
-  const shouldHideOverhangButtons = expanded && (isKeyboardVisible || isTextInputFocused);
+  const shouldHideOverhangButtons = expanded && isTextInputFocused;
 
   useEffect(() => {
     if (!expanded) return;
@@ -1450,7 +1440,7 @@ export function Fab({
         window.visualViewport?.height ?? 0
       );
       setStableViewportHeight((prev) => (prev ?? height));
-      setViewportHeight((prev) => prev ?? (window.visualViewport?.height ?? window.innerHeight));
+      setViewportHeight((prev) => prev ?? window.innerHeight);
       const safeBottom =
         Number.parseFloat(
           getComputedStyle(document.documentElement)
@@ -1477,40 +1467,6 @@ export function Fab({
       window.removeEventListener("orientationchange", measureOnce);
     };
   }, [expanded]);
-
-  useEffect(() => {
-    if (!expanded) {
-      setKeyboardLift(0);
-      setIsTextInputFocused(false);
-      return;
-    }
-    const updateLift = () => {
-      if (typeof window === "undefined") return;
-      const viewport = window.visualViewport;
-      if (!viewport) {
-        setKeyboardLift(0);
-        return;
-      }
-      const viewportH = viewport.height ?? window.innerHeight;
-      if (viewportH) {
-        setViewportHeight(viewportH);
-      }
-      const heightLoss = Math.max(0, window.innerHeight - viewport.height);
-      const offsetTop = viewport.offsetTop ?? 0;
-      const lift = Math.max(0, heightLoss - offsetTop - stableSafeBottom);
-      setKeyboardLift(lift);
-    };
-    updateLift();
-    const viewport = window.visualViewport;
-    viewport?.addEventListener("resize", updateLift);
-    viewport?.addEventListener("scroll", updateLift);
-    window.addEventListener("orientationchange", updateLift);
-    return () => {
-      viewport?.removeEventListener("resize", updateLift);
-      viewport?.removeEventListener("scroll", updateLift);
-      window.removeEventListener("orientationchange", updateLift);
-    };
-  }, [expanded, stableSafeBottom]);
 
   useEffect(() => {
     if (!expanded) {
@@ -1942,10 +1898,6 @@ export function Fab({
           >
             <div
               className="relative grid gap-4 p-4 pb-4 md:p-8 md:pb-6"
-              style={{
-                paddingBottom: `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
-                scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
-              }}
             >
               {selected === "GOAL" && (
                 <>
@@ -5270,10 +5222,6 @@ export function Fab({
                       zIndex: 2147483651,
                       transition:
                         "top 0.18s ease, left 0.18s ease, right 0.18s ease, bottom 0.18s ease, transform 0.18s ease",
-                      transform:
-                        expanded && keyboardLift > 0
-                          ? `translateY(${-keyboardLift}px)`
-                          : undefined,
                     }}
                   >
                     <Button
