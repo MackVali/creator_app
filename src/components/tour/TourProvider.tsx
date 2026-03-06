@@ -11,7 +11,6 @@ import {
   type CSSProperties,
   type MouseEvent,
   type PointerEvent,
-  type TouchEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -593,19 +592,6 @@ export function TourProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const stopOverlayCapture = useCallback(
-    (
-      event:
-        | PointerEvent<HTMLDivElement>
-        | MouseEvent<HTMLDivElement>
-        | TouchEvent<HTMLDivElement>
-    ) => {
-      event.preventDefault();
-      event.stopPropagation();
-    },
-    []
-  );
-
   const handleOverlayPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       stopOverlayInteraction(event);
@@ -673,9 +659,6 @@ export function TourProvider({ children }: { children: ReactNode }) {
             <div
               className="fixed inset-0 pointer-events-none"
               style={{ zIndex: OVERLAY_Z_INDEX }}
-              onPointerDownCapture={stopOverlayCapture}
-              onMouseDownCapture={stopOverlayCapture}
-              onTouchStartCapture={stopOverlayCapture}
             >
               <div
                 className="absolute inset-0"
