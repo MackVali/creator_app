@@ -1463,6 +1463,65 @@ export function Fab({
   }, [expanded]);
 
   useEffect(() => {
+    if (!expanded || typeof window === "undefined") return;
+
+    const scrollY = window.scrollY ?? window.pageYOffset ?? 0;
+    const body = document.body;
+    const doc = document.documentElement;
+
+    const previousBody = {
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      width: body.style.width,
+      overflow: body.style.overflow,
+      overscrollBehavior: body.style.overscrollBehavior,
+      touchAction: body.style.touchAction,
+    };
+    const previousDoc = {
+      overflow: doc.style.overflow,
+      overscrollBehavior: doc.style.overscrollBehavior,
+      touchAction: doc.style.touchAction,
+    };
+
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+    body.style.touchAction = "manipulation";
+
+    doc.style.overflow = "hidden";
+    doc.style.overscrollBehavior = "none";
+    doc.style.touchAction = "manipulation";
+
+    return () => {
+      body.style.position = previousBody.position;
+      body.style.top = previousBody.top;
+      body.style.left = previousBody.left;
+      body.style.right = previousBody.right;
+      body.style.width = previousBody.width;
+      body.style.overflow = previousBody.overflow;
+      body.style.overscrollBehavior = previousBody.overscrollBehavior;
+      body.style.touchAction = previousBody.touchAction;
+
+      doc.style.overflow = previousDoc.overflow;
+      doc.style.overscrollBehavior = previousDoc.overscrollBehavior;
+      doc.style.touchAction = previousDoc.touchAction;
+
+      const restored = Number.parseFloat(previousBody.top || "0");
+      if (Number.isFinite(restored) && restored !== 0) {
+        window.scrollTo({ top: Math.abs(restored), behavior: "auto" });
+      } else {
+        window.scrollTo({ top: scrollY, behavior: "auto" });
+      }
+    };
+  }, [expanded]);
+
+  useEffect(() => {
     if (!expanded) {
       setGoalSearch("");
       setGoalFilterEnergy("");
