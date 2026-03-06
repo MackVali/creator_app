@@ -3184,9 +3184,22 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           </div>
                           {showGoalAdvanced ? (
                             <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                Due date
-                              </Label>
+                              <div className="flex items-center justify-between">
+                                <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                  Due date
+                                </Label>
+                                {goalForm.dueDate ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleGoalFormChange("dueDate", "")
+                                    }
+                                    className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/50 transition hover:text-white"
+                                  >
+                                    Clear
+                                  </button>
+                                ) : null}
+                              </div>
                               <Input
                                 type="date"
                                 value={goalForm.dueDate}
@@ -3409,9 +3422,25 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                 {projectAdvanced[draft.id] ? (
                                   <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
                                     <div className="space-y-1">
-                                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                        Due date
-                                      </Label>
+                                      <div className="flex items-center justify-between">
+                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                          Due date
+                                        </Label>
+                                        {draft.dueDate ? (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleDraftProjectDueDateChange(
+                                                draft.id,
+                                                ""
+                                              )
+                                            }
+                                            className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/50 transition hover:text-white"
+                                          >
+                                            Clear
+                                          </button>
+                                        ) : null}
+                                      </div>
                                       <Input
                                         type="date"
                                         value={draft.dueDate}
@@ -3670,9 +3699,26 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                               </Select>
                                             </div>
                                             <div className="space-y-1">
-                                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                                Due date
-                                              </Label>
+                                              <div className="flex items-center justify-between">
+                                                <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                                  Due date
+                                                </Label>
+                                                {task.dueDate ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      handleDraftTaskDueDateChange(
+                                                        draft.id,
+                                                        task.id,
+                                                        ""
+                                                      )
+                                                    }
+                                                    className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/50 transition hover:text-white"
+                                                  >
+                                                    Clear
+                                                  </button>
+                                                ) : null}
+                                              </div>
                                               <Input
                                                 type="date"
                                                 value={task.dueDate}
