@@ -1427,30 +1427,14 @@ export function Fab({
     null
   );
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
-  const [keyboardLift, setKeyboardLift] = useState(0);
-  const [isTextInputFocused, setIsTextInputFocused] = useState(false);
-  const isKeyboardVisible = useMemo(() => {
-    if (!expanded) return false;
-    if (keyboardLift <= 12) return false;
-    if (stableViewportHeight && viewportHeight) {
-      const shrink = stableViewportHeight - viewportHeight;
-      return shrink > 80;
-    }
-    return keyboardLift > 24;
-  }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
-  const shouldHideOverhangButtons = expanded && (isKeyboardVisible || isTextInputFocused);
+  const shouldHideOverhangButtons = false;
 
   useEffect(() => {
     if (!expanded) return;
     const measureOnce = () => {
       if (typeof window === "undefined") return;
-      const height = Math.max(
-        window.innerHeight,
-        window.visualViewport?.height ?? 0
-      );
+      const height = window.innerHeight;
       setStableViewportHeight((prev) => (prev ?? height));
-      setViewportHeight((prev) => prev ?? (window.visualViewport?.height ?? window.innerHeight));
       const safeBottom =
         Number.parseFloat(
           getComputedStyle(document.documentElement)
@@ -1479,68 +1463,61 @@ export function Fab({
   }, [expanded]);
 
   useEffect(() => {
-    if (!expanded) {
-      setKeyboardLift(0);
-      setIsTextInputFocused(false);
-      return;
-    }
-    const updateLift = () => {
-      if (typeof window === "undefined") return;
-      const viewport = window.visualViewport;
-      if (!viewport) {
-        setKeyboardLift(0);
-        return;
-      }
-      const viewportH = viewport.height ?? window.innerHeight;
-      if (viewportH) {
-        setViewportHeight(viewportH);
-      }
-      const heightLoss = Math.max(0, window.innerHeight - viewport.height);
-      const offsetTop = viewport.offsetTop ?? 0;
-      const lift = Math.max(0, heightLoss - offsetTop - stableSafeBottom);
-      setKeyboardLift(lift);
-    };
-    updateLift();
-    const viewport = window.visualViewport;
-    viewport?.addEventListener("resize", updateLift);
-    viewport?.addEventListener("scroll", updateLift);
-    window.addEventListener("orientationchange", updateLift);
-    return () => {
-      viewport?.removeEventListener("resize", updateLift);
-      viewport?.removeEventListener("scroll", updateLift);
-      window.removeEventListener("orientationchange", updateLift);
-    };
-  }, [expanded, stableSafeBottom]);
+    if (!expanded || typeof window === "undefined") return;
 
-  useEffect(() => {
-    if (!expanded) {
-      setIsTextInputFocused(false);
-      return;
-    }
-    const isTextEntryElement = (el: Element | null) => {
-      if (!el) return false;
-      const tag = el.tagName.toLowerCase();
-      const editable = (el as HTMLElement).isContentEditable;
-      return (
-        editable ||
-        tag === "input" ||
-        tag === "textarea" ||
-        tag === "select" ||
-        (el instanceof HTMLTextAreaElement) ||
-        (el instanceof HTMLInputElement && el.type !== "button" && el.type !== "submit" && el.type !== "reset")
-      );
+    const scrollY = window.scrollY ?? window.pageYOffset ?? 0;
+    const body = document.body;
+    const doc = document.documentElement;
+
+    const previousBody = {
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      width: body.style.width,
+      overflow: body.style.overflow,
+      overscrollBehavior: body.style.overscrollBehavior,
+      touchAction: body.style.touchAction,
     };
-    const handleFocusIn = (event: FocusEvent) => {
-      setIsTextInputFocused(isTextEntryElement(event.target as Element));
+    const previousDoc = {
+      overflow: doc.style.overflow,
+      overscrollBehavior: doc.style.overscrollBehavior,
+      touchAction: doc.style.touchAction,
     };
-    const handleFocusOut = () => {
-      setIsTextInputFocused(isTextEntryElement(document.activeElement));
-    };
-    document.addEventListener("focusin", handleFocusIn, true);
-    document.addEventListener("focusout", handleFocusOut, true);
+
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+    body.style.touchAction = "manipulation";
+
+    doc.style.overflow = "hidden";
+    doc.style.overscrollBehavior = "none";
+    doc.style.touchAction = "manipulation";
+
     return () => {
-      document.removeEventListener("focusin", handleFocusIn, true);
-      document.removeEventListener("focusout", handleFocusOut, true);
+      body.style.position = previousBody.position;
+      body.style.top = previousBody.top;
+      body.style.left = previousBody.left;
+      body.style.right = previousBody.right;
+      body.style.width = previousBody.width;
+      body.style.overflow = previousBody.overflow;
+      body.style.overscrollBehavior = previousBody.overscrollBehavior;
+      body.style.touchAction = previousBody.touchAction;
+
+      doc.style.overflow = previousDoc.overflow;
+      doc.style.overscrollBehavior = previousDoc.overscrollBehavior;
+      doc.style.touchAction = previousDoc.touchAction;
+
+      const restored = Number.parseFloat(previousBody.top || "0");
+      if (Number.isFinite(restored) && restored !== 0) {
+        window.scrollTo({ top: Math.abs(restored), behavior: "auto" });
+      } else {
+        window.scrollTo({ top: scrollY, behavior: "auto" });
+      }
     };
   }, [expanded]);
 
@@ -1943,8 +1920,8 @@ export function Fab({
             <div
               className="relative grid gap-4 p-4 pb-4 md:p-8 md:pb-6"
               style={{
-                paddingBottom: `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
-                scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
+                paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
+                scrollPaddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
               }}
             >
               {selected === "GOAL" && (
@@ -5088,10 +5065,11 @@ export function Fab({
   const isBlendingGradient = isDragging && dragTargetPage !== null;
   const dragConstraintLeft = -normalizedStageWidth;
   const dragConstraintRight = normalizedStageWidth;
+  // Keep the expanded shell anchored to a stable layout viewport height.
+  // Using the live visual viewport while the keyboard animates causes the
+  // fixed panel to continuously resize/reflow (visible as "jank" on mobile).
   const effectiveViewportHeight =
-    expanded && (viewportHeight || stableViewportHeight)
-      ? viewportHeight ?? stableViewportHeight
-      : null;
+    expanded && stableViewportHeight ? stableViewportHeight : null;
   const minHeightExpanded = expanded
     ? effectiveViewportHeight
       ? Math.round(effectiveViewportHeight * 0.58)
@@ -5117,13 +5095,8 @@ export function Fab({
               ? createPortal(
                   <div
                     data-fab-overlay
-                    className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+                    className="pointer-events-none fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
                     style={{ touchAction: "manipulation" }}
-                    onWheel={(event) => event.preventDefault()}
-                    onTouchMove={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                    }}
                   />,
                   document.body
                 )
@@ -5148,7 +5121,9 @@ export function Fab({
                 borderColor: isBlendingGradient
                   ? blendedBorderColor
                   : staticBorderColor,
-                transition: "border-color 0.1s linear, transform 0.2s ease",
+                transition: expanded
+                  ? "border-color 0.1s linear"
+                  : "border-color 0.1s linear, transform 0.2s ease",
                 transformOrigin:
                   menuVariant === "timeline" ? "bottom right" : "bottom center",
                 minHeight: expanded ? minHeightExpanded : menuContainerHeight,
@@ -5270,10 +5245,6 @@ export function Fab({
                       zIndex: 2147483651,
                       transition:
                         "top 0.18s ease, left 0.18s ease, right 0.18s ease, bottom 0.18s ease, transform 0.18s ease",
-                      transform:
-                        expanded && keyboardLift > 0
-                          ? `translateY(${-keyboardLift}px)`
-                          : undefined,
                     }}
                   >
                     <Button

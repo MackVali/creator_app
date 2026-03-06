@@ -7,6 +7,12 @@ const config: CapacitorConfig = {
   server: {
     url: 'https://trycreator.app',
     cleartext: false
+  },
+  plugins: {
+    Keyboard: {
+      resize: 'none',
+      resizeOnFullScreen: false
+    }
   }
 };
 
