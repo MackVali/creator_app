@@ -28,6 +28,8 @@ import type { SchedulerModeType } from "@/lib/scheduler/modes";
 import { HABIT_TYPE_OPTIONS } from "@/components/habits/habit-form-fields";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
+import { getCatsForUser } from "@/lib/data/cats";
+import type { CatRow } from "@/lib/types/cat";
 import { Input } from "@/components/ui/input";
 import {
   DayType24hPreview,
@@ -53,6 +55,15 @@ type DayTypeBlockLink = {
   allow_all_habit_types?: boolean | null;
   allow_all_skills?: boolean | null;
   allow_all_monuments?: boolean | null;
+};
+
+const UNCATEGORIZED_CATEGORY_ID = "__uncategorized__";
+const UNCATEGORIZED_CATEGORY_LABEL = "Uncategorized";
+
+type SkillGroup = {
+  id: string;
+  label: string;
+  skills: Skill[];
 };
 
 const BLOCK_TYPES: BlockType[] = ["FOCUS", "BREAK", "PRACTICE"];
@@ -296,6 +307,7 @@ export default function NewDayTypePage() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [constraintsTarget, setConstraintsTarget] = useState<TimeBlock | null>(null);
+  const [tourEnergyHighlightId, setTourEnergyHighlightId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [blockEnergy, setBlockEnergy] = useState<Map<string, FlameLevel>>(() => new Map());
   const [blockLocation, setBlockLocation] = useState<Map<string, LocationContextOption | null>>(
@@ -324,14 +336,78 @@ export default function NewDayTypePage() {
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [monuments, setMonuments] = useState<Monument[]>([]);
   const [monumentsLoading, setMonumentsLoading] = useState(false);
+  const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
   const [skillSearch, setSkillSearch] = useState("");
   const [monumentSearch, setMonumentSearch] = useState("");
+
+  const filteredSkills = useMemo(() => {
+    const term = skillSearch.trim().toLowerCase();
+    return skills
+      .filter((skill) => (skill.name ?? "").toLowerCase().includes(term))
+      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  }, [skills, skillSearch]);
+
+  const categoryLookup = useMemo(() => {
+    const lookup = new Map<string, CatRow>();
+    skillCategories.forEach((category) => {
+      lookup.set(category.id, category);
+    });
+    return lookup;
+  }, [skillCategories]);
+
+  const skillGroups = useMemo(() => {
+    const grouped = new Map<string, Skill[]>();
+    filteredSkills.forEach((skill) => {
+      const groupId = skill.cat_id ?? UNCATEGORIZED_CATEGORY_ID;
+      const existing = grouped.get(groupId);
+      if (existing) {
+        existing.push(skill);
+      } else {
+        grouped.set(groupId, [skill]);
+      }
+    });
+
+    const groups: SkillGroup[] = [];
+    skillCategories.forEach((category) => {
+      const list = grouped.get(category.id);
+      if (!list?.length) return;
+      groups.push({
+        id: category.id,
+        label: category.name ?? UNCATEGORIZED_CATEGORY_LABEL,
+        skills: list,
+      });
+      grouped.delete(category.id);
+    });
+
+    const uncategorized = grouped.get(UNCATEGORIZED_CATEGORY_ID);
+    if (uncategorized?.length) {
+      groups.push({
+        id: UNCATEGORIZED_CATEGORY_ID,
+        label: UNCATEGORIZED_CATEGORY_LABEL,
+        skills: uncategorized,
+      });
+      grouped.delete(UNCATEGORIZED_CATEGORY_ID);
+    }
+
+    grouped.forEach((list, groupId) => {
+      groups.push({
+        id: groupId,
+        label: categoryLookup.get(groupId)?.name ?? UNCATEGORIZED_CATEGORY_LABEL,
+        skills: list,
+      });
+    });
+
+    return groups;
+  }, [filteredSkills, skillCategories, categoryLookup]);
 
   const FLAME_LEVELS = ENERGY.LIST as FlameLevel[];
   const isEditingBlock = Boolean(editingBlockId);
   const hasBlocks = timeBlocks.length > 0;
   const { options: locationOptions, loading: loadingLocations } = useLocationContexts();
   const selectableLocations = useMemo(() => locationOptions ?? [], [locationOptions]);
+  const findWorkBlock = useCallback(() => {
+    return timeBlocks.find((block) => normalizeLabel(block.label) === "WORK") ?? null;
+  }, [timeBlocks]);
 
   const startCreateBlock = useCallback(() => {
     setEditingBlockId(null);
@@ -340,6 +416,31 @@ export default function NewDayTypePage() {
     setCreateError(null);
     setShowCreateForm(true);
   }, []);
+
+  const emitTimeBlockSavedEvent = () => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent("tour:time-block-saved"));
+  };
+
+  const emitConstraintsSavedEvent = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent("tour:constraints-saved"));
+  }, []);
+
+  const emitConstraintsOpenedEvent = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent("tour:constraints-opened"));
+  }, []);
+
+  const prevConstraintsTargetRef = useRef<typeof constraintsTarget>(null);
+
+  useEffect(() => {
+    if (prevConstraintsTargetRef.current && constraintsTarget === null) {
+      emitConstraintsSavedEvent();
+      setTourEnergyHighlightId(prevConstraintsTargetRef.current.id ?? null);
+    }
+    prevConstraintsTargetRef.current = constraintsTarget;
+  }, [constraintsTarget, emitConstraintsSavedEvent]);
 
   const syncEnergyMap = useCallback((blocks: TimeBlock[]) => {
     setBlockEnergy((prev) => {
@@ -477,6 +578,7 @@ export default function NewDayTypePage() {
       const nextLevel = FLAME_LEVELS[(idx + 1) % FLAME_LEVELS.length];
       return new Map(prev).set(id, nextLevel);
     });
+
   };
 
   const updateLocationForBlock = (blockId: string, option: LocationContextOption | null) => {
@@ -762,6 +864,7 @@ export default function NewDayTypePage() {
       if (!supabase) {
         setSkills([]);
         setMonuments([]);
+        setSkillCategories([]);
         return;
       }
       const {
@@ -770,11 +873,12 @@ export default function NewDayTypePage() {
       if (!user?.id) {
         setSkills([]);
         setMonuments([]);
+        setSkillCategories([]);
         return;
       }
       setSkillsLoading(true);
       setMonumentsLoading(true);
-      const [skillsData, monumentsData] = await Promise.all([
+      const [skillsData, monumentsData, categoriesData] = await Promise.all([
         getSkillsForUser(user.id).catch((error) => {
           console.warn("Unable to load skills", error);
           return [];
@@ -783,13 +887,19 @@ export default function NewDayTypePage() {
           console.warn("Unable to load monuments", error);
           return [];
         }),
+        getCatsForUser(user.id, supabase).catch((error) => {
+          console.warn("Unable to load skill categories", error);
+          return [];
+        }),
       ]);
       setSkills(skillsData ?? []);
       setMonuments(monumentsData ?? []);
+      setSkillCategories(categoriesData ?? []);
     } catch (err) {
       console.error(err);
       setSkills([]);
       setMonuments([]);
+      setSkillCategories([]);
     } finally {
       setSkillsLoading(false);
       setMonumentsLoading(false);
@@ -936,12 +1046,17 @@ export default function NewDayTypePage() {
       setCreateError("Please enter start and end times as HH:MM.");
       return;
     }
+    const label = normalizeLabel(createState.label);
+    if (!label) {
+      setCreateError("Please name this time block.");
+      return;
+    }
     setSavingBlock(true);
     try {
       if (isEditingBlock && editingBlockId) {
         const optimisticUpdated: TimeBlock = {
           id: editingBlockId,
-          label: normalizeLabel(createState.label) ?? "TIME BLOCK",
+          label,
           start_local: normalizeTimeLabel(createState.start_local),
           end_local: normalizeTimeLabel(createState.end_local),
           day_type_id: timeBlocks.find((block) => block.id === editingBlockId)?.day_type_id ?? null,
@@ -975,7 +1090,7 @@ export default function NewDayTypePage() {
         const { data, error: updateError } = await supabase
           .from("time_blocks")
           .update({
-            label: normalizeLabel(createState.label),
+            label,
             start_local: optimisticUpdated.start_local,
             end_local: optimisticUpdated.end_local,
           })
@@ -999,12 +1114,13 @@ export default function NewDayTypePage() {
           sortTimeBlocks(prev.map((block) => (block.id === editingBlockId ? updated : block)))
         );
         resetBlockForm();
+        emitTimeBlockSavedEvent();
         return;
       }
 
       const optimistic: TimeBlock = {
         id: makeId(),
-        label: normalizeLabel(createState.label) ?? "TIME BLOCK",
+        label,
         start_local: normalizeTimeLabel(createState.start_local),
         end_local: normalizeTimeLabel(createState.end_local),
       };
@@ -1052,6 +1168,7 @@ export default function NewDayTypePage() {
           next.set(optimistic.id, new Set());
           return next;
         });
+        setConstraintsTarget(optimistic);
       } else {
         const {
           data: { user },
@@ -1062,7 +1179,7 @@ export default function NewDayTypePage() {
         }
         const payload = {
           user_id: user.id,
-          label: normalizeLabel(createState.label),
+          label,
           start_local: optimistic.start_local,
           end_local: optimistic.end_local,
         };
@@ -1122,11 +1239,12 @@ export default function NewDayTypePage() {
           next.set(inserted.id, prev.get(inserted.id) ?? new Set());
           return next;
         });
+        setConstraintsTarget(inserted);
       }
 
       resetBlockForm();
-      setConstraintsTarget(null);
       setMenuOpenId(null);
+      emitTimeBlockSavedEvent();
     } catch (err) {
       console.error(err);
       setCreateError("Unable to save time block. Try again.");
@@ -1250,10 +1368,28 @@ export default function NewDayTypePage() {
     }
   };
 
-  const handleConstraintsClick = (block: TimeBlock) => {
-    setConstraintsTarget(block);
-    setMenuOpenId(null);
-  };
+  const handleConstraintsClick = useCallback(
+    (block: TimeBlock) => {
+      setConstraintsTarget(block);
+      setMenuOpenId(null);
+      emitConstraintsOpenedEvent();
+    },
+    [emitConstraintsOpenedEvent]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const focusWorkConstraints = () => {
+      const workBlock = findWorkBlock();
+      if (!workBlock) return;
+      handleConstraintsClick(workBlock);
+      window.dispatchEvent(new CustomEvent("tour:work-constraints-focused"));
+    };
+    window.addEventListener("tour:focus-work-constraints", focusWorkConstraints);
+    return () => {
+      window.removeEventListener("tour:focus-work-constraints", focusWorkConstraints);
+    };
+  }, [findWorkBlock, handleConstraintsClick]);
 
   const selectedBlocks = useMemo(
     () => timeBlocks.filter((block) => selectedIds.has(block.id)),
@@ -1898,6 +2034,7 @@ export default function NewDayTypePage() {
                   <button
                     type="button"
                     onClick={startCreateDayType}
+                    data-tour="day-type-create"
                     className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
                   >
                     Create day type
@@ -2037,13 +2174,14 @@ export default function NewDayTypePage() {
                   <p className="text-sm text-white/60">
                     Create a few blocks to form the skeleton of your day.
                   </p>
-                  <div className="mt-4 flex justify-center">
-                    <button
-                      type="button"
-                      onClick={startCreateBlock}
-                      className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-white/90 transition hover:border-white/20 hover:bg-white/15"
-                    >
-                      Create time block
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={startCreateBlock}
+                    data-tour="day-type-add-block"
+                    className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-white/90 transition hover:border-white/20 hover:bg-white/15"
+                  >
+                    Create time block
                     </button>
                   </div>
                 </div>
@@ -2075,6 +2213,7 @@ export default function NewDayTypePage() {
                       type="button"
                       onClick={handleSubmitBlock}
                       disabled={savingBlock}
+                    data-tour="selected-time-block-save"
                       className="rounded-full border border-white/20 bg-white/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/20 disabled:opacity-60"
                     >
                       {savingBlock
@@ -2098,6 +2237,7 @@ export default function NewDayTypePage() {
                           label: e.target.value.toUpperCase(),
                         }))
                       }
+                    data-tour="selected-time-block-name"
                       placeholder="Focus block"
                       className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white placeholder:text-white/35 transition group-hover:border-white/20 group-focus-within:border-white/25 focus:outline-none"
                     />
@@ -2107,7 +2247,7 @@ export default function NewDayTypePage() {
                     ariaLabel="Start time"
                     value={createState.start_local}
                     onChange={(next) => setCreateState((prev) => ({ ...prev, start_local: next }))}
-                    dataTour="day-type-block-start"
+                    dataTour="selected-time-block-start"
                     helper="HH:MM — we’ll handle overnight."
                   />
                   <TimeInput
@@ -2115,7 +2255,7 @@ export default function NewDayTypePage() {
                     ariaLabel="End time"
                     value={createState.end_local}
                     onChange={(next) => setCreateState((prev) => ({ ...prev, end_local: next }))}
-                    dataTour="day-type-block-end"
+                    dataTour="selected-time-block-end"
                     helper="Ends before start? We wrap past midnight."
                   />
                 </div>
@@ -2129,6 +2269,8 @@ export default function NewDayTypePage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 {timeBlocks.map((block) => {
                   const selected = selectedIds.has(block.id);
+                  const isConstraintsTargetBlock = constraintsTarget?.id === block.id;
+                  const tourHighlightBlock = isConstraintsTargetBlock || editingBlockId === block.id;
                   const label = normalizeLabel(block.label) ?? "TIME BLOCK";
                   const energyLevel = blockEnergy.get(block.id) ?? "NO";
                   const locationOption = blockLocation.get(block.id);
@@ -2152,6 +2294,7 @@ export default function NewDayTypePage() {
                   return (
                     <div
                       key={block.id}
+                      data-tour={tourHighlightBlock ? "selected-time-block" : undefined}
                       className={cn(
                         "flex w-full flex-col gap-3 rounded-2xl border px-4 py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.28)] transition",
                         "border-white/10 bg-white/[0.04] hover:border-white/20 hover:bg-white/10",
@@ -2167,6 +2310,7 @@ export default function NewDayTypePage() {
                             <button
                               type="button"
                               onClick={(event) => event.stopPropagation()}
+                              data-tour={isConstraintsTargetBlock ? "selected-time-block-menu" : undefined}
                               className="rounded-md px-1.5 py-1 text-white/60 transition hover:text-white focus:outline-none focus:ring-1 focus:ring-white/30 focus:ring-offset-0"
                               aria-label={`Open actions for ${label}`}
                             >
@@ -2192,7 +2336,7 @@ export default function NewDayTypePage() {
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="flex items-center gap-2 focus:bg-white/10 focus:text-white"
-                              data-tour="day-type-constraints"
+                              data-tour={isConstraintsTargetBlock ? "selected-time-block-constraints" : undefined}
                               onSelect={(event) => {
                                 event.preventDefault();
                                 handleConstraintsClick(block);
@@ -2249,6 +2393,7 @@ export default function NewDayTypePage() {
                               }}
                               className="rounded-md bg-white/5 px-1 py-0.5 text-white/70 transition hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-white/30"
                               aria-label={`Cycle energy for ${label}`}
+                              data-tour={tourEnergyHighlightId === block.id ? "selected-time-block-energy" : undefined}
                             >
                               <FlameEmber level={energyLevel} size="sm" />
                             </button>
@@ -2265,7 +2410,10 @@ export default function NewDayTypePage() {
                         </div>
                       </div>
                       {constraintsTarget?.id === block.id ? (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 shadow-[0_10px_28px_rgba(0,0,0,0.3)]">
+                        <div
+                          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 shadow-[0_10px_28px_rgba(0,0,0,0.3)]"
+                          data-tour={isConstraintsTargetBlock ? "selected-time-block-constraints-panel" : undefined}
+                        >
                           <div className="flex items-start justify-between gap-3">
                             <div className="space-y-4">
                               <div className="text-[11px] uppercase tracking-[0.16em] text-white/55">
@@ -2284,21 +2432,41 @@ export default function NewDayTypePage() {
                                         next.set(block.id, value as BlockType);
                                         return next;
                                       });
+                                      if (isConstraintsTargetBlock && value === "BREAK") {
+                                        window.dispatchEvent(
+                                          new CustomEvent("tour:block-type-break-selected")
+                                        );
+                                      }
                                     }}
                                   >
-                                    <SelectTrigger className="w-full rounded-lg border border-white/10 bg-black/30 text-left text-white focus:outline-none">
+                                    <SelectTrigger
+                                      className="w-full rounded-lg border border-white/10 bg-black/30 text-left text-white focus:outline-none"
+                                      dataTour={isConstraintsTargetBlock ? "selected-time-block-type" : undefined}
+                                    >
                                       <SelectValue placeholder="Block type" />
                                     </SelectTrigger>
                                     <SelectContent className="border border-white/10 bg-[#0f111a]/95 text-white shadow-xl backdrop-blur">
                                       {BLOCK_TYPES.map((type) => (
-                                        <SelectItem key={type} value={type}>
+                                        <SelectItem
+                                          key={type}
+                                          value={type}
+                                          dataTour={
+                                            isConstraintsTargetBlock && type === "BREAK"
+                                              ? "selected-time-block-type-break"
+                                              : undefined
+                                          }
+                                          label={BLOCK_TYPE_LABEL[type]}
+                                        >
                                           {BLOCK_TYPE_LABEL[type]}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
                                   </Select>
                                 </div>
-                                <div className="space-y-1">
+                                <div
+                                  className="space-y-1"
+                                  data-tour={isConstraintsTargetBlock ? "selected-time-block-location-section" : undefined}
+                                >
                                   <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-white/60">
                                     <MapPin className="h-4 w-4 text-white/70" />
                                     <span>Location context</span>
@@ -2306,10 +2474,19 @@ export default function NewDayTypePage() {
                                   <Select
                                     value={(blockLocation.get(block.id)?.id ?? "ANY") as string}
                                     onValueChange={(value) => {
+                                      const dispatchWorkLocationSelected = (candidate?: string | null) => {
+                                        const normalized = normalizeLocationValue(candidate ?? value);
+                                        if (isConstraintsTargetBlock && normalized === "WORK") {
+                                          window.dispatchEvent(new CustomEvent("tour:location-work-selected"));
+                                        }
+                                      };
+
                                       if (value === "ANY") {
                                         updateLocationForBlock(block.id, null);
+                                        dispatchWorkLocationSelected(null);
                                         return;
                                       }
+
                                       const match =
                                         selectableLocations.find((opt) => opt.id === value) ??
                                         selectableLocations.find(
@@ -2318,6 +2495,7 @@ export default function NewDayTypePage() {
 
                                       if (match) {
                                         updateLocationForBlock(block.id, match);
+                                        dispatchWorkLocationSelected(match.value ?? match.label ?? value);
                                       } else {
                                         const normalized = normalizeLocationValue(value) ?? value;
                                         updateLocationForBlock(block.id, {
@@ -2325,22 +2503,40 @@ export default function NewDayTypePage() {
                                           value: normalized,
                                           label: match?.label ?? value,
                                         });
+                                        dispatchWorkLocationSelected(normalized);
                                       }
                                     }}
                                     disabled={loadingLocations}
                                   >
-                                    <SelectTrigger className="w-full rounded-lg border border-white/10 bg-black/30 text-left text-white focus:outline-none">
+                                    <SelectTrigger
+                                      className="w-full rounded-lg border border-white/10 bg-black/30 text-left text-white focus:outline-none"
+                                      dataTour={isConstraintsTargetBlock ? "selected-time-block-location" : undefined}
+                                    >
                                       <SelectValue placeholder="Anywhere" />
                                     </SelectTrigger>
                                     <SelectContent className="border border-white/10 bg-[#0f111a]/95 text-white shadow-xl backdrop-blur">
-                                      <SelectItem value="ANY">Anywhere</SelectItem>
+                                      <SelectItem value="ANY" label="Anywhere">
+                                        Anywhere
+                                      </SelectItem>
                                       {selectableLocations
                                         .filter((opt) => opt.value !== "ANY")
-                                        .map((opt) => (
-                                          <SelectItem key={opt.id} value={opt.id}>
-                                            {opt.label}
-                                          </SelectItem>
-                                        ))}
+                                        .map((opt) => {
+                                          const label = opt.label || opt.value || "";
+                                          const normalized = normalizeLabel(label) ?? normalizeLabel(opt.value);
+                                          const isWorkLocation = normalized === "WORK";
+                                          return (
+                                            <SelectItem
+                                              key={opt.id}
+                                              value={opt.id}
+                                              dataTour={
+                                                isWorkLocation ? "selected-time-block-location-work" : undefined
+                                              }
+                                              label={opt.label ?? opt.value ?? ""}
+                                            >
+                                              {opt.label}
+                                            </SelectItem>
+                                          );
+                                        })}
                                     </SelectContent>
                                   </Select>
                                   <div className="text-xs text-white/55">
@@ -2445,41 +2641,100 @@ export default function NewDayTypePage() {
                                         ) : filteredSkills.length === 0 ? (
                                           <p className="px-2 py-1 text-xs text-white/60">No skills found.</p>
                                         ) : (
-                                          <div className="grid gap-1">
-                                            {filteredSkills.map((skill) => {
-                                              const selectedSkill = allowedSkillIds.has(skill.id);
-                                              return (
-                                                <button
-                                                  key={skill.id}
-                                                  type="button"
-                                                  onClick={() =>
-                                                    setBlockAllowedSkillIds((prev) => {
-                                                      const next = new Map(prev);
-                                                      const set = new Set(next.get(block.id) ?? []);
-                                                      if (set.has(skill.id)) {
-                                                        set.delete(skill.id);
-                                                      } else {
-                                                        set.add(skill.id);
-                                                      }
-                                                      next.set(block.id, set);
-                                                      return next;
-                                                    })
+                                          <div className="space-y-3">
+                                            {skillGroups.map((group) => {
+                                              const groupSkillIds = group.skills.map((skill) => skill.id);
+                                              const selectedCount = groupSkillIds.filter((id) =>
+                                                allowedSkillIds.has(id)
+                                              ).length;
+                                              const allSelected =
+                                                selectedCount === groupSkillIds.length && groupSkillIds.length > 0;
+                                              const someSelected =
+                                                selectedCount > 0 && selectedCount < groupSkillIds.length;
+                                              const toggleGroup = () =>
+                                                setBlockAllowedSkillIds((prev) => {
+                                                  const next = new Map(prev);
+                                                  const set = new Set(next.get(block.id) ?? []);
+                                                  if (allSelected) {
+                                                    groupSkillIds.forEach((id) => set.delete(id));
+                                                  } else {
+                                                    groupSkillIds.forEach((id) => set.add(id));
                                                   }
-                                                  className={cn(
-                                                    "flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition",
-                                                    selectedSkill
-                                                      ? "bg-white/15 text-white"
-                                                      : "text-white/75 hover:bg-white/10"
-                                                  )}
-                                                >
-                                                  <span className="flex items-center gap-2 truncate">
-                                                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-sm">
-                                                      {(skill.icon ?? "🎯").trim() || "🎯"}
+                                                  next.set(block.id, set);
+                                                  return next;
+                                                });
+                                              const skillButtons = group.skills.map((skill) => {
+                                                const selectedSkill = allowedSkillIds.has(skill.id);
+                                                return (
+                                                  <button
+                                                    key={skill.id}
+                                                    type="button"
+                                                    onClick={() =>
+                                                      setBlockAllowedSkillIds((prev) => {
+                                                        const next = new Map(prev);
+                                                        const set = new Set(next.get(block.id) ?? []);
+                                                        if (set.has(skill.id)) {
+                                                          set.delete(skill.id);
+                                                        } else {
+                                                          set.add(skill.id);
+                                                        }
+                                                        next.set(block.id, set);
+                                                        return next;
+                                                      })
+                                                    }
+                                                    className={cn(
+                                                      "flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition",
+                                                      selectedSkill
+                                                        ? "bg-white/15 text-white"
+                                                        : "text-white/75 hover:bg-white/10"
+                                                    )}
+                                                  >
+                                                    <span className="flex items-center gap-2 truncate">
+                                                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-sm">
+                                                        {(skill.icon ?? "🎯").trim() || "🎯"}
+                                                      </span>
+                                                      <span className="truncate">{skill.name}</span>
                                                     </span>
-                                                    <span className="truncate">{skill.name}</span>
-                                                  </span>
-                                                  {selectedSkill ? <Check className="h-4 w-4" /> : null}
-                                                </button>
+                                                    {selectedSkill ? <Check className="h-4 w-4" /> : null}
+                                                  </button>
+                                                );
+                                              });
+                                              return (
+                                                <div key={group.id} className="space-y-1">
+                                                  <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-white/50">
+                                                    <span className="text-[10px] uppercase tracking-[0.18em]">
+                                                      {group.label}
+                                                    </span>
+                                                    <label className="relative flex h-3.5 w-3.5 items-center justify-center">
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={allSelected}
+                                                        ref={(el) => {
+                                                          if (!el) return;
+                                                          el.indeterminate = someSelected;
+                                                          if (someSelected) {
+                                                            el.setAttribute("aria-checked", "mixed");
+                                                          } else {
+                                                            el.setAttribute(
+                                                              "aria-checked",
+                                                              allSelected ? "true" : "false"
+                                                            );
+                                                          }
+                                                        }}
+                                                        onChange={toggleGroup}
+                                                        className="peer absolute inset-0 h-full w-full opacity-0"
+                                                      />
+                                                      <span className="pointer-events-none absolute inset-0 h-full w-full rounded border border-slate-600 bg-slate-900 transition peer-checked:bg-slate-400 peer-checked:border-slate-400 peer-[aria-checked=mixed]:bg-slate-600"></span>
+                                                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-slate-950 opacity-0 peer-checked:opacity-100">
+                                                        ✓
+                                                      </span>
+                                                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-slate-200 opacity-0 peer-[aria-checked=mixed]:opacity-100">
+                                                        —
+                                                      </span>
+                                                    </label>
+                                                  </div>
+                                                  <div className="grid gap-1">{skillButtons}</div>
+                                                </div>
                                               );
                                             })}
                                           </div>
@@ -2487,7 +2742,7 @@ export default function NewDayTypePage() {
                                       </div>
                                       {allowedSkillIds.size === 0 ? (
                                         <div className="text-xs text-amber-200/80">
-                                          Nothing allowed in this block for skills.
+                                          No skills allowed yet
                                         </div>
                                       ) : null}
                                     </>
@@ -2495,10 +2750,10 @@ export default function NewDayTypePage() {
                                 </div>
                               </div>
 
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
-                                  <span>Monuments</span>
-                                  <label className="flex items-center gap-2 text-xs text-white/70">
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
+                                <span>Monuments</span>
+                                <label className="flex items-center gap-2 text-xs text-white/70">
                                     <input
                                       type="checkbox"
                                       checked={allowAllMonuments}
@@ -2579,7 +2834,10 @@ export default function NewDayTypePage() {
                             </div>
                             <button
                               type="button"
-                              onClick={() => setConstraintsTarget(null)}
+                              data-tour="constraints-save"
+                              onClick={() => {
+                                setConstraintsTarget(null);
+                              }}
                               className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:border-white/25 hover:bg-white/15"
                             >
                               Close

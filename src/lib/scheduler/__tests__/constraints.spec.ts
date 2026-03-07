@@ -121,4 +121,27 @@ describe("fetchCompatibleWindowsForItem with constraints", () => {
 
     expect(result.windows.map((w) => w.id)).toEqual(["win-allow"]);
   });
+
+  it("matches windows when matching skills are provided via skillIds", async () => {
+    const windows: WindowLite[] = [
+      {
+        id: "win-skill-ids",
+        ...baseWindow(),
+        allowAllSkills: false,
+        allowedSkillIds: ["skill-x"],
+        allowAllHabitTypes: true,
+        allowAllMonuments: true,
+      },
+    ];
+
+    const result = await fetchCompatibleWindowsForItem(
+      {} as any,
+      new Date("2024-01-01T00:00:00Z"),
+      { energy: "NO", duration_min: 30, skillIds: ["skill-x"] },
+      "UTC",
+      { preloadedWindows: windows }
+    );
+
+    expect(result.windows.map((w) => w.id)).toEqual(["win-skill-ids"]);
+  });
 });

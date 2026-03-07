@@ -22,9 +22,18 @@ function getLabelText(children: React.ReactNode): string {
   return extract(children).join(" ").trim();
 }
 
+const SELECT_TRIGGER_DISPLAY_NAME = "SelectTrigger";
+
+type SelectTriggerChildInfo = {
+  className?: string;
+  dataTour?: string;
+  children?: React.ReactNode;
+};
+
 const SelectContext = React.createContext<{
   onSelect?: (value: string, label: string) => void;
   selectedValue?: string;
+  selectedLabel?: string;
   isOpen?: boolean;
   setIsOpen?: (open: boolean) => void;
 }>({});
@@ -32,6 +41,39 @@ const SelectContext = React.createContext<{
 export function useSelectContext() {
   return React.useContext(SelectContext);
 }
+
+const getComponentDisplayName = (type: React.ElementType | undefined) => {
+  if (!type) {
+    return undefined;
+  }
+  if (typeof type === "string") {
+    return type;
+  }
+  const typed = type as { displayName?: string; name?: string };
+  return typed.displayName ?? typed.name;
+};
+
+const getSelectTriggerChildInfo = (
+  children: React.ReactNode
+): SelectTriggerChildInfo | undefined => {
+  let info: SelectTriggerChildInfo | undefined;
+
+  React.Children.forEach(children, (child) => {
+    if (info) return;
+    if (!React.isValidElement(child)) return;
+
+    const displayName = getComponentDisplayName(child.type);
+    if (displayName === SELECT_TRIGGER_DISPLAY_NAME) {
+      info = {
+        className: child.props.className,
+        dataTour: child.props.dataTour,
+        children: child.props.children,
+      };
+    }
+  });
+
+  return info;
+};
 
 interface SelectProps {
   value?: string;
@@ -52,6 +94,8 @@ interface SelectProps {
   maxHeight?: number;
   /** Control menu placement. Defaults to auto. */
   placement?: "auto" | "above" | "below";
+  /** Optional hook for attaching data attributes to the trigger. */
+  dataTour?: string;
 }
 
 const Select = React.forwardRef<HTMLDivElement, SelectProps>(
@@ -71,6 +115,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       disablePortal = false,
       maxHeight,
       placement = "auto",
+      dataTour,
     },
     ref
   ) => {
@@ -92,6 +137,10 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       bottom?: number;
       maxHeight: number;
     } | null>(null);
+    const selectTriggerChildInfo = React.useMemo(
+      () => getSelectTriggerChildInfo(children),
+      [children]
+    );
 
     React.useEffect(() => {
       const handlePointerDown = (event: PointerEvent) => {
@@ -224,14 +273,20 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       setSelectedLabel(derived || "");
     }, [children, value]);
 
+    const resolvedTriggerContent = trigger ?? selectTriggerChildInfo?.children;
+    const resolvedTriggerClassName =
+      triggerClassName ?? selectTriggerChildInfo?.className;
+    const resolvedDataTour = dataTour ?? selectTriggerChildInfo?.dataTour;
+
     return (
       <SelectContext.Provider
-        value={{
-          onSelect: handleSelect,
-          selectedValue,
-          isOpen,
-          setIsOpen: updateOpen,
-        }}
+    value={{
+      onSelect: handleSelect,
+      selectedValue,
+      selectedLabel,
+      isOpen,
+      setIsOpen: updateOpen,
+    }}
       >
         <div
           ref={(node) => {
@@ -242,7 +297,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
             (ref as React.MutableRefObject<HTMLDivElement | null>).current =
               node;
           }
-        }}
+          }}
           className={cn("relative", className)}
         >
           <button
@@ -259,6 +314,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
               }
               updateOpen(!isOpen);
             }}
+            data-tour={resolvedDataTour}
             onFocusCapture={() => {
               if (!openOnTriggerFocus || isOpen || suppressFocusOpenRef.current)
                 return;
@@ -269,12 +325,12 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
               "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition overflow-visible",
               "focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50",
               isOpen && "border-blue-400/70",
-              triggerClassName
+              resolvedTriggerClassName
             )}
           >
             <div className="flex items-center gap-2 flex-1 min-w-0">
-              {trigger ? (
-                trigger
+              {resolvedTriggerContent ? (
+                resolvedTriggerContent
               ) : (
                 <span className="block truncate">
                   {selectedLabel || placeholder || ""}
@@ -361,14 +417,25 @@ const SelectTrigger = React.forwardRef<HTMLDivElement, SelectProps>(
     </Select>
   )
 );
-SelectTrigger.displayName = "SelectTrigger";
+SelectTrigger.displayName = SELECT_TRIGGER_DISPLAY_NAME;
 
 const SelectValue = React.forwardRef<
   HTMLSpanElement,
-  React.HTMLAttributes<HTMLSpanElement>
->(({ className, ...props }, ref) => (
-  <span ref={ref} className={cn("block truncate", className)} {...props} />
-));
+  React.HTMLAttributes<HTMLSpanElement> & { placeholder?: string }
+>(({ className, placeholder, ...props }, ref) => {
+  const ctx = useSelectContext();
+  const label = ctx?.selectedLabel;
+  const showPlaceholder = !label && placeholder;
+  return (
+    <span
+      ref={ref}
+      className={cn("block truncate", className, showPlaceholder && "text-white/50")}
+      {...props}
+    >
+      {label || placeholder || ""}
+    </span>
+  );
+});
 SelectValue.displayName = "SelectValue";
 
 interface SelectContentProps {
@@ -412,11 +479,12 @@ interface SelectItemProps {
   className?: string;
   label?: string;
   disabled?: boolean;
+  dataTour?: string;
 }
 
 const SelectItem = React.forwardRef<HTMLDivElement, SelectItemProps>(
   (
-    { value, children, onSelect, selectedValue, className, label, disabled },
+    { value, children, onSelect, selectedValue, className, label, disabled, dataTour },
     ref
   ) => {
     const context = React.useContext(SelectContext);
@@ -436,6 +504,7 @@ const SelectItem = React.forwardRef<HTMLDivElement, SelectItemProps>(
           className
         )}
         role="option"
+        data-tour={dataTour}
         aria-disabled={isDisabled}
         onClick={() => {
           if (isDisabled) return;

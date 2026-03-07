@@ -6,6 +6,14 @@ export const scheduleTourSteps: TourStep[] = [
     selector: 'button[data-tour="fab"]',
     title: "The FAB works here too",
     body: "Use the FAB to add tasks, habits, and actions while planning your day.",
+    requiresClick: true,
+    allowNext: false,
+    advanceOnEvent: { type: "custom", eventName: "tour:fab-opened" },
+    onBeforeNext: () => {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("tour:fab-request-close"));
+      }
+    },
   },
   {
     id: "schedule-jump-to-date",

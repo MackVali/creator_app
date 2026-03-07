@@ -1928,23 +1928,17 @@ export async function scheduleBacklog(
   }
 
   let projectSkillsMap: Record<string, string[]> = {};
-  if (mode.type === "SKILLED") {
-    try {
-      const projectIds = Object.keys(projectsMap);
-      if (projectIds.length > 0) {
-        projectSkillsMap = await fetchProjectSkillsForProjects(
-          projectIds,
-          supabase
-        );
-      }
-    } catch (error) {
-      log(
-        "error",
-        "Failed to fetch project skill links for scheduler mode",
-        error
+  try {
+    const projectIds = Object.keys(projectsMap);
+    if (projectIds.length > 0) {
+      projectSkillsMap = await fetchProjectSkillsForProjects(
+        projectIds,
+        supabase
       );
-      projectSkillsMap = {};
     }
+  } catch (error) {
+    log("error", "Failed to fetch project skill links for scheduler mode", error);
+    projectSkillsMap = {};
   }
 
   const projectSkillIdsCache = new Map<string, string[]>();

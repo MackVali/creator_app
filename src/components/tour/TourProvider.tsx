@@ -15,6 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
+import { dayTypesTourSteps } from "@/lib/tours/dayTypesTour";
 
 export type TourStep = {
   id: string;
@@ -29,6 +30,7 @@ export type TourStep = {
   waitForSelector?: boolean;
   advanceOnEvent?: { type: "click" | "custom"; eventName?: string };
   waitForEvent?: { type: "custom"; eventName: string };
+  enterEvent?: { type: "custom"; eventName: string };
   navigateTo?: string;
 };
 
@@ -139,6 +141,16 @@ export function TourProvider({ children }: { children: ReactNode }) {
     });
   }, [setTourActive]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (session) return;
+    if (pathname !== "/schedule/day-types/new") return;
+    const pending = window.localStorage.getItem("tour:day-types:pending");
+    if (pending !== "1") return;
+    window.localStorage.removeItem("tour:day-types:pending");
+    startTour(dayTypesTourSteps);
+  }, [pathname, session, startTour]);
+
   const currentStep = session?.steps[session.currentIndex] ?? null;
   const shouldBlockOutsideClicks = currentStep?.blockOutsideClicks ?? true;
   const shouldAdvanceAfterCustomEvent = Boolean(
@@ -191,6 +203,14 @@ export function TourProvider({ children }: { children: ReactNode }) {
     currentStep?.selector,
     currentStep?.navigateTo,
   ]);
+
+  useEffect(() => {
+    if (!currentStep?.enterEvent) return;
+    if (typeof window === "undefined") return;
+    if (currentStep.enterEvent.type !== "custom") return;
+    if (!currentStep.enterEvent.eventName) return;
+    window.dispatchEvent(new CustomEvent(currentStep.enterEvent.eventName));
+  }, [currentStep?.enterEvent, currentStep?.id]);
 
   useEffect(() => {
     if (!currentStep) {
@@ -560,7 +580,6 @@ export function TourProvider({ children }: { children: ReactNode }) {
   const isLastStep =
     Boolean(session) && session.currentIndex >= (session.steps.length - 1);
   const showNextButton = currentStep?.allowNext ?? true;
-  const showSkipButton = currentStep?.canSkip !== false;
   const waitingForGuidedAction =
     Boolean(currentStep?.requiresClick && awaitingClick);
   const nextDisabled = waitingForGuidedAction || isAdvancing;
@@ -638,7 +657,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
         const stop = radius + 32;
         const gradient = `radial-gradient(circle at ${centerX}px ${centerY}px, transparent ${radius}px, black ${stop}px)`;
         return {
-          backgroundColor: "rgba(0, 0, 0, 0.4)",
+          backgroundColor: "rgba(0, 0, 0, 0.28)",
           maskImage: gradient,
           WebkitMaskImage: gradient,
           zIndex: OVERLAY_Z_INDEX,
@@ -646,7 +665,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
         };
       })()
     : {
-        backgroundColor: "rgba(0, 0, 0, 0.4)",
+        backgroundColor: "rgba(0, 0, 0, 0.28)",
         zIndex: OVERLAY_Z_INDEX,
         pointerEvents: "none",
       };
@@ -719,12 +738,12 @@ export function TourProvider({ children }: { children: ReactNode }) {
                     </>
                   ) : null}
                   <div
-                    className="pointer-events-none absolute rounded-2xl border border-white/60 shadow-[0_0_0_12px_rgba(0,0,0,0.35)]"
+                    className="pointer-events-none absolute rounded-2xl border border-white/35 shadow-[0_0_0_6px_rgba(0,0,0,0.2)]"
                     style={{
-                      top: highlightRect.top - 8,
-                      left: highlightRect.left - 8,
-                      width: highlightRect.width + 16,
-                      height: highlightRect.height + 16,
+                      top: highlightRect.top - 4,
+                      left: highlightRect.left - 4,
+                      width: highlightRect.width + 8,
+                      height: highlightRect.height + 8,
                       zIndex: HIGHLIGHT_Z_INDEX,
                     }}
                   />
@@ -755,15 +774,6 @@ export function TourProvider({ children }: { children: ReactNode }) {
                       >
                         Continue
                       </button>
-                      {showSkipButton ? (
-                        <button
-                          type="button"
-                          onClick={finishTour}
-                          className="rounded-full border border-white/30 bg-transparent px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70 transition hover:text-white"
-                        >
-                          Skip
-                        </button>
-                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -785,15 +795,6 @@ export function TourProvider({ children }: { children: ReactNode }) {
                       </p>
                     </div>
                     <div className="mt-4 flex items-center justify-end gap-2">
-                      {showSkipButton ? (
-                        <button
-                          type="button"
-                          onClick={finishTour}
-                          className="rounded-full border border-white/30 bg-transparent px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70 transition hover:text-white"
-                        >
-                          Skip
-                        </button>
-                      ) : null}
                       {showNextButton ? (
                         <button
                           type="button"

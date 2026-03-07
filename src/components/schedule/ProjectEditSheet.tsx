@@ -29,9 +29,10 @@ import {
   ScheduleMorphDialog,
   type ScheduleEditOrigin,
 } from "@/components/schedule/ScheduleMorphDialog";
-import type {
-  ScheduleInstance,
-  ScheduleContext,
+import {
+  type ScheduleInstance,
+  type ScheduleContext,
+  updateInstanceStatus,
 } from "@/lib/scheduler/instanceRepo";
 
 const toDatetimeLocalValue = (value?: string | null) => {
@@ -144,6 +145,7 @@ type ProjectEditSheetProps = {
   layoutId?: string;
   onClose: () => void;
   onSaved?: () => Promise<void> | void;
+  onInstanceDeleted?: () => Promise<void> | void;
 };
 
 export function ProjectEditSheet({
@@ -158,12 +160,14 @@ export function ProjectEditSheet({
   layoutId,
   onClose,
   onSaved,
+  onInstanceDeleted,
 }: ProjectEditSheetProps) {
   console.log("[ProjectEditSheet] RENDER", { open, projectId });
   const supabase = getSupabaseBrowser();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [name, setName] = useState("");
   const [priority, setPriority] = useState(PRIORITY_OPTIONS[0].value);
@@ -544,6 +548,30 @@ export function ProjectEditSheet({
       setSaving(false);
     }
   };
+
+  const handleDeleteInstance = useCallback(async () => {
+    if (!instance?.id) {
+      return;
+    }
+    setIsDeleting(true);
+    setError(null);
+    try {
+      await updateInstanceStatus(instance.id, "canceled");
+      if (onInstanceDeleted) {
+        await onInstanceDeleted();
+      }
+      onClose();
+    } catch (err) {
+      console.error("Failed to delete schedule instance:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to delete this scheduled instance right now."
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [instance?.id, onClose, onInstanceDeleted]);
 
   const handleUpdateLockedSchedule = async () => {
     if (!projectId || !lockedInstance) {
@@ -998,12 +1026,23 @@ export function ProjectEditSheet({
             ) : null}
 
             <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+              {instance ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-red-500/60 text-red-200 hover:bg-red-500/10"
+                  onClick={handleDeleteInstance}
+                  disabled={isDeleting || saving || loading}
+                >
+                  {isDeleting ? "Deleting…" : "Delete instance"}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
                 className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
                 onClick={onClose}
-                disabled={saving}
+                disabled={saving || isDeleting}
               >
                 Cancel
               </Button>
@@ -1013,7 +1052,7 @@ export function ProjectEditSheet({
                   "bg-white text-zinc-900 hover:bg-white/90",
                   disableSubmit && "opacity-50"
                 )}
-                disabled={disableSubmit}
+                disabled={disableSubmit || isDeleting}
               >
                 {saving ? "Saving…" : "Save changes"}
               </Button>
