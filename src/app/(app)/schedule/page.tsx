@@ -563,6 +563,10 @@ const describeEditingSnapshot = (snapshot: EditingSnapshot | null) => ({
   habitId: snapshot?.habitId ?? null,
 });
 
+type EditingSnapshotWithInstance = EditingSnapshot & {
+  instance?: ScheduleInstance | null;
+};
+
 const logEditingSnapshotEvent = (
   label: string,
   snapshot: EditingSnapshot | null,
@@ -2457,6 +2461,12 @@ export default function SchedulePage() {
   const [editingSnapshot, setEditingSnapshot] =
     useState<EditingSnapshot | null>(null);
 
+  useEffect(() => {
+    const snapshotWithInstance =
+      editingSnapshot as EditingSnapshotWithInstance | null;
+    setEditingInstance(snapshotWithInstance?.instance ?? null);
+  }, [editingSnapshot]);
+
   const [topBarHeight, setTopBarHeight] = useState<number | null>(null);
   const sliderControls = useAnimationControls();
   const longPressTimerRef = useRef<number | null>(null);
@@ -2557,7 +2567,7 @@ export default function SchedulePage() {
   const backlogTaskPreviousStageRef = useRef<Map<string, TaskLite["stage"]>>(
     new Map()
   );
-  const resolvedEditingInstance = null;
+  const resolvedEditingInstance = editingInstance;
 
   useEffect(() => {
     setPendingInstanceStatuses((prev) => {
@@ -6291,6 +6301,10 @@ export default function SchedulePage() {
                             habitId: placement.habitId,
                             originData,
                           };
+                          const scheduledHabitInstance =
+                            placement.instanceId
+                              ? instancesById.get(placement.instanceId) ?? null
+                              : null;
                           logEditingSnapshotEvent(
                             "habit-card-pointerdown",
                             nextSnapshot,
@@ -6299,7 +6313,10 @@ export default function SchedulePage() {
                               placementId: placement.instanceId,
                             }
                           );
-                          setEditingSnapshot(nextSnapshot);
+                          setEditingSnapshot({
+                            ...nextSnapshot,
+                            instance: scheduledHabitInstance,
+                          } as EditingSnapshot & { instance?: ScheduleInstance });
                         },
                         placement.habitId,
                         placement,
@@ -6705,7 +6722,12 @@ export default function SchedulePage() {
                                       instanceId: instance?.id ?? null,
                                     }
                                   );
-                                  setEditingSnapshot(nextSnapshot);
+                                  setEditingSnapshot({
+                                    ...nextSnapshot,
+                                    instance: instance ?? null,
+                                  } as EditingSnapshot & {
+                                    instance?: ScheduleInstance | null;
+                                  });
                                 },
                                 undefined,
                                 undefined,
@@ -7720,12 +7742,16 @@ export default function SchedulePage() {
       <ProjectEditSheet
         open={isProjectEditing}
         projectId={editingSnapshot?.projectId ?? null}
+        instance={editingInstance}
         onClose={handleCloseEditSheet}
+        onInstanceDeleted={refreshScheduleData}
       />
       <HabitEditSheet
         open={isHabitEditing}
         habitId={editingSnapshot?.habitId ?? null}
+        instance={editingInstance}
         onClose={handleCloseEditSheet}
+        onInstanceDeleted={refreshScheduleData}
       />
     </LayoutGroup>
   );

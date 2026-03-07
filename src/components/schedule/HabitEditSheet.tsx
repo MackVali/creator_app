@@ -35,10 +35,11 @@ import {
   ScheduleMorphDialog,
   type ScheduleEditOrigin,
 } from "@/components/schedule/ScheduleMorphDialog";
-import type {
-  ScheduleInstance,
-  ScheduleContext,
-  HabitTimelinePlacement,
+import {
+  type ScheduleInstance,
+  type ScheduleContext,
+  type HabitTimelinePlacement,
+  updateInstanceStatus,
 } from "@/lib/scheduler/instanceRepo";
 
 type RoutineOption = {
@@ -67,6 +68,7 @@ type HabitEditSheetProps = {
   layoutId?: string;
   onClose: () => void;
   onSaved?: () => Promise<void> | void;
+  onInstanceDeleted?: () => Promise<void> | void;
 };
 
 console.log("[HabitEditSheet] MODULE LOADED");
@@ -185,6 +187,7 @@ export function HabitEditSheet({
   layoutId,
   onClose,
   onSaved,
+  onInstanceDeleted,
 }: HabitEditSheetProps) {
   const supabase = getSupabaseBrowser();
   const [name, setName] = useState("");
@@ -226,6 +229,7 @@ export function HabitEditSheet({
   const [habitLoadError, setHabitLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [nextDueOverrideInput, setNextDueOverrideInput] = useState("");
   const [nextDueOverrideOriginal, setNextDueOverrideOriginal] = useState<
     string | null
@@ -1160,6 +1164,30 @@ export function HabitEditSheet({
     ]
   );
 
+  const handleDeleteInstance = useCallback(async () => {
+    if (!instance?.id) {
+      return;
+    }
+    setIsDeleting(true);
+    setError(null);
+    try {
+      await updateInstanceStatus(instance.id, "canceled");
+      if (onInstanceDeleted) {
+        await onInstanceDeleted();
+      }
+      onClose();
+    } catch (err) {
+      console.error("Failed to delete schedule instance:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to delete this scheduled instance right now."
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [instance?.id, onClose, onInstanceDeleted]);
+
   if (!habitId) {
     console.log("[HabitEditSheet] NO HABIT ID, returning null");
     return null;
@@ -1355,12 +1383,25 @@ export function HabitEditSheet({
           ) : null}
 
           <div className="flex flex-col-reverse gap-3 pb-2 sm:flex-row sm:justify-end">
+            {instance ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="border-red-500/60 text-red-200 hover:bg-red-500/10"
+                onClick={handleDeleteInstance}
+                disabled={
+                  isDeleting || saving || habitLoading || skillsLoading
+                }
+              >
+                {isDeleting ? "Deleting…" : "Delete instance"}
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
               className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
               onClick={onClose}
-              disabled={saving}
+              disabled={saving || isDeleting}
             >
               Cancel
             </Button>
@@ -1370,7 +1411,7 @@ export function HabitEditSheet({
                 "bg-white text-zinc-900 hover:bg-white/90",
                 disableSubmit && "opacity-50"
               )}
-              disabled={disableSubmit}
+              disabled={disableSubmit || isDeleting}
             >
               {saving ? "Saving…" : "Save changes"}
             </Button>

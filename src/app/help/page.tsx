@@ -2,24 +2,17 @@
 
 import Link from "next/link";
 import { useCallback } from "react";
-import { dashboardTourSteps } from "@/lib/tours/dashboardTour";
-import { useTour } from "@/components/tour/TourProvider";
+import { useRouter } from "next/navigation";
 
 export default function HelpPage() {
-  const finishTour = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("dashboardTourCompleted", "true");
-    }
-  }, []);
-
-  const { start } = useTour(dashboardTourSteps, finishTour);
+  const router = useRouter();
 
   const handleRestart = useCallback(() => {
     if (typeof window !== "undefined") {
       window.localStorage.setItem("dashboardTourCompleted", "false");
     }
-    start();
-  }, [start]);
+    router.push("/dashboard");
+  }, [router]);
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-16 text-center">

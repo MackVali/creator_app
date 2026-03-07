@@ -1405,6 +1405,7 @@ export function Fab({
   const fabRootRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const overlayButtonRef = useRef<HTMLButtonElement | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
   const goalFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const skillFilterMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1860,6 +1861,8 @@ export function Fab({
   const { primary, secondary, menuClassName, itemAlignmentClass } =
     menuConfigs[menuVariant];
   const menuContainerHeight = primary.length * 56;
+  const shouldRenderTimelineOverlayButton =
+    !expanded && isOpen && menuVariant === "timeline";
 
   const menuVariants = {
     closed: {
@@ -5008,7 +5011,8 @@ export function Fab({
       if (
         isOpen &&
         !menuRef.current.contains(target) &&
-        !buttonRef.current.contains(target)
+        !buttonRef.current.contains(target) &&
+        !overlayButtonRef.current?.contains(target)
       ) {
         if (expanded) return;
         if (aiOpen && aiOverlayRef.current?.contains(target)) {
@@ -5128,126 +5132,149 @@ export function Fab({
                   document.body
                 )
               : null}
-            <motion.div
-              data-fab-overlay
-              ref={(node) => {
-                menuRef.current = node;
-                panelRef.current = node;
-              }}
+            <div
               className={cn(
-                "bottom-20 mb-2 z-[2147483650] border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
+                "bottom-20 mb-2 z-[2147483650] flex flex-col items-stretch",
                 expanded ? "fixed" : "absolute",
-                expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
                 menuClassName
               )}
-              layout={!expanded}
-              onTouchStart={(event) => event.stopPropagation()}
-              onPointerDownCapture={handleExpandedPointerDownCapture}
-              style={{
-                boxShadow: MENU_BOX_SHADOW,
-                borderColor: isBlendingGradient
-                  ? blendedBorderColor
-                  : staticBorderColor,
-                transition: "border-color 0.1s linear, transform 0.2s ease",
-                transformOrigin:
-                  menuVariant === "timeline" ? "bottom right" : "bottom center",
-                minHeight: expanded ? minHeightExpanded : menuContainerHeight,
-                maxHeight: expanded ? maxHeightExpanded : menuContainerHeight,
-                y: 0,
-                height: expanded ? undefined : menuContainerHeight,
-                minWidth: expanded ? undefined : menuWidth ?? undefined,
-                width: expanded ? undefined : menuWidth ?? undefined,
-                maxWidth: expanded ? undefined : menuWidth ?? undefined,
-                touchAction: expanded ? "manipulation" : undefined,
-                overflowY: expanded ? "auto" : "hidden",
-                overflowX: "hidden",
-                overscrollBehavior: expanded ? "contain" : undefined,
-              }}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                transition: { type: "tween", ease: "easeOut", duration: 0.2 },
-              }}
-              exit={{
-                opacity: 0,
-                y: 8,
-                transition: { type: "tween", ease: "easeIn", duration: 0.2 },
-              }}
-              onWheel={handleMenuWheel}
             >
-              <>
-                <motion.div
-                  className="relative h-full w-full"
-                  style={{
-                    backgroundImage: isBlendingGradient
-                      ? blendedBackgroundImage
-                      : staticBackgroundImage,
-                    borderRadius: "inherit",
-                  }}
-                >
-                  <div
-                    ref={stageRef}
-                    data-tour="fab-swipe"
-                    className="relative h-full w-full rounded-[inherit]"
+              <motion.div
+                data-fab-overlay
+                ref={(node) => {
+                  menuRef.current = node;
+                  panelRef.current = node;
+                }}
+                className={cn(
+                  "border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
+                  expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]"
+                )}
+                layout={!expanded}
+                onTouchStart={(event) => event.stopPropagation()}
+                onPointerDownCapture={handleExpandedPointerDownCapture}
+                style={{
+                  boxShadow: MENU_BOX_SHADOW,
+                  borderColor: isBlendingGradient
+                    ? blendedBorderColor
+                    : staticBorderColor,
+                  transition: "border-color 0.1s linear, transform 0.2s ease",
+                  transformOrigin:
+                    menuVariant === "timeline" ? "bottom right" : "bottom center",
+                  minHeight: expanded ? minHeightExpanded : menuContainerHeight,
+                  maxHeight: expanded ? maxHeightExpanded : menuContainerHeight,
+                  y: 0,
+                  height: expanded ? undefined : menuContainerHeight,
+                  minWidth: expanded ? undefined : menuWidth ?? undefined,
+                  width: expanded ? undefined : menuWidth ?? undefined,
+                  maxWidth: expanded ? undefined : menuWidth ?? undefined,
+                  touchAction: expanded ? "manipulation" : undefined,
+                  overflowY: expanded ? "auto" : "hidden",
+                  overflowX: "hidden",
+                  overscrollBehavior: expanded ? "contain" : undefined,
+                }}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                  transition: { type: "tween", ease: "easeOut", duration: 0.2 },
+                }}
+                exit={{
+                  opacity: 0,
+                  y: 8,
+                  transition: { type: "tween", ease: "easeIn", duration: 0.2 },
+                }}
+                onWheel={handleMenuWheel}
+              >
+                <>
+                  <motion.div
+                    className="relative h-full w-full"
+                    style={{
+                      backgroundImage: isBlendingGradient
+                        ? blendedBackgroundImage
+                        : staticBackgroundImage,
+                      borderRadius: "inherit",
+                    }}
                   >
-                    <motion.div
-                      className="absolute inset-0 flex"
-                      drag="x"
-                      dragListener={false}
-                      dragControls={pageDragControls}
-                      dragElastic={0}
-                      dragMomentum={false}
-                      dragConstraints={{
-                        left: dragConstraintLeft,
-                        right: dragConstraintRight,
-                      }}
-                      style={{ x: pageX }}
-                      onPointerDown={
-                        !expanded ? handlePagePointerDown : undefined
-                      }
-                      onDragStart={handlePageDragStart}
-                      onDrag={handlePageDrag}
-                      onDragEnd={handlePageDragEnd}
-                      dragPropagation
+                    <div
+                      ref={stageRef}
+                      data-tour="fab-swipe"
+                      className="relative h-full w-full rounded-[inherit]"
                     >
                       <motion.div
-                        className="absolute inset-0 z-10 flex"
-                        variants={pageVariants}
-                        initial="open"
-                        animate="open"
-                        style={{ borderRadius: "inherit" }}
+                        className="absolute inset-0 flex"
+                        drag="x"
+                        dragListener={false}
+                        dragControls={pageDragControls}
+                        dragElastic={0}
+                        dragMomentum={false}
+                        dragConstraints={{
+                          left: dragConstraintLeft,
+                          right: dragConstraintRight,
+                        }}
+                        style={{ x: pageX }}
+                        onPointerDown={
+                          !expanded ? handlePagePointerDown : undefined
+                        }
+                        onDragStart={handlePageDragStart}
+                        onDrag={handlePageDrag}
+                        onDragEnd={handlePageDragEnd}
+                        dragPropagation
                       >
-                        {renderPage(activeFabPage)}
-                      </motion.div>
-                    </motion.div>
-                    {neighborPage !== null &&
-                      neighborDirection !== null &&
-                      !expanded && (
                         <motion.div
-                          className="pointer-events-none absolute inset-0 z-0 flex"
-                          style={{
-                            x:
-                              neighborDirection === 1
-                                ? incomingFromRight
-                                : incomingFromLeft,
-                          }}
+                          className="absolute inset-0 z-10 flex"
+                          variants={pageVariants}
+                          initial="open"
+                          animate="open"
+                          style={{ borderRadius: "inherit" }}
                         >
-                          <motion.div
-                            className="absolute inset-0 flex overflow-hidden"
-                            variants={pageVariants}
-                            initial="open"
-                            animate="open"
-                            style={{ borderRadius: "inherit" }}
-                          >
-                            {renderPage(neighborPage)}
-                          </motion.div>
+                          {renderPage(activeFabPage)}
                         </motion.div>
-                      )}
-                  </div>
-                </motion.div>
-              </>
-            </motion.div>
+                      </motion.div>
+                      {neighborPage !== null &&
+                        neighborDirection !== null &&
+                        !expanded && (
+                          <motion.div
+                            className="pointer-events-none absolute inset-0 z-0 flex"
+                            style={{
+                              x:
+                                neighborDirection === 1
+                                  ? incomingFromRight
+                                  : incomingFromLeft,
+                            }}
+                          >
+                            <motion.div
+                              className="absolute inset-0 flex overflow-hidden"
+                              variants={pageVariants}
+                              initial="open"
+                              animate="open"
+                              style={{ borderRadius: "inherit" }}
+                            >
+                              {renderPage(neighborPage)}
+                            </motion.div>
+                          </motion.div>
+                        )}
+                    </div>
+                  </motion.div>
+                </>
+              </motion.div>
+              {shouldRenderTimelineOverlayButton && (
+              <motion.button
+                ref={overlayButtonRef}
+                type="button"
+                aria-label="Add overlay"
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-black/70 bg-gradient-to-br from-[#0d0d0d] via-[#0a0a0a] to-[#1f2937] px-6 py-3 text-white shadow-[0_25px_60px_rgba(0,0,0,0.85)] ring-1 ring-black/40 transition hover:ring-black/60 pointer-events-auto"
+              onPointerDown={(event) => event.stopPropagation()}
+              onTouchStart={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              <span className="text-sm opacity-80">add</span>
+              <span className="text-lg font-bold">OVERLAY</span>
+            </motion.button>
+          )}
+            </div>
             {expanded && !shouldHideOverhangButtons
               ? createPortal(
                   <motion.div

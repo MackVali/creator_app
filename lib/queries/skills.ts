@@ -27,7 +27,7 @@ export async function getSkillsForUser(userId: string): Promise<Skill[]> {
     throw error;
   }
 
-  return (data ?? []).map(({ id, name, icon, cat_id, monument_id }) => ({
+  return (data ?? []).map(({ id, name, icon, cat_id, monument_id, sort_order }) => ({
     id,
     name,
     icon: icon ?? null,

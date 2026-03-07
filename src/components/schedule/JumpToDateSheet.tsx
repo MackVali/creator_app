@@ -1504,7 +1504,7 @@ export function JumpToDateSheet({
               data-tour="create-day-type"
               className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-[#05070E] shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
             >
-              Create Day Type
+              DAY TYPES MENU
             </button>
           </div>
         </SheetHeader>

@@ -8,7 +8,23 @@ export const dashboardTourSteps: TourStep[] = [
     body: "Tap the floating action button to open the creator and explore all the options.",
     requiresClick: true,
     allowNext: false,
+    advanceOnEvent: { type: "custom", eventName: "tour:fab-opened" },
     waitForSelector: true,
+  },
+  {
+    id: "fab-menu",
+    selector: '[data-tour="fab-swipe"]',
+    title: "Choose your focus",
+    body: "With the FAB open you can quickly set up goals, projects, tasks, and habits before diving in.",
+    requiresClick: false,
+    allowNext: true,
+    waitForSelector: true,
+    waitForEvent: { type: "custom", eventName: "tour:fab-opened" },
+    onBeforeNext: () => {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("tour:fab-request-close"));
+      }
+    },
   },
   {
     id: "nav-skills",
