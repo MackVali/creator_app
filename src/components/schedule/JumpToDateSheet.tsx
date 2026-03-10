@@ -47,7 +47,10 @@ import {
   makeDateInTimeZone,
 } from "@/lib/scheduler/timezone";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { OverlayWindowModal } from "@/components/schedule/OverlayWindowModal";
+import {
+  OverlayWindowModal,
+  OVERLAY_DURATION_MS,
+} from "@/components/schedule/OverlayWindowModal";
 
 interface JumpToDateSheetProps {
   open: boolean;
@@ -177,6 +180,9 @@ export function JumpToDateSheet({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isOverlayModalOpen, setIsOverlayModalOpen] = useState(false);
   const [overlayStartReference, setOverlayStartReference] = useState<Date | null>(
+    null
+  );
+  const [overlayEndReference, setOverlayEndReference] = useState<Date | null>(
     null
   );
   useEffect(() => {
@@ -907,14 +913,21 @@ export function JumpToDateSheet({
 
   const handleOpenOverlayModal = useCallback(
     (preferred?: Date | null) => {
-      setOverlayStartReference(computeOverlayStartDate(preferred ?? null));
+      const baseline = computeOverlayStartDate(preferred ?? null);
+      setOverlayStartReference(baseline);
+      setOverlayEndReference(
+        new Date(baseline.getTime() + OVERLAY_DURATION_MS)
+      );
       setIsOverlayModalOpen(true);
     },
-    [computeOverlayStartDate]
+    [computeOverlayStartDate, OVERLAY_DURATION_MS]
   );
 
   const overlayModalStart =
     overlayStartReference ?? computeOverlayStartDate();
+  const overlayModalEnd =
+    overlayEndReference ??
+    new Date(overlayModalStart.getTime() + OVERLAY_DURATION_MS);
 
   const defaultDayTypeForSelection = useMemo(() => {
     if (!paintSelectionDate || dayTypes.length === 0) return null;
@@ -2117,6 +2130,9 @@ export function JumpToDateSheet({
       open={isOverlayModalOpen}
       onOpenChange={(nextOpen) => setIsOverlayModalOpen(nextOpen)}
       start={overlayModalStart}
+      end={overlayModalEnd}
+      onStartChange={(nextStart) => setOverlayStartReference(nextStart)}
+      onEndChange={(nextEnd) => setOverlayEndReference(nextEnd)}
       timeZone={resolvedTimeZone}
     />
     </>

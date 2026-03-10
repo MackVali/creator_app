@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { normalizeHabitType } from "@/lib/scheduler/habits";
 const PAGE_SIZE = 25;
 
 type SearchResult = {
@@ -13,6 +14,7 @@ type SearchResult = {
   completedAt: string | null;
   isCompleted: boolean;
   global_rank?: number | null;
+  habitType?: string | null;
 };
 
 type ProjectSearchRecord = {
@@ -208,7 +210,7 @@ export async function GET(request: NextRequest) {
     habitIds.length > 0
       ? supabase
           .from("habits")
-          .select("id,name")
+          .select("id,name,habit_type")
           .eq("user_id", user.id)
           .in("id", habitIds)
       : Promise.resolve({ data: [], error: null }),
@@ -234,7 +236,10 @@ export async function GET(request: NextRequest) {
     if (!project?.id) continue;
     projectLookup.set(project.id, project as ProjectSearchRecord);
   }
-  const habitLookup = new Map<string, { id: string; name?: string | null }>();
+  const habitLookup = new Map<
+    string,
+    { id: string; name?: string | null; habit_type?: string | null }
+  >();
   for (const habit of habitResponse.data ?? []) {
     if (!habit?.id) continue;
     habitLookup.set(habit.id, habit as { id: string; name?: string | null });
@@ -271,6 +276,7 @@ export async function GET(request: NextRequest) {
     }
     const habit = habitLookup.get(row.source_id);
     if (!habit) continue;
+    const normalizedHabitType = normalizeHabitType(habit.habit_type);
     results.push({
       id: habit.id,
       name: habit.name?.trim() || "Untitled habit",
@@ -286,6 +292,7 @@ export async function GET(request: NextRequest) {
       nextDueAt: null,
       completedAt: null,
       isCompleted: false,
+      habitType: normalizedHabitType,
     });
   }
 
