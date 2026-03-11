@@ -96,6 +96,29 @@ import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "./limits";
 
 type Client = SupabaseClient<Database>;
 
+type CompatibleWindowRecord = {
+  id: string;
+  key: string;
+  startLocal: Date;
+  endLocal: Date;
+  availableStartLocal: Date;
+  energyIdx: number;
+  energy?: string | null;
+  fromPrevDay?: boolean;
+  dayTypeTimeBlockId?: string | null;
+  timeBlockId?: string | null;
+  locationContextId?: string | null;
+  locationContextValue?: string | null;
+  gateTrace: BlockGateSample;
+};
+
+type OverlayWindowBlock = {
+  startMs: number;
+  endMs: number;
+};
+
+const overlayWindowCache = new Map<string, OverlayWindowBlock[]>();
+
 const START_GRACE_MIN = 1;
 const BASE_LOOKAHEAD_DAYS = 14;
 const LOOKAHEAD_PER_ITEM_DAYS = 7;
@@ -8521,6 +8544,11 @@ export async function fetchCompatibleWindowsForItem(
     userId,
     parity: options?.parity ?? undefined,
   };
+
+  const overlayBlocksPromise: Promise<OverlayWindowBlock[]> =
+    userId && userId.length > 0
+      ? loadOverlayWindowBlocksForDate(supabase, date, timeZone, userId)
+      : Promise.resolve([]);
   if (options?.horizonEnd && SCHEDULER_PROJECT_DEBUG_LOGGING) {
     // When horizonEnd is provided, expand windows into concrete occurrences with correct dates
     windowOccurrences = [];
@@ -8755,21 +8783,20 @@ export async function fetchCompatibleWindowsForItem(
         }
       : null;
 
-  const compatible = [] as Array<{
-    id: string;
-    key: string;
-    startLocal: Date;
-    endLocal: Date;
-    availableStartLocal: Date;
-    energyIdx: number;
-    fromPrevDay?: boolean;
-    dayTypeTimeBlockId?: string | null;
-    timeBlockId?: string | null;
-    energy?: string | null;
-    locationContextId?: string | null;
-    locationContextValue?: string | null;
-    gateTrace: BlockGateSample;
-  }>;
+  const compatible: CompatibleWindowRecord[] = [];
+  const compareCompatibleWindows = (
+    a: CompatibleWindowRecord,
+    b: CompatibleWindowRecord
+  ) => {
+    const startDiff =
+      a.availableStartLocal.getTime() - b.availableStartLocal.getTime();
+    if (startDiff !== 0) return startDiff;
+    const energyDiff = a.energyIdx - b.energyIdx;
+    if (energyDiff !== 0) return energyDiff;
+    const rawStartDiff = a.startLocal.getTime() - b.startLocal.getTime();
+    if (rawStartDiff !== 0) return rawStartDiff;
+    return a.id.localeCompare(b.id);
+  };
 
   const restMode = options?.restMode ?? false;
 
@@ -9098,16 +9125,7 @@ export async function fetchCompatibleWindowsForItem(
     });
   }
 
-  compatible.sort((a, b) => {
-    const startDiff =
-      a.availableStartLocal.getTime() - b.availableStartLocal.getTime();
-    if (startDiff !== 0) return startDiff;
-    const energyDiff = a.energyIdx - b.energyIdx;
-    if (energyDiff !== 0) return energyDiff;
-    const rawStartDiff = a.startLocal.getTime() - b.startLocal.getTime();
-    if (rawStartDiff !== 0) return rawStartDiff;
-    return a.id.localeCompare(b.id);
-  });
+  compatible.sort(compareCompatibleWindows);
 
   if (typeof auditZeroStageCallback === "function") {
     if (windows.length === 0) {
@@ -9202,7 +9220,14 @@ export async function fetchCompatibleWindowsForItem(
     });
   }
 
-  const compatibleWindows = compatible.map((win) => ({
+  const overlayBlocks = await overlayBlocksPromise;
+  let finalCompatible = compatible;
+  if (overlayBlocks.length > 0) {
+    finalCompatible = applyOverlayBlocks(compatible, overlayBlocks, durationMs);
+    finalCompatible.sort(compareCompatibleWindows);
+  }
+
+  const compatibleWindows = finalCompatible.map((win) => ({
     id: win.id,
     key: win.key,
     startLocal: win.startLocal,
@@ -9270,6 +9295,132 @@ function mergeFilterCounters(
   target.locationMismatch += source.locationMismatch;
   target.energyMismatch += source.energyMismatch;
   target.totalWindows += source.totalWindows;
+}
+
+async function loadOverlayWindowBlocksForDate(
+  supabase: Client,
+  date: Date,
+  timeZone: string,
+  userId: string
+): Promise<OverlayWindowBlock[]> {
+  const tz = timeZone || "UTC";
+  const cacheKey = `${userId}:${formatDateKeyInTimeZone(date, tz)}:${tz}`;
+  const cached = overlayWindowCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+  const dayStart = startOfDayInTimeZone(date, tz);
+  const dayEnd = addDaysInTimeZone(dayStart, 1, tz);
+  const isoStart = dayStart.toISOString();
+  const isoEnd = dayEnd.toISOString();
+
+  const { data, error } = await supabase
+    .from("overlay_windows" as any)
+    .select<{ start_utc: string | null; end_utc: string | null }>(
+      "start_utc,end_utc"
+    )
+    .eq("user_id", userId)
+    .lt("start_utc", isoEnd)
+    .gt("end_utc", isoStart);
+
+  if (error) {
+    logSchedulerDebug("[OVERLAY_WINDOWS] load failed", {
+      userId,
+      date: date.toISOString(),
+      timeZone: tz,
+      error,
+    });
+    overlayWindowCache.set(cacheKey, []);
+    return [];
+  }
+
+  const blocks: OverlayWindowBlock[] = [];
+  for (const row of data ?? []) {
+    const start = safeDate(row.start_utc ?? null);
+    const end = safeDate(row.end_utc ?? null);
+    if (!start || !end) continue;
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    if (
+      !Number.isFinite(startMs) ||
+      !Number.isFinite(endMs) ||
+      startMs >= endMs
+    ) {
+      continue;
+    }
+    blocks.push({ startMs, endMs });
+  }
+
+  blocks.sort((a, b) => a.startMs - b.startMs);
+  overlayWindowCache.set(cacheKey, blocks);
+  return blocks;
+}
+
+function applyOverlayBlocks(
+  windows: CompatibleWindowRecord[],
+  blockedRanges: OverlayWindowBlock[],
+  durationMs: number
+): CompatibleWindowRecord[] {
+  if (blockedRanges.length === 0) return windows;
+  const result: CompatibleWindowRecord[] = [];
+  for (const win of windows) {
+    result.push(...subtractBlockedRangesFromWindow(win, blockedRanges, durationMs));
+  }
+  return result;
+}
+
+function subtractBlockedRangesFromWindow(
+  window: CompatibleWindowRecord,
+  blockedRanges: OverlayWindowBlock[],
+  durationMs: number
+): CompatibleWindowRecord[] {
+  let segments: Array<{ start: number; end: number }> = [
+    {
+      start: window.availableStartLocal.getTime(),
+      end: window.endLocal.getTime(),
+    },
+  ];
+
+  for (const block of blockedRanges) {
+    if (segments.length === 0) break;
+    const nextSegments: Array<{ start: number; end: number }> = [];
+    for (const segment of segments) {
+      if (block.endMs <= segment.start || block.startMs >= segment.end) {
+        nextSegments.push(segment);
+        continue;
+      }
+      if (block.startMs > segment.start) {
+        const clippedEnd = Math.min(block.startMs, segment.end);
+        if (clippedEnd > segment.start) {
+          nextSegments.push({ start: segment.start, end: clippedEnd });
+        }
+      }
+      if (block.endMs < segment.end) {
+        const clippedStart = Math.max(block.endMs, segment.start);
+        if (segment.end > clippedStart) {
+          nextSegments.push({ start: clippedStart, end: segment.end });
+        }
+      }
+    }
+    segments = nextSegments;
+  }
+
+  const trimmed: CompatibleWindowRecord[] = [];
+  for (const segment of segments) {
+    const lengthMs = segment.end - segment.start;
+    if (lengthMs < durationMs) continue;
+    trimmed.push({
+      ...window,
+      startLocal: new Date(segment.start),
+      availableStartLocal: new Date(segment.start),
+      endLocal: new Date(segment.end),
+      gateTrace: {
+        ...window.gateTrace,
+        freeSegmentMinutes: Math.round(lengthMs / 60000),
+      },
+    });
+  }
+  return trimmed;
 }
 
 function determineConstraintFailureReason(

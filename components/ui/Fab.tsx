@@ -8,6 +8,7 @@ import {
   useRef,
   useCallback,
   useMemo,
+  useId,
   type HTMLAttributes,
   type RefObject,
   type UIEvent,
@@ -33,14 +34,16 @@ import {
   Plus,
   Search,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
-import FlameEmber, { type FlameEmberProps } from "@/components/FlameEmber";
+import FlameEmber, { type FlameEmberProps, type FlameLevel } from "@/components/FlameEmber";
 import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
 import { ComingSoonModal } from "./ComingSoonModal";
 import { PostModal } from "./PostModal";
 import { cn } from "@/lib/utils";
+import { DayTimeline } from "@/components/schedule/DayTimeline";
 import {
   DayType24hPreview,
   type DayType24hPreviewBlock,
@@ -64,6 +67,7 @@ import { getProjectsForUser, type Project } from "@/lib/queries/projects";
 import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
+import { normalizeHabitType } from "@/lib/scheduler/habits";
 import { useProjectedGlobalRank } from "@/lib/hooks/useProjectedGlobalRank";
 import {
   HABIT_RECURRENCE_OPTIONS,
@@ -148,6 +152,10 @@ type FabSearchResult = {
   completedAt: string | null;
   isCompleted: boolean;
   global_rank?: number | null;
+  habitType?: string | null;
+  goalId?: string | null;
+  goalName?: string | null;
+  energy?: string | null;
 };
 
 type FabSearchCursor = {
@@ -157,6 +165,22 @@ type FabSearchCursor = {
 };
 
 const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
+
+const FLAME_LEVELS: FlameLevel[] = [
+  "NO",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "ULTRA",
+  "EXTREME",
+];
+
+const normalizeFlameLevel = (value?: string | null): FlameLevel => {
+  const normalized = String(value ?? "MEDIUM").trim().toUpperCase();
+  return FLAME_LEVELS.includes(normalized as FlameLevel)
+    ? (normalized as FlameLevel)
+    : "MEDIUM";
+};
 
 const AUTO_SCOPE_CREATION_KEYWORDS = ["goal", "project", "task"];
 const AUTO_SCOPE_SCHEDULE_KEYWORDS = [
@@ -266,6 +290,489 @@ const buildInitialProposalFormValues = (
     values.stage ??= "";
   }
   return values;
+};
+
+const DEFAULT_OVERLAY_DURATION_MINUTES = 180;
+const TIMELINE_TICK_INTERVAL_MINUTES = 15;
+const MIN_OVERLAY_DURATION_MS = TIMELINE_TICK_INTERVAL_MINUTES * 60 * 1000;
+const MAX_OVERLAY_DURATION_MS = 24 * 60 * 60 * 1000;
+const OVERLAY_DRAG_SNAP_INTERVAL_MINUTES = 5;
+const OVERLAY_PLACEMENT_DEFAULT_DURATION_MINUTES = 30;
+
+type OverlayPlacement = {
+  id: string;
+  type: "PROJECT" | "HABIT";
+  name: string;
+  start: Date;
+  end: Date;
+  locked: true;
+  habitType?: string | null;
+  goalName?: string | null;
+  energy?: string | null;
+  sourceId: string;
+};
+
+const createOverlayPlacementId = () =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `overlay-place-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+
+const roundToNearestMinutes = (date: Date, step = 5): Date => {
+  const msStep = step * 60 * 1000;
+  const rounded = Math.round(date.getTime() / msStep) * msStep;
+  return new Date(rounded);
+};
+
+const formatTimeInputValue = (date: Date) =>
+  `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(
+    2,
+    "0"
+  )}`;
+
+const formatDurationLabel = (minutes: number) => {
+  const hours = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+  if (hours > 0 && mins > 0) {
+    return `${hours}h ${mins}m`;
+  }
+  if (hours > 0) {
+    return `${hours}h`;
+  }
+  return `${mins}m`;
+};
+
+const formatTimelinePlacementRange = (start: Date, end: Date) => {
+  try {
+    const formatter = new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    return `${formatter.format(start)} – ${formatter.format(end)}`;
+  } catch (error) {
+    console.warn("Unable to format timeline placement range", error);
+    const fallbackOptions: Intl.DateTimeFormatOptions = {
+      hour: "numeric",
+      minute: "2-digit",
+    };
+    return `${start.toLocaleTimeString(undefined, fallbackOptions)} – ${end.toLocaleTimeString(
+      undefined,
+      fallbackOptions
+    )}`;
+  }
+};
+
+const overlayDateToMinutes = (date: Date, overlayStartTime: Date) =>
+  Math.max(
+    0,
+    Math.round((date.getTime() - overlayStartTime.getTime()) / 60000)
+  );
+
+const overlayMinutesToDate = (minutes: number, overlayStartTime: Date) =>
+  new Date(overlayStartTime.getTime() + minutes * 60000);
+
+const snapMinutesToFive = (value: number) =>
+  Math.round(value / OVERLAY_DRAG_SNAP_INTERVAL_MINUTES) *
+  OVERLAY_DRAG_SNAP_INTERVAL_MINUTES;
+
+const clampOverlayPlacementStart = (
+  startMinutes: number,
+  durationMinutes: number,
+  totalWindowMinutes: number
+) => {
+  const maxStart = Math.max(0, totalWindowMinutes - durationMinutes);
+  return Math.min(maxStart, Math.max(0, startMinutes));
+};
+
+const sortOverlayPlacements = (placements: OverlayPlacement[]) =>
+  [...placements].sort((a, b) => a.start.getTime() - b.start.getTime());
+
+const isSyncOverlayPlacement = (placement: OverlayPlacement) =>
+  placement.type === "HABIT" &&
+  normalizeHabitType(placement.habitType) === "SYNC";
+
+type OverlayLayoutDirection = "forward" | "backward" | "none";
+
+type PlacementEntry = {
+  id: string;
+  start: number;
+  duration: number;
+  isSync: boolean;
+  placement: OverlayPlacement;
+};
+
+type ResolveOverlayLayoutParams = {
+  placements: OverlayPlacement[];
+  overlayStartTime: Date;
+  overlayWindowMinutes: number;
+  movingPlacementId: string;
+  targetStartMinutes: number;
+  rawTargetStartMinutes: number;
+  durationMinutes: number;
+  direction: OverlayLayoutDirection;
+};
+
+const resolveOverlayPlacementLayout = ({
+  placements,
+  overlayStartTime,
+  overlayWindowMinutes,
+  movingPlacementId,
+  targetStartMinutes,
+  rawTargetStartMinutes,
+  durationMinutes,
+  direction: _direction,
+}: ResolveOverlayLayoutParams): OverlayPlacement[] => {
+  const entries: PlacementEntry[] = placements.map((placement) => ({
+    id: placement.id,
+    start: overlayDateToMinutes(placement.start, overlayStartTime),
+    duration: Math.max(
+      1,
+      overlayDateToMinutes(placement.end, placement.start)
+    ),
+    isSync: isSyncOverlayPlacement(placement),
+    placement,
+  }));
+
+  const clampStart = (entry: PlacementEntry, desired: number) => {
+    const min = 0;
+    const max = Math.max(0, overlayWindowMinutes - entry.duration);
+    return Math.min(max, Math.max(min, desired));
+  };
+
+  const movingEntry = entries.find((entry) => entry.id === movingPlacementId);
+  if (!movingEntry) {
+    return placements;
+  }
+
+  movingEntry.duration = durationMinutes;
+
+  const boundsMax = Math.max(0, overlayWindowMinutes - movingEntry.duration);
+  const obstacles = entries.filter((entry) => entry.id !== movingPlacementId);
+  const clampTarget = (value: number) => clampStart(movingEntry, value);
+  const clampedTargetStart = clampTarget(targetStartMinutes);
+  const atTopBoundary = clampedTargetStart === 0;
+  const atBottomBoundary = clampedTargetStart === boundsMax;
+  const pushingTop = atTopBoundary && rawTargetStartMinutes < 0;
+  const pushingBottom =
+    atBottomBoundary && rawTargetStartMinutes > boundsMax;
+  const sortedObstaclesAsc = obstacles
+    .slice()
+    .sort((a, b) => a.start - b.start);
+  const sortedObstaclesDesc = obstacles
+    .slice()
+    .sort((a, b) => b.start - a.start);
+  const firstObstacle = sortedObstaclesAsc[0] ?? null;
+  const lastObstacle = sortedObstaclesDesc[0] ?? null;
+  const topGapAvailable = firstObstacle
+    ? Math.max(0, firstObstacle.start)
+    : overlayWindowMinutes;
+  const bottomGapAvailable = lastObstacle
+    ? Math.max(
+        0,
+        overlayWindowMinutes - (lastObstacle.start + lastObstacle.duration)
+      )
+    : overlayWindowMinutes;
+  const shouldPushDown =
+    atTopBoundary &&
+    (pushingTop || (firstObstacle !== null && movingEntry.duration > topGapAvailable));
+  const shouldPushUp =
+    atBottomBoundary &&
+    (pushingBottom ||
+      (lastObstacle !== null && movingEntry.duration > bottomGapAvailable));
+
+  const clampMovingCandidate = (value: number) =>
+    clampStart(movingEntry, value);
+  const actualMovementStart = clampTarget(rawTargetStartMinutes);
+  const findNearestLegalStart = (
+    desiredStart: number,
+    opts?: { boundarySlotsOnly?: boolean }
+  ) => {
+    const gaps: { start: number; end: number }[] = [];
+    let cursor = 0;
+    for (const obstacle of sortedObstaclesAsc) {
+      if (obstacle.start > cursor) {
+        gaps.push({ start: cursor, end: obstacle.start });
+      }
+      cursor = Math.max(cursor, obstacle.start + obstacle.duration);
+    }
+    if (overlayWindowMinutes - cursor >= movingEntry.duration) {
+      gaps.push({ start: cursor, end: overlayWindowMinutes });
+    }
+
+    if (gaps.length === 0) {
+      return clampMovingCandidate(desiredStart);
+    }
+
+    const candidates: {
+      start: number;
+      distance: number;
+      directionMatch: boolean;
+    }[] = [];
+
+    const evaluateCandidate = (
+      gapMin: number,
+      gapMax: number,
+      baseValue: number
+    ) => {
+      if (gapMax < gapMin) return;
+      const snapped = snapMinutesToFive(baseValue);
+      const bounded = Math.min(gapMax, Math.max(gapMin, snapped));
+      const clamped = clampMovingCandidate(bounded);
+      const distance = Math.abs(clamped - desiredStart);
+      const directionMatch =
+        _direction === "forward"
+          ? clamped >= desiredStart
+          : _direction === "backward"
+          ? clamped <= desiredStart
+          : true;
+      candidates.push({ start: clamped, distance, directionMatch });
+    };
+
+    for (const gap of gaps) {
+      const gapMin = gap.start;
+      const gapMax = gap.end - movingEntry.duration;
+      if (gapMax < gapMin) continue;
+      if (opts?.boundarySlotsOnly) {
+        evaluateCandidate(gapMin, gapMax, gapMin);
+        evaluateCandidate(gapMin, gapMax, gapMax);
+      } else {
+        evaluateCandidate(
+          gapMin,
+          gapMax,
+          Math.min(gapMax, Math.max(gapMin, desiredStart))
+        );
+      }
+    }
+
+    if (candidates.length === 0) {
+      return clampMovingCandidate(desiredStart);
+    }
+
+    let bestCandidate = candidates[0];
+    for (const candidate of candidates.slice(1)) {
+      if (candidate.distance < bestCandidate.distance) {
+        bestCandidate = candidate;
+        continue;
+      }
+      if (
+        candidate.distance === bestCandidate.distance &&
+        Number(candidate.directionMatch) >
+          Number(bestCandidate.directionMatch)
+      ) {
+        bestCandidate = candidate;
+      }
+    }
+    return bestCandidate.start;
+  };
+
+  const pushObstaclesDownward = () => {
+    const ordered = obstacles.slice().sort((a, b) => a.start - b.start);
+    let prevEnd = movingEntry.start + movingEntry.duration;
+    for (const obstacle of ordered) {
+      const desired = Math.max(prevEnd, obstacle.start);
+      const clamped = clampStart(obstacle, desired);
+      if (clamped !== obstacle.start) {
+        obstacle.start = clamped;
+      }
+      prevEnd = obstacle.start + obstacle.duration;
+    }
+  };
+
+  const pushObstaclesUpward = () => {
+    const ordered = obstacles.slice().sort((a, b) => b.start - a.start);
+    let prevStart = movingEntry.start;
+    for (const obstacle of ordered) {
+      const desired = Math.min(prevStart - obstacle.duration, obstacle.start);
+      const clamped = clampStart(obstacle, desired);
+      if (clamped !== obstacle.start) {
+        obstacle.start = clamped;
+      }
+      prevStart = obstacle.start;
+    }
+  };
+
+  if (shouldPushDown) {
+    movingEntry.start = 0;
+    pushObstaclesDownward();
+  } else if (shouldPushUp) {
+    movingEntry.start = boundsMax;
+    pushObstaclesUpward();
+  } else {
+    movingEntry.start = findNearestLegalStart(actualMovementStart);
+  }
+
+  const hasOverlap = obstacles.some((obstacle) => {
+    const movingEnd = movingEntry.start + movingEntry.duration;
+    return (
+      movingEntry.start < obstacle.start + obstacle.duration &&
+      movingEnd > obstacle.start
+    );
+  });
+  if (hasOverlap) {
+    movingEntry.start = findNearestLegalStart(actualMovementStart, {
+      boundarySlotsOnly: true,
+    });
+  }
+
+  const startMap = new Map<string, number>();
+  const durationMap = new Map<string, number>();
+  entries.forEach((entry) => {
+    const sanitized = clampStart(entry, entry.start);
+    startMap.set(entry.id, sanitized);
+    durationMap.set(entry.id, entry.duration);
+  });
+
+  return placements.map((placement) => {
+    const startMinutes = startMap.get(placement.id);
+    const duration = durationMap.get(placement.id);
+    if (startMinutes === undefined || duration === undefined) {
+      return placement;
+    }
+    return {
+      ...placement,
+      start: overlayMinutesToDate(startMinutes, overlayStartTime),
+      end: overlayMinutesToDate(startMinutes + duration, overlayStartTime),
+    };
+  });
+};
+
+const OVERLAY_DRAG_AXIS_THRESHOLD_PX = 8;
+const OVERLAY_DRAG_HORIZONTAL_AXIS_SWITCH_RATIO = 1.35;
+const OVERLAY_DRAG_SNAP_HYSTERESIS_MINUTES =
+  OVERLAY_DRAG_SNAP_INTERVAL_MINUTES / 2;
+
+type OverlayDragMode = "reorder" | "remove" | null;
+
+type OverlayDragCandidate = {
+  placementId: string;
+  startMinutes: number;
+  durationMinutes: number;
+  baseStartMinutes: number;
+};
+
+type OverlayDragIntent = {
+  axis: "vertical" | "horizontal" | null;
+  startPoint: { x: number; y: number } | null;
+  lastSnappedMinutes: number | null;
+};
+
+type OverlayDragMeta = {
+  baseStartMinutes: number;
+  durationMinutes: number;
+};
+
+const applyOverlayDragHysteresis = (
+  rawMinutes: number,
+  lastSnap: number | null
+) => {
+  const snapped = snapMinutesToFive(rawMinutes);
+  if (lastSnap === null) return snapped;
+  if (snapped === lastSnap) return lastSnap;
+
+  const direction = rawMinutes - lastSnap;
+  if (direction > 0) {
+    return rawMinutes >= lastSnap + OVERLAY_DRAG_SNAP_HYSTERESIS_MINUTES
+      ? snapped
+      : lastSnap;
+  }
+  if (direction < 0) {
+    return rawMinutes <= lastSnap - OVERLAY_DRAG_SNAP_HYSTERESIS_MINUTES
+      ? snapped
+      : lastSnap;
+  }
+  return lastSnap;
+};
+
+const normalizeOverlayPlacements = (
+  placements: OverlayPlacement[],
+  overlayStartTime: Date,
+  overlayEndTime: Date
+): OverlayPlacement[] => {
+  if (placements.length === 0) return [];
+  const windowMinutes = Math.max(
+    1,
+    overlayDateToMinutes(overlayEndTime, overlayStartTime)
+  );
+  let cursorMinutes = 0;
+  return sortOverlayPlacements(placements).map((placement) => {
+    const durationMinutes = Math.max(
+      1,
+      overlayDateToMinutes(placement.end, placement.start)
+    );
+    const earliestStart = Math.max(cursorMinutes, 0);
+    const desiredStart = overlayDateToMinutes(placement.start, overlayStartTime);
+    const candidateStart = Math.max(desiredStart, earliestStart);
+    const normalizedStartMinutes = clampOverlayPlacementStart(
+      candidateStart,
+      durationMinutes,
+      windowMinutes
+    );
+    const normalizedEndMinutes = normalizedStartMinutes + durationMinutes;
+    cursorMinutes = Math.max(cursorMinutes, normalizedEndMinutes);
+    return {
+      ...placement,
+      start: overlayMinutesToDate(normalizedStartMinutes, overlayStartTime),
+      end: overlayMinutesToDate(normalizedEndMinutes, overlayStartTime),
+    };
+  });
+};
+
+const removeOverlayPlacement = (
+  placements: OverlayPlacement[],
+  id: string,
+  overlayStartTime: Date,
+  overlayEndTime: Date
+) =>
+  normalizeOverlayPlacements(
+    placements.filter((placement) => placement.id !== id),
+    overlayStartTime,
+    overlayEndTime
+  );
+
+const getNextSequentialStartMinutes = (
+  placements: OverlayPlacement[],
+  overlayStartTime: Date,
+  windowMinutes: number,
+  durationMinutes: number
+) => {
+  if (placements.length === 0) return 0;
+  const sorted = sortOverlayPlacements(placements);
+  const last = sorted[sorted.length - 1];
+  const lastEndMinutes = overlayDateToMinutes(last.end, overlayStartTime);
+  return clampOverlayPlacementStart(lastEndMinutes, durationMinutes, windowMinutes);
+};
+
+const OVERLAY_BORDER_COLOR = "rgba(0, 0, 0, 0.95)";
+const OVERLAY_PROJECT_BACKGROUND = `radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)`;
+const HABIT_TYPE_BACKGROUND_MAP: Record<string, string> = {
+  HABIT: `radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)`,
+  CHORE: `radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)`,
+  RELAXER: `radial-gradient(circle at 8% -18%, rgba(16, 185, 129, 0.32), transparent 60%), linear-gradient(138deg, rgba(4, 56, 33, 0.94) 0%, rgba(4, 120, 87, 0.88) 46%, rgba(16, 185, 129, 0.78) 100%)`,
+  PRACTICE: `radial-gradient(circle at 6% -14%, rgba(54, 57, 66, 0.38), transparent 60%), linear-gradient(142deg, rgba(4, 4, 6, 0.98) 0%, rgba(18, 18, 22, 0.95) 44%, rgba(68, 72, 92, 0.72) 100%)`,
+  SYNC: `radial-gradient(circle at 12% -20%, rgba(209, 213, 219, 0.32), transparent 58%), linear-gradient(135deg, rgba(39, 42, 48, 0.92) 0%, rgba(107, 114, 128, 0.82) 45%, rgba(209, 213, 219, 0.7) 100%)`,
+  MEMO: `radial-gradient(circle at 8% -18%, rgba(192, 132, 252, 0.34), transparent 60%), linear-gradient(138deg, rgba(59, 7, 100, 0.94) 0%, rgba(99, 37, 141, 0.88) 46%, rgba(168, 85, 247, 0.74) 100%)`,
+};
+
+const getOverlayPlacementTheme = (
+  placement: OverlayPlacement
+): OverlayPlacementTheme => {
+  if (placement.type === "PROJECT") {
+    return {
+      background: OVERLAY_PROJECT_BACKGROUND,
+      borderColor: OVERLAY_BORDER_COLOR,
+    };
+  }
+
+  const habitTypeKey = normalizeHabitType(placement.habitType);
+  return {
+    background:
+      HABIT_TYPE_BACKGROUND_MAP[habitTypeKey] ?? HABIT_TYPE_BACKGROUND_MAP.HABIT,
+    borderColor: OVERLAY_BORDER_COLOR,
+  };
+};
+
+type OverlayPlacementTheme = {
+  background: string;
+  borderColor: string;
 };
 
 const humanizeFieldLabel = (key: string) =>
@@ -691,6 +1198,301 @@ export function Fab({
   const [selected, setSelected] = useState<
     "GOAL" | "PROJECT" | "TASK" | "HABIT" | null
   >(null);
+  const initialOverlayStart = useMemo(
+    () => roundToNearestMinutes(new Date(), 5),
+    []
+  );
+  const [overlayStartTime, setOverlayStartTime] = useState<Date>(
+    initialOverlayStart
+  );
+  const [overlayEndTime, setOverlayEndTime] = useState<Date>(() =>
+    new Date(
+      initialOverlayStart.getTime() + DEFAULT_OVERLAY_DURATION_MINUTES * 60000
+    )
+  );
+  const [overlayStartInputValue, setOverlayStartInputValue] = useState(
+    formatTimeInputValue(initialOverlayStart)
+  );
+  const [overlayEndInputValue, setOverlayEndInputValue] = useState(() =>
+    formatTimeInputValue(
+      new Date(
+        initialOverlayStart.getTime() + DEFAULT_OVERLAY_DURATION_MINUTES * 60000
+      )
+    )
+  );
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const [overlayPickerOpen, setOverlayPickerOpen] = useState(false);
+  const [overlayPickerSelected, setOverlayPickerSelected] =
+    useState<FabSearchResult | null>(null);
+  const [overlayPlacedItems, setOverlayPlacedItems] = useState<
+    OverlayPlacement[]
+  >([]);
+  const [isSavingLiveOverlay, setIsSavingLiveOverlay] = useState(false);
+  const [overlaySaveError, setOverlaySaveError] = useState<string | null>(null);
+  const overlayTimelineRef = useRef<HTMLDivElement | null>(null);
+  const [overlayRemovalCandidateId, setOverlayRemovalCandidateId] =
+    useState<string | null>(null);
+  const [activeOverlayDragId, setActiveOverlayDragId] = useState<string | null>(
+    null
+  );
+  const [overlayDragMode, setOverlayDragMode] =
+    useState<OverlayDragMode>(null);
+  const overlayDragModeRef = useRef<OverlayDragMode>(null);
+  const overlayDragIntentRef = useRef<OverlayDragIntent>({
+    axis: null,
+    startPoint: null,
+    lastSnappedMinutes: null,
+  });
+  const overlayDragMetaRef = useRef<OverlayDragMeta | null>(null);
+  const [overlayDragCandidate, setOverlayDragCandidate] =
+    useState<OverlayDragCandidate | null>(null);
+  const lastResolvedOverlayLayoutRef = useRef<OverlayPlacement[] | null>(null);
+  const overlayWindowMinutes = Math.max(
+    overlayDateToMinutes(overlayEndTime, overlayStartTime),
+    1
+  );
+  const overlayDurationMinutes = Math.max(overlayWindowMinutes, 15);
+  const overlayDurationLabel = formatDurationLabel(overlayDurationMinutes);
+  const overlayTimelineHeightPx = 280;
+  const overlayTimelineDurationForLayout = Math.max(
+    1,
+    overlayDurationMinutes
+  );
+  const overlayTimelinePxPerMin = Math.max(
+    0.9,
+    Math.min(
+      3.2,
+      overlayTimelineHeightPx / overlayTimelineDurationForLayout
+    )
+  );
+  const overlayTimelineStartHour =
+    overlayStartTime.getHours() + overlayStartTime.getMinutes() / 60;
+  const overlayTimelineEndHour =
+    overlayTimelineStartHour + overlayTimelineDurationForLayout / 60;
+  const overlayIntervalValid =
+    overlayEndTime.getTime() > overlayStartTime.getTime();
+  const minutesToTimelineStyle = (minutes: number) =>
+    `calc(var(--timeline-minute-unit) * ${Math.max(0, minutes)})`;
+  const renderOverlayPlacements = useMemo(() => {
+    if (!overlayDragCandidate) {
+      return overlayPlacedItems;
+    }
+    const delta =
+      overlayDragCandidate.startMinutes -
+      overlayDragCandidate.baseStartMinutes;
+    const direction: OverlayLayoutDirection =
+      delta > 0 ? "forward" : delta < 0 ? "backward" : "none";
+    return resolveOverlayPlacementLayout({
+      placements: overlayPlacedItems,
+      overlayStartTime,
+      overlayWindowMinutes,
+      movingPlacementId: overlayDragCandidate.placementId,
+      durationMinutes: overlayDragCandidate.durationMinutes,
+      targetStartMinutes: overlayDragCandidate.startMinutes,
+      rawTargetStartMinutes: overlayDragCandidate.startMinutes,
+      direction,
+    });
+  }, [
+    overlayDragCandidate,
+    overlayPlacedItems,
+    overlayStartTime,
+    overlayWindowMinutes,
+  ]);
+  useEffect(() => {
+    if (overlayDragCandidate) {
+      lastResolvedOverlayLayoutRef.current = renderOverlayPlacements;
+    } else {
+      lastResolvedOverlayLayoutRef.current = null;
+    }
+  }, [overlayDragCandidate, renderOverlayPlacements]);
+  const overlayDragCandidatePlacement = overlayDragCandidate
+    ? renderOverlayPlacements.find(
+        (placement) => placement.id === overlayDragCandidate.placementId
+      )
+    : null;
+  const overlayDragCandidatePlacementStartMinutes =
+    overlayDragCandidatePlacement !== null
+      ? Math.max(
+          0,
+          (overlayDragCandidatePlacement.start.getTime() -
+            overlayStartTime.getTime()) /
+            60000
+        )
+      : null;
+  const setOverlayDragModeWithRef = useCallback(
+    (mode: OverlayDragMode) => {
+      overlayDragModeRef.current = mode;
+      setOverlayDragMode(mode);
+    },
+    [setOverlayDragMode]
+  );
+  const [startInputFocused, setStartInputFocused] = useState(false);
+  const [endInputFocused, setEndInputFocused] = useState(false);
+  useEffect(() => {
+    setOverlayStartInputValue(formatTimeInputValue(overlayStartTime));
+  }, [overlayStartTime]);
+  useEffect(() => {
+    setOverlayEndInputValue(formatTimeInputValue(overlayEndTime));
+  }, [overlayEndTime]);
+  useEffect(() => {
+    if (!overlayOpen) {
+      setOverlayRemovalCandidateId(null);
+      setActiveOverlayDragId(null);
+      setOverlayDragCandidate(null);
+      setOverlayDragModeWithRef(null);
+      overlayDragIntentRef.current = {
+        axis: null,
+        startPoint: null,
+        lastSnappedMinutes: null,
+      };
+      overlayDragMetaRef.current = null;
+    }
+  }, [overlayOpen, setOverlayDragModeWithRef]);
+
+  const resetOverlayDraft = useCallback(() => {
+    const nextStart = roundToNearestMinutes(new Date(), 5);
+    const nextEnd = new Date(
+      nextStart.getTime() + DEFAULT_OVERLAY_DURATION_MINUTES * 60000
+    );
+    setOverlayStartTime(nextStart);
+    setOverlayEndTime(nextEnd);
+    setOverlayStartInputValue(formatTimeInputValue(nextStart));
+    setOverlayEndInputValue(formatTimeInputValue(nextEnd));
+    setOverlayPlacedItems([]);
+    setOverlayPickerSelected(null);
+    setOverlayPickerOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!overlayOpen) {
+      setOverlaySaveError(null);
+    }
+  }, [overlayOpen]);
+  const isPointerOverTrashZone = useCallback(
+    (point: { x: number; y: number } | null) => {
+      if (!point) return false;
+      const rect = overlayNexusDropRef.current?.getBoundingClientRect();
+      if (!rect) return false;
+      const scrollX = typeof window !== "undefined" ? window.scrollX : 0;
+      const scrollY = typeof window !== "undefined" ? window.scrollY : 0;
+      const viewportPoint = {
+        x: point.x - scrollX,
+        y: point.y - scrollY,
+      };
+      const margin = 12;
+      return (
+        viewportPoint.x >= rect.left - margin &&
+        viewportPoint.x <= rect.right + margin &&
+        viewportPoint.y >= rect.top - margin &&
+        viewportPoint.y <= rect.bottom + margin
+      );
+    },
+    []
+  );
+  const handleOverlayDrag = useCallback(
+    (placement: OverlayPlacement, info: PanInfo) => {
+      const intent = overlayDragIntentRef.current;
+      const meta = overlayDragMetaRef.current;
+      if (!intent.startPoint || !meta) return;
+
+      const deltaX = info.point.x - intent.startPoint.x;
+      const deltaY = info.point.y - intent.startPoint.y;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+
+      if (!intent.axis) {
+        if (
+          absX > OVERLAY_DRAG_AXIS_THRESHOLD_PX ||
+          absY > OVERLAY_DRAG_AXIS_THRESHOLD_PX
+        ) {
+          intent.axis = absY >= absX ? "vertical" : "horizontal";
+        }
+      } else {
+        const shouldSwitchToHorizontal =
+          absX > OVERLAY_DRAG_AXIS_THRESHOLD_PX &&
+          absX > absY * OVERLAY_DRAG_HORIZONTAL_AXIS_SWITCH_RATIO;
+        const shouldSwitchToVertical =
+          absY > OVERLAY_DRAG_AXIS_THRESHOLD_PX &&
+          absY > absX * OVERLAY_DRAG_HORIZONTAL_AXIS_SWITCH_RATIO;
+
+        if (intent.axis === "vertical" && shouldSwitchToHorizontal) {
+          intent.axis = "horizontal";
+        } else if (intent.axis === "horizontal" && shouldSwitchToVertical) {
+          intent.axis = "vertical";
+        }
+      }
+
+      const overTrashZone = isPointerOverTrashZone(info.point);
+      const nextMode: OverlayDragMode = overTrashZone ? "remove" : "reorder";
+      if (nextMode !== overlayDragModeRef.current) {
+        setOverlayRemovalCandidateId(nextMode === "remove" ? placement.id : null);
+        setOverlayDragModeWithRef(nextMode);
+      }
+      if (nextMode === "remove") {
+        return;
+      }
+
+      const pxPerMin = Math.max(0.01, overlayTimelinePxPerMin);
+      const rawMinutes = meta.baseStartMinutes + info.offset.y / pxPerMin;
+      const maxDragStart =
+        Math.max(0, overlayWindowMinutes - meta.durationMinutes);
+      const boundedRawMinutes = Math.min(
+        Math.max(rawMinutes, 0),
+        maxDragStart
+      );
+      const hysteresisMinutes = applyOverlayDragHysteresis(
+        boundedRawMinutes,
+        intent.lastSnappedMinutes
+      );
+      const clampedMinutes = clampOverlayPlacementStart(
+        hysteresisMinutes,
+        meta.durationMinutes,
+        overlayWindowMinutes
+      );
+      const direction: OverlayLayoutDirection =
+      clampedMinutes > meta.baseStartMinutes
+        ? "forward"
+        : clampedMinutes < meta.baseStartMinutes
+        ? "backward"
+        : "none";
+      const preview = resolveOverlayPlacementLayout({
+        placements: overlayPlacedItems,
+        overlayStartTime,
+        overlayWindowMinutes,
+        movingPlacementId: placement.id,
+        durationMinutes: meta.durationMinutes,
+        targetStartMinutes: clampedMinutes,
+        rawTargetStartMinutes: rawMinutes,
+        direction,
+      });
+      const previewPlacement = preview.find(
+        (entry) => entry.id === placement.id
+      );
+      const previewStartMinutes = previewPlacement
+        ? overlayDateToMinutes(previewPlacement.start, overlayStartTime)
+        : clampedMinutes;
+      const snappedChanged = intent.lastSnappedMinutes !== previewStartMinutes;
+      intent.lastSnappedMinutes = previewStartMinutes;
+      if (snappedChanged) {
+        setOverlayDragCandidate({
+          placementId: placement.id,
+          startMinutes: previewStartMinutes,
+          durationMinutes: meta.durationMinutes,
+          baseStartMinutes: meta.baseStartMinutes,
+        });
+      }
+    },
+    [
+      overlayTimelinePxPerMin,
+      overlayWindowMinutes,
+      setOverlayDragModeWithRef,
+      isPointerOverTrashZone,
+      overlayPlacedItems,
+      overlayStartTime,
+    ]
+  );
+  const startTimeInputId = useId();
+  const endTimeInputId = useId();
   const PROJECT_STAGE_OPTIONS_LOCAL = [
     { value: "RESEARCH", label: "RESEARCH" },
     { value: "TEST", label: "TEST" },
@@ -1406,6 +2208,8 @@ export function Fab({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const overlayButtonRef = useRef<HTMLButtonElement | null>(null);
+  const overlayNexusDropRef = useRef<HTMLButtonElement | null>(null);
+  const isDraggingOverlay = Boolean(activeOverlayDragId);
   const searchAbortRef = useRef<AbortController | null>(null);
   const goalFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const skillFilterMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1863,6 +2667,408 @@ export function Fab({
   const menuContainerHeight = primary.length * 56;
   const shouldRenderTimelineOverlayButton =
     !expanded && isOpen && menuVariant === "timeline";
+  const getOverlayPlacementDurationMinutes = useCallback(
+    (result: FabSearchResult | null) =>
+      Math.max(
+        1,
+        Math.min(
+          overlayWindowMinutes,
+          result?.durationMinutes ?? OVERLAY_PLACEMENT_DEFAULT_DURATION_MINUTES
+        )
+      ),
+    [overlayWindowMinutes]
+  );
+  const overlayPlacementDurationMinutes =
+    getOverlayPlacementDurationMinutes(overlayPickerSelected);
+  const handleAddFromNexusClick = () => {
+    setOverlayPickerOpen(true);
+    setOverlayPickerSelected(null);
+    setSearchError(null);
+  };
+
+  const handleOverlayPickerResult = (result: FabSearchResult) => {
+      const durationMinutes = getOverlayPlacementDurationMinutes(result);
+      setOverlayPlacedItems((previous) => {
+        const sequentialStartMinutes = getNextSequentialStartMinutes(
+          previous,
+          overlayStartTime,
+          overlayWindowMinutes,
+          durationMinutes
+        );
+        const placementStart = overlayMinutesToDate(
+          sequentialStartMinutes,
+          overlayStartTime
+        );
+        const placementEnd = overlayMinutesToDate(
+          sequentialStartMinutes + durationMinutes,
+          overlayStartTime
+        );
+        return normalizeOverlayPlacements(
+          [
+            ...previous,
+            {
+              id: createOverlayPlacementId(),
+              type: result.type,
+              name: result.name,
+              start: placementStart,
+              end: placementEnd,
+              locked: true,
+              habitType: result.habitType ?? null,
+              goalName: result.goalName ?? null,
+              energy: result.energy ?? null,
+              sourceId: result.id,
+            },
+          ],
+          overlayStartTime,
+          overlayEndTime
+        );
+      });
+    setOverlayPickerSelected(null);
+    setOverlayPickerOpen(false);
+  };
+
+  const handleOverlayPickerClose = () => {
+    setOverlayPickerOpen(false);
+  };
+
+  const handlePlacementCancel = () => {
+    setOverlayPickerSelected(null);
+  };
+
+  const handleTimelineClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!overlayPickerSelected || overlayDurationMinutes <= 0) return;
+    const target = event.currentTarget;
+    const rect = target.getBoundingClientRect();
+    const clickRatio = Math.max(
+      0,
+      Math.min(1, (event.clientY - rect.top) / rect.height)
+    );
+    const rawMinutes = clickRatio * overlayDurationMinutes;
+    const snappedMinutes = snapMinutesToFive(rawMinutes);
+    const placementDurationMinutes = overlayPlacementDurationMinutes;
+    const clampedMinutes = clampOverlayPlacementStart(
+      snappedMinutes,
+      placementDurationMinutes,
+      overlayWindowMinutes
+    );
+    const placementStart = overlayMinutesToDate(
+      clampedMinutes,
+      overlayStartTime
+    );
+    const placementEnd = overlayMinutesToDate(
+      clampedMinutes + placementDurationMinutes,
+      overlayStartTime
+    );
+    setOverlayPlacedItems((previous) =>
+      normalizeOverlayPlacements(
+        [
+          ...previous,
+          {
+            id: `${overlayPickerSelected.id}-${placementStart.getTime()}`,
+            type: overlayPickerSelected.type,
+            name: overlayPickerSelected.name,
+            start: placementStart,
+            end: placementEnd,
+            locked: true,
+            habitType: overlayPickerSelected.habitType ?? null,
+            sourceId: overlayPickerSelected.id,
+          },
+        ],
+        overlayStartTime,
+        overlayEndTime
+      )
+    );
+    setOverlayPickerSelected(null);
+  };
+  const handleLiveOverlaySave = useCallback(async () => {
+    if (isSavingLiveOverlay) return;
+    if (overlayEndTime.getTime() <= overlayStartTime.getTime()) {
+      setOverlaySaveError("Overlay end time must be after the start time.");
+      return;
+    }
+    setOverlaySaveError(null);
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      setOverlaySaveError("Unable to reach Supabase.");
+      return;
+    }
+    setIsSavingLiveOverlay(true);
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) throw new Error("You must be signed in to save overlays.");
+      const scheduleDate = `${overlayStartTime.getFullYear()}-${String(
+        overlayStartTime.getMonth() + 1
+      ).padStart(2, "0")}-${String(overlayStartTime.getDate()).padStart(2, "0")}`;
+      const { data: overlayRow, error: overlayError } = await supabase
+        .from("overlay_windows" as any)
+        .insert({
+          user_id: user.id,
+          schedule_date: scheduleDate,
+          start_utc: overlayStartTime.toISOString(),
+          end_utc: overlayEndTime.toISOString(),
+          label: null,
+        })
+        .select("id")
+        .single();
+      if (overlayError) throw overlayError;
+      const overlayWindowId = overlayRow?.id;
+      if (!overlayWindowId) throw new Error("Overlay window id missing.");
+      if (overlayPlacedItems.length > 0) {
+        const savedItems: {
+          placement: OverlayPlacement;
+          scheduleInstanceId: string;
+        }[] = [];
+        for (const placement of overlayPlacedItems) {
+          const startUTC = placement.start.toISOString();
+          const endUTC = placement.end.toISOString();
+          const durationMin = Math.max(
+            1,
+            Math.round(
+              (placement.end.getTime() - placement.start.getTime()) / 60000
+            )
+          );
+          const { data: scheduleRow, error: scheduleError } = await supabase
+            .from("schedule_instances" as any)
+            .insert({
+              user_id: user.id,
+              source_type: placement.type,
+              source_id: placement.sourceId,
+              start_utc: startUTC,
+              end_utc: endUTC,
+              duration_min: durationMin,
+              status: "scheduled",
+              locked: true,
+              event_name: placement.name,
+              overlay_window_id: overlayWindowId,
+              weight_snapshot: 0,
+              energy_resolved: placement.energy ?? "NO",
+            })
+            .select("id")
+            .single();
+          if (scheduleError) throw scheduleError;
+          const scheduleInstanceId = scheduleRow?.id;
+          if (!scheduleInstanceId) {
+            throw new Error("Schedule instance id missing.");
+          }
+          savedItems.push({ placement, scheduleInstanceId });
+        }
+        const { error: itemsError } = await supabase
+          .from("overlay_window_items" as any)
+          .insert(
+            savedItems.map(({ placement, scheduleInstanceId }) => ({
+              overlay_window_id: overlayWindowId,
+              user_id: user.id,
+              source_type: placement.type,
+              source_id: placement.sourceId ?? null,
+              start_utc: placement.start.toISOString(),
+              end_utc: placement.end.toISOString(),
+              locked: true,
+              event_name: placement.name,
+              schedule_instance_id: scheduleInstanceId,
+            }))
+          );
+        if (itemsError) throw itemsError;
+      }
+      resetOverlayDraft();
+      setOverlayOpen(false);
+    } catch (error) {
+      console.error("Failed to save overlay window", error);
+      const message =
+        error instanceof Error ? error.message : "Unable to save overlay.";
+      setOverlaySaveError(message);
+    } finally {
+      setIsSavingLiveOverlay(false);
+    }
+  }, [
+    isSavingLiveOverlay,
+    overlayEndTime,
+    overlayPlacedItems,
+    overlayStartTime,
+    resetOverlayDraft,
+  ]);
+  const handleOverlayDragStart = useCallback(
+    (placement: OverlayPlacement, event: PointerEvent, info: PanInfo) => {
+      setActiveOverlayDragId(placement.id);
+      setOverlayRemovalCandidateId(null);
+      setOverlayDragModeWithRef("reorder");
+      const startMinutes = overlayDateToMinutes(
+        placement.start,
+        overlayStartTime
+      );
+      const durationMinutes = Math.max(
+        1,
+        overlayDateToMinutes(placement.end, placement.start)
+      );
+      const clampedStartMinutes = clampOverlayPlacementStart(
+        startMinutes,
+        durationMinutes,
+        overlayWindowMinutes
+      );
+      overlayDragMetaRef.current = {
+        baseStartMinutes: clampedStartMinutes,
+        durationMinutes,
+      };
+      overlayDragIntentRef.current = {
+        axis: null,
+        startPoint: { x: info.point.x, y: info.point.y },
+        lastSnappedMinutes: clampedStartMinutes,
+      };
+      setOverlayDragCandidate({
+        placementId: placement.id,
+        startMinutes: clampedStartMinutes,
+        durationMinutes,
+        baseStartMinutes: clampedStartMinutes,
+      });
+    },
+    [
+      overlayStartTime,
+      overlayWindowMinutes,
+      overlayTimelinePxPerMin,
+      setOverlayDragModeWithRef,
+    ]
+  );
+
+  const handleOverlayDragEnd = useCallback(
+    (placement: OverlayPlacement, info: PanInfo) => {
+      const intent = overlayDragIntentRef.current;
+      const currentMode = overlayDragModeRef.current;
+      const candidate = overlayDragCandidate;
+      const meta = overlayDragMetaRef.current;
+      const overTrashZone = isPointerOverTrashZone(info.point);
+      const previewResolvedLayout = lastResolvedOverlayLayoutRef.current;
+
+      setActiveOverlayDragId(null);
+      setOverlayRemovalCandidateId(null);
+      setOverlayDragCandidate(null);
+      setOverlayDragModeWithRef(null);
+      overlayDragIntentRef.current = {
+        axis: null,
+        startPoint: null,
+        lastSnappedMinutes: null,
+      };
+      overlayDragMetaRef.current = null;
+
+      if (currentMode === "remove" && overTrashZone) {
+        setOverlayPlacedItems((previous) =>
+          removeOverlayPlacement(
+            previous,
+            placement.id,
+            overlayStartTime,
+            overlayEndTime
+          )
+        );
+        setOverlayRemovalCandidateId(null);
+        return;
+      }
+
+      const durationMinutes =
+        meta?.durationMinutes ??
+        Math.max(
+          1,
+          (placement.end.getTime() - placement.start.getTime()) / 60000
+        );
+      const desiredStartMinutes =
+        candidate?.startMinutes ??
+        overlayDateToMinutes(placement.start, overlayStartTime);
+      const clampedMinutes = clampOverlayPlacementStart(
+        desiredStartMinutes,
+        durationMinutes,
+        overlayWindowMinutes
+      );
+      const direction: OverlayLayoutDirection =
+        clampedMinutes > (meta?.baseStartMinutes ?? desiredStartMinutes)
+          ? "forward"
+          : clampedMinutes < (meta?.baseStartMinutes ?? desiredStartMinutes)
+          ? "backward"
+          : "none";
+      setOverlayPlacedItems((previous) => {
+        const resolved =
+          previewResolvedLayout ??
+          resolveOverlayPlacementLayout({
+            placements: previous,
+            overlayStartTime,
+            overlayWindowMinutes,
+            movingPlacementId: placement.id,
+            durationMinutes,
+            targetStartMinutes: clampedMinutes,
+            rawTargetStartMinutes:
+              overlayDragCandidate?.startMinutes ?? desiredStartMinutes,
+            direction,
+          });
+        return resolved;
+      });
+    },
+    [
+      overlayEndTime,
+      overlayStartTime,
+      overlayWindowMinutes,
+      setOverlayDragModeWithRef,
+      overlayDragCandidate,
+      isPointerOverTrashZone,
+    ]
+  );
+  const parseTimeValue = (value: string) => {
+    const [hoursStr, minutesStr] = value.split(":");
+    if (hoursStr === undefined || minutesStr === undefined) {
+      return null;
+    }
+    const hours = Number(hoursStr);
+    const minutes = Number(minutesStr);
+    if (
+      Number.isNaN(hours) ||
+      Number.isNaN(minutes) ||
+      hours < 0 ||
+      hours > 23 ||
+      minutes < 0 ||
+      minutes > 59
+    ) {
+      return null;
+    }
+    return { hours, minutes };
+  };
+  const handleStartTimeInputChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setOverlayStartInputValue(event.target.value);
+    const parsed = parseTimeValue(event.target.value);
+    if (!parsed) return;
+    const { hours, minutes } = parsed;
+    const nextStart = new Date(overlayStartTime);
+    nextStart.setHours(hours, minutes, 0, 0);
+    const currentDurationMs = Math.max(
+      MIN_OVERLAY_DURATION_MS,
+      overlayEndTime.getTime() - overlayStartTime.getTime()
+    );
+    const clampedDurationMs = Math.min(
+      MAX_OVERLAY_DURATION_MS,
+      currentDurationMs
+    );
+    setOverlayStartTime(nextStart);
+    setOverlayEndTime(new Date(nextStart.getTime() + clampedDurationMs));
+  };
+  const handleEndTimeInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setOverlayEndInputValue(event.target.value);
+    const parsed = parseTimeValue(event.target.value);
+    if (!parsed) return;
+    const { hours, minutes } = parsed;
+    const nextEnd = new Date(overlayStartTime);
+    nextEnd.setHours(hours, minutes, 0, 0);
+    if (nextEnd.getTime() <= overlayStartTime.getTime()) {
+      nextEnd.setDate(nextEnd.getDate() + 1);
+    }
+    const desiredDurationMs = nextEnd.getTime() - overlayStartTime.getTime();
+    const clampedDurationMs = Math.min(
+      MAX_OVERLAY_DURATION_MS,
+      Math.max(MIN_OVERLAY_DURATION_MS, desiredDurationMs)
+    );
+    setOverlayEndTime(
+      new Date(overlayStartTime.getTime() + clampedDurationMs)
+    );
+  };
 
   const menuVariants = {
     closed: {
@@ -2476,6 +3682,8 @@ export function Fab({
                           aria-haspopup="dialog"
                           aria-expanded={showDurationPicker}
                           aria-controls="project-duration-picker"
+                          layout
+                          layoutTransition={{ type: "spring", stiffness: 600, damping: 60 }}
                         >
                           <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
                             <Clock className="h-6 w-6 text-white/80" />
@@ -4520,7 +5728,9 @@ export function Fab({
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || pages[activeFabPage] !== "nexus") {
+    const shouldSearch =
+      (isOpen && pages[activeFabPage] === "nexus") || overlayPickerOpen;
+    if (!shouldSearch) {
       return;
     }
     if (typeof window === "undefined") return;
@@ -4558,7 +5768,14 @@ export function Fab({
       controller.abort();
       setIsSearching(false);
     };
-  }, [activeFabPage, isOpen, runSearch, searchQuery]);
+  }, [
+    activeFabPage,
+    isOpen,
+    overlayPickerOpen,
+    pages,
+    runSearch,
+    searchQuery,
+  ]);
 
   const handleLoadMoreResults = useCallback(async () => {
     if (!searchCursor || isSearching || isLoadingMore) {
@@ -4588,7 +5805,7 @@ export function Fab({
     if (!isOpen) {
       return;
     }
-    if (pages[activeFabPage] === "nexus") {
+    if (pages[activeFabPage] === "nexus" || overlayPickerOpen) {
       const frame = requestAnimationFrame(() => {
         nexusInputRef.current?.focus();
       });
@@ -4600,7 +5817,7 @@ export function Fab({
     ) {
       nexusInputRef.current?.blur();
     }
-  }, [activeFabPage, isOpen]);
+  }, [activeFabPage, isOpen, overlayPickerOpen, pages]);
 
   const handleRescheduleSave = useCallback(async () => {
     if (isDeletingEvent) {
@@ -5263,17 +6480,19 @@ export function Fab({
                 type="button"
                 aria-label="Add overlay"
                 className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-black/70 bg-gradient-to-br from-[#0d0d0d] via-[#0a0a0a] to-[#1f2937] px-6 py-3 text-white shadow-[0_25px_60px_rgba(0,0,0,0.85)] ring-1 ring-black/40 transition hover:ring-black/60 pointer-events-auto"
-              onPointerDown={(event) => event.stopPropagation()}
-              onTouchStart={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-            >
-              <span className="text-sm opacity-80">add</span>
-              <span className="text-lg font-bold">OVERLAY</span>
-            </motion.button>
-          )}
+                onPointerDown={(event) => event.stopPropagation()}
+                onTouchStart={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  handleOverlayPickerClose();
+                  setOverlayOpen(true);
+                }}
+              >
+                <span className="text-sm opacity-80">add</span>
+                <span className="text-lg font-bold">OVERLAY</span>
+              </motion.button>
+            )}
             </div>
             {expanded && !shouldHideOverhangButtons
               ? createPortal(
@@ -5383,6 +6602,342 @@ export function Fab({
         onClose={() => setComingSoon(null)}
         label={comingSoon || ""}
       />
+      {overlayOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[2147483662] flex items-center justify-center px-4 py-6 overflow-y-auto">
+            <div
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={() => setOverlayOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              className="relative w-full max-w-[520px] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-3xl border border-white/20 bg-gradient-to-br from-[#05060f] to-[#0b1121] p-6 text-white shadow-[0_30px_80px_rgba(0,0,0,0.9)]"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.4em] text-white/70">
+                    OVERLAY
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label="Save overlay"
+                    onClick={handleLiveOverlaySave}
+                    disabled={!overlayIntervalValid || isSavingLiveOverlay}
+                    className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-full border border-transparent bg-gradient-to-br from-emerald-700 via-emerald-600 to-emerald-500 p-0 text-white transition hover:from-emerald-600 hover:via-emerald-500 hover:to-emerald-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300",
+                      (!overlayIntervalValid || isSavingLiveOverlay) &&
+                        "cursor-not-allowed opacity-60"
+                    )}
+                  >
+                    <Check
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Close overlay draft"
+                    className="rounded-full border border-black/80 bg-white/5 p-2 text-white transition hover:border-black/60"
+                    onClick={() => setOverlayOpen(false)}
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label
+                    htmlFor={startTimeInputId}
+                    className="text-[9px] font-semibold uppercase tracking-[0.4em] text-white/70"
+                  >
+                    Start
+                  </label>
+                  <input
+                    id={startTimeInputId}
+                    type="time"
+                    aria-label="Set overlay start time"
+                    className="flex-1 min-w-[96px] h-8 rounded-md border border-black bg-white/5 px-1 text-[0.65rem] font-semibold text-white outline-none transition focus:border-gray-300 focus-visible:border-gray-300 focus-visible:ring-2 focus-visible:ring-gray-400/30 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
+                    value={overlayStartInputValue}
+                    onChange={handleStartTimeInputChange}
+                    onFocus={() => setStartInputFocused(true)}
+                    onBlur={() => setStartInputFocused(false)}
+                    style={
+                      startInputFocused
+                        ? { borderColor: "#d1d5db" }
+                        : undefined
+                    }
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label
+                    htmlFor={endTimeInputId}
+                    className="text-[9px] font-semibold uppercase tracking-[0.4em] text-white/70"
+                  >
+                    End
+                  </label>
+                  <input
+                    id={endTimeInputId}
+                    type="time"
+                    aria-label="Set overlay end time"
+                    className="flex-1 min-w-[96px] h-8 rounded-md border border-black bg-white/5 px-1 text-[0.65rem] font-semibold text-white outline-none transition focus:border-gray-300 focus-visible:border-gray-300 focus-visible:ring-2 focus-visible:ring-gray-400/30 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
+                    value={overlayEndInputValue}
+                    onChange={handleEndTimeInputChange}
+                    onFocus={() => setEndInputFocused(true)}
+                    onBlur={() => setEndInputFocused(false)}
+                    style={
+                      endInputFocused ? { borderColor: "#d1d5db" } : undefined
+                    }
+                  />
+                </div>
+              </div>
+              <div className="mt-1 text-[9px] uppercase tracking-[0.4em] text-white/40">
+                {overlayDurationLabel} window
+              </div>
+
+              {overlaySaveError ? (
+                <p className="mt-3 text-xs text-rose-400">{overlaySaveError}</p>
+              ) : null}
+
+              {overlayPickerSelected && !overlayPickerOpen ? (
+                <div className="mt-3 flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/70">
+                  <span className="truncate">
+                    Placing {overlayPickerSelected.name}
+                  </span>
+                  <button
+                    type="button"
+                    className="ml-auto rounded-full border border-white/20 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.3em] text-white transition hover:border-white/40"
+                    onClick={handlePlacementCancel}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : null}
+
+              {overlayPickerOpen ? (
+                <div className="mt-4 relative">
+                  <div className="relative h-[360px] w-full overflow-hidden rounded-3xl border border-white/10 bg-[#030308]">
+                    <FabNexus
+                      query={searchQuery}
+                      onQueryChange={setSearchQuery}
+                      results={searchResults}
+                      isSearching={isSearching}
+                      isLoadingMore={isLoadingMore}
+                      error={searchError}
+                      hasMore={Boolean(searchCursor)}
+                      onLoadMore={handleLoadMoreResults}
+                      onSelectResult={handleOverlayPickerResult}
+                      inputRef={nexusInputRef}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Close Nexus"
+                      className="absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-black/80 bg-gradient-to-br from-[#1f2937] via-[#0f172a] to-[#020617] text-white shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition hover:scale-[1.05] focus-visible:border-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                      onClick={handleOverlayPickerClose}
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 relative">
+                  <div
+                    ref={overlayTimelineRef}
+                    className={cn(
+                      "mt-0 w-full -mx-6 pb-0 relative",
+                      overlayPickerSelected ? "cursor-pointer" : "cursor-default"
+                    )}
+                    onClick={handleTimelineClick}
+                  >
+                    <DayTimeline
+                      className="w-full !rounded-none !border-0 !shadow-none !backdrop-blur-none"
+                      style={{
+                        background: "transparent",
+                        borderRadius: 0,
+                        "--timeline-right-gutter": "0px",
+                        "--timeline-grid-right": "0px",
+                        "--timeline-card-right": "0px",
+                      }}
+                      date={overlayStartTime}
+                      startHour={overlayTimelineStartHour}
+                      endHour={overlayTimelineEndHour}
+                      pxPerMin={overlayTimelinePxPerMin}
+                    >
+                    {renderOverlayPlacements.map((placement) => {
+                        const startMinutes = Math.max(
+                          0,
+                          (placement.start.getTime() - overlayStartTime.getTime()) /
+                            60000
+                        );
+                        const durationMinutes = Math.max(
+                          1,
+                          (placement.end.getTime() - placement.start.getTime()) / 60000
+                        );
+                        const normalizedStartMinutes = clampOverlayPlacementStart(
+                          startMinutes,
+                          durationMinutes,
+                          overlayWindowMinutes
+                        );
+                        const placementTheme = getOverlayPlacementTheme(placement);
+                      const overlayIsDragging = Boolean(activeOverlayDragId);
+                      const isDragging = activeOverlayDragId === placement.id;
+                      const isRemovalCandidate =
+                        overlayRemovalCandidateId === placement.id;
+                      const removalStyle = isRemovalCandidate
+                        ? {
+                            borderColor: "rgba(248, 113, 113, 0.9)",
+                            boxShadow:
+                              "0 0 0 10px rgba(248, 113, 113, 0.25),0 18px 38px rgba(6,6,10,0.48),0 8px 16px rgba(0,0,0,0.35)",
+                          }
+                        : {};
+                      const staticCardStyle = {
+                        top: minutesToTimelineStyle(normalizedStartMinutes),
+                        height: minutesToTimelineStyle(durationMinutes),
+                        left: "var(--timeline-card-left)",
+                        right: "var(--timeline-card-right)",
+                        background: placementTheme.background,
+                        borderColor: placementTheme.borderColor,
+                        outline: "1px solid rgba(255, 255, 255, 0.08)",
+                        outlineOffset: "-1px",
+                      };
+                      const baseShadow = isDragging
+                        ? "0 30px 90px rgba(0,0,0,0.6),0 16px 36px rgba(0,0,0,0.55)"
+                        : "0 18px 38px rgba(6,6,10,0.48),0 8px 16px rgba(0,0,0,0.35)";
+                      const filterValue = isDragging
+                        ? "brightness(1.09)"
+                        : overlayIsDragging
+                        ? "brightness(0.92)"
+                        : undefined;
+                      const opacityValue = overlayIsDragging && !isDragging ? 0.82 : 1;
+                      const zValue = isDragging ? 32 : isRemovalCandidate ? 10 : 2;
+                      const transitionStyle = isDragging
+                        ? "top 0.15s ease, filter 0.2s ease, opacity 0.2s ease"
+                        : "top 0.15s ease, box-shadow 0.25s ease, filter 0.2s ease, opacity 0.2s ease";
+                      const activeStyle = staticCardStyle;
+                      const dragTransformStyle = isDragging ? { y: 0 } : undefined;
+
+                      return (
+                        <motion.div
+                          key={placement.id}
+                          drag="y"
+                          dragDirectionLock
+                          dragElastic={0}
+                          dragMomentum={false}
+                          dragSnapToOrigin={false}
+                          dragPropagation={false}
+                          dragConstraints={overlayTimelineRef}
+                          onDragStart={(event, info) =>
+                            handleOverlayDragStart(placement, event, info)
+                          }
+                          onDrag={(event, info) =>
+                            handleOverlayDrag(placement, info)
+                          }
+                          onDragEnd={(event, info) =>
+                            handleOverlayDragEnd(placement, info)
+                          }
+                          whileDrag={{ scale: 1.02 }}
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                          className={cn(
+                            "absolute flex h-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border px-3 py-2 backdrop-blur-sm text-white select-none touch-none [user-select:none] [-webkit-user-select:none] [-webkit-touch-callout:none] pointer-events-auto cursor-grab active:cursor-grabbing transition-all duration-200 ease-out",
+                            isRemovalCandidate && "ring-2 ring-red-400/70"
+                          )}
+                          style={{
+                            ...activeStyle,
+                            ...dragTransformStyle,
+                            ...removalStyle,
+                            zIndex: zValue,
+                            boxShadow: baseShadow,
+                            filter: filterValue,
+                            opacity: opacityValue,
+                            transition: transitionStyle,
+                            willChange: "transform, opacity, filter",
+                          }}
+                        >
+                      {(() => {
+                        const goalLabel = placement.goalName?.trim() || null;
+                        const flameLevel =
+                          placement.type === "PROJECT"
+                            ? normalizeFlameLevel(placement.energy)
+                            : null;
+                        return (
+                          <div className="flex w-full items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <span className="block text-sm font-semibold leading-tight text-white break-words">
+                                {placement.name}
+                              </span>
+                            </div>
+                            <div className="flex flex-col items-end justify-start gap-1 text-right self-start">
+                              {goalLabel ? (
+                                <span className="max-w-[180px] truncate text-[9px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                                  {goalLabel}
+                                </span>
+                              ) : null}
+                              {flameLevel ? (
+                                <FlameEmber
+                                  level={flameLevel}
+                                  size="sm"
+                                  className="drop-shadow-[0_0_6px_rgba(0,0,0,0.45)]"
+                                />
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                        </motion.div>
+                      );
+                      })}
+                    </DayTimeline>
+                    {(() => {
+                      const isTrashMode = overlayDragMode === "remove";
+                      const showTrashIcon = isDraggingOverlay || isTrashMode;
+                      return (
+                        <button
+                          ref={overlayNexusDropRef}
+                          type="button"
+                          aria-label={
+                            isTrashMode
+                              ? "Remove event"
+                              : "Open Nexus"
+                          }
+                          className={cn(
+                            "absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border bg-gradient-to-br from-[#1f2937] via-[#0f172a] to-[#020617] shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition hover:scale-[1.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                            isTrashMode
+                              ? "border-red-500 text-red-100 hover:border-red-400"
+                              : "border-black/80 text-white hover:ring-white"
+                          )}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (!isTrashMode) {
+                              handleAddFromNexusClick();
+                            }
+                          }}
+                        >
+                      {showTrashIcon ? (
+                        <Trash2
+                          className="h-4 w-4"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+            </motion.div>
+          </div>,
+          document.body
+        )}
       {aiOpen
         ? createPortal(
             <div
@@ -6922,8 +8477,13 @@ function FabNexus({
                 result.type === "PROJECT" && result.isCompleted;
               const isDisabled = isCompletedProject;
               const statusText = getStatusText(result);
+              const goalLabel =
+                result.type === "PROJECT" && result.goalName
+                  ? result.goalName.trim()
+                  : null;
+              const energyLevel = normalizeFlameLevel(result.energy);
               const cardClassName = cn(
-                "flex flex-col gap-1 rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
+                "relative flex flex-col gap-1 rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
                 isCompletedProject
                   ? "border-white/20 bg-white/5 text-white/90 shadow-[0_22px_42px_rgba(0,0,0,0.45)]"
                   : "border-white/5 bg-black/60 text-white/85 hover:bg-black/70",
@@ -6931,9 +8491,9 @@ function FabNexus({
               );
               const nameTextClass = "text-white";
               const metaLabelClass =
-                "text-[4px] uppercase tracking-[0.4em] text-white/50";
+                "text-[9px] uppercase tracking-[0.22em] text-white/70";
               const statusLabelClass =
-                "text-[4px] uppercase tracking-[0.4em] text-white/50 break-words leading-tight";
+                "text-[8px] uppercase tracking-[0.18em] text-white/60 break-words leading-tight";
               return (
                 <button
                   key={`${result.type}-${result.id}`}
@@ -6964,13 +8524,13 @@ function FabNexus({
                           </span>
                         )}
                     </div>
-                    <div className="flex flex-col items-end gap-1 text-right flex-[1] basis-1/4 min-w-0">
-                      <div className="flex items-center gap-1">
-                        <span className={metaLabelClass}>
-                          {result.type === "PROJECT" ? "Project" : "Habit"}
-                        </span>
-                      </div>
-                      <span className={statusLabelClass}>{statusText}</span>
+                    <div className="flex flex-col items-end gap-1 text-right flex-[1.2] basis-0 min-w-0">
+                      <span className={metaLabelClass}>
+                        {result.type === "PROJECT" ? "Project" : "Habit"}
+                      </span>
+                      <span className={`${statusLabelClass} whitespace-nowrap`}>
+                        {statusText}
+                      </span>
                     </div>
                   </div>
                 </button>

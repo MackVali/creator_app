@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { normalizeHabitType } from "@/lib/scheduler/habits";
 const PAGE_SIZE = 25;
 
 type SearchResult = {
@@ -13,6 +14,11 @@ type SearchResult = {
   completedAt: string | null;
   isCompleted: boolean;
   global_rank?: number | null;
+  habitType?: string | null;
+  goalId?: string | null;
+  goalName?: string | null;
+  energy?: string | null;
+  currentStreakDays?: number | null;
 };
 
 type ProjectSearchRecord = {
@@ -20,6 +26,13 @@ type ProjectSearchRecord = {
   name?: string | null;
   completed_at?: string | null;
   global_rank?: number | null;
+  goal_id?: string | null;
+  energy?: string | null;
+};
+
+type GoalLookupRecord = {
+  id: string;
+  name?: string | null;
 };
 
 type ScheduleRow = {
@@ -201,14 +214,14 @@ export async function GET(request: NextRequest) {
     projectIds.length > 0
       ? supabase
           .from("projects")
-          .select("id,name,completed_at,global_rank")
+          .select("id,name,completed_at,global_rank,goal_id,energy")
           .eq("user_id", user.id)
           .in("id", projectIds)
       : Promise.resolve({ data: [], error: null }),
     habitIds.length > 0
       ? supabase
           .from("habits")
-          .select("id,name")
+          .select("id,name,habit_type,current_streak_days")
           .eq("user_id", user.id)
           .in("id", habitIds)
       : Promise.resolve({ data: [], error: null }),
@@ -229,15 +242,51 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const projectData = projectResponse.data ?? [];
   const projectLookup = new Map<string, ProjectSearchRecord>();
-  for (const project of projectResponse.data ?? []) {
+  const goalIds = new Set<string>();
+  for (const project of projectData) {
     if (!project?.id) continue;
+    const goalId = project.goal_id;
+    if (goalId) {
+      goalIds.add(goalId);
+    }
     projectLookup.set(project.id, project as ProjectSearchRecord);
   }
-  const habitLookup = new Map<string, { id: string; name?: string | null }>();
+  const habitLookup = new Map<
+    string,
+    {
+      id: string;
+      name?: string | null;
+      habit_type?: string | null;
+      current_streak_days?: number | null;
+    }
+  >();
   for (const habit of habitResponse.data ?? []) {
     if (!habit?.id) continue;
-    habitLookup.set(habit.id, habit as { id: string; name?: string | null });
+    habitLookup.set(habit.id, habit as {
+      id: string;
+      name?: string | null;
+      habit_type?: string | null;
+      current_streak_days?: number | null;
+    });
+  }
+  const goalLookup = new Map<string, string>();
+  if (goalIds.size > 0) {
+    const { data: goalData, error: goalError } = await supabase
+      .from("goals")
+      .select("id,name")
+      .eq("user_id", user.id)
+      .in("id", Array.from(goalIds));
+    if (goalError) {
+      console.error("FAB search goals error", goalError);
+    } else {
+      for (const goal of goalData ?? []) {
+        if (goal?.id && typeof goal.name === "string") {
+          goalLookup.set(goal.id, goal.name);
+        }
+      }
+    }
   }
 
   const results: SearchResult[] = [];
@@ -250,6 +299,10 @@ export async function GET(request: NextRequest) {
         project.completed_at.length > 0
           ? project.completed_at
           : null;
+      const projectGoalId = project.goal_id ?? null;
+      const projectGoalName = projectGoalId
+        ? goalLookup.get(projectGoalId) ?? null
+        : null;
       results.push({
         id: project.id,
         name: project.name?.trim() || "Untitled project",
@@ -266,11 +319,15 @@ export async function GET(request: NextRequest) {
         completedAt,
         isCompleted: typeof completedAt === "string",
         global_rank: project.global_rank ?? null,
+        goalId: projectGoalId,
+        goalName: projectGoalName,
+        energy: project.energy ?? null,
       });
       continue;
     }
     const habit = habitLookup.get(row.source_id);
     if (!habit) continue;
+    const normalizedHabitType = normalizeHabitType(habit.habit_type);
     results.push({
       id: habit.id,
       name: habit.name?.trim() || "Untitled habit",
@@ -286,6 +343,12 @@ export async function GET(request: NextRequest) {
       nextDueAt: null,
       completedAt: null,
       isCompleted: false,
+      habitType: normalizedHabitType,
+      currentStreakDays:
+        typeof habit.current_streak_days === "number" &&
+        Number.isFinite(habit.current_streak_days)
+          ? habit.current_streak_days
+          : null,
     });
   }
 
