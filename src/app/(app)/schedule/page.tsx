@@ -56,11 +56,11 @@ import { type ScheduleEditOrigin } from "@/components/schedule/ScheduleMorphDial
 import { scheduleInstanceLayoutTokens } from "@/components/schedule/sharedLayout";
 import { SchedulerModeSheet } from "@/components/schedule/SchedulerModeSheet";
 import { type ScheduleView } from "@/components/schedule/viewUtils";
-import { useTour } from "@/components/tour/TourProvider";
 import {
   updateTaskStage,
   type WindowLite as RepoWindow,
 } from "@/lib/scheduler/repo";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import {
   fetchScheduledProjectIds,
   updateInstanceStatus,
@@ -137,6 +137,7 @@ import {
 import { createMemoNoteForHabit } from "@/lib/notesStorage";
 import { MemoNoteSheet } from "@/components/schedule/MemoNoteSheet";
 import { scheduleTourSteps } from "@/lib/tours/scheduleTour";
+import { useTour } from "@/components/tour/TourProvider";
 import { useProfile } from "@/lib/hooks/useProfile";
 import { applyStatusTargets, type StatusTarget } from "./statusMutations";
 import {
@@ -217,6 +218,47 @@ const TIMELINE_CARD_BOUNDS: CSSProperties = {
 };
 
 const TIMELINE_TOUCH_ACTION = "pan-y pinch-zoom";
+
+type OverlayWindowRecord = {
+  id: string;
+  start_utc: string | null;
+  end_utc: string | null;
+  label: string | null;
+};
+
+type OverlayWindowSegment = {
+  id: string;
+  startMin: number;
+  durationMin: number;
+};
+
+type MinuteRange = {
+  start: number;
+  end: number;
+};
+
+const subtractOverlayRangesFromWindow = (
+  baseRange: MinuteRange,
+  overlays: MinuteRange[]
+) => {
+  const result: MinuteRange[] = [];
+  let cursor = baseRange.start;
+  for (const overlay of overlays) {
+    if (overlay.end <= cursor) continue;
+    if (overlay.start >= baseRange.end) break;
+    const overlapStart = Math.max(overlay.start, baseRange.start);
+    const overlapEnd = Math.min(overlay.end, baseRange.end);
+    if (overlapStart > cursor) {
+      result.push({ start: cursor, end: overlapStart });
+    }
+    cursor = Math.max(cursor, overlapEnd);
+    if (cursor >= baseRange.end) break;
+  }
+  if (cursor < baseRange.end) {
+    result.push({ start: cursor, end: baseRange.end });
+  }
+  return result;
+};
 
 const getScheduleInstanceLayoutId = (instanceId: string) =>
   `schedule-instance-${instanceId}`;
@@ -2263,6 +2305,8 @@ export default function SchedulePage() {
   const [habitCompletionByDate, setHabitCompletionByDate_REAL] =
     useState<HabitCompletionByDate>({});
   const [windows, setWindows_REAL] = useState<RepoWindow[]>([]);
+  const [overlayWindows, setOverlayWindows] =
+    useState<OverlayWindowRecord[]>([]);
   const goalMetaById = useMemo(() => {
     const monumentEmojiById = new Map<string, string | null>();
     for (const monument of monuments ?? []) {
@@ -3218,6 +3262,55 @@ export default function SchedulePage() {
 
     void fetchWindowsForCurrentDate();
   }, [userId, currentDate, localTimeZone]);
+
+  useEffect(() => {
+    if (!userId) {
+      setOverlayWindows([]);
+      return;
+    }
+
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      setOverlayWindows([]);
+      return;
+    }
+
+    const tz = effectiveTimeZone || "UTC";
+    const renderDayStart = getRenderDayStart(currentDate, tz);
+    const renderDayEnd = addDaysInTimeZone(renderDayStart, 1, tz);
+    const dayStartIso = renderDayStart.toISOString();
+    const dayEndIso = renderDayEnd.toISOString();
+    let active = true;
+
+    async function fetchOverlayWindows() {
+      try {
+        const { data, error } = await supabase
+          .from("overlay_windows" as any)
+          .select("id,start_utc,end_utc,label")
+          .eq("user_id", userId)
+          .lt("start_utc", dayEndIso)
+          .gt("end_utc", dayStartIso)
+          .order("start_utc", { ascending: true });
+        if (!active) return;
+        if (error) {
+          console.error("Failed to load overlay windows", error);
+          setOverlayWindows([]);
+          return;
+        }
+        setOverlayWindows(data ?? []);
+      } catch (fetchError) {
+        if (!active) return;
+        console.error("Failed to load overlay windows", fetchError);
+        setOverlayWindows([]);
+      }
+    }
+
+    void fetchOverlayWindows();
+
+    return () => {
+      active = false;
+    };
+  }, [userId, currentDate, effectiveTimeZone]);
 
   useEffect(() => {
     if (!userId) {
@@ -5824,6 +5917,47 @@ export default function SchedulePage() {
         .filter(
           (instance): instance is ProjectInstance => instance !== null
         );
+      const overlaySegments = overlayWindows
+        .map((overlay) => {
+          if (!overlay.start_utc || !overlay.end_utc) return null;
+          const start = new Date(overlay.start_utc);
+          const end = new Date(overlay.end_utc);
+          const clipped = clipSegmentToDay(
+            start,
+            end,
+            renderDayStart,
+            renderDayEnd
+          );
+          if (!clipped) return null;
+          const startMin = getDayMinuteOffset(clipped.segStart, renderDayStart);
+          const endMin = getDayMinuteOffset(clipped.segEnd, renderDayStart);
+          const durationMin = endMin - startMin;
+          if (!Number.isFinite(durationMin) || durationMin <= 0) return null;
+          return {
+            id: overlay.id,
+            startMin,
+            durationMin,
+          };
+        })
+        .filter(
+          (segment): segment is OverlayWindowSegment => segment !== null
+        );
+      const overlayRanges = overlaySegments
+        .map((segment) => {
+          const start = segment.startMin - modelStartHour * 60;
+          const end = start + segment.durationMin;
+          const clampedStart = Math.max(0, start);
+          const clampedEnd = Math.max(clampedStart, end);
+          if (!Number.isFinite(clampedStart) || !Number.isFinite(clampedEnd)) {
+            return null;
+          }
+          if (clampedEnd <= clampedStart) return null;
+          return { start: clampedStart, end: clampedEnd };
+        })
+        .filter(
+          (range): range is MinuteRange => range !== null
+        )
+        .sort((a, b) => a.start - b.start);
       const scheduledCardsByInstanceId = new Map<string, ProjectTaskCard[]>();
       for (const projectInstance of dayProjectInstances) {
         const projectTasks =
@@ -5942,23 +6076,46 @@ export default function SchedulePage() {
                 modelStartHour
               );
               const windowHeightPx = Math.max(0, heightMinutes * modelPxPerMin);
-              return (
-                <div
-                  key={w.id}
-                  aria-label={w.label}
-                  className="absolute left-0 flex"
-                  style={{
-                    top: toTimelinePosition(topMinutes),
-                    height: toTimelinePosition(heightMinutes),
-                  }}
-                >
-                  <div className="w-0.5 bg-zinc-700 opacity-50" />
-                  <WindowLabel
-                    label={w.label ?? ""}
-                    availableHeight={windowHeightPx}
-                  />
-                </div>
+              if (!Number.isFinite(heightMinutes) || heightMinutes <= 0) {
+                return null;
+              }
+              const windowSegments = subtractOverlayRangesFromWindow(
+                { start: topMinutes, end: topMinutes + heightMinutes },
+                overlayRanges
               );
+              if (windowSegments.length === 0) {
+                return null;
+              }
+              return windowSegments.map((segment, index) => {
+                const segmentHeightPx = Math.max(
+                  0,
+                  (segment.end - segment.start) * modelPxPerMin
+                );
+                const shouldShowLabel =
+                  index === 0 &&
+                  typeof w.label === "string" &&
+                  w.label.trim().length > 0 &&
+                  segmentHeightPx >= 24;
+                return (
+                  <div
+                    key={`${w.id}-${index}`}
+                    aria-label={index === 0 ? w.label : undefined}
+                    className="absolute left-0 flex"
+                    style={{
+                      top: toTimelinePosition(segment.start),
+                      height: toTimelinePosition(segment.end - segment.start),
+                    }}
+                  >
+                    <div className="w-0.5 bg-zinc-700 opacity-50" />
+                    {shouldShowLabel ? (
+                      <WindowLabel
+                        label={w.label ?? ""}
+                        availableHeight={segmentHeightPx}
+                      />
+                    ) : null}
+                  </div>
+                );
+              });
             })}
             {modelWindowReports.map((report) => {
               const { rangeStart, rangeEnd } = report;
@@ -5972,44 +6129,91 @@ export default function SchedulePage() {
               const renderRangeEndMin = getDayMinuteOffset(rangeEnd, renderDayStart);
               const startMin = renderRangeStartMin - modelStartHour * 60;
               const endMin = renderRangeEndMin - modelStartHour * 60;
-              const topMinutes = Math.max(0, startMin);
-              const heightMinutes = Math.max(0, endMin - Math.max(0, startMin));
-              if (!Number.isFinite(heightMinutes) || heightMinutes <= 0) {
-                return null;
-              }
-              return (
-                <div
-                  key={report.key}
-                  className="absolute"
-                  style={{
-                    ...TIMELINE_CARD_BOUNDS,
-                    top: toTimelinePosition(topMinutes),
-                    height: toTimelinePosition(heightMinutes),
-                  }}
-                >
-                  <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-slate-700/80 bg-black/10 px-3 py-2 text-slate-50 shadow-[0_16px_24px_rgba(0,0,0,0.25)] backdrop-blur-sm">
-                    <div className="text-[10px] font-semibold uppercase tracking-wide text-white/90">
-                      Window report · {report.windowLabel}
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-white/80">
-                      <span>{report.rangeLabel}</span>
-                      <span>Energy: {report.energyLabel}</span>
-                      <span>Duration: {report.durationLabel}</span>
-                    </div>
-                    <p className="mt-2 text-[11px] leading-snug text-white">
-                      {report.summary}
-                    </p>
-                    {report.details.length > 0 && (
-                      <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-white/80">
-                        {report.details.map((detail, index) => (
-                          <li key={`${report.key}-detail-${index}`}>
-                            {detail}
-                          </li>
-                        ))}
-                      </ul>
+              const baseRange = { start: startMin, end: endMin };
+              const visibleSegments = subtractOverlayRangesFromWindow(
+                baseRange,
+                overlayRanges
+              ).filter(
+                (segment) =>
+                  Number.isFinite(segment.start) &&
+                  Number.isFinite(segment.end) &&
+                  segment.end > segment.start
+              );
+              if (visibleSegments.length === 0) return null;
+
+              const reportContent = (
+                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-slate-700/80 bg-black/10 px-3 py-2 text-slate-50 shadow-[0_16px_24px_rgba(0,0,0,0.25)] backdrop-blur-sm">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-white/90">
+                    Window report · {report.windowLabel}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-white/80">
+                    <span>{report.rangeLabel}</span>
+                    <span>Energy: {report.energyLabel}</span>
+                    <span>Duration: {report.durationLabel}</span>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-snug text-white">
+                    {report.summary}
+                  </p>
+                  {report.details.length > 0 && (
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-white/80">
+                      {report.details.map((detail, index) => (
+                        <li key={`${report.key}-detail-${index}`}>
+                          {detail}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+
+              return visibleSegments.map((segment, index) => {
+                const heightMinutes = segment.end - segment.start;
+                if (!Number.isFinite(heightMinutes) || heightMinutes <= 0) {
+                  return null;
+                }
+                const segmentHeightPx = Math.max(0, heightMinutes * modelPxPerMin);
+                return (
+                  <div
+                    key={`${report.key}-${index}`}
+                    className="absolute"
+                    style={{
+                      ...TIMELINE_CARD_BOUNDS,
+                      top: toTimelinePosition(Math.max(0, segment.start)),
+                      height: toTimelinePosition(Math.max(0, heightMinutes)),
+                    }}
+                  >
+                    {index === 0 ? (
+                      reportContent
+                    ) : (
+                      <div
+                        className="h-full w-full rounded-[var(--radius-lg)] border border-slate-700/80 bg-black/10"
+                        style={{
+                          minHeight: segmentHeightPx,
+                        }}
+                      />
                     )}
                   </div>
-                </div>
+                );
+              });
+            })}
+            {overlaySegments.map((segment) => {
+              const start = segment.startMin - modelStartHour * 60;
+              const end = start + segment.durationMin;
+              const clampedStart = Math.max(0, start);
+              const clampedEnd = Math.max(clampedStart, end);
+              const heightMin = clampedEnd - clampedStart;
+              if (!Number.isFinite(heightMin) || heightMin <= 0) return null;
+              return (
+                <div
+                  key={`overlay-window-${segment.id}`}
+                  className="pointer-events-none absolute rounded-[var(--radius-lg)] border border-zinc-800 bg-zinc-950"
+                  style={{
+                    ...TIMELINE_CARD_BOUNDS,
+                    top: toTimelinePosition(clampedStart),
+                    height: toTimelinePosition(heightMin),
+                    zIndex: 15,
+                  }}
+                />
               );
             })}
             {dayHabitPlacements.map((placement, index) => {
@@ -7478,6 +7682,7 @@ export default function SchedulePage() {
       hasInteractedWithProjects,
       setProjectExpansion,
       expandedProjects,
+      overlayWindows,
       pendingInstanceStatuses,
       pendingBacklogTaskIds,
       projectGoalRelations,
