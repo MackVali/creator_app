@@ -6966,13 +6966,13 @@ export function Fab({
               className="absolute inset-0 bg-black/70 backdrop-blur-sm"
               onClick={() => setOverlayOpen(false)}
             />
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25 }}
-              className="relative w-full max-w-[520px] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-3xl border border-white/20 bg-gradient-to-br from-[#020202] via-[#050505] to-[#0b0b0b] p-6 text-white shadow-[0_30px_80px_rgba(0,0,0,0.85)]"
-            >
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="relative w-full max-w-[520px] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-3xl border border-black/60 bg-gradient-to-br from-[#020202] via-[#050505] to-[#0b0b0b] p-6 text-white shadow-[0_30px_80px_rgba(0,0,0,0.85)]"
+              >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.4em] text-white/70">
@@ -7078,7 +7078,7 @@ export function Fab({
 
               {overlayPickerOpen ? (
                 <div className="mt-4 relative">
-                  <div className="relative h-[360px] w-full overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-b from-[#0a0a0a] to-[#020202]">
+                  <div className="relative h-[360px] w-full overflow-hidden rounded-3xl border border-black/60 bg-gradient-to-b from-[#0a0a0a] to-[#020202]">
                     <FabNexus
                       query={searchQuery}
                       onQueryChange={setSearchQuery}
@@ -8969,9 +8969,9 @@ function FabNexus({
               );
               const nameTextClass = "text-white";
               const metaLabelClass =
-                "text-[9px] uppercase tracking-[0.22em] text-white/70";
+                "text-[7px] md:text-[9px] uppercase tracking-[0.18em] text-white/70";
               const statusLabelClass =
-                "text-[8px] uppercase tracking-[0.18em] text-white/60 break-words leading-tight";
+                "text-[7px] md:text-[8px] uppercase tracking-[0.14em] text-white/60 break-words leading-tight";
               return (
                 <button
                   key={`${result.type}-${result.id}`}
@@ -9002,7 +9002,7 @@ function FabNexus({
                           </span>
                         )}
                     </div>
-                    <div className="flex flex-col items-end gap-1 text-right flex-[1.2] basis-0 min-w-0">
+                    <div className="flex flex-col items-end gap-[2px] text-right flex-[1.2] basis-0 min-w-0">
                       <span className={metaLabelClass}>
                         {result.type === "PROJECT" ? "Project" : "Habit"}
                       </span>
