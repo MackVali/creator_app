@@ -2404,7 +2404,7 @@ export function Fab({
     useState<string>("");
   const [overlayFilterSkillId, setOverlayFilterSkillId] = useState<string>("");
   const [overlaySortMode, setOverlaySortMode] =
-    useState<OverlaySortMode>("recent");
+    useState<OverlaySortMode>("scheduled");
   const [rescheduleTarget, setRescheduleTarget] =
     useState<FabSearchResult | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
@@ -8791,7 +8791,7 @@ function FabNexus({
   const handleMonumentChange = onFilterMonumentChange ?? (() => {});
   const handleSkillChange = onFilterSkillChange ?? (() => {});
   const handleSortChange = onSortModeChange ?? (() => {});
-  const sortValue = sortMode ?? "recent";
+  const sortValue = sortMode ?? "scheduled";
   const toolbarSelectClass =
     "h-9 min-w-[120px] rounded-2xl border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white/80 focus-visible:border-white/30 focus-visible:ring-0";
   const toolbarContentClass = "bg-black/90 text-white";
@@ -8984,28 +8984,32 @@ function FabNexus({
                   aria-disabled={isDisabled}
                   className={cardClassName}
                 >
-                  <div className="flex w-full items-start justify-between gap-3">
-                    <div className="flex flex-col gap-1 flex-[3] basis-3/4 min-w-0">
-                      <span
-                        className={cn(
-                          "block line-clamp-2 break-words text-[12px] font-medium leading-snug tracking-wide",
-                          nameTextClass
-                        )}
-                      >
-                        {result.name}
-                      </span>
-                      {result.type === "PROJECT" &&
-                        result.global_rank !== null &&
-                        result.global_rank !== undefined && (
-                          <span className="text-gray-600 font-bold text-xs leading-none">
-                            #{result.global_rank}
-                          </span>
-                        )}
+                  <div className="flex w-full flex-col gap-1 min-w-0">
+                    <div className="flex w-full items-start justify-between gap-3">
+                      <div className="flex flex-col gap-1 flex-[3] basis-3/4 min-w-0">
+                        <span
+                          className={cn(
+                            "block line-clamp-2 break-words text-[12px] font-medium leading-snug tracking-wide",
+                            nameTextClass
+                          )}
+                        >
+                          {result.name}
+                        </span>
+                        {result.type === "PROJECT" &&
+                          result.global_rank !== null &&
+                          result.global_rank !== undefined && (
+                            <span className="text-gray-600 font-bold text-xs leading-none">
+                              #{result.global_rank}
+                            </span>
+                          )}
+                      </div>
+                      <div className="flex items-start justify-end flex-shrink-0">
+                        <span className={metaLabelClass}>
+                          {result.type === "PROJECT" ? "Project" : "Habit"}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex flex-col items-end gap-[2px] text-right flex-[1.2] basis-0 min-w-0">
-                      <span className={metaLabelClass}>
-                        {result.type === "PROJECT" ? "Project" : "Habit"}
-                      </span>
+                    <div className="flex w-full">
                       <span className={statusLabelClass}>{statusText}</span>
                     </div>
                   </div>
