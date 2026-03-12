@@ -156,7 +156,29 @@ type FabSearchResult = {
   goalId?: string | null;
   goalName?: string | null;
   energy?: string | null;
+  skillId?: string | null;
+  skill_id?: string | null;
+  monumentId?: string | null;
+  monument_id?: string | null;
+  priority?: string | null;
+  priority_label?: string | null;
+  updatedAt?: string | null;
+  updated_at?: string | null;
+  goalMonumentId?: string | null;
 };
+type OverlaySortMode =
+  | "recent"
+  | "alphabetical"
+  | "priority"
+  | "global_rank"
+  | "scheduled";
+const OVERLAY_SORT_OPTIONS: { value: OverlaySortMode; label: string }[] = [
+  { value: "recent", label: "Recently updated" },
+  { value: "alphabetical", label: "Alphabetical" },
+  { value: "priority", label: "Priority" },
+  { value: "global_rank", label: "Global rank" },
+  { value: "scheduled", label: "Scheduled order" },
+];
 
 type FabSearchCursor = {
   startUtc: string;
@@ -400,6 +422,12 @@ type PlacementEntry = {
   placement: OverlayPlacement;
 };
 
+type OccupiedChain = {
+  start: number;
+  end: number;
+  obstacles: PlacementEntry[];
+};
+
 type ResolveOverlayLayoutParams = {
   placements: OverlayPlacement[];
   overlayStartTime: Date;
@@ -449,6 +477,7 @@ const resolveOverlayPlacementLayout = ({
   const obstacles = entries.filter((entry) => entry.id !== movingPlacementId);
   const clampTarget = (value: number) => clampStart(movingEntry, value);
   const clampedTargetStart = clampTarget(targetStartMinutes);
+  const actualMovementStart = clampedTargetStart;
   const atTopBoundary = clampedTargetStart === 0;
   const atBottomBoundary = clampedTargetStart === boundsMax;
   const pushingTop = atTopBoundary && rawTargetStartMinutes < 0;
@@ -481,7 +510,6 @@ const resolveOverlayPlacementLayout = ({
 
   const clampMovingCandidate = (value: number) =>
     clampStart(movingEntry, value);
-  const actualMovementStart = clampTarget(rawTargetStartMinutes);
   const findNearestLegalStart = (
     desiredStart: number,
     opts?: { boundarySlotsOnly?: boolean }
@@ -590,6 +618,134 @@ const resolveOverlayPlacementLayout = ({
     }
   };
 
+  const startFitsWithoutOverlap = (start: number) => {
+    const end = start + movingEntry.duration;
+    return !obstacles.some(
+      (obstacle) =>
+        start < obstacle.start + obstacle.duration && end > obstacle.start
+    );
+  };
+
+  const buildOccupiedChains = (): OccupiedChain[] => {
+    const chains: OccupiedChain[] = [];
+    for (const obstacle of sortedObstaclesAsc) {
+      const obstacleEnd = obstacle.start + obstacle.duration;
+      const lastChain = chains[chains.length - 1];
+      if (lastChain && obstacle.start <= lastChain.end) {
+        lastChain.end = Math.max(lastChain.end, obstacleEnd);
+        lastChain.obstacles.push(obstacle);
+      } else {
+        chains.push({
+          start: obstacle.start,
+          end: obstacleEnd,
+          obstacles: [obstacle],
+        });
+      }
+    }
+    return chains;
+  };
+
+  const occupiedChains = buildOccupiedChains();
+
+  const findChainForMovement = (start: number) => {
+    for (const chain of occupiedChains) {
+      if (
+        start < chain.end &&
+        start + movingEntry.duration > chain.start
+      ) {
+        return chain;
+      }
+    }
+    return null;
+  };
+
+  const selectSeamStartForChain = (
+    chain: OccupiedChain,
+    pointerStart: number
+  ) => {
+    const candidates = Array.from(
+      new Set(
+        chain.obstacles.map((obstacle) =>
+          clampMovingCandidate(snapMinutesToFive(obstacle.start))
+        )
+      )
+    ).sort((a, b) => a - b);
+    if (candidates.length === 0) {
+      return null;
+    }
+    const matchesDirection = (value: number) =>
+      _direction === "forward"
+        ? value >= pointerStart
+        : _direction === "backward"
+        ? value <= pointerStart
+        : true;
+    let best = candidates[0];
+    let bestDistance = Math.abs(best - pointerStart);
+    let bestDirectionMatch = matchesDirection(best);
+
+    for (const candidate of candidates) {
+      const distance = Math.abs(candidate - pointerStart);
+      const directionMatch = matchesDirection(candidate);
+      if (
+        distance < bestDistance ||
+        (distance === bestDistance &&
+          Number(directionMatch) > Number(bestDirectionMatch))
+      ) {
+        best = candidate;
+        bestDistance = distance;
+        bestDirectionMatch = directionMatch;
+      }
+    }
+    return best;
+  };
+
+  const tryMiddleInsertion = (targetStart: number) => {
+    const insertionTargetStart = targetStart;
+    const downstreamObstacles = sortedObstaclesAsc.filter(
+      (obstacle) => obstacle.start + obstacle.duration > insertionTargetStart
+    );
+    const obstacleStartBackup = new Map<string, number>();
+    obstacles.forEach((obstacle) => {
+      obstacleStartBackup.set(obstacle.id, obstacle.start);
+    });
+    const movingStartBackup = movingEntry.start;
+
+    movingEntry.start = insertionTargetStart;
+    let prevEnd = movingEntry.start + movingEntry.duration;
+    let pushedDownstream = false;
+    for (const obstacle of downstreamObstacles) {
+      const desired = Math.max(prevEnd, obstacle.start);
+      const clamped = clampStart(obstacle, desired);
+      if (clamped !== obstacle.start) {
+        obstacle.start = clamped;
+        pushedDownstream = true;
+      }
+      prevEnd = obstacle.start + obstacle.duration;
+    }
+
+    const fitsInWindow = prevEnd <= overlayWindowMinutes;
+
+    if (fitsInWindow) {
+      return { success: true, pushedDownstream };
+    }
+
+    obstacles.forEach((obstacle) => {
+      const original = obstacleStartBackup.get(obstacle.id);
+      if (original !== undefined) {
+        obstacle.start = original;
+      }
+    });
+    movingEntry.start = movingStartBackup;
+    return { success: false, pushedDownstream };
+  };
+
+  type PlacementLog = {
+    mode: "direct-fit" | "seam-insert" | "fallback-gap";
+    chosenStart: number;
+    pushed: boolean;
+  };
+  let placementLog: PlacementLog | null = null;
+
   if (shouldPushDown) {
     movingEntry.start = 0;
     pushObstaclesDownward();
@@ -597,7 +753,37 @@ const resolveOverlayPlacementLayout = ({
     movingEntry.start = boundsMax;
     pushObstaclesUpward();
   } else {
-    movingEntry.start = findNearestLegalStart(actualMovementStart);
+    if (startFitsWithoutOverlap(actualMovementStart)) {
+      movingEntry.start = actualMovementStart;
+      placementLog = {
+        mode: "direct-fit",
+        chosenStart: movingEntry.start,
+        pushed: false,
+      };
+    } else {
+      const chain = findChainForMovement(actualMovementStart);
+      if (chain) {
+        const seamStart = selectSeamStartForChain(chain, actualMovementStart);
+        if (seamStart !== null) {
+          const insertionResult = tryMiddleInsertion(seamStart);
+          if (insertionResult.success) {
+            placementLog = {
+              mode: "seam-insert",
+              chosenStart: movingEntry.start,
+              pushed: insertionResult.pushedDownstream,
+            };
+          }
+        }
+      }
+      if (!placementLog) {
+        movingEntry.start = findNearestLegalStart(actualMovementStart);
+        placementLog = {
+          mode: "fallback-gap",
+          chosenStart: movingEntry.start,
+          pushed: false,
+        };
+      }
+    }
   }
 
   const hasOverlap = obstacles.some((obstacle) => {
@@ -610,6 +796,20 @@ const resolveOverlayPlacementLayout = ({
   if (hasOverlap) {
     movingEntry.start = findNearestLegalStart(actualMovementStart, {
       boundarySlotsOnly: true,
+    });
+    placementLog = {
+      mode: "fallback-gap",
+      chosenStart: movingEntry.start,
+      pushed: false,
+    };
+  }
+
+  if (placementLog && process.env.NODE_ENV !== "production") {
+    console.debug("[Fab] overlay drag resolve", movingPlacementId, {
+      actualMovementStart,
+      chosenStart: placementLog.chosenStart,
+      mode: placementLog.mode,
+      downstreamPush: placementLog.pushed,
     });
   }
 
@@ -1667,6 +1867,15 @@ export function Fab({
       return nameA.localeCompare(nameB);
     });
   }, [skillCategories, skillFilterMonumentId, skillSearch, skills]);
+  const goalsById = useMemo(() => {
+    const map = new Map<string, Goal>();
+    goals.forEach((goal) => {
+      if (goal.id) {
+        map.set(goal.id, goal);
+      }
+    });
+    return map;
+  }, [goals]);
   const filteredTaskProjects = useMemo(() => {
     let list = taskProjects;
     if (taskProjectFilterStage) {
@@ -2191,6 +2400,11 @@ export function Fab({
   const [searchCursor, setSearchCursor] = useState<FabSearchCursor | null>(
     null
   );
+  const [overlayFilterMonumentId, setOverlayFilterMonumentId] =
+    useState<string>("");
+  const [overlayFilterSkillId, setOverlayFilterSkillId] = useState<string>("");
+  const [overlaySortMode, setOverlaySortMode] =
+    useState<OverlaySortMode>("recent");
   const [rescheduleTarget, setRescheduleTarget] =
     useState<FabSearchResult | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
@@ -2211,6 +2425,149 @@ export function Fab({
   const overlayNexusDropRef = useRef<HTMLButtonElement | null>(null);
   const isDraggingOverlay = Boolean(activeOverlayDragId);
   const searchAbortRef = useRef<AbortController | null>(null);
+  const overlayPickerResults = useMemo(() => {
+    const matchesMonument = overlayFilterMonumentId.trim().length > 0;
+    const matchesSkill = overlayFilterSkillId.trim().length > 0;
+
+    const resolveMonumentId = (result: FabSearchResult): string | null => {
+      const explicit =
+        result.monumentId ??
+        result.monument_id ??
+        result.goalMonumentId ??
+        null;
+      if (explicit) {
+        return explicit;
+      }
+      if (result.goalId) {
+        const goal = goalsById.get(result.goalId);
+        if (goal?.monument_id) {
+          return goal.monument_id;
+        }
+      }
+      return null;
+    };
+
+    const resolveSkillId = (result: FabSearchResult): string | null =>
+      result.skillId ?? result.skill_id ?? null;
+
+    const normalizePriorityValue = (value?: string | null): string | null => {
+      if (!value) return null;
+      return value
+        .trim()
+        .toUpperCase()
+        .replace(/[\s_]+/g, "-");
+    };
+
+    const getPriorityIndex = (result: FabSearchResult): number => {
+      const goal = result.goalId ? goalsById.get(result.goalId) : undefined;
+      const candidate =
+        result.priority ??
+        result.priority_label ??
+        (goal?.priority ?? null);
+      const normalized = normalizePriorityValue(candidate);
+      if (!normalized) return -1;
+      const index = SCHEDULER_PRIORITY_LABELS.findIndex(
+        (label) => label === normalized
+      );
+      return index >= 0 ? index : -1;
+    };
+
+    const getUpdatedTimestamp = (result: FabSearchResult): number => {
+      const value =
+        result.updatedAt ??
+        result.updated_at ??
+        result.nextScheduledAt ??
+        result.completedAt ??
+        null;
+      if (!value) return Number.NEGATIVE_INFINITY;
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+    };
+
+    const parseGlobalRank = (value: unknown): number | null => {
+      if (value === null || value === undefined) return null;
+      const numeric = typeof value === "number" ? value : Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
+    };
+
+    const compareByName = (a: FabSearchResult, b: FabSearchResult) =>
+      (a.name ?? "").toLowerCase().localeCompare((b.name ?? "").toLowerCase());
+    const compareResults = (a: FabSearchResult, b: FabSearchResult) => {
+      switch (overlaySortMode) {
+        case "recent": {
+          return getUpdatedTimestamp(b) - getUpdatedTimestamp(a);
+        }
+        case "alphabetical": {
+          return (a.name ?? "").toLowerCase().localeCompare(
+            (b.name ?? "").toLowerCase()
+          );
+        }
+        case "priority": {
+          const priorityA = getPriorityIndex(a);
+          const priorityB = getPriorityIndex(b);
+          if (priorityA !== priorityB) {
+            return priorityB - priorityA;
+          }
+          return 0;
+        }
+        case "global_rank": {
+          const rankA = parseGlobalRank(a.global_rank ?? null);
+          const rankB = parseGlobalRank(b.global_rank ?? null);
+          if (rankA !== null && rankB !== null) {
+            return rankA - rankB;
+          }
+          if (rankA === null && rankB === null) {
+            return 0;
+          }
+          return rankA === null ? 1 : -1;
+        }
+        case "scheduled": {
+          const aHas = !!a.nextScheduledAt;
+          const bHas = !!b.nextScheduledAt;
+          if (aHas !== bHas) {
+            return aHas ? -1 : 1;
+          }
+          if (a.nextScheduledAt && b.nextScheduledAt) {
+            if (a.nextScheduledAt !== b.nextScheduledAt) {
+              return a.nextScheduledAt < b.nextScheduledAt ? -1 : 1;
+            }
+          }
+          return compareByName(a, b);
+        }
+        default:
+          return 0;
+      }
+    };
+
+    let filtered = searchResults;
+    if (matchesMonument) {
+      filtered = filtered.filter(
+        (result) => resolveMonumentId(result) === overlayFilterMonumentId
+      );
+    }
+    if (matchesSkill) {
+      filtered = filtered.filter(
+        (result) => resolveSkillId(result) === overlayFilterSkillId
+      );
+    }
+
+    const indexed = filtered.map((result, index) => ({
+      result,
+      index,
+    }));
+    indexed.sort((a, b) => {
+      const diff = compareResults(a.result, b.result);
+      if (diff !== 0) return diff;
+      return a.index - b.index;
+    });
+    return indexed.map(({ result }) => result);
+  }, [
+    goalsById,
+    overlayFilterMonumentId,
+    overlayFilterSkillId,
+    overlaySortMode,
+    searchResults,
+  ]);
   const goalFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const skillFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const taskProjectFilterMenuRef = useRef<HTMLDivElement | null>(null);
@@ -2460,16 +2817,15 @@ export function Fab({
       if (trimmed.length > 0) {
         params.set("q", trimmed);
       }
+      params.set("sort", overlaySortMode);
       if (cursor) {
         params.set("cursorStartUtc", cursor.startUtc);
         params.set("cursorSourceType", cursor.sourceType);
         params.set("cursorSourceId", cursor.sourceId);
       }
-      return params.toString().length > 0
-        ? `/api/schedule/search?${params.toString()}`
-        : "/api/schedule/search";
+      return `/api/schedule/search?${params.toString()}`;
     },
-    [searchQuery]
+    [overlaySortMode, searchQuery]
   );
 
   const runSearch = useCallback(
@@ -5775,6 +6131,7 @@ export function Fab({
     pages,
     runSearch,
     searchQuery,
+    overlaySortMode,
   ]);
 
   const handleLoadMoreResults = useCallback(async () => {
@@ -6479,7 +6836,7 @@ export function Fab({
                 ref={overlayButtonRef}
                 type="button"
                 aria-label="Add overlay"
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-black/70 bg-gradient-to-br from-[#0d0d0d] via-[#0a0a0a] to-[#1f2937] px-6 py-3 text-white shadow-[0_25px_60px_rgba(0,0,0,0.85)] ring-1 ring-black/40 transition hover:ring-black/60 pointer-events-auto"
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/20 bg-gradient-to-br from-[#111111] via-[#0d0d0d] to-[#050505] px-6 py-3 text-white shadow-[0_25px_60px_rgba(0,0,0,0.85)] ring-1 ring-black/40 transition hover:ring-black/60 pointer-events-auto"
                 onPointerDown={(event) => event.stopPropagation()}
                 onTouchStart={(event) => event.stopPropagation()}
                 onClick={(event) => {
@@ -6614,7 +6971,7 @@ export function Fab({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.25 }}
-              className="relative w-full max-w-[520px] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-3xl border border-white/20 bg-gradient-to-br from-[#05060f] to-[#0b1121] p-6 text-white shadow-[0_30px_80px_rgba(0,0,0,0.9)]"
+              className="relative w-full max-w-[520px] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-3xl border border-white/20 bg-gradient-to-br from-[#020202] via-[#050505] to-[#0b0b0b] p-6 text-white shadow-[0_30px_80px_rgba(0,0,0,0.85)]"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -6721,11 +7078,11 @@ export function Fab({
 
               {overlayPickerOpen ? (
                 <div className="mt-4 relative">
-                  <div className="relative h-[360px] w-full overflow-hidden rounded-3xl border border-white/10 bg-[#030308]">
+                  <div className="relative h-[360px] w-full overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-b from-[#0a0a0a] to-[#020202]">
                     <FabNexus
                       query={searchQuery}
                       onQueryChange={setSearchQuery}
-                      results={searchResults}
+                      results={overlayPickerResults}
                       isSearching={isSearching}
                       isLoadingMore={isLoadingMore}
                       error={searchError}
@@ -6733,11 +7090,20 @@ export function Fab({
                       onLoadMore={handleLoadMoreResults}
                       onSelectResult={handleOverlayPickerResult}
                       inputRef={nexusInputRef}
+                      filterMonumentId={overlayFilterMonumentId}
+                      onFilterMonumentChange={setOverlayFilterMonumentId}
+                      filterSkillId={overlayFilterSkillId}
+                      onFilterSkillChange={setOverlayFilterSkillId}
+                      sortMode={overlaySortMode}
+                      onSortModeChange={setOverlaySortMode}
+                      availableMonuments={monuments}
+                      availableSkills={skills}
+                      showToolbar
                     />
                     <button
                       type="button"
                       aria-label="Close Nexus"
-                      className="absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-black/80 bg-gradient-to-br from-[#1f2937] via-[#0f172a] to-[#020617] text-white shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition hover:scale-[1.05] focus-visible:border-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                      className="absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-gradient-to-br from-[#111111] via-[#0d0d0d] to-[#050505] text-white shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition hover:scale-[1.05] focus-visible:border-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
                       onClick={handleOverlayPickerClose}
                     >
                       <X className="h-4 w-4" aria-hidden="true" />
@@ -6806,8 +7172,8 @@ export function Fab({
                         outlineOffset: "-1px",
                       };
                       const baseShadow = isDragging
-                        ? "0 30px 90px rgba(0,0,0,0.6),0 16px 36px rgba(0,0,0,0.55)"
-                        : "0 18px 38px rgba(6,6,10,0.48),0 8px 16px rgba(0,0,0,0.35)";
+                        ? "0 0 60px rgba(0,0,0,0.55),0 12px 30px rgba(0,0,0,0.45)"
+                        : "0 0 30px rgba(0,0,0,0.35),0 6px 14px rgba(0,0,0,0.30)";
                       const filterValue = isDragging
                         ? "brightness(1.09)"
                         : overlayIsDragging
@@ -6908,10 +7274,10 @@ export function Fab({
                               : "Open Nexus"
                           }
                           className={cn(
-                            "absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border bg-gradient-to-br from-[#1f2937] via-[#0f172a] to-[#020617] shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition hover:scale-[1.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                            "absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border bg-gradient-to-br from-[#111111] via-[#0d0d0d] to-[#050505] shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition hover:scale-[1.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
                             isTrashMode
                               ? "border-red-500 text-red-100 hover:border-red-400"
-                              : "border-black/80 text-white hover:ring-white"
+                              : "border-white/20 text-white hover:ring-white"
                           )}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -8376,6 +8742,15 @@ type FabNexusProps = {
   hasMore: boolean;
   onLoadMore: () => void;
   onSelectResult: (result: FabSearchResult) => void;
+  filterMonumentId?: string;
+  onFilterMonumentChange?: (value: string) => void;
+  filterSkillId?: string;
+  onFilterSkillChange?: (value: string) => void;
+  sortMode?: OverlaySortMode;
+  onSortModeChange?: (value: OverlaySortMode) => void;
+  availableMonuments?: Monument[];
+  availableSkills?: Skill[];
+  showToolbar?: boolean;
   inputRef?: RefObject<HTMLInputElement | null>;
 };
 
@@ -8389,6 +8764,15 @@ function FabNexus({
   hasMore,
   onLoadMore,
   onSelectResult,
+  filterMonumentId,
+  onFilterMonumentChange,
+  filterSkillId,
+  onFilterSkillChange,
+  sortMode,
+  onSortModeChange,
+  availableMonuments,
+  availableSkills,
+  showToolbar = false,
   inputRef,
 }: FabNexusProps) {
   const hasResults = results.length > 0;
@@ -8401,6 +8785,16 @@ function FabNexus({
       onLoadMore();
     }
   };
+
+  const toolbarMonuments = availableMonuments ?? [];
+  const toolbarSkills = availableSkills ?? [];
+  const handleMonumentChange = onFilterMonumentChange ?? (() => {});
+  const handleSkillChange = onFilterSkillChange ?? (() => {});
+  const handleSortChange = onSortModeChange ?? (() => {});
+  const sortValue = sortMode ?? "recent";
+  const toolbarSelectClass =
+    "h-9 min-w-[120px] rounded-2xl border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white/80 focus-visible:border-white/30 focus-visible:ring-0";
+  const toolbarContentClass = "bg-black/90 text-white";
 
   const formatDateTime = (
     value: string | null,
@@ -8419,14 +8813,31 @@ function FabNexus({
     }
   };
 
-  const getStatusText = (result: FabSearchResult) => {
+  const formatDatePart = (value: string | null): string | null =>
+    formatDateTime(value, { dateStyle: "medium", timeStyle: undefined });
+  const formatTimePart = (value: string | null): string | null =>
+    formatDateTime(value, { timeStyle: "short" });
+
+  const getStatusText = (result: FabSearchResult): React.ReactNode => {
     if (result.type === "PROJECT" && result.isCompleted) {
       const completedLabel = formatDateTime(result.completedAt);
       return completedLabel ? `Completed ${completedLabel}` : "Completed";
     }
     if (result.nextScheduledAt) {
-      const scheduledLabel = formatDateTime(result.nextScheduledAt);
-      return scheduledLabel ? `Scheduled ${scheduledLabel}` : "Scheduled";
+      const dateLabel = formatDatePart(result.nextScheduledAt);
+      const timeLabel = formatTimePart(result.nextScheduledAt);
+      if (dateLabel && timeLabel) {
+        return (
+          <>
+            <span>Scheduled {dateLabel}</span>
+            <span>at {timeLabel}</span>
+          </>
+        );
+      }
+      if (dateLabel) {
+        return <>Scheduled {dateLabel}</>;
+      }
+      return "Scheduled";
     }
     if (result.type === "HABIT" && result.nextDueAt) {
       const dueLabel = formatDateTime(result.nextDueAt, {
@@ -8457,6 +8868,73 @@ function FabNexus({
           />
         </div>
       </div>
+      {showToolbar ? (
+        <div className="px-4 pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={filterMonumentId ?? ""}
+              onValueChange={handleMonumentChange}
+            >
+              <SelectTrigger
+                aria-label="Filter by monument"
+                className={toolbarSelectClass}
+              >
+                <SelectValue placeholder="Monument" />
+              </SelectTrigger>
+              <SelectContent className={toolbarContentClass}>
+                <SelectItem value="">All monuments</SelectItem>
+                {toolbarMonuments.map((monument) => (
+                  <SelectItem key={monument.id} value={monument.id}>
+                    <span className="text-sm">
+                      {(monument.emoji ?? "✨") +
+                        " " +
+                        (monument.title ?? "Monument")}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterSkillId ?? ""} onValueChange={handleSkillChange}>
+              <SelectTrigger
+                aria-label="Filter by skill"
+                className={toolbarSelectClass}
+              >
+                <SelectValue placeholder="Skill" />
+              </SelectTrigger>
+              <SelectContent className={toolbarContentClass}>
+                <SelectItem value="">All skills</SelectItem>
+                {toolbarSkills.map((skill) => (
+                  <SelectItem key={skill.id} value={skill.id}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{skill.icon ?? "🛠️"}</span>
+                      <span>{skill.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={sortValue} onValueChange={handleSortChange}>
+              <SelectTrigger
+                aria-label="Sort overlay results"
+                className={toolbarSelectClass}
+              >
+                <SelectValue placeholder="Sort" />
+              </SelectTrigger>
+              <SelectContent className={toolbarContentClass}>
+                {OVERLAY_SORT_OPTIONS.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    className="text-[10px] uppercase text-white/60"
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      ) : null}
       <div
         className="flex-1 overflow-y-auto px-4 pb-4 pr-5 pt-3"
         data-fab-nexus-scroll="true"
@@ -8528,9 +9006,7 @@ function FabNexus({
                       <span className={metaLabelClass}>
                         {result.type === "PROJECT" ? "Project" : "Habit"}
                       </span>
-                      <span className={`${statusLabelClass} whitespace-nowrap`}>
-                        {statusText}
-                      </span>
+                      <span className={statusLabelClass}>{statusText}</span>
                     </div>
                   </div>
                 </button>
