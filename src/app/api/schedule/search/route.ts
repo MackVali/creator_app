@@ -1,7 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { normalizeHabitType } from "@/lib/scheduler/habits";
+import { PROJECT_PRIORITY_WEIGHT } from "@/lib/scheduler/config";
+
 const PAGE_SIZE = 25;
+const SORT_OPTIONS = [
+  "recent",
+  "alphabetical",
+  "priority",
+  "global_rank",
+  "scheduled",
+] as const;
+type SearchSortMode = (typeof SORT_OPTIONS)[number];
 
 type SearchResult = {
   id: string;
@@ -18,6 +28,10 @@ type SearchResult = {
   goalId?: string | null;
   goalName?: string | null;
   energy?: string | null;
+  priority?: string | null;
+  priority_label?: string | null;
+  updatedAt?: string | null;
+  updated_at?: string | null;
   currentStreakDays?: number | null;
 };
 
@@ -28,14 +42,21 @@ type ProjectSearchRecord = {
   global_rank?: number | null;
   goal_id?: string | null;
   energy?: string | null;
+  priority?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
 };
 
-type GoalLookupRecord = {
+type HabitSearchRecord = {
   id: string;
   name?: string | null;
+  habit_type?: string | null;
+  current_streak_days?: number | null;
+  updated_at?: string | null;
+  created_at?: string | null;
 };
 
-type ScheduleRow = {
+type ScheduleInstanceRow = {
   id: string;
   source_id: string;
   source_type: "PROJECT" | "HABIT";
@@ -43,15 +64,164 @@ type ScheduleRow = {
   duration_min: number | null;
 };
 
-type SearchCursor = {
-  startUtc: string;
-  sourceType: "PROJECT" | "HABIT";
-  sourceId: string;
+type CursorPayload = {
+  lastType: "PROJECT" | "HABIT";
+  lastId: string;
+  sortMode: SearchSortMode;
 };
 
 function normalizeQuery(value: string | null): string {
   if (!value) return "";
   return value.trim();
+}
+
+function normalizeSortMode(value: string | null): SearchSortMode {
+  if (typeof value !== "string") return "recent";
+  const normalized = value.toLowerCase();
+  return (SORT_OPTIONS.includes(normalized as SearchSortMode)
+    ? (normalized as SearchSortMode)
+    : "recent");
+}
+
+function parseCursor(
+  searchParams: URLSearchParams,
+  sortMode: SearchSortMode
+): CursorPayload | null {
+  const raw = searchParams.get("cursorStartUtc");
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (
+        parsed &&
+        (parsed.lastType === "PROJECT" || parsed.lastType === "HABIT") &&
+        typeof parsed.lastId === "string" &&
+        parsed.lastId.length > 0 &&
+        parsed.sortMode === sortMode
+      ) {
+        return {
+          lastType: parsed.lastType,
+          lastId: parsed.lastId,
+          sortMode,
+        };
+      }
+    } catch {
+      // Fall through to fallback parsing
+    }
+  }
+  const fallbackType = searchParams.get("cursorSourceType");
+  const fallbackId = searchParams.get("cursorSourceId");
+  if (
+    (fallbackType === "PROJECT" || fallbackType === "HABIT") &&
+    typeof fallbackId === "string" &&
+    fallbackId.length > 0
+  ) {
+    return {
+      lastType: fallbackType,
+      lastId: fallbackId,
+      sortMode,
+    };
+  }
+  return null;
+}
+
+function buildCursorPayload(payload: CursorPayload): string {
+  return JSON.stringify(payload);
+}
+
+function getRecencyTimestamp(record: SearchResult): number {
+  const candidates = [
+    record.updatedAt,
+    record.updated_at,
+    record.completedAt,
+    record.nextScheduledAt,
+  ];
+  for (const candidate of candidates) {
+    if (candidate) {
+      const parsed = Date.parse(candidate);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return Number.NEGATIVE_INFINITY;
+}
+
+function normalizeGlobalRank(value?: number | null): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function getPriorityWeight(record: SearchResult): number {
+  if (record.type === "HABIT") {
+    return -1;
+  }
+  const label = record.priority ?? record.priority_label ?? "";
+  if (!label) {
+    return 0;
+  }
+  const trimmed = label.trim();
+  const direct = PROJECT_PRIORITY_WEIGHT[trimmed as keyof typeof PROJECT_PRIORITY_WEIGHT];
+  if (direct !== undefined) {
+    return direct;
+  }
+  const upperMatch = Object.entries(PROJECT_PRIORITY_WEIGHT).find(
+    ([key]) => key.toUpperCase() === trimmed.toUpperCase()
+  );
+  if (upperMatch) {
+    return upperMatch[1];
+  }
+  return 0;
+}
+
+function compareByNameTypeId(a: SearchResult, b: SearchResult): number {
+  const nameCompare = a.name.localeCompare(b.name);
+  if (nameCompare !== 0) return nameCompare;
+  if (a.type !== b.type) {
+    return a.type.localeCompare(b.type);
+  }
+  return a.id.localeCompare(b.id);
+}
+
+function sortResults(results: SearchResult[], sortMode: SearchSortMode): SearchResult[] {
+  return [...results].sort((a, b) => {
+    switch (sortMode) {
+      case "alphabetical": {
+        return compareByNameTypeId(a, b);
+      }
+      case "global_rank": {
+        const rankDiff = normalizeGlobalRank(a.global_rank) - normalizeGlobalRank(b.global_rank);
+        if (rankDiff !== 0) return rankDiff;
+        return compareByNameTypeId(a, b);
+      }
+      case "priority": {
+        const weightDiff = getPriorityWeight(b) - getPriorityWeight(a);
+        if (weightDiff !== 0) return weightDiff;
+        if (a.type !== b.type) {
+          return a.type.localeCompare(b.type);
+        }
+        return compareByNameTypeId(a, b);
+      }
+      case "scheduled": {
+        const aHas = typeof a.nextScheduledAt === "string" && a.nextScheduledAt.length > 0;
+        const bHas = typeof b.nextScheduledAt === "string" && b.nextScheduledAt.length > 0;
+        if (aHas !== bHas) {
+          return aHas ? -1 : 1;
+        }
+        if (aHas && bHas && a.nextScheduledAt !== b.nextScheduledAt) {
+          return a.nextScheduledAt < b.nextScheduledAt ? -1 : 1;
+        }
+        return compareByNameTypeId(a, b);
+      }
+      case "recent":
+      default: {
+        const diff = getRecencyTimestamp(b) - getRecencyTimestamp(a);
+        if (diff !== 0) return diff;
+        return compareByNameTypeId(a, b);
+      }
+    }
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -72,159 +242,31 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
+  const sortMode = normalizeSortMode(searchParams.get("sort"));
   const query = normalizeQuery(searchParams.get("q"));
   const likeQuery = query
     ? `%${query.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`
     : null;
+  const cursor = parseCursor(searchParams, sortMode);
 
-  const cursor = parseCursor(searchParams);
-
-  let projectIdFilter: string[] | null = null;
-  let habitIdFilter: string[] | null = null;
+  let projectQuery = supabase
+    .from("projects")
+    .select(
+      "id,name,completed_at,global_rank,goal_id,energy,priority,updated_at,created_at"
+    )
+    .eq("user_id", user.id);
+  let habitQuery = supabase
+    .from("habits")
+    .select("id,name,habit_type,current_streak_days,updated_at,created_at")
+    .eq("user_id", user.id);
   if (likeQuery) {
-    const [projectIdResponse, habitIdResponse] = await Promise.all([
-      supabase
-        .from("projects")
-        .select("id")
-        .eq("user_id", user.id)
-        .ilike("name", likeQuery),
-      supabase
-        .from("habits")
-        .select("id")
-        .eq("user_id", user.id)
-        .ilike("name", likeQuery),
-    ]);
-    if (projectIdResponse.error) {
-      console.error(
-        "FAB search project lookup error",
-        projectIdResponse.error
-      );
-      return NextResponse.json(
-        { error: "Unable to load projects" },
-        { status: 500 }
-      );
-    }
-    if (habitIdResponse.error) {
-      console.error("FAB search habit lookup error", habitIdResponse.error);
-      return NextResponse.json(
-        { error: "Unable to load habits" },
-        { status: 500 }
-      );
-    }
-    projectIdFilter = (projectIdResponse.data ?? [])
-      .map((row) => row?.id)
-      .filter((id): id is string => typeof id === "string" && id.length > 0);
-    habitIdFilter = (habitIdResponse.data ?? [])
-      .map((row) => row?.id)
-      .filter((id): id is string => typeof id === "string" && id.length > 0);
-    if (projectIdFilter.length === 0 && habitIdFilter.length === 0) {
-      return NextResponse.json({ results: [], nextCursor: null });
-    }
-  }
-
-  let scheduleQuery = supabase
-    .from("schedule_instances")
-    .select("id, source_id, source_type, start_utc, duration_min")
-    .eq("user_id", user.id)
-    .in("source_type", ["PROJECT", "HABIT"])
-    .eq("status", "scheduled")
-    .gte("start_utc", new Date().toISOString())
-    .order("start_utc", { ascending: true })
-    .order("source_type", { ascending: true })
-    .order("source_id", { ascending: true })
-    .limit(PAGE_SIZE + 1);
-
-  if (projectIdFilter || habitIdFilter) {
-    const projectFilter =
-      projectIdFilter && projectIdFilter.length > 0
-        ? `and(source_type.eq.PROJECT,source_id.in.(${projectIdFilter.join(
-            ","
-          )}))`
-        : null;
-    const habitFilter =
-      habitIdFilter && habitIdFilter.length > 0
-        ? `and(source_type.eq.HABIT,source_id.in.(${habitIdFilter.join(",")}))`
-        : null;
-    const filters = [projectFilter, habitFilter].filter(
-      (value): value is string => Boolean(value)
-    );
-    if (filters.length > 0) {
-      scheduleQuery = scheduleQuery.or(filters.join(","));
-    }
-  }
-
-  if (cursor) {
-    scheduleQuery = scheduleQuery.or(
-      [
-        `start_utc.gt.${cursor.startUtc}`,
-        `and(start_utc.eq.${cursor.startUtc},source_type.gt.${cursor.sourceType})`,
-        `and(start_utc.eq.${cursor.startUtc},source_type.eq.${cursor.sourceType},source_id.gt.${cursor.sourceId})`,
-      ].join(",")
-    );
-  }
-
-  const { data: scheduleRows, error: scheduleError } = await scheduleQuery;
-
-  if (scheduleError) {
-    console.error("FAB search schedule lookup failed", scheduleError);
-    return NextResponse.json(
-      { error: "Unable to load schedule" },
-      { status: 500 }
-    );
-  }
-
-  const seen = new Set<string>();
-  const dedupedRows: ScheduleRow[] = [];
-  for (const row of (scheduleRows ?? []) as ScheduleRow[]) {
-    const key = `${row.source_type}:${row.source_id}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    dedupedRows.push(row);
-  }
-
-  const pageRows = dedupedRows.slice(0, PAGE_SIZE);
-  const hasMore = dedupedRows.length > PAGE_SIZE;
-  const lastRow = pageRows[pageRows.length - 1] ?? null;
-  const nextCursor =
-    hasMore && lastRow?.start_utc && lastRow.source_id
-      ? {
-          startUtc: lastRow.start_utc,
-          sourceType: lastRow.source_type,
-          sourceId: lastRow.source_id,
-        }
-      : null;
-
-  const projectIds = pageRows
-    .filter((row) => row.source_type === "PROJECT")
-    .map((row) => row.source_id)
-    .filter((id): id is string => typeof id === "string" && id.length > 0);
-  const habitIds = pageRows
-    .filter((row) => row.source_type === "HABIT")
-    .map((row) => row.source_id)
-    .filter((id): id is string => typeof id === "string" && id.length > 0);
-
-  if (projectIds.length === 0 && habitIds.length === 0) {
-    return NextResponse.json({
-      results: [],
-      nextCursor: null,
-    });
+    projectQuery = projectQuery.ilike("name", likeQuery);
+    habitQuery = habitQuery.ilike("name", likeQuery);
   }
 
   const [projectResponse, habitResponse] = await Promise.all([
-    projectIds.length > 0
-      ? supabase
-          .from("projects")
-          .select("id,name,completed_at,global_rank,goal_id,energy")
-          .eq("user_id", user.id)
-          .in("id", projectIds)
-      : Promise.resolve({ data: [], error: null }),
-    habitIds.length > 0
-      ? supabase
-          .from("habits")
-          .select("id,name,habit_type,current_streak_days")
-          .eq("user_id", user.id)
-          .in("id", habitIds)
-      : Promise.resolve({ data: [], error: null }),
+    projectQuery,
+    habitQuery,
   ]);
 
   if (projectResponse.error) {
@@ -242,8 +284,21 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const projectData = projectResponse.data ?? [];
-  const projectLookup = new Map<string, ProjectSearchRecord>();
+  const projectData = (projectResponse.data ?? []) as ProjectSearchRecord[];
+  const habitData = (habitResponse.data ?? []) as HabitSearchRecord[];
+
+  if (projectData.length === 0 && habitData.length === 0) {
+    return NextResponse.json({ results: [], nextCursor: null });
+  }
+
+  const projectIds = projectData
+    .map((project) => project?.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  const habitIds = habitData
+    .map((habit) => habit?.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  const allSourceIds = [...new Set([...projectIds, ...habitIds])];
+
   const goalIds = new Set<string>();
   for (const project of projectData) {
     if (!project?.id) continue;
@@ -251,26 +306,8 @@ export async function GET(request: NextRequest) {
     if (goalId) {
       goalIds.add(goalId);
     }
-    projectLookup.set(project.id, project as ProjectSearchRecord);
   }
-  const habitLookup = new Map<
-    string,
-    {
-      id: string;
-      name?: string | null;
-      habit_type?: string | null;
-      current_streak_days?: number | null;
-    }
-  >();
-  for (const habit of habitResponse.data ?? []) {
-    if (!habit?.id) continue;
-    habitLookup.set(habit.id, habit as {
-      id: string;
-      name?: string | null;
-      habit_type?: string | null;
-      current_streak_days?: number | null;
-    });
-  }
+
   const goalLookup = new Map<string, string>();
   if (goalIds.size > 0) {
     const { data: goalData, error: goalError } = await supabase
@@ -289,56 +326,101 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const results: SearchResult[] = [];
-  for (const row of pageRows) {
-    if (row.source_type === "PROJECT") {
-      const project = projectLookup.get(row.source_id);
-      if (!project) continue;
-      const completedAt =
-        typeof project.completed_at === "string" &&
-        project.completed_at.length > 0
-          ? project.completed_at
-          : null;
-      const projectGoalId = project.goal_id ?? null;
-      const projectGoalName = projectGoalId
-        ? goalLookup.get(projectGoalId) ?? null
-        : null;
-      results.push({
-        id: project.id,
-        name: project.name?.trim() || "Untitled project",
-        type: "PROJECT",
-        nextScheduledAt:
-          typeof row.start_utc === "string" ? row.start_utc : null,
-        scheduleInstanceId: row.id ?? null,
-        durationMinutes:
-          typeof row.duration_min === "number" &&
-          Number.isFinite(row.duration_min)
-            ? row.duration_min
-            : null,
-        nextDueAt: null,
-        completedAt,
-        isCompleted: typeof completedAt === "string",
-        global_rank: project.global_rank ?? null,
-        goalId: projectGoalId,
-        goalName: projectGoalName,
-        energy: project.energy ?? null,
-      });
-      continue;
+  const scheduleMap = new Map<string, ScheduleInstanceRow>();
+  if (allSourceIds.length > 0) {
+    const scheduleNow = new Date().toISOString();
+    const { data: scheduleRows, error: scheduleError } = await supabase
+      .from("schedule_instances")
+      .select("id,source_id,source_type,start_utc,duration_min")
+      .eq("user_id", user.id)
+      .in("source_type", ["PROJECT", "HABIT"])
+      .in("source_id", allSourceIds)
+      .eq("status", "scheduled")
+      .gte("start_utc", scheduleNow)
+      .order("start_utc", { ascending: true });
+    if (scheduleError) {
+      console.error("FAB search schedule lookup failed", scheduleError);
+      return NextResponse.json(
+        { error: "Unable to load schedule metadata" },
+        { status: 500 }
+      );
     }
-    const habit = habitLookup.get(row.source_id);
-    if (!habit) continue;
+    for (const row of scheduleRows ?? []) {
+      if (!row) continue;
+      const { source_id: sourceId, source_type: sourceType } = row;
+      if (!sourceId || !sourceType || !row.start_utc) continue;
+      const key = `${sourceType}:${sourceId}`;
+      if (scheduleMap.has(key)) continue;
+      scheduleMap.set(key, row);
+    }
+  }
+
+  const results: SearchResult[] = [];
+  for (const project of projectData) {
+    if (!project?.id) continue;
+    const scheduleKey = `PROJECT:${project.id}`;
+    const schedule = scheduleMap.get(scheduleKey);
+    const completedAt =
+      typeof project.completed_at === "string" && project.completed_at.length > 0
+        ? project.completed_at
+        : null;
+    const projectGoalId = project.goal_id ?? null;
+    const projectGoalName = projectGoalId
+      ? goalLookup.get(projectGoalId) ?? null
+      : null;
+    const normalizedUpdated =
+      typeof project.updated_at === "string" && project.updated_at.length > 0
+        ? project.updated_at
+        : typeof project.created_at === "string" &&
+          project.created_at.length > 0
+        ? project.created_at
+        : null;
+    const priorityValue = project.priority ?? null;
+    results.push({
+      id: project.id,
+      name: project.name?.trim() || "Untitled project",
+      type: "PROJECT",
+      nextScheduledAt: schedule?.start_utc ?? null,
+      scheduleInstanceId: schedule?.id ?? null,
+      durationMinutes:
+        typeof schedule?.duration_min === "number" &&
+        Number.isFinite(schedule.duration_min)
+          ? schedule.duration_min
+          : null,
+      nextDueAt: null,
+      completedAt,
+      isCompleted: typeof completedAt === "string",
+      global_rank: project.global_rank ?? null,
+      goalId: projectGoalId,
+      goalName: projectGoalName,
+      energy: project.energy ?? null,
+      priority: priorityValue,
+      priority_label: priorityValue,
+      updatedAt: normalizedUpdated,
+      updated_at: normalizedUpdated,
+    });
+  }
+  for (const habit of habitData) {
+    if (!habit?.id) continue;
+    const scheduleKey = `HABIT:${habit.id}`;
+    const schedule = scheduleMap.get(scheduleKey);
+    const normalizedUpdated =
+      typeof habit.updated_at === "string" && habit.updated_at.length > 0
+        ? habit.updated_at
+        : typeof habit.created_at === "string" && habit.created_at.length > 0
+        ? habit.created_at
+        : null;
     const normalizedHabitType = normalizeHabitType(habit.habit_type);
     results.push({
       id: habit.id,
       name: habit.name?.trim() || "Untitled habit",
       type: "HABIT",
-      nextScheduledAt:
-        typeof row.start_utc === "string" ? row.start_utc : null,
-      scheduleInstanceId: row.id ?? null,
+      nextScheduledAt: schedule?.start_utc ?? null,
+      scheduleInstanceId: schedule?.id ?? null,
       durationMinutes:
-        typeof row.duration_min === "number" &&
-        Number.isFinite(row.duration_min)
-          ? row.duration_min
+        typeof schedule?.duration_min === "number" &&
+        Number.isFinite(schedule.duration_min)
+          ? schedule.duration_min
           : null,
       nextDueAt: null,
       completedAt: null,
@@ -349,19 +431,36 @@ export async function GET(request: NextRequest) {
         Number.isFinite(habit.current_streak_days)
           ? habit.current_streak_days
           : null,
+      updatedAt: normalizedUpdated,
+      updated_at: normalizedUpdated,
     });
   }
 
-  return NextResponse.json({ results, nextCursor });
-}
+  const sortedResults = sortResults(results, sortMode);
+  let startIndex = 0;
+  if (cursor) {
+    const index = sortedResults.findIndex(
+      (result) => result.type === cursor.lastType && result.id === cursor.lastId
+    );
+    if (index >= 0) {
+      startIndex = index + 1;
+    }
+  }
 
-function parseCursor(searchParams: URLSearchParams): SearchCursor | null {
-  const startUtc = searchParams.get("cursorStartUtc");
-  const sourceType = searchParams.get("cursorSourceType");
-  const sourceId = searchParams.get("cursorSourceId");
-  if (!startUtc || !sourceType || !sourceId) return null;
-  const parsed = Date.parse(startUtc);
-  if (Number.isNaN(parsed)) return null;
-  if (sourceType !== "PROJECT" && sourceType !== "HABIT") return null;
-  return { startUtc, sourceType, sourceId };
+  const pagedResults = sortedResults.slice(startIndex, startIndex + PAGE_SIZE);
+  const hasMore = startIndex + PAGE_SIZE < sortedResults.length;
+  const lastItem = pagedResults[pagedResults.length - 1] ?? null;
+  const nextCursor = hasMore && lastItem
+    ? {
+        startUtc: buildCursorPayload({
+          lastType: lastItem.type,
+          lastId: lastItem.id,
+          sortMode,
+        }),
+        sourceType: lastItem.type,
+        sourceId: lastItem.id,
+      }
+    : null;
+
+  return NextResponse.json({ results: pagedResults, nextCursor });
 }

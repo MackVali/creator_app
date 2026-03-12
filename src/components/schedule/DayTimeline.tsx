@@ -106,7 +106,7 @@ export function DayTimeline({
   const nowTop = minutesToStyle(nowMinutes ?? 0);
 
   const hours: number[] = [];
-  for (let h = Math.ceil(startHour); h < endHour; h++) {
+  for (let h = Math.floor(startHour); h < endHour; h++) {
     hours.push(h);
   }
 

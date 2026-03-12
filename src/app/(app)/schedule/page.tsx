@@ -155,6 +155,10 @@ function safeDateTimeFormat(
   return new Intl.DateTimeFormat(locale, { ...options, timeZone: effectiveTz });
 }
 
+function formatScheduleDateKey(date: Date, timeZone: string) {
+  return dayKeyFromUtc(date, timeZone);
+}
+
 type DayTransitionDirection = -1 | 0 | 1;
 
 type PeekState = {
@@ -1580,7 +1584,7 @@ function buildDayTimelineModel({
   todayDateKey: string;
 }): DayTimelineModel {
   const { dayStart, dayEnd } = getLocalDayRange(date, localTimeZone);
-  const dayViewDateKey = formatLocalDateKey(date);
+  const dayViewDateKey = formatScheduleDateKey(date, localTimeZone);
   const windowMap = buildWindowMap(windows);
   const projectInstances = computeProjectInstances(
     instances,
@@ -2223,9 +2227,9 @@ export default function SchedulePage() {
   }, [stableTimeZone, parsedDayKey]);
   // 5. dayViewDateKey (string)
   const dayViewDateKey = useMemo(() => {
-    if (!viewedDate) return "";
-    return formatLocalDateKey(viewedDate);
-  }, [viewedDate]);
+    if (!viewedDate || !stableTimeZone) return "";
+    return formatScheduleDateKey(viewedDate, stableTimeZone);
+  }, [viewedDate, stableTimeZone]);
   // 6. canonical today (already fixed earlier)
   const canonicalTodayDateKey = useMemo(() => {
     return dayKeyFromUtc(new Date().toISOString(), effectiveTimeZone);
@@ -2849,11 +2853,12 @@ export default function SchedulePage() {
           })();
         setDayTransitionDirection(resolvedDirection);
       } else {
-        setDayTransitionDirection(0);
-      }
-      setCurrentDateKey(formatLocalDateKey(nextDate));
-    },
-    [prefersReducedMotion, view, currentDate]
+      setDayTransitionDirection(0);
+    }
+    const tz = stableTimeZone ?? effectiveTimeZone ?? "UTC";
+    setCurrentDateKey(formatScheduleDateKey(nextDate, tz));
+  },
+  [prefersReducedMotion, view, currentDate, stableTimeZone, effectiveTimeZone]
   );
 
   useEffect(() => {
@@ -2864,8 +2869,9 @@ export default function SchedulePage() {
 
   useEffect(() => {
     if (initialDateWasValid) return;
-    setCurrentDateKey(formatLocalDateKey(new Date()));
-  }, [initialDateWasValid]);
+    const tz = stableTimeZone ?? effectiveTimeZone ?? "UTC";
+    setCurrentDateKey(formatScheduleDateKey(new Date(), tz));
+  }, [initialDateWasValid, stableTimeZone, effectiveTimeZone]);
 
   useEffect(() => {
     setMemoNoteState(null);
@@ -2928,14 +2934,14 @@ export default function SchedulePage() {
     () => formatDayViewLabel(nextDayDate, effectiveTimeZone),
     [nextDayDate, effectiveTimeZone]
   );
-  const previousDayKey = useMemo(
-    () => formatLocalDateKey(previousDayDate),
-    [previousDayDate]
-  );
-  const nextDayKey = useMemo(
-    () => formatLocalDateKey(nextDayDate),
-    [nextDayDate]
-  );
+  const previousDayKey = useMemo(() => {
+    const tz = stableTimeZone ?? effectiveTimeZone ?? "UTC";
+    return formatScheduleDateKey(previousDayDate, tz);
+  }, [previousDayDate, stableTimeZone, effectiveTimeZone]);
+  const nextDayKey = useMemo(() => {
+    const tz = stableTimeZone ?? effectiveTimeZone ?? "UTC";
+    return formatScheduleDateKey(nextDayDate, tz);
+  }, [nextDayDate, stableTimeZone, effectiveTimeZone]);
   const recordHabitCompletionRemote = useCallback(
     async (params: {
       habitId: string;
@@ -3120,10 +3126,18 @@ export default function SchedulePage() {
     const params = new URLSearchParams();
     params.set("view", view);
     if (!Number.isNaN(currentDate.getTime())) {
-      params.set("date", formatLocalDateKey(currentDate));
+      const tz = stableTimeZone ?? effectiveTimeZone ?? "UTC";
+      params.set("date", formatScheduleDateKey(currentDate, tz));
     }
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [view, currentDate, router, pathname]);
+  }, [
+    view,
+    currentDate,
+    router,
+    pathname,
+    stableTimeZone,
+    effectiveTimeZone,
+  ]);
 
   useEffect(() => {
     const prevUserId = prevUserIdRef.current;
@@ -3230,8 +3244,8 @@ export default function SchedulePage() {
       return;
     }
 
-    const dayKey = formatLocalDateKey(currentDate);
-    const tz = localTimeZone ?? "UTC";
+    const tz = localTimeZone ?? effectiveTimeZone ?? "UTC";
+    const dayKey = formatScheduleDateKey(currentDate, tz);
 
     async function fetchWindowsForCurrentDate() {
       try {
@@ -3461,12 +3475,13 @@ export default function SchedulePage() {
 
   const filterInstancesForDate = useCallback(
     (date: Date, timeZone: string) => {
-      if (allInstances.length === 0) {
-        return [];
-      }
-      const { dayStart, dayEnd } = getLocalDayRange(date, timeZone);
-      const startMs = dayStart.getTime();
-      const endMs = dayEnd.getTime();
+    if (allInstances.length === 0) {
+      return [];
+    }
+    const renderDayStart = getRenderDayStart(date, timeZone);
+    const renderDayEnd = addDaysInTimeZone(renderDayStart, 1, timeZone);
+    const startMs = renderDayStart.getTime();
+    const endMs = renderDayEnd.getTime();
       let filtered = allInstances.filter((instance) => {
         const start = new Date(instance.start_utc ?? "").getTime();
         const end = new Date(instance.end_utc ?? "").getTime();
@@ -3525,23 +3540,32 @@ export default function SchedulePage() {
         (instance) => !completedIdsToHide.has(instance.id)
       );
 
-      if (DEBUG_DAY_SHIFT && filtered.length > 0) {
-        const inst = filtered[0];
+      if (DEBUG_DAY_SHIFT) {
+        const earlyInstance = filtered.find((entry) => {
+          if (!entry?.start_utc) return false;
+          const localStart = toZonedTime(new Date(entry.start_utc), timeZone);
+          return localStart.getHours() < 4;
+        });
+        if (earlyInstance) {
+          const localStart = toZonedTime(
+            new Date(earlyInstance.start_utc),
+            timeZone
+          );
 
-        console.group("DAY SHIFT TRACE");
-        console.log("viewedDate:", date);
-        console.log("viewedDayKey:", format(date, "yyyy-MM-dd"));
-        console.log("effectiveTimeZone:", timeZone);
-        console.log("instance.start_utc:", inst.start_utc);
-        console.log(
-          "instance zoned:",
-          toZonedTime(new Date(inst.start_utc), timeZone)
-        );
-        console.log(
-          "instance dayKey:",
-          dayKeyFromUtc(inst.start_utc, timeZone)
-        );
-        console.groupEnd();
+          console.group("DAY SHIFT TRACE");
+          console.log("viewedDate:", date);
+          console.log("timeZone:", timeZone);
+          console.log("renderDayStart:", renderDayStart);
+          console.log("renderDayEnd:", renderDayEnd);
+          console.log("instance overlap before 4am local:", {
+            id: earlyInstance.id,
+            source_type: earlyInstance.source_type,
+            start_utc: earlyInstance.start_utc,
+            end_utc: earlyInstance.end_utc,
+            localStartHour: localStart.getHours(),
+          });
+          console.groupEnd();
+        }
       }
       return filtered;
     },
@@ -3951,7 +3975,7 @@ export default function SchedulePage() {
       date: Date,
       forceReload: boolean
     ) {
-      const targetKey = formatLocalDateKey(date);
+      const targetKey = formatScheduleDateKey(date, effectiveTimeZone);
       let shouldFetch = true;
       setPeekModels((prev) => {
         const prevModel = prev[direction];
@@ -4998,7 +5022,9 @@ export default function SchedulePage() {
   useEffect(() => {
     if (!userId) return;
     if (metaStatus !== "loaded" || instancesStatus !== "loaded") return;
-    const todayKey = formatLocalDateKey(new Date());
+    const todayKey =
+      canonicalTodayDateKey ??
+      formatScheduleDateKey(new Date(), effectiveTimeZone ?? "UTC");
     const stored = readLastAutoRunDate();
     if (stored === todayKey) {
       if (hasAutoRunToday !== true) setHasAutoRunToday(true);
@@ -5011,11 +5037,15 @@ export default function SchedulePage() {
     instancesStatus,
     readLastAutoRunDate,
     hasAutoRunToday,
+    canonicalTodayDateKey,
+    effectiveTimeZone,
   ]);
 
   const handleRescheduleClick = useCallback(async () => {
     if (!userId) return;
-    const todayKey = formatLocalDateKey(new Date());
+    const todayKey =
+      canonicalTodayDateKey ??
+      formatScheduleDateKey(new Date(), effectiveTimeZone ?? "UTC");
     await runScheduler({ writeThroughDays: PRIMARY_WRITE_WINDOW_DAYS });
     if (
       ENABLE_BACKGROUND_SCHEDULER &&
@@ -5034,6 +5064,8 @@ export default function SchedulePage() {
     persistAutoRunDate,
     refreshScheduledProjectIds,
     loadInstancesRef,
+    canonicalTodayDateKey,
+    effectiveTimeZone,
   ]);
 
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null);
