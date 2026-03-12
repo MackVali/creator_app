@@ -941,6 +941,7 @@ export interface Database {
           locked: boolean;
           event_name: string | null;
           practice_context_monument_id: string | null;
+          overlay_window_id: string | null;
         };
         Insert: {
           id?: string;
@@ -963,6 +964,7 @@ export interface Database {
           locked?: boolean;
           event_name?: string | null;
           practice_context_monument_id?: string | null;
+          overlay_window_id?: string | null;
         };
         Update: {
           id?: string;
@@ -985,6 +987,7 @@ export interface Database {
           locked?: boolean;
           event_name?: string | null;
           practice_context_monument_id?: string | null;
+          overlay_window_id?: string | null;
         };
       };
       schedule_sync_pairings: {

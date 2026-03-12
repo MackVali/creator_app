@@ -976,7 +976,8 @@ export const buildTimelineInstancesForRange = (
   for (const instance of instances) {
     if (!instance) continue;
     if (instance.status !== "scheduled") continue;
-    if (instance.locked === true) continue;
+    const isOverlayBacked = Boolean(instance.overlay_window_id);
+    if (instance.locked === true && !isOverlayBacked) continue;
     const sourceType = instance.source_type;
     if (sourceType !== "PROJECT" && sourceType !== "HABIT") continue;
     const startMs = new Date(instance.start_utc ?? "").getTime();
@@ -1478,6 +1479,7 @@ export async function scheduleBacklog(
   }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client);
+  await reconcileExpiredOverlayWindows(supabase, userId);
   const parityEnabled = options?.parity === true;
   const paritySummary: ParitySummary | null = parityEnabled
     ? {
@@ -9419,8 +9421,116 @@ function subtractBlockedRangesFromWindow(
         freeSegmentMinutes: Math.round(lengthMs / 60000),
       },
     });
-  }
+}
   return trimmed;
+}
+
+async function reconcileExpiredOverlayWindows(
+  supabase: Client,
+  userId: string,
+  now = new Date()
+) {
+  const isoNow = now.toISOString();
+  const { data: windows, error: windowError } = await supabase
+    .from("overlay_windows" as any)
+    .select("id")
+    .eq("user_id", userId)
+    .lte("end_utc", isoNow);
+
+  if (windowError) {
+    log("warn", "[OVERLAY] failed to fetch expired windows", {
+      userId,
+      error: windowError,
+    });
+    return;
+  }
+
+  const expiredWindowIds = (windows ?? [])
+    .map((row) => row?.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  if (expiredWindowIds.length === 0) {
+    return;
+  }
+
+  const { data: instances, error: instanceError } = await supabase
+    .from("schedule_instances")
+    .select("id,source_type,status")
+    .eq("user_id", userId)
+    .in("overlay_window_id", expiredWindowIds)
+    .in("status", ["scheduled", "missed"]);
+
+  if (instanceError) {
+    log("warn", "[OVERLAY] failed to load overlay instances", {
+      userId,
+      error: instanceError,
+      windowCount: expiredWindowIds.length,
+    });
+    return;
+  }
+
+  const projectIds = new Set<string>();
+  const otherIds = new Set<string>();
+  for (const instance of instances ?? []) {
+    if (!instance?.id) continue;
+    if (instance.status === "completed" || instance.status === "canceled") continue;
+    if (instance.source_type === "PROJECT") {
+      projectIds.add(instance.id);
+    } else {
+      otherIds.add(instance.id);
+    }
+  }
+
+  const projectPayload = {
+    status: "missed",
+    start_utc: null,
+    end_utc: null,
+    window_id: null,
+    day_type_time_block_id: null,
+    time_block_id: null,
+    locked: false,
+    overlay_window_id: null,
+  };
+
+  for (const batch of chunkIds(Array.from(projectIds), 1000)) {
+    const { error } = await supabase
+      .from("schedule_instances")
+      .update(projectPayload)
+      .in("id", batch);
+    if (error) {
+      log("warn", "[OVERLAY] failed to release project instances", {
+        userId,
+        batchSize: batch.length,
+        error,
+      });
+    }
+  }
+
+  const otherPayload = {
+    status: "missed",
+    locked: false,
+    overlay_window_id: null,
+  };
+
+  for (const batch of chunkIds(Array.from(otherIds), 1000)) {
+    const { error } = await supabase
+      .from("schedule_instances")
+      .update(otherPayload)
+      .in("id", batch);
+    if (error) {
+      log("warn", "[OVERLAY] failed to release overlay instances", {
+        userId,
+        batchSize: batch.length,
+        error,
+      });
+    }
+  }
+
+  logSchedulerDebug("[OVERLAY] reconciled expired windows", {
+    userId,
+    windowCount: expiredWindowIds.length,
+    projectCount: projectIds.size,
+    otherCount: otherIds.size,
+  });
 }
 
 function determineConstraintFailureReason(
