@@ -4230,16 +4230,45 @@ export default function SchedulePage() {
       }
 
       const instance = instancesById.get(instanceId);
+      const isOverlayBacked = Boolean(instance?.overlay_window_id);
+      const logOverlayStage = (
+        stage: number,
+        detail?: Record<string, unknown>
+      ) => {
+        if (!isOverlayBacked) return;
+        console.log(`[OVERLAY_TOGGLE][stage${stage}]`, {
+          instanceId,
+          nextStatus,
+          overlay_window_id: instance?.overlay_window_id ?? null,
+          ...detail,
+        });
+      };
+      logOverlayStage(2, { reason: "toggle invoked" });
+      const isLockedInstance = instance?.locked === true;
+      logOverlayStage(3, {
+        locked: isLockedInstance,
+      });
+      if (isLockedInstance && !isOverlayBacked) {
+        logOverlayStage(4, { reason: "locked block" });
+        console.log(
+          `[SKIP] reason=locked instanceId=${instanceId} overlay=${instance?.overlay_window_id ?? "none"}`
+        );
+        return;
+      }
       const previousStatus = instance?.status ?? null;
       const pending = pendingInstanceStatuses.has(instanceId);
+      logOverlayStage(4, { isPending: pending });
       const dayKey =
         instance?.start_utc && stableTimeZone
           ? formatLocalDateKey(new Date(instance.start_utc), stableTimeZone)
           : canonicalTodayDateKey;
       if (pending) {
+        logOverlayStage(4, { reason: "pending block" });
         console.log(`[SKIP] reason=pending instanceId=${instanceId}`);
         return;
       }
+      logOverlayStage(4, { reason: "guards pass" });
+      logOverlayStage(5, { previousStatus, dayKey });
       console.log("[INSTANCE WRITE][USER_TAP]", {
         instanceId,
         previousStatus,
@@ -4302,8 +4331,10 @@ export default function SchedulePage() {
         });
       };
       applyOptimisticInstanceUpdate();
+      logOverlayStage(7, { reason: "optimistic applied" });
 
       try {
+        logOverlayStage(5, { reason: "sending update" });
         console.log(
           `[MUTATE] instanceId=${instanceId} next=${nextStatus} completed_at=${
             completionIso ?? "null"
@@ -4328,6 +4359,7 @@ export default function SchedulePage() {
             : undefined
         );
         const okResult = !result.error && (result.status ?? 500) < 400;
+        logOverlayStage(6, { status: result.status, ok: okResult });
         console.log(
           `[RESULT] instanceId=${instanceId} http=${
             result.status ?? "n/a"
@@ -4411,6 +4443,7 @@ export default function SchedulePage() {
           mutationTargetIds.forEach((id) => next.delete(id));
           return next;
         });
+        logOverlayStage(8, { reason: "pending cleared" });
       }
     },
     [
@@ -5442,6 +5475,13 @@ export default function SchedulePage() {
           buttons: event.buttons,
           instanceId: instance?.id,
         });
+        if (instance?.overlay_window_id) {
+          console.log("[OVERLAY_TOGGLE][stage1] pointer down", {
+            instanceId: instance.id,
+            overlay_window_id: instance.overlay_window_id,
+            pointer: event.pointerType,
+          });
+        }
         if (event.pointerType !== "mouse") {
           event.preventDefault();
         }
@@ -5512,6 +5552,13 @@ export default function SchedulePage() {
         buttons: event.buttons,
         instanceId: instance?.id,
       });
+      if (instance?.overlay_window_id) {
+        console.log("[OVERLAY_TOGGLE][stage1] pointer down", {
+          instanceId: instance?.id,
+          overlay_window_id: instance.overlay_window_id,
+          pointer: event.pointerType,
+        });
+      }
       if (event.pointerType !== "mouse") {
         event.preventDefault();
       }
@@ -5958,6 +6005,10 @@ export default function SchedulePage() {
           (range): range is MinuteRange => range !== null
         )
         .sort((a, b) => a.start - b.start);
+      const overlayLayerZIndex = Math.max(
+        0,
+        TIMELINE_STACK_BASE_Z_INDEX - 5
+      );
       const scheduledCardsByInstanceId = new Map<string, ProjectTaskCard[]>();
       for (const projectInstance of dayProjectInstances) {
         const projectTasks =
@@ -6196,26 +6247,32 @@ export default function SchedulePage() {
                 );
               });
             })}
-            {overlaySegments.map((segment) => {
-              const start = segment.startMin - modelStartHour * 60;
-              const end = start + segment.durationMin;
-              const clampedStart = Math.max(0, start);
-              const clampedEnd = Math.max(clampedStart, end);
-              const heightMin = clampedEnd - clampedStart;
-              if (!Number.isFinite(heightMin) || heightMin <= 0) return null;
-              return (
-                <div
-                  key={`overlay-window-${segment.id}`}
-                  className="pointer-events-none absolute rounded-[var(--radius-lg)] border border-zinc-800 bg-zinc-950"
-                  style={{
-                    ...TIMELINE_CARD_BOUNDS,
-                    top: toTimelinePosition(clampedStart),
-                    height: toTimelinePosition(heightMin),
-                    zIndex: 15,
-                  }}
-                />
-              );
-            })}
+            <div
+              className="pointer-events-none absolute inset-0"
+              aria-hidden="true"
+            >
+              {overlaySegments.map((segment) => {
+                const start = segment.startMin - modelStartHour * 60;
+                const end = start + segment.durationMin;
+                const clampedStart = Math.max(0, start);
+                const clampedEnd = Math.max(clampedStart, end);
+                const heightMin = clampedEnd - clampedStart;
+                if (!Number.isFinite(heightMin) || heightMin <= 0) return null;
+                return (
+                  <div
+                    key={`overlay-window-${segment.id}`}
+                    className="pointer-events-none absolute rounded-[var(--radius-lg)] border border-zinc-800 bg-zinc-950"
+                    style={{
+                      ...TIMELINE_CARD_BOUNDS,
+                      top: toTimelinePosition(clampedStart),
+                      height: toTimelinePosition(heightMin),
+                      pointerEvents: "none",
+                      zIndex: overlayLayerZIndex,
+                    }}
+                  />
+                );
+              })}
+            </div>
             {dayHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end))
                 return null;
@@ -6768,9 +6825,11 @@ export default function SchedulePage() {
                 const isPending = pendingStatus !== undefined;
                 const effectiveStatus =
                   pendingStatus ?? instance.status ?? "scheduled";
+                const isOverlayBacked = Boolean(instance.overlay_window_id);
                 const canToggle =
-                  effectiveStatus === "completed" ||
-                  effectiveStatus === "scheduled";
+                  (effectiveStatus === "completed" ||
+                    effectiveStatus === "scheduled") &&
+                  (!instance.locked || isOverlayBacked);
                 const isCompleted = effectiveStatus === "completed";
                 const projectLongPressActive =
                   longPressBounceId === instance.id;
@@ -6847,7 +6906,7 @@ export default function SchedulePage() {
                             layoutId={layoutTokens.card}
                             aria-label={`Project ${project.name}`}
                             role="button"
-                            tabIndex={0}
+                            tabIndex={canToggle ? 0 : -1}
                             aria-expanded={canExpand ? isExpanded : undefined}
                             aria-pressed={isCompleted}
                             aria-disabled={!canToggle || isPending}
@@ -7210,11 +7269,21 @@ export default function SchedulePage() {
                                       instanceStatusById[instanceId] ??
                                       "scheduled")
                                     : null;
+                                const scheduledInstance = instanceId
+                                  ? instancesById.get(instanceId) ?? null
+                                  : null;
+                                const scheduledIsLocked =
+                                  scheduledInstance?.locked === true;
+                                const scheduledIsOverlayBacked = Boolean(
+                                  scheduledInstance?.overlay_window_id
+                                );
                                 const scheduledCanToggle =
                                   kind === "scheduled" &&
                                   !!instanceId &&
                                   (status === "completed" ||
-                                    status === "scheduled");
+                                    status === "scheduled") &&
+                                  (!scheduledIsLocked ||
+                                    scheduledIsOverlayBacked);
                                 const scheduledCompleted =
                                   status === "completed";
                                 const canToggle = isFallbackCard
@@ -7497,8 +7566,10 @@ export default function SchedulePage() {
                   const isPending = pendingStatus !== undefined;
                   const status =
                     pendingStatus ?? instance.status ?? "scheduled";
+                  const isOverlayBacked = Boolean(instance.overlay_window_id);
                   const canToggle =
-                    status === "completed" || status === "scheduled";
+                    (status === "completed" || status === "scheduled") &&
+                    (!instance.locked || isOverlayBacked);
                   const isCompleted = status === "completed";
                   const standaloneHeightPx = Math.max(
                     durationMinutes * modelPxPerMin,

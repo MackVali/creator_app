@@ -446,11 +446,16 @@ export async function buildScheduleEventDataset({
       energyLookup,
       projectMap
     );
+    const preparedInstances = normalizedInstances.map((instance) => ({
+      ...instance,
+      overlay_window_id:
+        instance.overlay_window_id ?? null,
+    }));
     let syncPairings: SyncPairingsByInstanceId = {};
     try {
       syncPairings = await fetchSyncPairingsForInstances({
         userId,
-        instances: normalizedInstances,
+        instances: preparedInstances,
         habits,
         client,
       });
@@ -459,23 +464,23 @@ export async function buildScheduleEventDataset({
     }
 
     const loadDay = dayKeyFromUtc(baseDate.toISOString(), normalizedTz);
-    const habitCount = normalizedInstances.filter(
+    const habitCount = preparedInstances.filter(
       (inst) => inst.source_type === "HABIT"
     ).length;
-    const completedCount = normalizedInstances.filter(
+    const completedCount = preparedInstances.filter(
       (inst) => inst.status === "completed"
     ).length;
-    const scheduledCount = normalizedInstances.filter(
+    const scheduledCount = preparedInstances.filter(
       (inst) => inst.status === "scheduled"
     ).length;
-    const nonHabitCount = normalizedInstances.length - habitCount;
+    const nonHabitCount = preparedInstances.length - habitCount;
     log(
       "debug",
-      `[LOAD] day=${loadDay} total=${normalizedInstances.length} habit=${habitCount} nonhabit=${nonHabitCount} completed=${completedCount} scheduled=${scheduledCount}`
+      `[LOAD] day=${loadDay} total=${preparedInstances.length} habit=${habitCount} nonhabit=${nonHabitCount} completed=${completedCount} scheduled=${scheduledCount}`
     );
 
     if (process.env.NODE_ENV !== "production") {
-      const inst = normalizedInstances[0];
+      const inst = preparedInstances[0];
       log("debug", "SCHEDULER CREATE", {
         start_utc: inst.start_utc,
         timeZone,
@@ -497,7 +502,7 @@ export async function buildScheduleEventDataset({
       skills,
       monuments,
       scheduledProjectIds: resolvedScheduledProjectIds,
-      instances: normalizedInstances,
+      instances: preparedInstances,
       syncPairings,
       energyLookup,
       priorityLookup,
