@@ -8775,6 +8775,7 @@ function FabNexus({
   showToolbar = false,
   inputRef,
 }: FabNexusProps) {
+  const [showControls, setShowControls] = useState(false);
   const hasResults = results.length > 0;
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (!hasMore || isLoadingMore) return;
@@ -8863,12 +8864,23 @@ function FabNexus({
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="search NEXUS"
-            className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
+            className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-14 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
             aria-label="Search NEXUS"
           />
+          {showToolbar && (
+            <button
+              type="button"
+              aria-label="Toggle Nexus filters"
+              aria-expanded={showControls}
+              onClick={() => setShowControls((prev) => !prev)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+            >
+              <Filter className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
-      {showToolbar ? (
+      {showToolbar && showControls ? (
         <div className="px-4 pt-3">
           <div className="flex flex-wrap items-center gap-2">
             <Select
