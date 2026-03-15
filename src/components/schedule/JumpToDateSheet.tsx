@@ -51,6 +51,10 @@ import {
   OverlayWindowModal,
   OVERLAY_DURATION_MS,
 } from "@/components/schedule/OverlayWindowModal";
+import {
+  DAY_TYPE_BLOCK_EDIT_EVENT,
+  type DayTypeBlockEditEventDetail,
+} from "@/lib/scheduler/dayTypeBlockEvents";
 
 interface JumpToDateSheetProps {
   open: boolean;
@@ -166,6 +170,11 @@ export function JumpToDateSheet({
   const [overrideDates, setOverrideDates] = useState<Set<string>>(new Set());
   const [isLoadingTimeBlocks, setIsLoadingTimeBlocks] = useState(false);
   const [timeBlockError, setTimeBlockError] = useState<string | null>(null);
+  const [pendingBlockFocus, setPendingBlockFocus] =
+    useState<DayTypeBlockEditEventDetail | null>(null);
+  const [highlightedBlockId, setHighlightedBlockId] = useState<string | null>(
+    null
+  );
   const [assignmentDayTypeId, setAssignmentDayTypeId] = useState<string | null>(
     null
   );
@@ -196,6 +205,38 @@ export function JumpToDateSheet({
       // ignore write errors
     }
   }, [showTimeBlocks, SHOW_TIME_BLOCKS_KEY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleDayTypeBlockEdit = (event: Event) => {
+      const detail = (event as CustomEvent<DayTypeBlockEditEventDetail>).detail;
+      if (!detail?.blockId) return;
+      setPendingBlockFocus(detail);
+      setHighlightedBlockId(null);
+      setShowTimeBlocks(true);
+      setIsPaintMode(true);
+      if (detail.dateKey) {
+        setPaintSelectionKey(detail.dateKey);
+      }
+      if (detail.dayTypeId) {
+        setSelectedDayTypeId(detail.dayTypeId);
+      }
+    };
+    window.addEventListener(DAY_TYPE_BLOCK_EDIT_EVENT, handleDayTypeBlockEdit);
+    return () => {
+      window.removeEventListener(
+        DAY_TYPE_BLOCK_EDIT_EVENT,
+        handleDayTypeBlockEdit
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      setPendingBlockFocus(null);
+      setHighlightedBlockId(null);
+    }
+  }, [open]);
   const resolvedTimeZone =
     (timeZone && timeZone.trim()) ||
     Intl.DateTimeFormat().resolvedOptions().timeZone ||
@@ -979,6 +1020,45 @@ export function JumpToDateSheet({
     timeBlocks,
   ]);
 
+  const visiblePaintTimeBlocks = useMemo(() => {
+    if (!highlightedBlockId) return paintTimeBlocks;
+    const filtered = paintTimeBlocks.filter((block) => block.id === highlightedBlockId);
+    return filtered.length > 0 ? filtered : paintTimeBlocks;
+  }, [paintTimeBlocks, highlightedBlockId]);
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      !open ||
+      !pendingBlockFocus ||
+      isLoadingTimeBlocks
+    ) {
+      return;
+    }
+    const match = paintTimeBlocks.find(
+      (block) => block.id === pendingBlockFocus.blockId
+    );
+    if (!match) {
+      setPendingBlockFocus(null);
+      return;
+    }
+    setHighlightedBlockId(match.id);
+    setPendingBlockFocus(null);
+    const frame = window.requestAnimationFrame(() => {
+      const element = document.querySelector<HTMLElement>(
+        `[data-time-block-card="${match.id}"]`
+      );
+      if (element) {
+        element.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+          inline: "nearest",
+        });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, pendingBlockFocus, paintTimeBlocks, isLoadingTimeBlocks]);
+
   const assignDayTypeToSelection = useCallback(
     async (
       dayTypeId: string,
@@ -1553,10 +1633,10 @@ export function JumpToDateSheet({
                 )}
                 {paintSelectionLabel ? (
                   <div className="rounded-lg border border-white/10 bg-white/5 p-2.5 sm:p-3 space-y-1.5">
-                    <div className="pt-1 space-y-0.5 text-[12px] sm:text-sm font-semibold text-white/75">
-                      <div className="flex items-center justify-between gap-2">
+                    <div className="grid grid-cols-2 gap-2 text-[12px] sm:text-sm font-semibold text-white/75">
+                      <div className="flex flex-col gap-1 min-w-0">
                         <span>Day type</span>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 min-w-0">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
@@ -1609,59 +1689,61 @@ export function JumpToDateSheet({
                           </DropdownMenu>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-col gap-1 min-w-0">
                         <span>Mode</span>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              disabled={isLoadingDayTypes}
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-[11px] sm:text-xs font-semibold text-white/90 shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:border-white/20 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70",
-                                isLoadingDayTypes && "opacity-60"
-                              )}
-                            >
-                              <span className="truncate max-w-[140px] sm:max-w-[160px]">
-                                {(
-                                  (paintDayType?.schedulerMode ??
-                                    defaultDayTypeForSelection?.schedulerMode ??
-                                    "REGULAR") as string
-                                )
-                                  .charAt(0)
-                                  .concat(
-                                    (
-                                      (paintDayType?.schedulerMode ??
-                                        defaultDayTypeForSelection?.schedulerMode ??
-                                        "REGULAR") as string
-                                    )
-                                      .slice(1)
-                                      .toLowerCase()
-                                  )}
-                              </span>
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="end"
-                            side="bottom"
-                            sideOffset={6}
-                            collisionPadding={12}
-                            className="z-[20000] min-w-[180px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
-                          >
-                            {SCHEDULER_MODES.map((mode) => (
-                              <DropdownMenuItem
-                                key={mode}
-                                className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
-                                onSelect={(event) => {
-                                  event.preventDefault();
-                                  void handleChangeMode(mode);
-                                }}
+                        <div className="flex items-center gap-1 min-w-0">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                disabled={isLoadingDayTypes}
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-[11px] sm:text-xs font-semibold text-white/90 shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:border-white/20 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70",
+                                  isLoadingDayTypes && "opacity-60"
+                                )}
                               >
-                                {mode.charAt(0) + mode.slice(1).toLowerCase()}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                                <span className="truncate max-w-[140px] sm:max-w-[160px]">
+                                  {(
+                                    (paintDayType?.schedulerMode ??
+                                      defaultDayTypeForSelection?.schedulerMode ??
+                                      "REGULAR") as string
+                                  )
+                                    .charAt(0)
+                                    .concat(
+                                      (
+                                        (paintDayType?.schedulerMode ??
+                                          defaultDayTypeForSelection?.schedulerMode ??
+                                          "REGULAR") as string
+                                      )
+                                        .slice(1)
+                                        .toLowerCase()
+                                    )}
+                                </span>
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                              align="end"
+                              side="bottom"
+                              sideOffset={6}
+                              collisionPadding={12}
+                              className="z-[20000] min-w-[180px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
+                            >
+                              {SCHEDULER_MODES.map((mode) => (
+                                <DropdownMenuItem
+                                  key={mode}
+                                  className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    void handleChangeMode(mode);
+                                  }}
+                                >
+                                  {mode.charAt(0) + mode.slice(1).toLowerCase()}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                     </div>
                     <div className="rounded-md border border-white/10 bg-white/5 p-2.5 sm:p-3 space-y-1.5">
@@ -1736,7 +1818,7 @@ export function JumpToDateSheet({
                         <div className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
                           Loading time blocks…
                         </div>
-                      ) : paintTimeBlocks.length === 0 ? (
+                      ) : visiblePaintTimeBlocks.length === 0 ? (
                         <div className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
                           No time blocks for this day type.
                         </div>
@@ -1747,7 +1829,7 @@ export function JumpToDateSheet({
                               {saveError}
                             </div>
                           ) : null}
-                          {paintTimeBlocks.map((block) => {
+                          {visiblePaintTimeBlocks.map((block) => {
                             const hours = windowDurationHours(block);
                             const typeLabel =
                               (block.blockType ?? "FOCUS").charAt(0) +
@@ -1760,7 +1842,12 @@ export function JumpToDateSheet({
                             return (
                               <div
                                 key={block.id}
-                                className="flex w-full flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.28)]"
+                                data-time-block-card={block.id}
+                                className={cn(
+                                  "flex w-full flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.28)]",
+                                  highlightedBlockId === block.id &&
+                                    "border-black ring-1 ring-black/70 bg-white/10 shadow-[0_0_0_26px_rgba(0,0,0,0.45)]"
+                                )}
                               >
                                 <div className="flex items-center justify-between">
                                   <div className="space-y-0.5">
@@ -1805,11 +1892,6 @@ export function JumpToDateSheet({
                                       />
                                       <span>{energyLevel}</span>
                                     </button>
-                                  </div>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2 text-[11px] text-white/70">
-                                    <span>{formatWindowHours(hours)}</span>
                                   </div>
                                 </div>
                               </div>

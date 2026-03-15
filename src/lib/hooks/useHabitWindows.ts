@@ -20,6 +20,9 @@ export type HabitWindowSelectOption = {
   id: string;
   label: string;
   kind: WindowKind;
+  name: string;
+  timeLabel: string;
+  days: number[] | null;
 };
 
 function normalizeWindowKind(value: string | null | undefined): WindowKind {
@@ -42,14 +45,21 @@ function formatDays(days: number[] | null) {
     .join(" · ");
 }
 
+function formatTimeRange(start: string | null, end: string | null) {
+  return `${formatTime(start)}–${formatTime(end)}`;
+}
+
 function mapWindowRow(row: WindowRow): HabitWindowSelectOption {
   const name = row.label?.trim() || "Untitled window";
   const daysLabel = formatDays(row.days);
-  const timeLabel = `${formatTime(row.start_local)}–${formatTime(row.end_local)}`;
+  const timeRange = formatTimeRange(row.start_local, row.end_local);
   return {
     id: row.id,
-    label: `${name} (${daysLabel} · ${timeLabel})`,
+    label: `${name} (${daysLabel} · ${timeRange})`,
     kind: normalizeWindowKind(row.window_kind),
+    name,
+    timeLabel: timeRange,
+    days: Array.isArray(row.days) ? row.days : null,
   };
 }
 

@@ -9,6 +9,7 @@ import React, {
   type RefObject,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { XIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { scheduleInstanceLayoutTokens } from "@/components/schedule/sharedLayout";
@@ -36,6 +37,8 @@ type ScheduleMorphDialogProps = {
   origin?: ScheduleEditOrigin | null;
   layoutId?: string;
   focusRef?: RefObject<HTMLElement>;
+  description?: string | null;
+  showCloseButton?: boolean;
 };
 
 console.log("[ScheduleMorphDialog] MODULE LOADED");
@@ -50,6 +53,8 @@ export function ScheduleMorphDialog({
   origin,
   layoutId,
   focusRef,
+  description,
+  showCloseButton = false,
 }: ScheduleMorphDialogProps) {
   const [viewport, setViewport] = useState(() => ({
     width: typeof window === "undefined" ? 0 : window.innerWidth,
@@ -345,21 +350,46 @@ export function ScheduleMorphDialog({
                             ease: [0.2, 0.8, 0.2, 1] as const,
                           }}
                         >
-                          <motion.p
-                            layoutId={layoutTokens?.title}
-                            id={titleId}
-                            className="text-lg font-semibold leading-tight text-white sm:text-xl"
-                          >
-                            {title}
-                          </motion.p>
-                          {subtitle ? (
-                            <motion.p
-                              layoutId={layoutTokens?.meta}
-                              className="mt-1 text-sm text-white/70"
+                          <div className="relative">
+                            {showCloseButton ? (
+                              <button
+                                type="button"
+                                onClick={onClose}
+                                aria-label="Close"
+                                className="absolute right-0 top-0 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
+                              >
+                                <XIcon className="size-4" aria-hidden="true" />
+                                <span className="sr-only">Close</span>
+                              </button>
+                            ) : null}
+                            <div
+                              className={cn(
+                                showCloseButton ? "pr-10" : "",
+                                "pb-1"
+                              )}
                             >
-                              {subtitle}
-                            </motion.p>
-                          ) : null}
+                              <motion.p
+                                layoutId={layoutTokens?.title}
+                                id={titleId}
+                                className="text-lg font-semibold leading-tight text-white sm:text-xl"
+                              >
+                                {title}
+                              </motion.p>
+                              {subtitle ? (
+                                <motion.p
+                                  layoutId={layoutTokens?.meta}
+                                  className="mt-1 text-sm text-white/70"
+                                >
+                                  {subtitle}
+                                </motion.p>
+                              ) : null}
+                              {description ? (
+                                <p className="mt-1 text-sm text-white/70">
+                                  {description}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
                           <motion.p
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}

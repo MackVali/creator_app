@@ -24,12 +24,24 @@ import { Textarea } from "@/components/ui/textarea";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import * as Dialog from "@radix-ui/react-dialog";
+import type { HabitScheduleItem } from "@/lib/scheduler/habits";
+import {
+  FAB_BUTTON_ACTION_CLASS,
+  FAB_FIELD_CONTROL_CLASS,
+  FAB_FIELD_HELP_TEXT_CLASS,
+  FAB_FIELD_LABEL_CLASS,
+  FAB_FIELD_SELECT_CLASS,
+  FAB_SECTION_CARD_CLASS,
+  FAB_SECTION_HEADING_TEXT_CLASS,
+  FAB_SECTION_HELP_TEXT_SMALL_CLASS,
+} from "@/components/ui/fab-form-classes";
 import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import { resolveEveryXDaysInterval } from "@/lib/recurrence";
 import { useHabitWindows } from "@/lib/hooks/useHabitWindows";
 import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
-import { XIcon } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import {
   ScheduleMorphDialog,
@@ -41,6 +53,11 @@ import {
   type HabitTimelinePlacement,
   updateInstanceStatus,
 } from "@/lib/scheduler/instanceRepo";
+import {
+  getHabitNextDue,
+  normalizeRecurrenceMode,
+  type AnchorType,
+} from "@/lib/scheduler/habitRecurrence";
 
 type RoutineOption = {
   id: string;
@@ -123,8 +140,30 @@ function isGoalMetadataError(maybeError?: unknown) {
 }
 
 function buildHabitSelectColumns(includeGoalMetadata: boolean) {
-  const baseColumns =
-    "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, daylight_preference, window_edge_preference, location_context_id, next_due_override, window_id";
+  const baseColumns = [
+    "id",
+    "name",
+    "description",
+    "habit_type",
+    "recurrence",
+    "recurrence_days",
+    "recurrence_mode",
+    "anchor_type",
+    "anchor_value",
+    "anchor_start_date",
+    "duration_minutes",
+    "energy",
+    "routine_id",
+    "skill_id",
+    "window_id",
+    "daylight_preference",
+    "window_edge_preference",
+    "location_context_id",
+    "last_completed_at",
+    "next_due_override",
+    "created_at",
+    "updated_at",
+  ].join(", ");
 
   const columns = [
     baseColumns,
@@ -174,6 +213,55 @@ function formatDateTimeDisplay(value?: string | null) {
   }
 }
 
+function formatShortDate(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+    }).format(date);
+  } catch {
+    return date.toDateString();
+  }
+}
+
+function formatOrdinal(value: number) {
+  const remainder = value % 100;
+  if (remainder >= 11 && remainder <= 13) {
+    return `${value}th`;
+  }
+  const suffixes = ["th", "st", "nd", "rd"];
+  const suffix = suffixes[value % 10] ?? "th";
+  return `${value}${suffix}`;
+}
+
+const ANCHOR_TYPE_OPTIONS: { value: AnchorType; label: string }[] = [
+  { value: "DATE", label: "Date" },
+  { value: "DAY", label: "Day of week" },
+];
+
+const DATE_ANCHOR_OPTIONS = Array.from({ length: 31 }, (_, index) => {
+  const day = index + 1;
+  return {
+    value: String(day),
+    label: formatOrdinal(day),
+  };
+});
+
+const DAY_ANCHOR_OPTIONS = [
+  { value: "SUNDAY", label: "Sunday" },
+  { value: "MONDAY", label: "Monday" },
+  { value: "TUESDAY", label: "Tuesday" },
+  { value: "WEDNESDAY", label: "Wednesday" },
+  { value: "THURSDAY", label: "Thursday" },
+  { value: "FRIDAY", label: "Friday" },
+  { value: "SATURDAY", label: "Saturday" },
+];
+
 export function HabitEditSheet({
   open,
   habitId,
@@ -204,6 +292,12 @@ export function HabitEditSheet({
   );
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
+  const [recurrenceMode, setRecurrenceMode] = useState<"INTERVAL" | "ANCHORED">(
+    "INTERVAL"
+  );
+  const [anchorType, setAnchorType] = useState<AnchorType | "">("DATE");
+  const [anchorValue, setAnchorValue] = useState("");
+  const [anchorStartDate, setAnchorStartDate] = useState("");
   const [windowId, setWindowId] = useState<string>("none");
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
   const [routinesLoading, setRoutinesLoading] = useState(true);
@@ -225,15 +319,23 @@ export function HabitEditSheet({
   const [goalId, setGoalId] = useState<string>("none");
   const [goalMetadataSupported, setGoalMetadataSupported] = useState(true);
   const [completionTarget, setCompletionTarget] = useState("10");
+  const [lastCompletedAt, setLastCompletedAt] = useState<string | null>(null);
+  const [createdAt, setCreatedAt] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [habitLoading, setHabitLoading] = useState(false);
   const [habitLoadError, setHabitLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [nextDueOverrideInput, setNextDueOverrideInput] = useState("");
   const [nextDueOverrideOriginal, setNextDueOverrideOriginal] = useState<
     string | null
   >(null);
+  const [advancedResetKey, setAdvancedResetKey] = useState(0);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [habitWindowDays, setHabitWindowDays] = useState<number[] | null>(null);
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -253,6 +355,15 @@ export function HabitEditSheet({
     setLocationContextId(null);
     setDaylightPreference("ALL_DAY");
     setWindowEdgePreference("FRONT");
+    setRecurrenceMode("INTERVAL");
+    setAnchorType("DATE");
+    setAnchorValue("");
+    setAnchorStartDate("");
+    setLastCompletedAt(null);
+    setHabitWindowDays(null);
+    setAdvancedOpen(false);
+    setCreatedAt(null);
+    setUpdatedAt(null);
     setWindowId("none");
     setRoutineOptions([]);
     setRoutineLoadError(null);
@@ -283,6 +394,36 @@ export function HabitEditSheet({
       resetForm();
     }
   }, [open, resetForm]);
+
+  useEffect(() => {
+    if (!open) {
+      setDeleteConfirmOpen(false);
+      setDeleteError(null);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setAdvancedResetKey((prev) => prev + 1);
+  }, [open]);
+
+  useEffect(() => {
+    setAdvancedOpen(false);
+  }, [advancedResetKey]);
+
+  useEffect(() => {
+    if (recurrenceMode !== "ANCHORED") return;
+    const options =
+      anchorType === "DAY" ? DAY_ANCHOR_OPTIONS : DATE_ANCHOR_OPTIONS;
+    if (anchorValue && options.some((option) => option.value === anchorValue)) {
+      return;
+    }
+    if (options.length > 0) {
+      setAnchorValue(options[0].value);
+    } else {
+      setAnchorValue("");
+    }
+  }, [anchorType, anchorValue, recurrenceMode]);
 
   useEffect(() => {
     if (!open) return;
@@ -669,6 +810,13 @@ export function HabitEditSheet({
       return "local time";
     }
   }, []);
+  const localTimeZone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      return "UTC";
+    }
+  }, []);
 
   const nextDueOverridePreview = useMemo(() => {
     const isoValue = fromDateTimeLocalInput(nextDueOverrideInput);
@@ -676,9 +824,105 @@ export function HabitEditSheet({
   }, [nextDueOverrideInput]);
 
   const savedNextDueOverrideLabel = useMemo(
-    () => formatDateTimeDisplay(nextDueOverrideOriginal),
+    () => formatShortDate(nextDueOverrideOriginal),
     [nextDueOverrideOriginal]
   );
+  const computedNextDue = useMemo(() => {
+    if (!habitId) return null;
+    const recurrenceDaysValue =
+      recurrenceDays.length > 0 ? recurrenceDays : null;
+    const habitForDue: HabitScheduleItem = {
+      id: habitId,
+      name: name || "Untitled habit",
+      durationMinutes:
+        duration && Number.isFinite(Number(duration))
+          ? Number(duration)
+          : null,
+      createdAt,
+      updatedAt,
+      lastCompletedAt,
+      currentStreakDays: 0,
+      longestStreakDays: 0,
+      habitType,
+      windowId: windowId === "none" ? null : windowId,
+      energy,
+      recurrence,
+      recurrenceDays: recurrenceDaysValue,
+      recurrenceMode,
+      anchorType: anchorType || null,
+      anchorValue: anchorValue || null,
+      anchorStartDate: anchorStartDate || null,
+      skillId: skillId === "none" ? null : skillId,
+      skillMonumentId: null,
+      goalId: goalId === "none" ? null : goalId,
+      completionTarget:
+        completionTarget && Number.isFinite(Number(completionTarget))
+          ? Number(completionTarget)
+          : null,
+      locationContextId,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference,
+      windowEdgePreference,
+      nextDueOverride: nextDueOverrideOriginal,
+      window:
+        habitWindowDays && habitWindowDays.length > 0
+          ? {
+              id: windowId === "none" ? "" : windowId ?? "",
+              label: null,
+              energy: null,
+              startLocal: "00:00",
+              endLocal: "00:00",
+              days: habitWindowDays,
+              locationContextId: null,
+              locationContextValue: null,
+              locationContextName: null,
+            }
+          : null,
+    };
+    return getHabitNextDue({
+      habit: habitForDue,
+      timeZone: localTimeZone,
+      nextDueOverride: nextDueOverrideOriginal,
+    });
+  }, [
+    anchorStartDate,
+    anchorType,
+    anchorValue,
+    completionTarget,
+    createdAt,
+    duration,
+    energy,
+    goalId,
+    habitId,
+    habitWindowDays,
+    lastCompletedAt,
+    localTimeZone,
+    locationContextId,
+    name,
+    nextDueOverrideOriginal,
+    recurrence,
+    recurrenceDays,
+    recurrenceMode,
+    skillId,
+    windowEdgePreference,
+    windowId,
+    updatedAt,
+  ]);
+
+  const computedNextDueLabel = useMemo(
+    () =>
+      computedNextDue
+        ? formatShortDate(computedNextDue.toISOString())
+        : null,
+    [computedNextDue]
+  );
+  const nextDueSummaryLabel = nextDueOverrideOriginal
+    ? savedNextDueOverrideLabel
+    : computedNextDueLabel;
+  const summaryLastCompletedLabel =
+    formatShortDate(lastCompletedAt) ?? "NOT YET";
+  const summaryNextDueValue = nextDueSummaryLabel ?? "Not scheduled yet.";
 
   useEffect(() => {
     if (!open) return;
@@ -840,6 +1084,37 @@ export function HabitEditSheet({
               ? String(data.window_edge_preference).toUpperCase()
               : "FRONT"
           );
+          const normalizedMode = normalizeRecurrenceMode(
+            (typeof data.recurrence_mode === "string" ? data.recurrence_mode : null)
+          );
+          setRecurrenceMode(normalizedMode);
+          const parsedAnchorType = data.anchor_type
+            ? String(data.anchor_type).toUpperCase()
+            : "";
+          setAnchorType(
+            parsedAnchorType === "DATE" || parsedAnchorType === "DAY"
+              ? (parsedAnchorType as AnchorType)
+              : ""
+          );
+          setAnchorValue(
+            typeof data.anchor_value === "string" ||
+              typeof data.anchor_value === "number"
+              ? String(data.anchor_value)
+              : ""
+          );
+          setAnchorStartDate(
+            typeof data.anchor_start_date === "string"
+              ? data.anchor_start_date
+              : ""
+          );
+          setLastCompletedAt(
+            typeof data.last_completed_at === "string"
+              ? data.last_completed_at
+              : null
+          );
+          setHabitWindowDays(data.window?.days ?? null);
+          setCreatedAt(data.created_at ?? null);
+          setUpdatedAt(data.updated_at ?? null);
         }
       } catch (err) {
         console.error("Failed to load habit:", err);
@@ -920,7 +1195,7 @@ export function HabitEditSheet({
       </div>
 
       {routineId === "__create__" && (
-        <div className="grid gap-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="grid gap-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
           <div className="space-y-2">
             <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
               Routine name
@@ -1060,6 +1335,37 @@ export function HabitEditSheet({
           ? null
           : recurrence;
 
+        if (recurrenceMode === "ANCHORED") {
+          if (!anchorType) {
+            setError("Choose an anchor type for anchored recurrence.");
+            setSaving(false);
+            return;
+          }
+          if (!anchorValue) {
+            setError("Choose an anchor value for anchored recurrence.");
+            setSaving(false);
+            return;
+          }
+          if (!anchorStartDate) {
+            setError("Choose a start date for the anchor.");
+            setSaving(false);
+            return;
+          }
+          const parsedAnchorStart = new Date(anchorStartDate);
+          if (Number.isNaN(parsedAnchorStart.getTime())) {
+            setError("Choose a valid anchor start date.");
+            setSaving(false);
+            return;
+          }
+        }
+
+        const normalizedAnchorValue =
+          recurrenceMode === "ANCHORED" && anchorValue
+            ? anchorType === "DAY"
+              ? anchorValue.toUpperCase()
+              : anchorValue
+            : null;
+
         const basePayload: Record<string, unknown> = {
           name: name.trim(),
           description: trimmedDescription || null,
@@ -1076,6 +1382,11 @@ export function HabitEditSheet({
               : null,
           window_edge_preference: windowEdgePreference,
           window_id: resolvedWindowId,
+          recurrence_mode: recurrenceMode,
+          anchor_type: recurrenceMode === "ANCHORED" ? anchorType : null,
+          anchor_value: normalizedAnchorValue,
+          anchor_start_date:
+            recurrenceMode === "ANCHORED" ? anchorStartDate : null,
         };
 
         if (goalMetadataSupported) {
@@ -1165,28 +1476,39 @@ export function HabitEditSheet({
   );
 
   const handleDeleteInstance = useCallback(async () => {
-    if (!instance?.id) {
+    if (!habitId) {
+      setDeleteError("Habit ID unavailable.");
       return;
     }
     setIsDeleting(true);
     setError(null);
+    setDeleteError(null);
     try {
-      await updateInstanceStatus(instance.id, "canceled");
+      const response = await fetch(`/api/schedule/events/habit/${habitId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(
+          payload?.error ?? "Unable to delete this habit right now."
+        );
+      }
+      setDeleteConfirmOpen(false);
       if (onInstanceDeleted) {
         await onInstanceDeleted();
       }
       onClose();
     } catch (err) {
-      console.error("Failed to delete schedule instance:", err);
-      setError(
+      console.error("Failed to delete habit:", err);
+      setDeleteError(
         err instanceof Error
           ? err.message
-          : "Unable to delete this scheduled instance right now."
+          : "Unable to delete this habit right now."
       );
     } finally {
       setIsDeleting(false);
     }
-  }, [instance?.id, onClose, onInstanceDeleted]);
+  }, [habitId, onClose, onInstanceDeleted]);
 
   if (!habitId) {
     console.log("[HabitEditSheet] NO HABIT ID, returning null");
@@ -1204,221 +1526,436 @@ export function HabitEditSheet({
   });
 
   return (
-    <ScheduleMorphDialog
-      open={open}
-      title={eventTitle ?? "Habit"}
-      subtitle={timeRangeLabel}
-      typeLabel={eventTypeLabel ?? "Habit"}
-      onClose={onClose}
-      origin={origin}
-      layoutId={layoutId}
-    >
-      {habitLoading ? (
-        <div className="px-1 py-4 text-sm text-white/70">Loading…</div>
-      ) : habitLoadError ? (
-        <div className="space-y-3 px-1 py-4">
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-            {habitLoadError}
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            className="self-start text-white"
-            onClick={onClose}
-          >
-            Close
-          </Button>
-        </div>
-      ) : (
-        <>
-          {console.log("[HabitEditSheet] rendering form", {
-            habitLoading,
-            habitLoadError,
-            error,
-            disableSubmit,
-          })}
-          <form
-            onSubmit={handleSubmit}
-            onClick={(event) => {
-              const target = event.target as HTMLElement | null;
-              console.log("[HabitEditSheet] form click received", {
-                tagName: target?.tagName,
-                className: target?.className,
-              });
-            }}
-            className="flex flex-col gap-6 pb-4"
-          >
-          <div className="relative pb-2">
-            <button
+    <>
+      <ScheduleMorphDialog
+        open={open}
+        title={eventTitle ?? "Habit"}
+        subtitle={timeRangeLabel}
+        typeLabel={eventTypeLabel ?? "Habit"}
+        onClose={onClose}
+        origin={origin}
+        layoutId={layoutId}
+      >
+        {habitLoading ? (
+          <div className="px-1 py-4 text-sm text-white/70">Loading…</div>
+        ) : habitLoadError ? (
+          <div className="space-y-3 px-1 py-4">
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+              {habitLoadError}
+            </div>
+            <Button
               type="button"
+              variant="secondary"
+              className="self-start text-white"
               onClick={onClose}
-              className="absolute right-0 top-0 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
             >
-              <XIcon className="size-4" aria-hidden="true" />
-              <span className="sr-only">Close</span>
-            </button>
-            <div className="pr-10">
-              <h2 className="text-lg font-semibold text-white">Edit habit</h2>
-              <p className="mt-1 text-sm text-white/70">
-                Tune the cadence, energy, and advanced settings for this habit.
-              </p>
-            </div>
+              Close
+            </Button>
           </div>
-
-          <HabitFormFields
-            name={name}
-            description={description}
-            habitType={habitType}
-            recurrence={recurrence}
-            recurrenceDays={recurrenceDays}
-            duration={duration}
-            energy={energy}
-            skillId={skillId}
-            locationContextId={locationContextId}
-            daylightPreference={daylightPreference}
-            windowEdgePreference={windowEdgePreference}
-            windowId={windowId}
-            windowOptions={windowOptions}
-            windowsLoading={windowsLoading}
-            windowError={windowError}
-            energyOptions={energySelectOptions}
-            skillsLoading={skillsLoading}
-            skillOptions={skillSelectOptions}
-            skillCategories={skillCategories}
-            skillError={skillLoadError}
-            goalId={goalId}
-            goalOptions={goalSelectOptions}
-            goalError={goalMetadataSupported ? goalLoadError : null}
-            onGoalChange={setGoalId}
-            completionTarget={completionTarget}
-            onCompletionTargetChange={setCompletionTarget}
-            onNameChange={setName}
-            onDescriptionChange={setDescription}
-            onHabitTypeChange={setHabitType}
-            onRecurrenceChange={setRecurrence}
-            onRecurrenceDaysChange={setRecurrenceDays}
-            onEnergyChange={setEnergy}
-            onDurationChange={setDuration}
-            onSkillChange={setSkillId}
-            onLocationContextIdChange={setLocationContextId}
-            onDaylightPreferenceChange={(value) =>
-              setDaylightPreference(value.toUpperCase())
-            }
-            onWindowEdgePreferenceChange={(value) =>
-              setWindowEdgePreference(value.toUpperCase())
-            }
-            onWindowChange={setWindowId}
-            showDescriptionField={false}
-            footerSlot={routineFooter}
-          />
-
-          <div className="space-y-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">
-                  Next due date
-                </p>
-                <p className="text-sm text-white/70">
-                  Skip upcoming reminders until a date that works better.
-                </p>
+        ) : (
+          <>
+            {console.log("[HabitEditSheet] rendering form", {
+              habitLoading,
+              habitLoadError,
+              error,
+              disableSubmit,
+            })}
+            <form
+              onSubmit={handleSubmit}
+              onClick={(event) => {
+                const target = event.target as HTMLElement | null;
+                console.log("[HabitEditSheet] form click received", {
+                  tagName: target?.tagName,
+                  className: target?.className,
+                });
+              }}
+              className="flex flex-col gap-4 pb-4"
+            >
+              <div className="relative pb-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="absolute right-0 top-0 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
+                >
+                  <X className="size-4" aria-hidden="true" />
+                  <span className="sr-only">Close</span>
+                </button>
               </div>
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.3em]",
-                  nextDueOverrideInput
-                    ? "border border-amber-400/40 text-amber-200"
-                    : "border border-white/15 text-white/60"
-                )}
-              >
-                {nextDueOverrideInput ? "Custom" : "Automatic"}
-              </span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                  Resume on
-                </Label>
-                <Input
-                  type="datetime-local"
-                  value={nextDueOverrideInput}
-                  onChange={(event) =>
-                    setNextDueOverrideInput(event.target.value)
-                  }
-                  className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
-                />
-              </div>
-              {nextDueOverrideInput ? (
+
+              <HabitFormFields
+                name={name}
+                description={description}
+                habitType={habitType}
+                recurrence={recurrence}
+                recurrenceDays={recurrenceDays}
+                duration={duration}
+                energy={energy}
+                skillId={skillId}
+                locationContextId={locationContextId}
+                daylightPreference={daylightPreference}
+                windowEdgePreference={windowEdgePreference}
+                windowId={windowId}
+                windowOptions={windowOptions}
+                windowsLoading={windowsLoading}
+                windowError={windowError}
+                energyOptions={energySelectOptions}
+                skillsLoading={skillsLoading}
+                skillOptions={skillSelectOptions}
+                skillCategories={skillCategories}
+                skillError={skillLoadError}
+                goalId={goalId}
+                goalOptions={goalSelectOptions}
+                goalError={goalMetadataSupported ? goalLoadError : null}
+                onGoalChange={setGoalId}
+                completionTarget={completionTarget}
+                onCompletionTargetChange={setCompletionTarget}
+                onNameChange={setName}
+                onDescriptionChange={setDescription}
+                onHabitTypeChange={setHabitType}
+                onRecurrenceChange={setRecurrence}
+                onRecurrenceDaysChange={setRecurrenceDays}
+                onEnergyChange={setEnergy}
+                onDurationChange={setDuration}
+                onSkillChange={setSkillId}
+                onLocationContextIdChange={setLocationContextId}
+                onDaylightPreferenceChange={(value) =>
+                  setDaylightPreference(value.toUpperCase())
+                }
+                onWindowEdgePreferenceChange={(value) =>
+                  setWindowEdgePreference(value.toUpperCase())
+                }
+                onWindowChange={setWindowId}
+                showDescriptionField={false}
+                footerSlot={routineFooter}
+                advancedResetKey={advancedResetKey}
+              />
+
+              <div className="space-y-3">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setNextDueOverrideInput("")}
-                  className="h-11 border-white/30 text-white hover:bg-white/10"
+                  onClick={() => setAdvancedOpen((prev) => !prev)}
+                  className="h-10 w-full rounded-xl border-white/15 bg-white/[0.03] text-xs font-semibold uppercase tracking-[0.2em] text-white/80 hover:border-white/30 hover:bg-white/[0.07]"
                 >
-                  Clear date
+                  {advancedOpen ? "Hide advanced options" : "Show advanced options"}
                 </Button>
-              ) : null}
-            </div>
-            <div className="space-y-1 text-xs text-white/60">
-              <p>Times use {localTimeZoneLabel}.</p>
-              {nextDueOverridePreview ? (
-                <p className="text-white/80">
-                  Next run will resume on {nextDueOverridePreview}.
-                </p>
-              ) : savedNextDueOverrideLabel ? (
-                <p className="text-amber-200">
-                  Currently deferred until {savedNextDueOverrideLabel}.
-                </p>
-              ) : (
-                <p>
-                  Leave blank to let the scheduler follow the regular cadence.
-                </p>
-              )}
-            </div>
-          </div>
+                {advancedOpen ? (
+                  <div className={`${FAB_SECTION_CARD_CLASS} space-y-6`}>
+                    <div className="space-y-2">
+                      <p className={FAB_SECTION_HEADING_TEXT_CLASS}>
+                        Advanced scheduling
+                      </p>
+                      <p className={FAB_FIELD_HELP_TEXT_CLASS}>
+                        Last completed + next due follow the cadence below.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
+                          Last completed
+                        </p>
+                        <p className="text-sm text-white/80">
+                          {summaryLastCompletedLabel}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
+                            Next due
+                          </p>
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.3em]",
+                              nextDueOverrideOriginal
+                                ? "border border-amber-400/40 text-amber-200"
+                                : "border border-white/15 text-white/60"
+                            )}
+                          >
+                            {nextDueOverrideOriginal ? "Custom" : "Automatic"}
+                          </span>
+                        </div>
+                        <p className="text-sm text-white/80">
+                          {summaryNextDueValue}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className={FAB_FIELD_LABEL_CLASS}>
+                        Recurrence mode
+                      </Label>
+                      <div className="flex flex-wrap gap-2">
+                        {["INTERVAL", "ANCHORED"].map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            className={cn(
+                              "h-10 rounded-xl border px-3 text-xs font-semibold uppercase tracking-[0.3em]",
+                              recurrenceMode === mode
+                                ? "border-blue-400/80 bg-white text-zinc-900"
+                                : "border-white/15 text-white/70"
+                            )}
+                            onClick={() =>
+                              setRecurrenceMode(
+                                mode as "INTERVAL" | "ANCHORED"
+                              )
+                            }
+                          >
+                            {mode}
+                          </button>
+                        ))}
+                      </div>
+                      <p className={FAB_FIELD_HELP_TEXT_CLASS}>
+                        {recurrenceMode === "ANCHORED"
+                          ? "Anchored habits follow the fixed anchor even when you complete late."
+                          : "Interval habits progress relative to your most recent completion."}
+                      </p>
+                    </div>
+                    {recurrenceMode === "ANCHORED" ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+                          <div className="space-y-2">
+                            <Label className={FAB_FIELD_LABEL_CLASS}>
+                              Anchor type
+                            </Label>
+                            <Select
+                              value={anchorType || ""}
+                              onValueChange={(value) =>
+                                setAnchorType(
+                                  value === "DATE" || value === "DAY"
+                                    ? (value as AnchorType)
+                                    : ""
+                                )
+                              }
+                            >
+                              <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
+                                <SelectValue placeholder="Choose anchor type" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-[#0b101b] text-sm text-white">
+                                {ANCHOR_TYPE_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className={FAB_FIELD_LABEL_CLASS}>Anchor</Label>
+                            <Select
+                              value={anchorValue}
+                              onValueChange={(value) => setAnchorValue(value)}
+                            >
+                              <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
+                                <SelectValue placeholder="Choose anchor" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-[#0b101b] text-sm text-white">
+                                {(anchorType === "DAY"
+                                  ? DAY_ANCHOR_OPTIONS
+                                  : DATE_ANCHOR_OPTIONS
+                                ).map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className={FAB_FIELD_LABEL_CLASS}>
+                            Anchor start date
+                          </Label>
+                          <Input
+                            type="date"
+                            value={anchorStartDate}
+                            onChange={(event) =>
+                              setAnchorStartDate(event.target.value)
+                            }
+                            className={FAB_FIELD_CONTROL_CLASS}
+                          />
+                        </div>
+                        <p className={FAB_FIELD_HELP_TEXT_CLASS}>
+                          The date your anchored cadence begins from.
+                        </p>
+                      </div>
+                    ) : null}
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className={FAB_SECTION_HEADING_TEXT_CLASS}>
+                            Next due date
+                          </p>
+                          <p className={FAB_FIELD_HELP_TEXT_CLASS}>
+                            Skip upcoming reminders until a date that works better.
+                          </p>
+                        </div>
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.3em]",
+                            nextDueOverrideInput
+                              ? "border border-amber-400/40 text-amber-200"
+                              : "border border-white/15 text-white/60"
+                          )}
+                        >
+                          {nextDueOverrideInput ? "Custom" : "Automatic"}
+                        </span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                        <div className="space-y-2">
+                          <Label className={FAB_FIELD_LABEL_CLASS}>Resume on</Label>
+                          <Input
+                            type="datetime-local"
+                            value={nextDueOverrideInput}
+                            onChange={(event) =>
+                              setNextDueOverrideInput(event.target.value)
+                            }
+                            className={FAB_FIELD_CONTROL_CLASS}
+                          />
+                        </div>
+                        {nextDueOverrideInput ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setNextDueOverrideInput("")}
+                            className="h-10 border-white/30 text-sm text-white hover:bg-white/10"
+                          >
+                            Clear date
+                          </Button>
+                        ) : null}
+                      </div>
+                      <div
+                        className={cn(FAB_SECTION_HELP_TEXT_SMALL_CLASS, "space-y-0.5")}
+                      >
+                        <p>Times use {localTimeZoneLabel}.</p>
+                        {nextDueOverridePreview ? (
+                          <p className="text-white/80">
+                            Next run will resume on {nextDueOverridePreview}.
+                          </p>
+                        ) : savedNextDueOverrideLabel ? (
+                          <p className="text-amber-200">
+                            Currently deferred until {savedNextDueOverrideLabel}.
+                          </p>
+                        ) : (
+                          <p>
+                            Leave blank to let the scheduler follow the regular cadence.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
 
-          {error ? (
-            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-              {error}
-            </div>
-          ) : null}
-
-          <div className="flex flex-col-reverse gap-3 pb-2 sm:flex-row sm:justify-end">
-            {instance ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="border-red-500/60 text-red-200 hover:bg-red-500/10"
-                onClick={handleDeleteInstance}
-                disabled={
-                  isDeleting || saving || habitLoading || skillsLoading
-                }
-              >
-                {isDeleting ? "Deleting…" : "Delete instance"}
-              </Button>
+            {error ? (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                {error}
+              </div>
             ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
-              onClick={onClose}
-              disabled={saving || isDeleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className={cn(
-                "bg-white text-zinc-900 hover:bg-white/90",
-                disableSubmit && "opacity-50"
+
+            <div className="space-y-2 pb-1">
+              {instance ? (
+                <div className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
+                  <Button
+                    type="button"
+                    className="h-10 w-full rounded-xl bg-gradient-to-b from-[#7a1f2a] to-[#4b0f18] px-3 text-sm font-semibold text-white shadow-inner transition hover:from-[#8f2633] hover:to-[#5a121e]"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleteConfirmOpen(true);
+                    }}
+                    disabled={
+                      isDeleting || saving || habitLoading || skillsLoading
+                    }
+                  >
+                    {isDeleting ? "Deleting…" : "Delete habit"}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={onClose}
+                    disabled={saving || isDeleting}
+                    className={cn(FAB_BUTTON_ACTION_CLASS, "w-full")}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={onClose}
+                  disabled={saving || isDeleting}
+                  className={cn(FAB_BUTTON_ACTION_CLASS, "w-full")}
+                >
+                  Cancel
+                </Button>
               )}
-              disabled={disableSubmit || isDeleting}
-            >
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-          </div>
-          </form>
-        </>
-      )}
-    </ScheduleMorphDialog>
+              <div className="flex justify-end gap-3">
+                <Button
+                  type="submit"
+                  className={cn(
+                    "h-10 rounded-xl bg-white px-3 text-sm text-zinc-900 hover:bg-white/90",
+                    disableSubmit && "opacity-50"
+                  )}
+                  disabled={disableSubmit || isDeleting}
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
+            </div>
+            </form>
+          </>
+        )}
+      </ScheduleMorphDialog>
+      <Dialog.Root
+        open={deleteConfirmOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setDeleteError(null);
+          }
+          setDeleteConfirmOpen(nextOpen);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[250] bg-black/80 backdrop-blur-sm" />
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 z-[260] w-[min(90vw,440px)] max-w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-[#05070c] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          >
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Dialog.Title className="text-lg font-semibold text-white">
+                  ARE YOU SURE?
+                </Dialog.Title>
+                <Dialog.Description className="text-sm text-white/70">
+                  Deleting this habit removes the entire habit record and ALL
+                  scheduled instances permanently.
+                </Dialog.Description>
+              </div>
+              {deleteError ? (
+                <p className="text-sm text-rose-400">{deleteError}</p>
+              ) : null}
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setDeleteConfirmOpen(false);
+                    setDeleteError(null);
+                  }}
+                  className="h-10 w-full rounded-xl border-white/20 text-sm text-white/80 hover:bg-white/10"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleDeleteInstance}
+                  disabled={isDeleting}
+                  className="h-10 w-full rounded-xl bg-gradient-to-b from-[#7a1f2a] to-[#4b0f18] px-3 text-sm font-semibold text-white shadow-inner transition hover:from-[#8f2633] hover:to-[#5a121e]"
+                >
+                  {isDeleting ? "Deleting…" : "Delete habit"}
+                </Button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </>
   );
 }
