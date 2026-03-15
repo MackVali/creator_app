@@ -2030,6 +2030,42 @@ export async function scheduleBacklog(
 
   const queue: QueueItem[] = [];
   const baseStart = startOfDayInTimeZone(baseDate, timeZone);
+  const baseStartMs = baseStart.getTime();
+  const futureOverridePauses: Array<{
+    habitId: string;
+    overrideStart: Date;
+  }> = [];
+  for (const habit of habits) {
+    const overrideDate = parseNextDueOverride(habit.nextDueOverride);
+    if (!overrideDate) continue;
+    const overrideStart = startOfDayInTimeZone(overrideDate, timeZone);
+    if (overrideStart.getTime() <= baseStartMs) continue;
+    futureOverridePauses.push({ habitId: habit.id, overrideStart });
+  }
+  if (futureOverridePauses.length > 0) {
+    for (const { habitId, overrideStart } of futureOverridePauses) {
+      const { error } = await supabase
+        .from("schedule_instances")
+        .update({
+          status: "canceled",
+          canceled_reason: "NEXT_DUE_OVERRIDE",
+        })
+        .eq("user_id", userId)
+        .eq("source_type", "HABIT")
+        .eq("source_id", habitId)
+        .eq("status", "scheduled")
+        .lt("start_utc", overrideStart.toISOString());
+      if (error) {
+        result.failures.push({
+          itemId: habitId,
+          reason: "error",
+          detail: error,
+        });
+      } else {
+        canceledHabitIds.push(habitId);
+      }
+    }
+  }
   if (debugEnabled) {
     placementDebugCollector = new SchedulerPlacementDebugCollector(
       timeZone,

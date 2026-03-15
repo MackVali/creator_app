@@ -237,7 +237,7 @@ export function DayType24hPreview({
                   "absolute inset-x-3 rounded-md shadow-[0_14px_38px_rgba(0,0,0,0.35)] transition focus-visible:outline-none",
                   onSelect ? "cursor-pointer" : "",
                   isSelected
-                    ? "border border-white/40 bg-white/10 text-white shadow-[0_24px_48px_rgba(255,255,255,0.1)]"
+                    ? "border border-transparent bg-zinc-400/15 text-zinc-100"
                     : segment.overlapped
                       ? "border border-red-400/70 bg-red-500/25"
                       : isConstrained

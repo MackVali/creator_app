@@ -26,6 +26,18 @@ import {
   ensureEveryXDaysInterval,
   resolveEveryXDaysInterval,
 } from "@/lib/recurrence";
+import {
+  FAB_FIELD_CONTROL_CLASS,
+  FAB_FIELD_HELP_TEXT_CLASS,
+  FAB_FIELD_LABEL_CLASS,
+  FAB_FIELD_SELECT_CLASS,
+  FAB_FIELD_TEXTAREA_CLASS,
+  FAB_SECTION_CARD_CLASS,
+  FAB_SECTION_HEADING_TEXT_CLASS,
+  FAB_SECTION_HELP_TEXT_SMALL_CLASS,
+  FAB_SECTION_INSET_CLASS,
+  FAB_SELECT_SEARCH_INPUT_CLASS,
+} from "@/components/ui/fab-form-classes";
 
 export type HabitTypeOption = {
   label: string;
@@ -179,6 +191,7 @@ interface HabitFormFieldsProps {
   typeOptions?: HabitTypeOption[];
   recurrenceOptions?: HabitRecurrenceOption[];
   footerSlot?: ReactNode;
+  advancedResetKey?: number;
   showDescriptionField?: boolean;
 }
 
@@ -187,6 +200,43 @@ const DAYLIGHT_OPTIONS = [
   { value: "DAY", label: "Daytime" },
   { value: "NIGHT", label: "Night" },
 ];
+
+const DAY_ABBREVIATIONS = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+
+const getDayAbbreviation = (day: number) => {
+  const normalized = Math.max(0, Math.min(6, day));
+  return DAY_ABBREVIATIONS[normalized];
+};
+
+interface PreferredWindowDayPillClusterProps {
+  days?: number[] | null;
+  className?: string;
+}
+
+function PreferredWindowDayPillCluster({
+  days,
+  className,
+}: PreferredWindowDayPillClusterProps) {
+  if (!days || days.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={cn("flex flex-wrap gap-1", className)}>
+      {days.map((day) => {
+        const abbreviation = getDayAbbreviation(day);
+        return (
+          <span
+            key={`window-day-${day}-${abbreviation}`}
+            className="rounded-full border border-white/15 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/70"
+          >
+            {abbreviation}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 const WINDOW_EDGE_OPTIONS = [
   { value: "FRONT", label: "Front" },
@@ -240,6 +290,7 @@ export function HabitFormFields({
   typeOptions = HABIT_TYPE_OPTIONS,
   recurrenceOptions = HABIT_RECURRENCE_OPTIONS,
   footerSlot,
+  advancedResetKey,
   showDescriptionField = true,
 }: HabitFormFieldsProps) {
   const normalizedRecurrence = recurrence.toLowerCase().trim();
@@ -282,19 +333,13 @@ export function HabitFormFields({
     : goalSelectOptions[0]?.value ?? "none";
 
   const [skillSearchQuery, setSkillSearchQuery] = useState("");
-  const [advancedOpen, setAdvancedOpen] = useState(() => {
-    const hasLocation = Boolean(locationContextId);
-    const daylightUpper = (daylightPreference ?? "ALL_DAY").toUpperCase();
-    const hasDaylight = daylightUpper === "DAY" || daylightUpper === "NIGHT";
-    const edgeUpper = (windowEdgePreference ?? "FRONT").toUpperCase();
-    const usesBackEdge = edgeUpper === "BACK";
-    return hasLocation || hasDaylight || usesBackEdge;
-  });
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [customLocationName, setCustomLocationName] = useState("");
   const [customLocationError, setCustomLocationError] = useState<string | null>(
     null
   );
   const [savingCustomLocation, setSavingCustomLocation] = useState(false);
+  const [showAddLocationControls, setShowAddLocationControls] = useState(false);
 
   const {
     options: locationOptions,
@@ -306,6 +351,19 @@ export function HabitFormFields({
   useEffect(() => {
     setSkillSearchQuery("");
   }, [skillId, skillsLoading, skillOptions]);
+
+  useEffect(() => {
+    if (typeof advancedResetKey === "undefined") {
+      return;
+    }
+    setAdvancedOpen(false);
+    setShowAddLocationControls(false);
+  }, [advancedResetKey]);
+  useEffect(() => {
+    if (!advancedOpen) {
+      setShowAddLocationControls(false);
+    }
+  }, [advancedOpen]);
 
   const filteredSkillOptions = useMemo(() => {
     const query = skillSearchQuery.trim().toLowerCase();
@@ -415,25 +473,37 @@ export function HabitFormFields({
     });
   }, [windowOptions, normalizedHabitType]);
 
-  const normalizedWindowId =
-    typeof windowId === "string" && windowId.trim().length > 0
-      ? windowId
-      : "none";
-  const hasWindowSelection =
-    normalizedWindowId !== "none" &&
-    filteredWindowOptions.some((option) => option.id === normalizedWindowId);
-  const resolvedWindowOptions: HabitWindowSelectOption[] = hasWindowSelection
-    ? filteredWindowOptions
-    : normalizedWindowId !== "none"
-    ? [
-        ...filteredWindowOptions,
-        {
-          id: normalizedWindowId,
-          label: "Selected window (incompatible)",
-          kind: "DEFAULT" as HabitWindowKind,
-        },
-      ]
-    : filteredWindowOptions;
+const normalizedWindowId =
+  typeof windowId === "string" && windowId.trim().length > 0
+    ? windowId
+    : "none";
+const hasWindowSelection =
+  normalizedWindowId !== "none" &&
+  filteredWindowOptions.some((option) => option.id === normalizedWindowId);
+const resolvedWindowOptions: HabitWindowSelectOption[] = hasWindowSelection
+  ? filteredWindowOptions
+  : normalizedWindowId !== "none"
+  ? [
+      ...filteredWindowOptions,
+      {
+        id: normalizedWindowId,
+        label: "Selected window (incompatible)",
+        kind: "DEFAULT" as HabitWindowKind,
+        name: "Selected window (incompatible)",
+        timeLabel: "",
+        days: null,
+      },
+    ]
+  : filteredWindowOptions;
+const selectedWindowOption = useMemo(() => {
+  if (normalizedWindowId === "none") {
+    return null;
+  }
+  return (
+    resolvedWindowOptions.find((option) => option.id === normalizedWindowId) ??
+    null
+  );
+}, [normalizedWindowId, resolvedWindowOptions]);
 
   const handleAddCustomLocation = async () => {
     const name = customLocationName;
@@ -467,28 +537,71 @@ export function HabitFormFields({
 
   return (
     <div className="space-y-8">
-      <div className="space-y-3">
-        <Label
-          htmlFor="habit-name"
-          className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
-        >
-          Habit name
-        </Label>
-        <Input
-          id="habit-name"
-          value={name}
-          onChange={(event) => onNameChange(event.target.value)}
-          placeholder="Name your HABIT"
-          required
-          className="h-14 rounded-lg !border-white/10 bg-white/[0.05] text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
-        />
+      <div
+        className={cn(
+          "grid gap-4 sm:gap-6",
+          !isPracticeHabit
+            ? "grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
+            : "grid-cols-1"
+        )}
+      >
+        <div className="space-y-3 min-w-0">
+          <Label
+            htmlFor="habit-name"
+            className={FAB_FIELD_LABEL_CLASS}
+          >
+            Habit name
+          </Label>
+          <Input
+            id="habit-name"
+            value={name}
+            onChange={(event) => onNameChange(event.target.value)}
+            placeholder="Name your HABIT"
+            required
+            className={FAB_FIELD_CONTROL_CLASS}
+          />
+        </div>
+        {!isPracticeHabit ? (
+          <div className="space-y-3 min-w-0">
+            <Label className={FAB_FIELD_LABEL_CLASS}>Energy</Label>
+            <Select
+              value={energy}
+              onValueChange={onEnergyChange}
+              triggerClassName="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white flex items-center justify-center"
+              hideChevron
+              trigger={
+                <div className="flex h-full w-full items-center justify-center">
+                  {energy ? (
+                    <FlameEmber
+                      level={energy as FlameLevel}
+                      size="md"
+                      className="-translate-y-[3px]"
+                    />
+                  ) : (
+                    <span className="text-zinc-400">Energy</span>
+                  )}
+                </div>
+              }
+            >
+              <SelectContent>
+                {energyOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    <div className="flex items-center justify-center py-2">
+                      <FlameEmber level={option.value as FlameLevel} size="md" />
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
       </div>
 
       {showDescriptionField ? (
         <div className="space-y-3">
           <Label
             htmlFor="habit-description"
-            className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
+            className={FAB_FIELD_LABEL_CLASS}
           >
             Description
           </Label>
@@ -497,24 +610,17 @@ export function HabitFormFields({
             value={description}
             onChange={(event) => onDescriptionChange(event.target.value)}
             placeholder="Add any notes that will keep you accountable."
-            className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+            className={FAB_FIELD_TEXTAREA_CLASS}
           />
         </div>
       ) : null}
 
       <div className="space-y-6">
-        <div
-          className={cn(
-            "grid gap-4 sm:gap-6 max-[360px]:grid-cols-1",
-            !isPracticeHabit ? "grid-cols-2" : "grid-cols-1"
-          )}
-        >
-          <div className="space-y-3">
-            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-              Type
-            </Label>
+        <div className="grid gap-3 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="space-y-3 min-w-0">
+            <Label className={FAB_FIELD_LABEL_CLASS}>Type</Label>
             <Select value={habitType} onValueChange={onHabitTypeChange}>
-              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+              <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
                 <SelectValue placeholder="Choose a type" />
               </SelectTrigger>
               <SelectContent className="bg-[#0b101b] text-sm text-white">
@@ -527,64 +633,84 @@ export function HabitFormFields({
             </Select>
           </div>
 
-          {!isPracticeHabit ? (
-            <div className="space-y-3">
-              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                Recurrence
-              </Label>
-              <Select value={recurrence} onValueChange={onRecurrenceChange}>
-                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                  <SelectValue placeholder="How often will you do this?" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#0b101b] text-sm text-white">
-                  {recurrenceOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {showRecurrenceIntervalInput ? (
-                <div className="space-y-2">
-                  <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                    Interval (days)
-                  </Label>
-                  <div className="flex items-center gap-3">
-                    <Input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={everyXDaysInterval}
-                      onChange={(event) => {
-                        const normalizedValue =
-                          ensureEveryXDaysInterval(event.target.value) ??
-                          DEFAULT_EVERY_X_DAYS_INTERVAL;
-                        onRecurrenceDaysChange([normalizedValue]);
-                      }}
-                      className="h-11 w-32 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
-                    />
-                    <span className="text-xs uppercase tracking-[0.3em] text-white/60">
-                      days between completions
-                    </span>
+          <div className="space-y-3 min-w-0">
+            <Label className={FAB_FIELD_LABEL_CLASS}>Recurrence</Label>
+            {!isPracticeHabit ? (
+              <>
+                <Select value={recurrence} onValueChange={onRecurrenceChange}>
+                  <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
+                    <SelectValue placeholder="How often will you do this?" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0b101b] text-sm text-white">
+                    {recurrenceOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {showRecurrenceIntervalInput ? (
+                  <div className="space-y-2">
+                    <Label className={FAB_FIELD_LABEL_CLASS}>
+                      Interval (days)
+                    </Label>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={everyXDaysInterval}
+                        onChange={(event) => {
+                          const normalizedValue =
+                            ensureEveryXDaysInterval(event.target.value) ??
+                            DEFAULT_EVERY_X_DAYS_INTERVAL;
+                          onRecurrenceDaysChange([normalizedValue]);
+                        }}
+                        className={cn(FAB_FIELD_CONTROL_CLASS, "w-32")}
+                      />
+                      <span className="text-xs uppercase tracking-[0.3em] text-white/60">
+                        days between completions
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+                ) : null}
+              </>
+            ) : (
+              <p className="text-xs uppercase tracking-[0.3em] text-white/60">
+                Practice habits always use no cadence.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-3 min-w-0">
+            <Label htmlFor="habit-duration" className={FAB_FIELD_LABEL_CLASS}>
+              Duration
+            </Label>
+            <Input
+              id="habit-duration"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              step={1}
+              value={duration}
+              onChange={(event) => onDurationChange(event.target.value)}
+              placeholder="x minutes"
+              required
+              className={FAB_FIELD_CONTROL_CLASS}
+            />
+          </div>
         </div>
 
         {isTempHabit ? (
-          <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
-            <div className="space-y-3">
-              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                Goal
-              </Label>
+          <div className={cn(FAB_SECTION_INSET_CLASS, "space-y-4 sm:p-4")}>
+            <div className="space-y-2">
+              <Label className={FAB_FIELD_LABEL_CLASS}>Goal</Label>
               <Select
                 value={resolvedGoalValue}
                 onValueChange={(value) => onGoalChange?.(value)}
                 disabled={goalSelectDisabled}
               >
-                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
                   <SelectValue placeholder="Choose a goal" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#0b101b] text-sm text-white">
@@ -611,10 +737,8 @@ export function HabitFormFields({
               ) : null}
             </div>
 
-            <div className="space-y-3">
-              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                Completions
-              </Label>
+            <div className="space-y-2">
+              <Label className={FAB_FIELD_LABEL_CLASS}>Completions</Label>
               <Input
                 type="number"
                 min={1}
@@ -624,9 +748,9 @@ export function HabitFormFields({
                   onCompletionTargetChange?.(event.target.value)
                 }
                 placeholder="How many completions finish this habit?"
-                className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+                className={FAB_FIELD_CONTROL_CLASS}
               />
-              <p className="text-xs text-white/60">
+              <p className={FAB_SECTION_HELP_TEXT_SMALL_CLASS}>
                 Once you log this many completions, the temporary habit will
                 wrap up.
               </p>
@@ -636,20 +760,20 @@ export function HabitFormFields({
 
         <div
           className={cn(
-            "grid gap-4 sm:gap-6 max-[360px]:grid-cols-1",
-            !isPracticeHabit ? "grid-cols-2" : "grid-cols-1"
+            "grid gap-3",
+            footerSlot
+              ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+              : "grid-cols-1"
           )}
         >
-          <div className="space-y-3">
-            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-              Skill focus
-            </Label>
+          <div className="space-y-3 min-w-0">
+            <Label className={FAB_FIELD_LABEL_CLASS}>Skill focus</Label>
             <Select
               value={skillId}
               onValueChange={onSkillChange}
               disabled={skillsLoading && skillOptions.length <= 1}
             >
-              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+              <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
                 <SelectValue placeholder="Choose the skill this habit grows" />
               </SelectTrigger>
               <SelectContent className="bg-[#0b101b] text-sm text-white">
@@ -660,7 +784,7 @@ export function HabitFormFields({
                       setSkillSearchQuery(event.target.value)
                     }
                     placeholder="Search skills..."
-                    className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                    className={FAB_SELECT_SEARCH_INPUT_CLASS}
                   />
                 </div>
                 {specialSkillOptions.map((option) => (
@@ -688,7 +812,7 @@ export function HabitFormFields({
                         index === 0 ? "pt-0" : ""
                       )}
                     >
-                      <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+                      <p className={FAB_SECTION_HEADING_TEXT_CLASS}>
                         {group.label}
                       </p>
                       <div className="grid gap-1">
@@ -714,100 +838,32 @@ export function HabitFormFields({
             {skillError ? (
               <p className="text-xs text-red-300">{skillError}</p>
             ) : null}
-          </div>
 
-          {isPracticeHabit ? (
-            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 text-sm text-white">
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-white/60">
-                Practice context
-              </p>
-              {selectedSkillOption?.monumentId ? (
-                <div className="mt-2 flex items-center gap-2 text-sm">
-                  {selectedSkillOption.monumentEmoji ? (
-                    <span>{selectedSkillOption.monumentEmoji}</span>
-                  ) : null}
-                  <span>
-                    {selectedSkillOption.monumentLabel ?? "Linked monument"}
-                  </span>
-                </div>
-              ) : (
-                <p className="mt-2 text-xs text-white/60">
-                  Link this skill to a monument to anchor practice blocks to a
-                  context.
-                </p>
-              )}
-            </div>
-          ) : null}
-
-          {!isPracticeHabit ? (
-            <div className="space-y-3">
-              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                Energy
-              </Label>
-              <Select
-                value={energy}
-                onValueChange={onEnergyChange}
-                triggerClassName="!h-14 !items-center !justify-center rounded-lg border-white/15 bg-white/[0.06] !overflow-visible"
-                hideChevron
-                trigger={
-                  <div className="flex h-full w-full items-center justify-center leading-none">
-                    {energy ? (
-                      <FlameEmber
-                        level={energy as FlameLevel}
-                        size="md"
-                        className="-translate-y-[3px]"
-                      />
-                    ) : (
-                      <span className="text-zinc-400">Energy</span>
-                    )}
+            {isPracticeHabit ? (
+              <div className={`${FAB_SECTION_INSET_CLASS} text-sm text-white`}>
+                <p className={FAB_SECTION_HEADING_TEXT_CLASS}>Practice context</p>
+                {selectedSkillOption?.monumentId ? (
+                  <div className="mt-2 flex items-center gap-2 text-sm">
+                    {selectedSkillOption.monumentEmoji ? (
+                      <span>{selectedSkillOption.monumentEmoji}</span>
+                    ) : null}
+                    <span>
+                      {selectedSkillOption.monumentLabel ?? "Linked monument"}
+                    </span>
                   </div>
-                }
-              >
-                <SelectContent>
-                  {energyOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      <div className="flex items-center justify-center py-2">
-                        <FlameEmber
-                          level={option.value as FlameLevel}
-                          size="md"
-                        />
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : null}
-        </div>
-
-        <div
-          className={
-            footerSlot
-              ? "grid grid-cols-2 gap-4 sm:gap-6 max-[360px]:grid-cols-1"
-              : "space-y-3"
-          }
-        >
-          <div className="space-y-3">
-            <Label
-              htmlFor="habit-duration"
-              className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
-            >
-              Duration
-            </Label>
-            <Input
-              id="habit-duration"
-              type="number"
-              inputMode="numeric"
-              min={1}
-              step={1}
-              value={duration}
-              onChange={(event) => onDurationChange(event.target.value)}
-              placeholder="x minutes"
-              required
-              className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
-            />
+                ) : (
+                  <p className={cn("mt-2", FAB_SECTION_HELP_TEXT_SMALL_CLASS)}>
+                    Link this skill to a monument to anchor practice blocks to a
+                    context.
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
-          {footerSlot ? <div className="space-y-3">{footerSlot}</div> : null}
+
+          {footerSlot ? (
+            <div className="space-y-3 min-w-0">{footerSlot}</div>
+          ) : null}
         </div>
       </div>
 
@@ -822,11 +878,9 @@ export function HabitFormFields({
         </Button>
 
         {advancedOpen ? (
-          <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
-            <div className="space-y-3">
-              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                Location context
-              </Label>
+          <div className={`${FAB_SECTION_CARD_CLASS} space-y-4 sm:p-4`}>
+            <div className="space-y-2">
+              <Label className={FAB_FIELD_LABEL_CLASS}>Location context</Label>
               <Select
                 value={locationValue}
                 onValueChange={(value) => {
@@ -845,7 +899,7 @@ export function HabitFormFields({
                 }}
                 disabled={locationOptionsLoading}
               >
-                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
                   <SelectValue placeholder="Where does this habit happen?" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#0b101b] text-sm text-white">
@@ -859,69 +913,99 @@ export function HabitFormFields({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-white/60">
-                Choose a location to keep this habit aligned with compatible
-                schedule windows.
-              </p>
               {locationOptionsError ? (
                 <p className="text-xs text-amber-300/90">
                   {locationOptionsError}
                 </p>
               ) : null}
-              <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.04] p-3">
-                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-white/60">
-                  Add a new location
-                </p>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input
-                    value={customLocationName}
-                    onChange={(event) => {
-                      setCustomLocationName(event.target.value);
-                      setCustomLocationError(null);
-                    }}
-                    placeholder="e.g. Gym or Studio"
-                    className="h-10 rounded-lg border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
-                  />
-                  <Button
+              <div className={`${FAB_SECTION_INSET_CLASS} space-y-2`}>
+                <div className="flex justify-end">
+                  <button
                     type="button"
-                    onClick={handleAddCustomLocation}
-                    disabled={savingCustomLocation}
-                    className="h-10 shrink-0 rounded-lg bg-blue-500/80 text-xs font-semibold uppercase tracking-[0.2em] text-white hover:bg-blue-500"
+                    onClick={() =>
+                      setShowAddLocationControls((prev) => !prev)
+                    }
+                    className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/60 transition hover:text-white/90"
                   >
-                    {savingCustomLocation ? "Saving..." : "Save"}
-                  </Button>
+                    ADD A NEW LOCATION
+                  </button>
                 </div>
-                {customLocationError ? (
-                  <p className="text-xs text-red-300">{customLocationError}</p>
+                {showAddLocationControls ? (
+                  <>
+                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                      <Input
+                        value={customLocationName}
+                        onChange={(event) => {
+                          setCustomLocationName(event.target.value);
+                          setCustomLocationError(null);
+                        }}
+                        placeholder="e.g. Gym or Studio"
+                        className={FAB_FIELD_CONTROL_CLASS}
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleAddCustomLocation}
+                        disabled={savingCustomLocation}
+                        className="h-11 rounded-xl border border-white/10 bg-gradient-to-b from-white/5 to-white/0 px-3 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70 transition hover:border-white/20 hover:bg-white/10 focus:outline-none"
+                      >
+                        {savingCustomLocation ? "Saving..." : "Save"}
+                      </Button>
+                    </div>
+                    {customLocationError ? (
+                      <p className="text-xs text-red-300">{customLocationError}</p>
+                    ) : null}
+                    <p className={FAB_SECTION_HELP_TEXT_SMALL_CLASS}>
+                      Custom locations sync across your habits and windows.
+                    </p>
+                  </>
                 ) : null}
-                <p className="text-[0.65rem] text-white/50">
-                  Custom locations sync across your habits and windows.
-                </p>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                Preferred window
-              </Label>
+            <div className="space-y-2">
+              <Label className={FAB_FIELD_LABEL_CLASS}>Preferred window</Label>
               <Select
                 value={normalizedWindowId}
                 onValueChange={(value) => onWindowChange?.(value)}
                 disabled={windowsLoading}
               >
-                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                  <SelectValue placeholder="Lock this habit to a window" />
+                <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
+                  <div className="flex flex-col gap-1">
+                    <SelectValue
+                      className="text-sm font-semibold"
+                      placeholder="Lock this habit to a window"
+                    />
+                    <PreferredWindowDayPillCluster
+                      days={selectedWindowOption?.days}
+                    />
+                  </div>
                 </SelectTrigger>
                 <SelectContent className="bg-[#0b101b] text-sm text-white">
                   <SelectItem value="none">No preferred window</SelectItem>
                   {resolvedWindowOptions.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {option.label}
+                    <SelectItem
+                      key={option.id}
+                      value={option.id}
+                      label={option.name}
+                    >
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 text-sm font-semibold text-white truncate">
+                            {option.name}
+                          </span>
+                          {option.timeLabel?.trim() ? (
+                            <span className="text-[11px] uppercase tracking-[0.3em] text-zinc-400">
+                              {option.timeLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                        <PreferredWindowDayPillCluster days={option.days} />
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-white/60">
+              <p className={FAB_FIELD_HELP_TEXT_CLASS}>
                 Keep this habit anchored to a specific window. We’ll skip other
                 windows when placing it.
               </p>
@@ -930,15 +1014,13 @@ export function HabitFormFields({
               ) : null}
             </div>
 
-            <div className="space-y-3">
-              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                Daylight preference
-              </Label>
+            <div className="space-y-2">
+              <Label className={FAB_FIELD_LABEL_CLASS}>Daylight preference</Label>
               <Select
                 value={daylightValue || "ALL_DAY"}
                 onValueChange={(value) => onDaylightPreferenceChange?.(value)}
               >
-                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
                   <SelectValue placeholder="When should this habit run?" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#0b101b] text-sm text-white">
@@ -949,21 +1031,19 @@ export function HabitFormFields({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-white/60">
+              <p className={FAB_FIELD_HELP_TEXT_CLASS}>
                 Restrict this habit to daylight or night windows. We’ll respect
                 your local sunrise and sunset when scheduling.
               </p>
             </div>
 
-            <div className="space-y-3">
-              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                Front/Back
-              </Label>
+            <div className="space-y-2">
+              <Label className={FAB_FIELD_LABEL_CLASS}>Front/Back</Label>
               <Select
                 value={windowEdgeValue || "FRONT"}
                 onValueChange={(value) => onWindowEdgePreferenceChange?.(value)}
               >
-                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
                   <SelectValue placeholder="Where should this habit anchor?" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#0b101b] text-sm text-white">
@@ -974,7 +1054,7 @@ export function HabitFormFields({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-white/60">
+              <p className={FAB_FIELD_HELP_TEXT_CLASS}>
                 Choose whether this habit should schedule from the beginning of
                 a window or stack from the end instead.
               </p>

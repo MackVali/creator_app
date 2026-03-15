@@ -2404,7 +2404,7 @@ export function Fab({
     useState<string>("");
   const [overlayFilterSkillId, setOverlayFilterSkillId] = useState<string>("");
   const [overlaySortMode, setOverlaySortMode] =
-    useState<OverlaySortMode>("recent");
+    useState<OverlaySortMode>("scheduled");
   const [rescheduleTarget, setRescheduleTarget] =
     useState<FabSearchResult | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
@@ -6966,13 +6966,13 @@ export function Fab({
               className="absolute inset-0 bg-black/70 backdrop-blur-sm"
               onClick={() => setOverlayOpen(false)}
             />
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25 }}
-              className="relative w-full max-w-[520px] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-3xl border border-white/20 bg-gradient-to-br from-[#020202] via-[#050505] to-[#0b0b0b] p-6 text-white shadow-[0_30px_80px_rgba(0,0,0,0.85)]"
-            >
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="relative w-full max-w-[520px] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-3xl border border-black/60 bg-gradient-to-br from-[#020202] via-[#050505] to-[#0b0b0b] p-6 text-white shadow-[0_30px_80px_rgba(0,0,0,0.85)]"
+              >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.4em] text-white/70">
@@ -7078,7 +7078,7 @@ export function Fab({
 
               {overlayPickerOpen ? (
                 <div className="mt-4 relative">
-                  <div className="relative h-[360px] w-full overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-b from-[#0a0a0a] to-[#020202]">
+                  <div className="relative h-[360px] w-full overflow-hidden rounded-3xl border border-black/60 bg-gradient-to-b from-[#0a0a0a] to-[#020202]">
                     <FabNexus
                       query={searchQuery}
                       onQueryChange={setSearchQuery}
@@ -8775,6 +8775,7 @@ function FabNexus({
   showToolbar = false,
   inputRef,
 }: FabNexusProps) {
+  const [showControls, setShowControls] = useState(false);
   const hasResults = results.length > 0;
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (!hasMore || isLoadingMore) return;
@@ -8791,7 +8792,7 @@ function FabNexus({
   const handleMonumentChange = onFilterMonumentChange ?? (() => {});
   const handleSkillChange = onFilterSkillChange ?? (() => {});
   const handleSortChange = onSortModeChange ?? (() => {});
-  const sortValue = sortMode ?? "recent";
+  const sortValue = sortMode ?? "scheduled";
   const toolbarSelectClass =
     "h-9 min-w-[120px] rounded-2xl border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white/80 focus-visible:border-white/30 focus-visible:ring-0";
   const toolbarContentClass = "bg-black/90 text-white";
@@ -8863,12 +8864,23 @@ function FabNexus({
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="search NEXUS"
-            className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
+            className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-14 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
             aria-label="Search NEXUS"
           />
+          {showToolbar && (
+            <button
+              type="button"
+              aria-label="Toggle Nexus filters"
+              aria-expanded={showControls}
+              onClick={() => setShowControls((prev) => !prev)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/70 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+            >
+              <Filter className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
-      {showToolbar ? (
+      {showToolbar && showControls ? (
         <div className="px-4 pt-3">
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -8969,9 +8981,9 @@ function FabNexus({
               );
               const nameTextClass = "text-white";
               const metaLabelClass =
-                "text-[9px] uppercase tracking-[0.22em] text-white/70";
+                "text-[7px] md:text-[9px] uppercase tracking-[0.18em] text-white/70";
               const statusLabelClass =
-                "text-[8px] uppercase tracking-[0.18em] text-white/60 break-words leading-tight";
+                "text-[7px] md:text-[8px] uppercase tracking-[0.14em] text-white/60 break-words leading-tight";
               return (
                 <button
                   key={`${result.type}-${result.id}`}
@@ -8984,28 +8996,32 @@ function FabNexus({
                   aria-disabled={isDisabled}
                   className={cardClassName}
                 >
-                  <div className="flex w-full items-start justify-between gap-3">
-                    <div className="flex flex-col gap-1 flex-[3] basis-3/4 min-w-0">
-                      <span
-                        className={cn(
-                          "block line-clamp-2 break-words text-[12px] font-medium leading-snug tracking-wide",
-                          nameTextClass
-                        )}
-                      >
-                        {result.name}
-                      </span>
-                      {result.type === "PROJECT" &&
-                        result.global_rank !== null &&
-                        result.global_rank !== undefined && (
-                          <span className="text-gray-600 font-bold text-xs leading-none">
-                            #{result.global_rank}
-                          </span>
-                        )}
+                  <div className="flex w-full flex-col gap-1 min-w-0">
+                    <div className="flex w-full items-start justify-between gap-3">
+                      <div className="flex flex-col gap-1 flex-[3] basis-3/4 min-w-0">
+                        <span
+                          className={cn(
+                            "block line-clamp-2 break-words text-[12px] font-medium leading-snug tracking-wide",
+                            nameTextClass
+                          )}
+                        >
+                          {result.name}
+                        </span>
+                        {result.type === "PROJECT" &&
+                          result.global_rank !== null &&
+                          result.global_rank !== undefined && (
+                            <span className="text-gray-600 font-bold text-xs leading-none">
+                              #{result.global_rank}
+                            </span>
+                          )}
+                      </div>
+                      <div className="flex items-start justify-end flex-shrink-0">
+                        <span className={metaLabelClass}>
+                          {result.type === "PROJECT" ? "Project" : "Habit"}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex flex-col items-end gap-1 text-right flex-[1.2] basis-0 min-w-0">
-                      <span className={metaLabelClass}>
-                        {result.type === "PROJECT" ? "Project" : "Habit"}
-                      </span>
+                    <div className="flex w-full">
                       <span className={statusLabelClass}>{statusText}</span>
                     </div>
                   </div>

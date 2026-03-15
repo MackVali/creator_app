@@ -11,6 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   Select,
   SelectContent,
@@ -24,11 +25,22 @@ import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
 import { ENERGY } from "@/lib/scheduler/config";
 import { cn } from "@/lib/utils";
-import { Lock, XIcon } from "lucide-react";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
+import { Lock } from "lucide-react";
 import {
   ScheduleMorphDialog,
   type ScheduleEditOrigin,
 } from "@/components/schedule/ScheduleMorphDialog";
+import {
+  FAB_BUTTON_ACTION_CLASS,
+  FAB_FIELD_CONTROL_CLASS,
+  FAB_FIELD_HELP_TEXT_CLASS,
+  FAB_FIELD_LABEL_CLASS,
+  FAB_FIELD_SELECT_CLASS,
+  FAB_SELECT_SEARCH_INPUT_CLASS,
+  FAB_SECTION_CARD_CLASS,
+  FAB_SECTION_HEADING_TEXT_CLASS,
+} from "@/components/ui/fab-form-classes";
 import {
   type ScheduleInstance,
   type ScheduleContext,
@@ -168,6 +180,8 @@ export function ProjectEditSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [priority, setPriority] = useState(PRIORITY_OPTIONS[0].value);
@@ -389,6 +403,13 @@ export function ProjectEditSheet({
   }, [open, projectId, loadProject]);
 
   useEffect(() => {
+    if (!open) {
+      setDeleteConfirmOpen(false);
+      setDeleteError(null);
+    }
+  }, [open]);
+
+  useEffect(() => {
     setSkillSearch("");
   }, [skillOptions, skillsLoading]);
 
@@ -550,28 +571,39 @@ export function ProjectEditSheet({
   };
 
   const handleDeleteInstance = useCallback(async () => {
-    if (!instance?.id) {
+    if (!projectId) {
+      setDeleteError("Project ID unavailable.");
       return;
     }
     setIsDeleting(true);
     setError(null);
+    setDeleteError(null);
     try {
-      await updateInstanceStatus(instance.id, "canceled");
+      const response = await fetch(`/api/schedule/events/project/${projectId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(
+          payload?.error ?? "Unable to delete this project right now."
+        );
+      }
+      setDeleteConfirmOpen(false);
       if (onInstanceDeleted) {
         await onInstanceDeleted();
       }
       onClose();
     } catch (err) {
-      console.error("Failed to delete schedule instance:", err);
-      setError(
+      console.error("Failed to delete project:", err);
+      setDeleteError(
         err instanceof Error
           ? err.message
-          : "Unable to delete this scheduled instance right now."
+          : "Unable to delete this project right now."
       );
     } finally {
       setIsDeleting(false);
     }
-  }, [instance?.id, onClose, onInstanceDeleted]);
+  }, [projectId, onClose, onInstanceDeleted]);
 
   const handleUpdateLockedSchedule = async () => {
     if (!projectId || !lockedInstance) {
@@ -686,7 +718,8 @@ export function ProjectEditSheet({
   });
 
   return (
-    <ScheduleMorphDialog
+    <>
+      <ScheduleMorphDialog
       open={open}
       title={eventTitle ?? "Project"}
       subtitle={timeRangeLabel}
@@ -716,132 +749,168 @@ export function ProjectEditSheet({
                 className: target?.className,
               });
             }}
-            className="flex flex-col gap-4"
+            className="flex flex-col gap-3"
           >
-            <div className="relative pb-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="absolute right-0 top-0 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
-              >
-                <XIcon className="size-4" aria-hidden="true" />
-                <span className="sr-only">Close</span>
-              </button>
-              <div className="pr-10">
-                <h2 className="text-lg font-semibold text-white">
-                  Edit project
-                </h2>
-                <p className="mt-1 text-sm text-white/70">
-                  Update the underlying project details. Changes here apply
-                  everywhere this project appears.
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Project name
-              </Label>
-              <Input
-                ref={nameInputRef}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Project title"
-                className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
-                required
-                disabled={loading}
-              />
-            </div>
-
-            <div className="grid gap-4 grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                  Priority
-                </Label>
-                <Select
-                  value={priority}
-                  onValueChange={setPriority}
+            <div className="grid gap-3 grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+              <div className="space-y-1.5 min-w-0">
+                <Label className={FAB_FIELD_LABEL_CLASS}>Project name</Label>
+                <Input
+                  ref={nameInputRef}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Project title"
+                  className={FAB_FIELD_CONTROL_CLASS}
+                  required
                   disabled={loading}
-                >
-                  <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                    <SelectValue placeholder="Priority" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#05070c] text-white">
-                    {PRIORITY_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                  Stage
-                </Label>
-                <Select
-                  value={stage}
-                  onValueChange={setStage}
-                  disabled={loading}
-                >
-                  <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                    <SelectValue placeholder="Stage" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#05070c] text-white">
-                    {STAGE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-4 grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                  Energy
-                </Label>
+              <div className="space-y-2 min-w-0">
+                <Label className={FAB_FIELD_LABEL_CLASS}>Energy</Label>
                 <Select
                   value={energy}
                   onValueChange={(value) =>
                     setEnergy(value as (typeof ENERGY.LIST)[number])
                   }
                   disabled={loading}
+                  triggerClassName="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white flex items-center justify-center"
+                  hideChevron
+                  trigger={
+                    <div className="flex h-full w-full items-center justify-center">
+                      {energy ? (
+                        <FlameEmber
+                          level={energy as FlameLevel}
+                          size="md"
+                          className="-translate-y-[3px]"
+                        />
+                      ) : (
+                        <span className="text-zinc-400">Energy</span>
+                      )}
+                    </div>
+                  }
                 >
-                  <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                    <SelectValue placeholder="Energy" />
-                  </SelectTrigger>
                   <SelectContent className="bg-[#05070c] text-white">
                     {ENERGY.LIST.map((value) => (
                       <SelectItem key={value} value={value}>
-                        {value.charAt(0) + value.slice(1).toLowerCase()}
+                        <div className="flex items-center justify-center py-2">
+                          <FlameEmber
+                            level={value as FlameLevel}
+                            size="md"
+                            className="shrink-0"
+                          />
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                  Estimated duration (minutes)
-                </Label>
+            </div>
+
+            <div className="grid gap-2 grid-cols-5">
+              <div className="space-y-2 col-span-2">
+                <Label className={FAB_FIELD_LABEL_CLASS}>Priority</Label>
+                <Select
+                  value={priority}
+                  onValueChange={setPriority}
+                  disabled={loading}
+                >
+                  <SelectTrigger
+                    className={cn(
+                      FAB_FIELD_SELECT_CLASS,
+                      "uppercase text-xs"
+                    )}
+                  >
+                    <SelectValue
+                      className="uppercase text-xs"
+                      placeholder="Priority"
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#05070c] text-white">
+                    {PRIORITY_OPTIONS.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        className="text-xs"
+                      >
+                        {option.label.toUpperCase()}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <Label className={FAB_FIELD_LABEL_CLASS}>Stage</Label>
+                <Select
+                  value={stage}
+                  onValueChange={setStage}
+                  disabled={loading}
+                >
+                  <SelectTrigger
+                    className={cn(
+                      FAB_FIELD_SELECT_CLASS,
+                      "uppercase text-xs"
+                    )}
+                  >
+                    <SelectValue
+                      className="uppercase text-xs"
+                      placeholder="Stage"
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#05070c] text-white">
+                    {STAGE_OPTIONS.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        className="text-xs"
+                      >
+                        {option.label.toUpperCase()}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5 col-span-1">
+              <Label className={FAB_FIELD_LABEL_CLASS}>DURATION</Label>
                 <Input
                   value={duration}
                   onChange={(event) => setDuration(event.target.value)}
                   placeholder="60"
                   inputMode="numeric"
                   pattern="[0-9]*"
-                  className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                  className={cn(FAB_FIELD_CONTROL_CLASS, "text-sm")}
                   disabled={loading}
                 />
               </div>
             </div>
 
+            <div className="space-y-1.5">
+              <Label className={FAB_FIELD_LABEL_CLASS}>Goal</Label>
+              <Select
+                value={
+                  goalOptions.some((option) => option.value === goalId)
+                    ? goalId
+                    : "none"
+                }
+                onValueChange={setGoalId}
+                disabled={goalsLoading || loading}
+              >
+                <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
+                  <SelectValue placeholder="No goal linked" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#05070c] text-white">
+                  {(goalOptions.length === 0
+                    ? [{ value: "none", label: "No goal linked" }]
+                    : goalOptions
+                  ).map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Skill relation
-              </Label>
+              <Label className={FAB_FIELD_LABEL_CLASS}>Skill relation</Label>
               <Select
                 value={selectedSkillId ?? "none"}
                 onValueChange={(value) =>
@@ -849,7 +918,7 @@ export function ProjectEditSheet({
                 }
                 disabled={skillsLoading && skillOptions.length === 0}
               >
-                <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
+                <SelectTrigger className={FAB_FIELD_SELECT_CLASS}>
                   <SelectValue placeholder="Choose a linked skill" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#05070c] text-white">
@@ -858,7 +927,7 @@ export function ProjectEditSheet({
                       value={skillSearch}
                       onChange={(event) => setSkillSearch(event.target.value)}
                       placeholder="Search skills..."
-                      className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                      className={FAB_SELECT_SEARCH_INPUT_CLASS}
                     />
                   </div>
                   <SelectItem value="none">No linked skill</SelectItem>
@@ -874,7 +943,7 @@ export function ProjectEditSheet({
                         <div
                           className={cn("px-3 pt-2", index === 0 ? "pt-0" : "")}
                         >
-                          <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+                          <p className={FAB_SECTION_HEADING_TEXT_CLASS}>
                             {group.label}
                           </p>
                         </div>
@@ -902,42 +971,13 @@ export function ProjectEditSheet({
               ) : null}
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Goal
-              </Label>
-              <Select
-                value={
-                  goalOptions.some((option) => option.value === goalId)
-                    ? goalId
-                    : "none"
-                }
-                onValueChange={setGoalId}
-                disabled={goalsLoading || loading}
-              >
-                <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                  <SelectValue placeholder="No goal linked" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#05070c] text-white">
-                  {(goalOptions.length === 0
-                    ? [{ value: "none", label: "No goal linked" }]
-                    : goalOptions
-                  ).map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className={FAB_SECTION_CARD_CLASS}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                  <p className={FAB_SECTION_HEADING_TEXT_CLASS}>
                     Manual schedule
                   </p>
-                  <p className="text-sm text-white/70">
+                  <p className={FAB_FIELD_HELP_TEXT_CLASS}>
                     Locked blocks stay fixed when you rerun the scheduler.
                   </p>
                 </div>
@@ -954,29 +994,25 @@ export function ProjectEditSheet({
               </div>
               {lockedInstance ? (
                 <>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                        Start time
-                      </Label>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-2">
+                    <div className="space-y-0.5">
+                      <Label className={FAB_FIELD_LABEL_CLASS}>Start time</Label>
                       <Input
                         type="datetime-local"
                         value={manualStart}
                         onChange={(event) => setManualStart(event.target.value)}
                         disabled={manualScheduleSaving}
-                        className="border-white/20 bg-white/5 text-sm text-white"
+                        className={FAB_FIELD_CONTROL_CLASS}
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                        End time
-                      </Label>
+                    <div className="space-y-0.5">
+                      <Label className={FAB_FIELD_LABEL_CLASS}>End time</Label>
                       <Input
                         type="datetime-local"
                         value={manualEnd}
                         onChange={(event) => setManualEnd(event.target.value)}
                         disabled={manualScheduleSaving}
-                        className="border-white/20 bg-white/5 text-sm text-white"
+                        className={FAB_FIELD_CONTROL_CLASS}
                       />
                     </div>
                   </div>
@@ -985,7 +1021,7 @@ export function ProjectEditSheet({
                       {manualScheduleError}
                     </p>
                   ) : (
-                    <p className="text-xs text-white/60">
+                    <p className={FAB_SECTION_HELP_TEXT_SMALL_CLASS}>
                       Update the exact timing for this locked project or remove
                       the lock to return it to the automatic scheduler.
                     </p>
@@ -995,7 +1031,7 @@ export function ProjectEditSheet({
                       type="button"
                       onClick={handleUpdateLockedSchedule}
                       disabled={manualScheduleSaving}
-                      className="flex-1 bg-white text-zinc-900 hover:bg-white/90"
+                      className="flex-1 h-10 rounded-xl bg-white text-sm text-zinc-900 hover:bg-white/90"
                     >
                       {manualScheduleSaving ? "Saving…" : "Update times"}
                     </Button>
@@ -1004,14 +1040,14 @@ export function ProjectEditSheet({
                       variant="outline"
                       onClick={handleRemoveLockedSchedule}
                       disabled={manualScheduleSaving}
-                      className="flex-1 border-red-500/40 text-red-200 hover:bg-red-500/10"
+                      className="flex-1 h-10 rounded-xl border-red-500/40 text-sm text-red-200 hover:bg-red-500/10"
                     >
                       Remove lock
                     </Button>
                   </div>
                 </>
               ) : (
-                <p className="text-sm text-white/60">
+                <p className={FAB_FIELD_HELP_TEXT_CLASS}>
                   This project is currently scheduled dynamically. To lock a
                   project at a specific time, create it with manual times from
                   the scheduler’s project workflow.
@@ -1025,41 +1061,108 @@ export function ProjectEditSheet({
               </div>
             ) : null}
 
-            <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <div className="space-y-2 pb-1">
               {instance ? (
+                <div className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
+                  <Button
+                    type="button"
+                    className="h-10 w-full rounded-xl bg-gradient-to-b from-[#7a1f2a] to-[#4b0f18] px-3 text-sm font-semibold text-white shadow-inner transition hover:from-[#8f2633] hover:to-[#5a121e]"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleteConfirmOpen(true);
+                    }}
+                    disabled={isDeleting || saving || loading}
+                  >
+                    {isDeleting ? "Deleting…" : "Delete project"}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={onClose}
+                    disabled={saving || isDeleting}
+                    className={cn(FAB_BUTTON_ACTION_CLASS, "w-full")}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
                 <Button
                   type="button"
-                  variant="outline"
-                  className="border-red-500/60 text-red-200 hover:bg-red-500/10"
-                  onClick={handleDeleteInstance}
-                  disabled={isDeleting || saving || loading}
+                  onClick={onClose}
+                  disabled={saving || isDeleting}
+                  className={cn(FAB_BUTTON_ACTION_CLASS, "w-full")}
                 >
-                  {isDeleting ? "Deleting…" : "Delete instance"}
+                  Cancel
                 </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant="ghost"
-                className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
-                onClick={onClose}
-                disabled={saving || isDeleting}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className={cn(
-                  "bg-white text-zinc-900 hover:bg-white/90",
-                  disableSubmit && "opacity-50"
-                )}
-                disabled={disableSubmit || isDeleting}
-              >
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
+              )}
+              <div className="flex justify-end gap-3">
+                <Button
+                  type="submit"
+                  className={cn(
+                    "h-10 rounded-xl bg-white px-3 text-sm text-zinc-900 hover:bg-white/90",
+                    disableSubmit && "opacity-50"
+                  )}
+                  disabled={disableSubmit || isDeleting}
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
             </div>
           </form>
         </>
       )}
     </ScheduleMorphDialog>
+    <Dialog.Root
+      open={deleteConfirmOpen}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          setDeleteError(null);
+        }
+        setDeleteConfirmOpen(nextOpen);
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-[250] bg-black/80 backdrop-blur-sm" />
+        <Dialog.Content
+          className="fixed left-1/2 top-1/2 z-[260] w-[min(90vw,440px)] max-w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-[#05070c] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+        >
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Dialog.Title className="text-lg font-semibold text-white">
+                ARE YOU SURE?
+              </Dialog.Title>
+              <Dialog.Description className="text-sm text-white/70">
+                Deleting this project removes the entire project record and ALL
+                scheduled instances permanently.
+              </Dialog.Description>
+            </div>
+            {deleteError ? (
+              <p className="text-sm text-rose-400">{deleteError}</p>
+            ) : null}
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDeleteConfirmOpen(false);
+                  setDeleteError(null);
+                }}
+                className="h-10 w-full rounded-xl border-white/20 text-sm text-white/80 hover:bg-white/10"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleDeleteInstance}
+                disabled={isDeleting}
+                className="h-10 w-full rounded-xl bg-gradient-to-b from-[#7a1f2a] to-[#4b0f18] px-3 text-sm font-semibold text-white shadow-inner transition hover:from-[#8f2633] hover:to-[#5a121e]"
+              >
+                {isDeleting ? "Deleting…" : "Delete project"}
+              </Button>
+            </div>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+    </>
   );
 }

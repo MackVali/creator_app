@@ -18,6 +18,7 @@ import {
   Droplet,
   MapPin,
   ChevronDown,
+  Check,
 } from "lucide-react";
 import type { JumpToDateSnapshot } from "@/lib/scheduler/snapshot";
 import { ENERGY_LEVELS } from "@/lib/scheduler/energy";
@@ -51,6 +52,19 @@ import {
   OverlayWindowModal,
   OVERLAY_DURATION_MS,
 } from "@/components/schedule/OverlayWindowModal";
+import {
+  DAY_TYPE_BLOCK_EDIT_EVENT,
+  type DayTypeBlockEditEventDetail,
+} from "@/lib/scheduler/dayTypeBlockEvents";
+
+import {
+  getSkillsForUser,
+  type Skill,
+} from "@/lib/queries/skills";
+import {
+  getMonumentsForUser,
+  type Monument,
+} from "@/lib/queries/monuments";
 
 interface JumpToDateSheetProps {
   open: boolean;
@@ -114,6 +128,16 @@ const WEEKDAY_LABELS = (() => {
   }
 })();
 
+const HABIT_TYPE_OPTIONS = [
+  { label: "Habit", value: "HABIT" },
+  { label: "Relaxer", value: "RELAXER" },
+  { label: "Practice", value: "PRACTICE" },
+  { label: "Temp", value: "TEMP" },
+  { label: "Chore", value: "CHORE" },
+  { label: "Sync", value: "SYNC" },
+  { label: "Memo", value: "MEMO" },
+];
+
 export function JumpToDateSheet({
   open,
   onOpenChange,
@@ -163,9 +187,38 @@ export function JumpToDateSheet({
   const [blockLocation, setBlockLocation] = useState<
     Map<string, { label: string; value: string } | null>
   >(() => new Map());
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [monuments, setMonuments] = useState<Monument[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [monumentsLoading, setMonumentsLoading] = useState(false);
+  const [blockAllowAllHabitTypes, setBlockAllowAllHabitTypes] = useState<
+    Map<string, boolean>
+  >(() => new Map());
+  const [blockAllowAllSkills, setBlockAllowAllSkills] = useState<
+    Map<string, boolean>
+  >(() => new Map());
+  const [blockAllowAllMonuments, setBlockAllowAllMonuments] = useState<
+    Map<string, boolean>
+  >(() => new Map());
+  const [blockAllowedHabitTypes, setBlockAllowedHabitTypes] = useState<
+    Map<string, Set<string>>
+  >(() => new Map());
+  const [blockAllowedSkillIds, setBlockAllowedSkillIds] = useState<
+    Map<string, Set<string>>
+  >(() => new Map());
+  const [blockAllowedMonumentIds, setBlockAllowedMonumentIds] = useState<
+    Map<string, Set<string>>
+  >(() => new Map());
   const [overrideDates, setOverrideDates] = useState<Set<string>>(new Set());
   const [isLoadingTimeBlocks, setIsLoadingTimeBlocks] = useState(false);
   const [timeBlockError, setTimeBlockError] = useState<string | null>(null);
+  const [pendingBlockFocus, setPendingBlockFocus] =
+    useState<DayTypeBlockEditEventDetail | null>(null);
+  const [highlightedBlockId, setHighlightedBlockId] = useState<string | null>(
+    null
+  );
+  const prevHighlightedBlockId = useRef<string | null>(null);
+  const [isConstraintsMenuOpen, setIsConstraintsMenuOpen] = useState(false);
   const [assignmentDayTypeId, setAssignmentDayTypeId] = useState<string | null>(
     null
   );
@@ -196,6 +249,48 @@ export function JumpToDateSheet({
       // ignore write errors
     }
   }, [showTimeBlocks, SHOW_TIME_BLOCKS_KEY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleDayTypeBlockEdit = (event: Event) => {
+      const detail = (event as CustomEvent<DayTypeBlockEditEventDetail>).detail;
+      if (!detail?.blockId) return;
+      setPendingBlockFocus(detail);
+      setHighlightedBlockId(null);
+      setShowTimeBlocks(true);
+      setIsPaintMode(true);
+      if (detail.dateKey) {
+        setPaintSelectionKey(detail.dateKey);
+      }
+      if (detail.dayTypeId) {
+        setSelectedDayTypeId(detail.dayTypeId);
+      }
+    };
+    window.addEventListener(DAY_TYPE_BLOCK_EDIT_EVENT, handleDayTypeBlockEdit);
+    return () => {
+      window.removeEventListener(
+        DAY_TYPE_BLOCK_EDIT_EVENT,
+        handleDayTypeBlockEdit
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      setPendingBlockFocus(null);
+      setHighlightedBlockId(null);
+      setIsConstraintsMenuOpen(false);
+    }
+  }, [open]);
+  useEffect(() => {
+    if (
+      prevHighlightedBlockId.current !== null &&
+      prevHighlightedBlockId.current !== highlightedBlockId
+    ) {
+      setIsConstraintsMenuOpen(false);
+    }
+    prevHighlightedBlockId.current = highlightedBlockId;
+  }, [highlightedBlockId]);
   const resolvedTimeZone =
     (timeZone && timeZone.trim()) ||
     Intl.DateTimeFormat().resolvedOptions().timeZone ||
@@ -383,6 +478,63 @@ export function JumpToDateSheet({
   }, [open, isPaintMode]);
 
   useEffect(() => {
+    if (!open || !isPaintMode) {
+      setSkills([]);
+      setMonuments([]);
+      setSkillsLoading(false);
+      setMonumentsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const loadConstraintOptions = async () => {
+      setSkillsLoading(true);
+      setMonumentsLoading(true);
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) throw new Error("Supabase client not available");
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user?.id) {
+          if (!cancelled) {
+            setSkills([]);
+            setMonuments([]);
+          }
+          return;
+        }
+        const [skillsData, monumentsData] = await Promise.all([
+          getSkillsForUser(user.id).catch((error) => {
+            console.warn("Unable to load skills for constraints", error);
+            return [];
+          }),
+          getMonumentsForUser(user.id).catch((error) => {
+            console.warn("Unable to load monuments for constraints", error);
+            return [];
+          }),
+        ]);
+        if (cancelled) return;
+        setSkills(skillsData ?? []);
+        setMonuments(monumentsData ?? []);
+      } catch (error) {
+        console.warn("Unable to load constraint options", error);
+        if (!cancelled) {
+          setSkills([]);
+          setMonuments([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setSkillsLoading(false);
+          setMonumentsLoading(false);
+        }
+      }
+    };
+    void loadConstraintOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isPaintMode]);
+
+  useEffect(() => {
     if (!open || !isPaintMode) return;
     let cancelled = false;
     const fetchLinks = async (
@@ -390,7 +542,7 @@ export function JumpToDateSheet({
       userId: string
     ) => {
       const columns =
-        "day_type_id,time_block_id,energy,block_type,location_context_id,location_context:location_contexts(value,label)";
+        "day_type_id,time_block_id,energy,block_type,location_context_id,location_context:location_contexts(value,label),allow_all_habit_types,allow_all_skills,allow_all_monuments";
       const { data, error } = await supabase
         .from("day_type_time_blocks")
         .select(columns)
@@ -400,7 +552,7 @@ export function JumpToDateSheet({
       const retry = await supabase
         .from("day_type_time_blocks")
         .select(
-          "day_type_id,time_block_id,energy,block_type,location_context_id"
+          "day_type_id,time_block_id,energy,block_type,location_context_id,allow_all_habit_types,allow_all_skills,allow_all_monuments"
         )
         .eq("user_id", userId);
       return { data: retry.data, error: retry.error };
@@ -420,6 +572,9 @@ export function JumpToDateSheet({
           setBlockEnergy(new Map());
           setBlockTypeMap(new Map());
           setBlockLocation(new Map());
+          setBlockAllowAllHabitTypes(new Map());
+          setBlockAllowAllSkills(new Map());
+          setBlockAllowAllMonuments(new Map());
           return;
         }
         const [blocksResult, linksResult] = await Promise.all([
@@ -453,6 +608,9 @@ export function JumpToDateSheet({
           string,
           { label: string; value: string } | null
         >();
+        const allowAllHabitMap = new Map<string, boolean>();
+        const allowAllSkillMap = new Map<string, boolean>();
+        const allowAllMonumentMap = new Map<string, boolean>();
         (linksResult.data ?? []).forEach((row) => {
           const dayTypeId = (row as { day_type_id?: string | null })
             ?.day_type_id;
@@ -498,6 +656,21 @@ export function JumpToDateSheet({
           } else {
             locationMap.set(`${dayTypeId}:${blockId}`, null);
           }
+          allowAllHabitMap.set(
+            `${dayTypeId}:${blockId}`,
+            (row as { allow_all_habit_types?: boolean | null })
+              ?.allow_all_habit_types !== false
+          );
+          allowAllSkillMap.set(
+            `${dayTypeId}:${blockId}`,
+            (row as { allow_all_skills?: boolean | null })?.allow_all_skills !==
+              false
+          );
+          allowAllMonumentMap.set(
+            `${dayTypeId}:${blockId}`,
+            (row as { allow_all_monuments?: boolean | null })
+              ?.allow_all_monuments !== false
+          );
         });
 
         const sortedBlocks = [...normalizedBlocks].sort((a, b) => {
@@ -514,6 +687,9 @@ export function JumpToDateSheet({
         setBlockEnergy(energyMap);
         setBlockTypeMap(typeMap);
         setBlockLocation(locationMap);
+        setBlockAllowAllHabitTypes(allowAllHabitMap);
+        setBlockAllowAllSkills(allowAllSkillMap);
+        setBlockAllowAllMonuments(allowAllMonumentMap);
       } catch (error) {
         console.warn("Unable to load time blocks for paint mode", error);
         if (cancelled) return;
@@ -522,6 +698,9 @@ export function JumpToDateSheet({
         setBlockEnergy(new Map());
         setBlockTypeMap(new Map());
         setBlockLocation(new Map());
+        setBlockAllowAllHabitTypes(new Map());
+        setBlockAllowAllSkills(new Map());
+        setBlockAllowAllMonuments(new Map());
         setTimeBlockError("Unable to load time blocks right now.");
       } finally {
         if (cancelled) return;
@@ -956,6 +1135,9 @@ export function JumpToDateSheet({
     selectedDayTypeId,
   ]);
 
+  const activeDayTypeId =
+    assignmentDayTypeId ?? paintDayType?.id ?? selectedDayTypeId ?? null;
+
   const paintTimeBlocks = useMemo(() => {
     if (!isPaintMode || !paintDayType) return [];
     const linkedBlocks = dayTypeBlockMap.get(paintDayType.id);
@@ -978,6 +1160,45 @@ export function JumpToDateSheet({
     paintDayType,
     timeBlocks,
   ]);
+
+  const visiblePaintTimeBlocks = useMemo(() => {
+    if (!highlightedBlockId) return paintTimeBlocks;
+    const filtered = paintTimeBlocks.filter((block) => block.id === highlightedBlockId);
+    return filtered.length > 0 ? filtered : paintTimeBlocks;
+  }, [paintTimeBlocks, highlightedBlockId]);
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      !open ||
+      !pendingBlockFocus ||
+      isLoadingTimeBlocks
+    ) {
+      return;
+    }
+    const match = paintTimeBlocks.find(
+      (block) => block.id === pendingBlockFocus.blockId
+    );
+    if (!match) {
+      setPendingBlockFocus(null);
+      return;
+    }
+    setHighlightedBlockId(match.id);
+    setPendingBlockFocus(null);
+    const frame = window.requestAnimationFrame(() => {
+      const element = document.querySelector<HTMLElement>(
+        `[data-time-block-card="${match.id}"]`
+      );
+      if (element) {
+        element.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+          inline: "nearest",
+        });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, pendingBlockFocus, paintTimeBlocks, isLoadingTimeBlocks]);
 
   const assignDayTypeToSelection = useCallback(
     async (
@@ -1553,10 +1774,10 @@ export function JumpToDateSheet({
                 )}
                 {paintSelectionLabel ? (
                   <div className="rounded-lg border border-white/10 bg-white/5 p-2.5 sm:p-3 space-y-1.5">
-                    <div className="pt-1 space-y-0.5 text-[12px] sm:text-sm font-semibold text-white/75">
-                      <div className="flex items-center justify-between gap-2">
+                    <div className="grid grid-cols-2 gap-2 text-[12px] sm:text-sm font-semibold text-white/75">
+                      <div className="flex flex-col gap-1 min-w-0">
                         <span>Day type</span>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 min-w-0">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
@@ -1609,59 +1830,61 @@ export function JumpToDateSheet({
                           </DropdownMenu>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-col gap-1 min-w-0">
                         <span>Mode</span>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              disabled={isLoadingDayTypes}
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-[11px] sm:text-xs font-semibold text-white/90 shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:border-white/20 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70",
-                                isLoadingDayTypes && "opacity-60"
-                              )}
-                            >
-                              <span className="truncate max-w-[140px] sm:max-w-[160px]">
-                                {(
-                                  (paintDayType?.schedulerMode ??
-                                    defaultDayTypeForSelection?.schedulerMode ??
-                                    "REGULAR") as string
-                                )
-                                  .charAt(0)
-                                  .concat(
-                                    (
-                                      (paintDayType?.schedulerMode ??
-                                        defaultDayTypeForSelection?.schedulerMode ??
-                                        "REGULAR") as string
-                                    )
-                                      .slice(1)
-                                      .toLowerCase()
-                                  )}
-                              </span>
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="end"
-                            side="bottom"
-                            sideOffset={6}
-                            collisionPadding={12}
-                            className="z-[20000] min-w-[180px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
-                          >
-                            {SCHEDULER_MODES.map((mode) => (
-                              <DropdownMenuItem
-                                key={mode}
-                                className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
-                                onSelect={(event) => {
-                                  event.preventDefault();
-                                  void handleChangeMode(mode);
-                                }}
+                        <div className="flex items-center gap-1 min-w-0">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                disabled={isLoadingDayTypes}
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1.5 text-[11px] sm:text-xs font-semibold text-white/90 shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:border-white/20 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70",
+                                  isLoadingDayTypes && "opacity-60"
+                                )}
                               >
-                                {mode.charAt(0) + mode.slice(1).toLowerCase()}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                                <span className="truncate max-w-[140px] sm:max-w-[160px]">
+                                  {(
+                                    (paintDayType?.schedulerMode ??
+                                      defaultDayTypeForSelection?.schedulerMode ??
+                                      "REGULAR") as string
+                                  )
+                                    .charAt(0)
+                                    .concat(
+                                      (
+                                        (paintDayType?.schedulerMode ??
+                                          defaultDayTypeForSelection?.schedulerMode ??
+                                          "REGULAR") as string
+                                      )
+                                        .slice(1)
+                                        .toLowerCase()
+                                    )}
+                                </span>
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                              align="end"
+                              side="bottom"
+                              sideOffset={6}
+                              collisionPadding={12}
+                              className="z-[20000] min-w-[180px] bg-[var(--surface-elevated)] text-white border border-white/10 shadow-xl shadow-black/30"
+                            >
+                              {SCHEDULER_MODES.map((mode) => (
+                                <DropdownMenuItem
+                                  key={mode}
+                                  className="text-xs text-white/90 focus:bg-white/10 focus:text-white"
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    void handleChangeMode(mode);
+                                  }}
+                                >
+                                  {mode.charAt(0) + mode.slice(1).toLowerCase()}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                     </div>
                     <div className="rounded-md border border-white/10 bg-white/5 p-2.5 sm:p-3 space-y-1.5">
@@ -1736,7 +1959,7 @@ export function JumpToDateSheet({
                         <div className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
                           Loading time blocks…
                         </div>
-                      ) : paintTimeBlocks.length === 0 ? (
+                      ) : visiblePaintTimeBlocks.length === 0 ? (
                         <div className="rounded-md border border-white/5 bg-white/5 px-2.5 py-1.5 text-[12px] sm:text-sm text-white/65">
                           No time blocks for this day type.
                         </div>
@@ -1747,7 +1970,7 @@ export function JumpToDateSheet({
                               {saveError}
                             </div>
                           ) : null}
-                          {paintTimeBlocks.map((block) => {
+                          {visiblePaintTimeBlocks.map((block) => {
                             const hours = windowDurationHours(block);
                             const typeLabel =
                               (block.blockType ?? "FOCUS").charAt(0) +
@@ -1757,36 +1980,369 @@ export function JumpToDateSheet({
                             const energyLevel = normalizeFlameLevel(
                               block.energy
                             );
+                            const locationLabel = (
+                              block.location?.label ??
+                              block.location?.value ??
+                              "Anywhere"
+                            ).toString();
+                            const isActiveBlock = highlightedBlockId === block.id;
+                            const showingConstraints =
+                              isActiveBlock && isConstraintsMenuOpen;
+                            const handleCardClick = () => {
+                              if (showingConstraints) return;
+                              setHighlightedBlockId(block.id);
+                              setIsConstraintsMenuOpen(true);
+                            };
+                            const renderLocationRow = () => (
+                              <div className="flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] text-white/55">
+                                <MapPin className="h-3 w-3 text-white/55" />
+                                <span className="truncate max-w-[140px] sm:max-w-[200px]">
+                                  {locationLabel}
+                                </span>
+                              </div>
+                            );
+                            const constraintKey =
+                              activeDayTypeId && block.id
+                                ? `${activeDayTypeId}:${block.id}`
+                                : null;
+                            const allowAllHabits =
+                              constraintKey
+                                ? blockAllowAllHabitTypes.get(constraintKey) ?? true
+                                : true;
+                            const allowAllSkills =
+                              constraintKey
+                                ? blockAllowAllSkills.get(constraintKey) ?? true
+                                : true;
+                            const allowAllMonuments =
+                              constraintKey
+                                ? blockAllowAllMonuments.get(constraintKey) ?? true
+                                : true;
+                            const allowedHabitTypes = constraintKey
+                              ? new Set(blockAllowedHabitTypes.get(constraintKey) ?? [])
+                              : new Set<string>();
+                            const allowedSkillIds = constraintKey
+                              ? new Set(blockAllowedSkillIds.get(constraintKey) ?? [])
+                              : new Set<string>();
+                            const allowedMonumentIds = constraintKey
+                              ? new Set(blockAllowedMonumentIds.get(constraintKey) ?? [])
+                              : new Set<string>();
                             return (
                               <div
                                 key={block.id}
-                                className="flex w-full flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.28)]"
+                                data-time-block-card={block.id}
+                                onClick={handleCardClick}
+                                className={cn(
+                                  "flex w-full flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.28)]",
+                                  highlightedBlockId === block.id &&
+                                    "border-black ring-1 ring-black/70 bg-white/10 shadow-[0_0_0_26px_rgba(0,0,0,0.45)]",
+                                  !showingConstraints && "cursor-pointer"
+                                )}
                               >
-                                <div className="flex items-center justify-between">
-                                  <div className="space-y-0.5">
-                                    <div className="text-sm font-semibold text-white/90">
-                                      {block.label || "Time block"}
-                                    </div>
-                                    <div className="text-[10px] uppercase tracking-[0.16em] text-white/50">
-                                      {block.start_local} → {block.end_local}
-                                    </div>
-                                    <div className="flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] text-white/55">
-                                      <MapPin className="h-3 w-3 text-white/55" />
-                                      <span className="truncate max-w-[140px] sm:max-w-[200px]">
-                                        {(
-                                          block.location?.label ??
-                                          block.location?.value ??
-                                          "Anywhere"
-                                        ).toString()}
-                                      </span>
-                                    </div>
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="space-y-0.5 flex-1">
+                                    {showingConstraints ? (
+                                      <div className="space-y-2">
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            setIsConstraintsMenuOpen(false);
+                                          }}
+                                          className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/65"
+                                        >
+                                          <ChevronLeft className="h-3.5 w-3.5" />
+                                          <span>Back</span>
+                                        </button>
+                                        <div className="text-sm font-semibold text-white/90">
+                                          {block.label || "Time block"}
+                                        </div>
+                                        <div className="text-[10px] uppercase tracking-[0.16em] text-white/50">
+                                          {block.start_local} → {block.end_local}
+                                        </div>
+                                        {renderLocationRow()}
+                                        <div className="space-y-3">
+                                          <div className="space-y-2">
+                                            <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
+                                              <span>Habits</span>
+                                              <label className="flex items-center gap-2 text-xs text-white/70">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={allowAllHabits}
+                                                  onChange={(event) => {
+                                                    if (!constraintKey) return;
+                                                    setBlockAllowAllHabitTypes((prev) => {
+                                                      const next = new Map(prev);
+                                                      next.set(
+                                                        constraintKey,
+                                                        event.target.checked
+                                                      );
+                                                      return next;
+                                                    });
+                                                  }}
+                                                  className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
+                                                />
+                                                <span>Allow all habit types</span>
+                                              </label>
+                                            </div>
+                                            {!allowAllHabits ? (
+                                              <>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                  {HABIT_TYPE_OPTIONS.map((option) => {
+                                                    const selectedHabit =
+                                                      allowedHabitTypes.has(option.value);
+                                                    return (
+                                                      <button
+                                                        key={option.value}
+                                                        type="button"
+                                                        onClick={() => {
+                                                          if (!constraintKey) return;
+                                                          setBlockAllowedHabitTypes((prev) => {
+                                                            const next = new Map(prev);
+                                                            const set = new Set(
+                                                              next.get(constraintKey) ?? []
+                                                            );
+                                                            if (set.has(option.value)) {
+                                                              set.delete(option.value);
+                                                            } else {
+                                                              set.add(option.value);
+                                                            }
+                                                            next.set(constraintKey, set);
+                                                            return next;
+                                                          });
+                                                        }}
+                                                        className={cn(
+                                                          "flex items-center justify-between rounded-lg border px-3 py-2 text-xs transition",
+                                                          selectedHabit
+                                                            ? "border-white/40 bg-white/15 text-white"
+                                                            : "border-white/10 bg-black/20 text-white/70 hover:border-white/20"
+                                                        )}
+                                                      >
+                                                        <span className="truncate">
+                                                          {option.label}
+                                                        </span>
+                                                        {selectedHabit ? (
+                                                          <Check className="h-3.5 w-3.5" />
+                                                        ) : null}
+                                                      </button>
+                                                    );
+                                                  })}
+                                                </div>
+                                                {allowedHabitTypes.size === 0 ? (
+                                                  <div className="text-xs text-amber-200/80">
+                                                    Nothing allowed in this block for habits.
+                                                  </div>
+                                                ) : null}
+                                              </>
+                                            ) : null}
+                                          </div>
+                                          <div className="space-y-2">
+                                            <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
+                                              <span>Skills</span>
+                                              <label className="flex items-center gap-2 text-xs text-white/70">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={allowAllSkills}
+                                                  onChange={(event) => {
+                                                    if (!constraintKey) return;
+                                                    setBlockAllowAllSkills((prev) => {
+                                                      const next = new Map(prev);
+                                                      next.set(
+                                                        constraintKey,
+                                                        event.target.checked
+                                                      );
+                                                      return next;
+                                                    });
+                                                  }}
+                                                  className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
+                                                />
+                                                <span>Allow all skills</span>
+                                              </label>
+                                            </div>
+                                            {!allowAllSkills ? (
+                                              <>
+                                                {skillsLoading ? (
+                                                  <div className="text-xs text-white/60">
+                                                    Loading skills…
+                                                  </div>
+                                                ) : skills.length === 0 ? (
+                                                  <div className="text-xs text-white/60">
+                                                    No skills found.
+                                                  </div>
+                                                ) : (
+                                                  <div className="grid gap-1">
+                                                    {skills.map((skill) => {
+                                                      const selectedSkill =
+                                                        allowedSkillIds.has(skill.id);
+                                                      const icon =
+                                                        (skill.icon ?? "🎯").trim() || "🎯";
+                                                      return (
+                                                        <button
+                                                          key={skill.id}
+                                                          type="button"
+                                                          onClick={() => {
+                                                            if (!constraintKey) return;
+                                                            setBlockAllowedSkillIds(
+                                                              (prev) => {
+                                                                const next = new Map(prev);
+                                                                const set = new Set(
+                                                                  next.get(constraintKey) ?? []
+                                                                );
+                                                                if (set.has(skill.id)) {
+                                                                  set.delete(skill.id);
+                                                                } else {
+                                                                  set.add(skill.id);
+                                                                }
+                                                                next.set(constraintKey, set);
+                                                                return next;
+                                                              }
+                                                            );
+                                                          }}
+                                                          className={cn(
+                                                            "flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition",
+                                                            selectedSkill
+                                                              ? "bg-white/15 text-white"
+                                                              : "text-white/75 hover:bg-white/10"
+                                                          )}
+                                                        >
+                                                          <span className="flex items-center gap-2 truncate">
+                                                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-sm">
+                                                              {icon}
+                                                            </span>
+                                                            <span className="truncate">
+                                                              {skill.name}
+                                                            </span>
+                                                          </span>
+                                                          {selectedSkill ? (
+                                                            <Check className="h-3.5 w-3.5" />
+                                                          ) : null}
+                                                        </button>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                )}
+                                                {allowedSkillIds.size === 0 ? (
+                                                  <div className="text-xs text-amber-200/80">
+                                                    No skills allowed yet
+                                                  </div>
+                                                ) : null}
+                                              </>
+                                            ) : null}
+                                          </div>
+                                          <div className="space-y-2">
+                                            <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
+                                              <span>Monuments</span>
+                                              <label className="flex items-center gap-2 text-xs text-white/70">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={allowAllMonuments}
+                                                  onChange={(event) => {
+                                                    if (!constraintKey) return;
+                                                    setBlockAllowAllMonuments((prev) => {
+                                                      const next = new Map(prev);
+                                                      next.set(
+                                                        constraintKey,
+                                                        event.target.checked
+                                                      );
+                                                      return next;
+                                                    });
+                                                  }}
+                                                  className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
+                                                />
+                                                <span>Allow all monuments</span>
+                                              </label>
+                                            </div>
+                                            {!allowAllMonuments ? (
+                                              <>
+                                                {monumentsLoading ? (
+                                                  <div className="text-xs text-white/60">
+                                                    Loading monuments…
+                                                  </div>
+                                                ) : monuments.length === 0 ? (
+                                                  <div className="text-xs text-white/60">
+                                                    No monuments found.
+                                                  </div>
+                                                ) : (
+                                                  <div className="grid gap-1">
+                                                    {monuments.map((monument) => {
+                                                      const selectedMonument =
+                                                        allowedMonumentIds.has(monument.id);
+                                                      const emoji =
+                                                        (monument.emoji ?? "🗿").trim() ||
+                                                        "🗿";
+                                                      return (
+                                                        <button
+                                                          key={monument.id}
+                                                          type="button"
+                                                          onClick={() => {
+                                                            if (!constraintKey) return;
+                                                            setBlockAllowedMonumentIds(
+                                                              (prev) => {
+                                                                const next = new Map(prev);
+                                                                const set = new Set(
+                                                                  next.get(constraintKey) ?? []
+                                                                );
+                                                                if (set.has(monument.id)) {
+                                                                  set.delete(monument.id);
+                                                                } else {
+                                                                  set.add(monument.id);
+                                                                }
+                                                                next.set(constraintKey, set);
+                                                                return next;
+                                                              }
+                                                            );
+                                                          }}
+                                                          className={cn(
+                                                            "flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition",
+                                                            selectedMonument
+                                                              ? "bg-white/15 text-white"
+                                                              : "text-white/75 hover:bg-white/10"
+                                                          )}
+                                                        >
+                                                          <span className="flex items-center gap-2 truncate">
+                                                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-sm">
+                                                              {emoji}
+                                                            </span>
+                                                            <span className="truncate">
+                                                              {monument.title}
+                                                            </span>
+                                                          </span>
+                                                          {selectedMonument ? (
+                                                            <Check className="h-3.5 w-3.5" />
+                                                          ) : null}
+                                                        </button>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                )}
+                                                {allowedMonumentIds.size === 0 ? (
+                                                  <div className="text-xs text-amber-200/80">
+                                                    Nothing allowed in this block for monuments.
+                                                  </div>
+                                                ) : null}
+                                              </>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-0.5">
+                                        <div className="text-sm font-semibold text-white/90">
+                                          {block.label || "Time block"}
+                                        </div>
+                                        <div className="text-[10px] uppercase tracking-[0.16em] text-white/50">
+                                          {block.start_local} → {block.end_local}
+                                        </div>
+                                        {renderLocationRow()}
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <button
                                       type="button"
-                                      onClick={() =>
-                                        void cycleBlockType(block.id)
-                                      }
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void cycleBlockType(block.id);
+                                      }}
                                       className="flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:border-white/25 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60"
                                       aria-label={`Cycle block type for ${block.label ?? "time block"}`}
                                     >
@@ -1794,7 +2350,10 @@ export function JumpToDateSheet({
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => void cycleEnergy(block.id)}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void cycleEnergy(block.id);
+                                      }}
                                       className="flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:border-white/25 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60"
                                       aria-label={`Cycle energy for ${block.label ?? "time block"}`}
                                     >
@@ -1805,11 +2364,6 @@ export function JumpToDateSheet({
                                       />
                                       <span>{energyLevel}</span>
                                     </button>
-                                  </div>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2 text-[11px] text-white/70">
-                                    <span>{formatWindowHours(hours)}</span>
                                   </div>
                                 </div>
                               </div>

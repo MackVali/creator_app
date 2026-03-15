@@ -14,6 +14,8 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
+  type TouchEvent as ReactTouchEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
@@ -71,6 +73,11 @@ import { TaskLite, ProjectLite } from "@/lib/scheduler/weight";
 import { buildProjectItems } from "@/lib/scheduler/projects";
 import { windowRectMinutes } from "@/lib/scheduler/windowRect";
 import { ENERGY } from "@/lib/scheduler/config";
+import {
+  DAY_TYPE_BLOCK_EDIT_EVENT,
+  DAY_TYPE_BLOCK_UPDATED_EVENT,
+  type DayTypeBlockEditEventDetail,
+} from "@/lib/scheduler/dayTypeBlockEvents";
 import {
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
@@ -453,6 +460,157 @@ function WindowLabel({
     >
       {label}
     </span>
+  );
+}
+
+const DAY_TYPE_DOUBLE_TAP_DELAY_MS = 260;
+const DAY_TYPE_DOUBLE_TAP_MOVE_PX = 30;
+
+type DayTypeBlockLabelProps = {
+  label: string;
+  availableHeight: number;
+  onActivate: () => void;
+};
+
+function DayTypeBlockLabel({
+  label,
+  availableHeight,
+  onActivate,
+}: DayTypeBlockLabelProps) {
+  const safeHeight = Number.isFinite(availableHeight)
+    ? Math.max(0, availableHeight)
+    : 0;
+  const inlineSize = safeHeight > 0 ? safeHeight : undefined;
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
+  const touchStartRef = useRef<{
+    identifier: number | null;
+    x: number;
+    y: number;
+  } | null>(null);
+  const touchMovedRef = useRef(false);
+
+  const triggerActivate = useCallback(() => {
+    onActivate();
+  }, [onActivate]);
+
+  const handleTouchStart = useCallback(
+    (event: ReactTouchEvent<HTMLButtonElement>) => {
+      if (event.touches.length !== 1) {
+        touchStartRef.current = null;
+        touchMovedRef.current = false;
+        return;
+      }
+      const [touch] = event.touches;
+      touchStartRef.current = {
+        identifier: touch.identifier,
+        x: touch.clientX,
+        y: touch.clientY,
+      };
+      touchMovedRef.current = false;
+    },
+    []
+  );
+
+  const handleTouchMove = useCallback(
+    (event: ReactTouchEvent<HTMLButtonElement>) => {
+      const start = touchStartRef.current;
+      if (!start) return;
+      const match =
+        Array.from(event.changedTouches).find(
+          (touch) => touch.identifier === start.identifier
+        ) ?? event.changedTouches[0];
+      if (!match) return;
+      const dx = match.clientX - start.x;
+      const dy = match.clientY - start.y;
+      if (Math.hypot(dx, dy) > 16) {
+        touchMovedRef.current = true;
+      }
+    },
+    []
+  );
+
+  const handleTouchEnd = useCallback(
+    (event: ReactTouchEvent<HTMLButtonElement>) => {
+      const start = touchStartRef.current;
+      if (!start) return;
+      const match =
+        Array.from(event.changedTouches).find(
+          (touch) => touch.identifier === start.identifier
+        ) ?? event.changedTouches[0];
+      if (!match) {
+        touchStartRef.current = null;
+        return;
+      }
+      const now = performance.now();
+      const currentPos = { x: match.clientX, y: match.clientY };
+      if (
+        !touchMovedRef.current &&
+        lastTapRef.current &&
+        now - lastTapRef.current.time <= DAY_TYPE_DOUBLE_TAP_DELAY_MS &&
+        Math.hypot(
+          currentPos.x - lastTapRef.current.x,
+          currentPos.y - lastTapRef.current.y
+        ) <= DAY_TYPE_DOUBLE_TAP_MOVE_PX
+      ) {
+        lastTapRef.current = null;
+        triggerActivate();
+        touchStartRef.current = null;
+        return;
+      }
+      lastTapRef.current = {
+        time: now,
+        x: currentPos.x,
+        y: currentPos.y,
+      };
+      touchStartRef.current = null;
+    },
+    [triggerActivate]
+  );
+
+  const handleTouchCancel = useCallback(() => {
+    touchStartRef.current = null;
+    touchMovedRef.current = false;
+  }, []);
+
+  const handleDoubleClick = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      triggerActivate();
+    },
+    [triggerActivate]
+  );
+
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={`Edit constraints for ${label || "time block"}`}
+      className="ml-1 text-[10px] leading-none text-zinc-500 focus-visible:outline focus-visible:outline-white/60"
+      style={{
+        display: "inline-flex",
+        writingMode: "vertical-rl",
+        textOrientation: "mixed",
+        whiteSpace: "normal",
+        wordBreak: "break-word",
+        overflowWrap: "anywhere",
+        overflow: "hidden",
+        maxInlineSize: inlineSize,
+        inlineSize,
+      }}
+      onDoubleClick={handleDoubleClick}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          triggerActivate();
+        }
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -3237,45 +3395,54 @@ export default function SchedulePage() {
     logInstanceStatusChange,
   ]);
 
-  // New useEffect to fetch day-type-aware windows from API
-  useEffect(() => {
+  const refreshDayTypeWindows = useCallback(async () => {
     if (!userId) {
-      setWindows([]);
+      setWindows_REAL([]);
       return;
     }
-
     const tz = localTimeZone ?? effectiveTimeZone ?? "UTC";
     const dayKey = formatScheduleDateKey(currentDate, tz);
+    const params = new URLSearchParams();
+    params.set("dayKey", dayKey);
+    params.set("timeZone", tz);
 
-    async function fetchWindowsForCurrentDate() {
-      try {
-        const params = new URLSearchParams();
-        params.set("dayKey", dayKey);
-        params.set("timeZone", tz);
-
-        const response = await fetch(
-          `/api/windows/for-date?${params.toString()}`,
-          {
-            cache: "no-store",
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch windows (${response.status})`);
-        }
-
-        const payload = await response.json();
-        if (payload.windows) {
-          setWindows(payload.windows);
-        }
-      } catch (error) {
-        console.error("Failed to fetch day-type-aware windows", error);
-        setWindows([]);
+    try {
+      const response = await fetch(`/api/windows/for-date?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch windows (${response.status})`);
       }
+      const payload = await response.json();
+      if (payload?.windows) {
+        setWindows_REAL(payload.windows);
+      }
+    } catch (error) {
+      console.error("Failed to fetch day-type-aware windows", error);
+      setWindows_REAL([]);
     }
+  }, [
+    userId,
+    currentDate,
+    localTimeZone,
+    effectiveTimeZone,
+    setWindows_REAL,
+  ]);
 
-    void fetchWindowsForCurrentDate();
-  }, [userId, currentDate, localTimeZone]);
+  useEffect(() => {
+    void refreshDayTypeWindows();
+  }, [refreshDayTypeWindows]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = () => {
+      void refreshDayTypeWindows();
+    };
+    window.addEventListener(DAY_TYPE_BLOCK_UPDATED_EVENT, handler);
+    return () => {
+      window.removeEventListener(DAY_TYPE_BLOCK_UPDATED_EVENT, handler);
+    };
+  }, [refreshDayTypeWindows]);
 
   useEffect(() => {
     if (!userId) {
@@ -5852,6 +6019,26 @@ export default function SchedulePage() {
     return false;
   }, []);
 
+  const handleOpenDayTypeBlockConstraints = useCallback(
+    (block: RepoWindow) => {
+      if (!block.dayTypeTimeBlockId) return;
+      setIsJumpToDateOpen(true);
+      if (typeof window === "undefined") return;
+      const detail: DayTypeBlockEditEventDetail = {
+        blockId: block.id,
+        dayTypeId: block.dayTypeId ?? null,
+        dateKey: currentDateKey,
+      };
+      window.dispatchEvent(
+        new CustomEvent<DayTypeBlockEditEventDetail>(
+          DAY_TYPE_BLOCK_EDIT_EVENT,
+          { detail }
+        )
+      );
+    },
+    [currentDateKey, setIsJumpToDateOpen]
+  );
+
   const dayTimelineModel = useMemo(() => {
     return buildDayTimelineModel({
       date: currentDate,
@@ -6191,10 +6378,18 @@ export default function SchedulePage() {
                   >
                     <div className="w-0.5 bg-zinc-700 opacity-50" />
                     {shouldShowLabel ? (
-                      <WindowLabel
-                        label={w.label ?? ""}
-                        availableHeight={segmentHeightPx}
-                      />
+                      w.dayTypeTimeBlockId ? (
+                        <DayTypeBlockLabel
+                          label={w.label ?? ""}
+                          availableHeight={segmentHeightPx}
+                          onActivate={() => handleOpenDayTypeBlockConstraints(w)}
+                        />
+                      ) : (
+                        <WindowLabel
+                          label={w.label ?? ""}
+                          availableHeight={segmentHeightPx}
+                        />
+                      )
                     ) : null}
                   </div>
                 );
@@ -7635,7 +7830,7 @@ export default function SchedulePage() {
                     : "text-sm font-medium leading-tight truncate";
                   const standaloneBaseClass =
                     "absolute flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 py-2";
-                  const standaloneScheduledClass = `${standaloneBaseClass} text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]`;
+                  const standaloneScheduledClass = `${standaloneBaseClass} text-zinc-100 shadow-[0_12px_28px_rgba(24,24,27,0.35)] bg-[linear-gradient(135deg,_rgba(46,46,52,0.94)_0%,_rgba(58,58,66,0.92)_45%,_rgba(82,82,92,0.88)_100%)]`;
                   const standaloneCompletedClass = `${standaloneBaseClass} text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)]`;
                   const standaloneClassName = [
                     isCompleted
@@ -8059,6 +8254,7 @@ export default function SchedulePage() {
         habitId={editingSnapshot?.habitId ?? null}
         instance={editingInstance}
         onClose={handleCloseEditSheet}
+        onSaved={refreshScheduleData}
         onInstanceDeleted={refreshScheduleData}
       />
     </LayoutGroup>

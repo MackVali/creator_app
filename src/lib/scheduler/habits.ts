@@ -19,6 +19,10 @@ export type HabitScheduleItem = {
   energy?: string | null;
   recurrence: string | null;
   recurrenceDays: number[] | null;
+  recurrenceMode: string | null;
+  anchorType: string | null;
+  anchorValue: string | null;
+  anchorStartDate: string | null;
   skillId: string | null;
   skillMonumentId?: string | null;
   goalId: string | null;
@@ -56,6 +60,10 @@ type HabitRecord = {
   energy?: string | null;
   recurrence?: string | null;
   recurrence_days?: number[] | null;
+  recurrence_mode?: string | null;
+  anchor_type?: string | null;
+  anchor_value?: string | null;
+  anchor_start_date?: string | null;
   skill_id?: string | null;
   skill?: {
     monument_id?: string | null;
@@ -133,7 +141,7 @@ export async function fetchHabitsForSchedule(
   const locationJoin = "location_context:location_contexts(id, value, label)";
   const windowJoin = `window:windows(id, label, energy, start_local, end_local, days, location_context_id, ${locationJoin})`;
   const skillJoin = "skill:skills(monument_id)";
-  const baseColumns = `id, name, duration_minutes, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, ${skillJoin}, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, next_due_override, ${windowJoin}`;
+  const baseColumns = `id, name, duration_minutes, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, window_id, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, ${skillJoin}, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, next_due_override, ${windowJoin}`;
   const extendedColumns = `${baseColumns}, goal_id, completion_target`;
 
   let supportsGoalMetadata = cachedGoalMetadataSupport !== "unsupported";
@@ -224,6 +232,10 @@ export async function fetchHabitsForSchedule(
     energy: record.energy ?? record.window?.energy ?? null,
     recurrence: record.recurrence ?? null,
     recurrenceDays: record.recurrence_days ?? null,
+    recurrenceMode: record.recurrence_mode ?? null,
+    anchorType: record.anchor_type ?? null,
+    anchorValue: record.anchor_value ?? null,
+    anchorStartDate: record.anchor_start_date ?? null,
     skillId: record.skill_id ?? null,
     skillMonumentId: record.skill?.monument_id ?? null,
     goalId: supportsGoalMetadata ? record.goal_id ?? null : null,

@@ -62,6 +62,10 @@ export interface Database {
           current_streak_days: number;
           longest_streak_days: number;
           next_due_override: string | null;
+          recurrence_mode: string;
+          anchor_type: string | null;
+          anchor_value: string | null;
+          anchor_start_date: string | null;
         };
         Insert: {
           id?: string;
@@ -87,6 +91,10 @@ export interface Database {
           current_streak_days?: number;
           longest_streak_days?: number;
           next_due_override?: string | null;
+          recurrence_mode?: string;
+          anchor_type?: string | null;
+          anchor_value?: string | null;
+          anchor_start_date?: string | null;
         };
         Update: {
           id?: string;
@@ -111,6 +119,10 @@ export interface Database {
           current_streak_days?: number;
           longest_streak_days?: number;
           next_due_override?: string | null;
+          recurrence_mode?: string;
+          anchor_type?: string | null;
+          anchor_value?: string | null;
+          anchor_start_date?: string | null;
         };
       };
       habit_completion_days: {
