@@ -2032,7 +2032,7 @@ export function JumpToDateSheet({
                                 data-time-block-card={block.id}
                                 onClick={handleCardClick}
                                 className={cn(
-                                  "flex w-full flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.28)]",
+                                  "flex w-full flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 sm:px-3.5 sm:py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.28)]",
                                   highlightedBlockId === block.id &&
                                     "border-black ring-1 ring-black/70 bg-white/10 shadow-[0_0_0_26px_rgba(0,0,0,0.45)]",
                                   !showingConstraints && "cursor-pointer"
@@ -2041,7 +2041,7 @@ export function JumpToDateSheet({
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="space-y-0.5 flex-1">
                                     {showingConstraints ? (
-                                      <div className="space-y-2">
+                                      <div className="space-y-1.5">
                                         <button
                                           type="button"
                                           onClick={(event) => {
@@ -2060,267 +2060,273 @@ export function JumpToDateSheet({
                                           {block.start_local} → {block.end_local}
                                         </div>
                                         {renderLocationRow()}
-                                        <div className="space-y-3">
-                                          <div className="space-y-2">
-                                            <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
-                                              <span>Habits</span>
-                                              <label className="flex items-center gap-2 text-xs text-white/70">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={allowAllHabits}
-                                                  onChange={(event) => {
-                                                    if (!constraintKey) return;
-                                                    setBlockAllowAllHabitTypes((prev) => {
-                                                      const next = new Map(prev);
-                                                      next.set(
-                                                        constraintKey,
-                                                        event.target.checked
-                                                      );
-                                                      return next;
-                                                    });
-                                                  }}
-                                                  className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
-                                                />
-                                                <span>Allow all habit types</span>
-                                              </label>
-                                            </div>
-                                            {!allowAllHabits ? (
-                                              <>
-                                                <div className="grid grid-cols-2 gap-2">
-                                                  {HABIT_TYPE_OPTIONS.map((option) => {
-                                                    const selectedHabit =
-                                                      allowedHabitTypes.has(option.value);
-                                                    return (
-                                                      <button
-                                                        key={option.value}
-                                                        type="button"
-                                                        onClick={() => {
-                                                          if (!constraintKey) return;
-                                                          setBlockAllowedHabitTypes((prev) => {
-                                                            const next = new Map(prev);
-                                                            const set = new Set(
-                                                              next.get(constraintKey) ?? []
-                                                            );
-                                                            if (set.has(option.value)) {
-                                                              set.delete(option.value);
-                                                            } else {
-                                                              set.add(option.value);
-                                                            }
-                                                            next.set(constraintKey, set);
-                                                            return next;
-                                                          });
-                                                        }}
-                                                        className={cn(
-                                                          "flex items-center justify-between rounded-lg border px-3 py-2 text-xs transition",
-                                                          selectedHabit
-                                                            ? "border-white/40 bg-white/15 text-white"
-                                                            : "border-white/10 bg-black/20 text-white/70 hover:border-white/20"
-                                                        )}
-                                                      >
-                                                        <span className="truncate">
-                                                          {option.label}
-                                                        </span>
-                                                        {selectedHabit ? (
-                                                          <Check className="h-3.5 w-3.5" />
-                                                        ) : null}
-                                                      </button>
-                                                    );
-                                                  })}
-                                                </div>
-                                                {allowedHabitTypes.size === 0 ? (
-                                                  <div className="text-xs text-amber-200/80">
-                                                    Nothing allowed in this block for habits.
-                                                  </div>
-                                                ) : null}
-                                              </>
-                                            ) : null}
-                                          </div>
-                                          <div className="space-y-2">
-                                            <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
-                                              <span>Skills</span>
-                                              <label className="flex items-center gap-2 text-xs text-white/70">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={allowAllSkills}
-                                                  onChange={(event) => {
-                                                    if (!constraintKey) return;
-                                                    setBlockAllowAllSkills((prev) => {
-                                                      const next = new Map(prev);
-                                                      next.set(
-                                                        constraintKey,
-                                                        event.target.checked
-                                                      );
-                                                      return next;
-                                                    });
-                                                  }}
-                                                  className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
-                                                />
-                                                <span>Allow all skills</span>
-                                              </label>
-                                            </div>
-                                            {!allowAllSkills ? (
-                                              <>
-                                                {skillsLoading ? (
-                                                  <div className="text-xs text-white/60">
-                                                    Loading skills…
-                                                  </div>
-                                                ) : skills.length === 0 ? (
-                                                  <div className="text-xs text-white/60">
-                                                    No skills found.
-                                                  </div>
-                                                ) : (
-                                                  <div className="grid gap-1">
-                                                    {skills.map((skill) => {
-                                                      const selectedSkill =
-                                                        allowedSkillIds.has(skill.id);
-                                                      const icon =
-                                                        (skill.icon ?? "🎯").trim() || "🎯";
+                                        <div className="max-h-[46vh] sm:max-h-none overflow-y-auto pr-1">
+                                          <div className="space-y-2 sm:space-y-3">
+                                            <div className="space-y-2">
+                                              <div className="flex items-start justify-between text-[10px] sm:text-[11px] uppercase tracking-[0.14em] text-white/60">
+                                                <span>Habits</span>
+                                                <label className="flex flex-col items-start gap-1 text-[10px] sm:flex-row sm:items-center sm:gap-2 text-white/70">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={allowAllHabits}
+                                                    onChange={(event) => {
+                                                      if (!constraintKey) return;
+                                                      setBlockAllowAllHabitTypes((prev) => {
+                                                        const next = new Map(prev);
+                                                        next.set(
+                                                          constraintKey,
+                                                          event.target.checked
+                                                        );
+                                                        return next;
+                                                      });
+                                                    }}
+                                                    className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
+                                                  />
+                                                  <span>Allow all habit types</span>
+                                                </label>
+                                              </div>
+                                              {!allowAllHabits ? (
+                                                <>
+                                                  <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+                                                    {HABIT_TYPE_OPTIONS.map((option) => {
+                                                      const selectedHabit =
+                                                        allowedHabitTypes.has(option.value);
                                                       return (
                                                         <button
-                                                          key={skill.id}
+                                                          key={option.value}
                                                           type="button"
                                                           onClick={() => {
                                                             if (!constraintKey) return;
-                                                            setBlockAllowedSkillIds(
-                                                              (prev) => {
-                                                                const next = new Map(prev);
-                                                                const set = new Set(
-                                                                  next.get(constraintKey) ?? []
-                                                                );
-                                                                if (set.has(skill.id)) {
-                                                                  set.delete(skill.id);
-                                                                } else {
-                                                                  set.add(skill.id);
-                                                                }
-                                                                next.set(constraintKey, set);
-                                                                return next;
+                                                            setBlockAllowedHabitTypes((prev) => {
+                                                              const next = new Map(prev);
+                                                              const set = new Set(
+                                                                next.get(constraintKey) ?? []
+                                                              );
+                                                              if (set.has(option.value)) {
+                                                                set.delete(option.value);
+                                                              } else {
+                                                                set.add(option.value);
                                                               }
-                                                            );
+                                                              next.set(constraintKey, set);
+                                                              return next;
+                                                            });
                                                           }}
                                                           className={cn(
-                                                            "flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition",
-                                                            selectedSkill
-                                                              ? "bg-white/15 text-white"
-                                                              : "text-white/75 hover:bg-white/10"
+                                                            "flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-[10px] sm:px-3 sm:py-2 sm:text-xs transition",
+                                                            selectedHabit
+                                                              ? "border-white/40 bg-white/15 text-white"
+                                                              : "border-white/10 bg-black/20 text-white/70 hover:border-white/20"
                                                           )}
                                                         >
-                                                          <span className="flex items-center gap-2 truncate">
-                                                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-sm">
-                                                              {icon}
-                                                            </span>
-                                                            <span className="truncate">
-                                                              {skill.name}
-                                                            </span>
+                                                          <span className="truncate">
+                                                            {option.label}
                                                           </span>
-                                                          {selectedSkill ? (
-                                                            <Check className="h-3.5 w-3.5" />
+                                                          {selectedHabit ? (
+                                                            <Check className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                                                           ) : null}
                                                         </button>
                                                       );
                                                     })}
                                                   </div>
-                                                )}
-                                                {allowedSkillIds.size === 0 ? (
-                                                  <div className="text-xs text-amber-200/80">
-                                                    No skills allowed yet
-                                                  </div>
-                                                ) : null}
-                                              </>
-                                            ) : null}
-                                          </div>
-                                          <div className="space-y-2">
-                                            <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-white/60">
-                                              <span>Monuments</span>
-                                              <label className="flex items-center gap-2 text-xs text-white/70">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={allowAllMonuments}
-                                                  onChange={(event) => {
-                                                    if (!constraintKey) return;
-                                                    setBlockAllowAllMonuments((prev) => {
-                                                      const next = new Map(prev);
-                                                      next.set(
-                                                        constraintKey,
-                                                        event.target.checked
-                                                      );
-                                                      return next;
-                                                    });
-                                                  }}
-                                                  className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
-                                                />
-                                                <span>Allow all monuments</span>
-                                              </label>
+                                                  {allowedHabitTypes.size === 0 ? (
+                                                    <div className="text-xs text-amber-200/80">
+                                                      Nothing allowed in this block for habits.
+                                                    </div>
+                                                  ) : null}
+                                                </>
+                                              ) : null}
                                             </div>
-                                            {!allowAllMonuments ? (
-                                              <>
-                                                {monumentsLoading ? (
-                                                  <div className="text-xs text-white/60">
-                                                    Loading monuments…
-                                                  </div>
-                                                ) : monuments.length === 0 ? (
-                                                  <div className="text-xs text-white/60">
-                                                    No monuments found.
-                                                  </div>
-                                                ) : (
-                                                  <div className="grid gap-1">
-                                                    {monuments.map((monument) => {
-                                                      const selectedMonument =
-                                                        allowedMonumentIds.has(monument.id);
-                                                      const emoji =
-                                                        (monument.emoji ?? "🗿").trim() ||
-                                                        "🗿";
-                                                      return (
-                                                        <button
-                                                          key={monument.id}
-                                                          type="button"
-                                                          onClick={() => {
-                                                            if (!constraintKey) return;
-                                                            setBlockAllowedMonumentIds(
-                                                              (prev) => {
-                                                                const next = new Map(prev);
-                                                                const set = new Set(
-                                                                  next.get(constraintKey) ?? []
+                                            <div className="space-y-1.5 sm:space-y-2">
+                                              <div className="flex items-start justify-between text-[10px] sm:text-[11px] uppercase tracking-[0.14em] text-white/60">
+                                                <span>Skills</span>
+                                                <label className="flex flex-col items-start gap-1 text-[10px] sm:flex-row sm:items-center sm:gap-2 text-white/70">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={allowAllSkills}
+                                                    onChange={(event) => {
+                                                      if (!constraintKey) return;
+                                                      setBlockAllowAllSkills((prev) => {
+                                                        const next = new Map(prev);
+                                                        next.set(
+                                                          constraintKey,
+                                                          event.target.checked
+                                                        );
+                                                        return next;
+                                                      });
+                                                    }}
+                                                    className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
+                                                  />
+                                                  <span>Allow all skills</span>
+                                                </label>
+                                              </div>
+                                              {!allowAllSkills ? (
+                                                <>
+                                                  {skillsLoading ? (
+                                                    <div className="text-xs text-white/60">
+                                                      Loading skills…
+                                                    </div>
+                                                  ) : skills.length === 0 ? (
+                                                    <div className="text-xs text-white/60">
+                                                      No skills found.
+                                                    </div>
+                                                  ) : (
+                                                    <div className="max-h-32 sm:max-h-40 overflow-y-auto pr-1">
+                                                      <div className="grid gap-1">
+                                                        {skills.map((skill) => {
+                                                          const selectedSkill =
+                                                            allowedSkillIds.has(skill.id);
+                                                          const icon =
+                                                            (skill.icon ?? "🎯").trim() || "🎯";
+                                                          return (
+                                                            <button
+                                                              key={skill.id}
+                                                              type="button"
+                                                              onClick={() => {
+                                                                if (!constraintKey) return;
+                                                                setBlockAllowedSkillIds(
+                                                                  (prev) => {
+                                                                    const next = new Map(prev);
+                                                                    const set = new Set(
+                                                                      next.get(constraintKey) ?? []
+                                                                    );
+                                                                    if (set.has(skill.id)) {
+                                                                      set.delete(skill.id);
+                                                                    } else {
+                                                                      set.add(skill.id);
+                                                                    }
+                                                                    next.set(constraintKey, set);
+                                                                    return next;
+                                                                  }
                                                                 );
-                                                                if (set.has(monument.id)) {
-                                                                  set.delete(monument.id);
-                                                                } else {
-                                                                  set.add(monument.id);
-                                                                }
-                                                                next.set(constraintKey, set);
-                                                                return next;
-                                                              }
-                                                            );
-                                                          }}
-                                                          className={cn(
-                                                            "flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition",
-                                                            selectedMonument
-                                                              ? "bg-white/15 text-white"
-                                                              : "text-white/75 hover:bg-white/10"
-                                                          )}
-                                                        >
-                                                          <span className="flex items-center gap-2 truncate">
-                                                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-sm">
-                                                              {emoji}
-                                                            </span>
-                                                            <span className="truncate">
-                                                              {monument.title}
-                                                            </span>
-                                                          </span>
-                                                          {selectedMonument ? (
-                                                            <Check className="h-3.5 w-3.5" />
-                                                          ) : null}
-                                                        </button>
-                                                      );
-                                                    })}
-                                                  </div>
-                                                )}
-                                                {allowedMonumentIds.size === 0 ? (
-                                                  <div className="text-xs text-amber-200/80">
-                                                    Nothing allowed in this block for monuments.
-                                                  </div>
-                                                ) : null}
-                                              </>
-                                            ) : null}
+                                                              }}
+                                                              className={cn(
+                                                                "flex items-center justify-between rounded-md px-2 py-1.5 text-[10px] sm:px-2.5 sm:text-xs transition",
+                                                                selectedSkill
+                                                                  ? "bg-white/15 text-white"
+                                                                  : "text-white/75 hover:bg-white/10"
+                                                              )}
+                                                            >
+                                                              <span className="flex flex-1 items-start gap-2">
+                                                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-xs">
+                                                                  {icon}
+                                                                </span>
+                                                                <span className="break-words text-left text-[10px] sm:text-xs">
+                                                                  {skill.name}
+                                                                </span>
+                                                              </span>
+                                                              {selectedSkill ? (
+                                                                <Check className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                                                              ) : null}
+                                                            </button>
+                                                          );
+                                                        })}
+                                                      </div>
+                                                    </div>
+                                                  )}
+                                                  {allowedSkillIds.size === 0 ? (
+                                                    <div className="text-xs text-amber-200/80">
+                                                      No skills allowed yet
+                                                    </div>
+                                                  ) : null}
+                                                </>
+                                              ) : null}
+                                            </div>
+                                            <div className="space-y-1.5 sm:space-y-2">
+                                              <div className="flex items-start justify-between text-[10px] sm:text-[11px] uppercase tracking-[0.14em] text-white/60">
+                                                <span>Monuments</span>
+                                                <label className="flex flex-col items-start gap-1 text-[10px] sm:flex-row sm:items-center sm:gap-2 text-white/70">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={allowAllMonuments}
+                                                    onChange={(event) => {
+                                                      if (!constraintKey) return;
+                                                      setBlockAllowAllMonuments((prev) => {
+                                                        const next = new Map(prev);
+                                                        next.set(
+                                                          constraintKey,
+                                                          event.target.checked
+                                                        );
+                                                        return next;
+                                                      });
+                                                    }}
+                                                    className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
+                                                  />
+                                                  <span>Allow all monuments</span>
+                                                </label>
+                                              </div>
+                                              {!allowAllMonuments ? (
+                                                <>
+                                                  {monumentsLoading ? (
+                                                    <div className="text-xs text-white/60">
+                                                      Loading monuments…
+                                                    </div>
+                                                  ) : monuments.length === 0 ? (
+                                                    <div className="text-xs text-white/60">
+                                                      No monuments found.
+                                                    </div>
+                                                  ) : (
+                                                    <div className="max-h-32 sm:max-h-40 overflow-y-auto pr-1">
+                                                      <div className="grid gap-1">
+                                                        {monuments.map((monument) => {
+                                                          const selectedMonument =
+                                                            allowedMonumentIds.has(monument.id);
+                                                          const emoji =
+                                                            (monument.emoji ?? "🗿").trim() ||
+                                                            "🗿";
+                                                          return (
+                                                            <button
+                                                              key={monument.id}
+                                                              type="button"
+                                                              onClick={() => {
+                                                                if (!constraintKey) return;
+                                                                setBlockAllowedMonumentIds(
+                                                                  (prev) => {
+                                                                    const next = new Map(prev);
+                                                                    const set = new Set(
+                                                                      next.get(constraintKey) ?? []
+                                                                    );
+                                                                    if (set.has(monument.id)) {
+                                                                      set.delete(monument.id);
+                                                                    } else {
+                                                                      set.add(monument.id);
+                                                                    }
+                                                                    next.set(constraintKey, set);
+                                                                    return next;
+                                                                  }
+                                                                );
+                                                              }}
+                                                              className={cn(
+                                                                "flex items-center justify-between rounded-md px-2 py-1.5 text-[10px] sm:px-2.5 sm:text-xs transition",
+                                                                selectedMonument
+                                                                  ? "bg-white/15 text-white"
+                                                                  : "text-white/75 hover:bg-white/10"
+                                                              )}
+                                                            >
+                                                              <span className="flex flex-1 items-start gap-2">
+                                                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-xs">
+                                                                  {emoji}
+                                                                </span>
+                                                                <span className="break-words text-left text-[10px] sm:text-xs">
+                                                                  {monument.title}
+                                                                </span>
+                                                              </span>
+                                                              {selectedMonument ? (
+                                                                <Check className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                                                              ) : null}
+                                                            </button>
+                                                          );
+                                                        })}
+                                                      </div>
+                                                    </div>
+                                                  )}
+                                                  {allowedMonumentIds.size === 0 ? (
+                                                    <div className="text-xs text-amber-200/80">
+                                                      Nothing allowed in this block for monuments.
+                                                    </div>
+                                                  ) : null}
+                                                </>
+                                              ) : null}
+                                            </div>
                                           </div>
                                         </div>
                                       </div>
@@ -2336,7 +2342,13 @@ export function JumpToDateSheet({
                                       </div>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-2">
+                                  <div
+                                    className={cn(
+                                      showingConstraints
+                                        ? "flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2"
+                                        : "flex items-center gap-2"
+                                    )}
+                                  >
                                     <button
                                       type="button"
                                       onClick={(event) => {
