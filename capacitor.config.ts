@@ -1,3 +1,6 @@
+/// <reference types="@capacitor/keyboard" />
+
+import { KeyboardResize } from '@capacitor/keyboard';
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
@@ -7,6 +10,11 @@ const config: CapacitorConfig = {
   server: {
     url: 'https://trycreator.app',
     cleartext: false
+  },
+  plugins: {
+    Keyboard: {
+      resize: KeyboardResize.Body
+    }
   }
 };
 

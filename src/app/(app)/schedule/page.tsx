@@ -3245,10 +3245,23 @@ export default function SchedulePage() {
     if (typeof window === "undefined") return;
 
     const viewport = window.visualViewport;
+    const isEditableFieldFocused = () => {
+      const activeElement = document.activeElement;
+      if (!activeElement) return false;
+      const tagName = activeElement.tagName?.toLowerCase();
+      if (tagName === "input" || tagName === "textarea") return true;
+      return (
+        activeElement instanceof HTMLElement &&
+        activeElement.getAttribute("contenteditable") === "true"
+      );
+    };
 
     const recompute = () => {
       const viewportHeight =
-        window.visualViewport?.height ?? window.innerHeight;
+        (isEditableFieldFocused()
+          ? window.innerHeight
+          : window.visualViewport?.height) ?? window.innerHeight;
+      // visualViewport.height shrinks when the iOS keyboard opens; ignore that as a density change.
       const density = determineDensity(viewportHeight);
       applyDensity(density);
     };
