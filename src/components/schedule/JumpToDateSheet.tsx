@@ -573,8 +573,11 @@ export function JumpToDateSheet({
           setBlockTypeMap(new Map());
           setBlockLocation(new Map());
           setBlockAllowAllHabitTypes(new Map());
+          setBlockAllowedHabitTypes(new Map());
           setBlockAllowAllSkills(new Map());
+          setBlockAllowedSkillIds(new Map());
           setBlockAllowAllMonuments(new Map());
+          setBlockAllowedMonumentIds(new Map());
           return;
         }
         const [blocksResult, linksResult] = await Promise.all([
@@ -611,24 +614,30 @@ export function JumpToDateSheet({
         const allowAllHabitMap = new Map<string, boolean>();
         const allowAllSkillMap = new Map<string, boolean>();
         const allowAllMonumentMap = new Map<string, boolean>();
+        const dttbKeyById = new Map<string, string>();
+        const dttbIds: string[] = [];
+        const allowedHabitTypesMap = new Map<string, Set<string>>();
+        const allowedSkillIdsMap = new Map<string, Set<string>>();
+        const allowedMonumentIdsMap = new Map<string, Set<string>>();
         (linksResult.data ?? []).forEach((row) => {
           const dayTypeId = (row as { day_type_id?: string | null })
             ?.day_type_id;
           const blockId = (row as { time_block_id?: string | null })
             ?.time_block_id;
           if (!dayTypeId || !blockId) return;
+          const constraintKey = `${dayTypeId}:${blockId}`;
           const existing = byDayType.get(dayTypeId) ?? new Set<string>();
           existing.add(blockId);
           byDayType.set(dayTypeId, existing);
           const level = (row as { energy?: string | null })?.energy ?? "NO";
-          energyMap.set(`${dayTypeId}:${blockId}`, normalizeFlameLevel(level));
+          energyMap.set(constraintKey, normalizeFlameLevel(level));
           const type = (
             (row as { block_type?: string | null })?.block_type ?? "FOCUS"
           ).toUpperCase();
           if (type === "BREAK" || type === "PRACTICE" || type === "FOCUS") {
-            typeMap.set(`${dayTypeId}:${blockId}`, type);
+            typeMap.set(constraintKey, type);
           } else {
-            typeMap.set(`${dayTypeId}:${blockId}`, "FOCUS");
+            typeMap.set(constraintKey, "FOCUS");
           }
           const locationContext = (
             row as {
@@ -640,6 +649,11 @@ export function JumpToDateSheet({
           )?.location_context;
           const locationId = (row as { location_context_id?: string | null })
             ?.location_context_id;
+          const rowId = (row as { id?: string | null })?.id;
+          if (rowId) {
+            dttbKeyById.set(rowId, constraintKey);
+            dttbIds.push(rowId);
+          }
           if (locationId) {
             const value =
               typeof locationContext?.value === "string"
@@ -649,29 +663,126 @@ export function JumpToDateSheet({
               typeof locationContext?.label === "string"
                 ? locationContext.label.trim()
                 : (locationContext?.value ?? value);
-            locationMap.set(`${dayTypeId}:${blockId}`, {
+            locationMap.set(constraintKey, {
               label: label ?? locationId,
               value,
             });
           } else {
-            locationMap.set(`${dayTypeId}:${blockId}`, null);
+            locationMap.set(constraintKey, null);
           }
           allowAllHabitMap.set(
-            `${dayTypeId}:${blockId}`,
+            constraintKey,
             (row as { allow_all_habit_types?: boolean | null })
               ?.allow_all_habit_types !== false
           );
           allowAllSkillMap.set(
-            `${dayTypeId}:${blockId}`,
+            constraintKey,
             (row as { allow_all_skills?: boolean | null })?.allow_all_skills !==
               false
           );
           allowAllMonumentMap.set(
-            `${dayTypeId}:${blockId}`,
+            constraintKey,
             (row as { allow_all_monuments?: boolean | null })
               ?.allow_all_monuments !== false
           );
         });
+        if (dttbIds.length > 0) {
+          const { data: allowedEntries, error: allowedError } = await supabase
+            .from("day_type_time_block_allowed_habit_types")
+            .select("day_type_time_block_id,habit_type")
+            .in("day_type_time_block_id", dttbIds);
+          if (allowedError) {
+            console.warn(
+              "Unable to load allowed habit types for time blocks",
+              allowedError
+            );
+          } else {
+            (allowedEntries ?? []).forEach((entry) => {
+              const dayTypeTimeBlockId = (
+                entry as {
+                  day_type_time_block_id?: string | null;
+                  habit_type?: string | null;
+                }
+              )?.day_type_time_block_id;
+              const rawType = (
+                entry as { habit_type?: string | null }
+              )?.habit_type;
+              if (!dayTypeTimeBlockId || !rawType) return;
+              const key = dttbKeyById.get(dayTypeTimeBlockId);
+              if (!key) return;
+              const normalizedHabitType = String(rawType).trim().toUpperCase();
+              if (!normalizedHabitType) return;
+              const nextSet = allowedHabitTypesMap.get(key) ?? new Set<string>();
+              nextSet.add(normalizedHabitType);
+              allowedHabitTypesMap.set(key, nextSet);
+            });
+          }
+        }
+        if (dttbIds.length > 0) {
+          const { data: allowedSkillEntries, error: allowedSkillError } =
+            await supabase
+              .from("day_type_time_block_allowed_skills")
+              .select("day_type_time_block_id,skill_id")
+              .in("day_type_time_block_id", dttbIds);
+          if (allowedSkillError) {
+            console.warn(
+              "Unable to load allowed skill ids for time blocks",
+              allowedSkillError
+            );
+          } else {
+            (allowedSkillEntries ?? []).forEach((entry) => {
+              const dayTypeTimeBlockId = (
+                entry as {
+                  day_type_time_block_id?: string | null;
+                  skill_id?: string | null;
+                }
+              )?.day_type_time_block_id;
+              const rawSkillId = (entry as { skill_id?: string | null })?.skill_id;
+              if (!dayTypeTimeBlockId || !rawSkillId) return;
+              const key = dttbKeyById.get(dayTypeTimeBlockId);
+              if (!key) return;
+              const normalizedSkillId = String(rawSkillId).trim();
+              if (!normalizedSkillId) return;
+              const nextSet = allowedSkillIdsMap.get(key) ?? new Set<string>();
+              nextSet.add(normalizedSkillId);
+              allowedSkillIdsMap.set(key, nextSet);
+            });
+          }
+        }
+        if (dttbIds.length > 0) {
+          const { data: allowedMonumentEntries, error: allowedMonumentError } =
+            await supabase
+              .from("day_type_time_block_allowed_monuments")
+              .select("day_type_time_block_id,monument_id")
+              .in("day_type_time_block_id", dttbIds);
+          if (allowedMonumentError) {
+            console.warn(
+              "Unable to load allowed monument ids for time blocks",
+              allowedMonumentError
+            );
+          } else {
+            (allowedMonumentEntries ?? []).forEach((entry) => {
+              const dayTypeTimeBlockId = (
+                entry as {
+                  day_type_time_block_id?: string | null;
+                  monument_id?: string | null;
+                }
+              )?.day_type_time_block_id;
+              const rawMonumentId = (
+                entry as { monument_id?: string | null }
+              )?.monument_id;
+              if (!dayTypeTimeBlockId || !rawMonumentId) return;
+              const key = dttbKeyById.get(dayTypeTimeBlockId);
+              if (!key) return;
+              const normalizedMonumentId = String(rawMonumentId).trim();
+              if (!normalizedMonumentId) return;
+              const nextSet =
+                allowedMonumentIdsMap.get(key) ?? new Set<string>();
+              nextSet.add(normalizedMonumentId);
+              allowedMonumentIdsMap.set(key, nextSet);
+            });
+          }
+        }
 
         const sortedBlocks = [...normalizedBlocks].sort((a, b) => {
           const aStart = timeStringToMinutes(a.start_local);
@@ -688,8 +799,11 @@ export function JumpToDateSheet({
         setBlockTypeMap(typeMap);
         setBlockLocation(locationMap);
         setBlockAllowAllHabitTypes(allowAllHabitMap);
+        setBlockAllowedHabitTypes(allowedHabitTypesMap);
         setBlockAllowAllSkills(allowAllSkillMap);
+        setBlockAllowedSkillIds(allowedSkillIdsMap);
         setBlockAllowAllMonuments(allowAllMonumentMap);
+        setBlockAllowedMonumentIds(allowedMonumentIdsMap);
       } catch (error) {
         console.warn("Unable to load time blocks for paint mode", error);
         if (cancelled) return;
@@ -700,7 +814,10 @@ export function JumpToDateSheet({
         setBlockLocation(new Map());
         setBlockAllowAllHabitTypes(new Map());
         setBlockAllowAllSkills(new Map());
+        setBlockAllowedSkillIds(new Map());
         setBlockAllowAllMonuments(new Map());
+        setBlockAllowedMonumentIds(new Map());
+        setBlockAllowedHabitTypes(new Map());
         setTimeBlockError("Unable to load time blocks right now.");
       } finally {
         if (cancelled) return;
@@ -1505,7 +1622,16 @@ export function JumpToDateSheet({
   const saveBlockSettings = useCallback(
     async (
       blockId: string,
-      updates: { energy?: FlameLevel; blockType?: BlockType }
+      updates: {
+        energy?: FlameLevel;
+        blockType?: BlockType;
+        allowAllHabitTypes?: boolean;
+        allowedHabitTypes?: Set<string>;
+        allowAllSkills?: boolean;
+        allowedSkillIds?: Set<string>;
+        allowAllMonuments?: boolean;
+        allowedMonumentIds?: Set<string>;
+      }
     ) => {
       if (!paintSelectionKey) {
         setSaveError("Select a date in paint mode first.");
@@ -1530,19 +1656,180 @@ export function JumpToDateSheet({
             userId,
           }));
         if (!dayTypeId) throw new Error("Unable to prepare day type");
-        const payload: Record<string, string | null> = {
+        const payload: Record<string, string | boolean | null> = {
           user_id: userId,
           day_type_id: dayTypeId,
           time_block_id: blockId,
         };
         if (updates.energy) payload.energy = updates.energy;
         if (updates.blockType) payload.block_type = updates.blockType;
+        const shouldUpdateHabitSettings =
+          typeof updates.allowAllHabitTypes === "boolean";
+        if (shouldUpdateHabitSettings) {
+          payload.allow_all_habit_types = updates.allowAllHabitTypes ?? true;
+        }
+        const shouldUpdateSkillSettings =
+          typeof updates.allowAllSkills === "boolean";
+        if (shouldUpdateSkillSettings) {
+          payload.allow_all_skills = updates.allowAllSkills ?? true;
+        }
+        const shouldUpdateMonumentSettings =
+          typeof updates.allowAllMonuments === "boolean";
+        if (shouldUpdateMonumentSettings) {
+          payload.allow_all_monuments = updates.allowAllMonuments ?? true;
+        }
         const { error } = await supabase
           .from("day_type_time_blocks")
           .upsert(payload, {
             onConflict: "day_type_id,time_block_id",
           });
         if (error) throw error;
+
+        const allowedHabitTypesSet =
+          updates.allowedHabitTypes ?? new Set<string>();
+        const normalizedAllowedHabitTypes = Array.from(
+          new Set(
+            Array.from(allowedHabitTypesSet)
+              .map((value) => value.trim().toUpperCase())
+              .filter((value): value is string => value.length > 0)
+          )
+        );
+        const allowedSkillIdsSet = updates.allowedSkillIds ?? new Set<string>();
+        const normalizedSkillIds = Array.from(
+          new Set(
+            Array.from(allowedSkillIdsSet)
+              .map((value) => value.trim())
+              .filter((value): value is string => value.length > 0)
+          )
+        );
+        const allowedMonumentIdsSet =
+          updates.allowedMonumentIds ?? new Set<string>();
+        const normalizedMonumentIds = Array.from(
+          new Set(
+            Array.from(allowedMonumentIdsSet)
+              .map((value) => value.trim())
+              .filter((value): value is string => value.length > 0)
+          )
+        );
+        let dttbId: string | null = null;
+        if (
+          shouldUpdateHabitSettings ||
+          shouldUpdateSkillSettings ||
+          shouldUpdateMonumentSettings
+        ) {
+          const { data: dayTypeTimeBlock, error: lookupError } =
+            await supabase
+              .from("day_type_time_blocks")
+              .select("id")
+              .eq("day_type_id", dayTypeId)
+              .eq("time_block_id", blockId)
+              .single();
+          if (lookupError) throw lookupError;
+          dttbId = (dayTypeTimeBlock as { id?: string | null })?.id ?? null;
+          if (!dttbId) throw new Error("Day type time block missing");
+        }
+        if (shouldUpdateHabitSettings) {
+          const resolvedDttbId = dttbId!;
+          const { error: deleteError } = await supabase
+            .from("day_type_time_block_allowed_habit_types")
+            .delete()
+            .eq("day_type_time_block_id", resolvedDttbId);
+          if (deleteError) throw deleteError;
+          if (
+            updates.allowAllHabitTypes === false &&
+            normalizedAllowedHabitTypes.length > 0
+          ) {
+            const { error: insertError } = await supabase
+              .from("day_type_time_block_allowed_habit_types")
+              .insert(
+                normalizedAllowedHabitTypes.map((habitType) => ({
+                  user_id: userId,
+                  day_type_time_block_id: resolvedDttbId,
+                  habit_type: habitType,
+                }))
+              );
+            if (insertError) throw insertError;
+          }
+          const constraintKey = `${dayTypeId}:${blockId}`;
+          setBlockAllowAllHabitTypes((prev) => {
+            const next = new Map(prev);
+            next.set(constraintKey, updates.allowAllHabitTypes ?? true);
+            return next;
+          });
+          setBlockAllowedHabitTypes((prev) => {
+            const next = new Map(prev);
+            next.set(constraintKey, new Set(normalizedAllowedHabitTypes));
+            return next;
+          });
+        }
+        if (shouldUpdateSkillSettings) {
+          const resolvedDttbId = dttbId!;
+          const { error: deleteError } = await supabase
+            .from("day_type_time_block_allowed_skills")
+            .delete()
+            .eq("day_type_time_block_id", resolvedDttbId);
+          if (deleteError) throw deleteError;
+          if (
+            updates.allowAllSkills === false &&
+            normalizedSkillIds.length > 0
+          ) {
+            const { error: insertError } = await supabase
+              .from("day_type_time_block_allowed_skills")
+              .insert(
+                normalizedSkillIds.map((skillId) => ({
+                  user_id: userId,
+                  day_type_time_block_id: resolvedDttbId,
+                  skill_id: skillId,
+                }))
+              );
+            if (insertError) throw insertError;
+          }
+          const constraintKey = `${dayTypeId}:${blockId}`;
+          setBlockAllowAllSkills((prev) => {
+            const next = new Map(prev);
+            next.set(constraintKey, updates.allowAllSkills ?? true);
+            return next;
+          });
+          setBlockAllowedSkillIds((prev) => {
+            const next = new Map(prev);
+            next.set(constraintKey, new Set(normalizedSkillIds));
+            return next;
+          });
+        }
+        if (shouldUpdateMonumentSettings) {
+          const resolvedDttbId = dttbId!;
+          const { error: deleteError } = await supabase
+            .from("day_type_time_block_allowed_monuments")
+            .delete()
+            .eq("day_type_time_block_id", resolvedDttbId);
+          if (deleteError) throw deleteError;
+          if (
+            updates.allowAllMonuments === false &&
+            normalizedMonumentIds.length > 0
+          ) {
+            const { error: insertError } = await supabase
+              .from("day_type_time_block_allowed_monuments")
+              .insert(
+                normalizedMonumentIds.map((monumentId) => ({
+                  user_id: userId,
+                  day_type_time_block_id: resolvedDttbId,
+                  monument_id: monumentId,
+                }))
+              );
+            if (insertError) throw insertError;
+          }
+          const constraintKey = `${dayTypeId}:${blockId}`;
+          setBlockAllowAllMonuments((prev) => {
+            const next = new Map(prev);
+            next.set(constraintKey, updates.allowAllMonuments ?? true);
+            return next;
+          });
+          setBlockAllowedMonumentIds((prev) => {
+            const next = new Map(prev);
+            next.set(constraintKey, new Set(normalizedMonumentIds));
+            return next;
+          });
+        }
 
         if (updates.energy) {
           setBlockEnergy((prev) => {
@@ -2071,13 +2358,20 @@ export function JumpToDateSheet({
                                                     checked={allowAllHabits}
                                                     onChange={(event) => {
                                                       if (!constraintKey) return;
+                                                      const checked = event.target.checked;
                                                       setBlockAllowAllHabitTypes((prev) => {
                                                         const next = new Map(prev);
                                                         next.set(
                                                           constraintKey,
-                                                          event.target.checked
+                                                          checked
                                                         );
                                                         return next;
+                                                      });
+                                                      void saveBlockSettings(block.id, {
+                                                        allowAllHabitTypes: checked,
+                                                        allowedHabitTypes: new Set(
+                                                          allowedHabitTypes
+                                                        ),
                                                       });
                                                     }}
                                                     className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
@@ -2097,18 +2391,25 @@ export function JumpToDateSheet({
                                                           type="button"
                                                           onClick={() => {
                                                             if (!constraintKey) return;
+                                                            const updatedSet = new Set(
+                                                              allowedHabitTypes
+                                                            );
+                                                            if (updatedSet.has(option.value)) {
+                                                              updatedSet.delete(option.value);
+                                                            } else {
+                                                              updatedSet.add(option.value);
+                                                            }
                                                             setBlockAllowedHabitTypes((prev) => {
                                                               const next = new Map(prev);
-                                                              const set = new Set(
-                                                                next.get(constraintKey) ?? []
+                                                              next.set(
+                                                                constraintKey,
+                                                                new Set(updatedSet)
                                                               );
-                                                              if (set.has(option.value)) {
-                                                                set.delete(option.value);
-                                                              } else {
-                                                                set.add(option.value);
-                                                              }
-                                                              next.set(constraintKey, set);
                                                               return next;
+                                                            });
+                                                            void saveBlockSettings(block.id, {
+                                                              allowAllHabitTypes: false,
+                                                              allowedHabitTypes: updatedSet,
                                                             });
                                                           }}
                                                           className={cn(
@@ -2145,13 +2446,17 @@ export function JumpToDateSheet({
                                                     checked={allowAllSkills}
                                                     onChange={(event) => {
                                                       if (!constraintKey) return;
+                                                      const checked = event.target.checked;
                                                       setBlockAllowAllSkills((prev) => {
                                                         const next = new Map(prev);
-                                                        next.set(
-                                                          constraintKey,
-                                                          event.target.checked
-                                                        );
+                                                        next.set(constraintKey, checked);
                                                         return next;
+                                                      });
+                                                      void saveBlockSettings(block.id, {
+                                                        allowAllSkills: checked,
+                                                        allowedSkillIds: new Set(
+                                                          allowedSkillIds
+                                                        ),
                                                       });
                                                     }}
                                                     className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
@@ -2181,24 +2486,29 @@ export function JumpToDateSheet({
                                                             <button
                                                               key={skill.id}
                                                               type="button"
-                                                              onClick={() => {
-                                                                if (!constraintKey) return;
-                                                                setBlockAllowedSkillIds(
-                                                                  (prev) => {
-                                                                    const next = new Map(prev);
-                                                                    const set = new Set(
-                                                                      next.get(constraintKey) ?? []
-                                                                    );
-                                                                    if (set.has(skill.id)) {
-                                                                      set.delete(skill.id);
-                                                                    } else {
-                                                                      set.add(skill.id);
-                                                                    }
-                                                                    next.set(constraintKey, set);
-                                                                    return next;
-                                                                  }
+                                                            onClick={() => {
+                                                              if (!constraintKey) return;
+                                                              const updatedSet = new Set(
+                                                                allowedSkillIds
+                                                              );
+                                                              if (updatedSet.has(skill.id)) {
+                                                                updatedSet.delete(skill.id);
+                                                              } else {
+                                                                updatedSet.add(skill.id);
+                                                              }
+                                                              setBlockAllowedSkillIds((prev) => {
+                                                                const next = new Map(prev);
+                                                                next.set(
+                                                                  constraintKey,
+                                                                  new Set(updatedSet)
                                                                 );
-                                                              }}
+                                                                return next;
+                                                              });
+                                                              void saveBlockSettings(block.id, {
+                                                                allowAllSkills: false,
+                                                                allowedSkillIds: updatedSet,
+                                                              });
+                                                            }}
                                                               className={cn(
                                                                 "flex items-center justify-between rounded-md px-2 py-1.5 text-[10px] sm:px-2.5 sm:text-xs transition",
                                                                 selectedSkill
@@ -2240,13 +2550,20 @@ export function JumpToDateSheet({
                                                     checked={allowAllMonuments}
                                                     onChange={(event) => {
                                                       if (!constraintKey) return;
+                                                      const checked = event.target.checked;
                                                       setBlockAllowAllMonuments((prev) => {
                                                         const next = new Map(prev);
                                                         next.set(
                                                           constraintKey,
-                                                          event.target.checked
+                                                          checked
                                                         );
                                                         return next;
+                                                      });
+                                                      void saveBlockSettings(block.id, {
+                                                        allowAllMonuments: checked,
+                                                        allowedMonumentIds: new Set(
+                                                          allowedMonumentIds
+                                                        ),
                                                       });
                                                     }}
                                                     className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
@@ -2277,24 +2594,29 @@ export function JumpToDateSheet({
                                                             <button
                                                               key={monument.id}
                                                               type="button"
-                                                              onClick={() => {
-                                                                if (!constraintKey) return;
-                                                                setBlockAllowedMonumentIds(
-                                                                  (prev) => {
-                                                                    const next = new Map(prev);
-                                                                    const set = new Set(
-                                                                      next.get(constraintKey) ?? []
-                                                                    );
-                                                                    if (set.has(monument.id)) {
-                                                                      set.delete(monument.id);
-                                                                    } else {
-                                                                      set.add(monument.id);
-                                                                    }
-                                                                    next.set(constraintKey, set);
-                                                                    return next;
-                                                                  }
+                                                            onClick={() => {
+                                                              if (!constraintKey) return;
+                                                              const updatedSet = new Set(
+                                                                allowedMonumentIds
+                                                              );
+                                                              if (updatedSet.has(monument.id)) {
+                                                                updatedSet.delete(monument.id);
+                                                              } else {
+                                                                updatedSet.add(monument.id);
+                                                              }
+                                                              setBlockAllowedMonumentIds((prev) => {
+                                                                const next = new Map(prev);
+                                                                next.set(
+                                                                  constraintKey,
+                                                                  new Set(updatedSet)
                                                                 );
-                                                              }}
+                                                                return next;
+                                                              });
+                                                              void saveBlockSettings(block.id, {
+                                                                allowAllMonuments: false,
+                                                                allowedMonumentIds: updatedSet,
+                                                              });
+                                                            }}
                                                               className={cn(
                                                                 "flex items-center justify-between rounded-md px-2 py-1.5 text-[10px] sm:px-2.5 sm:text-xs transition",
                                                                 selectedMonument

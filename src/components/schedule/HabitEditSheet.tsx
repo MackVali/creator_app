@@ -190,11 +190,29 @@ function toDateTimeLocalInput(value?: string | null) {
 
 function fromDateTimeLocalInput(value?: string | null) {
   if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
+
+  const [datePart, timePart] = value.split("T");
+  if (!datePart || !timePart) return null;
+
+  const [year, month, day] = datePart.split("-").map(Number);
+  const [hour, minute] = timePart.split(":").map(Number);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
     return null;
   }
-  return parsed.toISOString();
+
+  const localDate = new Date(year, month - 1, day, hour, minute, 0, 0);
+  if (Number.isNaN(localDate.getTime())) {
+    return null;
+  }
+
+  return localDate.toISOString();
 }
 
 function formatDateTimeDisplay(value?: string | null) {

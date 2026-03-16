@@ -5530,6 +5530,16 @@ async function reserveMandatoryHabitsForDay(params: {
     }
     const windowDays = habit.window?.days ?? null;
     const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
+    const overrideDayStart = nextDueOverride
+      ? startOfDayInTimeZone(nextDueOverride, zone)
+      : null;
+
+    if (overrideDayStart) {
+      const todayStart = startOfDayInTimeZone(day, zone);
+      if (todayStart.getTime() < overrideDayStart.getTime()) {
+        continue;
+      }
+    }
     const dueInfo = evaluateHabitDueOnDate({
       habit,
       date: day,
@@ -6908,7 +6918,11 @@ async function scheduleHabitsForDay(params: {
       nextDueOverride,
     });
     if (!dueInfo.isDue) {
-      if (instance.id && createdThisRun.has(instance.id)) {
+      if (
+        instance.id &&
+        createdThisRun.has(instance.id) &&
+        dueInfo.debugTag === "LAST_SCHEDULED_TODAY"
+      ) {
         continue;
       }
       if (SCHEDULER_DEBUG_LOGGING) {
@@ -7055,6 +7069,13 @@ async function scheduleHabitsForDay(params: {
     const overrideDayStart = nextDueOverride
       ? startOfDayInTimeZone(nextDueOverride, zone)
       : null;
+
+    if (overrideDayStart) {
+      const todayStart = startOfDayInTimeZone(day, zone);
+      if (todayStart.getTime() < overrideDayStart.getTime()) {
+        continue;
+      }
+    }
     // Use effective lastCompletedAt if more recent than habit's lastCompletedAt
     const effectiveLastCompletedAtForHabit = effectiveLastCompletedAt.get(
       habit.id
