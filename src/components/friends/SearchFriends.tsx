@@ -198,6 +198,15 @@ export default function SearchFriends({
     };
   }, [q, syncDiscoveryProfiles]);
 
+  const uniqueDiscovery = useMemo(() => {
+    const seen = new Set<string>();
+    return discovery.filter((profile) => {
+      if (seen.has(profile.id)) return false;
+      seen.add(profile.id);
+      return true;
+    });
+  }, [discovery]);
+
   const dataset = useMemo(
     () => (me ? [me, ...matches] : matches),
     [me, matches]
@@ -205,7 +214,7 @@ export default function SearchFriends({
 
   const trimmedQuery = q.trim();
   const hasQuery = trimmedQuery.length > 0;
-  const shouldShowDiscovery = discovery.length > 0 || hasQuery;
+  const shouldShowDiscovery = uniqueDiscovery.length > 0 || hasQuery;
 
   const handleConnect = useCallback(
     (profile: DiscoveryProfileState) => {
@@ -374,13 +383,13 @@ export default function SearchFriends({
     : "Recommended creators";
 
   const discoveryResultsCount =
-    hasQuery && discovery.length > 0
-      ? `${discovery.length} profile${discovery.length === 1 ? "" : "s"}`
+    hasQuery && uniqueDiscovery.length > 0
+      ? `${uniqueDiscovery.length} profile${uniqueDiscovery.length === 1 ? "" : "s"}`
       : null;
 
-  const discoveryResultsList = discovery.length ? (
+  const discoveryResultsList = uniqueDiscovery.length ? (
     <div className="space-y-2">
-      {discovery.map((profile) => (
+      {uniqueDiscovery.map((profile) => (
         <article
           key={profile.id}
           className="flex items-center gap-3 rounded-2xl bg-white/[0.08] px-3 py-3 ring-1 ring-white/10"

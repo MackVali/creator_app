@@ -55,6 +55,11 @@ export async function GET(request: Request) {
     error: authError,
   } = await supabase.auth.getUser();
 
+  console.log(
+    "[friends/search] authenticated user id:",
+    user?.id ?? "none"
+  );
+
   if (authError || !user) {
     return NextResponse.json(
       { results: [], discoveryProfiles: [] },
@@ -79,18 +84,32 @@ export async function GET(request: Request) {
     .order("friend_display_name", { ascending: true });
 
   const trimmed = query.trim();
+  console.log("[friends/search] trimmed query:", JSON.stringify(trimmed));
   const maxDiscoveryResults = 25;
-  const admin = createAdminClient();
-  const profileClient = admin ?? supabase;
   const trimmedLower = trimmed.toLowerCase();
   if (trimmed) {
     const escaped = escapeForILike(trimmed);
     friendsQuery.or(
-      `friend_username.ilike.%${escaped}%,friend_display_name.ilike.%${escaped}%`
+      `friend_username.ilike.*${escaped}*,friend_display_name.ilike.*${escaped}*`
+    );
+  }
+
+  const admin = createAdminClient();
+  const profileClient = admin;
+
+  if (!profileClient) {
+    console.error("Admin client missing or misconfigured");
+    return NextResponse.json(
+      { error: "Admin client not configured" },
+      { status: 500 }
     );
   }
 
   const { data: friendRows, error: friendsError } = await friendsQuery;
+  console.log(
+    "[friends/search] friendRows length:",
+    friendRows?.length ?? 0
+  );
 
   if (friendsError) {
     console.error("Failed to search friend connections", friendsError);
@@ -111,7 +130,7 @@ export async function GET(request: Request) {
   const discoveryQuery = supabase
     .from("friend_discovery_profiles")
     .select(
-      "id, username, name, avatar_url, role, highlight, reason, mutual_friends"
+      "id, username, display_name, avatar_url, role, highlight, reason, mutual_friends"
     )
     .order(trimmed ? "mutual_friends" : "created_at", { ascending: false })
     .limit(maxDiscoveryResults);
@@ -119,11 +138,15 @@ export async function GET(request: Request) {
   if (trimmed) {
     const escaped = escapeForILike(trimmed);
     discoveryQuery.or(
-      `username.ilike.%${escaped}%,name.ilike.%${escaped}%,role.ilike.%${escaped}%`
+      `username.ilike.*${escaped}*,display_name.ilike.*${escaped}*,role.ilike.*${escaped}*`
     );
   }
 
   const { data: discoveryRows, error: discoveryError } = await discoveryQuery;
+  console.log(
+    "[friends/search] discoveryRows length:",
+    discoveryRows?.length ?? 0
+  );
 
   if (discoveryError) {
     console.error("Failed to load friend discovery profiles", discoveryError);
@@ -139,9 +162,7 @@ export async function GET(request: Request) {
 
   if (trimmed) {
     const escapedProfiles = escapeForILike(trimmed);
-    profileQuery.or(
-      `username.ilike.%${escapedProfiles}%,name.ilike.%${escapedProfiles}%`
-    );
+    profileQuery.ilike("username", `%${escapedProfiles}%`);
   }
 
   const { data: profileData, error: profilesError } = await profileQuery;
@@ -158,8 +179,10 @@ export async function GET(request: Request) {
   } else if (profileData) {
     profileRows = profileData;
   }
+  console.log("[friends/search] profileRows length:", profileRows.length);
 
   const seenUsernames = friendUsernames;
+  const seenProfileIds = new Set<string>();
   const aggregated: ReturnType<typeof mapDiscoveryProfile>[] = [];
 
   if (profileRows.length) {
@@ -180,6 +203,10 @@ export async function GET(request: Request) {
         continue;
       }
 
+      if (seenProfileIds.has(row.id)) {
+        continue;
+      }
+
       const displayName = row.name ?? username;
       aggregated.push({
         id: row.id,
@@ -191,6 +218,7 @@ export async function GET(request: Request) {
         role: "Creator",
       });
       seenUsernames.add(normalized);
+      seenProfileIds.add(row.id);
     }
   }
 
@@ -208,8 +236,12 @@ export async function GET(request: Request) {
     if (seenUsernames.has(normalized)) {
       continue;
     }
+    if (seenProfileIds.has(profile.id)) {
+      continue;
+    }
     aggregated.push(profile);
     seenUsernames.add(normalized);
+    seenProfileIds.add(profile.id);
   }
 
   if (
@@ -298,6 +330,10 @@ export async function GET(request: Request) {
           const avatarUrl =
             metadataAvatar ?? buildAvatarFromSeed(displayNameCandidate);
 
+          if (seenProfileIds.has(adminUser.id)) {
+            continue;
+          }
+
           aggregated.push({
             id: adminUser.id,
             username: usernameCandidate,
@@ -308,6 +344,7 @@ export async function GET(request: Request) {
             role: "Creator",
           });
           seenUsernames.add(normalizedCandidate);
+          seenProfileIds.add(adminUser.id);
         }
       }
     } catch (adminFallbackError) {
@@ -319,6 +356,10 @@ export async function GET(request: Request) {
   }
 
   const discoveryProfiles = aggregated;
+  console.log(
+    "[friends/search] discoveryProfiles length:",
+    discoveryProfiles.length
+  );
 
   return NextResponse.json(
     { results: friendResults, discoveryProfiles },
