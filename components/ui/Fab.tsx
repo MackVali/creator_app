@@ -6666,10 +6666,12 @@ export function Fab({
   const isBlendingGradient = isDragging && dragTargetPage !== null;
   const dragConstraintLeft = -normalizedStageWidth;
   const dragConstraintRight = normalizedStageWidth;
-  const effectiveViewportHeight =
-    expanded && (viewportHeight || stableViewportHeight)
-      ? viewportHeight ?? stableViewportHeight
-      : null;
+  const effectiveViewportHeight = expanded
+    ? isKeyboardVisible || isTextInputFocused
+      // The live visualViewport height shrinks when the keyboard opens; keep the modal stable while typing.
+      ? stableViewportHeight ?? viewportHeight
+      : viewportHeight ?? stableViewportHeight
+    : null;
   const minHeightExpanded = expanded
     ? effectiveViewportHeight
       ? Math.round(effectiveViewportHeight * 0.58)
