@@ -20,6 +20,7 @@ type RequestsInvitesProps = {
   requests: FriendRequest[];
   invites: SentInvite[];
   suggestions: SuggestedFriend[];
+  onRequestResolved?: () => void | Promise<void>;
 };
 
 type RequestStatus = "pending" | "accepted" | "declined";
@@ -37,6 +38,7 @@ export default function RequestsInvites({
   requests,
   invites,
   suggestions,
+  onRequestResolved,
 }: RequestsInvitesProps) {
   const [requestState, setRequestState] = useState<RequestState[]>(() =>
     requests.map((req) => ({ ...req, status: "pending" }))
@@ -71,10 +73,29 @@ export default function RequestsInvites({
     [requestState]
   );
 
-  const handleRespond = (id: string, status: RequestStatus) => {
-    setRequestState((prev) =>
-      prev.map((req) => (req.id === id ? { ...req, status } : req))
-    );
+  const handleRespond = async (id: string, status: RequestStatus) => {
+    try {
+      const response = await fetch("/api/friends/requests/respond", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id, status }),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to respond to request.");
+      }
+
+      setRequestState((prev) =>
+        prev.map((req) => (req.id === id ? { ...req, status } : req))
+      );
+      await onRequestResolved?.();
+    } catch (error) {
+      console.error("Failed to respond to request", error);
+    }
   };
 
   const handleCancelInvite = async (id: string) => {
