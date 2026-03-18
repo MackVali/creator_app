@@ -3047,6 +3047,7 @@ export async function scheduleBacklog(
     nonDailyHabits: HabitScheduleItem[]
   ): Promise<Set<string>> => {
     if (nonDailyHabits.length === 0) return new Set<string>();
+    const overrideClears = new Set<string>();
     const nonDailyReplacementInstanceIds = new Set<string>();
     const horizonStartLocalDay = startOfDayInTimeZone(baseStart, timeZone);
     const horizonEndLocalDay = startOfDayInTimeZone(
@@ -3187,6 +3188,18 @@ export async function scheduleBacklog(
       const normalizedType =
         habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
       if (normalizedType === "SYNC") continue;
+      const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
+      if (nextDueOverride) {
+        const overrideDayStart = startOfDayInTimeZone(
+          nextDueOverride,
+          timeZone
+        );
+        const baseStartMs = baseStart.getTime();
+        if (baseStartMs < overrideDayStart.getTime()) {
+          continue;
+        }
+        overrideClears.add(habit.id);
+      }
 
       const plan = computeNonDailyChainPlan(
         habit,
@@ -3571,6 +3584,20 @@ export async function scheduleBacklog(
         if (forecastInstance) {
           recordHabitScheduledStart(habit.id, forecastInstance.start_utc ?? "");
         }
+      }
+    }
+
+    if (overrideClears.size > 0) {
+      const { error } = await supabase
+        .from("habits")
+        .update({ next_due_override: null })
+        .eq("user_id", userId)
+        .in("id", Array.from(overrideClears));
+      if (error) {
+        log("error", "[HABIT_OVERRIDE_CLEAR]", {
+          error,
+          habitIds: Array.from(overrideClears),
+        });
       }
     }
 
