@@ -60,6 +60,7 @@ import {
   useSelectContext,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { useToastHelpers } from "./toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser, type Goal } from "@/lib/queries/goals";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
@@ -1307,6 +1308,7 @@ export function Fab({
   ...wrapperProps
 }: FabProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const toast = useToastHelpers();
   const [aiOpen, setAiOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiScope, setAiScope] = useState<AiScope>("read_only");
@@ -1731,6 +1733,12 @@ export function Fab({
     { value: "QA", label: "QA" },
     { value: "SHIP", label: "Ship" },
   ];
+  const defaultHabitType = HABIT_TYPE_OPTIONS[0]?.value ?? "";
+  const defaultHabitRecurrence =
+    HABIT_RECURRENCE_OPTIONS.find((option) => option.value === "weekly")
+      ?.value ??
+    HABIT_RECURRENCE_OPTIONS[0]?.value ??
+    "";
   const [projectName, setProjectName] = useState("");
   const [projectStage, setProjectStage] = useState<string>("RESEARCH");
   const [projectDuration, setProjectDuration] = useState<number | "">("");
@@ -2271,11 +2279,8 @@ export function Fab({
   const [taskSkillId, setTaskSkillId] = useState<string | "">("");
   const [taskNotes, setTaskNotes] = useState("");
   const [habitName, setHabitName] = useState("");
-  const [habitType, setHabitType] = useState(HABIT_TYPE_OPTIONS[0].value);
-  const [habitRecurrence, setHabitRecurrence] = useState(
-    HABIT_RECURRENCE_OPTIONS.find((option) => option.value === "weekly")
-      ?.value ?? HABIT_RECURRENCE_OPTIONS[0].value
-  );
+  const [habitType, setHabitType] = useState(defaultHabitType);
+  const [habitRecurrence, setHabitRecurrence] = useState(defaultHabitRecurrence);
   const [habitDuration, setHabitDuration] = useState<string>("15");
   const [habitEnergy, setHabitEnergy] = useState("LOW");
   const [habitGoalId, setHabitGoalId] = useState<string | "">("");
@@ -2906,6 +2911,45 @@ export function Fab({
     }
   }, []);
 
+  const resetFabFormState = useCallback(() => {
+    setProjectName("");
+    setProjectStage("RESEARCH");
+    setProjectDuration("");
+    setProjectPriority("MEDIUM");
+    setProjectEnergy("MEDIUM");
+    setProjectWhy("");
+    setProjectSkillIds([]);
+    setProjectGoalId(null);
+
+    setGoalName("");
+    setGoalMonumentId("");
+    setGoalPriority("MEDIUM");
+    setGoalEnergy("MEDIUM");
+    setGoalWhy("");
+    setGoalDue(null);
+
+    setTaskName("");
+    setTaskStage("PRODUCE");
+    setTaskDuration("");
+    setTaskPriority("MEDIUM");
+    setTaskEnergy("MEDIUM");
+    setTaskProjectId("");
+    setTaskSkillId("");
+    setTaskNotes("");
+
+    setHabitName("");
+    setHabitType(defaultHabitType);
+    setHabitRecurrence(defaultHabitRecurrence);
+    setHabitDuration("15");
+    setHabitEnergy("LOW");
+    setHabitGoalId("");
+    setHabitSkillId("");
+    setHabitWhy("");
+    setHabitRoutineId("");
+
+    setSaveError(null);
+  }, [defaultHabitRecurrence, defaultHabitType]);
+
   type MenuPalette = {
     base: [number, number, number];
     highlight: [number, number, number];
@@ -3231,10 +3275,35 @@ export function Fab({
       }
       resetOverlayDraft();
       setOverlayOpen(false);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("schedule:overlay-windows-updated")
+        );
+      }
     } catch (error) {
-      console.error("Failed to save overlay window", error);
+      const supabaseErrorMessage = (() => {
+        if (error && typeof error === "object") {
+          const payload = error as Record<string, unknown>;
+          const parts: string[] = [];
+          const add = (value: unknown) => {
+            if (typeof value === "string" && value.trim().length > 0) {
+              parts.push(value.trim());
+            }
+          };
+          add(payload.message);
+          add(payload.details);
+          add(payload.hint);
+          if (parts.length > 0) {
+            return parts.join(" ");
+          }
+        }
+        return null;
+      })();
       const message =
-        error instanceof Error ? error.message : "Unable to save overlay.";
+        supabaseErrorMessage ??
+        (error instanceof Error ? error.message : null) ??
+        "Unable to save overlay.";
+      console.error("Failed to save overlay window", message, error);
       setOverlaySaveError(message);
     } finally {
       setIsSavingLiveOverlay(false);
@@ -6029,12 +6098,13 @@ export function Fab({
       }
       pageX.set(0);
       resetSearchState();
+      resetFabFormState();
       setRescheduleTarget(null);
       setDeleteError(null);
       setIsDeletingEvent(false);
       searchAbortRef.current?.abort();
     }
-  }, [isOpen, pageX, resetSearchState]);
+  }, [isOpen, pageX, resetSearchState, resetFabFormState]);
 
   useEffect(() => {
     return () => {
@@ -6315,6 +6385,7 @@ export function Fab({
 
   const handleFabSave = useCallback(async () => {
     if (fabSavePendingRef.current || isSavingFab || !selected) return;
+    const createdType = selected;
     fabSavePendingRef.current = true;
     try {
       setSaveError(null);
@@ -6472,8 +6543,21 @@ export function Fab({
           if (error) throw error;
           await notifySchedulerOfChange();
         }
+        resetFabFormState();
         setExpanded(false);
         setSelected(null);
+        setIsOpen(false);
+        const successLabel =
+          createdType === "GOAL"
+            ? "Goal"
+            : createdType === "PROJECT"
+            ? "Project"
+            : createdType === "TASK"
+            ? "Task"
+            : createdType === "HABIT"
+            ? "Habit"
+            : "Item";
+        toast.success(`${successLabel} created`);
       } catch (error: any) {
         console.error("Failed to save item", error);
         const errorMessage =
@@ -6516,6 +6600,8 @@ export function Fab({
     taskProjectId,
     taskSkillId,
     taskStage,
+    resetFabFormState,
+    toast,
   ]);
 
   const overhangCancelTapHandlers = useTapHandler(() => {

@@ -3445,6 +3445,7 @@ export default function SchedulePage() {
   }, [refreshDayTypeWindows]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
     if (!userId) {
       setOverlayWindows([]);
       return;
@@ -3486,10 +3487,18 @@ export default function SchedulePage() {
       }
     }
 
+    const refreshHandler = () => {
+      void fetchOverlayWindows();
+    };
+    window.addEventListener("schedule:overlay-windows-updated", refreshHandler);
     void fetchOverlayWindows();
 
     return () => {
       active = false;
+      window.removeEventListener(
+        "schedule:overlay-windows-updated",
+        refreshHandler
+      );
     };
   }, [userId, currentDate, effectiveTimeZone]);
 
