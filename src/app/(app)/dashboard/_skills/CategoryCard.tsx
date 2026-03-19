@@ -3,57 +3,22 @@
 import Link from "next/link";
 import { Reorder } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { updateCatColor, updateCatIcon, updateCatName, deleteCat } from "@/lib/data/cats";
+import {
+  updateCatColor,
+  updateCatIcon,
+  updateCatName,
+  deleteCat,
+} from "@/lib/data/cats";
 import { updateSkillsOrder } from "@/lib/data/skills";
 import DraggableSkill from "./DraggableSkill";
+import {
+  buildCategoryCardPalette,
+  CATEGORY_COLOR_OPTIONS,
+  FALLBACK_CATEGORY_COLOR,
+  withAlpha,
+} from "./categoryColorSystem";
 import type { SkillProgressData } from "./useSkillProgress";
 import type { Category, Skill } from "./useSkillsData";
-
-function getOnColor(hex: string) {
-  if (!hex) return "#fff";
-  const c = hex.replace("#", "");
-  const r = parseInt(c.substring(0, 2), 16);
-  const g = parseInt(c.substring(2, 4), 16);
-  const b = parseInt(c.substring(4, 6), 16);
-  // luminance
-  const l = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return l > 0.6 ? "#000" : "#fff";
-}
-
-function hexToRgb(hex: string) {
-  const normalized = hex.replace("#", "");
-  const r = parseInt(normalized.substring(0, 2), 16);
-  const g = parseInt(normalized.substring(2, 4), 16);
-  const b = parseInt(normalized.substring(4, 6), 16);
-  return { r, g, b };
-}
-
-function channelToHex(channel: number) {
-  const clamped = Math.max(0, Math.min(255, Math.round(channel)));
-  return clamped.toString(16).padStart(2, "0");
-}
-
-function blend(hex: string, target: string, amount: number) {
-  const start = hexToRgb(hex);
-  const end = hexToRgb(target);
-  const r = start.r + (end.r - start.r) * amount;
-  const g = start.g + (end.g - start.g) * amount;
-  const b = start.b + (end.b - start.b) * amount;
-  return `#${channelToHex(r)}${channelToHex(g)}${channelToHex(b)}`;
-}
-
-function lighten(hex: string, amount: number) {
-  return blend(hex, "#ffffff", amount);
-}
-
-function darken(hex: string, amount: number) {
-  return blend(hex, "#000000", amount);
-}
-
-function withAlpha(hex: string, alpha: number) {
-  const { r, g, b } = hexToRgb(hex);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
 
 interface Props {
   category: Category;
@@ -114,15 +79,20 @@ export default function CategoryCard({
   const isDefaultCategory = Boolean(category.is_default);
   const isUncategorized = category.id === "uncategorized";
   const editingRestricted = isLocked && !isDefaultCategory;
-  const canDeleteCategory = !isUncategorized && (!isLocked || isDefaultCategory);
-  const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
+  const canDeleteCategory =
+    !isUncategorized && (!isLocked || isDefaultCategory);
+  const [color, setColor] = useState(
+    colorOverride || category.color_hex || FALLBACK_CATEGORY_COLOR,
+  );
   const [menuOpenState, setMenuOpenState] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
   const [icon, setIcon] = useState<string>(iconOverride || category.icon || "");
-  const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon || "");
+  const [iconDraft, setIconDraft] = useState<string>(
+    iconOverride || category.icon || "",
+  );
   const [isSavingSkillOrder, setIsSavingSkillOrder] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState(category.name || "");
@@ -142,7 +112,7 @@ export default function CategoryCard({
         setMenuOpenState(next);
       }
     },
-    [menuControlled, onMenuOpenChange]
+    [menuControlled, onMenuOpenChange],
   );
 
   const closeMenu = useCallback(() => {
@@ -154,7 +124,7 @@ export default function CategoryCard({
   }, [menuOpen, setMenuOpenStateSafe]);
 
   useEffect(() => {
-    setColor(colorOverride || category.color_hex || "#000000");
+    setColor(colorOverride || category.color_hex || FALLBACK_CATEGORY_COLOR);
   }, [category.color_hex, colorOverride]);
   useEffect(() => {
     setLocalSkills([...skills]);
@@ -178,36 +148,37 @@ export default function CategoryCard({
     }
   }, [editingRestricted, closeMenu]);
 
-  const handleSkillReorder = useCallback(
-    (nextSkills: Skill[]) => {
-      setLocalSkills(nextSkills);
-      if (nextSkills.length === 0) return;
+  const handleSkillReorder = useCallback((nextSkills: Skill[]) => {
+    setLocalSkills(nextSkills);
+    if (nextSkills.length === 0) return;
 
-      const updates = nextSkills.map((skill, index) => ({
-        id: skill.id,
-        sort_order: index + 1,
-      }));
+    const updates = nextSkills.map((skill, index) => ({
+      id: skill.id,
+      sort_order: index + 1,
+    }));
 
-      setIsSavingSkillOrder(true);
-      void updateSkillsOrder(updates)
-        .catch((error) => {
-          console.error("Failed to save skill order", error);
-        })
-        .finally(() => {
-          setIsSavingSkillOrder(false);
-        });
-    },
-    []
-  );
+    setIsSavingSkillOrder(true);
+    void updateSkillsOrder(updates)
+      .catch((error) => {
+        console.error("Failed to save skill order", error);
+      })
+      .finally(() => {
+        setIsSavingSkillOrder(false);
+      });
+  }, []);
 
   const extractFirstGlyph = (value: string): string => {
     if (!value) return "";
     if (typeof Intl !== "undefined") {
-      const SegmenterCtor = (Intl as typeof Intl & {
-        Segmenter?: typeof Intl.Segmenter;
-      }).Segmenter;
+      const SegmenterCtor = (
+        Intl as typeof Intl & {
+          Segmenter?: typeof Intl.Segmenter;
+        }
+      ).Segmenter;
       if (typeof SegmenterCtor === "function") {
-        const segmenter = new SegmenterCtor(undefined, { granularity: "grapheme" });
+        const segmenter = new SegmenterCtor(undefined, {
+          granularity: "grapheme",
+        });
         const iterator = segmenter.segment(value)[Symbol.iterator]();
         const first = iterator.next();
         return first.done ? "" : first.value.segment;
@@ -216,52 +187,10 @@ export default function CategoryCard({
     return Array.from(value)[0] ?? "";
   };
 
-  const palette = useMemo(() => {
-    const base = color || "#6366f1";
-    const on = getOnColor(base);
-    const surface = active
-      ? `linear-gradient(145deg, ${withAlpha(lighten(base, 0.2), 0.96)} 0%, ${withAlpha(base, 0.9)} 52%, ${withAlpha(
-          darken(base, 0.14),
-          0.82
-        )} 100%)`
-      : `linear-gradient(150deg, ${withAlpha(lighten(base, 0.14), 0.64)} 0%, ${withAlpha(base, 0.62)} 48%, ${withAlpha(
-          darken(base, 0.18),
-          0.54
-        )} 100%)`;
-    const halo = withAlpha(lighten(base, 0.42), active ? 0.32 : 0.18);
-    const frame = withAlpha(on === "#fff" ? "#ffffff" : "#0f172a", active ? 0.26 : 0.18);
-    const track = on === "#fff" ? withAlpha("#ffffff", 0.22) : withAlpha("#0f172a", 0.26);
-    const fill = on === "#fff" ? withAlpha("#ffffff", 0.88) : withAlpha("#0f172a", 0.74);
-    const listBg = withAlpha(on === "#fff" ? "#020817" : "#ffffff", 0.16);
-    const badgeBg = withAlpha(on === "#fff" ? "#ffffff" : "#0f172a", 0.18);
-    const badgeBorder = withAlpha(on === "#fff" ? "#ffffff" : "#0f172a", 0.28);
-    const badgeNameBase = on === "#fff" ? darken("#ffffff", 0.16) : "#0f172a";
-    const badgeNameBg = withAlpha(badgeNameBase, active ? 0.36 : 0.28);
-    const badgeNameBorder = withAlpha(badgeNameBase, active ? 0.52 : 0.38);
-    const dropShadow = active
-      ? `0 22px 45px ${withAlpha(darken(base, 0.55), 0.42)}, 0 10px 18px ${withAlpha("#0f172a", 0.22)}`
-      : "0 14px 30px rgba(15, 23, 42, 0.38), 0 6px 12px rgba(15, 23, 42, 0.24)";
-    const sheen = `linear-gradient(120deg, rgba(255,255,255,${active ? "0.38" : "0.24"}) 0%, rgba(255,255,255,0) 72%)`;
-    const edgeGlow = withAlpha(lighten(base, 0.55), active ? 0.26 : 0.16);
-
-    return {
-      base,
-      on,
-      surface,
-      halo,
-      frame,
-      track,
-      fill,
-      listBg,
-      badgeBg,
-      badgeBorder,
-      badgeNameBg,
-      badgeNameBorder,
-      dropShadow,
-      sheen,
-      edgeGlow,
-    };
-  }, [active, color]);
+  const palette = useMemo(
+    () => buildCategoryCardPalette(color, active),
+    [active, color],
+  );
 
   useEffect(() => {
     if (!menuOpen) {
@@ -349,7 +278,13 @@ export default function CategoryCard({
     } finally {
       setIsDeleting(false);
     }
-  }, [category.id, category.is_locked, closeMenu, isDeleting, onDeleteCategory]);
+  }, [
+    category.id,
+    category.is_locked,
+    closeMenu,
+    isDeleting,
+    onDeleteCategory,
+  ]);
 
   const handlePointerEnter = useCallback(() => {
     if (isDraggingSkill && !isLocked) {
@@ -363,15 +298,20 @@ export default function CategoryCard({
     }
   }, [isDraggingSkill, isLocked, onDragCategoryLeave]);
 
+  const emphasisColor = palette.on === "#f8fafc" ? "#ffffff" : "#0f172a";
   const borderColor = isDropTarget
-    ? withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", 0.6)
+    ? withAlpha(emphasisColor, 0.58)
     : palette.frame;
   const boxShadow = isDropTarget
-    ? `0 0 0 2px ${withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", 0.35)}, ${palette.dropShadow}`
+    ? `0 0 0 2px ${withAlpha(emphasisColor, 0.26)}, ${palette.dropShadow}`
     : palette.dropShadow;
 
   return (
-    <div className="relative h-full" onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
+    <div
+      className="relative h-full"
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+    >
       <article
         className="relative flex h-full flex-col rounded-[26px] border px-3 pb-4 pt-5 shadow-lg transition-all duration-200 sm:px-4"
         style={{
@@ -393,22 +333,34 @@ export default function CategoryCard({
             aria-hidden
             className="absolute inset-[1px] rounded-[24px] transition-opacity duration-300"
             style={{
-              border: `1px solid ${withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", active ? 0.24 : 0.14)}`,
-              opacity: active ? 0.75 : 0.5,
-            }}
-          />
-          <span
-            aria-hidden
-            className="absolute inset-[6px] rounded-[20px] transition-opacity duration-300"
-            style={{
-              boxShadow: `inset 0 0 0 1px ${palette.edgeGlow}`,
-              opacity: active ? 0.7 : 0.45,
+              border: `1px solid ${palette.rim}`,
+              opacity: active ? 0.8 : 0.58,
             }}
           />
           <span
             aria-hidden
             className="absolute inset-0 transition-opacity duration-300"
-            style={{ background: palette.sheen, mixBlendMode: "screen", opacity: active ? 0.6 : 0.35 }}
+            style={{
+              background: palette.highlight,
+              mixBlendMode: "screen",
+              opacity: active ? 0.95 : 0.75,
+            }}
+          />
+          <span
+            aria-hidden
+            className="absolute inset-0 transition-opacity duration-300"
+            style={{
+              background: palette.colorBloom,
+              opacity: active ? 0.9 : 0.7,
+            }}
+          />
+          <span
+            aria-hidden
+            className="absolute inset-0 transition-opacity duration-300"
+            style={{
+              background: palette.depthShade,
+              opacity: active ? 1 : 0.92,
+            }}
           />
         </div>
         <div className="relative z-10 flex h-full flex-col">
@@ -419,117 +371,185 @@ export default function CategoryCard({
                 className="relative inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors"
                 style={{
                   color: palette.on,
-                  backgroundColor: palette.badgeNameBg,
+                  background: palette.badgeNameBg,
                   border: `1px solid ${palette.badgeNameBorder}`,
                 }}
-                  onClick={toggleMenu}
-              aria-disabled={editingRestricted && !canDeleteCategory}
+                onClick={toggleMenu}
+                aria-disabled={editingRestricted && !canDeleteCategory}
               >
-                {icon && <span className="mr-2 text-lg leading-none">{icon}</span>}
+                {icon && (
+                  <span className="mr-2 text-lg leading-none">{icon}</span>
+                )}
                 <span className="pr-3">{category.name}</span>
                 <span
                   aria-hidden
                   className="pointer-events-none absolute inset-0 rounded-full transition-opacity duration-300"
-                  style={{ background: palette.sheen, mixBlendMode: "screen", opacity: active ? 0.55 : 0.4 }}
+                  style={{
+                    background: palette.highlight,
+                    mixBlendMode: "screen",
+                    opacity: active ? 0.28 : 0.18,
+                  }}
                 />
               </button>
-            {menuOpen && (
-              <div
-                className="absolute left-0 top-full z-20 mt-2 w-56 rounded-2xl p-3 text-sm text-slate-400 shadow-xl backdrop-blur"
-                style={{
-                  background: `linear-gradient(180deg, ${withAlpha("#0f172a", 0.92)} 0%, ${withAlpha("#0b1220", 0.85)} 100%)`,
-                  border: "1px solid rgba(0, 0, 0, 0.9)",
-                }}
-              >
-                {deleteConfirmOpen ? (
-                  <div className="space-y-3">
-                    <p className="text-xs text-slate-500">
-                      Removing this category moves its skills to the uncategorized list. The built-in skills remain locked.
-                    </p>
-                    <div className="flex justify-between text-xs font-medium uppercase tracking-wide">
-                      <button
-                        type="button"
-                        className="text-slate-500"
-                        onClick={() => setDeleteConfirmOpen(false)}
-                        disabled={isDeleting}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="text-rose-600"
-                        onClick={handleDeleteCategory}
-                        disabled={isDeleting}
-                      >
-                        {isDeleting ? "Deleting…" : "Delete category"}
-                      </button>
-                    </div>
-                  </div>
-                ) : editingRestricted ? (
-                  <div className="space-y-3">
-                    {canDeleteCategory ? (
-                      <>
-                        <p className="text-xs text-slate-500">
-                          This locked category can be deleted, but its skills stay intact and move to Uncategorized.
-                        </p>
+              {menuOpen && (
+                <div
+                  className="absolute left-0 top-full z-20 mt-2 w-56 rounded-2xl p-3 text-sm text-slate-400 shadow-xl backdrop-blur"
+                  style={{
+                    background: `linear-gradient(180deg, ${withAlpha("#0f172a", 0.92)} 0%, ${withAlpha("#0b1220", 0.85)} 100%)`,
+                    border: "1px solid rgba(0, 0, 0, 0.9)",
+                  }}
+                >
+                  {deleteConfirmOpen ? (
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-500">
+                        Removing this category moves its skills to the
+                        uncategorized list. The built-in skills remain locked.
+                      </p>
+                      <div className="flex justify-between text-xs font-medium uppercase tracking-wide">
                         <button
                           type="button"
-                          className="block text-left text-sm font-semibold uppercase tracking-wide text-rose-500 underline"
-                          onClick={() => setDeleteConfirmOpen(true)}
+                          className="text-slate-500"
+                          onClick={() => setDeleteConfirmOpen(false)}
                           disabled={isDeleting}
                         >
-                          Delete category
+                          Cancel
                         </button>
-                      </>
-                    ) : (
-                      <p className="text-xs font-semibold uppercase text-slate-500">Category locked</p>
-                    )}
-                  </div>
-                ) : renameOpen ? (
-                  <div className="space-y-3">
-                    <label className="block text-xs font-semibold uppercase text-slate-500">
-                      Rename category
-                    </label>
-                    <input
-                      type="text"
-                      value={nameDraft}
-                      onChange={(event) => setNameDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          handleRenameSave();
-                        }
-                      }}
-                      autoFocus
-                      className="w-full rounded border border-black/20 bg-transparent px-2 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring focus:ring-slate-300"
-                      placeholder="Category name"
-                      maxLength={80}
-                    />
-                    <div className="flex justify-between text-xs font-medium uppercase tracking-wide">
-                      <button
-                        type="button"
-                        className="text-slate-500"
-                        onClick={() => setRenameOpen(false)}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="text-blue-600"
-                        onClick={handleRenameSave}
-                        disabled={isRenaming || nameDraft.trim().length === 0}
-                      >
-                        {isRenaming ? "Saving…" : "Save"}
-                      </button>
+                        <button
+                          type="button"
+                          className="text-rose-600"
+                          onClick={handleDeleteCategory}
+                          disabled={isDeleting}
+                        >
+                          {isDeleting ? "Deleting…" : "Delete category"}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ) : pickerOpen ? (
-                  <input
-                    type="color"
-                    value={color}
-                    onChange={(e) => handleColorChange(e.target.value)}
-                    className="h-24 w-full cursor-pointer rounded border-0 bg-transparent p-0"
-                  />
+                  ) : editingRestricted ? (
+                    <div className="space-y-3">
+                      {canDeleteCategory ? (
+                        <>
+                          <p className="text-xs text-slate-500">
+                            This locked category can be deleted, but its skills
+                            stay intact and move to Uncategorized.
+                          </p>
+                          <button
+                            type="button"
+                            className="block text-left text-sm font-semibold uppercase tracking-wide text-rose-500 underline"
+                            onClick={() => setDeleteConfirmOpen(true)}
+                            disabled={isDeleting}
+                          >
+                            Delete category
+                          </button>
+                        </>
+                      ) : (
+                        <p className="text-xs font-semibold uppercase text-slate-500">
+                          Category locked
+                        </p>
+                      )}
+                    </div>
+                  ) : renameOpen ? (
+                    <div className="space-y-3">
+                      <label className="block text-xs font-semibold uppercase text-slate-500">
+                        Rename category
+                      </label>
+                      <input
+                        type="text"
+                        value={nameDraft}
+                        onChange={(event) => setNameDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            handleRenameSave();
+                          }
+                        }}
+                        autoFocus
+                        className="w-full rounded-xl border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:border-white/40 focus:outline-none focus:ring focus:ring-white/20"
+                        placeholder="Category name"
+                        maxLength={80}
+                      />
+                      <div className="flex justify-between text-xs font-medium uppercase tracking-wide">
+                        <button
+                          type="button"
+                          className="text-slate-500"
+                          onClick={() => setRenameOpen(false)}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="text-blue-600"
+                          onClick={handleRenameSave}
+                          disabled={isRenaming || nameDraft.trim().length === 0}
+                        >
+                          {isRenaming ? "Saving…" : "Save"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : pickerOpen ? (
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+                          Premium palette
+                        </p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                          Richer hues with softer highlights and cleaner depth
+                          across the carousel.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {CATEGORY_COLOR_OPTIONS.map((option) => {
+                          const isSelected =
+                            option.value.toLowerCase() === color.toLowerCase();
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => handleColorChange(option.value)}
+                              className="group relative h-10 rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                              style={{
+                                background: `linear-gradient(160deg, ${option.value} 0%, ${withAlpha(option.value, 0.78)} 100%)`,
+                                borderColor: isSelected
+                                  ? "rgba(255,255,255,0.72)"
+                                  : "rgba(255,255,255,0.14)",
+                                boxShadow: isSelected
+                                  ? `0 0 0 1px rgba(255,255,255,0.28), 0 14px 28px ${withAlpha(option.value, 0.34)}`
+                                  : `0 10px 20px ${withAlpha(option.value, 0.18)}`,
+                              }}
+                              aria-label={`Use ${option.label}`}
+                              title={option.label}
+                            >
+                              <span
+                                aria-hidden
+                                className="absolute inset-x-2 top-1.5 h-3 rounded-full"
+                                style={{
+                                  background:
+                                    "linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0))",
+                                }}
+                              />
+                              {isSelected && (
+                                <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold uppercase tracking-[0.28em] text-white">
+                                  ✓
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <label className="block text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+                        Custom color
+                      </label>
+                      <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                        <input
+                          type="color"
+                          value={color}
+                          onChange={(e) => handleColorChange(e.target.value)}
+                          className="h-10 w-10 cursor-pointer rounded-xl border border-white/20 bg-transparent p-0"
+                        />
+                        <span className="text-xs font-medium uppercase tracking-[0.24em] text-slate-400">
+                          {color}
+                        </span>
+                      </div>
+                    </div>
                   ) : iconPickerOpen ? (
                     <div className="space-y-3">
                       <label className="block text-xs font-semibold uppercase text-slate-500">
@@ -540,11 +560,12 @@ export default function CategoryCard({
                         value={iconDraft}
                         onChange={(e) => setIconDraft(e.target.value)}
                         maxLength={8}
-                        className="w-full rounded border border-black/20 p-2 text-base"
+                        className="w-full rounded-xl border border-white/10 bg-white/5 p-2 text-base text-white placeholder:text-slate-500"
                         placeholder="Type any emoji"
                       />
                       <p className="text-[11px] text-slate-400">
-                        Enter a custom emoji and save; we won’t suggest defaults anymore.
+                        Enter a custom emoji and save; we won’t suggest defaults
+                        anymore.
                       </p>
                       <div className="flex justify-end gap-2 text-xs font-medium uppercase">
                         <button
@@ -557,23 +578,33 @@ export default function CategoryCard({
                         >
                           Cancel
                         </button>
-                        <button type="button" className="text-blue-600" onClick={() => handleIconSave(iconDraft)}>
+                        <button
+                          type="button"
+                          className="text-blue-600"
+                          onClick={() => handleIconSave(iconDraft)}
+                        >
                           Save
                         </button>
                       </div>
                     </div>
                   ) : orderOpen ? (
                     <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase text-slate-500">Reorder category</p>
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Reorder category
+                      </p>
                       <div className="flex items-stretch divide-x divide-black/10 overflow-hidden rounded-full border border-black/10 bg-white/90 text-slate-700 shadow-sm backdrop-blur-sm">
                         <button
                           type="button"
                           onClick={() => onReorder?.("first")}
-                          disabled={!onReorder || !canMoveToStart || isReordering}
+                          disabled={
+                            !onReorder || !canMoveToStart || isReordering
+                          }
                           className="group relative flex h-9 basis-[18%] items-center justify-center text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Move to first position"
                         >
-                          <span aria-hidden className="relative text-base">⏮</span>
+                          <span aria-hidden className="relative text-base">
+                            ⏮
+                          </span>
                           <span
                             className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
                             style={{ background: withAlpha("#0f172a", 0.04) }}
@@ -610,7 +641,9 @@ export default function CategoryCard({
                           className="group relative flex h-9 basis-[18%] items-center justify-center text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Move to last position"
                         >
-                          <span aria-hidden className="relative text-base">⏭</span>
+                          <span aria-hidden className="relative text-base">
+                            ⏭
+                          </span>
                           <span
                             className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
                             style={{ background: withAlpha("#0f172a", 0.04) }}
@@ -618,7 +651,9 @@ export default function CategoryCard({
                         </button>
                       </div>
                       <p className="text-xs text-slate-500">
-                        {isReordering ? "Saving new order…" : "Move this category earlier or later in the carousel."}
+                        {isReordering
+                          ? "Saving new order…"
+                          : "Move this category earlier or later in the carousel."}
                       </p>
                       <div className="flex justify-end">
                         <button
@@ -644,7 +679,10 @@ export default function CategoryCard({
                       >
                         Rename category
                       </button>
-                      <button className="block text-left text-sm font-medium underline" onClick={() => setPickerOpen(true)}>
+                      <button
+                        className="block text-left text-sm font-medium underline"
+                        onClick={() => setPickerOpen(true)}
+                      >
                         Change color
                       </button>
                       <button
@@ -656,28 +694,31 @@ export default function CategoryCard({
                       >
                         Change icon
                       </button>
-                    <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
-                      Change order
-                    </button>
-                    {canDeleteCategory && (
                       <button
-                        type="button"
-                        className="block text-left text-sm font-medium underline text-rose-500"
-                        onClick={() => setDeleteConfirmOpen(true)}
+                        className="block text-left text-sm font-medium underline"
+                        onClick={() => setOrderOpen(true)}
                       >
-                        Delete category
+                        Change order
                       </button>
-                    )}
-                  </div>
-                )}
-              </div>
+                      {canDeleteCategory && (
+                        <button
+                          type="button"
+                          className="block text-left text-sm font-medium underline text-rose-500"
+                          onClick={() => setDeleteConfirmOpen(true)}
+                        >
+                          Delete category
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             <span
               className="rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide"
               style={{
                 color: palette.on,
-                backgroundColor: palette.badgeBg,
+                background: palette.badgeBg,
                 border: `1px solid ${palette.badgeBorder}`,
               }}
             >
@@ -698,15 +739,22 @@ export default function CategoryCard({
             as="div"
             className="flex-1 overflow-y-auto overscroll-contain rounded-2xl px-3 pb-5 pt-4 backdrop-blur-sm"
             style={{
-              backgroundColor: palette.listBg,
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -10px 18px rgba(15, 23, 42, 0.12)",
-              border: `1px solid ${withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", 0.18)}`,
+              background: `${palette.contentGlass}, ${palette.listBg}`,
+              boxShadow:
+                "inset 0 1px 0 rgba(255,255,255,0.16), inset 0 -14px 24px rgba(15, 23, 42, 0.14)",
+              border: `1px solid ${withAlpha(emphasisColor, 0.14)}`,
             }}
           >
             {localSkills.length === 0 ? (
-              <div className="flex h-full flex-col items-start justify-center gap-2 text-sm leading-relaxed" style={{ color: palette.on }}>
+              <div
+                className="flex h-full flex-col items-start justify-center gap-2 text-sm leading-relaxed"
+                style={{ color: palette.on }}
+              >
                 <span>No skills yet</span>
-                <Link href="/skills" className="text-xs font-semibold uppercase tracking-wide underline">
+                <Link
+                  href="/skills"
+                  className="text-xs font-semibold uppercase tracking-wide underline"
+                >
                   Add skill
                 </Link>
               </div>
