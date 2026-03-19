@@ -3737,38 +3737,46 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                         {taskAdvanced[task.id] ? (
                                           <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
                                             <div className="space-y-1">
-                                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                                Skill link
-                                              </Label>
-                                              <Select
-                                                value={task.skillId ?? ""}
-                                                onValueChange={(value) =>
+                                              <div className="flex items-center justify-between gap-2">
+                                                <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                                  Skill link
+                                                </Label>
+                                                {task.skillId ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      handleDraftTaskSkillChange(
+                                                        draft.id,
+                                                        task.id,
+                                                        null,
+                                                      )
+                                                    }
+                                                    className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45 transition hover:text-white"
+                                                  >
+                                                    Clear
+                                                  </button>
+                                                ) : null}
+                                              </div>
+                                              <SkillMultiSelect
+                                                skills={sortedSkills}
+                                                selectedIds={
+                                                  task.skillId
+                                                    ? [task.skillId]
+                                                    : []
+                                                }
+                                                onToggle={(skillId) =>
                                                   handleDraftTaskSkillChange(
                                                     draft.id,
                                                     task.id,
-                                                    value ? value : null,
+                                                    skillId === task.skillId
+                                                      ? null
+                                                      : skillId,
                                                   )
                                                 }
-                                              >
-                                                <SelectTrigger className="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                                                  <SelectValue placeholder="Not linked" />
-                                                </SelectTrigger>
-                                                <SelectContent className="bg-[#0b101b] text-sm text-white">
-                                                  <SelectItem value="">
-                                                    <span className="text-zinc-400">
-                                                      Not linked
-                                                    </span>
-                                                  </SelectItem>
-                                                  {sortedSkills.map((skill) => (
-                                                    <SelectItem
-                                                      key={skill.id}
-                                                      value={skill.id}
-                                                    >
-                                                      {skill.name}
-                                                    </SelectItem>
-                                                  ))}
-                                                </SelectContent>
-                                              </Select>
+                                                placeholder="Not linked"
+                                                buttonClassName="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                                                categories={skillCategories}
+                                              />
                                             </div>
                                             <div className="space-y-1">
                                               <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
