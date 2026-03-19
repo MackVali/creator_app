@@ -32,6 +32,7 @@ import clsx from "clsx";
 import { Lock } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useHasExistingTimeBlocks } from "@/lib/hooks/useHasExistingTimeBlocks";
 import {
   DayTimeline,
   TIMELINE_CARD_LEFT_FALLBACK,
@@ -2399,6 +2400,8 @@ export default function SchedulePage() {
   }, [dayViewDateKey, canonicalTodayDateKey]);
   const prefersReducedMotion = useReducedMotion();
   const { user } = useAuth();
+  const { hasExistingTimeBlocks, isLoading: isLoadingExistingTimeBlocks } =
+    useHasExistingTimeBlocks();
   const userId = user?.id ?? null;
   const habitCompletionStorageKey = useMemo(
     () => (userId ? `${HABIT_COMPLETION_STORAGE_PREFIX}:${userId}` : null),
@@ -2415,10 +2418,23 @@ export default function SchedulePage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (isLoadingExistingTimeBlocks) return;
+
+    if (hasExistingTimeBlocks) {
+      window.localStorage.setItem("tour:schedule:completed", "1");
+      window.localStorage.removeItem("tour:schedule:pending");
+      window.localStorage.removeItem("tour:day-types:pending");
+      return;
+    }
+
     if (window.localStorage.getItem("tour:schedule:pending") !== "1") return;
     window.localStorage.removeItem("tour:schedule:pending");
     startScheduleTour();
-  }, [startScheduleTour]);
+  }, [
+    hasExistingTimeBlocks,
+    isLoadingExistingTimeBlocks,
+    startScheduleTour,
+  ]);
 
   const initialViewParam = searchParams.get("view") as ScheduleView | null;
   const initialView: ScheduleView =
