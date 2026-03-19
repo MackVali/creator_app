@@ -265,13 +265,13 @@ function GoalCardImpl({
   const energy = energyAccent[goal.energy];
   const isCompleted = goal.status === "Completed";
   const completedClass = isCompleted
-    ? monumentContext
-      ? variant === "compact"
-        ? "monument-completed-compact"
-        : "monument-completed"
-      : variant === "compact"
-      ? "emerald-completed-compact"
-      : "emerald-completed"
+    ? variant === "compact"
+      ? monumentContext
+        ? "emerald-completed-compact"
+        : "emerald-completed-compact"
+      : monumentContext
+        ? "emerald-completed"
+        : "emerald-completed"
     : "";
   const completedIconClass = isCompleted
     ? "bg-gradient-to-b from-[#0a5c3a] via-[#0a4f34] to-[#043022] border border-emerald-400/60 text-emerald-100 shadow-[inset_0_2px_0_rgba(255,255,255,0.08)]"
