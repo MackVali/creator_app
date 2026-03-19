@@ -43,6 +43,7 @@ function DraggableGoalCard({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  monumentContext,
 }: {
   goal: Goal;
   index: number;
@@ -51,6 +52,7 @@ function DraggableGoalCard({
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  monumentContext?: boolean;
 }) {
   const {
     attributes,
@@ -120,6 +122,7 @@ function DraggableGoalCard({
               onGoalToggleActive ? () => onGoalToggleActive(goal) : undefined
             }
             onDelete={onGoalDelete ? () => onGoalDelete(goal) : undefined}
+            monumentContext={monumentContext}
           />
         ) : (
           <button
@@ -175,6 +178,7 @@ interface RoadmapCardProps {
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  monumentContext?: boolean;
 }
 
 function RoadmapCardImpl({
@@ -186,6 +190,7 @@ function RoadmapCardImpl({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  monumentContext = false,
 }: RoadmapCardProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -370,6 +375,7 @@ function RoadmapCardImpl({
               onGoalEdit={onGoalEdit}
               onGoalToggleActive={onGoalToggleActive}
               onGoalDelete={onGoalDelete}
+              monumentContext={monumentContext}
             />
           )}
         </div>
@@ -496,6 +502,7 @@ type CompactGoalsOverlayProps = {
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  monumentContext?: boolean;
 };
 
 function CompactGoalsOverlay({
@@ -506,6 +513,7 @@ function CompactGoalsOverlay({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  monumentContext,
 }: CompactGoalsOverlayProps) {
   const [mounted, setMounted] = useState(false);
   const [localGoals, setLocalGoals] = useState(goals);
@@ -654,6 +662,7 @@ function CompactGoalsOverlay({
                   onGoalEdit={onGoalEdit}
                   onGoalToggleActive={onGoalToggleActive}
                   onGoalDelete={onGoalDelete}
+                  monumentContext={monumentContext}
                 />
               ))}
             </div>
@@ -678,6 +687,7 @@ function CompactGoalsOverlay({
       onOpenChange={(isOpen) => {
         if (!isOpen) setOpenGoalId(null);
       }}
+      monumentContext={monumentContext}
     />
   ) : null;
 
@@ -742,7 +752,8 @@ export const RoadmapCard = memo(RoadmapCardImpl, (prev, next) => {
     prev.roadmap.title === next.roadmap.title &&
     prev.goalCount === next.goalCount &&
     prev.variant === next.variant &&
-    prev.goals === next.goals
+    prev.goals === next.goals &&
+    prev.monumentContext === next.monumentContext
   );
 });
 

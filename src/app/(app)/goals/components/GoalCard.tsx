@@ -81,6 +81,7 @@ interface GoalCardProps {
   showWeight?: boolean;
   showCreatedAt?: boolean;
   showEmojiPrefix?: boolean;
+  monumentContext?: boolean;
   variant?: "default" | "compact";
   showEnergyInCompact?: boolean;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
@@ -112,6 +113,7 @@ function GoalCardImpl({
   showEmojiPrefix = false,
   variant = "default",
   showEnergyInCompact = false,
+  monumentContext = false,
   onProjectUpdated,
   onProjectDeleted,
   open: openProp,
@@ -261,7 +263,19 @@ function GoalCardImpl({
   }, []);
 
   const energy = energyAccent[goal.energy];
-  const isCompleted = goal.progress >= 100 || goal.status === "Completed";
+  const isCompleted = goal.status === "Completed";
+  const completedClass = isCompleted
+    ? monumentContext
+      ? variant === "compact"
+        ? "monument-completed-compact"
+        : "monument-completed"
+      : variant === "compact"
+      ? "emerald-completed-compact"
+      : "emerald-completed"
+    : "";
+  const completedIconClass = isCompleted
+    ? "bg-gradient-to-b from-[#0a5c3a] via-[#0a4f34] to-[#043022] border border-emerald-400/60 text-emerald-100 shadow-[inset_0_2px_0_rgba(255,255,255,0.08)]"
+    : "bg-white/5 text-white";
   const completionGradient =
     "linear-gradient(135deg,rgba(6,78,59,0.96) 0%,rgba(4,120,87,0.94) 42%,rgba(16,185,129,0.9) 100%)";
   const progressBarStyle = {
@@ -290,9 +304,13 @@ function GoalCardImpl({
     const lightness = Math.round(88 - progressPct * 0.78); // 0% -> 88% (light gray), 100% -> ~10% (near black)
     const containerBase =
       "group relative h-full rounded-2xl p-4 text-white goal-card";
-    const containerClass = `${containerBase} ${
-      isCompleted ? "emerald-completed-compact" : ""
-    } ${showEnergyInCompact ? "min-h-[60px]" : "min-h-[96px] aspect-[5/6]"}`;
+    const containerClass = [
+      containerBase,
+      completedClass,
+      showEnergyInCompact ? "min-h-[60px]" : "min-h-[96px] aspect-[5/6]",
+    ]
+      .filter(Boolean)
+      .join(" ");
     const displayEmoji =
       typeof (goal.emoji ?? goal.monumentEmoji) === "string" &&
       (goal.emoji ?? goal.monumentEmoji)?.trim().length
@@ -323,8 +341,8 @@ function GoalCardImpl({
                 onPointerLeave={handleProjectPointerCancel}
                 className="flex w-full items-center justify-between text-left text-sm select-none"
               >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
                     {displayEmoji}
                   </div>
                   <div className="flex flex-col flex-1 min-w-0">
@@ -402,9 +420,7 @@ function GoalCardImpl({
               className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center"
             >
               <div
-                className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] ${
-                  isCompleted ? "bg-black text-white" : "bg-white/5 text-white"
-                }`}
+                className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] ${completedIconClass}`}
               >
                 {goal.emoji ?? goal.monumentEmoji ?? goal.title.slice(0, 2)}
               </div>
@@ -465,15 +481,18 @@ function GoalCardImpl({
     );
   }
 
+  const defaultContainerClass = [
+    "group relative h-full rounded-xl goal-card p-3 text-white mb-3",
+    completedClass,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <>
-      <div
-        className={`group relative h-full rounded-xl goal-card p-4 text-white mb-[20px] ${
-          isCompleted ? "emerald-completed" : ""
-        }`}
-      >
-        <div className="relative flex h-full flex-col gap-3">
-          <div className="flex items-start justify-between gap-3">
+      <div className={defaultContainerClass}>
+        <div className="relative flex h-full flex-col gap-2">
+          <div className="flex items-start justify-between gap-2">
             <button
               onClick={toggle}
               aria-expanded={open}
@@ -482,21 +501,17 @@ function GoalCardImpl({
               onPointerUp={handleProjectPointerUp}
               onPointerCancel={handleProjectPointerCancel}
               onPointerLeave={handleProjectPointerCancel}
-              className="relative flex flex-1 flex-col gap-2 text-left overflow-hidden"
+              className="relative flex flex-1 flex-col gap-1.5 text-left overflow-hidden"
             >
-              <div className="relative z-10 flex items-start gap-3">
+              <div className="relative z-10 flex items-start gap-2">
                 <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 text-xl font-semibold ${
-                    isCompleted
-                      ? "bg-black text-white"
-                      : "bg-white/5 text-white"
-                  }`}
+                  className={`flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 text-xl font-semibold ${completedIconClass}`}
                 >
                   {goal.emoji ?? goal.monumentEmoji ?? goal.title.slice(0, 2)}
                 </div>
                 <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em]">
-                    <span className="flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-white/80">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-[0.18em]">
+                    <span className="flex items-center gap-1 rounded-full border border-white/10 px-1.5 py-0.5 text-white/80">
                       <FlameEmber
                         level={goal.energy.toUpperCase() as FlameLevel}
                         size="xs"
@@ -506,14 +521,14 @@ function GoalCardImpl({
                       </span>
                     </span>
                     {showWeight ? (
-                      <span className="rounded-full border border-white/20 px-2 py-0.5 text-white/70">
+                      <span className="rounded-full border border-white/20 px-1.5 py-0.5 text-white/70 text-[10px]">
                         wt {goal.weight ?? 0}
                       </span>
                     ) : null}
                   </div>
                   <h3
                     id={`goal-${goal.id}-label`}
-                    className="mt-2 text-xl font-semibold"
+                    className="mt-1 text-lg font-semibold"
                   >
                     {showEmojiPrefix && (goal.emoji ?? goal.monumentEmoji) ? (
                       <span className="mr-2 inline" aria-hidden>
@@ -523,7 +538,7 @@ function GoalCardImpl({
                     {goal.title}
                   </h3>
                   {goal.why && (
-                    <p className="mt-1 text-sm text-white/65 line-clamp-2">
+                    <p className="mt-0.5 text-sm text-white/65 line-clamp-2">
                       {goal.why}
                     </p>
                   )}
@@ -534,9 +549,9 @@ function GoalCardImpl({
                   }`}
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
+              <div className="flex flex-wrap items-center gap-2 text-[10px] text-white/60">
                 {!open && (
-                  <div className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
+                  <div className="flex items-center gap-2 rounded-full border border-white/10 px-2 py-0.5 text-[10px]">
                     <span
                       className={`h-1.5 w-1.5 rounded-full ${energy.dot}`}
                       aria-hidden="true"
@@ -545,13 +560,13 @@ function GoalCardImpl({
                   </div>
                 )}
                 {goal.dueDate && (
-                  <span className="rounded-full border border-white/10 px-3 py-1">
+                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px]">
                     Due {new Date(goal.dueDate).toLocaleDateString()}
                   </span>
                 )}
                 {etaDisplay && (
-                  <span className="relative flex items-center gap-2 rounded-full border border-fuchsia-400/40 bg-gradient-to-r from-fuchsia-500/15 via-rose-500/10 to-amber-500/15 px-3 py-1 text-white shadow-[0_6px_18px_rgba(236,72,153,0.35)]">
-                    <span className="flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                  <span className="relative flex items-center gap-2 rounded-full border border-fuchsia-400/40 bg-gradient-to-r from-fuchsia-500/15 via-rose-500/10 to-amber-500/15 px-2 py-0.5 text-white shadow-[0_6px_18px_rgba(236,72,153,0.35)]">
+                    <span className="flex items-center gap-1 rounded-full bg-white/10 px-1.25 py-0.5 text-[8px] font-semibold uppercase tracking-[0.3em] text-white/70">
                       <Sparkles
                         className="h-3 w-3 text-amber-100"
                         aria-hidden="true"
@@ -564,19 +579,19 @@ function GoalCardImpl({
                   </span>
                 )}
                 {createdAt && showCreatedAt && (
-                  <span className="rounded-full border border-white/10 px-3 py-1 text-white/60">
+                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white/60">
                     Created {createdAt}
                   </span>
                 )}
               </div>
               {!open && (
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1">
                   <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-white/50">
                     <span>Progress</span>
                     <span>{goal.progress}%</span>
                   </div>
                   <div
-                    className="h-[14px] overflow-hidden rounded-[999px] border-2 border-[#0f1115] bg-[#1b1e24]"
+                    className="h-[12px] overflow-hidden rounded-[999px] border border-[#0f1115] bg-[#1b1e24]"
                     style={{
                       boxShadow:
                         "inset 0 2px 3px rgba(0,0,0,0.6), 0 1px 2px rgba(255,255,255,0.08)",
@@ -590,14 +605,14 @@ function GoalCardImpl({
                 </div>
               )}
               {onBoost && (
-                <div className="pt-1">
+                <div className="pt-0.5">
                   <button
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
                       onBoost();
                     }}
-                    className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-gradient-to-r from-red-600 to-rose-500 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white shadow-[0_8px_20px_-10px_rgba(239,68,68,0.6)]"
+                    className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-gradient-to-r from-red-600 to-rose-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.25em] text-white shadow-[0_8px_20px_-10px_rgba(239,68,68,0.6)]"
                   >
                     Boost +250
                   </button>
