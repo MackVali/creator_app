@@ -16,6 +16,7 @@ import {
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { dayTypesTourSteps } from "@/lib/tours/dayTypesTour";
+import { useHasExistingTimeBlocks } from "@/lib/hooks/useHasExistingTimeBlocks";
 
 export type TourStep = {
   id: string;
@@ -85,6 +86,8 @@ export function TourProvider({ children }: { children: ReactNode }) {
   const [missingTarget, setMissingTarget] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
+  const { hasExistingTimeBlocks, isLoading: isLoadingExistingTimeBlocks } =
+    useHasExistingTimeBlocks();
   const advancingRef = useRef(false);
   const clickedThisStepRef = useRef(false);
   const pendingFinishRef = useRef<(() => void) | null>(null);
@@ -145,11 +148,24 @@ export function TourProvider({ children }: { children: ReactNode }) {
     if (typeof window === "undefined") return;
     if (session) return;
     if (pathname !== "/schedule/day-types/new") return;
+    if (isLoadingExistingTimeBlocks) return;
+
+    if (hasExistingTimeBlocks) {
+      window.localStorage.removeItem("tour:day-types:pending");
+      return;
+    }
+
     const pending = window.localStorage.getItem("tour:day-types:pending");
     if (pending !== "1") return;
     window.localStorage.removeItem("tour:day-types:pending");
     startTour(dayTypesTourSteps);
-  }, [pathname, session, startTour]);
+  }, [
+    hasExistingTimeBlocks,
+    isLoadingExistingTimeBlocks,
+    pathname,
+    session,
+    startTour,
+  ]);
 
   const currentStep = session?.steps[session.currentIndex] ?? null;
   const shouldBlockOutsideClicks = currentStep?.blockOutsideClicks ?? true;

@@ -8,10 +8,13 @@ import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import { useTour } from "@/components/tour/TourProvider";
 import { dashboardTourSteps } from "@/lib/tours/dashboardTour";
+import { useHasExistingTimeBlocks } from "@/lib/hooks/useHasExistingTimeBlocks";
 import SkillsCarousel from "./_skills/SkillsCarousel";
 
 export default function DashboardClient() {
   const router = useRouter();
+  const { hasExistingTimeBlocks, isLoading: isLoadingExistingTimeBlocks } =
+    useHasExistingTimeBlocks();
 
   const finishTour = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -24,12 +27,21 @@ export default function DashboardClient() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (isLoadingExistingTimeBlocks) return;
+
+    if (hasExistingTimeBlocks) {
+      window.localStorage.setItem("dashboardTourCompleted", "true");
+      window.localStorage.removeItem("tour:schedule:pending");
+      window.localStorage.removeItem("tour:day-types:pending");
+      return;
+    }
+
     if (window.localStorage.getItem("dashboardTourCompleted") === "true") return;
     const timer = window.setTimeout(() => {
       start();
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [start]);
+  }, [hasExistingTimeBlocks, isLoadingExistingTimeBlocks, start]);
 
   return (
     <main className="pb-20">
