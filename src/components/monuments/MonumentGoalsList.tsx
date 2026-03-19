@@ -233,6 +233,15 @@ const isProjectStageComplete = (stage?: string | null): boolean => {
   return COMPLETED_PROJECT_STAGES.has(stage.toUpperCase());
 };
 
+const areAllProjectsComplete = (projects: Project[]): boolean =>
+  projects.length > 0 &&
+  projects.every(
+    (project) =>
+      isProjectStageComplete(project.stage) ||
+      project.status === "Done" ||
+      Number(project.progress ?? 0) >= 100
+  );
+
 function mapSchedulerPriority(priority?: string | null): string {
   if (typeof priority !== "string") return "NO";
   const upper = priority.toUpperCase();
@@ -587,18 +596,19 @@ export function MonumentGoalsList({
                     tasks: normalizedTasks,
                   };
                 });
-                let derivedProgress =
-                  projList.length > 0
-                    ? Math.round(
-                        projList.reduce((sum, p) => sum + p.progress, 0) /
-                          projList.length
-                      )
-                    : 0;
-                // Check if ALL projects are completed (progress = 100)
-                const normalizedStatus = goalStatusToStatus(g.status);
-                if (normalizedStatus === "Completed") {
-                  derivedProgress = 100;
-                }
+                const allProjectsComplete = areAllProjectsComplete(projList);
+                const derivedProgress =
+                  allProjectsComplete || goalStatusToStatus(g.status) === "Completed"
+                    ? 100
+                    : projList.length > 0
+                      ? Math.round(
+                          projList.reduce((sum, p) => sum + p.progress, 0) /
+                            projList.length
+                        )
+                      : 0;
+                const normalizedStatus = allProjectsComplete
+                  ? "Completed"
+                  : goalStatusToStatus(g.status);
                 const goalPrioritySource =
                   g.priority_code ?? extractLookupName(g.priority);
                 const normalizedGoalPriorityCode = goalPrioritySource
@@ -745,17 +755,19 @@ export function MonumentGoalsList({
             };
           });
 
-          let derivedProgress =
-            projList.length > 0
-              ? Math.round(
-                  projList.reduce((sum, p) => sum + p.progress, 0) /
-                    projList.length
-                )
-              : 0;
-          const normalizedStatus = goalStatusToStatus(g.status);
-          if (normalizedStatus === "Completed") {
-            derivedProgress = 100;
-          }
+          const allProjectsComplete = areAllProjectsComplete(projList);
+          const derivedProgress =
+            allProjectsComplete || goalStatusToStatus(g.status) === "Completed"
+              ? 100
+              : projList.length > 0
+                ? Math.round(
+                    projList.reduce((sum, p) => sum + p.progress, 0) /
+                      projList.length
+                  )
+                : 0;
+          const normalizedStatus = allProjectsComplete
+            ? "Completed"
+            : goalStatusToStatus(g.status);
 
           const goalPrioritySource =
             g.priority_code ?? extractLookupName(g.priority);
