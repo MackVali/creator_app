@@ -1853,51 +1853,55 @@ export function HabitEditSheet({
             ) : null}
 
             <div className="space-y-2 pb-1">
-              {instance ? (
-                <div className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
+              <div className="flex flex-wrap items-end justify-between gap-2 md:flex-col md:items-stretch">
+                <div className="flex-1 min-w-0 md:w-full">
+                  {instance ? (
+                    <div className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
+                      <Button
+                        type="button"
+                        className="h-10 w-full rounded-xl bg-gradient-to-b from-[#7a1f2a] to-[#4b0f18] px-3 text-sm font-semibold text-white shadow-inner transition hover:from-[#8f2633] hover:to-[#5a121e]"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleteConfirmOpen(true);
+                        }}
+                        disabled={
+                          isDeleting || saving || habitLoading || skillsLoading
+                        }
+                      >
+                        {isDeleting ? "Deleting…" : "Delete habit"}
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={onClose}
+                        disabled={saving || isDeleting}
+                        className={cn(FAB_BUTTON_ACTION_CLASS, "w-full")}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={onClose}
+                      disabled={saving || isDeleting}
+                      className={cn(FAB_BUTTON_ACTION_CLASS, "w-full")}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+                <div className="flex shrink-0 justify-end gap-3 md:justify-end">
                   <Button
-                    type="button"
-                    className="h-10 w-full rounded-xl bg-gradient-to-b from-[#7a1f2a] to-[#4b0f18] px-3 text-sm font-semibold text-white shadow-inner transition hover:from-[#8f2633] hover:to-[#5a121e]"
-                    onClick={() => {
-                      setDeleteError(null);
-                      setDeleteConfirmOpen(true);
-                    }}
-                    disabled={
-                      isDeleting || saving || habitLoading || skillsLoading
-                    }
+                    type="submit"
+                    className={cn(
+                      "h-10 rounded-xl bg-white px-3 text-sm text-zinc-900 hover:bg-white/90",
+                      disableSubmit && "opacity-50"
+                    )}
+                    disabled={disableSubmit || isDeleting}
                   >
-                    {isDeleting ? "Deleting…" : "Delete habit"}
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={onClose}
-                    disabled={saving || isDeleting}
-                    className={cn(FAB_BUTTON_ACTION_CLASS, "w-full")}
-                  >
-                    Cancel
+                    {saving ? "Saving…" : "Save changes"}
                   </Button>
                 </div>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={onClose}
-                  disabled={saving || isDeleting}
-                  className={cn(FAB_BUTTON_ACTION_CLASS, "w-full")}
-                >
-                  Cancel
-                </Button>
-              )}
-              <div className="flex justify-end gap-3">
-                <Button
-                  type="submit"
-                  className={cn(
-                    "h-10 rounded-xl bg-white px-3 text-sm text-zinc-900 hover:bg-white/90",
-                    disableSubmit && "opacity-50"
-                  )}
-                  disabled={disableSubmit || isDeleting}
-                >
-                  {saving ? "Saving…" : "Save changes"}
-                </Button>
               </div>
             </div>
             </form>
@@ -1916,21 +1920,27 @@ export function HabitEditSheet({
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-[250] bg-black/80 backdrop-blur-sm" />
           <Dialog.Content
-            className="fixed left-1/2 top-1/2 z-[260] w-[min(90vw,440px)] max-w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-[#05070c] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className={cn(
+              "fixed inset-x-4 bottom-6 z-[260] w-[min(90vw,440px)] max-h-[calc(100dvh-3.5rem)] max-w-[440px] rounded-3xl border border-white/10 bg-[#05070c] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
+              "flex min-h-0 flex-col",
+              "md:inset-x-auto md:left-1/2 md:top-1/2 md:bottom-auto md:-translate-x-1/2 md:-translate-y-1/2"
+            )}
           >
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Dialog.Title className="text-lg font-semibold text-white">
-                  ARE YOU SURE?
-                </Dialog.Title>
-                <Dialog.Description className="text-sm text-white/70">
-                  Deleting this habit removes the entire habit record and ALL
-                  scheduled instances permanently.
-                </Dialog.Description>
+            <div className="flex min-h-0 flex-col gap-4">
+              <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+                <div className="space-y-2">
+                  <Dialog.Title className="text-lg font-semibold text-white">
+                    ARE YOU SURE?
+                  </Dialog.Title>
+                  <Dialog.Description className="text-sm text-white/70">
+                    Deleting this habit removes the entire habit record and ALL
+                    scheduled instances permanently.
+                  </Dialog.Description>
+                </div>
+                {deleteError ? (
+                  <p className="text-sm text-rose-400">{deleteError}</p>
+                ) : null}
               </div>
-              {deleteError ? (
-                <p className="text-sm text-rose-400">{deleteError}</p>
-              ) : null}
               <div className="flex flex-col gap-2">
                 <Button
                   type="button"
