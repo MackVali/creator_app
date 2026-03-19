@@ -191,7 +191,7 @@ async function cleanupGoalHierarchy(supabase: SupabaseClient, goalId: string) {
 async function createGoalFallback(
   supabase: SupabaseClient,
   goalInput: GoalWizardRpcInput,
-  projects: NormalizedProjectPayload[]
+  projects: NormalizedProjectPayload[],
 ): Promise<{ success: boolean; goalId: string | null; projectIds: string[] }> {
   let createdGoalId: string | null = null;
   const createdProjectIds: string[] = [];
@@ -263,7 +263,7 @@ async function createGoalFallback(
         if (projectSkillError) {
           console.error(
             "Fallback project skill link failed:",
-            projectSkillError
+            projectSkillError,
           );
         }
       }
@@ -284,7 +284,7 @@ async function createGoalFallback(
             notes: task.notes,
             skill_id: task.skill_id,
             due_date: task.due_date,
-          }))
+          })),
         );
 
         if (taskError) {
@@ -339,7 +339,7 @@ async function persistLockedProjectPlacements({
         energy: placement.energy,
         due_date: placement.dueDate ?? null,
       },
-      0
+      0,
     );
     const energyResolved =
       placement.energy && placement.energy.trim().length > 0
@@ -379,7 +379,7 @@ const DEFAULT_PRIORITY_DEFINITIONS: PriorityDefinition[] = PRIORITY_META.map(
     id: String(index + 1),
     name: entry.label,
     order_index: index,
-  })
+  }),
 );
 
 const ENERGY_META = [
@@ -396,7 +396,7 @@ const DEFAULT_ENERGY_DEFINITIONS: EnergyDefinition[] = ENERGY_META.map(
     id: String(index + 1),
     name: entry.label,
     order_index: index,
-  })
+  }),
 );
 
 const MAX_PRACTICE_ENERGY_CODE =
@@ -421,7 +421,7 @@ const normalizeSelectionLabel = (value?: string | null) => {
 const resolveSelectValue = (
   currentValue: string,
   options: ChoiceOption[],
-  stripWord?: string
+  stripWord?: string,
 ): string => {
   if (options.length === 0) {
     return currentValue;
@@ -448,12 +448,39 @@ const resolveSelectValue = (
   return options[0]?.value ?? currentValue;
 };
 
+const getNextSelectableOptionValue = (
+  currentValue: string,
+  options: ChoiceOption[],
+): string => {
+  const selectableOptions = options.filter((option) => !option.disabled);
+  if (selectableOptions.length === 0) {
+    return currentValue;
+  }
+
+  const resolvedCurrentValue = resolveSelectValue(
+    currentValue,
+    selectableOptions,
+  );
+  const currentIndex = selectableOptions.findIndex(
+    (option) => option.value === resolvedCurrentValue,
+  );
+
+  if (currentIndex === -1) {
+    return selectableOptions[0]?.value ?? currentValue;
+  }
+
+  return (
+    selectableOptions[(currentIndex + 1) % selectableOptions.length]?.value ??
+    currentValue
+  );
+};
+
 const matchPriorityCodeFromLabel = (label: string): string | null => {
   const normalized = normalizeSelectionLabel(label).replace("PRIORITY", "");
   for (const entry of PRIORITY_META) {
     const normalizedLabel = normalizeSelectionLabel(entry.label).replace(
       "PRIORITY",
-      ""
+      "",
     );
     if (normalizedLabel === normalized || entry.code === normalized) {
       return entry.code;
@@ -467,7 +494,7 @@ const matchEnergyCodeFromLabel = (label: string): string | null => {
   for (const entry of ENERGY_META) {
     const normalizedLabel = normalizeSelectionLabel(entry.label).replace(
       "ENERGY",
-      ""
+      "",
     );
     if (normalizedLabel === normalized || entry.code === normalized) {
       return entry.code;
@@ -484,7 +511,7 @@ const inferEnergyCodeFromLabel = (label: string): string =>
 
 const priorityCodeToOptionId = (
   code: string,
-  definitions: PriorityDefinition[]
+  definitions: PriorityDefinition[],
 ): string | null => {
   const normalized = normalizeSelectionLabel(code);
   const match = definitions.find((entry) => {
@@ -499,7 +526,7 @@ const priorityCodeToOptionId = (
 
 const energyCodeToOptionId = (
   code: string,
-  definitions: EnergyDefinition[]
+  definitions: EnergyDefinition[],
 ): string | null => {
   const normalized = normalizeSelectionLabel(code);
   const match = definitions.find((entry) => {
@@ -514,7 +541,7 @@ const energyCodeToOptionId = (
 
 const legacyPriorityCodeFromSelection = (
   value: string,
-  options: ChoiceOption[]
+  options: ChoiceOption[],
 ): string => {
   const option = options.find((entry) => entry.value === value);
   if (!option) {
@@ -525,7 +552,7 @@ const legacyPriorityCodeFromSelection = (
 
 const legacyEnergyCodeFromSelection = (
   value: string,
-  options: ChoiceOption[]
+  options: ChoiceOption[],
 ): string => {
   const option = options.find((entry) => entry.value === value);
   if (!option) {
@@ -633,7 +660,7 @@ const GOAL_WIZARD_STEPS: { key: GoalWizardStep; label: string }[] = [
 ];
 
 const createInitialFormState = (
-  eventType: NonNullable<EventModalProps["eventType"]>
+  eventType: NonNullable<EventModalProps["eventType"]>,
 ): FormState => ({
   name: "",
   description: "",
@@ -649,8 +676,8 @@ const createInitialFormState = (
     eventType === "PROJECT"
       ? PROJECT_STAGE_OPTIONS[0].value
       : eventType === "TASK"
-      ? TASK_STAGE_OPTIONS[0].value
-      : "",
+        ? TASK_STAGE_OPTIONS[0].value
+        : "",
   type: eventType === "HABIT" ? HABIT_TYPE_OPTIONS[0].value : "",
   recurrence: eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   recurrence_days: [],
@@ -721,9 +748,9 @@ function SkillMultiSelect({
   const sortedSkills = useMemo(
     () =>
       [...skills].sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
       ),
-    [skills]
+    [skills],
   );
 
   const filteredSkills = useMemo(() => {
@@ -733,7 +760,7 @@ function SkillMultiSelect({
     }
 
     return sortedSkills.filter((skill) =>
-      skill.name.toLowerCase().includes(query)
+      skill.name.toLowerCase().includes(query),
     );
   }, [sortedSkills, searchTerm]);
 
@@ -859,7 +886,7 @@ function SkillMultiSelect({
 
   const selectedSkills = useMemo(
     () => sortedSkills.filter((skill) => selectedIds.includes(skill.id)),
-    [sortedSkills, selectedIds]
+    [sortedSkills, selectedIds],
   );
 
   const hasSkills = sortedSkills.length > 0;
@@ -874,10 +901,10 @@ function SkillMultiSelect({
     ? selectedSkills.length === 0
       ? placeholder
       : selectedSkills.length <= 2
-      ? selectedSkills
-          .map((skill) => `${getSkillIcon(skill.icon)} ${skill.name}`)
-          .join(", ")
-      : `${selectedSkills.length} skills selected`
+        ? selectedSkills
+            .map((skill) => `${getSkillIcon(skill.icon)} ${skill.name}`)
+            .join(", ")
+        : `${selectedSkills.length} skills selected`
     : "No skills available";
 
   return (
@@ -889,7 +916,7 @@ function SkillMultiSelect({
         className={cn(
           "flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-60",
           isOpen && hasSkills && "border-blue-400/70",
-          buttonClassName
+          buttonClassName,
         )}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
@@ -900,7 +927,7 @@ function SkillMultiSelect({
         <ChevronDown
           className={cn(
             "h-4 w-4 opacity-50 transition-transform",
-            isOpen && "rotate-180"
+            isOpen && "rotate-180",
           )}
         />
       </button>
@@ -940,7 +967,7 @@ function SkillMultiSelect({
                           className={cn(
                             "flex w-full items-center justify-between rounded-lg border border-transparent px-2 py-1 text-[10px] text-zinc-200 transition hover:border-white/20 hover:bg-white/5",
                             isSelected &&
-                              "border-blue-500/40 bg-blue-500/10 text-white"
+                              "border-blue-500/40 bg-blue-500/10 text-white",
                           )}
                         >
                           <span className="flex items-center gap-1 truncate">
@@ -995,6 +1022,10 @@ interface OptionDropdownProps {
   placeholder?: string;
   variant?: "default" | "black";
   itemSize?: "default" | "compact";
+  cycleControl?: {
+    onCycle: () => void;
+    ariaLabel: string;
+  };
 }
 
 function OptionDropdown({
@@ -1004,7 +1035,12 @@ function OptionDropdown({
   placeholder,
   variant = "default",
   itemSize = "default",
+  cycleControl,
 }: OptionDropdownProps) {
+  const selectedOption =
+    options.find((option) => option.value === value) ??
+    options.find((option) => !option.disabled) ??
+    null;
   const triggerClassName =
     variant === "black"
       ? "h-12 rounded-2xl border border-white/10 bg-black/80 px-4 text-sm font-medium text-white shadow-[0_22px_45px_-32px_rgba(15,23,42,0.9)] transition focus:ring-blue-500/70 hover:border-blue-500/40"
@@ -1018,75 +1054,105 @@ function OptionDropdown({
       ? "flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.01] text-[11px] text-zinc-400 transition"
       : "flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.02] text-zinc-400 transition";
   return (
-    <Select
-      value={value}
-      onValueChange={onChange}
-      placeholder={placeholder}
-      className="w-full"
-      triggerClassName={triggerClassName}
-      contentWrapperClassName="rounded-2xl border border-white/10 bg-[#020617]/95 backdrop-blur-xl shadow-[0_35px_60px_-40px_rgba(15,23,42,0.95)]"
-    >
-      <SelectContent className="max-h-72 space-y-1 p-2">
-        {options.map((option) => {
-          const selected = option.value === value;
-          const IconComponent = option.icon;
-          const iconNode = option.renderIcon ? (
-            option.renderIcon(selected)
-          ) : IconComponent ? (
-            <IconComponent
-              className={cn(
-                "h-4 w-4",
-                option.iconClassName ??
-                  (selected ? "text-blue-400" : "text-zinc-400")
-              )}
-            />
-          ) : null;
-
-          return (
-            <SelectItem
-              key={option.value}
-              value={option.value}
-              label={option.label}
-              disabled={option.disabled}
-              className={cn(
-                itemBaseClass,
-                "transition hover:border-blue-500/40 hover:bg-white/[0.05]",
-                selected &&
-                  "border-blue-500/60 bg-blue-500/20 shadow-[0_18px_45px_-30px_rgba(59,130,246,0.6)]"
-              )}
-            >
-              <div
+    <div className="relative">
+      <Select
+        value={value}
+        onValueChange={onChange}
+        placeholder={placeholder}
+        className="w-full"
+        triggerClassName={cn(cycleControl && "pl-14", triggerClassName)}
+        contentWrapperClassName="rounded-2xl border border-white/10 bg-[#020617]/95 backdrop-blur-xl shadow-[0_35px_60px_-40px_rgba(15,23,42,0.95)]"
+      >
+        <SelectContent className="max-h-72 space-y-1 p-2">
+          {options.map((option) => {
+            const selected = option.value === value;
+            const IconComponent = option.icon;
+            const iconNode = option.renderIcon ? (
+              option.renderIcon(selected)
+            ) : IconComponent ? (
+              <IconComponent
                 className={cn(
-                  "flex items-start",
-                  itemSize === "compact" ? "gap-3" : "gap-4"
+                  "h-4 w-4",
+                  option.iconClassName ??
+                    (selected ? "text-blue-400" : "text-zinc-400"),
+                )}
+              />
+            ) : null;
+
+            return (
+              <SelectItem
+                key={option.value}
+                value={option.value}
+                label={option.label}
+                disabled={option.disabled}
+                className={cn(
+                  itemBaseClass,
+                  "transition hover:border-blue-500/40 hover:bg-white/[0.05]",
+                  selected &&
+                    "border-blue-500/60 bg-blue-500/20 shadow-[0_18px_45px_-30px_rgba(59,130,246,0.6)]",
                 )}
               >
-                {iconNode ? (
-                  <span
-                    className={cn(
-                      iconWrapperClass,
-                      selected && "bg-blue-500/20 text-blue-300"
-                    )}
-                  >
-                    {iconNode}
-                  </span>
-                ) : null}
-                <div className="flex flex-col">
-                  <span
-                    className={cn(
-                      "font-semibold text-zinc-100",
-                      itemSize === "compact" ? "text-xs" : "text-sm"
-                    )}
-                  >
-                    {option.label}
-                  </span>
+                <div
+                  className={cn(
+                    "flex items-start",
+                    itemSize === "compact" ? "gap-3" : "gap-4",
+                  )}
+                >
+                  {iconNode ? (
+                    <span
+                      className={cn(
+                        iconWrapperClass,
+                        selected && "bg-blue-500/20 text-blue-300",
+                      )}
+                    >
+                      {iconNode}
+                    </span>
+                  ) : null}
+                  <div className="flex flex-col">
+                    <span
+                      className={cn(
+                        "font-semibold text-zinc-100",
+                        itemSize === "compact" ? "text-xs" : "text-sm",
+                      )}
+                    >
+                      {option.label}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </SelectItem>
-          );
-        })}
-      </SelectContent>
-    </Select>
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+      {cycleControl && selectedOption ? (
+        <button
+          type="button"
+          aria-label={cycleControl.ariaLabel}
+          title={cycleControl.ariaLabel}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            cycleControl.onCycle();
+          }}
+          className="absolute left-3 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-zinc-100 shadow-[0_10px_30px_-20px_rgba(59,130,246,0.7)] transition hover:border-blue-400/50 hover:bg-blue-500/10"
+        >
+          {selectedOption.renderIcon ? (
+            selectedOption.renderIcon(true)
+          ) : selectedOption.icon ? (
+            <selectedOption.icon
+              className={cn(
+                "h-4 w-4",
+                selectedOption.iconClassName ?? "text-zinc-100",
+              )}
+            />
+          ) : null}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -1101,11 +1167,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
   const resolvedType = eventType ?? "GOAL";
   const [formData, setFormData] = useState<FormState>(() =>
-    createInitialFormState(resolvedType)
+    createInitialFormState(resolvedType),
   );
   const [goalWizardStep, setGoalWizardStep] = useState<GoalWizardStep>("GOAL");
   const [goalForm, setGoalForm] = useState<GoalWizardFormState>(
-    createInitialGoalWizardForm
+    createInitialGoalWizardForm,
   );
   const [draftProjects, setDraftProjects] = useState<DraftProject[]>(() => [
     createDraftProject(),
@@ -1146,9 +1212,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const sortedSkills = useMemo(
     () =>
       [...skills].sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
       ),
-    [skills]
+    [skills],
   );
 
   const priorityChoiceOptions = useMemo<ChoiceOption[]>(() => {
@@ -1179,7 +1245,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       const level =
         ENERGY_META.find(
           (entry) =>
-            entry.code === (matchedCode ?? inferEnergyCodeFromLabel(rawLabel))
+            entry.code === (matchedCode ?? inferEnergyCodeFromLabel(rawLabel)),
         )?.level ?? "LOW";
       return {
         value: energy.id,
@@ -1202,12 +1268,17 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const resolvePriorityPayloadValue = useCallback(
     (value: string) =>
       resolveSelectValue(value, priorityChoiceOptions, "PRIORITY"),
-    [priorityChoiceOptions]
+    [priorityChoiceOptions],
   );
 
   const resolveEnergyPayloadValue = useCallback(
     (value: string) => resolveSelectValue(value, energyChoiceOptions, "ENERGY"),
-    [energyChoiceOptions]
+    [energyChoiceOptions],
+  );
+
+  const getNextEnergyValue = useCallback(
+    (value: string) => getNextSelectableOptionValue(value, energyChoiceOptions),
+    [energyChoiceOptions],
   );
 
   const resetGoalWizard = useCallback(() => {
@@ -1238,7 +1309,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       draftProjects.forEach((draft) => {
         currentIds.add(draft.id);
         const hasAdvancedData = Boolean(
-          draft.skillId || draft.dueDate || draft.manualStart || draft.manualEnd
+          draft.skillId ||
+          draft.dueDate ||
+          draft.manualStart ||
+          draft.manualEnd,
         );
         if (!(draft.id in next)) {
           next[draft.id] = hasAdvancedData;
@@ -1603,7 +1677,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       ...sortedSkills.map((skill) => {
         const monumentId = skill.monument_id ?? null;
         const monumentDetails = monumentId
-          ? monumentLookup.get(monumentId) ?? null
+          ? (monumentLookup.get(monumentId) ?? null)
           : null;
         return {
           value: skill.id,
@@ -1633,7 +1707,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       const resolved = resolveSelectValue(
         prev.priority,
         priorityChoiceOptions,
-        "PRIORITY"
+        "PRIORITY",
       );
       return resolved === prev.priority
         ? prev
@@ -1644,7 +1718,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       const resolved = resolveSelectValue(
         prev.priority,
         priorityChoiceOptions,
-        "PRIORITY"
+        "PRIORITY",
       );
       return resolved === prev.priority
         ? prev
@@ -1657,14 +1731,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         const nextPriority = resolveSelectValue(
           draft.priority,
           priorityChoiceOptions,
-          "PRIORITY"
+          "PRIORITY",
         );
         let changed = nextPriority !== draft.priority;
         const nextTasks = draft.tasks.map((task) => {
           const nextTaskPriority = resolveSelectValue(
             task.priority,
             priorityChoiceOptions,
-            "PRIORITY"
+            "PRIORITY",
           );
           if (nextTaskPriority !== task.priority) {
             changed = true;
@@ -1691,7 +1765,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       const resolved = resolveSelectValue(
         prev.energy,
         energyChoiceOptions,
-        "ENERGY"
+        "ENERGY",
       );
       return resolved === prev.energy ? prev : { ...prev, energy: resolved };
     });
@@ -1700,7 +1774,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       const resolved = resolveSelectValue(
         prev.energy,
         energyChoiceOptions,
-        "ENERGY"
+        "ENERGY",
       );
       return resolved === prev.energy ? prev : { ...prev, energy: resolved };
     });
@@ -1711,14 +1785,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         const nextEnergy = resolveSelectValue(
           draft.energy,
           energyChoiceOptions,
-          "ENERGY"
+          "ENERGY",
         );
         let changed = nextEnergy !== draft.energy;
         const nextTasks = draft.tasks.map((task) => {
           const nextTaskEnergy = resolveSelectValue(
             task.energy,
             energyChoiceOptions,
-            "ENERGY"
+            "ENERGY",
           );
           if (nextTaskEnergy !== task.energy) {
             changed = true;
@@ -1756,7 +1830,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         }
       }
     },
-    [eventType]
+    [eventType],
   );
 
   const toggleSkill = (skillId: string) => {
@@ -1773,7 +1847,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
   function handleGoalFormChange<K extends keyof GoalWizardFormState>(
     key: K,
-    value: GoalWizardFormState[K]
+    value: GoalWizardFormState[K],
   ) {
     setGoalForm((prev) => ({
       ...prev,
@@ -1786,13 +1860,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const handleDraftProjectChange = (
     projectId: string,
     field: keyof Omit<DraftProject, "id" | "tasks">,
-    value: string
+    value: string,
   ) => {
     const nextValue = field === "name" ? formatNameValue(value) : value;
     setDraftProjects((prev) =>
       prev.map((draft) =>
-        draft.id === projectId ? { ...draft, [field]: nextValue } : draft
-      )
+        draft.id === projectId ? { ...draft, [field]: nextValue } : draft,
+      ),
     );
   };
 
@@ -1815,7 +1889,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }
 
     const projectToRemove = draftProjects.find(
-      (draft) => draft.id === projectId
+      (draft) => draft.id === projectId,
     );
     setDraftProjects((prev) => prev.filter((draft) => draft.id !== projectId));
     setProjectAdvanced((prev) => {
@@ -1844,8 +1918,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       prev.map((draft) =>
         draft.id === projectId
           ? { ...draft, tasks: [...draft.tasks, newTask] }
-          : draft
-      )
+          : draft,
+      ),
     );
     setTaskAdvanced((prev) => ({ ...prev, [newTask.id]: false }));
   };
@@ -1854,7 +1928,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     projectId: string,
     taskId: string,
     field: keyof Omit<DraftTask, "id">,
-    value: string
+    value: string,
   ) => {
     const nextValue = field === "name" ? formatNameValue(value) : value;
     setDraftProjects((prev) =>
@@ -1863,40 +1937,40 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           ? {
               ...draft,
               tasks: draft.tasks.map((task) =>
-                task.id === taskId ? { ...task, [field]: nextValue } : task
+                task.id === taskId ? { ...task, [field]: nextValue } : task,
               ),
             }
-          : draft
-      )
+          : draft,
+      ),
     );
   };
 
   const handleDraftProjectSkillChange = (
     projectId: string,
-    skillId: string | null
+    skillId: string | null,
   ) => {
     setDraftProjects((prev) =>
       prev.map((draft) =>
-        draft.id === projectId ? { ...draft, skillId } : draft
-      )
+        draft.id === projectId ? { ...draft, skillId } : draft,
+      ),
     );
   };
 
   const handleDraftProjectDueDateChange = (
     projectId: string,
-    dueDate: string
+    dueDate: string,
   ) => {
     setDraftProjects((prev) =>
       prev.map((draft) =>
-        draft.id === projectId ? { ...draft, dueDate } : draft
-      )
+        draft.id === projectId ? { ...draft, dueDate } : draft,
+      ),
     );
   };
 
   const handleDraftTaskSkillChange = (
     projectId: string,
     taskId: string,
-    skillId: string | null
+    skillId: string | null,
   ) => {
     setDraftProjects((prev) =>
       prev.map((draft) =>
@@ -1904,18 +1978,18 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           ? {
               ...draft,
               tasks: draft.tasks.map((task) =>
-                task.id === taskId ? { ...task, skillId } : task
+                task.id === taskId ? { ...task, skillId } : task,
               ),
             }
-          : draft
-      )
+          : draft,
+      ),
     );
   };
 
   const handleDraftTaskDueDateChange = (
     projectId: string,
     taskId: string,
-    dueDate: string
+    dueDate: string,
   ) => {
     setDraftProjects((prev) =>
       prev.map((draft) =>
@@ -1923,11 +1997,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           ? {
               ...draft,
               tasks: draft.tasks.map((task) =>
-                task.id === taskId ? { ...task, dueDate } : task
+                task.id === taskId ? { ...task, dueDate } : task,
               ),
             }
-          : draft
-      )
+          : draft,
+      ),
     );
   };
 
@@ -1939,8 +2013,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               ...draft,
               tasks: draft.tasks.filter((task) => task.id !== taskId),
             }
-          : draft
-      )
+          : draft,
+      ),
     );
     setTaskAdvanced((prev) => {
       if (!(taskId in prev)) {
@@ -1981,7 +2055,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     if (!formData.name.trim()) {
       toast.error(
         "Name required",
-        `Give your ${eventType.toLowerCase()} a descriptive name.`
+        `Give your ${eventType.toLowerCase()} a descriptive name.`,
       );
       return;
     }
@@ -2014,7 +2088,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       ) {
         toast.error(
           "Manual schedule incomplete",
-          "Provide both start and end times to lock this project."
+          "Provide both start and end times to lock this project.",
         );
         return;
       }
@@ -2027,14 +2101,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         ) {
           toast.error(
             "Manual schedule invalid",
-            "Enter valid start and end times."
+            "Enter valid start and end times.",
           );
           return;
         }
         if (endDate.getTime() <= startDate.getTime()) {
           toast.error(
             "Manual schedule invalid",
-            "End time must be after the start time."
+            "End time must be after the start time.",
           );
           return;
         }
@@ -2043,7 +2117,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           endUTC: endDate.toISOString(),
           durationMin: Math.max(
             1,
-            Math.round((endDate.getTime() - startDate.getTime()) / 60000)
+            Math.round((endDate.getTime() - startDate.getTime()) / 60000),
           ),
         };
       }
@@ -2069,7 +2143,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       if (energyChoiceOptions.length === 0) {
         toast.error(
           "Loading",
-          "Energy options are still loading. Please try again in a moment."
+          "Energy options are still loading. Please try again in a moment.",
         );
         return;
       }
@@ -2077,7 +2151,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       if (eventType !== "HABIT" && priorityChoiceOptions.length === 0) {
         toast.error(
           "Loading",
-          "Priority options are still loading. Please try again in a moment."
+          "Priority options are still loading. Please try again in a moment.",
         );
         return;
       }
@@ -2091,12 +2165,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         eventType !== "HABIT"
           ? legacyPriorityCodeFromSelection(
               resolvedPriorityValue,
-              priorityChoiceOptions
+              priorityChoiceOptions,
             )
           : DEFAULT_PRIORITY;
       const resolvedEnergyCode = legacyEnergyCodeFromSelection(
         resolvedEnergyValue,
-        energyChoiceOptions
+        energyChoiceOptions,
       );
 
       const insertData: {
@@ -2144,7 +2218,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         if (!formData.goal_id) {
           toast.error(
             "Goal required",
-            "Select the goal this project will support."
+            "Select the goal this project will support.",
           );
           return;
         }
@@ -2154,14 +2228,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         if (!formData.project_id) {
           toast.error(
             "Project required",
-            "Choose the project this task belongs to."
+            "Choose the project this task belongs to.",
           );
           return;
         }
         if (!formData.skill_id) {
           toast.error(
             "Skill Required",
-            "Choose the skill this task will advance."
+            "Choose the skill this task will advance.",
           );
           return;
         }
@@ -2182,7 +2256,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           if (!selectedGoalId) {
             toast.error(
               "Goal required",
-              "Temp habits need a goal to stay aligned with your plan."
+              "Temp habits need a goal to stay aligned with your plan.",
             );
             return;
           }
@@ -2195,7 +2269,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           ) {
             toast.error(
               "Completions required",
-              "Use a whole number greater than zero for the completion target."
+              "Use a whole number greater than zero for the completion target.",
             );
             return;
           }
@@ -2211,7 +2285,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           normalizedRecurrence === "every x days"
             ? resolveEveryXDaysInterval(
                 formData.recurrence,
-                formData.recurrence_days
+                formData.recurrence_days,
               )
             : null;
         if (
@@ -2221,7 +2295,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         ) {
           toast.error(
             "Interval required",
-            "Set how many days should pass between completions."
+            "Set how many days should pass between completions.",
           );
           return;
         }
@@ -2236,8 +2310,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.recurrence = isPracticeHabit
           ? "none"
           : normalizedRecurrence === "none"
-          ? null
-          : formData.recurrence;
+            ? null
+            : formData.recurrence;
         insertData.recurrence_days = isPracticeHabit
           ? null
           : recurrenceDaysValue;
@@ -2251,13 +2325,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             resolvedLocationContextId = await resolveLocationContextId(
               supabase,
               user.id,
-              formData.location_context_id
+              formData.location_context_id,
             );
 
             if (!resolvedLocationContextId) {
               toast.error(
                 "Location unavailable",
-                "We couldn’t save that location right now. Please try again."
+                "We couldn’t save that location right now. Please try again.",
               );
               return;
             }
@@ -2281,7 +2355,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         if (formData.type?.toUpperCase() === "MEMO" && !insertData.skill_id) {
           toast.error(
             "Skill required",
-            "Memo habits need a skill so their notes have somewhere to land."
+            "Memo habits need a skill so their notes have somewhere to land.",
           );
           return;
         }
@@ -2292,7 +2366,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           if (!routineName) {
             toast.error(
               "Routine name required",
-              "Please give your new routine a name."
+              "Please give your new routine a name.",
             );
             return;
           }
@@ -2385,11 +2459,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         } catch (lockError) {
           console.error(
             "Failed to persist locked project schedule:",
-            lockError
+            lockError,
           );
           toast.error(
             "Manual lock failed",
-            "Project saved, but its manual schedule could not be applied."
+            "Project saved, but its manual schedule could not be applied.",
           );
         }
       }
@@ -2402,7 +2476,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         "Failed to create " + (eventType?.toLowerCase() ?? "event");
       console.error(
         "Error creating " + (eventType?.toLowerCase() ?? "event") + ":",
-        error
+        error,
       );
       toast.error("Error", getInsertErrorMessage(error, fallbackMessage));
     } finally {
@@ -2421,7 +2495,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       if (!goalForm.monument_id.trim()) {
         toast.error(
           "Monument required",
-          "Select a monument to ground this goal."
+          "Select a monument to ground this goal.",
         );
         return;
       }
@@ -2450,7 +2524,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         ) {
           toast.error(
             "Loading",
-            "Priority and energy options are still loading. Please try again in a moment."
+            "Priority and energy options are still loading. Please try again in a moment.",
           );
           return;
         }
@@ -2461,7 +2535,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           if (hasStart !== hasEnd) {
             toast.error(
               "Manual schedule incomplete",
-              "Provide both start and end times to lock a project."
+              "Provide both start and end times to lock a project.",
             );
             setIsSaving(false);
             return;
@@ -2472,7 +2546,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
               toast.error(
                 "Manual schedule invalid",
-                "Enter valid start and end times."
+                "Enter valid start and end times.",
               );
               setIsSaving(false);
               return;
@@ -2480,7 +2554,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             if (end.getTime() <= start.getTime()) {
               toast.error(
                 "Manual schedule invalid",
-                "End time must be after the start time."
+                "End time must be after the start time.",
               );
               setIsSaving(false);
               return;
@@ -2525,7 +2599,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 const trimmedTaskDueDate = task.dueDate.trim();
                 const taskSkillId = task.skillId ? task.skillId : null;
                 const taskPriorityValue = resolvePriorityPayloadValue(
-                  task.priority
+                  task.priority,
                 );
                 const taskEnergyValue = resolveEnergyPayloadValue(task.energy);
 
@@ -2564,24 +2638,24 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   durationMin: Math.max(
                     1,
                     Math.round(
-                      (endDate.getTime() - startDate.getTime()) / 60000
-                    )
+                      (endDate.getTime() - startDate.getTime()) / 60000,
+                    ),
                   ),
                 };
               }
             }
 
             const projectPriorityValue = resolvePriorityPayloadValue(
-              draft.priority
+              draft.priority,
             );
             const projectEnergyValue = resolveEnergyPayloadValue(draft.energy);
             const projectPriorityCode = legacyPriorityCodeFromSelection(
               projectPriorityValue,
-              priorityChoiceOptions
+              priorityChoiceOptions,
             );
             const projectEnergyCode = legacyEnergyCodeFromSelection(
               projectEnergyValue,
-              energyChoiceOptions
+              energyChoiceOptions,
             );
 
             return {
@@ -2611,7 +2685,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           })
           .filter(
             (
-              project
+              project,
             ): project is {
               draftId: string;
               payload: NormalizedProjectPayload;
@@ -2624,11 +2698,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     durationMin: number;
                   }
                 | undefined;
-            } => project !== null
+            } => project !== null,
           );
 
         const sanitizedProjects = sanitizedProjectTuples.map(
-          (tuple) => tuple.payload
+          (tuple) => tuple.payload,
         );
 
         const hasProjects = sanitizedProjects.length > 0;
@@ -2638,16 +2712,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         const goalDueDate = goalForm.dueDate.trim();
 
         const goalPriorityValue = resolvePriorityPayloadValue(
-          goalForm.priority
+          goalForm.priority,
         );
         const goalEnergyValue = resolveEnergyPayloadValue(goalForm.energy);
         const goalPriorityCode = legacyPriorityCodeFromSelection(
           goalPriorityValue,
-          priorityChoiceOptions
+          priorityChoiceOptions,
         );
         const goalEnergyCode = legacyEnergyCodeFromSelection(
           goalEnergyValue,
-          energyChoiceOptions
+          energyChoiceOptions,
         );
 
         const priorityIdToEnum: Record<string, string> = {
@@ -2685,7 +2759,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             project_inputs: hasProjects
               ? (sanitizedProjects as unknown as Json)
               : ([] as unknown as Json),
-          }
+          },
         );
 
         let createdGoalId: string | undefined;
@@ -2711,7 +2785,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           if (missingFn) {
             toast.error(
               "Database not ready",
-              "Please run migrations so the goal wizard function exists."
+              "Please run migrations so the goal wizard function exists.",
             );
           } else if (rpcError) {
             const label = rpcError.code ? `Error ${rpcError.code}` : "Error";
@@ -2723,7 +2797,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           } else {
             toast.error(
               "Error",
-              "RPC returned no data. Ensure the function returns JSON and migrations are applied."
+              "RPC returned no data. Ensure the function returns JSON and migrations are applied.",
             );
           }
           return;
@@ -2735,7 +2809,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           if (Array.isArray(rpcPayload?.projects)) {
             createdProjectIds = (rpcPayload?.projects as Array<{ id?: string }>)
               .map((project) =>
-                typeof project?.id === "string" ? project.id : null
+                typeof project?.id === "string" ? project.id : null,
               )
               .filter((id): id is string => Boolean(id));
           } else {
@@ -2772,7 +2846,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             console.error("Failed to lock manual project schedules:", error);
             toast.error(
               "Manual lock failed",
-              "Projects were saved, but their manual times could not be applied."
+              "Projects were saved, but their manual times could not be applied.",
             );
           }
         }
@@ -2781,7 +2855,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           "Saved",
           hasProjects
             ? "Goal, projects, and tasks created successfully"
-            : "Goal created successfully"
+            : "Goal created successfully",
         );
 
         resetGoalWizard();
@@ -2800,7 +2874,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         setIsSaving(false);
       }
     },
-    [draftProjects, goalForm, onClose, resetGoalWizard, router, toast]
+    [draftProjects, goalForm, onClose, resetGoalWizard, router, toast],
   );
 
   const handleGoalFormSubmit = async (event: React.FormEvent) => {
@@ -2818,7 +2892,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       if (!goalForm.monument_id.trim()) {
         toast.error(
           "Monument required",
-          "Select a monument to ground this goal."
+          "Select a monument to ground this goal.",
         );
         return;
       }
@@ -2965,7 +3039,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const EventIcon = eventMeta.icon;
   const activeWizardIndex = Math.max(
     0,
-    GOAL_WIZARD_STEPS.findIndex((step) => step.key === goalWizardStep)
+    GOAL_WIZARD_STEPS.findIndex((step) => step.key === goalWizardStep),
   );
   const wizardPrimaryDisabled =
     isSaving ||
@@ -2990,7 +3064,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             <div
               className={cn(
                 "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-90",
-                eventMeta.accent
+                eventMeta.accent,
               )}
             />
             <div className="relative flex flex-col gap-2.5 px-4 pb-3 pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:pb-4 sm:pt-3.5">
@@ -2999,7 +3073,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   <span
                     className={cn(
                       "flex h-9 w-9 items-center justify-center rounded-2xl border text-white shadow-inner",
-                      eventMeta.iconBg
+                      eventMeta.iconBg,
                     )}
                   >
                     <EventIcon className="h-5 w-5" />
@@ -3057,8 +3131,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                             isActive
                               ? "border-blue-500/70 bg-blue-500/20 text-white"
                               : isComplete
-                              ? "border-emerald-500/70 bg-emerald-500/15 text-emerald-200"
-                              : "border-white/10 bg-white/[0.04] text-zinc-400"
+                                ? "border-emerald-500/70 bg-emerald-500/15 text-emerald-200"
+                                : "border-white/10 bg-white/[0.04] text-zinc-400",
                           )}
                         >
                           {index + 1}
@@ -3066,7 +3140,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         <span
                           className={cn(
                             "tracking-[0.2em]",
-                            isActive ? "text-white" : "text-zinc-500"
+                            isActive ? "text-white" : "text-zinc-500",
                           )}
                         >
                           {step.label}
@@ -3159,6 +3233,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                               onChange={(value) =>
                                 handleGoalFormChange("energy", value)
                               }
+                              cycleControl={{
+                                ariaLabel: "Cycle goal energy",
+                                onCycle: () =>
+                                  handleGoalFormChange(
+                                    "energy",
+                                    getNextEnergyValue(goalForm.energy),
+                                  ),
+                              }}
                               placeholder="Select energy..."
                               itemSize="compact"
                             />
@@ -3193,7 +3275,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                 onChange={(event) =>
                                   handleGoalFormChange(
                                     "dueDate",
-                                    event.target.value
+                                    event.target.value,
                                   )
                                 }
                                 className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
@@ -3240,7 +3322,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     handleDraftProjectChange(
                                       draft.id,
                                       "name",
-                                      event.target.value
+                                      event.target.value,
                                     )
                                   }
                                   placeholder="Name this project"
@@ -3261,7 +3343,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                       handleDraftProjectChange(
                                         draft.id,
                                         "stage",
-                                        value
+                                        value,
                                       )
                                     }
                                     placeholder="Select stage..."
@@ -3277,7 +3359,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                       handleDraftProjectChange(
                                         draft.id,
                                         "duration",
-                                        event.target.value
+                                        event.target.value,
                                       )
                                     }
                                     inputMode="numeric"
@@ -3298,7 +3380,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                       handleDraftProjectChange(
                                         draft.id,
                                         "priority",
-                                        value
+                                        value,
                                       )
                                     }
                                     placeholder="Select priority..."
@@ -3317,9 +3399,18 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                       handleDraftProjectChange(
                                         draft.id,
                                         "energy",
-                                        value
+                                        value,
                                       )
                                     }
+                                    cycleControl={{
+                                      ariaLabel: "Cycle project energy",
+                                      onCycle: () =>
+                                        handleDraftProjectChange(
+                                          draft.id,
+                                          "energy",
+                                          getNextEnergyValue(draft.energy),
+                                        ),
+                                    }}
                                     placeholder="Select energy..."
                                     itemSize="compact"
                                   />
@@ -3338,7 +3429,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                         onClick={() =>
                                           handleDraftProjectSkillChange(
                                             draft.id,
-                                            null
+                                            null,
                                           )
                                         }
                                         className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/50 transition hover:text-white"
@@ -3357,7 +3448,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                         draft.id,
                                         skillId === draft.skillId
                                           ? null
-                                          : skillId
+                                          : skillId,
                                       )
                                     }
                                     placeholder="Assign a skill"
@@ -3375,7 +3466,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                       handleDraftProjectChange(
                                         draft.id,
                                         "why",
-                                        event.target.value
+                                        event.target.value,
                                       )
                                     }
                                     placeholder="Outline the intent or outcome for this project"
@@ -3418,7 +3509,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                         onChange={(event) =>
                                           handleDraftProjectDueDateChange(
                                             draft.id,
-                                            event.target.value
+                                            event.target.value,
                                           )
                                         }
                                         className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
@@ -3436,7 +3527,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                             handleDraftProjectChange(
                                               draft.id,
                                               "manualStart",
-                                              event.target.value
+                                              event.target.value,
                                             )
                                           }
                                           className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
@@ -3453,7 +3544,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                             handleDraftProjectChange(
                                               draft.id,
                                               "manualEnd",
-                                              event.target.value
+                                              event.target.value,
                                             )
                                           }
                                           className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
@@ -3542,7 +3633,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                               draft.id,
                                               task.id,
                                               "name",
-                                              event.target.value
+                                              event.target.value,
                                             )
                                           }
                                           placeholder="Name this task"
@@ -3558,7 +3649,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                               draft.id,
                                               task.id,
                                               "stage",
-                                              value
+                                              value,
                                             )
                                           }
                                           placeholder="Stage"
@@ -3571,7 +3662,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                               draft.id,
                                               task.id,
                                               "priority",
-                                              value
+                                              value,
                                             )
                                           }
                                           placeholder="Priority"
@@ -3585,9 +3676,19 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                               draft.id,
                                               task.id,
                                               "energy",
-                                              value
+                                              value,
                                             )
                                           }
+                                          cycleControl={{
+                                            ariaLabel: "Cycle task energy",
+                                            onCycle: () =>
+                                              handleTaskChange(
+                                                draft.id,
+                                                task.id,
+                                                "energy",
+                                                getNextEnergyValue(task.energy),
+                                              ),
+                                          }}
                                           placeholder="Energy"
                                           itemSize="compact"
                                         />
@@ -3603,7 +3704,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                               draft.id,
                                               task.id,
                                               "notes",
-                                              event.target.value
+                                              event.target.value,
                                             )
                                           }
                                           placeholder="Add context, links, or success criteria"
@@ -3636,38 +3737,46 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                         {taskAdvanced[task.id] ? (
                                           <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
                                             <div className="space-y-1">
-                                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                                Skill link
-                                              </Label>
-                                              <Select
-                                                value={task.skillId ?? ""}
-                                                onValueChange={(value) =>
+                                              <div className="flex items-center justify-between gap-2">
+                                                <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                                  Skill link
+                                                </Label>
+                                                {task.skillId ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      handleDraftTaskSkillChange(
+                                                        draft.id,
+                                                        task.id,
+                                                        null,
+                                                      )
+                                                    }
+                                                    className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/45 transition hover:text-white"
+                                                  >
+                                                    Clear
+                                                  </button>
+                                                ) : null}
+                                              </div>
+                                              <SkillMultiSelect
+                                                skills={sortedSkills}
+                                                selectedIds={
+                                                  task.skillId
+                                                    ? [task.skillId]
+                                                    : []
+                                                }
+                                                onToggle={(skillId) =>
                                                   handleDraftTaskSkillChange(
                                                     draft.id,
                                                     task.id,
-                                                    value ? value : null
+                                                    skillId === task.skillId
+                                                      ? null
+                                                      : skillId,
                                                   )
                                                 }
-                                              >
-                                                <SelectTrigger className="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                                                  <SelectValue placeholder="Not linked" />
-                                                </SelectTrigger>
-                                                <SelectContent className="bg-[#0b101b] text-sm text-white">
-                                                  <SelectItem value="">
-                                                    <span className="text-zinc-400">
-                                                      Not linked
-                                                    </span>
-                                                  </SelectItem>
-                                                  {sortedSkills.map((skill) => (
-                                                    <SelectItem
-                                                      key={skill.id}
-                                                      value={skill.id}
-                                                    >
-                                                      {skill.name}
-                                                    </SelectItem>
-                                                  ))}
-                                                </SelectContent>
-                                              </Select>
+                                                placeholder="Not linked"
+                                                buttonClassName="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                                                categories={skillCategories}
+                                              />
                                             </div>
                                             <div className="space-y-1">
                                               <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
@@ -3680,7 +3789,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                                   handleDraftTaskDueDateChange(
                                                     draft.id,
                                                     task.id,
-                                                    event.target.value
+                                                    event.target.value,
                                                   )
                                                 }
                                                 className="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
@@ -3696,7 +3805,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                       onClick={() =>
                                         handleRemoveTaskFromDraft(
                                           draft.id,
-                                          task.id
+                                          task.id,
                                         )
                                       }
                                       disabled={draft.tasks.length === 1}
@@ -3961,6 +4070,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         onChange={(value) =>
                           setFormData({ ...formData, energy: value })
                         }
+                        cycleControl={{
+                          ariaLabel: `Cycle ${eventMeta.badge.toLowerCase()} energy`,
+                          onCycle: () =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              energy: getNextEnergyValue(prev.energy),
+                            })),
+                        }}
                         placeholder="Select energy..."
                         itemSize="compact"
                       />
@@ -4181,6 +4298,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         onChange={(value) =>
                           setFormData({ ...formData, energy: value })
                         }
+                        cycleControl={{
+                          ariaLabel: `Cycle ${eventMeta.badge.toLowerCase()} energy`,
+                          onCycle: () =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              energy: getNextEnergyValue(prev.energy),
+                            })),
+                        }}
                         placeholder="Select energy..."
                         itemSize="compact"
                       />
@@ -4361,6 +4486,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         onChange={(value) =>
                           setFormData({ ...formData, energy: value })
                         }
+                        cycleControl={{
+                          ariaLabel: `Cycle ${eventMeta.badge.toLowerCase()} energy`,
+                          onCycle: () =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              energy: getNextEnergyValue(prev.energy),
+                            })),
+                        }}
                         placeholder="Select energy..."
                         itemSize="compact"
                       />
@@ -4493,10 +4626,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       {isSaving && goalWizardStep === "TASKS"
                         ? "Saving..."
                         : goalWizardStep === "TASKS"
-                        ? "Save goal & launch"
-                        : goalWizardStep === "PROJECTS"
-                        ? "Continue to tasks"
-                        : "Continue to projects"}
+                          ? "Save goal & launch"
+                          : goalWizardStep === "PROJECTS"
+                            ? "Continue to tasks"
+                            : "Continue to projects"}
                     </Button>
                   </div>
                 </div>
@@ -4530,6 +4663,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }

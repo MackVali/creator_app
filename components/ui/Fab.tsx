@@ -37,7 +37,10 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import FlameEmber, { type FlameEmberProps, type FlameLevel } from "@/components/FlameEmber";
+import FlameEmber, {
+  type FlameEmberProps,
+  type FlameLevel,
+} from "@/components/FlameEmber";
 import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
 import { ComingSoonModal } from "./ComingSoonModal";
@@ -74,9 +77,7 @@ import {
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
 } from "@/components/habits/habit-form-fields";
-import {
-  SCHEDULER_PRIORITY_LABELS,
-} from "@/lib/types/ai";
+import { SCHEDULER_PRIORITY_LABELS } from "@/lib/types/ai";
 import type {
   AiIntent,
   AiIntentResponse,
@@ -199,7 +200,9 @@ const FLAME_LEVELS: FlameLevel[] = [
 ];
 
 const normalizeFlameLevel = (value?: string | null): FlameLevel => {
-  const normalized = String(value ?? "MEDIUM").trim().toUpperCase();
+  const normalized = String(value ?? "MEDIUM")
+    .trim()
+    .toUpperCase();
   return FLAME_LEVELS.includes(normalized as FlameLevel)
     ? (normalized as FlameLevel)
     : "MEDIUM";
@@ -276,7 +279,7 @@ type AiThreadProposalMessage = {
 type LocalAiThreadMessage = AiThreadTextMessage | AiThreadProposalMessage;
 
 const isTextThreadMessage = (
-  message: LocalAiThreadMessage
+  message: LocalAiThreadMessage,
 ): message is AiThreadTextMessage => message.kind === "text";
 
 const createThreadMessageId = () =>
@@ -287,7 +290,7 @@ const createThreadMessageId = () =>
 const buildInitialProposalFormValues = (
   draft?: Record<string, unknown>,
   overrides?: Record<string, string>,
-  intentType?: AiIntent["type"]
+  intentType?: AiIntent["type"],
 ) => {
   const keys = new Set<string>([
     ...Object.keys(draft ?? {}),
@@ -347,10 +350,9 @@ const roundToNearestMinutes = (date: Date, step = 5): Date => {
 };
 
 const formatTimeInputValue = (date: Date) =>
-  `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(
-    2,
-    "0"
-  )}`;
+  `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
 
 const formatDurationLabel = (minutes: number) => {
   const hours = Math.floor(minutes / 60);
@@ -379,7 +381,7 @@ const formatTimelinePlacementRange = (start: Date, end: Date) => {
     };
     return `${start.toLocaleTimeString(undefined, fallbackOptions)} – ${end.toLocaleTimeString(
       undefined,
-      fallbackOptions
+      fallbackOptions,
     )}`;
   }
 };
@@ -387,7 +389,7 @@ const formatTimelinePlacementRange = (start: Date, end: Date) => {
 const overlayDateToMinutes = (date: Date, overlayStartTime: Date) =>
   Math.max(
     0,
-    Math.round((date.getTime() - overlayStartTime.getTime()) / 60000)
+    Math.round((date.getTime() - overlayStartTime.getTime()) / 60000),
   );
 
 const overlayMinutesToDate = (minutes: number, overlayStartTime: Date) =>
@@ -400,7 +402,7 @@ const snapMinutesToFive = (value: number) =>
 const clampOverlayPlacementStart = (
   startMinutes: number,
   durationMinutes: number,
-  totalWindowMinutes: number
+  totalWindowMinutes: number,
 ) => {
   const maxStart = Math.max(0, totalWindowMinutes - durationMinutes);
   return Math.min(maxStart, Math.max(0, startMinutes));
@@ -453,10 +455,7 @@ const resolveOverlayPlacementLayout = ({
   const entries: PlacementEntry[] = placements.map((placement) => ({
     id: placement.id,
     start: overlayDateToMinutes(placement.start, overlayStartTime),
-    duration: Math.max(
-      1,
-      overlayDateToMinutes(placement.end, placement.start)
-    ),
+    duration: Math.max(1, overlayDateToMinutes(placement.end, placement.start)),
     isSync: isSyncOverlayPlacement(placement),
     placement,
   }));
@@ -482,8 +481,7 @@ const resolveOverlayPlacementLayout = ({
   const atTopBoundary = clampedTargetStart === 0;
   const atBottomBoundary = clampedTargetStart === boundsMax;
   const pushingTop = atTopBoundary && rawTargetStartMinutes < 0;
-  const pushingBottom =
-    atBottomBoundary && rawTargetStartMinutes > boundsMax;
+  const pushingBottom = atBottomBoundary && rawTargetStartMinutes > boundsMax;
   const sortedObstaclesAsc = obstacles
     .slice()
     .sort((a, b) => a.start - b.start);
@@ -498,12 +496,13 @@ const resolveOverlayPlacementLayout = ({
   const bottomGapAvailable = lastObstacle
     ? Math.max(
         0,
-        overlayWindowMinutes - (lastObstacle.start + lastObstacle.duration)
+        overlayWindowMinutes - (lastObstacle.start + lastObstacle.duration),
       )
     : overlayWindowMinutes;
   const shouldPushDown =
     atTopBoundary &&
-    (pushingTop || (firstObstacle !== null && movingEntry.duration > topGapAvailable));
+    (pushingTop ||
+      (firstObstacle !== null && movingEntry.duration > topGapAvailable));
   const shouldPushUp =
     atBottomBoundary &&
     (pushingBottom ||
@@ -513,7 +512,7 @@ const resolveOverlayPlacementLayout = ({
     clampStart(movingEntry, value);
   const findNearestLegalStart = (
     desiredStart: number,
-    opts?: { boundarySlotsOnly?: boolean }
+    opts?: { boundarySlotsOnly?: boolean },
   ) => {
     const gaps: { start: number; end: number }[] = [];
     let cursor = 0;
@@ -540,7 +539,7 @@ const resolveOverlayPlacementLayout = ({
     const evaluateCandidate = (
       gapMin: number,
       gapMax: number,
-      baseValue: number
+      baseValue: number,
     ) => {
       if (gapMax < gapMin) return;
       const snapped = snapMinutesToFive(baseValue);
@@ -551,8 +550,8 @@ const resolveOverlayPlacementLayout = ({
         _direction === "forward"
           ? clamped >= desiredStart
           : _direction === "backward"
-          ? clamped <= desiredStart
-          : true;
+            ? clamped <= desiredStart
+            : true;
       candidates.push({ start: clamped, distance, directionMatch });
     };
 
@@ -567,7 +566,7 @@ const resolveOverlayPlacementLayout = ({
         evaluateCandidate(
           gapMin,
           gapMax,
-          Math.min(gapMax, Math.max(gapMin, desiredStart))
+          Math.min(gapMax, Math.max(gapMin, desiredStart)),
         );
       }
     }
@@ -584,8 +583,7 @@ const resolveOverlayPlacementLayout = ({
       }
       if (
         candidate.distance === bestCandidate.distance &&
-        Number(candidate.directionMatch) >
-          Number(bestCandidate.directionMatch)
+        Number(candidate.directionMatch) > Number(bestCandidate.directionMatch)
       ) {
         bestCandidate = candidate;
       }
@@ -623,7 +621,7 @@ const resolveOverlayPlacementLayout = ({
     const end = start + movingEntry.duration;
     return !obstacles.some(
       (obstacle) =>
-        start < obstacle.start + obstacle.duration && end > obstacle.start
+        start < obstacle.start + obstacle.duration && end > obstacle.start,
     );
   };
 
@@ -650,10 +648,7 @@ const resolveOverlayPlacementLayout = ({
 
   const findChainForMovement = (start: number) => {
     for (const chain of occupiedChains) {
-      if (
-        start < chain.end &&
-        start + movingEntry.duration > chain.start
-      ) {
+      if (start < chain.end && start + movingEntry.duration > chain.start) {
         return chain;
       }
     }
@@ -662,14 +657,14 @@ const resolveOverlayPlacementLayout = ({
 
   const selectSeamStartForChain = (
     chain: OccupiedChain,
-    pointerStart: number
+    pointerStart: number,
   ) => {
     const candidates = Array.from(
       new Set(
         chain.obstacles.map((obstacle) =>
-          clampMovingCandidate(snapMinutesToFive(obstacle.start))
-        )
-      )
+          clampMovingCandidate(snapMinutesToFive(obstacle.start)),
+        ),
+      ),
     ).sort((a, b) => a - b);
     if (candidates.length === 0) {
       return null;
@@ -678,8 +673,8 @@ const resolveOverlayPlacementLayout = ({
       _direction === "forward"
         ? value >= pointerStart
         : _direction === "backward"
-        ? value <= pointerStart
-        : true;
+          ? value <= pointerStart
+          : true;
     let best = candidates[0];
     let bestDistance = Math.abs(best - pointerStart);
     let bestDirectionMatch = matchesDirection(best);
@@ -703,7 +698,7 @@ const resolveOverlayPlacementLayout = ({
   const tryMiddleInsertion = (targetStart: number) => {
     const insertionTargetStart = targetStart;
     const downstreamObstacles = sortedObstaclesAsc.filter(
-      (obstacle) => obstacle.start + obstacle.duration > insertionTargetStart
+      (obstacle) => obstacle.start + obstacle.duration > insertionTargetStart,
     );
     const obstacleStartBackup = new Map<string, number>();
     obstacles.forEach((obstacle) => {
@@ -863,7 +858,7 @@ type OverlayDragMeta = {
 
 const applyOverlayDragHysteresis = (
   rawMinutes: number,
-  lastSnap: number | null
+  lastSnap: number | null,
 ) => {
   const snapped = snapMinutesToFive(rawMinutes);
   if (lastSnap === null) return snapped;
@@ -886,26 +881,29 @@ const applyOverlayDragHysteresis = (
 const normalizeOverlayPlacements = (
   placements: OverlayPlacement[],
   overlayStartTime: Date,
-  overlayEndTime: Date
+  overlayEndTime: Date,
 ): OverlayPlacement[] => {
   if (placements.length === 0) return [];
   const windowMinutes = Math.max(
     1,
-    overlayDateToMinutes(overlayEndTime, overlayStartTime)
+    overlayDateToMinutes(overlayEndTime, overlayStartTime),
   );
   let cursorMinutes = 0;
   return sortOverlayPlacements(placements).map((placement) => {
     const durationMinutes = Math.max(
       1,
-      overlayDateToMinutes(placement.end, placement.start)
+      overlayDateToMinutes(placement.end, placement.start),
     );
     const earliestStart = Math.max(cursorMinutes, 0);
-    const desiredStart = overlayDateToMinutes(placement.start, overlayStartTime);
+    const desiredStart = overlayDateToMinutes(
+      placement.start,
+      overlayStartTime,
+    );
     const candidateStart = Math.max(desiredStart, earliestStart);
     const normalizedStartMinutes = clampOverlayPlacementStart(
       candidateStart,
       durationMinutes,
-      windowMinutes
+      windowMinutes,
     );
     const normalizedEndMinutes = normalizedStartMinutes + durationMinutes;
     cursorMinutes = Math.max(cursorMinutes, normalizedEndMinutes);
@@ -921,25 +919,29 @@ const removeOverlayPlacement = (
   placements: OverlayPlacement[],
   id: string,
   overlayStartTime: Date,
-  overlayEndTime: Date
+  overlayEndTime: Date,
 ) =>
   normalizeOverlayPlacements(
     placements.filter((placement) => placement.id !== id),
     overlayStartTime,
-    overlayEndTime
+    overlayEndTime,
   );
 
 const getNextSequentialStartMinutes = (
   placements: OverlayPlacement[],
   overlayStartTime: Date,
   windowMinutes: number,
-  durationMinutes: number
+  durationMinutes: number,
 ) => {
   if (placements.length === 0) return 0;
   const sorted = sortOverlayPlacements(placements);
   const last = sorted[sorted.length - 1];
   const lastEndMinutes = overlayDateToMinutes(last.end, overlayStartTime);
-  return clampOverlayPlacementStart(lastEndMinutes, durationMinutes, windowMinutes);
+  return clampOverlayPlacementStart(
+    lastEndMinutes,
+    durationMinutes,
+    windowMinutes,
+  );
 };
 
 const OVERLAY_BORDER_COLOR = "rgba(0, 0, 0, 0.95)";
@@ -954,7 +956,7 @@ const HABIT_TYPE_BACKGROUND_MAP: Record<string, string> = {
 };
 
 const getOverlayPlacementTheme = (
-  placement: OverlayPlacement
+  placement: OverlayPlacement,
 ): OverlayPlacementTheme => {
   if (placement.type === "PROJECT") {
     return {
@@ -966,7 +968,8 @@ const getOverlayPlacementTheme = (
   const habitTypeKey = normalizeHabitType(placement.habitType);
   return {
     background:
-      HABIT_TYPE_BACKGROUND_MAP[habitTypeKey] ?? HABIT_TYPE_BACKGROUND_MAP.HABIT,
+      HABIT_TYPE_BACKGROUND_MAP[habitTypeKey] ??
+      HABIT_TYPE_BACKGROUND_MAP.HABIT,
     borderColor: OVERLAY_BORDER_COLOR,
   };
 };
@@ -989,22 +992,18 @@ function determineAutoScopeFromPrompt(prompt: string): AiScope {
       normalized.includes("draft") ||
       normalized.includes("add") ||
       normalized.includes("make")) &&
-    (
-      AUTO_SCOPE_CREATION_KEYWORDS.some((keyword) =>
-        normalized.includes(keyword)
-      ) ||
+    (AUTO_SCOPE_CREATION_KEYWORDS.some((keyword) =>
+      normalized.includes(keyword),
+    ) ||
       /\b(goal|project|task|day\s*type|habit)\b/.test(normalized) ||
-      normalized.includes("help me create")
-    );
+      normalized.includes("help me create"));
 
   if (mentionsCreate) {
     return "draft_creation";
   }
 
   if (
-    AUTO_SCOPE_SCHEDULE_KEYWORDS.some((keyword) =>
-      normalized.includes(keyword)
-    )
+    AUTO_SCOPE_SCHEDULE_KEYWORDS.some((keyword) => normalized.includes(keyword))
   ) {
     return "schedule_edit";
   }
@@ -1032,7 +1031,7 @@ function useTapHandler(onTap: () => void, opts?: { disabled?: boolean }) {
         sawPointerUpRef.current = false;
       }, 0);
     },
-    [onTap, opts?.disabled]
+    [onTap, opts?.disabled],
   );
 
   const onClick = React.useCallback(
@@ -1044,22 +1043,21 @@ function useTapHandler(onTap: () => void, opts?: { disabled?: boolean }) {
       }
       onTap(); // allow keyboard/AT-triggered clicks
     },
-    [onTap, opts?.disabled]
+    [onTap, opts?.disabled],
   );
 
   return { onPointerUp, onClick };
 }
 
-const isTourActive = () =>
-  Boolean((window as any).__CREATOR_TOUR_ACTIVE__);
+const isTourActive = () => Boolean((window as any).__CREATOR_TOUR_ACTIVE__);
 
 function useOverhangLT(
   ref: React.RefObject<HTMLElement>,
   deps: any[] = [],
-  opts?: { listenVisualViewport?: boolean; listenScroll?: boolean }
+  opts?: { listenVisualViewport?: boolean; listenScroll?: boolean },
 ) {
   const [pos, setPos] = React.useState<{ left: number; top: number } | null>(
-    null
+    null,
   );
 
   useLayoutEffect(() => {
@@ -1080,7 +1078,7 @@ function useOverhangLT(
         Number.parseFloat(
           getComputedStyle(document.documentElement)
             .getPropertyValue("--sat-safe-bottom")
-            .trim() || "0"
+            .trim() || "0",
         ) || 0;
 
       // Use visualViewport for mobile keyboard compatibility, fallback to window
@@ -1139,7 +1137,7 @@ function useOverhangLT(
 const formatSchedulerPriorityLabel = (value: number) => {
   const index = Math.max(
     0,
-    Math.min(value - 1, SCHEDULER_PRIORITY_LABELS.length - 1)
+    Math.min(value - 1, SCHEDULER_PRIORITY_LABELS.length - 1),
   );
   return SCHEDULER_PRIORITY_LABELS[index] ?? "NO";
 };
@@ -1150,11 +1148,11 @@ const describeSchedulerOp = (op: AiSchedulerOp) => {
       return `Set day type for ${op.date} to ${op.day_type_name}`;
     case "SET_GOAL_PRIORITY_BY_NAME":
       return `Set goal "${op.goal_title}" priority to ${formatSchedulerPriorityLabel(
-        op.priority
+        op.priority,
       )} (${op.priority})`;
     case "SET_PROJECT_PRIORITY_BY_NAME":
       return `Set project "${op.project_title}" priority to ${formatSchedulerPriorityLabel(
-        op.priority
+        op.priority,
       )} (${op.priority})`;
     case "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL":
       return `Update time block "${op.block_label}" for day type "${op.day_type_name}"`;
@@ -1175,7 +1173,9 @@ type DayTypePreviewBlock = {
   hasConstraints?: boolean;
 };
 
-const buildDayTypePreviewBlocks = (ops: AiSchedulerOp[]): DayTypePreviewBlock[] => {
+const buildDayTypePreviewBlocks = (
+  ops: AiSchedulerOp[],
+): DayTypePreviewBlock[] => {
   const blocks: DayTypePreviewBlock[] = [];
 
   ops.forEach((op, index) => {
@@ -1209,10 +1209,10 @@ const buildDayTypePreviewBlocks = (ops: AiSchedulerOp[]): DayTypePreviewBlock[] 
         start_local: start_local ?? undefined,
         end_local: end_local ?? undefined,
         startMinutes: start_local
-          ? parseTimeToMinutes(start_local) ?? undefined
+          ? (parseTimeToMinutes(start_local) ?? undefined)
           : undefined,
         endMinutes: end_local
-          ? parseTimeToMinutes(end_local) ?? undefined
+          ? (parseTimeToMinutes(end_local) ?? undefined)
           : undefined,
         opIndex: index,
         opType: op.type,
@@ -1225,7 +1225,7 @@ const buildDayTypePreviewBlocks = (ops: AiSchedulerOp[]): DayTypePreviewBlock[] 
   return blocks.sort(
     (a, b) =>
       (a.startMinutes ?? Number.MAX_SAFE_INTEGER) -
-      (b.startMinutes ?? Number.MAX_SAFE_INTEGER)
+      (b.startMinutes ?? Number.MAX_SAFE_INTEGER),
   );
 };
 
@@ -1298,7 +1298,7 @@ const cloneSchedulerOp = (op: AiSchedulerOp): AiSchedulerOp => {
 };
 
 const normalizeSchedulerOps = (
-  ops?: AiSchedulerOp[] | null
+  ops?: AiSchedulerOp[] | null,
 ): AiSchedulerOp[] => (Array.isArray(ops) ? ops : []);
 
 export function Fab({
@@ -1312,8 +1312,7 @@ export function Fab({
   const [aiOpen, setAiOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiScope, setAiScope] = useState<AiScope>("read_only");
-  const [scopeSelection, setScopeSelection] =
-    useState<ScopeSelection>("auto");
+  const [scopeSelection, setScopeSelection] = useState<ScopeSelection>("auto");
   const [autoModeActive, setAutoModeActive] = useState(true);
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
   const scopeMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1402,25 +1401,27 @@ export function Fab({
   >(null);
   const initialOverlayStart = useMemo(
     () => roundToNearestMinutes(new Date(), 5),
-    []
+    [],
   );
-  const [overlayStartTime, setOverlayStartTime] = useState<Date>(
-    initialOverlayStart
-  );
-  const [overlayEndTime, setOverlayEndTime] = useState<Date>(() =>
-    new Date(
-      initialOverlayStart.getTime() + DEFAULT_OVERLAY_DURATION_MINUTES * 60000
-    )
+  const [overlayStartTime, setOverlayStartTime] =
+    useState<Date>(initialOverlayStart);
+  const [overlayEndTime, setOverlayEndTime] = useState<Date>(
+    () =>
+      new Date(
+        initialOverlayStart.getTime() +
+          DEFAULT_OVERLAY_DURATION_MINUTES * 60000,
+      ),
   );
   const [overlayStartInputValue, setOverlayStartInputValue] = useState(
-    formatTimeInputValue(initialOverlayStart)
+    formatTimeInputValue(initialOverlayStart),
   );
   const [overlayEndInputValue, setOverlayEndInputValue] = useState(() =>
     formatTimeInputValue(
       new Date(
-        initialOverlayStart.getTime() + DEFAULT_OVERLAY_DURATION_MINUTES * 60000
-      )
-    )
+        initialOverlayStart.getTime() +
+          DEFAULT_OVERLAY_DURATION_MINUTES * 60000,
+      ),
+    ),
   );
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [overlayPickerOpen, setOverlayPickerOpen] = useState(false);
@@ -1432,13 +1433,13 @@ export function Fab({
   const [isSavingLiveOverlay, setIsSavingLiveOverlay] = useState(false);
   const [overlaySaveError, setOverlaySaveError] = useState<string | null>(null);
   const overlayTimelineRef = useRef<HTMLDivElement | null>(null);
-  const [overlayRemovalCandidateId, setOverlayRemovalCandidateId] =
-    useState<string | null>(null);
+  const [overlayRemovalCandidateId, setOverlayRemovalCandidateId] = useState<
+    string | null
+  >(null);
   const [activeOverlayDragId, setActiveOverlayDragId] = useState<string | null>(
-    null
+    null,
   );
-  const [overlayDragMode, setOverlayDragMode] =
-    useState<OverlayDragMode>(null);
+  const [overlayDragMode, setOverlayDragMode] = useState<OverlayDragMode>(null);
   const overlayDragModeRef = useRef<OverlayDragMode>(null);
   const overlayDragIntentRef = useRef<OverlayDragIntent>({
     axis: null,
@@ -1451,21 +1452,15 @@ export function Fab({
   const lastResolvedOverlayLayoutRef = useRef<OverlayPlacement[] | null>(null);
   const overlayWindowMinutes = Math.max(
     overlayDateToMinutes(overlayEndTime, overlayStartTime),
-    1
+    1,
   );
   const overlayDurationMinutes = Math.max(overlayWindowMinutes, 15);
   const overlayDurationLabel = formatDurationLabel(overlayDurationMinutes);
   const overlayTimelineHeightPx = 280;
-  const overlayTimelineDurationForLayout = Math.max(
-    1,
-    overlayDurationMinutes
-  );
+  const overlayTimelineDurationForLayout = Math.max(1, overlayDurationMinutes);
   const overlayTimelinePxPerMin = Math.max(
     0.9,
-    Math.min(
-      3.2,
-      overlayTimelineHeightPx / overlayTimelineDurationForLayout
-    )
+    Math.min(3.2, overlayTimelineHeightPx / overlayTimelineDurationForLayout),
   );
   const overlayTimelineStartHour =
     overlayStartTime.getHours() + overlayStartTime.getMinutes() / 60;
@@ -1480,8 +1475,7 @@ export function Fab({
       return overlayPlacedItems;
     }
     const delta =
-      overlayDragCandidate.startMinutes -
-      overlayDragCandidate.baseStartMinutes;
+      overlayDragCandidate.startMinutes - overlayDragCandidate.baseStartMinutes;
     const direction: OverlayLayoutDirection =
       delta > 0 ? "forward" : delta < 0 ? "backward" : "none";
     return resolveOverlayPlacementLayout({
@@ -1509,7 +1503,7 @@ export function Fab({
   }, [overlayDragCandidate, renderOverlayPlacements]);
   const overlayDragCandidatePlacement = overlayDragCandidate
     ? renderOverlayPlacements.find(
-        (placement) => placement.id === overlayDragCandidate.placementId
+        (placement) => placement.id === overlayDragCandidate.placementId,
       )
     : null;
   const overlayDragCandidatePlacementStartMinutes =
@@ -1518,7 +1512,7 @@ export function Fab({
           0,
           (overlayDragCandidatePlacement.start.getTime() -
             overlayStartTime.getTime()) /
-            60000
+            60000,
         )
       : null;
   const setOverlayDragModeWithRef = useCallback(
@@ -1526,7 +1520,7 @@ export function Fab({
       overlayDragModeRef.current = mode;
       setOverlayDragMode(mode);
     },
-    [setOverlayDragMode]
+    [setOverlayDragMode],
   );
   const [startInputFocused, setStartInputFocused] = useState(false);
   const [endInputFocused, setEndInputFocused] = useState(false);
@@ -1554,7 +1548,7 @@ export function Fab({
   const resetOverlayDraft = useCallback(() => {
     const nextStart = roundToNearestMinutes(new Date(), 5);
     const nextEnd = new Date(
-      nextStart.getTime() + DEFAULT_OVERLAY_DURATION_MINUTES * 60000
+      nextStart.getTime() + DEFAULT_OVERLAY_DURATION_MINUTES * 60000,
     );
     setOverlayStartTime(nextStart);
     setOverlayEndTime(nextEnd);
@@ -1589,7 +1583,7 @@ export function Fab({
         viewportPoint.y <= rect.bottom + margin
       );
     },
-    []
+    [],
   );
   const handleOverlayDrag = useCallback(
     (placement: OverlayPlacement, info: PanInfo) => {
@@ -1627,7 +1621,9 @@ export function Fab({
       const overTrashZone = isPointerOverTrashZone(info.point);
       const nextMode: OverlayDragMode = overTrashZone ? "remove" : "reorder";
       if (nextMode !== overlayDragModeRef.current) {
-        setOverlayRemovalCandidateId(nextMode === "remove" ? placement.id : null);
+        setOverlayRemovalCandidateId(
+          nextMode === "remove" ? placement.id : null,
+        );
         setOverlayDragModeWithRef(nextMode);
       }
       if (nextMode === "remove") {
@@ -1636,27 +1632,26 @@ export function Fab({
 
       const pxPerMin = Math.max(0.01, overlayTimelinePxPerMin);
       const rawMinutes = meta.baseStartMinutes + info.offset.y / pxPerMin;
-      const maxDragStart =
-        Math.max(0, overlayWindowMinutes - meta.durationMinutes);
-      const boundedRawMinutes = Math.min(
-        Math.max(rawMinutes, 0),
-        maxDragStart
+      const maxDragStart = Math.max(
+        0,
+        overlayWindowMinutes - meta.durationMinutes,
       );
+      const boundedRawMinutes = Math.min(Math.max(rawMinutes, 0), maxDragStart);
       const hysteresisMinutes = applyOverlayDragHysteresis(
         boundedRawMinutes,
-        intent.lastSnappedMinutes
+        intent.lastSnappedMinutes,
       );
       const clampedMinutes = clampOverlayPlacementStart(
         hysteresisMinutes,
         meta.durationMinutes,
-        overlayWindowMinutes
+        overlayWindowMinutes,
       );
       const direction: OverlayLayoutDirection =
-      clampedMinutes > meta.baseStartMinutes
-        ? "forward"
-        : clampedMinutes < meta.baseStartMinutes
-        ? "backward"
-        : "none";
+        clampedMinutes > meta.baseStartMinutes
+          ? "forward"
+          : clampedMinutes < meta.baseStartMinutes
+            ? "backward"
+            : "none";
       const preview = resolveOverlayPlacementLayout({
         placements: overlayPlacedItems,
         overlayStartTime,
@@ -1668,7 +1663,7 @@ export function Fab({
         direction,
       });
       const previewPlacement = preview.find(
-        (entry) => entry.id === placement.id
+        (entry) => entry.id === placement.id,
       );
       const previewStartMinutes = previewPlacement
         ? overlayDateToMinutes(previewPlacement.start, overlayStartTime)
@@ -1691,7 +1686,7 @@ export function Fab({
       isPointerOverTrashZone,
       overlayPlacedItems,
       overlayStartTime,
-    ]
+    ],
   );
   const startTimeInputId = useId();
   const endTimeInputId = useId();
@@ -1771,7 +1766,7 @@ export function Fab({
   const [goalFilterEnergy, setGoalFilterEnergy] = useState("");
   const [goalFilterPriority, setGoalFilterPriority] = useState("");
   const [goalSort, setGoalSort] = useState<"recent" | "oldest" | "weight">(
-    "recent"
+    "recent",
   );
   const [goalSearch, setGoalSearch] = useState("");
   const [skillSearch, setSkillSearch] = useState("");
@@ -1789,26 +1784,26 @@ export function Fab({
     let list = goals;
     if (query) {
       list = list.filter((goal) =>
-        (goal.name ?? "").toLowerCase().includes(query)
+        (goal.name ?? "").toLowerCase().includes(query),
       );
     }
     if (goalFilterEnergy) {
       list = list.filter(
         (goal) =>
           (goal.energy_code ?? goal.energy ?? "").toLowerCase() ===
-          goalFilterEnergy.toLowerCase()
+          goalFilterEnergy.toLowerCase(),
       );
     }
     if (goalFilterPriority) {
       list = list.filter(
         (goal) =>
           (goal.priority ?? "").toLowerCase() ===
-          goalFilterPriority.toLowerCase()
+          goalFilterPriority.toLowerCase(),
       );
     }
     if (goalFilterMonumentId) {
       list = list.filter(
-        (goal) => (goal.monument_id ?? "") === goalFilterMonumentId
+        (goal) => (goal.monument_id ?? "") === goalFilterMonumentId,
       );
     }
     if (goalFilterSkillId) {
@@ -1832,9 +1827,10 @@ export function Fab({
         ? (a: Goal, b: Goal) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         : goalSort === "oldest"
-        ? (a: Goal, b: Goal) =>
-            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        : (a: Goal, b: Goal) => (b.weight ?? 0) - (a.weight ?? 0);
+          ? (a: Goal, b: Goal) =>
+              new Date(a.created_at).getTime() -
+              new Date(b.created_at).getTime()
+          : (a: Goal, b: Goal) => (b.weight ?? 0) - (a.weight ?? 0);
     return [...list].sort(sorter);
   }, [
     goalFilterEnergy,
@@ -1851,20 +1847,20 @@ export function Fab({
     let list = skills;
     if (term) {
       list = list.filter((skill) =>
-        (skill.name ?? "").toLowerCase().includes(term)
+        (skill.name ?? "").toLowerCase().includes(term),
       );
     }
     if (skillFilterMonumentId) {
       list = list.filter(
-        (skill) => (skill.monument_id ?? "") === skillFilterMonumentId
+        (skill) => (skill.monument_id ?? "") === skillFilterMonumentId,
       );
     }
     const categoryOrder = new Map(
-      skillCategories.map((cat, index) => [cat.id, index])
+      skillCategories.map((cat, index) => [cat.id, index]),
     );
     const getCategoryIndex = (catId?: string | null) =>
       catId && categoryOrder.has(catId)
-        ? categoryOrder.get(catId) ?? Number.MAX_SAFE_INTEGER
+        ? (categoryOrder.get(catId) ?? Number.MAX_SAFE_INTEGER)
         : Number.MAX_SAFE_INTEGER;
     return [...list].sort((a, b) => {
       const catA = getCategoryIndex(a.cat_id ?? null);
@@ -1889,19 +1885,19 @@ export function Fab({
     if (taskProjectFilterStage) {
       const stage = taskProjectFilterStage.toLowerCase();
       list = list.filter(
-        (project) => (project.stage ?? "").toLowerCase() === stage
+        (project) => (project.stage ?? "").toLowerCase() === stage,
       );
     }
     if (taskProjectFilterPriority) {
       const priority = taskProjectFilterPriority.toLowerCase();
       list = list.filter(
-        (project) => (project.priority ?? "").toLowerCase() === priority
+        (project) => (project.priority ?? "").toLowerCase() === priority,
       );
     }
     const term = taskProjectSearch.trim().toLowerCase();
     if (!term) return list;
     return list.filter((project) =>
-      (project.name ?? "").toLowerCase().includes(term)
+      (project.name ?? "").toLowerCase().includes(term),
     );
   }, [
     taskProjectFilterPriority,
@@ -1926,7 +1922,7 @@ export function Fab({
       resetSkillLookupState,
       skillFilterMonumentId,
       skillSearch,
-    ]
+    ],
   );
   useEffect(() => {
     resetSkillLookupState();
@@ -1976,7 +1972,7 @@ export function Fab({
       !trigger ||
       typeof window === "undefined" ||
       typeof document === "undefined"
-  ) {
+    ) {
       return;
     }
     const rect = trigger.getBoundingClientRect();
@@ -2227,31 +2223,31 @@ export function Fab({
   };
 
   const projectDurationTapHandlers = useTapHandler(() =>
-    toggleDurationPicker()
+    toggleDurationPicker(),
   );
   const taskDurationTapHandlers = useTapHandler(() =>
-    toggleTaskDurationPicker()
+    toggleTaskDurationPicker(),
   );
   const habitDurationTapHandlers = useTapHandler(() =>
-    toggleHabitDurationPicker()
+    toggleHabitDurationPicker(),
   );
   const projectDurationMinusTapHandlers = useTapHandler(() =>
-    adjustProjectDuration(-5)
+    adjustProjectDuration(-5),
   );
   const taskDurationMinusTapHandlers = useTapHandler(() =>
-    adjustTaskDuration(-5)
+    adjustTaskDuration(-5),
   );
   const projectDurationPlusTapHandlers = useTapHandler(() =>
-    adjustProjectDuration(5)
+    adjustProjectDuration(5),
   );
   const taskDurationPlusTapHandlers = useTapHandler(() =>
-    adjustTaskDuration(5)
+    adjustTaskDuration(5),
   );
   const habitDurationMinusTapHandlers = useTapHandler(() =>
-    adjustHabitDuration(-5)
+    adjustHabitDuration(-5),
   );
   const habitDurationPlusTapHandlers = useTapHandler(() =>
-    adjustHabitDuration(5)
+    adjustHabitDuration(5),
   );
   const [projectSkillIds, setProjectSkillIds] = useState<string[]>([]);
   const [projectGoalId, setProjectGoalId] = useState<string | null>(null);
@@ -2280,7 +2276,9 @@ export function Fab({
   const [taskNotes, setTaskNotes] = useState("");
   const [habitName, setHabitName] = useState("");
   const [habitType, setHabitType] = useState(defaultHabitType);
-  const [habitRecurrence, setHabitRecurrence] = useState(defaultHabitRecurrence);
+  const [habitRecurrence, setHabitRecurrence] = useState(
+    defaultHabitRecurrence,
+  );
   const [habitDuration, setHabitDuration] = useState<string>("15");
   const [habitEnergy, setHabitEnergy] = useState("LOW");
   const [habitGoalId, setHabitGoalId] = useState<string | "">("");
@@ -2293,9 +2291,130 @@ export function Fab({
   const [habitRoutinesLoading, setHabitRoutinesLoading] = useState(false);
   const findSkillById = useCallback(
     (id: string | null | undefined) =>
-      id ? skills.find((s) => s.id === id) ?? null : null,
-    [skills]
+      id ? (skills.find((s) => s.id === id) ?? null) : null,
+    [skills],
   );
+
+  const getNextFabEnergyValue = (currentValue?: string | null) => {
+    if (ENERGY_OPTIONS_LOCAL.length === 0) {
+      return currentValue ?? "MEDIUM";
+    }
+    const currentIndex = ENERGY_OPTIONS_LOCAL.findIndex(
+      (option) => option.value === currentValue,
+    );
+    if (currentIndex === -1) {
+      return ENERGY_OPTIONS_LOCAL[0]?.value ?? "MEDIUM";
+    }
+    return (
+      ENERGY_OPTIONS_LOCAL[(currentIndex + 1) % ENERGY_OPTIONS_LOCAL.length]
+        ?.value ?? "MEDIUM"
+    );
+  };
+
+  const renderGroupedSkillItems = useCallback(() => {
+    const UNCATEGORIZED_SKILL_GROUP_ID = "__uncategorized_skill_group__";
+    const UNCATEGORIZED_SKILL_GROUP_LABEL = "Uncategorized";
+    const groups = new Map<
+      string,
+      { id: string; label: string; skills: Skill[] }
+    >();
+
+    filteredSkills.forEach((skill) => {
+      const groupId = skill.cat_id ?? UNCATEGORIZED_SKILL_GROUP_ID;
+      const categoryLabel =
+        skillCategories
+          .find((category) => category.id === groupId)
+          ?.name?.trim() || UNCATEGORIZED_SKILL_GROUP_LABEL;
+      const group = groups.get(groupId) ?? {
+        id: groupId,
+        label:
+          groupId === UNCATEGORIZED_SKILL_GROUP_ID
+            ? UNCATEGORIZED_SKILL_GROUP_LABEL
+            : categoryLabel,
+        skills: [],
+      };
+      group.skills.push(skill);
+      groups.set(groupId, group);
+    });
+
+    const orderedGroups: Array<{ id: string; label: string; skills: Skill[] }> =
+      [];
+    const seen = new Set<string>();
+
+    skillCategories.forEach((category) => {
+      const group = groups.get(category.id);
+      if (!group) return;
+      orderedGroups.push({
+        ...group,
+        label: category.name?.trim() || group.label,
+      });
+      seen.add(category.id);
+    });
+
+    const uncategorizedGroup = groups.get(UNCATEGORIZED_SKILL_GROUP_ID);
+    if (uncategorizedGroup) {
+      orderedGroups.push(uncategorizedGroup);
+      seen.add(UNCATEGORIZED_SKILL_GROUP_ID);
+    }
+
+    groups.forEach((group, groupId) => {
+      if (!seen.has(groupId)) {
+        orderedGroups.push(group);
+      }
+    });
+
+    return orderedGroups.map((group) => (
+      <div key={group.id} className="space-y-2 px-3 py-2">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">
+          {group.label}
+        </div>
+        <div className="grid gap-1">
+          {group.skills.map((skill) => (
+            <SelectItem key={skill.id} value={skill.id}>
+              <div className="flex items-center gap-2">
+                <span className="text-lg">{skill.icon ?? "🛠️"}</span>
+                <span>{skill.name}</span>
+              </div>
+            </SelectItem>
+          ))}
+        </div>
+      </div>
+    ));
+  }, [filteredSkills, skillCategories]);
+
+  function EnergyCycleButton({
+    value,
+    onChange,
+    ariaLabel,
+    size = "md",
+    className,
+  }: {
+    value?: string | null;
+    onChange: (value: string) => void;
+    ariaLabel: string;
+    size?: FlameEmberProps["size"];
+    className?: string;
+  }) {
+    const resolvedLevel = normalizeFlameLevel(value);
+    return (
+      <button
+        type="button"
+        onClick={() => onChange(getNextFabEnergyValue(resolvedLevel))}
+        className={cn(
+          "flex h-12 w-12 items-center justify-center rounded-md border border-white/15 bg-white/[0.06] text-white transition hover:border-white/30 hover:bg-white/10",
+          className,
+        )}
+        aria-label={ariaLabel}
+        title={`${ariaLabel} (${resolvedLevel})`}
+      >
+        <FlameEmber
+          level={resolvedLevel}
+          size={size}
+          className="pointer-events-none -translate-y-[3px]"
+        />
+      </button>
+    );
+  }
 
   function SkillTrigger({
     selectedId,
@@ -2374,7 +2493,7 @@ export function Fab({
           }}
           className={cn(
             "flex h-9 w-9 items-center justify-center rounded-md text-white/70 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20",
-            showSkillFilters && "text-white"
+            showSkillFilters && "text-white",
           )}
           aria-label="Filter skills"
         >
@@ -2403,7 +2522,7 @@ export function Fab({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchCursor, setSearchCursor] = useState<FabSearchCursor | null>(
-    null
+    null,
   );
   const [overlayFilterMonumentId, setOverlayFilterMonumentId] =
     useState<string>("");
@@ -2466,13 +2585,11 @@ export function Fab({
     const getPriorityIndex = (result: FabSearchResult): number => {
       const goal = result.goalId ? goalsById.get(result.goalId) : undefined;
       const candidate =
-        result.priority ??
-        result.priority_label ??
-        (goal?.priority ?? null);
+        result.priority ?? result.priority_label ?? goal?.priority ?? null;
       const normalized = normalizePriorityValue(candidate);
       if (!normalized) return -1;
       const index = SCHEDULER_PRIORITY_LABELS.findIndex(
-        (label) => label === normalized
+        (label) => label === normalized,
       );
       return index >= 0 ? index : -1;
     };
@@ -2503,9 +2620,9 @@ export function Fab({
           return getUpdatedTimestamp(b) - getUpdatedTimestamp(a);
         }
         case "alphabetical": {
-          return (a.name ?? "").toLowerCase().localeCompare(
-            (b.name ?? "").toLowerCase()
-          );
+          return (a.name ?? "")
+            .toLowerCase()
+            .localeCompare((b.name ?? "").toLowerCase());
         }
         case "priority": {
           const priorityA = getPriorityIndex(a);
@@ -2547,12 +2664,12 @@ export function Fab({
     let filtered = searchResults;
     if (matchesMonument) {
       filtered = filtered.filter(
-        (result) => resolveMonumentId(result) === overlayFilterMonumentId
+        (result) => resolveMonumentId(result) === overlayFilterMonumentId,
       );
     }
     if (matchesSkill) {
       filtered = filtered.filter(
-        (result) => resolveSkillId(result) === overlayFilterSkillId
+        (result) => resolveSkillId(result) === overlayFilterSkillId,
       );
     }
 
@@ -2590,9 +2707,9 @@ export function Fab({
   const overhangPos = useOverhangLT(panelRef, [expanded, selected], {
     listenVisualViewport: !expanded,
   });
-  const [stableViewportHeight, setStableViewportHeight] = useState<number | null>(
-    null
-  );
+  const [stableViewportHeight, setStableViewportHeight] = useState<
+    number | null
+  >(null);
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
@@ -2606,7 +2723,8 @@ export function Fab({
     }
     return keyboardLift > 24;
   }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
-  const shouldHideOverhangButtons = expanded && (isKeyboardVisible || isTextInputFocused);
+  const shouldHideOverhangButtons =
+    expanded && (isKeyboardVisible || isTextInputFocused);
 
   useEffect(() => {
     if (!expanded) return;
@@ -2614,17 +2732,19 @@ export function Fab({
       if (typeof window === "undefined") return;
       const height = Math.max(
         window.innerHeight,
-        window.visualViewport?.height ?? 0
+        window.visualViewport?.height ?? 0,
       );
-      setStableViewportHeight((prev) => (prev ?? height));
-      setViewportHeight((prev) => prev ?? (window.visualViewport?.height ?? window.innerHeight));
+      setStableViewportHeight((prev) => prev ?? height);
+      setViewportHeight(
+        (prev) => prev ?? window.visualViewport?.height ?? window.innerHeight,
+      );
       const safeBottom =
         Number.parseFloat(
           getComputedStyle(document.documentElement)
             .getPropertyValue("--sat-safe-bottom")
-            .trim() || "0"
+            .trim() || "0",
         ) || 0;
-      setStableSafeBottom((prev) => (prev || safeBottom));
+      setStableSafeBottom((prev) => prev || safeBottom);
     };
     const handleResize = () => {
       if (typeof window === "undefined") return;
@@ -2693,8 +2813,11 @@ export function Fab({
         tag === "input" ||
         tag === "textarea" ||
         tag === "select" ||
-        (el instanceof HTMLTextAreaElement) ||
-        (el instanceof HTMLInputElement && el.type !== "button" && el.type !== "submit" && el.type !== "reset")
+        el instanceof HTMLTextAreaElement ||
+        (el instanceof HTMLInputElement &&
+          el.type !== "button" &&
+          el.type !== "submit" &&
+          el.type !== "reset")
       );
     };
     const handleFocusIn = (event: FocusEvent) => {
@@ -2788,19 +2911,19 @@ export function Fab({
   const formatDateInput = (date: Date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
       2,
-      "0"
+      "0",
     )}-${String(date.getDate()).padStart(2, "0")}`;
 
   const formatTimeInput = (date: Date) =>
     `${String(date.getHours()).padStart(2, "0")}:${String(
-      date.getMinutes()
+      date.getMinutes(),
     ).padStart(2, "0")}`;
 
   const fetchNextScheduledInstance = useCallback(
     async (sourceId: string, sourceType: "PROJECT" | "HABIT") => {
       const params = new URLSearchParams({ sourceId, sourceType });
       const response = await fetch(
-        `/api/schedule/instances/next?${params.toString()}`
+        `/api/schedule/instances/next?${params.toString()}`,
       );
       if (!response.ok) {
         return null;
@@ -2812,7 +2935,7 @@ export function Fab({
       } | null;
       return payload ?? null;
     },
-    []
+    [],
   );
 
   const buildSearchUrl = useCallback(
@@ -2830,7 +2953,7 @@ export function Fab({
       }
       return `/api/schedule/search?${params.toString()}`;
     },
-    [overlaySortMode, searchQuery]
+    [overlaySortMode, searchQuery],
   );
 
   const runSearch = useCallback(
@@ -2867,19 +2990,21 @@ export function Fab({
           : null;
       if (!signal?.aborted) {
         setSearchResults((prev) =>
-          append ? [...prev, ...(payload.results ?? [])] : payload.results ?? []
+          append
+            ? [...prev, ...(payload.results ?? [])]
+            : (payload.results ?? []),
         );
         setSearchCursor(nextCursor);
       }
     },
-    [buildSearchUrl]
+    [buildSearchUrl],
   );
 
   const notifySchedulerOfChange = useCallback(async () => {
     try {
       const timeZone =
         typeof Intl !== "undefined"
-          ? Intl.DateTimeFormat().resolvedOptions().timeZone ?? null
+          ? (Intl.DateTimeFormat().resolvedOptions().timeZone ?? null)
           : null;
       const payload = {
         localNow: new Date().toISOString(),
@@ -3073,13 +3198,14 @@ export function Fab({
         1,
         Math.min(
           overlayWindowMinutes,
-          result?.durationMinutes ?? OVERLAY_PLACEMENT_DEFAULT_DURATION_MINUTES
-        )
+          result?.durationMinutes ?? OVERLAY_PLACEMENT_DEFAULT_DURATION_MINUTES,
+        ),
       ),
-    [overlayWindowMinutes]
+    [overlayWindowMinutes],
   );
-  const overlayPlacementDurationMinutes =
-    getOverlayPlacementDurationMinutes(overlayPickerSelected);
+  const overlayPlacementDurationMinutes = getOverlayPlacementDurationMinutes(
+    overlayPickerSelected,
+  );
   const handleAddFromNexusClick = () => {
     setOverlayPickerOpen(true);
     setOverlayPickerSelected(null);
@@ -3087,42 +3213,42 @@ export function Fab({
   };
 
   const handleOverlayPickerResult = (result: FabSearchResult) => {
-      const durationMinutes = getOverlayPlacementDurationMinutes(result);
-      setOverlayPlacedItems((previous) => {
-        const sequentialStartMinutes = getNextSequentialStartMinutes(
-          previous,
-          overlayStartTime,
-          overlayWindowMinutes,
-          durationMinutes
-        );
-        const placementStart = overlayMinutesToDate(
-          sequentialStartMinutes,
-          overlayStartTime
-        );
-        const placementEnd = overlayMinutesToDate(
-          sequentialStartMinutes + durationMinutes,
-          overlayStartTime
-        );
-        return normalizeOverlayPlacements(
-          [
-            ...previous,
-            {
-              id: createOverlayPlacementId(),
-              type: result.type,
-              name: result.name,
-              start: placementStart,
-              end: placementEnd,
-              locked: true,
-              habitType: result.habitType ?? null,
-              goalName: result.goalName ?? null,
-              energy: result.energy ?? null,
-              sourceId: result.id,
-            },
-          ],
-          overlayStartTime,
-          overlayEndTime
-        );
-      });
+    const durationMinutes = getOverlayPlacementDurationMinutes(result);
+    setOverlayPlacedItems((previous) => {
+      const sequentialStartMinutes = getNextSequentialStartMinutes(
+        previous,
+        overlayStartTime,
+        overlayWindowMinutes,
+        durationMinutes,
+      );
+      const placementStart = overlayMinutesToDate(
+        sequentialStartMinutes,
+        overlayStartTime,
+      );
+      const placementEnd = overlayMinutesToDate(
+        sequentialStartMinutes + durationMinutes,
+        overlayStartTime,
+      );
+      return normalizeOverlayPlacements(
+        [
+          ...previous,
+          {
+            id: createOverlayPlacementId(),
+            type: result.type,
+            name: result.name,
+            start: placementStart,
+            end: placementEnd,
+            locked: true,
+            habitType: result.habitType ?? null,
+            goalName: result.goalName ?? null,
+            energy: result.energy ?? null,
+            sourceId: result.id,
+          },
+        ],
+        overlayStartTime,
+        overlayEndTime,
+      );
+    });
     setOverlayPickerSelected(null);
     setOverlayPickerOpen(false);
   };
@@ -3141,7 +3267,7 @@ export function Fab({
     const rect = target.getBoundingClientRect();
     const clickRatio = Math.max(
       0,
-      Math.min(1, (event.clientY - rect.top) / rect.height)
+      Math.min(1, (event.clientY - rect.top) / rect.height),
     );
     const rawMinutes = clickRatio * overlayDurationMinutes;
     const snappedMinutes = snapMinutesToFive(rawMinutes);
@@ -3149,15 +3275,15 @@ export function Fab({
     const clampedMinutes = clampOverlayPlacementStart(
       snappedMinutes,
       placementDurationMinutes,
-      overlayWindowMinutes
+      overlayWindowMinutes,
     );
     const placementStart = overlayMinutesToDate(
       clampedMinutes,
-      overlayStartTime
+      overlayStartTime,
     );
     const placementEnd = overlayMinutesToDate(
       clampedMinutes + placementDurationMinutes,
-      overlayStartTime
+      overlayStartTime,
     );
     setOverlayPlacedItems((previous) =>
       normalizeOverlayPlacements(
@@ -3175,8 +3301,8 @@ export function Fab({
           },
         ],
         overlayStartTime,
-        overlayEndTime
-      )
+        overlayEndTime,
+      ),
     );
     setOverlayPickerSelected(null);
   };
@@ -3201,8 +3327,11 @@ export function Fab({
       if (userError) throw userError;
       if (!user) throw new Error("You must be signed in to save overlays.");
       const scheduleDate = `${overlayStartTime.getFullYear()}-${String(
-        overlayStartTime.getMonth() + 1
-      ).padStart(2, "0")}-${String(overlayStartTime.getDate()).padStart(2, "0")}`;
+        overlayStartTime.getMonth() + 1,
+      ).padStart(
+        2,
+        "0",
+      )}-${String(overlayStartTime.getDate()).padStart(2, "0")}`;
       const { data: overlayRow, error: overlayError } = await supabase
         .from("overlay_windows" as any)
         .insert({
@@ -3228,8 +3357,8 @@ export function Fab({
           const durationMin = Math.max(
             1,
             Math.round(
-              (placement.end.getTime() - placement.start.getTime()) / 60000
-            )
+              (placement.end.getTime() - placement.start.getTime()) / 60000,
+            ),
           );
           const { data: scheduleRow, error: scheduleError } = await supabase
             .from("schedule_instances" as any)
@@ -3269,7 +3398,7 @@ export function Fab({
               locked: true,
               event_name: placement.name,
               schedule_instance_id: scheduleInstanceId,
-            }))
+            })),
           );
         if (itemsError) throw itemsError;
       }
@@ -3277,7 +3406,7 @@ export function Fab({
       setOverlayOpen(false);
       if (typeof window !== "undefined") {
         window.dispatchEvent(
-          new CustomEvent("schedule:overlay-windows-updated")
+          new CustomEvent("schedule:overlay-windows-updated"),
         );
       }
     } catch (error) {
@@ -3322,16 +3451,16 @@ export function Fab({
       setOverlayDragModeWithRef("reorder");
       const startMinutes = overlayDateToMinutes(
         placement.start,
-        overlayStartTime
+        overlayStartTime,
       );
       const durationMinutes = Math.max(
         1,
-        overlayDateToMinutes(placement.end, placement.start)
+        overlayDateToMinutes(placement.end, placement.start),
       );
       const clampedStartMinutes = clampOverlayPlacementStart(
         startMinutes,
         durationMinutes,
-        overlayWindowMinutes
+        overlayWindowMinutes,
       );
       overlayDragMetaRef.current = {
         baseStartMinutes: clampedStartMinutes,
@@ -3354,7 +3483,7 @@ export function Fab({
       overlayWindowMinutes,
       overlayTimelinePxPerMin,
       setOverlayDragModeWithRef,
-    ]
+    ],
   );
 
   const handleOverlayDragEnd = useCallback(
@@ -3383,8 +3512,8 @@ export function Fab({
             previous,
             placement.id,
             overlayStartTime,
-            overlayEndTime
-          )
+            overlayEndTime,
+          ),
         );
         setOverlayRemovalCandidateId(null);
         return;
@@ -3394,7 +3523,7 @@ export function Fab({
         meta?.durationMinutes ??
         Math.max(
           1,
-          (placement.end.getTime() - placement.start.getTime()) / 60000
+          (placement.end.getTime() - placement.start.getTime()) / 60000,
         );
       const desiredStartMinutes =
         candidate?.startMinutes ??
@@ -3402,14 +3531,14 @@ export function Fab({
       const clampedMinutes = clampOverlayPlacementStart(
         desiredStartMinutes,
         durationMinutes,
-        overlayWindowMinutes
+        overlayWindowMinutes,
       );
       const direction: OverlayLayoutDirection =
         clampedMinutes > (meta?.baseStartMinutes ?? desiredStartMinutes)
           ? "forward"
           : clampedMinutes < (meta?.baseStartMinutes ?? desiredStartMinutes)
-          ? "backward"
-          : "none";
+            ? "backward"
+            : "none";
       setOverlayPlacedItems((previous) => {
         const resolved =
           previewResolvedLayout ??
@@ -3434,7 +3563,7 @@ export function Fab({
       setOverlayDragModeWithRef,
       overlayDragCandidate,
       isPointerOverTrashZone,
-    ]
+    ],
   );
   const parseTimeValue = (value: string) => {
     const [hoursStr, minutesStr] = value.split(":");
@@ -3456,7 +3585,7 @@ export function Fab({
     return { hours, minutes };
   };
   const handleStartTimeInputChange = (
-    event: React.ChangeEvent<HTMLInputElement>
+    event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     setOverlayStartInputValue(event.target.value);
     const parsed = parseTimeValue(event.target.value);
@@ -3466,16 +3595,18 @@ export function Fab({
     nextStart.setHours(hours, minutes, 0, 0);
     const currentDurationMs = Math.max(
       MIN_OVERLAY_DURATION_MS,
-      overlayEndTime.getTime() - overlayStartTime.getTime()
+      overlayEndTime.getTime() - overlayStartTime.getTime(),
     );
     const clampedDurationMs = Math.min(
       MAX_OVERLAY_DURATION_MS,
-      currentDurationMs
+      currentDurationMs,
     );
     setOverlayStartTime(nextStart);
     setOverlayEndTime(new Date(nextStart.getTime() + clampedDurationMs));
   };
-  const handleEndTimeInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEndTimeInputChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     setOverlayEndInputValue(event.target.value);
     const parsed = parseTimeValue(event.target.value);
     if (!parsed) return;
@@ -3488,11 +3619,9 @@ export function Fab({
     const desiredDurationMs = nextEnd.getTime() - overlayStartTime.getTime();
     const clampedDurationMs = Math.min(
       MAX_OVERLAY_DURATION_MS,
-      Math.max(MIN_OVERLAY_DURATION_MS, desiredDurationMs)
+      Math.max(MIN_OVERLAY_DURATION_MS, desiredDurationMs),
     );
-    setOverlayEndTime(
-      new Date(overlayStartTime.getTime() + clampedDurationMs)
-    );
+    setOverlayEndTime(new Date(overlayStartTime.getTime() + clampedDurationMs));
   };
 
   const menuVariants = {
@@ -3560,7 +3689,7 @@ export function Fab({
             className={cn(
               "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
               itemAlignmentClass,
-              event.color
+              event.color,
             )}
           >
             <span className="text-sm opacity-80">add</span>{" "}
@@ -3592,13 +3721,13 @@ export function Fab({
                         "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
                         goalMonumentId
                           ? "text-white/80 hover:text-blue-200"
-                          : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
+                          : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                       )}
                       trigger={
                         <span>
                           {goalMonumentId
-                            ? monuments.find((m) => m.id === goalMonumentId)
-                                ?.title ?? "Link to existing MONUMENT +"
+                            ? (monuments.find((m) => m.id === goalMonumentId)
+                                ?.title ?? "Link to existing MONUMENT +")
                             : "Link to existing MONUMENT +"}
                         </span>
                       }
@@ -3636,52 +3765,21 @@ export function Fab({
                       <Input
                         id="goal-name"
                         value={goalName}
-                        onChange={(e) => setGoalName(e.target.value.toUpperCase())}
+                        onChange={(e) =>
+                          setGoalName(e.target.value.toUpperCase())
+                        }
                         placeholder="Name your GOAL"
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
                     <div className="grid gap-2 col-span-1">
                       <Label className="sr-only">Energy</Label>
-                      <Select
+                      <EnergyCycleButton
                         value={goalEnergy}
-                        onValueChange={setGoalEnergy}
-                        triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
-                        hideChevron
-                        trigger={
-                          <div className="flex h-full w-full items-center justify-center leading-none">
-                            {goalEnergy ? (
-                              <FlameEmber
-                                level={goalEnergy as FlameEmberProps["level"]}
-                                size="md"
-                                className="-translate-y-[3px]"
-                              />
-                            ) : (
-                              <span className="text-zinc-400">Energy</span>
-                            )}
-                          </div>
-                        }
-                      >
-                        <SelectContent className="overflow-y-auto scrollbar-thin scrollbar-thumb-black scrollbar-track-black/40">
-                          {ENERGY_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem
-                              key={o.value}
-                              value={o.value}
-                              className="flex justify-center"
-                            >
-                              <div className="flex w-full flex-col items-center justify-center gap-1 py-2 text-center">
-                                <FlameEmber
-                                  level={o.value as FlameEmberProps["level"]}
-                                  size="md"
-                                />
-                                <span className="text-[6px] font-bold tracking-[0.2em]">
-                                  {o.label.toUpperCase()}
-                                </span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={setGoalEnergy}
+                        ariaLabel="Goal energy"
+                        className="h-12 w-full md:h-14"
+                      />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -3749,13 +3847,13 @@ export function Fab({
                           "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
                           projectGoalId
                             ? "text-white/80 hover:text-blue-200"
-                            : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
+                            : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                         )}
                         trigger={
                           <span>
                             {projectGoalId
-                              ? goals.find((g) => g.id === projectGoalId)
-                                  ?.name ?? "Link to existing GOAL +"
+                              ? (goals.find((g) => g.id === projectGoalId)
+                                  ?.name ?? "Link to existing GOAL +")
                               : "Link to existing GOAL +"}
                           </span>
                         }
@@ -3775,7 +3873,7 @@ export function Fab({
                                 className={cn(
                                   "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
                                   showGoalFilters &&
-                                    "border-blue-400/60 text-white"
+                                    "border-blue-400/60 text-white",
                                 )}
                                 aria-label="Filter goals"
                               >
@@ -3832,7 +3930,7 @@ export function Fab({
                                         value={goalFilterMonumentId}
                                         onChange={(e) =>
                                           setGoalFilterMonumentId(
-                                            e.target.value
+                                            e.target.value,
                                           )
                                         }
                                         className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
@@ -3899,7 +3997,7 @@ export function Fab({
                                         className={cn(
                                           "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
                                           goalSort === "recent" &&
-                                            "border-blue-400/60 bg-blue-500/10 text-white"
+                                            "border-blue-400/60 bg-blue-500/10 text-white",
                                         )}
                                       >
                                         Recently updated
@@ -3910,7 +4008,7 @@ export function Fab({
                                         className={cn(
                                           "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
                                           goalSort === "oldest" &&
-                                            "border-blue-400/60 bg-blue-500/10 text-white"
+                                            "border-blue-400/60 bg-blue-500/10 text-white",
                                         )}
                                       >
                                         Oldest updated
@@ -3921,16 +4019,16 @@ export function Fab({
                                         className={cn(
                                           "w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30",
                                           goalSort === "weight" &&
-                                            "border-blue-400/60 bg-blue-500/10 text-white"
+                                            "border-blue-400/60 bg-blue-500/10 text-white",
                                         )}
                                       >
                                         Highest weight
                                       </button>
-                    </div>
-                  </div>
-                </div>
-            </div>
-          </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                           ) : null}
                           {goalsLoading ? (
                             <SelectItem value="" disabled>
@@ -3947,7 +4045,7 @@ export function Fab({
                                         monumentEmojiMap.get(
                                           (goal as any).monument_id ??
                                             (goal as any).monumentId ??
-                                            ""
+                                            "",
                                         ) ??
                                         "✨"}
                                     </span>
@@ -3998,54 +4096,21 @@ export function Fab({
                       <Input
                         id="project-name"
                         value={projectName}
-                        onChange={(e) => setProjectName(e.target.value.toUpperCase())}
+                        onChange={(e) =>
+                          setProjectName(e.target.value.toUpperCase())
+                        }
                         placeholder="Name your PROJECT"
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
                     <div className="grid gap-2 col-span-1">
                       <Label className="sr-only">Energy</Label>
-                      <Select
+                      <EnergyCycleButton
                         value={projectEnergy}
-                        onValueChange={setProjectEnergy}
-                        triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
-                        hideChevron
-                        trigger={
-                          <div className="flex h-full w-full items-center justify-center leading-none">
-                            {projectEnergy ? (
-                              <FlameEmber
-                                level={
-                                  projectEnergy as FlameEmberProps["level"]
-                                }
-                                size="md"
-                                className="-translate-y-[3px]"
-                              />
-                            ) : (
-                              <span className="text-zinc-400">Energy</span>
-                            )}
-                          </div>
-                        }
-                      >
-                        <SelectContent className="overflow-y-auto scrollbar-thin scrollbar-thumb-black scrollbar-track-black/40">
-                          {ENERGY_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem
-                              key={o.value}
-                              value={o.value}
-                              className="flex justify-center"
-                            >
-                              <div className="flex w-full flex-col items-center justify-center gap-1 py-2 text-center">
-                                <FlameEmber
-                                  level={o.value as FlameEmberProps["level"]}
-                                  size="md"
-                                />
-                                <span className="text-[6px] font-bold tracking-[0.2em]">
-                                  {o.label.toUpperCase()}
-                                </span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={setProjectEnergy}
+                        ariaLabel="Project energy"
+                        className="h-12 w-full md:h-14"
+                      />
                     </div>
                   </div>
                   <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
@@ -4108,7 +4173,11 @@ export function Fab({
                           aria-expanded={showDurationPicker}
                           aria-controls="project-duration-picker"
                           layout
-                          layoutTransition={{ type: "spring", stiffness: 600, damping: 60 }}
+                          layoutTransition={{
+                            type: "spring",
+                            stiffness: 600,
+                            damping: 60,
+                          }}
                         >
                           <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
                             <Clock className="h-6 w-6 text-white/80" />
@@ -4156,7 +4225,7 @@ export function Fab({
                             </button>
                           </div>
                         </div>,
-                        document.body
+                        document.body,
                       )
                     : null}
                   {showHabitDurationPicker && habitDurationPosition
@@ -4195,7 +4264,7 @@ export function Fab({
                             </button>
                           </div>
                         </div>,
-                        document.body
+                        document.body,
                       )
                     : null}
                   <div className="grid gap-2">
@@ -4305,16 +4374,7 @@ export function Fab({
                             Loading skills…
                           </SelectItem>
                         ) : filteredSkills.length > 0 ? (
-                          filteredSkills.map((skill) => (
-                            <SelectItem key={skill.id} value={skill.id}>
-                              <div className="flex items-center gap-2">
-                                <span className="text-lg">
-                                  {skill.icon ?? "🛠️"}
-                                </span>
-                                <span>{skill.name}</span>
-                              </div>
-                            </SelectItem>
-                          ))
+                          renderGroupedSkillItems()
                         ) : (
                           <SelectItem value="__empty" disabled>
                             No skills found
@@ -4354,13 +4414,13 @@ export function Fab({
                         "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
                         taskProjectId
                           ? "text-white/80 hover:text-blue-200"
-                          : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
+                          : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                       )}
                       trigger={
                         <span>
                           {taskProjectId
-                            ? taskProjects.find((p) => p.id === taskProjectId)
-                                ?.name ?? "Link to existing PROJECT +"
+                            ? (taskProjects.find((p) => p.id === taskProjectId)
+                                ?.name ?? "Link to existing PROJECT +")
                             : "Link to existing PROJECT +"}
                         </span>
                       }
@@ -4384,7 +4444,7 @@ export function Fab({
                               className={cn(
                                 "flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70 transition hover:border-white/30 hover:text-white",
                                 showTaskProjectFilters &&
-                                  "border-blue-400/60 text-white"
+                                  "border-blue-400/60 text-white",
                               )}
                               aria-label="Filter projects"
                             >
@@ -4420,7 +4480,7 @@ export function Fab({
                                       value={taskProjectFilterStage}
                                       onChange={(e) =>
                                         setTaskProjectFilterStage(
-                                          e.target.value
+                                          e.target.value,
                                         )
                                       }
                                       className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
@@ -4438,14 +4498,14 @@ export function Fab({
                                           >
                                             {stage.label}
                                           </option>
-                                        )
+                                        ),
                                       )}
                                     </select>
                                     <select
                                       value={taskProjectFilterPriority}
                                       onChange={(e) =>
                                         setTaskProjectFilterPriority(
-                                          e.target.value
+                                          e.target.value,
                                         )
                                       }
                                       className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
@@ -4519,52 +4579,21 @@ export function Fab({
                       <Input
                         id="task-name"
                         value={taskName}
-                        onChange={(e) => setTaskName(e.target.value.toUpperCase())}
+                        onChange={(e) =>
+                          setTaskName(e.target.value.toUpperCase())
+                        }
                         placeholder="Name your TASK"
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
                     <div className="grid gap-2 col-span-1">
                       <Label className="sr-only">Energy</Label>
-                      <Select
+                      <EnergyCycleButton
                         value={taskEnergy}
-                        onValueChange={setTaskEnergy}
-                        triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
-                        hideChevron
-                        trigger={
-                          <div className="flex h-full w-full items-center justify-center leading-none">
-                            {taskEnergy ? (
-                              <FlameEmber
-                                level={taskEnergy as FlameEmberProps["level"]}
-                                size="md"
-                                className="-translate-y-[3px]"
-                              />
-                            ) : (
-                              <span className="text-zinc-400">Energy</span>
-                            )}
-                          </div>
-                        }
-                      >
-                        <SelectContent className="overflow-y-auto scrollbar-thin scrollbar-thumb-black scrollbar-track-black/40">
-                          {ENERGY_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem
-                              key={o.value}
-                              value={o.value}
-                              className="flex justify-center"
-                            >
-                              <div className="flex w-full flex-col items-center justify-center gap-1 py-2 text-center">
-                                <FlameEmber
-                                  level={o.value as FlameEmberProps["level"]}
-                                  size="md"
-                                />
-                                <span className="text-[6px] font-bold tracking-[0.2em]">
-                                  {o.label.toUpperCase()}
-                                </span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={setTaskEnergy}
+                        ariaLabel="Task energy"
+                        className="h-12 w-full md:h-14"
+                      />
                     </div>
                   </div>
                   <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
@@ -4665,7 +4694,7 @@ export function Fab({
                             </button>
                           </div>
                         </div>,
-                        document.body
+                        document.body,
                       )
                     : null}
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -4724,7 +4753,7 @@ export function Fab({
                                         value={skillFilterMonumentId}
                                         onChange={(e) =>
                                           setSkillFilterMonumentId(
-                                            e.target.value
+                                            e.target.value,
                                           )
                                         }
                                         className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
@@ -4776,16 +4805,7 @@ export function Fab({
                               Loading skills…
                             </SelectItem>
                           ) : filteredSkills.length > 0 ? (
-                            filteredSkills.map((skill) => (
-                              <SelectItem key={skill.id} value={skill.id}>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-lg">
-                                    {skill.icon ?? "🛠️"}
-                                  </span>
-                                  <span>{skill.name}</span>
-                                </div>
-                              </SelectItem>
-                            ))
+                            renderGroupedSkillItems()
                           ) : (
                             <SelectItem value="__empty" disabled>
                               No skills found
@@ -4825,13 +4845,14 @@ export function Fab({
                         "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
                         habitRoutineId
                           ? "text-white/80 hover:text-blue-200"
-                          : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]"
+                          : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                       )}
                       trigger={
                         <span>
                           {habitRoutineId
-                            ? habitRoutines.find((r) => r.id === habitRoutineId)
-                                ?.name ?? "Link to existing ROUTINE +"
+                            ? (habitRoutines.find(
+                                (r) => r.id === habitRoutineId,
+                              )?.name ?? "Link to existing ROUTINE +")
                             : "Link to existing ROUTINE +"}
                         </span>
                       }
@@ -4878,45 +4899,21 @@ export function Fab({
                       <Input
                         id="habit-name"
                         value={habitName}
-                        onChange={(e) => setHabitName(e.target.value.toUpperCase())}
+                        onChange={(e) =>
+                          setHabitName(e.target.value.toUpperCase())
+                        }
                         placeholder="Name your HABIT"
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
                     <div className="grid gap-2 col-span-1">
                       <Label className="sr-only">Energy</Label>
-                      <Select
+                      <EnergyCycleButton
                         value={habitEnergy}
-                        onValueChange={setHabitEnergy}
-                        triggerClassName="!h-12 md:!h-14 !items-center !justify-center rounded-md border-white/15 bg-white/[0.06] !overflow-visible"
-                        hideChevron
-                        trigger={
-                          <div className="flex h-full w-full items-center justify-center leading-none">
-                            {habitEnergy ? (
-                              <FlameEmber
-                                level={habitEnergy as FlameEmberProps["level"]}
-                                size="md"
-                                className="-translate-y-[3px]"
-                              />
-                            ) : (
-                              <span className="text-zinc-400">Energy</span>
-                            )}
-                          </div>
-                        }
-                      >
-                        <SelectContent>
-                          {ENERGY_OPTIONS_LOCAL.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                              <div className="flex items-center justify-center py-2">
-                                <FlameEmber
-                                  level={o.value as FlameEmberProps["level"]}
-                                  size="md"
-                                />
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={setHabitEnergy}
+                        ariaLabel="Habit energy"
+                        className="h-12 w-full md:h-14"
+                      />
                     </div>
                   </div>
                   <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
@@ -5086,16 +5083,7 @@ export function Fab({
                             Loading skills…
                           </SelectItem>
                         ) : filteredSkills.length > 0 ? (
-                          filteredSkills.map((skill) => (
-                            <SelectItem key={skill.id} value={skill.id}>
-                              <div className="flex items-center gap-2">
-                                <span className="text-lg">
-                                  {skill.icon ?? "🛠️"}
-                                </span>
-                                <span>{skill.name}</span>
-                              </div>
-                            </SelectItem>
-                          ))
+                          renderGroupedSkillItems()
                         ) : (
                           <SelectItem value="__empty" disabled>
                             No skills found
@@ -5138,7 +5126,7 @@ export function Fab({
                             </button>
                           </div>
                         </div>,
-                        document.body
+                        document.body,
                       )
                     : null}
                 </>
@@ -5163,7 +5151,7 @@ export function Fab({
           onClick={() => handleExtraClick(event.label)}
           className={cn(
             "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
-            itemAlignmentClass
+            itemAlignmentClass,
           )}
         >
           <span className="text-sm opacity-80">add</span>{" "}
@@ -5200,7 +5188,7 @@ export function Fab({
   };
 
   const handleEventClick = (
-    eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT"
+    eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT",
   ) => {
     // Ensure any in-progress drag state cannot leave the neighbor overlay visible.
     setIsDragging(false);
@@ -5283,8 +5271,8 @@ export function Fab({
     const effectiveScope: AiScope = isForced
       ? aiScope
       : isAutoMode
-      ? determineAutoScopeFromPrompt(trimmedPrompt)
-      : (scopeSelection as AiScope);
+        ? determineAutoScopeFromPrompt(trimmedPrompt)
+        : (scopeSelection as AiScope);
 
     if (!isForced) {
       if (isAutoMode) {
@@ -5330,7 +5318,9 @@ export function Fab({
       const payload = await response.json().catch(() => null);
       console.log("ILAV payload debug:", {
         singleIntentType: payload?.intent?.type,
-        intentsCount: Array.isArray(payload?.intents) ? payload.intents.length : null,
+        intentsCount: Array.isArray(payload?.intents)
+          ? payload.intents.length
+          : null,
         intentTypes: Array.isArray(payload?.intents)
           ? payload.intents.map((i) => i.type)
           : null,
@@ -5355,17 +5345,18 @@ export function Fab({
             ? [payload.intent]
             : [];
       const proposalIntents = intents.filter((intent) =>
-        PROPOSAL_CARD_TYPES.includes(intent.type)
+        PROPOSAL_CARD_TYPES.includes(intent.type),
       );
-      const proposalMessages = payload && proposalIntents.length
-        ? proposalIntents.map((intent) => ({
-            id: createThreadMessageId(),
-            role: "assistant",
-            kind: "proposal",
-            ai: { ...payload, intent },
-            ts: Date.now(),
-          }))
-        : [];
+      const proposalMessages =
+        payload && proposalIntents.length
+          ? proposalIntents.map((intent) => ({
+              id: createThreadMessageId(),
+              role: "assistant",
+              kind: "proposal",
+              ai: { ...payload, intent },
+              ts: Date.now(),
+            }))
+          : [];
 
       setAiThread((prev) => {
         const updated = [...prev];
@@ -5384,7 +5375,7 @@ export function Fab({
             updated[proposalMessage.id] = buildInitialProposalFormValues(
               proposalMessage.ai.intent.draft ?? undefined,
               undefined,
-              proposalMessage.ai.intent.type
+              proposalMessage.ai.intent.type,
             );
           });
           return updated;
@@ -5400,7 +5391,7 @@ export function Fab({
       } else {
         console.error("ILAV overlay error", error);
         setAiError(
-          error instanceof Error ? error.message : "Unable to reach ILAV"
+          error instanceof Error ? error.message : "Unable to reach ILAV",
         );
       }
     } finally {
@@ -5412,7 +5403,7 @@ export function Fab({
   const handleProposalFieldChange = (
     messageId: string,
     field: string,
-    value: string
+    value: string,
   ) => {
     setProposalFormState((prev) => ({
       ...prev,
@@ -5438,11 +5429,11 @@ export function Fab({
         return updated;
       });
     },
-    []
+    [],
   );
 
   const getDraftValuesForMessage = (
-    message: AiThreadProposalMessage
+    message: AiThreadProposalMessage,
   ): Record<string, string> => {
     const baseDraft = message.ai.intent.draft ?? {};
     const overrideDraft = message.overrides?.draft ?? {};
@@ -5465,15 +5456,13 @@ export function Fab({
       }
       const baseValue = baseDraft[key];
       finalDraft[key] =
-        baseValue === undefined || baseValue === null
-          ? ""
-          : String(baseValue);
+        baseValue === undefined || baseValue === null ? "" : String(baseValue);
     });
     return finalDraft;
   };
 
   const getSchedulerOpsOverridesForMessage = (
-    messageId: string
+    messageId: string,
   ): AiSchedulerOp[] | undefined => {
     const entry = proposalFormState[messageId];
     if (!entry) return undefined;
@@ -5508,7 +5497,7 @@ export function Fab({
           ...entry,
           overrides: nextOverrides,
         };
-      })
+      }),
     );
   };
 
@@ -5531,9 +5520,7 @@ export function Fab({
     if (ops.length > 0) {
       payload.ops = ops;
     }
-    const approvedPrompt = `APPROVED_PROPOSAL_JSON: ${JSON.stringify(
-      payload
-    )}`;
+    const approvedPrompt = `APPROVED_PROPOSAL_JSON: ${JSON.stringify(payload)}`;
     void handleRunAi(approvedPrompt);
   };
 
@@ -5553,14 +5540,14 @@ export function Fab({
   };
 
   const handleFabButtonTouchStart = (
-    event: React.TouchEvent<HTMLButtonElement>
+    event: React.TouchEvent<HTMLButtonElement>,
   ) => {
     if (!swipeUpToOpen) return;
     setTouchStartY(event.touches[0].clientY);
   };
 
   const handleFabButtonTouchEnd = (
-    event: React.TouchEvent<HTMLButtonElement>
+    event: React.TouchEvent<HTMLButtonElement>,
   ) => {
     if (!swipeUpToOpen || touchStartY === null) return;
     const diffY = event.changedTouches[0].clientY - touchStartY;
@@ -5595,7 +5582,7 @@ export function Fab({
     setRescheduleError(
       result.scheduleInstanceId
         ? null
-        : "This event has no upcoming scheduled time."
+        : "This event has no upcoming scheduled time.",
     );
     const baseDate = result.nextScheduledAt
       ? new Date(result.nextScheduledAt)
@@ -5646,7 +5633,7 @@ export function Fab({
         target.focus({ preventScroll: true });
       }
     },
-    [expanded]
+    [expanded],
   );
 
   useEffect(() => {
@@ -5683,10 +5670,10 @@ export function Fab({
               monumentEmoji:
                 goal.monumentEmoji ??
                 map.get(
-                  (goal as any).monument_id ?? (goal as any).monumentId ?? ""
+                  (goal as any).monument_id ?? (goal as any).monumentId ?? "",
                 ) ??
                 null,
-            }))
+            })),
           );
         }
       } catch (error) {
@@ -5731,7 +5718,7 @@ export function Fab({
           setGoalMonumentId((current) =>
             current && monumentsData.some((m) => m.id === current)
               ? current
-              : ""
+              : "",
           );
         }
       } catch (error) {
@@ -5773,7 +5760,9 @@ export function Fab({
         if (!cancelled) {
           setTaskProjects(projectsData ?? []);
           setTaskProjectId((current) =>
-            current && projectsData.some((p) => p.id === current) ? current : ""
+            current && projectsData.some((p) => p.id === current)
+              ? current
+              : "",
           );
         }
       } catch (error) {
@@ -5868,7 +5857,7 @@ export function Fab({
         const routines = data ?? [];
         setHabitRoutines(routines);
         setHabitRoutineId((current) =>
-          current && routines.some((r) => r.id === current) ? current : ""
+          current && routines.some((r) => r.id === current) ? current : "",
         );
       } catch (error) {
         console.error("Failed to load habit routines", error);
@@ -5889,18 +5878,18 @@ export function Fab({
 
   const getNextIndex = useCallback(
     (index: number) => (index + 1) % pageCount,
-    [pageCount]
+    [pageCount],
   );
 
   const getPrevIndex = useCallback(
     (index: number) => (index - 1 + pageCount) % pageCount,
-    [pageCount]
+    [pageCount],
   );
 
   const animateToPage = useCallback(
     async (
       targetPage: number,
-      options?: { fromDrag?: boolean; direction?: 1 | -1 }
+      options?: { fromDrag?: boolean; direction?: 1 | -1 },
     ) => {
       if (targetPage === activeFabPage) {
         pageX.set(0);
@@ -5934,7 +5923,7 @@ export function Fab({
         {
           duration: 0.25,
           ease: "easeOut",
-        }
+        },
       );
       try {
         await controls.finished;
@@ -5957,7 +5946,7 @@ export function Fab({
       pageX,
       prefersReducedMotion,
       stageWidth,
-    ]
+    ],
   );
 
   const handlePageDragStart = useCallback(() => {
@@ -5991,7 +5980,7 @@ export function Fab({
       }
       pageDragControls.start(event);
     },
-    [activeFabPage, isOpen, isPointerInEdgeZone, pageDragControls, pages]
+    [activeFabPage, isOpen, isPointerInEdgeZone, pageDragControls, pages],
   );
 
   const handlePageDrag = useCallback(
@@ -6029,7 +6018,7 @@ export function Fab({
       isDragging,
       pageX,
       stageWidth,
-    ]
+    ],
   );
 
   const handlePageDragEnd = useCallback(
@@ -6073,7 +6062,7 @@ export function Fab({
       isDragging,
       pageX,
       stageWidth,
-    ]
+    ],
   );
 
   const handleCloseReschedule = () => {
@@ -6272,7 +6261,7 @@ export function Fab({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ startUtc: parsed.toISOString() }),
-        }
+        },
       );
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
@@ -6288,7 +6277,7 @@ export function Fab({
       if (rescheduleTarget.type === "HABIT") {
         const refreshed = await fetchNextScheduledInstance(
           rescheduleTarget.id,
-          "HABIT"
+          "HABIT",
         );
         if (refreshed) {
           nextStart = refreshed.startUtc ?? nextStart;
@@ -6311,8 +6300,8 @@ export function Fab({
                 scheduleInstanceId: nextInstanceId,
                 durationMinutes: nextDuration,
               }
-            : item
-        )
+            : item,
+        ),
       );
       void notifySchedulerOfChange();
       setIsSavingReschedule(false);
@@ -6321,7 +6310,7 @@ export function Fab({
     } catch (error) {
       console.error("Failed to reschedule", error);
       setRescheduleError(
-        error instanceof Error ? error.message : "Unable to update schedule"
+        error instanceof Error ? error.message : "Unable to update schedule",
       );
       setIsSavingReschedule(false);
     }
@@ -6410,10 +6399,10 @@ export function Fab({
         selected === "GOAL"
           ? goalName.trim()
           : selected === "PROJECT"
-          ? projectName.trim()
-          : selected === "TASK"
-          ? taskName.trim()
-          : habitName.trim();
+            ? projectName.trim()
+            : selected === "TASK"
+              ? taskName.trim()
+              : habitName.trim();
       if (trimmedName.length === 0) {
         setSaveError("Please enter a name.");
         return;
@@ -6510,7 +6499,7 @@ export function Fab({
                 projectSkillIds.map((skillId) => ({
                   project_id: projectData.id,
                   skill_id: skillId,
-                }))
+                })),
               );
             if (projectSkillsError) throw projectSkillsError;
           }
@@ -6551,17 +6540,19 @@ export function Fab({
           createdType === "GOAL"
             ? "Goal"
             : createdType === "PROJECT"
-            ? "Project"
-            : createdType === "TASK"
-            ? "Task"
-            : createdType === "HABIT"
-            ? "Habit"
-            : "Item";
+              ? "Project"
+              : createdType === "TASK"
+                ? "Task"
+                : createdType === "HABIT"
+                  ? "Habit"
+                  : "Item";
         toast.success(`${successLabel} created`);
       } catch (error: any) {
         console.error("Failed to save item", error);
         const errorMessage =
-          error?.message || error?.error?.message || "Unable to save right now.";
+          error?.message ||
+          error?.error?.message ||
+          "Unable to save right now.";
         setSaveError(errorMessage);
       } finally {
         setIsSavingFab(false);
@@ -6626,7 +6617,7 @@ export function Fab({
       const typeSegment = target.type === "HABIT" ? "habit" : "project";
       const response = await fetch(
         `/api/schedule/events/${typeSegment}/${target.id}`,
-        { method: "DELETE" }
+        { method: "DELETE" },
       );
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
@@ -6634,8 +6625,8 @@ export function Fab({
       }
       setSearchResults((prev) =>
         prev.filter(
-          (item) => !(item.id === target.id && item.type === target.type)
-        )
+          (item) => !(item.id === target.id && item.type === target.type),
+        ),
       );
       setRescheduleTarget(null);
       setRescheduleDate("");
@@ -6646,7 +6637,7 @@ export function Fab({
     } catch (error) {
       console.error("Failed to delete schedule event", error);
       setDeleteError(
-        error instanceof Error ? error.message : "Unable to delete this event"
+        error instanceof Error ? error.message : "Unable to delete this event",
       );
     } finally {
       setIsDeletingEvent(false);
@@ -6705,7 +6696,9 @@ export function Fab({
   const shouldRenderNeighbor = isDragging && dragTargetPage !== null;
   const neighborPage = shouldRenderNeighbor ? dragTargetPage : null;
   const neighborDirection =
-    neighborPage !== null ? dragDirection ?? (pageX.get() < 0 ? 1 : -1) : null;
+    neighborPage !== null
+      ? (dragDirection ?? (pageX.get() < 0 ? 1 : -1))
+      : null;
 
   const restingPalette = getMenuPalette(activeFabPage);
   const staticBackgroundImage = createPaletteBackground(restingPalette);
@@ -6715,31 +6708,31 @@ export function Fab({
       ? getMenuPalette(dragTargetPage)
       : restingPalette;
   const baseR = useTransform(dragProgress, (value) =>
-    lerp(restingPalette.base[0], targetPalette.base[0], value)
+    lerp(restingPalette.base[0], targetPalette.base[0], value),
   );
   const baseG = useTransform(dragProgress, (value) =>
-    lerp(restingPalette.base[1], targetPalette.base[1], value)
+    lerp(restingPalette.base[1], targetPalette.base[1], value),
   );
   const baseB = useTransform(dragProgress, (value) =>
-    lerp(restingPalette.base[2], targetPalette.base[2], value)
+    lerp(restingPalette.base[2], targetPalette.base[2], value),
   );
   const highlightR = useTransform(dragProgress, (value) =>
-    lerp(restingPalette.highlight[0], targetPalette.highlight[0], value)
+    lerp(restingPalette.highlight[0], targetPalette.highlight[0], value),
   );
   const highlightG = useTransform(dragProgress, (value) =>
-    lerp(restingPalette.highlight[1], targetPalette.highlight[1], value)
+    lerp(restingPalette.highlight[1], targetPalette.highlight[1], value),
   );
   const highlightB = useTransform(dragProgress, (value) =>
-    lerp(restingPalette.highlight[2], targetPalette.highlight[2], value)
+    lerp(restingPalette.highlight[2], targetPalette.highlight[2], value),
   );
   const lowlightR = useTransform(dragProgress, (value) =>
-    lerp(restingPalette.lowlight[0], targetPalette.lowlight[0], value)
+    lerp(restingPalette.lowlight[0], targetPalette.lowlight[0], value),
   );
   const lowlightG = useTransform(dragProgress, (value) =>
-    lerp(restingPalette.lowlight[1], targetPalette.lowlight[1], value)
+    lerp(restingPalette.lowlight[1], targetPalette.lowlight[1], value),
   );
   const lowlightB = useTransform(dragProgress, (value) =>
-    lerp(restingPalette.lowlight[2], targetPalette.lowlight[2], value)
+    lerp(restingPalette.lowlight[2], targetPalette.lowlight[2], value),
   );
   // Background blends from drag motion value so color transitions stay continuous during interactive paging.
   const blendedBackgroundImage = useMotionTemplate`
@@ -6754,7 +6747,7 @@ export function Fab({
   const dragConstraintRight = normalizedStageWidth;
   const effectiveViewportHeight =
     expanded && (viewportHeight || stableViewportHeight)
-      ? viewportHeight ?? stableViewportHeight
+      ? (viewportHeight ?? stableViewportHeight)
       : null;
   const minHeightExpanded = expanded
     ? effectiveViewportHeight
@@ -6789,14 +6782,14 @@ export function Fab({
                       event.stopPropagation();
                     }}
                   />,
-                  document.body
+                  document.body,
                 )
               : null}
             <div
               className={cn(
                 "bottom-20 mb-2 z-[2147483650] flex flex-col items-stretch",
                 expanded ? "fixed" : "absolute",
-                menuClassName
+                menuClassName,
               )}
             >
               <motion.div
@@ -6807,7 +6800,7 @@ export function Fab({
                 }}
                 className={cn(
                   "border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
-                  expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]"
+                  expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
                 )}
                 layout={!expanded}
                 onTouchStart={(event) => event.stopPropagation()}
@@ -6819,14 +6812,16 @@ export function Fab({
                     : staticBorderColor,
                   transition: "border-color 0.1s linear, transform 0.2s ease",
                   transformOrigin:
-                    menuVariant === "timeline" ? "bottom right" : "bottom center",
+                    menuVariant === "timeline"
+                      ? "bottom right"
+                      : "bottom center",
                   minHeight: expanded ? minHeightExpanded : menuContainerHeight,
                   maxHeight: expanded ? maxHeightExpanded : menuContainerHeight,
                   y: 0,
                   height: expanded ? undefined : menuContainerHeight,
-                  minWidth: expanded ? undefined : menuWidth ?? undefined,
-                  width: expanded ? undefined : menuWidth ?? undefined,
-                  maxWidth: expanded ? undefined : menuWidth ?? undefined,
+                  minWidth: expanded ? undefined : (menuWidth ?? undefined),
+                  width: expanded ? undefined : (menuWidth ?? undefined),
+                  maxWidth: expanded ? undefined : (menuWidth ?? undefined),
                   touchAction: expanded ? "manipulation" : undefined,
                   overflowY: expanded ? "auto" : "hidden",
                   overflowX: "hidden",
@@ -6918,24 +6913,24 @@ export function Fab({
                 </>
               </motion.div>
               {shouldRenderTimelineOverlayButton && (
-              <motion.button
-                ref={overlayButtonRef}
-                type="button"
-                aria-label="Add overlay"
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/20 bg-gradient-to-br from-[#111111] via-[#0d0d0d] to-[#050505] px-6 py-3 text-white shadow-[0_25px_60px_rgba(0,0,0,0.85)] ring-1 ring-black/40 transition hover:ring-black/60 pointer-events-auto"
-                onPointerDown={(event) => event.stopPropagation()}
-                onTouchStart={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  handleOverlayPickerClose();
-                  setOverlayOpen(true);
-                }}
-              >
-                <span className="text-sm opacity-80">add</span>
-                <span className="text-lg font-bold">OVERLAY</span>
-              </motion.button>
-            )}
+                <motion.button
+                  ref={overlayButtonRef}
+                  type="button"
+                  aria-label="Add overlay"
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/20 bg-gradient-to-br from-[#111111] via-[#0d0d0d] to-[#050505] px-6 py-3 text-white shadow-[0_25px_60px_rgba(0,0,0,0.85)] ring-1 ring-black/40 transition hover:ring-black/60 pointer-events-auto"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onTouchStart={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handleOverlayPickerClose();
+                    setOverlayOpen(true);
+                  }}
+                >
+                  <span className="text-sm opacity-80">add</span>
+                  <span className="text-lg font-bold">OVERLAY</span>
+                </motion.button>
+              )}
             </div>
             {expanded && !shouldHideOverhangButtons
               ? createPortal(
@@ -6987,7 +6982,7 @@ export function Fab({
                       disabled={isSaveDisabled}
                       className={cn(
                         "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation bg-white/10 text-white transition hover:bg-white/20",
-                        isSaveDisabled ? "opacity-50" : ""
+                        isSaveDisabled ? "opacity-50" : "",
                       )}
                       {...overhangSaveTapHandlers}
                     >
@@ -6997,7 +6992,7 @@ export function Fab({
                       />
                     </Button>
                   </motion.div>,
-                  document.body
+                  document.body,
                 )
               : null}
           </>
@@ -7020,7 +7015,8 @@ export function Fab({
         whileTap={{ scale: 0.9 }}
         transition={{ type: "spring", stiffness: 500, damping: 25 }}
         style={{
-          background: "linear-gradient(145deg, #1f2937 0%, #0f172a 60%, #020617 100%)",
+          background:
+            "linear-gradient(145deg, #1f2937 0%, #0f172a 60%, #020617 100%)",
           boxShadow:
             "0 18px 36px rgba(0, 0, 0, 0.65), 0 8px 18px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)",
         }}
@@ -7052,13 +7048,13 @@ export function Fab({
               className="absolute inset-0 bg-black/70 backdrop-blur-sm"
               onClick={() => setOverlayOpen(false)}
             />
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.25 }}
-                className="relative w-full max-w-[520px] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-3xl border border-black/60 bg-gradient-to-br from-[#020202] via-[#050505] to-[#0b0b0b] p-6 text-white shadow-[0_30px_80px_rgba(0,0,0,0.85)]"
-              >
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              className="relative w-full max-w-[520px] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-3xl border border-black/60 bg-gradient-to-br from-[#020202] via-[#050505] to-[#0b0b0b] p-6 text-white shadow-[0_30px_80px_rgba(0,0,0,0.85)]"
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.4em] text-white/70">
@@ -7074,13 +7070,10 @@ export function Fab({
                     className={cn(
                       "flex h-9 w-9 items-center justify-center rounded-full border border-transparent bg-gradient-to-br from-emerald-700 via-emerald-600 to-emerald-500 p-0 text-white transition hover:from-emerald-600 hover:via-emerald-500 hover:to-emerald-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300",
                       (!overlayIntervalValid || isSavingLiveOverlay) &&
-                        "cursor-not-allowed opacity-60"
+                        "cursor-not-allowed opacity-60",
                     )}
                   >
-                    <Check
-                      className="h-4 w-4"
-                      aria-hidden="true"
-                    />
+                    <Check className="h-4 w-4" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -7111,9 +7104,7 @@ export function Fab({
                     onFocus={() => setStartInputFocused(true)}
                     onBlur={() => setStartInputFocused(false)}
                     style={
-                      startInputFocused
-                        ? { borderColor: "#d1d5db" }
-                        : undefined
+                      startInputFocused ? { borderColor: "#d1d5db" } : undefined
                     }
                   />
                 </div>
@@ -7202,7 +7193,9 @@ export function Fab({
                     ref={overlayTimelineRef}
                     className={cn(
                       "mt-0 w-full -mx-6 pb-0 relative",
-                      overlayPickerSelected ? "cursor-pointer" : "cursor-default"
+                      overlayPickerSelected
+                        ? "cursor-pointer"
+                        : "cursor-default",
                     )}
                     onClick={handleTimelineClick}
                   >
@@ -7220,131 +7213,144 @@ export function Fab({
                       endHour={overlayTimelineEndHour}
                       pxPerMin={overlayTimelinePxPerMin}
                     >
-                    {renderOverlayPlacements.map((placement) => {
+                      {renderOverlayPlacements.map((placement) => {
                         const startMinutes = Math.max(
                           0,
-                          (placement.start.getTime() - overlayStartTime.getTime()) /
-                            60000
+                          (placement.start.getTime() -
+                            overlayStartTime.getTime()) /
+                            60000,
                         );
                         const durationMinutes = Math.max(
                           1,
-                          (placement.end.getTime() - placement.start.getTime()) / 60000
+                          (placement.end.getTime() -
+                            placement.start.getTime()) /
+                            60000,
                         );
-                        const normalizedStartMinutes = clampOverlayPlacementStart(
-                          startMinutes,
-                          durationMinutes,
-                          overlayWindowMinutes
-                        );
-                        const placementTheme = getOverlayPlacementTheme(placement);
-                      const overlayIsDragging = Boolean(activeOverlayDragId);
-                      const isDragging = activeOverlayDragId === placement.id;
-                      const isRemovalCandidate =
-                        overlayRemovalCandidateId === placement.id;
-                      const removalStyle = isRemovalCandidate
-                        ? {
-                            borderColor: "rgba(248, 113, 113, 0.9)",
-                            boxShadow:
-                              "0 0 0 10px rgba(248, 113, 113, 0.25),0 18px 38px rgba(6,6,10,0.48),0 8px 16px rgba(0,0,0,0.35)",
-                          }
-                        : {};
-                      const staticCardStyle = {
-                        top: minutesToTimelineStyle(normalizedStartMinutes),
-                        height: minutesToTimelineStyle(durationMinutes),
-                        left: "var(--timeline-card-left)",
-                        right: "var(--timeline-card-right)",
-                        background: placementTheme.background,
-                        borderColor: placementTheme.borderColor,
-                        outline: "1px solid rgba(255, 255, 255, 0.08)",
-                        outlineOffset: "-1px",
-                      };
-                      const baseShadow = isDragging
-                        ? "0 0 60px rgba(0,0,0,0.55),0 12px 30px rgba(0,0,0,0.45)"
-                        : "0 0 30px rgba(0,0,0,0.35),0 6px 14px rgba(0,0,0,0.30)";
-                      const filterValue = isDragging
-                        ? "brightness(1.09)"
-                        : overlayIsDragging
-                        ? "brightness(0.92)"
-                        : undefined;
-                      const opacityValue = overlayIsDragging && !isDragging ? 0.82 : 1;
-                      const zValue = isDragging ? 32 : isRemovalCandidate ? 10 : 2;
-                      const transitionStyle = isDragging
-                        ? "top 0.15s ease, filter 0.2s ease, opacity 0.2s ease"
-                        : "top 0.15s ease, box-shadow 0.25s ease, filter 0.2s ease, opacity 0.2s ease";
-                      const activeStyle = staticCardStyle;
-                      const dragTransformStyle = isDragging ? { y: 0 } : undefined;
+                        const normalizedStartMinutes =
+                          clampOverlayPlacementStart(
+                            startMinutes,
+                            durationMinutes,
+                            overlayWindowMinutes,
+                          );
+                        const placementTheme =
+                          getOverlayPlacementTheme(placement);
+                        const overlayIsDragging = Boolean(activeOverlayDragId);
+                        const isDragging = activeOverlayDragId === placement.id;
+                        const isRemovalCandidate =
+                          overlayRemovalCandidateId === placement.id;
+                        const removalStyle = isRemovalCandidate
+                          ? {
+                              borderColor: "rgba(248, 113, 113, 0.9)",
+                              boxShadow:
+                                "0 0 0 10px rgba(248, 113, 113, 0.25),0 18px 38px rgba(6,6,10,0.48),0 8px 16px rgba(0,0,0,0.35)",
+                            }
+                          : {};
+                        const staticCardStyle = {
+                          top: minutesToTimelineStyle(normalizedStartMinutes),
+                          height: minutesToTimelineStyle(durationMinutes),
+                          left: "var(--timeline-card-left)",
+                          right: "var(--timeline-card-right)",
+                          background: placementTheme.background,
+                          borderColor: placementTheme.borderColor,
+                          outline: "1px solid rgba(255, 255, 255, 0.08)",
+                          outlineOffset: "-1px",
+                        };
+                        const baseShadow = isDragging
+                          ? "0 0 60px rgba(0,0,0,0.55),0 12px 30px rgba(0,0,0,0.45)"
+                          : "0 0 30px rgba(0,0,0,0.35),0 6px 14px rgba(0,0,0,0.30)";
+                        const filterValue = isDragging
+                          ? "brightness(1.09)"
+                          : overlayIsDragging
+                            ? "brightness(0.92)"
+                            : undefined;
+                        const opacityValue =
+                          overlayIsDragging && !isDragging ? 0.82 : 1;
+                        const zValue = isDragging
+                          ? 32
+                          : isRemovalCandidate
+                            ? 10
+                            : 2;
+                        const transitionStyle = isDragging
+                          ? "top 0.15s ease, filter 0.2s ease, opacity 0.2s ease"
+                          : "top 0.15s ease, box-shadow 0.25s ease, filter 0.2s ease, opacity 0.2s ease";
+                        const activeStyle = staticCardStyle;
+                        const dragTransformStyle = isDragging
+                          ? { y: 0 }
+                          : undefined;
 
-                      return (
-                        <motion.div
-                          key={placement.id}
-                          drag="y"
-                          dragDirectionLock
-                          dragElastic={0}
-                          dragMomentum={false}
-                          dragSnapToOrigin={false}
-                          dragPropagation={false}
-                          dragConstraints={overlayTimelineRef}
-                          onDragStart={(event, info) =>
-                            handleOverlayDragStart(placement, event, info)
-                          }
-                          onDrag={(event, info) =>
-                            handleOverlayDrag(placement, info)
-                          }
-                          onDragEnd={(event, info) =>
-                            handleOverlayDragEnd(placement, info)
-                          }
-                          whileDrag={{ scale: 1.02 }}
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                          }}
-                          className={cn(
-                            "absolute flex h-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border px-3 py-2 backdrop-blur-sm text-white select-none touch-none [user-select:none] [-webkit-user-select:none] [-webkit-touch-callout:none] pointer-events-auto cursor-grab active:cursor-grabbing transition-all duration-200 ease-out",
-                            isRemovalCandidate && "ring-2 ring-red-400/70"
-                          )}
-                          style={{
-                            ...activeStyle,
-                            ...dragTransformStyle,
-                            ...removalStyle,
-                            zIndex: zValue,
-                            boxShadow: baseShadow,
-                            filter: filterValue,
-                            opacity: opacityValue,
-                            transition: transitionStyle,
-                            willChange: "transform, opacity, filter",
-                          }}
-                        >
-                      {(() => {
-                        const goalLabel = placement.goalName?.trim() || null;
-                        const flameLevel =
-                          placement.type === "PROJECT"
-                            ? normalizeFlameLevel(placement.energy)
-                            : null;
                         return (
-                          <div className="flex w-full items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <span className="block text-sm font-semibold leading-tight text-white break-words">
-                                {placement.name}
-                              </span>
-                            </div>
-                            <div className="flex flex-col items-end justify-start gap-1 text-right self-start">
-                              {goalLabel ? (
-                                <span className="max-w-[180px] truncate text-[9px] font-semibold uppercase tracking-[0.3em] text-white/70">
-                                  {goalLabel}
-                                </span>
-                              ) : null}
-                              {flameLevel ? (
-                                <FlameEmber
-                                  level={flameLevel}
-                                  size="sm"
-                                  className="drop-shadow-[0_0_6px_rgba(0,0,0,0.45)]"
-                                />
-                              ) : null}
-                            </div>
-                          </div>
+                          <motion.div
+                            key={placement.id}
+                            drag="y"
+                            dragDirectionLock
+                            dragElastic={0}
+                            dragMomentum={false}
+                            dragSnapToOrigin={false}
+                            dragPropagation={false}
+                            dragConstraints={overlayTimelineRef}
+                            onDragStart={(event, info) =>
+                              handleOverlayDragStart(placement, event, info)
+                            }
+                            onDrag={(event, info) =>
+                              handleOverlayDrag(placement, info)
+                            }
+                            onDragEnd={(event, info) =>
+                              handleOverlayDragEnd(placement, info)
+                            }
+                            whileDrag={{ scale: 1.02 }}
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
+                            className={cn(
+                              "absolute flex h-full flex-col justify-center overflow-hidden rounded-[var(--schedule-instance-radius)] border px-3 py-2 backdrop-blur-sm text-white select-none touch-none [user-select:none] [-webkit-user-select:none] [-webkit-touch-callout:none] pointer-events-auto cursor-grab active:cursor-grabbing transition-all duration-200 ease-out",
+                              isRemovalCandidate && "ring-2 ring-red-400/70",
+                            )}
+                            style={{
+                              ...activeStyle,
+                              ...dragTransformStyle,
+                              ...removalStyle,
+                              zIndex: zValue,
+                              boxShadow: baseShadow,
+                              filter: filterValue,
+                              opacity: opacityValue,
+                              transition: transitionStyle,
+                              willChange: "transform, opacity, filter",
+                            }}
+                          >
+                            {(() => {
+                              const goalLabel =
+                                placement.goalName?.trim() || null;
+                              const flameLevel =
+                                placement.type === "PROJECT"
+                                  ? normalizeFlameLevel(placement.energy)
+                                  : null;
+                              return (
+                                <div className="flex w-full items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <span className="block text-sm font-semibold leading-tight text-white break-words">
+                                      {placement.name}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-col items-end justify-start gap-1 text-right self-start">
+                                    {goalLabel ? (
+                                      <span className="max-w-[180px] truncate text-[9px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                                        {goalLabel}
+                                      </span>
+                                    ) : null}
+                                    {flameLevel ? (
+                                      <FlameEmber
+                                        level={flameLevel}
+                                        size="sm"
+                                        className="drop-shadow-[0_0_6px_rgba(0,0,0,0.45)]"
+                                      />
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </motion.div>
                         );
-                      })()}
-                        </motion.div>
-                      );
                       })}
                     </DayTimeline>
                     {(() => {
@@ -7355,15 +7361,13 @@ export function Fab({
                           ref={overlayNexusDropRef}
                           type="button"
                           aria-label={
-                            isTrashMode
-                              ? "Remove event"
-                              : "Open Nexus"
+                            isTrashMode ? "Remove event" : "Open Nexus"
                           }
                           className={cn(
                             "absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border bg-gradient-to-br from-[#111111] via-[#0d0d0d] to-[#050505] shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition hover:scale-[1.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
                             isTrashMode
                               ? "border-red-500 text-red-100 hover:border-red-400"
-                              : "border-white/20 text-white hover:ring-white"
+                              : "border-white/20 text-white hover:ring-white",
                           )}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -7372,23 +7376,20 @@ export function Fab({
                             }
                           }}
                         >
-                      {showTrashIcon ? (
-                        <Trash2
-                          className="h-4 w-4"
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <Plus className="h-4 w-4" aria-hidden="true" />
-                      )}
-                    </button>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
+                          {showTrashIcon ? (
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            <Plus className="h-4 w-4" aria-hidden="true" />
+                          )}
+                        </button>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>,
-          document.body
+          document.body,
         )}
       {aiOpen
         ? createPortal(
@@ -7396,39 +7397,37 @@ export function Fab({
               ref={aiOverlayRef}
               className="fixed inset-0 z-[2147483655] flex items-center justify-center overflow-hidden bg-black/80 backdrop-blur-sm p-4"
             >
-                <div className="relative flex h-full max-h-[85vh] w-full max-w-[min(720px,92vw)] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[#020205]/95 text-white shadow-xl">
+              <div className="relative flex h-full max-h-[85vh] w-full max-w-[min(720px,92vw)] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[#020205]/95 text-white shadow-xl">
                 <header className="flex flex-row items-center justify-between border-b border-white/10 px-6 py-4">
                   <div className="flex flex-col gap-1">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.2em] leading-tight text-white">
                       ILAV
                     </p>
-                      <div className="relative flex flex-col gap-1">
-                        <button
-                          ref={scopeToggleRef}
-                          type="button"
-                          onClick={() => setScopeMenuOpen((prev) => !prev)}
+                    <div className="relative flex flex-col gap-1">
+                      <button
+                        ref={scopeToggleRef}
+                        type="button"
+                        onClick={() => setScopeMenuOpen((prev) => !prev)}
                         aria-haspopup="true"
                         aria-expanded={scopeMenuOpen}
-                          className="cursor-pointer text-[9px] uppercase tracking-[0.3em] leading-none text-white/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-                        >
-                          Scope:{" "}
-                          <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/90">
-                            {scopeLabel}
-                          </span>
-                        </button>
-                        <p
-                          className={cn(
-                            "text-[9px] uppercase tracking-[0.3em]",
-                            quotaExceeded
-                              ? "text-amber-400"
-                              : "text-white/60"
-                          )}
-                        >
-                          AI USED: {quotaDisplayPercent}%
-                        </p>
-                        {scopeMenuOpen ? (
-                          <div
-                            ref={scopeMenuRef}
+                        className="cursor-pointer text-[9px] uppercase tracking-[0.3em] leading-none text-white/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+                      >
+                        Scope:{" "}
+                        <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/90">
+                          {scopeLabel}
+                        </span>
+                      </button>
+                      <p
+                        className={cn(
+                          "text-[9px] uppercase tracking-[0.3em]",
+                          quotaExceeded ? "text-amber-400" : "text-white/60",
+                        )}
+                      >
+                        AI USED: {quotaDisplayPercent}%
+                      </p>
+                      {scopeMenuOpen ? (
+                        <div
+                          ref={scopeMenuRef}
                           className="absolute left-0 top-full z-10 mt-2 w-40 rounded-2xl border border-white/20 bg-[#050507]/95 p-2 shadow-lg"
                         >
                           {SCOPE_OPTIONS.map((option) => (
@@ -7449,7 +7448,7 @@ export function Fab({
                                 "block w-full rounded-xl px-3 py-1 text-left text-xs font-semibold uppercase tracking-[0.3em] transition",
                                 option === scopeSelection
                                   ? "border border-white/40 bg-white/10 text-white"
-                                  : "text-white/70 hover:text-white"
+                                  : "text-white/70 hover:text-white",
                               )}
                             >
                               {SCOPE_LABELS[option]}
@@ -7511,7 +7510,8 @@ export function Fab({
                           Monthly AI quota reached
                         </div>
                       ) : null}
-                      {(aiThread.length > 0 || aiResponse?.assistant_message) && (
+                      {(aiThread.length > 0 ||
+                        aiResponse?.assistant_message) && (
                         <section className="space-y-3 pt-2">
                           <div className="flex items-center justify-between">
                             <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">
@@ -7521,25 +7521,31 @@ export function Fab({
                           <div ref={chatLogRef} className="space-y-3">
                             {(() => {
                               const makeKey = (
-                                message: typeof aiThread[number],
-                                fallbackIndex: number
-                              ) => message.id ?? `${message.role}-${message.ts}-${fallbackIndex}`;
+                                message: (typeof aiThread)[number],
+                                fallbackIndex: number,
+                              ) =>
+                                message.id ??
+                                `${message.role}-${message.ts}-${fallbackIndex}`;
 
                               const renderItems: Array<
                                 | {
                                     type: "text";
                                     key: string;
-                                    message: typeof aiThread[number];
+                                    message: (typeof aiThread)[number];
                                   }
                                 | {
                                     type: "proposalGroup";
                                     key: string;
-                                    proposals: typeof aiThread[number][];
+                                    proposals: (typeof aiThread)[number][];
                                     startIndex: number;
                                   }
                               > = [];
 
-                              for (let index = 0; index < aiThread.length; index += 1) {
+                              for (
+                                let index = 0;
+                                index < aiThread.length;
+                                index += 1
+                              ) {
                                 const message = aiThread[index];
 
                                 if (message.kind === "proposal") {
@@ -7555,8 +7561,9 @@ export function Fab({
                                     nextIndex += 1;
                                   }
 
-                                  const keyParts = proposals.map((proposal, offset) =>
-                                    makeKey(proposal, startIndex + offset)
+                                  const keyParts = proposals.map(
+                                    (proposal, offset) =>
+                                      makeKey(proposal, startIndex + offset),
                                   );
 
                                   renderItems.push({
@@ -7583,21 +7590,26 @@ export function Fab({
                                     "flex gap-2 transition",
                                     item.message.role === "user"
                                       ? "ml-auto justify-end max-w-[80%]"
-                                      : "justify-start w-full"
+                                      : "justify-start w-full",
                                   );
 
                                   return (
-                                    <div key={item.key} className={containerClasses}>
+                                    <div
+                                      key={item.key}
+                                      className={containerClasses}
+                                    >
                                       <div
                                         className={cn(
                                           "rounded-[20px] px-4 py-3 text-sm leading-relaxed shadow-[0_10px_30px_rgba(0,0,0,0.35)]",
                                           item.message.role === "user"
                                             ? "border border-white/10 bg-white/10 text-white md:rounded-tl-[4px] md:rounded-bl-[20px]"
-                                            : "border border-white/5 bg-white/5 text-white/90 md:rounded-tr-[4px] md:rounded-bl-[20px]"
+                                            : "border border-white/5 bg-white/5 text-white/90 md:rounded-tr-[4px] md:rounded-bl-[20px]",
                                         )}
                                       >
                                         <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">
-                                          {item.message.role === "user" ? "You" : "ILAV"}
+                                          {item.message.role === "user"
+                                            ? "You"
+                                            : "ILAV"}
                                         </p>
                                         <p className="mt-1 text-sm text-white/90">
                                           {item.message.content}
@@ -7612,57 +7624,79 @@ export function Fab({
                                   "flex gap-2 transition",
                                   firstProposal.role === "user"
                                     ? "ml-auto justify-end max-w-[80%]"
-                                    : "justify-start w-full"
+                                    : "justify-start w-full",
                                 );
 
                                 return (
-                                  <div key={item.key} className={containerClasses}>
+                                  <div
+                                    key={item.key}
+                                    className={containerClasses}
+                                  >
                                     <div className="w-full overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                                       <div className="flex gap-3 snap-x snap-mandatory px-1">
-                                        {item.proposals.map((proposal, proposalIndex) => {
-                                          const proposalSlideKey = makeKey(
-                                            proposal,
-                                            item.startIndex + proposalIndex
-                                          );
+                                        {item.proposals.map(
+                                          (proposal, proposalIndex) => {
+                                            const proposalSlideKey = makeKey(
+                                              proposal,
+                                              item.startIndex + proposalIndex,
+                                            );
 
-                                          return (
-                                            <div
-                                              key={`proposal-slide-${proposalSlideKey}`}
-                                              className="w-full shrink-0 snap-center"
-                                            >
-                                              <ProposalTimelineCard
-                                                message={proposal}
-                                                formState={
-                                                  proposalFormState[proposal.id] ?? {}
-                                                }
-                                                onFieldChange={(field, value) =>
-                                                  handleProposalFieldChange(
-                                                    proposal.id,
+                                            return (
+                                              <div
+                                                key={`proposal-slide-${proposalSlideKey}`}
+                                                className="w-full shrink-0 snap-center"
+                                              >
+                                                <ProposalTimelineCard
+                                                  message={proposal}
+                                                  formState={
+                                                    proposalFormState[
+                                                      proposal.id
+                                                    ] ?? {}
+                                                  }
+                                                  onFieldChange={(
                                                     field,
-                                                    value
-                                                  )
-                                                }
-                                                onSave={() =>
-                                                  handleSaveProposalEdits(proposal)
-                                                }
-                                                onSend={() =>
-                                                  handleSendEditedProposal(proposal)
-                                                }
-                                                opsOpen={opsPreviewOpenById[proposal.id] ?? false}
-                                                onToggleOps={() =>
-                                                  toggleOpsPreview(proposal.id)
-                                                }
-                                                isSending={aiLoading}
-                                                onQueueAiMessage={(prompt) => {
-                                                  void handleRunAi(prompt);
-                                                }}
-                                                onSchedulerOpsOverrideChange={
-                                                  handleSchedulerOpsOverridesChange
-                                                }
-                                              />
-                                            </div>
-                                          );
-                                        })}
+                                                    value,
+                                                  ) =>
+                                                    handleProposalFieldChange(
+                                                      proposal.id,
+                                                      field,
+                                                      value,
+                                                    )
+                                                  }
+                                                  onSave={() =>
+                                                    handleSaveProposalEdits(
+                                                      proposal,
+                                                    )
+                                                  }
+                                                  onSend={() =>
+                                                    handleSendEditedProposal(
+                                                      proposal,
+                                                    )
+                                                  }
+                                                  opsOpen={
+                                                    opsPreviewOpenById[
+                                                      proposal.id
+                                                    ] ?? false
+                                                  }
+                                                  onToggleOps={() =>
+                                                    toggleOpsPreview(
+                                                      proposal.id,
+                                                    )
+                                                  }
+                                                  isSending={aiLoading}
+                                                  onQueueAiMessage={(
+                                                    prompt,
+                                                  ) => {
+                                                    void handleRunAi(prompt);
+                                                  }}
+                                                  onSchedulerOpsOverrideChange={
+                                                    handleSchedulerOpsOverridesChange
+                                                  }
+                                                />
+                                              </div>
+                                            );
+                                          },
+                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -7737,7 +7771,7 @@ export function Fab({
                       disabled={aiLoading || !aiPrompt.trim() || quotaExceeded}
                       className={cn(
                         "rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:cursor-not-allowed disabled:opacity-60",
-                        aiLoading ? "opacity-70" : ""
+                        aiLoading ? "opacity-70" : "",
                       )}
                     >
                       {aiLoading ? "Sending…" : "Send"}
@@ -7746,7 +7780,7 @@ export function Fab({
                 </div>
               </div>
             </div>,
-            document.body
+            document.body,
           )
         : null}
       <FabRescheduleOverlay
@@ -7780,7 +7814,7 @@ type ProposalTimelineCardProps = {
   onQueueAiMessage: (prompt: string) => void;
   onSchedulerOpsOverrideChange: (
     messageId: string,
-    ops: AiSchedulerOp[] | undefined
+    ops: AiSchedulerOp[] | undefined,
   ) => void;
 };
 
@@ -7800,12 +7834,11 @@ function ProposalTimelineCard({
   const overrideDraft = message.overrides?.draft ?? {};
   const baseKeys = Object.keys(baseDraft);
   const overrideOnlyKeys = Object.keys(overrideDraft).filter(
-    (key) => !baseKeys.includes(key)
+    (key) => !baseKeys.includes(key),
   );
   const fieldKeys = Array.from(new Set([...baseKeys, ...overrideOnlyKeys]));
   const [detailsOpen, setDetailsOpen] = useState(fieldKeys.length > 0);
-  const rawOps =
-    message.overrides?.schedulerOps ?? message.ai.intent.ops ?? [];
+  const rawOps = message.overrides?.schedulerOps ?? message.ai.intent.ops ?? [];
   const ops = normalizeSchedulerOps(rawOps);
   const assistantMessage = message.ai.assistant_message ?? "";
   const intentMessage = message.ai.intent.message ?? "";
@@ -7943,7 +7976,9 @@ function ProposalTimelineCard({
       <div className="space-y-4 pb-10">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[8px] uppercase tracking-[0.35em] text-white/60">PROPOSAL</p>
+            <p className="text-[8px] uppercase tracking-[0.35em] text-white/60">
+              PROPOSAL
+            </p>
             <p className="mt-1 text-base font-semibold leading-tight text-white">
               {message.ai.intent.title}
             </p>
@@ -7953,7 +7988,9 @@ function ProposalTimelineCard({
           </span>
         </div>
         {assistantMessage ? (
-          <p className="text-sm leading-relaxed text-white">{assistantMessage}</p>
+          <p className="text-sm leading-relaxed text-white">
+            {assistantMessage}
+          </p>
         ) : null}
         {intentMessage ? (
           <p className="text-[11px] leading-relaxed text-white/70">
@@ -7980,7 +8017,9 @@ function ProposalTimelineCard({
             {fieldKeys.length > 0 ? (
               fieldKeys.map((key) => renderField(key))
             ) : (
-              <p className="text-[11px] text-white/60">No editable fields detected.</p>
+              <p className="text-[11px] text-white/60">
+                No editable fields detected.
+              </p>
             )}
           </div>
         ) : null}
@@ -7992,7 +8031,9 @@ function ProposalTimelineCard({
               className="flex w-full items-center justify-between rounded-xl border border-white/10 px-3 py-2 text-[10px] uppercase tracking-[0.35em] text-white/70 transition hover:border-white/30 hover:text-white"
             >
               <span>Ops preview</span>
-              <span className="text-[10px] text-white/40">{ops.length} ops</span>
+              <span className="text-[10px] text-white/40">
+                {ops.length} ops
+              </span>
             </button>
             {opsOpen ? (
               <div className="space-y-2">
@@ -8024,7 +8065,11 @@ function ProposalTimelineCard({
           >
             {isSending ? "Sending…" : "Send edited to AI"}
           </Button>
-          <Button variant="ghost" onClick={() => onSave(message)} className="w-full sm:w-auto">
+          <Button
+            variant="ghost"
+            onClick={() => onSave(message)}
+            className="w-full sm:w-auto"
+          >
             Save
           </Button>
         </div>
@@ -8055,8 +8100,8 @@ function GoalProposalForm({
   const dueDateKey = fieldKeys.includes("due_date")
     ? "due_date"
     : fieldKeys.includes("dueDate")
-    ? "dueDate"
-    : null;
+      ? "dueDate"
+      : null;
   const hasWhyKey = fieldKeys.includes("why");
   const [manualDueValue, setManualDueValue] = useState("");
   const [manualWhyValue, setManualWhyValue] = useState("");
@@ -8103,7 +8148,9 @@ function GoalProposalForm({
               <div className="flex gap-2">
                 <Input
                   value={getFieldValue("name")}
-                  onChange={(event) => onFieldChange("name", event.target.value)}
+                  onChange={(event) =>
+                    onFieldChange("name", event.target.value)
+                  }
                   placeholder="Name this goal"
                   className={`${inputClassName} flex-1`}
                 />
@@ -8224,8 +8271,8 @@ function ProjectProposalForm({
   const whyFieldKey = fieldKeys.includes("why")
     ? "why"
     : fieldKeys.includes("description")
-    ? "description"
-    : "why";
+      ? "description"
+      : "why";
   const labelClassName =
     "text-[10px] font-semibold uppercase tracking-[0.35em] text-white/60";
   const baseInputClassName =
@@ -8388,7 +8435,7 @@ type DayTypeProposalFormProps = {
   formState: ProposalFormValues;
   onSchedulerOpsOverrideChange: (
     messageId: string,
-    ops: AiSchedulerOp[] | undefined
+    ops: AiSchedulerOp[] | undefined,
   ) => void;
   onQueueAiMessage: (prompt: string) => void;
 };
@@ -8412,7 +8459,7 @@ function DayTypeProposalForm({
     ? (storedOverrideValue as AiSchedulerOp[])
     : undefined;
   const [editedOps, setEditedOps] = useState<AiSchedulerOp[]>(() =>
-    (storedOverrideOps ?? ops).map(cloneSchedulerOp)
+    (storedOverrideOps ?? ops).map(cloneSchedulerOp),
   );
 
   useEffect(() => {
@@ -8426,15 +8473,17 @@ function DayTypeProposalForm({
 
   const previewBlocks = useMemo(
     () => buildDayTypePreviewBlocks(editedOps),
-    [editedOps]
+    [editedOps],
   );
   const previewTimelineBlocks = useMemo<DayType24hPreviewBlock[]>(() => {
     return previewBlocks
       .filter(
-        (block): block is DayType24hPreviewBlock & {
+        (
+          block,
+        ): block is DayType24hPreviewBlock & {
           start_local: string;
           end_local: string;
-        } => Boolean(block.start_local && block.end_local)
+        } => Boolean(block.start_local && block.end_local),
       )
       .map((block) => ({
         id: block.id,
@@ -8450,7 +8499,7 @@ function DayTypeProposalForm({
   const selectedBlock =
     selectedBlockId === null
       ? null
-      : previewBlocks.find((block) => block.id === selectedBlockId) ?? null;
+      : (previewBlocks.find((block) => block.id === selectedBlockId) ?? null);
   const selectedBlockIndex =
     selectedBlock === null
       ? -1
@@ -8466,8 +8515,7 @@ function DayTypeProposalForm({
   }, [previewBlocks, selectedBlockId]);
 
   const dayTypeNameValue = getFieldValue("day_type_name");
-  const labelClass =
-    "text-[10px] uppercase tracking-[0.35em] text-white/60";
+  const labelClass = "text-[10px] uppercase tracking-[0.35em] text-white/60";
   const inputClass =
     "h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-[12px] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0";
 
@@ -8488,8 +8536,8 @@ function DayTypeProposalForm({
       selectedOp.type === "CREATE_DAY_TYPE_TIME_BLOCK"
         ? selectedOp.constraints
         : selectedOp.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL"
-        ? selectedOp.patch.constraints
-        : undefined;
+          ? selectedOp.patch.constraints
+          : undefined;
     if (constraintSource && Object.keys(constraintSource).length > 0) {
       setConstraintsInput(JSON.stringify(constraintSource, null, 2));
     } else {
@@ -8524,7 +8572,7 @@ function DayTypeProposalForm({
 
   const handleTimeChange = (
     field: "start_local" | "end_local",
-    value: string
+    value: string,
   ) => {
     updateSelectedOp((op) => {
       if (op.type === "CREATE_DAY_TYPE_TIME_BLOCK") {
@@ -8603,7 +8651,7 @@ function DayTypeProposalForm({
       setConstraintsError(null);
     } catch (error) {
       setConstraintsError(
-        error instanceof Error ? error.message : "Invalid JSON"
+        error instanceof Error ? error.message : "Invalid JSON",
       );
     }
   };
@@ -8612,20 +8660,20 @@ function DayTypeProposalForm({
     selectedOp?.type === "CREATE_DAY_TYPE_TIME_BLOCK"
       ? selectedOp.label
       : selectedOp?.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL"
-      ? selectedOp.block_label
-      : "";
+        ? selectedOp.block_label
+        : "";
   const selectedStartValue =
     selectedOp?.type === "CREATE_DAY_TYPE_TIME_BLOCK"
       ? selectedOp.start_local
       : selectedOp?.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL"
-      ? selectedOp.patch.start_local ?? selectedBlock?.start_local ?? ""
-      : selectedBlock?.start_local ?? "";
+        ? (selectedOp.patch.start_local ?? selectedBlock?.start_local ?? "")
+        : (selectedBlock?.start_local ?? "");
   const selectedEndValue =
     selectedOp?.type === "CREATE_DAY_TYPE_TIME_BLOCK"
       ? selectedOp.end_local
       : selectedOp?.type === "UPDATE_DAY_TYPE_TIME_BLOCK_BY_LABEL"
-      ? selectedOp.patch.end_local ?? selectedBlock?.end_local ?? ""
-      : selectedBlock?.end_local ?? "";
+        ? (selectedOp.patch.end_local ?? selectedBlock?.end_local ?? "")
+        : (selectedBlock?.end_local ?? "");
 
   return (
     <div className="mx-auto w-full max-w-[520px]">
@@ -8693,7 +8741,10 @@ function DayTypeProposalForm({
                             type="time"
                             value={selectedStartValue}
                             onChange={(event) =>
-                              handleTimeChange("start_local", event.target.value)
+                              handleTimeChange(
+                                "start_local",
+                                event.target.value,
+                              )
                             }
                             placeholder={selectedBlock.start_local}
                             className={inputClass}
@@ -8742,7 +8793,8 @@ function DayTypeProposalForm({
                   NO TIME BLOCKS YET
                 </p>
                 <p className="text-[11px] text-white/70">
-                  I assigned the day type, but haven’t generated the 24-hour blocks.
+                  I assigned the day type, but haven’t generated the 24-hour
+                  blocks.
                 </p>
                 <div className="flex flex-col gap-2 pt-2 sm:flex-row">
                   <Button
@@ -8885,7 +8937,7 @@ function FabNexus({
 
   const formatDateTime = (
     value: string | null,
-    options?: Intl.DateTimeFormatOptions
+    options?: Intl.DateTimeFormatOptions,
   ) => {
     if (!value) return null;
     const date = new Date(value);
@@ -8893,7 +8945,7 @@ function FabNexus({
     try {
       return new Intl.DateTimeFormat(
         undefined,
-        options ?? { dateStyle: "medium", timeStyle: "short" }
+        options ?? { dateStyle: "medium", timeStyle: "short" },
       ).format(date);
     } catch {
       return date.toLocaleString();
@@ -8992,7 +9044,10 @@ function FabNexus({
                 ))}
               </SelectContent>
             </Select>
-            <Select value={filterSkillId ?? ""} onValueChange={handleSkillChange}>
+            <Select
+              value={filterSkillId ?? ""}
+              onValueChange={handleSkillChange}
+            >
               <SelectTrigger
                 aria-label="Filter by skill"
                 className={toolbarSelectClass}
@@ -9063,7 +9118,7 @@ function FabNexus({
                 isCompletedProject
                   ? "border-white/20 bg-white/5 text-white/90 shadow-[0_22px_42px_rgba(0,0,0,0.45)]"
                   : "border-white/5 bg-black/60 text-white/85 hover:bg-black/70",
-                isDisabled && "cursor-not-allowed"
+                isDisabled && "cursor-not-allowed",
               );
               const nameTextClass = "text-white";
               const metaLabelClass =
@@ -9088,7 +9143,7 @@ function FabNexus({
                         <span
                           className={cn(
                             "block line-clamp-2 break-words text-[12px] font-medium leading-snug tracking-wide",
-                            nameTextClass
+                            nameTextClass,
                           )}
                         >
                           {result.name}
@@ -9169,15 +9224,15 @@ function FabRescheduleOverlay({
   if (typeof document === "undefined") return null;
   const combinedErrors = [error, deleteError].filter(
     (message): message is string =>
-      typeof message === "string" && message.length > 0
+      typeof message === "string" && message.length > 0,
   );
   const disableActions = isSaving || isDeleting;
   const deleteLabel =
     target?.type === "HABIT"
       ? "Habit"
       : target?.type === "PROJECT"
-      ? "Project"
-      : "Event";
+        ? "Project"
+        : "Event";
   const handleDeleteClick = () => {
     if (disableActions || !target) return;
     if (!confirmingDelete) {
@@ -9270,14 +9325,14 @@ function FabRescheduleOverlay({
                     disabled={disableActions || !target}
                     className={cn(
                       "bg-red-600 text-white hover:bg-red-500 transition",
-                      confirmingDelete && "border border-white/40 bg-red-700"
+                      confirmingDelete && "border border-white/40 bg-red-700",
                     )}
                   >
                     {isDeleting
                       ? "Deleting…"
                       : confirmingDelete
-                      ? `Confirm delete ${deleteLabel}`
-                      : `Delete ${deleteLabel}`}
+                        ? `Confirm delete ${deleteLabel}`
+                        : `Delete ${deleteLabel}`}
                   </Button>
                   <div className="flex items-center justify-end gap-2">
                     <Button
@@ -9317,6 +9372,6 @@ function FabRescheduleOverlay({
         </motion.div>
       ) : null}
     </AnimatePresence>,
-    document.body
+    document.body,
   );
 }
