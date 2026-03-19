@@ -6,6 +6,7 @@ export const viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  interactiveWidget: "overlays-content",
 };
 
 import "./globals.css";
