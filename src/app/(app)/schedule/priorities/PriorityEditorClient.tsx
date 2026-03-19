@@ -413,6 +413,7 @@ function PriorityItemCard({ type, item }: PriorityItemCardProps) {
   } = useSortable({ id: draggableId });
 
   const stageLabel = item.stage ? `Stage: ${formatEnumLabel(item.stage)}` : null;
+  const goalEmoji = type === "goal" ? item.emoji ?? "🎯" : null;
   const transformStyle = transform ? CSS.Transform.toString(transform) : undefined;
   const style: CSSProperties = {
     touchAction: "none",
@@ -431,7 +432,10 @@ function PriorityItemCard({ type, item }: PriorityItemCardProps) {
       } cursor-grab active:cursor-grabbing`}
     >
       <div>
-        <p className="text-sm font-semibold text-white">{item.name}</p>
+        <div className="flex items-center gap-2">
+          {goalEmoji && <span className="text-base">{goalEmoji}</span>}
+          <p className="text-sm font-semibold text-white">{item.name}</p>
+        </div>
         {stageLabel && <p className="text-xs text-zinc-500">{stageLabel}</p>}
       </div>
       {type === "project" && item.globalRank !== undefined && (

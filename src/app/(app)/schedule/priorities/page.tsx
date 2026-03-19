@@ -39,7 +39,7 @@ export default async function PriorityEditorPage() {
       .is("completed_at", null),
     supabase
       .from("goals")
-      .select("id,name,priority,priority_code,status")
+      .select("id,name,emoji,priority,priority_code,status")
       .neq("status", "COMPLETED"),
   ]);
 
@@ -61,6 +61,7 @@ export default async function PriorityEditorPage() {
   const normalizedGoals: PriorityGoal[] = (goalData ?? []).map((row) => ({
     id: row.id,
     name: (row.name ?? "").trim() || "Untitled goal",
+    emoji: row.emoji ?? null,
     priority: normalizePriority(row.priority ?? row.priority_code),
     stage: null,
   }));

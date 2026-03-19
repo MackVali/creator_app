@@ -26,6 +26,7 @@ import {
   isGoalCodeColumnMissingError,
 } from "@/lib/goals/persistGoalUpdate";
 import { presentUpgrade } from "@/lib/revenuecat/presentUpgrade";
+import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
@@ -720,6 +721,30 @@ export default function GoalsPage() {
     []
   );
 
+  const refreshGoalStatus = useCallback(
+    async (goalId: string) => {
+      if (!goalId) return;
+      try {
+        const statusRow = await getGoalStatusById(goalId);
+        if (!statusRow?.status) return;
+        setGoals((prev) =>
+          prev.map((goal) =>
+            goal.id === goalId
+              ? {
+                  ...goal,
+                  status: goalStatusToStatus(statusRow.status),
+                  updatedAt: statusRow.updatedAt ?? goal.updatedAt,
+                }
+              : goal
+          )
+        );
+      } catch (err) {
+        console.error("Failed to refresh goal status:", err);
+      }
+    },
+    []
+  );
+
   const handleProjectUpdated = useCallback(
     (goalId: string, projectId: string, updates: Partial<Project>) => {
       setGoals((prev) =>
@@ -738,13 +763,14 @@ export default function GoalsPage() {
                 )
               : [
                   ...goal.projects,
-                  buildProjectFromUpdates(projectId, updates),
-                ],
+              buildProjectFromUpdates(projectId, updates),
+            ],
           };
         })
       );
+      void refreshGoalStatus(goalId);
     },
-    [buildProjectFromUpdates]
+    [buildProjectFromUpdates, refreshGoalStatus]
   );
 
   const handleProjectDeleted = useCallback(
@@ -760,8 +786,9 @@ export default function GoalsPage() {
           };
         })
       );
+      void refreshGoalStatus(goalId);
     },
-    []
+    [refreshGoalStatus]
   );
 
   useEffect(() => {
@@ -944,11 +971,7 @@ export default function GoalsPage() {
                     projList.length
                 )
               : 0;
-          const status = g.status
-            ? goalStatusToStatus(g.status)
-            : progress >= 100
-            ? "Completed"
-            : "Active";
+          const status = goalStatusToStatus(g.status);
           const estimatedCompletionAt = projList.reduce<string | null>(
             (latest, project) => {
               const scheduledEnd =
@@ -1125,11 +1148,7 @@ export default function GoalsPage() {
                         projList.length
                     )
                   : 0;
-              const status = g.status
-                ? goalStatusToStatus(g.status)
-                : progress >= 100
-                ? "Completed"
-                : "Active";
+          const status = goalStatusToStatus(g.status);
               const estimatedCompletionAt = projList.reduce<string | null>(
                 (latest, project) => {
                   const scheduledEnd =

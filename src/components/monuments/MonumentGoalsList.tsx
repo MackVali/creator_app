@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import { RoadmapCard } from "@/app/(app)/goals/components/RoadmapCard";
@@ -585,9 +586,6 @@ export function MonumentGoalsList({
                     tasks: normalizedTasks,
                   };
                 });
-                const status = g.status
-                  ? goalStatusToStatus(g.status)
-                  : undefined;
                 let derivedProgress =
                   projList.length > 0
                     ? Math.round(
@@ -596,11 +594,7 @@ export function MonumentGoalsList({
                       )
                     : 0;
                 // Check if ALL projects are completed (progress = 100)
-                const allProjectsCompleted =
-                  projList.length > 0 &&
-                  projList.every((p) => p.progress >= 100);
-                const normalizedStatus =
-                  status ?? (allProjectsCompleted ? "Completed" : "Active");
+                const normalizedStatus = goalStatusToStatus(g.status);
                 if (normalizedStatus === "Completed") {
                   derivedProgress = 100;
                 }
@@ -749,7 +743,6 @@ export function MonumentGoalsList({
             };
           });
 
-          const status = g.status ? goalStatusToStatus(g.status) : undefined;
           let derivedProgress =
             projList.length > 0
               ? Math.round(
@@ -757,8 +750,7 @@ export function MonumentGoalsList({
                     projList.length
                 )
               : 0;
-          const normalizedStatus =
-            status ?? (derivedProgress >= 100 ? "Completed" : "Active");
+          const normalizedStatus = goalStatusToStatus(g.status);
           if (normalizedStatus === "Completed") {
             derivedProgress = 100;
           }
@@ -816,6 +808,30 @@ export function MonumentGoalsList({
     load();
   }, [monumentId, monumentEmoji, decorate]);
 
+  const refreshGoalStatus = useCallback(
+    async (goalId: string) => {
+      if (!goalId) return;
+      try {
+        const statusRow = await getGoalStatusById(goalId);
+        if (!statusRow?.status) return;
+        setGoals((prev) =>
+          prev.map((goal) =>
+            goal.id === goalId
+              ? {
+                  ...goal,
+                  status: goalStatusToStatus(statusRow.status),
+                  updatedAt: statusRow.updatedAt ?? goal.updatedAt,
+                }
+              : goal
+          )
+        );
+      } catch (err) {
+        console.error("Failed to refresh goal status:", err);
+      }
+    },
+    []
+  );
+
   const handleProjectUpdated = useCallback(
     (goalId: string, projectId: string, updates: Partial<Project>) => {
       setGoals((prev) =>
@@ -836,8 +852,9 @@ export function MonumentGoalsList({
           };
         })
       );
+      void refreshGoalStatus(goalId);
     },
-    []
+    [refreshGoalStatus]
   );
 
   const handleProjectDeleted = useCallback(
@@ -853,8 +870,9 @@ export function MonumentGoalsList({
           };
         })
       );
+      void refreshGoalStatus(goalId);
     },
-    []
+    [refreshGoalStatus]
   );
 
   const handleGoalOpenChange = useCallback(
@@ -1004,13 +1022,14 @@ export function MonumentGoalsList({
               key={roadmap.id}
               className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-0"
             >
-              <RoadmapCard
-                roadmap={roadmap}
-                goalCount={roadmapGoalsList.length}
-                goals={roadmapGoalsList}
-                variant="compact"
-                onGoalEdit={handleRoadmapGoalEdit}
-              />
+            <RoadmapCard
+              roadmap={roadmap}
+              goalCount={roadmapGoalsList.length}
+              goals={roadmapGoalsList}
+              variant="compact"
+              onGoalEdit={handleRoadmapGoalEdit}
+              monumentContext
+            />
             </div>
           );
         })}
@@ -1026,6 +1045,7 @@ export function MonumentGoalsList({
               showCreatedAt={false}
               showEmojiPrefix={false}
               variant="compact"
+              monumentContext
               onEdit={() => handleGoalEdit(goal)}
               onProjectUpdated={(projectId, updates) =>
                 handleProjectUpdated(goal.id, projectId, updates)

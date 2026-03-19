@@ -3636,7 +3636,7 @@ export function Fab({
                       <Input
                         id="goal-name"
                         value={goalName}
-                        onChange={(e) => setGoalName(e.target.value)}
+                        onChange={(e) => setGoalName(e.target.value.toUpperCase())}
                         placeholder="Name your GOAL"
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
@@ -3998,7 +3998,7 @@ export function Fab({
                       <Input
                         id="project-name"
                         value={projectName}
-                        onChange={(e) => setProjectName(e.target.value)}
+                        onChange={(e) => setProjectName(e.target.value.toUpperCase())}
                         placeholder="Name your PROJECT"
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
@@ -4519,7 +4519,7 @@ export function Fab({
                       <Input
                         id="task-name"
                         value={taskName}
-                        onChange={(e) => setTaskName(e.target.value)}
+                        onChange={(e) => setTaskName(e.target.value.toUpperCase())}
                         placeholder="Name your TASK"
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
@@ -4878,7 +4878,7 @@ export function Fab({
                       <Input
                         id="habit-name"
                         value={habitName}
-                        onChange={(e) => setHabitName(e.target.value)}
+                        onChange={(e) => setHabitName(e.target.value.toUpperCase())}
                         placeholder="Name your HABIT"
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />

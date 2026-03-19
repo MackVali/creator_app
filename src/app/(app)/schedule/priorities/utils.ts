@@ -34,6 +34,7 @@ export type PriorityGoal = {
   name: string;
   priority: PriorityBucketId;
   stage?: string | null;
+  emoji?: string | null;
 };
 
 export function normalizeStage(value?: string | null): StageId | null {

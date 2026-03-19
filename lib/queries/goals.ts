@@ -70,3 +70,31 @@ export async function getGoalById(goalId: string): Promise<Goal | null> {
     ? { ...data, monumentEmoji: (data as any)?.monument?.emoji ?? null }
     : null;
 }
+
+export async function getGoalStatusById(
+  goalId: string
+): Promise<{ status: string | null; updatedAt: string | null } | null> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { data, error } = await supabase
+    .from("goals")
+    .select("status, updated_at")
+    .eq("id", goalId)
+    .single();
+
+  if (error) {
+    console.error("Error fetching goal status:", error);
+    return null;
+  }
+  if (!data) {
+    return null;
+  }
+
+  return {
+    status: typeof data.status === "string" ? data.status : null,
+    updatedAt: data.updated_at ?? null,
+  };
+}
