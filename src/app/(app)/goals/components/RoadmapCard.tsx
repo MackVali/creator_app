@@ -133,7 +133,7 @@ function DraggableGoalCard({
           <button
             type="button"
             onClick={() => onOpenChange?.(true)}
-            className={`relative flex w-full items-center gap-4 rounded-2xl p-4 text-left text-white transition-all hover:-translate-y-0.5 hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${cardSurfaceClass}`}
+            className={`relative flex w-full items-start gap-3 rounded-2xl p-4 text-left text-white transition-all hover:-translate-y-0.5 hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${cardSurfaceClass}`}
           >
             <div
               className={`pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
@@ -141,8 +141,8 @@ function DraggableGoalCard({
             <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
               {displayEmoji}
             </div>
-            <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-1">
-              <p className="truncate text-sm font-semibold leading-tight text-white">
+            <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-1 pr-1">
+              <p className="line-clamp-2 break-words text-[13px] font-semibold leading-[1.15rem] text-white sm:text-sm">
                 {typeof (goal.emoji ?? goal.monumentEmoji) === "string" &&
                 (goal.emoji ?? goal.monumentEmoji)?.trim().length ? (
                   <span className="mr-2 inline" aria-hidden>
@@ -168,7 +168,7 @@ function DraggableGoalCard({
                 )}
               </div>
             </div>
-            <div className="relative z-10 flex flex-col items-end gap-0.5 whitespace-nowrap text-right text-[11px]">
+            <div className="relative z-10 flex shrink-0 flex-col items-end gap-0.5 whitespace-nowrap pt-0.5 text-right text-[11px]">
               <span className="text-sm font-semibold text-white">
                 {Math.round(Math.min(100, goal.progress))}%
               </span>
