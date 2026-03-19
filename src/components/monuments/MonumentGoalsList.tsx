@@ -31,6 +31,7 @@ type GoalRowWithRelations = GoalRow & {
   due_date?: string | null;
   priority_code?: string | null;
   energy_code?: string | null;
+  emoji?: string | null;
   projects?: {
     id: string;
     name: string;
@@ -308,7 +309,7 @@ async function fetchGoalsWithRelationsForMonument(
   if (!supabase) return [] as GoalRowWithRelations[];
 
   const baseSelect =
-    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date";
+    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date, emoji";
   const selectWithEnumColumns = `
     ${baseSelect},
     projects (
@@ -611,6 +612,7 @@ export function MonumentGoalsList({
                 const base: Goal = {
                   id: g.id,
                   title: g.name,
+                  emoji: g.emoji ?? undefined,
                   priority: mapPriority(goalPrioritySource),
                   energy: mapEnergy(goalEnergySource),
                   progress: derivedProgress,
@@ -767,6 +769,7 @@ export function MonumentGoalsList({
           const base: Goal = {
             id: g.id,
             title: g.name,
+            emoji: g.emoji ?? undefined,
             priority: mapPriority(goalPrioritySource),
             energy: mapEnergy(goalEnergySource),
             progress: derivedProgress,
