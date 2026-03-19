@@ -387,33 +387,89 @@ export default function SkillDetailPage() {
 
   if (loading) {
     return (
-      <main className="px-4 pb-16 pt-10">
-        <div className="mx-auto flex max-w-6xl flex-col gap-10">
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950/80 p-8 shadow-[0_30px_60px_rgba(15,23,42,0.45)]">
-            <div className="flex flex-col items-center gap-6 md:flex-row md:items-center md:gap-10">
-              <Skeleton className="h-28 w-28 rounded-2xl" />
-              <div className="flex w-full flex-1 flex-col gap-4">
-                <Skeleton className="h-6 w-32" />
-                <Skeleton className="h-10 w-64" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-2/3" />
-                <div className="flex flex-wrap gap-3">
-                  <Skeleton className="h-8 w-24 rounded-full" />
-                  <Skeleton className="h-8 w-28 rounded-full" />
-                  <Skeleton className="h-8 w-32 rounded-full" />
+      <main className="px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+          <Skeleton className="h-9 w-28 rounded-full border border-white/10 bg-white/5" />
+
+          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-6 shadow-[0_35px_120px_-45px_rgba(0,0,0,0.82)] sm:p-8">
+            <div className="absolute inset-0">
+              <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.12),_transparent_70%)] blur-3xl" />
+              <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.08),_transparent_65%)] blur-3xl" />
+            </div>
+            <div className="relative flex flex-col gap-8 md:flex-row md:items-center">
+              <div className="flex items-start gap-5">
+                <Skeleton className="h-[88px] w-[88px] rounded-3xl border border-white/10 bg-white/10" />
+                <div className="flex flex-col gap-3">
+                  <Skeleton className="h-6 w-28 rounded-full bg-white/10" />
+                  <Skeleton className="h-10 w-48 bg-white/10 sm:w-64" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
+                    <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
+                    <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+            <div className="relative mt-8 flex flex-wrap gap-2 md:flex-nowrap">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="flex min-w-[140px] flex-1 basis-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
+                >
+                  <Skeleton className="size-6 rounded-full bg-white/10" />
+                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <Skeleton className="h-2 w-20 bg-white/10" />
+                    <Skeleton className="h-3 w-24 bg-white/10" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
 
-          <div className="space-y-4">
-            <Skeleton className="h-6 w-40" />
-            <Skeleton className="h-60 rounded-2xl border border-white/5 bg-slate-900/40" />
-          </div>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+            <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101010] to-[#1a1a1a] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.8)] sm:p-7">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-20 bg-white/10" />
+                  <Skeleton className="h-7 w-52 bg-white/10" />
+                  <Skeleton className="h-4 w-full max-w-md bg-white/10" />
+                </div>
+                <Skeleton className="h-9 w-24 rounded-full bg-white/10" />
+              </div>
+              <div className="mt-6 space-y-3">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <Skeleton key={index} className="h-24 rounded-2xl border border-white/10 bg-white/5" />
+                ))}
+              </div>
+            </section>
 
-          <div className="space-y-4">
-            <Skeleton className="h-6 w-32" />
-            <Skeleton className="h-60 rounded-2xl border border-white/5 bg-slate-900/40" />
+            <section className="space-y-6">
+              <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#070707] via-[#121212] to-[#1c1c1c] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.8)] sm:p-7">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-16 bg-white/10" />
+                  <Skeleton className="h-7 w-44 bg-white/10" />
+                  <Skeleton className="h-4 w-full bg-white/10" />
+                </div>
+                <div className="mt-5 grid gap-3">
+                  <Skeleton className="h-20 rounded-2xl border border-white/10 bg-white/5" />
+                  <Skeleton className="h-20 rounded-2xl border border-white/10 bg-white/5" />
+                </div>
+              </div>
+
+              <Card className="rounded-3xl border-white/10 bg-white/5 shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
+                <CardHeader>
+                  <Skeleton className="h-6 w-28 bg-white/10" />
+                  <Skeleton className="h-4 w-44 bg-white/10" />
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <Skeleton key={index} className="h-8 w-24 rounded-full bg-white/10" />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
           </div>
         </div>
       </main>
