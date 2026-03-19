@@ -79,10 +79,23 @@ function DraggableGoalCard({
   const flameLevel = (goal.energyCode ? goal.energyCode : goal.energy ?? "No")
     .toString()
     .toUpperCase() as FlameLevel;
-  const cardSurfaceClass =
-    "ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]";
+  const allProjectsCompleted =
+    goal.projects.length > 0 &&
+    goal.projects.every(
+      (project) =>
+        project.status === "Done" ||
+        project.stage === "RELEASE" ||
+        Number(project.progress ?? 0) >= 100
+    );
+  const isCompleted = goal.status === "Completed" || allProjectsCompleted;
+  const statusLabel = isCompleted ? "Completed" : goal.status;
+  const cardSurfaceClass = isCompleted
+    ? "border border-emerald-400/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] shadow-[0_18px_38px_-24px_rgba(4,47,39,0.8),inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 ring-emerald-300/50"
+    : "ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]";
   const overlayGlowClass =
-    "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
+    isCompleted
+      ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.18),transparent_60%)]"
+      : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
 
   return (
     <div
@@ -128,6 +141,8 @@ function DraggableGoalCard({
             }
             onDelete={onGoalDelete ? () => onGoalDelete(goal) : undefined}
             monumentContext={monumentContext}
+            completeWhenProjectsDone
+            completionTheme="emerald"
           />
         ) : (
           <button
@@ -138,7 +153,13 @@ function DraggableGoalCard({
             <div
               className={`pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
             />
-            <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
+            <div
+              className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] ${
+                isCompleted
+                  ? "border border-emerald-300/60 bg-emerald-950/40 text-emerald-50"
+                  : "border border-white/10 bg-white/5"
+              }`}
+            >
               {displayEmoji}
             </div>
             <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-1 pr-1">
@@ -151,7 +172,11 @@ function DraggableGoalCard({
                 ) : null}
                 {goal.title}
               </p>
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+              <div
+                className={`flex flex-wrap items-center gap-2 text-[11px] ${
+                  isCompleted ? "text-emerald-50/80" : "text-white/60"
+                }`}
+              >
                 <FlameEmber level={flameLevel} size="xs" />
                 <span className="uppercase tracking-[0.3em]">{goal.energy}</span>
                 <span className="text-white/30">•</span>
@@ -172,8 +197,12 @@ function DraggableGoalCard({
               <span className="text-sm font-semibold text-white">
                 {Math.round(Math.min(100, goal.progress))}%
               </span>
-              <span className="text-xs uppercase tracking-[0.3em] text-white/70">
-                {goal.status}
+              <span
+                className={`text-xs uppercase tracking-[0.3em] ${
+                  isCompleted ? "text-emerald-50/80" : "text-white/70"
+                }`}
+              >
+                {statusLabel}
               </span>
             </div>
           </button>
@@ -638,6 +667,8 @@ function CompactGoalsOverlay({
               ? () => onGoalDelete(selectedGoal)
               : undefined
           }
+          completeWhenProjectsDone
+          completionTheme="emerald"
         />
       ) : (
         <DndContext
@@ -702,6 +733,8 @@ function CompactGoalsOverlay({
         if (!isOpen) setOpenGoalId(null);
       }}
       monumentContext={monumentContext}
+      completeWhenProjectsDone
+      completionTheme="emerald"
     />
   ) : null;
 
