@@ -2723,8 +2723,11 @@ export function Fab({
     }
     return keyboardLift > 24;
   }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
-  const shouldHideOverhangButtons =
+  const shouldLiftActionBar =
     expanded && (isKeyboardVisible || isTextInputFocused);
+  const actionBarBottom = `calc(12px + env(safe-area-inset-bottom, 0px) + ${
+    shouldLiftActionBar ? Math.max(0, keyboardLift) : 0
+  }px)`;
 
   useEffect(() => {
     if (!expanded) return;
@@ -6932,7 +6935,7 @@ export function Fab({
                 </motion.button>
               )}
             </div>
-            {expanded && !shouldHideOverhangButtons
+            {expanded
               ? createPortal(
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9, y: 6 }}
@@ -6946,18 +6949,11 @@ export function Fab({
                     className="pointer-events-auto fixed flex w-[108px] items-center gap-3"
                     style={{
                       left: overhangPos?.left,
-                      top: overhangPos?.top,
                       right: overhangPos ? undefined : 12,
-                      bottom: overhangPos
-                        ? undefined
-                        : "calc(12px + env(safe-area-inset-bottom, 0px))",
+                      bottom: actionBarBottom,
                       zIndex: 2147483651,
                       transition:
-                        "top 0.18s ease, left 0.18s ease, right 0.18s ease, bottom 0.18s ease, transform 0.18s ease",
-                      transform:
-                        expanded && keyboardLift > 0
-                          ? `translateY(${-keyboardLift}px)`
-                          : undefined,
+                        "left 0.18s ease, right 0.18s ease, bottom 0.18s ease",
                     }}
                   >
                     <Button
