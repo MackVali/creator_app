@@ -86,6 +86,7 @@ import {
   type SchedulerModePayload,
 } from "./modes";
 import { selectPracticeContext } from "./practiceContextSelector";
+import type { ConstraintItem } from "./constraints";
 import {
   passesTimeBlockConstraints,
   normalizeSet,
@@ -1348,6 +1349,24 @@ const doesWindowAllowHabitType = (
     return normalizeHabitTypeValue(habit?.habitType) === "PRACTICE";
   }
   return true;
+};
+
+const doesWindowHonorHabitConstraints = (
+  habit: HabitScheduleItem | undefined,
+  windowRecord: WindowLite | null
+) => {
+  if (!windowRecord) return true;
+  if (!habit) return true;
+  if (!doesWindowAllowHabitType(habit, windowRecord)) return false;
+  const constraintItem: ConstraintItem = {
+    habitType: habit.habitType ?? null,
+    skillId: habit.skillId ?? null,
+    skillIds: null,
+    monumentId: null,
+    skillMonumentId: habit.skillMonumentId ?? null,
+    monumentIds: null,
+  };
+  return passesTimeBlockConstraints(constraintItem, windowRecord);
 };
 
 export async function markMissedAndQueue(
@@ -5376,7 +5395,7 @@ async function reserveMandatoryHabitsForDay(params: {
         ? (windowsById.get(instance.window_id) ?? null)
         : null;
       if (!doesWindowMatchHabitLocation(habit, windowRecord)) continue;
-      if (!doesWindowAllowHabitType(habit, windowRecord)) continue;
+      if (!doesWindowHonorHabitConstraints(habit, windowRecord)) continue;
       return true;
     }
     return false;
@@ -6904,7 +6923,10 @@ async function scheduleHabitsForDay(params: {
       }
       continue;
     }
-    const hasWindowTypeMatch = doesWindowAllowHabitType(habit, windowRecord);
+    const hasWindowTypeMatch = doesWindowHonorHabitConstraints(
+      habit,
+      windowRecord
+    );
     if (!hasWindowTypeMatch) {
       if (instance.id && createdThisRun.has(instance.id)) {
         continue;
@@ -7359,7 +7381,7 @@ async function scheduleHabitsForDay(params: {
       existingWindowHasLocation;
     const hasWindowTypeMismatch =
       existingInstance &&
-      !doesWindowAllowHabitType(habit, existingWindowRecord);
+      !doesWindowHonorHabitConstraints(habit, existingWindowRecord);
     if (hasLocationMismatch || hasLocationlessMismatch) {
       const reservation = reservedPlacements?.get(habit.id) ?? null;
       if (reservation && existingInstance?.id) {
@@ -9604,17 +9626,16 @@ function determineConstraintFailureReason(
   window: WindowLite
 ): PlacementReasonCode | null {
   if (window.allowAllHabitTypes === false) {
-    const allowed =
-      window.allowedHabitTypesSet ?? normalizeSet(window.allowedHabitTypes);
-    if (!allowed || allowed.size === 0) {
-      return "ITEM_TYPE_NOT_ALLOWED";
-    }
     const habitType =
       typeof item.habitType === "string"
         ? item.habitType.toUpperCase().trim()
         : null;
-    if (habitType && !allowed.has(habitType)) {
-      return "ITEM_TYPE_NOT_ALLOWED";
+    if (habitType) {
+      const allowed =
+        window.allowedHabitTypesSet ?? normalizeSet(window.allowedHabitTypes);
+      if (!allowed || allowed.size === 0 || !allowed.has(habitType)) {
+        return "ITEM_TYPE_NOT_ALLOWED";
+      }
     }
   }
 
