@@ -2805,7 +2805,13 @@ export async function scheduleBacklog(
   }, 0);
   schedulerDebugSummary.projects.alreadyScheduled = alreadyScheduledCount;
 
+  // Eligible placement queue must preserve canonical global-rank ordering with weight as a secondary tie-breaker.
   queue.sort((a, b) => {
+    const aRank = a.globalRank ?? Number.POSITIVE_INFINITY;
+    const bRank = b.globalRank ?? Number.POSITIVE_INFINITY;
+    if (aRank !== bRank) {
+      return aRank - bRank;
+    }
     if (a.weight !== b.weight) {
       return b.weight - a.weight;
     }
