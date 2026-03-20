@@ -1095,9 +1095,9 @@ export function MonumentGoalsList({
             padding-right: 0;
           }
           .monument-goals-list [data-variant="compact"] {
-            padding: 0.55rem 0.4rem;
+            padding: 0.65rem 0.45rem;
             border-radius: 1rem;
-            min-height: 90px;
+            min-height: 108px;
             aspect-ratio: auto;
           }
           .monument-goals-list [data-variant="compact"] button {
@@ -1113,12 +1113,12 @@ export function MonumentGoalsList({
             font-size: 0.7rem;
           }
           .monument-goals-list [data-variant="compact"] h3 {
-            font-size: 0.45rem;
-            line-height: 1.1;
+            font-size: 0.5rem;
+            line-height: 1.15;
             min-height: 0;
-            max-height: 2.2em;
+            max-height: 3.45em;
             display: -webkit-box;
-            -webkit-line-clamp: 2;
+            -webkit-line-clamp: 3;
             -webkit-box-orient: vertical;
             overflow: hidden;
             text-overflow: ellipsis;
