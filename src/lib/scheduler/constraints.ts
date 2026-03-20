@@ -56,11 +56,11 @@ export function passesTimeBlockConstraints(
 
   // Habit type dimension
   if (!allowAllHabitTypes) {
+    const habitType = item.habitType ? item.habitType.toUpperCase() : null;
+    if (!habitType) return true;
     const allowed =
       window.allowedHabitTypesSet ?? normalizeSet(allowedHabitTypes);
     if (!allowed || allowed.size === 0) return false;
-    const habitType = item.habitType ? item.habitType.toUpperCase() : null;
-    if (!habitType) return true;
     if (!allowed.has(habitType)) return false;
   }
 
