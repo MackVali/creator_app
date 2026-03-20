@@ -1067,7 +1067,7 @@ function useOverhangLT(
 
       const rect = el.getBoundingClientRect();
 
-      const OVERHANG = 12; // vertical overhang only
+      const OVERHANG = 24; // let the controls hang halfway off the panel
       const BTN = 48;
       const GAP = 12;
       const GROUP_W = BTN * 2 + GAP;
@@ -1082,20 +1082,24 @@ function useOverhangLT(
         ) || 0;
 
       // Use visualViewport for mobile keyboard compatibility, fallback to window
+      const viewportOffsetLeft = window.visualViewport?.offsetLeft ?? 0;
+      const viewportOffsetTop = window.visualViewport?.offsetTop ?? 0;
       const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
       const viewportHeight =
         window.visualViewport?.height ?? window.innerHeight;
 
       // Align group's right edge to panel's right (no horizontal overhang).
       let left = Math.round(rect.right - GROUP_W - SHIFT_LEFT);
-      const minLeft = 8;
-      const maxLeft = viewportWidth - GROUP_W - 8;
+      const minLeft = viewportOffsetLeft + 8;
+      const maxLeft = viewportOffsetLeft + viewportWidth - GROUP_W - 8;
       left = Math.min(Math.max(left, minLeft), maxLeft);
 
       let top = Math.round(rect.bottom + OVERHANG - GROUP_H);
-      const maxTop = viewportHeight - safeBottom - GROUP_H - 8;
+      const minTop = viewportOffsetTop + 8;
+      const maxTop =
+        viewportOffsetTop + viewportHeight - safeBottom - GROUP_H - 8;
       top = Math.min(top, maxTop);
-      top = Math.max(top, 8);
+      top = Math.max(top, minTop);
 
       setPos({ left, top });
     };
@@ -1108,6 +1112,7 @@ function useOverhangLT(
     if (listenVisualViewport) {
       if (visualViewport) {
         visualViewport.addEventListener("resize", update);
+        visualViewport.addEventListener("scroll", update);
       } else {
         // Fallback for browsers without visualViewport support
         window.addEventListener("resize", update);
@@ -1120,6 +1125,7 @@ function useOverhangLT(
       if (listenVisualViewport) {
         if (visualViewport) {
           visualViewport.removeEventListener("resize", update);
+          visualViewport.removeEventListener("scroll", update);
         } else {
           window.removeEventListener("resize", update);
         }
@@ -2704,30 +2710,13 @@ export function Fab({
   const DRAG_THRESHOLD_PX = 80;
   const EDGE_SWIPE_ZONE_RATIO = 0.12;
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
-  const overhangPos = useOverhangLT(panelRef, [expanded, selected], {
-    listenVisualViewport: !expanded,
-  });
+  const overhangPos = useOverhangLT(panelRef, [expanded, selected]);
   const [stableViewportHeight, setStableViewportHeight] = useState<
     number | null
   >(null);
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
-  const [isTextInputFocused, setIsTextInputFocused] = useState(false);
-  const isKeyboardVisible = useMemo(() => {
-    if (!expanded) return false;
-    if (keyboardLift <= 12) return false;
-    if (stableViewportHeight && viewportHeight) {
-      const shrink = stableViewportHeight - viewportHeight;
-      return shrink > 80;
-    }
-    return keyboardLift > 24;
-  }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
-  const shouldLiftActionBar =
-    expanded && (isKeyboardVisible || isTextInputFocused);
-  const actionBarBottom = `calc(12px + env(safe-area-inset-bottom, 0px) + ${
-    shouldLiftActionBar ? Math.max(0, keyboardLift) : 0
-  }px)`;
 
   useEffect(() => {
     if (!expanded) return;
@@ -2801,41 +2790,6 @@ export function Fab({
       window.removeEventListener("orientationchange", updateLift);
     };
   }, [expanded, stableSafeBottom]);
-
-  useEffect(() => {
-    if (!expanded) {
-      setIsTextInputFocused(false);
-      return;
-    }
-    const isTextEntryElement = (el: Element | null) => {
-      if (!el) return false;
-      const tag = el.tagName.toLowerCase();
-      const editable = (el as HTMLElement).isContentEditable;
-      return (
-        editable ||
-        tag === "input" ||
-        tag === "textarea" ||
-        tag === "select" ||
-        el instanceof HTMLTextAreaElement ||
-        (el instanceof HTMLInputElement &&
-          el.type !== "button" &&
-          el.type !== "submit" &&
-          el.type !== "reset")
-      );
-    };
-    const handleFocusIn = (event: FocusEvent) => {
-      setIsTextInputFocused(isTextEntryElement(event.target as Element));
-    };
-    const handleFocusOut = () => {
-      setIsTextInputFocused(isTextEntryElement(document.activeElement));
-    };
-    document.addEventListener("focusin", handleFocusIn, true);
-    document.addEventListener("focusout", handleFocusOut, true);
-    return () => {
-      document.removeEventListener("focusin", handleFocusIn, true);
-      document.removeEventListener("focusout", handleFocusOut, true);
-    };
-  }, [expanded]);
 
   useEffect(() => {
     if (!expanded) {
@@ -6949,11 +6903,14 @@ export function Fab({
                     className="pointer-events-auto fixed flex w-[108px] items-center gap-3"
                     style={{
                       left: overhangPos?.left,
+                      top: overhangPos?.top,
                       right: overhangPos ? undefined : 12,
-                      bottom: actionBarBottom,
+                      bottom: overhangPos
+                        ? undefined
+                        : "calc(12px + env(safe-area-inset-bottom, 0px))",
                       zIndex: 2147483651,
                       transition:
-                        "left 0.18s ease, right 0.18s ease, bottom 0.18s ease",
+                        "left 0.18s ease, top 0.18s ease, right 0.18s ease, bottom 0.18s ease",
                     }}
                   >
                     <Button
