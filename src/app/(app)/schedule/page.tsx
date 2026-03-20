@@ -197,8 +197,12 @@ const HABIT_COMPACT_SHADOW =
 const TIMELINE_COMPACT_CARD_HEIGHT_PX = 56;
 const TIMELINE_COMPACT_CARD_SHADOW =
   "0 14px 28px rgba(6, 8, 20, 0.45), 0 8px 18px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
-const TIMELINE_COMPACT_CARD_COMPLETED_SHADOW =
-  "0 16px 32px rgba(2, 32, 24, 0.5), 0 8px 18px rgba(1, 55, 34, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.12)";
+const EMERALD_COMPLETED_CARD_BACKGROUND =
+  "radial-gradient(circle at 18% 16%, rgba(255,255,255,0.28), transparent 26%), radial-gradient(circle at 86% 18%, rgba(110,231,183,0.34), transparent 30%), radial-gradient(circle at 50% 115%, rgba(2,44,34,0.56), transparent 42%), linear-gradient(145deg, rgba(2,44,34,0.98) 0%, rgba(4,94,74,0.97) 18%, rgba(16,185,129,0.94) 52%, rgba(5,150,105,0.98) 74%, rgba(2,62,48,0.98) 100%)";
+const EMERALD_COMPLETED_CARD_SHADOW =
+  "0 26px 52px rgba(1, 46, 36, 0.56), 0 12px 26px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.26), inset 0 -6px 14px rgba(1, 35, 27, 0.34)";
+const EMERALD_COMPLETED_CARD_COMPACT_SHADOW =
+  "0 18px 36px rgba(1, 46, 36, 0.5), 0 10px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.24), inset 0 -5px 10px rgba(1, 35, 27, 0.28)";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
 
@@ -7134,18 +7138,18 @@ export default function SchedulePage() {
                   handleProjectToggle();
                 };
                 const projectBackground = isCompleted
-                  ? "radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)"
+                  ? EMERALD_COMPLETED_CARD_BACKGROUND
                   : "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)";
                 const resolvedProjectShadow = isCompleted
                   ? useCompactProjectShadow
-                    ? TIMELINE_COMPACT_CARD_COMPLETED_SHADOW
-                    : "0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)"
+                    ? EMERALD_COMPLETED_CARD_COMPACT_SHADOW
+                    : EMERALD_COMPLETED_CARD_SHADOW
                   : sharedCardShadow;
                 const projectCardStyle: CSSProperties = {
                   ...sharedCardStyle,
                   boxShadow: resolvedProjectShadow,
                   outline: isCompleted
-                    ? "1px solid rgba(16, 185, 129, 0.55)"
+                    ? "1px solid rgba(110, 231, 183, 0.66)"
                     : sharedCardStyle.outline,
                   background: projectBackground,
                 };
@@ -7348,6 +7352,13 @@ export default function SchedulePage() {
                                   }
                             }
                           >
+                            {isCompleted ? (
+                              <>
+                                <div className="pointer-events-none absolute inset-[1px] rounded-[calc(var(--schedule-instance-radius)-1px)] bg-[linear-gradient(180deg,rgba(255,255,255,0.26)_0%,rgba(255,255,255,0.1)_14%,rgba(255,255,255,0)_36%,rgba(2,44,34,0.12)_100%)] opacity-90" />
+                                <div className="pointer-events-none absolute inset-x-[12%] top-[2px] h-[34%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.34),transparent_72%)] blur-md opacity-90" />
+                                <div className="pointer-events-none absolute inset-x-1.5 bottom-1 h-[26%] rounded-full bg-[linear-gradient(180deg,rgba(2,44,34,0)_0%,rgba(1,30,24,0.38)_100%)]" />
+                              </>
+                            ) : null}
                             {goalRelationText ? (
                               <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
                                 <span className="truncate text-[9px] font-semibold text-white/80">
@@ -7513,11 +7524,11 @@ export default function SchedulePage() {
                                   ? "text-sm font-medium leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
                                   : "text-sm font-medium leading-tight truncate";
                                 const baseTaskClasses =
-                                  "absolute left-0 right-0 flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 py-2 select-none";
+                                  "absolute left-0 right-0 flex items-center justify-between overflow-hidden rounded-[var(--schedule-instance-radius)] px-3 py-2 select-none";
                                 const shinyTaskClasses =
                                   "bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur";
                                 const completedTaskClasses =
-                                  "bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] text-emerald-50 shadow-[0_18px_38px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 backdrop-blur";
+                                  "text-emerald-50 ring-1 ring-emerald-200/70 backdrop-blur";
                                 const fallbackTaskClasses =
                                   "bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]";
                                 const isFallbackCard = kind === "fallback";
@@ -7580,6 +7591,22 @@ export default function SchedulePage() {
                                       ? fallbackTaskClasses
                                       : shinyTaskClasses
                                 }`;
+                                const completedTaskStyle: CSSProperties =
+                                  isCompleted
+                                    ? {
+                                        background:
+                                          EMERALD_COMPLETED_CARD_BACKGROUND,
+                                        boxShadow:
+                                          EMERALD_COMPLETED_CARD_COMPACT_SHADOW,
+                                        outline:
+                                          "1px solid rgba(110, 231, 183, 0.62)",
+                                        outlineOffset: "-1px",
+                                      }
+                                    : {};
+                                const taskCardStyle: CSSProperties = {
+                                  ...tStyle,
+                                  ...completedTaskStyle,
+                                };
                                 const progressValue =
                                   kind === "scheduled"
                                     ? Math.max(
@@ -7679,7 +7706,7 @@ export default function SchedulePage() {
                                         ? " cursor-pointer"
                                         : ""
                                     }`}
-                                    style={tStyle}
+                                    style={taskCardStyle}
                                     onPointerDown={(event) => {
                                       if (!instanceId) return;
                                       const taskInstance =
@@ -7765,6 +7792,13 @@ export default function SchedulePage() {
                                           }
                                     }
                                   >
+                                    {isCompleted ? (
+                                      <>
+                                        <div className="pointer-events-none absolute inset-[1px] rounded-[calc(var(--schedule-instance-radius)-1px)] bg-[linear-gradient(180deg,rgba(255,255,255,0.24)_0%,rgba(255,255,255,0.08)_16%,rgba(255,255,255,0)_38%,rgba(2,44,34,0.12)_100%)] opacity-90" />
+                                        <div className="pointer-events-none absolute inset-x-[16%] top-[2px] h-[32%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.34),transparent_72%)] blur-md opacity-85" />
+                                        <div className="pointer-events-none absolute inset-x-1.5 bottom-1 h-[24%] rounded-full bg-[linear-gradient(180deg,rgba(2,44,34,0)_0%,rgba(1,30,24,0.34)_100%)]" />
+                                      </>
+                                    ) : null}
                                     <div className="flex flex-col">
                                       <motion.span
                                         layoutId={nestedLayoutTokens?.title}
@@ -7859,8 +7893,8 @@ export default function SchedulePage() {
                     ? TIMELINE_COMPACT_CARD_SHADOW
                     : "var(--elev-card)";
                   const completedStandaloneShadow = useCompactStandaloneShadow
-                    ? TIMELINE_COMPACT_CARD_COMPLETED_SHADOW
-                    : "0 22px 42px rgba(4, 47, 39, 0.55)";
+                    ? EMERALD_COMPLETED_CARD_COMPACT_SHADOW
+                    : EMERALD_COMPLETED_CARD_SHADOW;
                   const style: CSSProperties = {
                     ...TIMELINE_CARD_BOUNDS,
                     top: toTimelinePosition(startOffsetMinutes),
@@ -7880,9 +7914,19 @@ export default function SchedulePage() {
                     ? "text-sm font-medium leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
                     : "text-sm font-medium leading-tight truncate";
                   const standaloneBaseClass =
-                    "absolute flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 py-2";
+                    "absolute flex items-center justify-between overflow-hidden rounded-[var(--schedule-instance-radius)] px-3 py-2";
                   const standaloneScheduledClass = `${standaloneBaseClass} text-zinc-100 shadow-[0_12px_28px_rgba(24,24,27,0.35)] bg-[linear-gradient(135deg,_rgba(46,46,52,0.94)_0%,_rgba(58,58,66,0.92)_45%,_rgba(82,82,92,0.88)_100%)]`;
-                  const standaloneCompletedClass = `${standaloneBaseClass} text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)]`;
+                  const standaloneCompletedClass = `${standaloneBaseClass} text-emerald-50 ring-1 ring-emerald-200/70`;
+                  const standaloneCompletedStyle: CSSProperties = isCompleted
+                    ? {
+                        background: EMERALD_COMPLETED_CARD_BACKGROUND,
+                        boxShadow: useCompactStandaloneShadow
+                          ? EMERALD_COMPLETED_CARD_COMPACT_SHADOW
+                          : EMERALD_COMPLETED_CARD_SHADOW,
+                        outline: "1px solid rgba(110, 231, 183, 0.62)",
+                        outlineOffset: "-1px",
+                      }
+                    : {};
                   const standaloneClassName = [
                     isCompleted
                       ? standaloneCompletedClass
@@ -7934,7 +7978,10 @@ export default function SchedulePage() {
                       aria-disabled={!canToggle || isPending}
                       data-completed={isCompleted ? "true" : "false"}
                       className={standaloneClassName}
-                      style={layeredStyle}
+                      style={{
+                        ...layeredStyle,
+                        ...standaloneCompletedStyle,
+                      }}
                       onPointerDown={(event) => {
                         handleInstancePointerDown(
                           event,
@@ -7978,6 +8025,13 @@ export default function SchedulePage() {
                         prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
                       }
                     >
+                      {isCompleted ? (
+                        <>
+                          <div className="pointer-events-none absolute inset-[1px] rounded-[calc(var(--schedule-instance-radius)-1px)] bg-[linear-gradient(180deg,rgba(255,255,255,0.24)_0%,rgba(255,255,255,0.08)_16%,rgba(255,255,255,0)_38%,rgba(2,44,34,0.12)_100%)] opacity-90" />
+                          <div className="pointer-events-none absolute inset-x-[16%] top-[2px] h-[32%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.34),transparent_72%)] blur-md opacity-85" />
+                          <div className="pointer-events-none absolute inset-x-1.5 bottom-1 h-[24%] rounded-full bg-[linear-gradient(180deg,rgba(2,44,34,0)_0%,rgba(1,30,24,0.34)_100%)]" />
+                        </>
+                      ) : null}
                       <div className="flex flex-col">
                         <motion.span
                           layoutId={layoutTokens.title}
