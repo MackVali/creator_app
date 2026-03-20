@@ -9108,7 +9108,10 @@ function FabNexus({
                 result.type === "PROJECT" && result.goalName
                   ? result.goalName.trim()
                   : null;
-              const energyLevel = normalizeFlameLevel(result.energy);
+              const hasProjectRank =
+                result.type === "PROJECT" &&
+                result.global_rank !== null &&
+                result.global_rank !== undefined;
               const cardClassName = cn(
                 "relative flex flex-col gap-1 rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
                 isCompletedProject
@@ -9145,11 +9148,26 @@ function FabNexus({
                           {result.name}
                         </span>
                         {result.type === "PROJECT" &&
-                          result.global_rank !== null &&
-                          result.global_rank !== undefined && (
-                            <span className="text-gray-600 font-bold text-xs leading-none">
-                              #{result.global_rank}
-                            </span>
+                          (hasProjectRank || goalLabel) && (
+                            <div
+                              className={cn(
+                                "min-w-0 items-center gap-x-2 text-[10px] leading-tight text-white/65",
+                                hasProjectRank
+                                  ? "grid grid-cols-[auto_minmax(0,1fr)]"
+                                  : "flex",
+                              )}
+                            >
+                              {hasProjectRank ? (
+                                <span className="font-semibold text-white/75">
+                                  #{result.global_rank}
+                                </span>
+                              ) : null}
+                              {goalLabel ? (
+                                <span className="truncate text-white/60">
+                                  {goalLabel}
+                                </span>
+                              ) : null}
+                            </div>
                           )}
                       </div>
                       <div className="flex items-start justify-end flex-shrink-0">
