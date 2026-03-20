@@ -100,6 +100,16 @@ interface GoalCardProps {
     projectId: string,
     stage: string
   ) => void;
+  completeWhenProjectsDone?: boolean;
+  completionTheme?: "auto" | "emerald" | "monument";
+}
+
+function isProjectComplete(project: Project) {
+  return (
+    project.status === "Done" ||
+    project.stage === "RELEASE" ||
+    Number(project.progress ?? 0) >= 100
+  );
 }
 
 function GoalCardImpl({
@@ -121,6 +131,8 @@ function GoalCardImpl({
   projectDropdownMode = "default",
   onTaskToggleCompletion,
   onProjectHoldComplete,
+  completeWhenProjectsDone = false,
+  completionTheme = "auto",
 }: GoalCardProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = typeof openProp === "boolean";
@@ -263,15 +275,25 @@ function GoalCardImpl({
   }, []);
 
   const energy = energyAccent[goal.energy];
-  const isCompleted = goal.status === "Completed";
+  const allProjectsCompleted =
+    goal.projects.length > 0 && goal.projects.every(isProjectComplete);
+  const isCompleted =
+    goal.status === "Completed" ||
+    (completeWhenProjectsDone && allProjectsCompleted);
+  const resolvedCompletionTheme =
+    completionTheme === "auto"
+      ? monumentContext
+        ? "monument"
+        : "emerald"
+      : completionTheme;
   const completedClass = isCompleted
-    ? monumentContext
+    ? resolvedCompletionTheme === "monument"
       ? variant === "compact"
         ? "monument-completed-compact"
         : "monument-completed"
       : variant === "compact"
-      ? "emerald-completed-compact"
-      : "emerald-completed"
+        ? "emerald-completed-compact"
+        : "emerald-completed"
     : "";
   const completedIconClass = isCompleted
     ? "bg-gradient-to-b from-[#0a5c3a] via-[#0a4f34] to-[#043022] border border-emerald-400/60 text-emerald-100 shadow-[inset_0_2px_0_rgba(255,255,255,0.08)]"
@@ -912,7 +934,9 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     prev.showCreatedAt === next.showCreatedAt &&
     prev.showEmojiPrefix === next.showEmojiPrefix &&
     prev.variant === next.variant &&
-    prev.open === next.open
+    prev.open === next.open &&
+    prev.completeWhenProjectsDone === next.completeWhenProjectsDone &&
+    prev.completionTheme === next.completionTheme
   );
 });
 

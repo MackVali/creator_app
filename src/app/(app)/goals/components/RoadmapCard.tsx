@@ -79,10 +79,23 @@ function DraggableGoalCard({
   const flameLevel = (goal.energyCode ? goal.energyCode : goal.energy ?? "No")
     .toString()
     .toUpperCase() as FlameLevel;
-  const cardSurfaceClass =
-    "ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]";
+  const allProjectsCompleted =
+    goal.projects.length > 0 &&
+    goal.projects.every(
+      (project) =>
+        project.status === "Done" ||
+        project.stage === "RELEASE" ||
+        Number(project.progress ?? 0) >= 100
+    );
+  const isCompleted = goal.status === "Completed" || allProjectsCompleted;
+  const statusLabel = isCompleted ? "Completed" : goal.status;
+  const cardSurfaceClass = isCompleted
+    ? "border border-emerald-400/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] shadow-[0_18px_38px_-24px_rgba(4,47,39,0.8),inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 ring-emerald-300/50"
+    : "ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]";
   const overlayGlowClass =
-    "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
+    isCompleted
+      ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.18),transparent_60%)]"
+      : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
 
   return (
     <div
@@ -97,13 +110,13 @@ function DraggableGoalCard({
       {...attributes}
     >
       {/* Drag Handle */}
-      <div className="absolute -left-8 top-2 z-10 flex items-center gap-2">
-        <span className="text-lg font-black text-white/60 min-w-[2ch] select-none">
+      <div className="absolute -left-7 top-2 z-10 flex items-center gap-1.5">
+        <span className="min-w-[2ch] select-none text-base font-black text-white/55">
           {index + 1}.
         </span>
         <button
           type="button"
-          className="flex items-center justify-center w-5 h-5 rounded-md hover:bg-white/10 transition-colors cursor-grab active:cursor-grabbing"
+          className="flex h-[18px] w-[18px] items-center justify-center rounded-md transition-colors hover:bg-white/10 cursor-grab active:cursor-grabbing"
           {...listeners}
           aria-label="Drag to reorder"
         >
@@ -112,7 +125,7 @@ function DraggableGoalCard({
       </div>
 
       {/* Goal Card with inline expansion */}
-      <div className="ml-6">
+      <div className="ml-5">
         {isOpen ? (
           <GoalCard
             goal={goal}
@@ -128,21 +141,29 @@ function DraggableGoalCard({
             }
             onDelete={onGoalDelete ? () => onGoalDelete(goal) : undefined}
             monumentContext={monumentContext}
+            completeWhenProjectsDone
+            completionTheme="emerald"
           />
         ) : (
           <button
             type="button"
             onClick={() => onOpenChange?.(true)}
-            className={`relative flex w-full items-start gap-3 rounded-2xl p-4 text-left text-white transition-all hover:-translate-y-0.5 hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${cardSurfaceClass}`}
+            className={`relative flex w-full items-start gap-2.5 rounded-[22px] px-3 py-2.5 text-left text-white transition-all hover:-translate-y-0.5 hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${cardSurfaceClass}`}
           >
             <div
               className={`pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
             />
-            <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
+            <div
+              className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] ${
+                isCompleted
+                  ? "border border-emerald-300/60 bg-emerald-950/40 text-emerald-50"
+                  : "border border-white/10 bg-white/5"
+              }`}
+            >
               {displayEmoji}
             </div>
-            <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-1 pr-1">
-              <p className="line-clamp-2 break-words text-[13px] font-semibold leading-[1.15rem] text-white sm:text-sm">
+            <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-0.5 pr-1">
+              <p className="line-clamp-2 break-words text-[12px] font-semibold leading-[1rem] text-white sm:text-[13px]">
                 {typeof (goal.emoji ?? goal.monumentEmoji) === "string" &&
                 (goal.emoji ?? goal.monumentEmoji)?.trim().length ? (
                   <span className="mr-2 inline" aria-hidden>
@@ -151,29 +172,37 @@ function DraggableGoalCard({
                 ) : null}
                 {goal.title}
               </p>
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+              <div
+                className={`flex flex-wrap items-center gap-1.5 text-[10px] ${
+                  isCompleted ? "text-emerald-50/80" : "text-white/60"
+                }`}
+              >
                 <FlameEmber level={flameLevel} size="xs" />
-                <span className="uppercase tracking-[0.3em]">{goal.energy}</span>
+                <span className="uppercase tracking-[0.24em]">{goal.energy}</span>
                 <span className="text-white/30">•</span>
-                <span className="uppercase tracking-[0.3em]">
+                <span className="uppercase tracking-[0.24em]">
                   {goal.priority}
                 </span>
                 {goal.dueDate && (
                   <>
                     <span className="text-white/30">•</span>
-                    <span className="whitespace-nowrap text-[10px] text-white/60 normal-case">
+                    <span className="whitespace-nowrap text-[9px] text-white/60 normal-case">
                       Due {new Date(goal.dueDate).toLocaleDateString()}
                     </span>
                   </>
                 )}
               </div>
             </div>
-            <div className="relative z-10 flex shrink-0 flex-col items-end gap-0.5 whitespace-nowrap pt-0.5 text-right text-[11px]">
-              <span className="text-sm font-semibold text-white">
+            <div className="relative z-10 flex shrink-0 flex-col items-end gap-0.5 whitespace-nowrap pt-0.5 text-right text-[10px]">
+              <span className="text-[13px] font-semibold text-white">
                 {Math.round(Math.min(100, goal.progress))}%
               </span>
-              <span className="text-xs uppercase tracking-[0.3em] text-white/70">
-                {goal.status}
+              <span
+                className={`text-[10px] uppercase tracking-[0.24em] ${
+                  isCompleted ? "text-emerald-50/80" : "text-white/70"
+                }`}
+              >
+                {statusLabel}
               </span>
             </div>
           </button>
@@ -638,6 +667,8 @@ function CompactGoalsOverlay({
               ? () => onGoalDelete(selectedGoal)
               : undefined
           }
+          completeWhenProjectsDone
+          completionTheme="emerald"
         />
       ) : (
         <DndContext
@@ -702,6 +733,8 @@ function CompactGoalsOverlay({
         if (!isOpen) setOpenGoalId(null);
       }}
       monumentContext={monumentContext}
+      completeWhenProjectsDone
+      completionTheme="emerald"
     />
   ) : null;
 
