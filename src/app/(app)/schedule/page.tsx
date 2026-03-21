@@ -200,9 +200,9 @@ const TIMELINE_COMPACT_CARD_SHADOW =
 const EMERALD_COMPLETED_CARD_BACKGROUND =
   "radial-gradient(circle at 18% 16%, rgba(255,255,255,0.28), transparent 26%), radial-gradient(circle at 86% 18%, rgba(110,231,183,0.34), transparent 30%), radial-gradient(circle at 50% 115%, rgba(2,44,34,0.56), transparent 42%), linear-gradient(145deg, rgba(2,44,34,0.98) 0%, rgba(4,94,74,0.97) 18%, rgba(16,185,129,0.94) 52%, rgba(5,150,105,0.98) 74%, rgba(2,62,48,0.98) 100%)";
 const EMERALD_COMPLETED_CARD_SHADOW =
-  "0 26px 52px rgba(1, 46, 36, 0.56), 0 12px 26px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.26), inset 0 -6px 14px rgba(1, 35, 27, 0.34)";
+  "0 26px 52px rgba(1, 46, 36, 0.56), 0 12px 26px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.26), inset 2px 2px 0 rgba(236, 253, 245, 0.12), inset -3px -4px 0 rgba(1, 35, 27, 0.24), inset 0 -6px 14px rgba(1, 35, 27, 0.34)";
 const EMERALD_COMPLETED_CARD_COMPACT_SHADOW =
-  "0 18px 36px rgba(1, 46, 36, 0.5), 0 10px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.24), inset 0 -5px 10px rgba(1, 35, 27, 0.28)";
+  "0 18px 36px rgba(1, 46, 36, 0.5), 0 10px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.24), inset 2px 2px 0 rgba(236, 253, 245, 0.1), inset -2px -3px 0 rgba(1, 35, 27, 0.22), inset 0 -5px 10px rgba(1, 35, 27, 0.28)";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
 
@@ -7354,9 +7354,10 @@ export default function SchedulePage() {
                           >
                             {isCompleted ? (
                               <>
-                                <div className="pointer-events-none absolute inset-[1px] rounded-[calc(var(--schedule-instance-radius)-1px)] bg-[linear-gradient(180deg,rgba(255,255,255,0.26)_0%,rgba(255,255,255,0.1)_14%,rgba(255,255,255,0)_36%,rgba(2,44,34,0.12)_100%)] opacity-90" />
-                                <div className="pointer-events-none absolute inset-x-[12%] top-[2px] h-[34%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.34),transparent_72%)] blur-md opacity-90" />
-                                <div className="pointer-events-none absolute inset-x-1.5 bottom-1 h-[26%] rounded-full bg-[linear-gradient(180deg,rgba(2,44,34,0)_0%,rgba(1,30,24,0.38)_100%)]" />
+                                <div className="pointer-events-none absolute inset-[1px] rounded-[calc(var(--schedule-instance-radius)-1px)] border border-transparent border-t-white/40 border-l-emerald-50/25 border-r-emerald-950/50 border-b-emerald-950/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.2)_0%,rgba(255,255,255,0.08)_16%,rgba(255,255,255,0)_34%,rgba(2,44,34,0.12)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-1px_0_rgba(1,35,27,0.24)] opacity-95" />
+                                <div className="pointer-events-none absolute inset-[3px] rounded-[calc(var(--schedule-instance-radius)-3px)] border border-transparent border-t-white/15 border-l-white/10 border-r-emerald-950/28 border-b-emerald-950/38 opacity-90" />
+                                <div className="pointer-events-none absolute inset-x-[12%] top-[2px] h-[30%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.3),transparent_72%)] blur-md opacity-85" />
+                                <div className="pointer-events-none absolute inset-x-1.5 bottom-1 h-[28%] rounded-full bg-[linear-gradient(180deg,rgba(2,44,34,0)_0%,rgba(1,30,24,0.42)_100%)]" />
                               </>
                             ) : null}
                             {goalRelationText ? (
@@ -7794,9 +7795,10 @@ export default function SchedulePage() {
                                   >
                                     {isCompleted ? (
                                       <>
-                                        <div className="pointer-events-none absolute inset-[1px] rounded-[calc(var(--schedule-instance-radius)-1px)] bg-[linear-gradient(180deg,rgba(255,255,255,0.24)_0%,rgba(255,255,255,0.08)_16%,rgba(255,255,255,0)_38%,rgba(2,44,34,0.12)_100%)] opacity-90" />
-                                        <div className="pointer-events-none absolute inset-x-[16%] top-[2px] h-[32%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.34),transparent_72%)] blur-md opacity-85" />
-                                        <div className="pointer-events-none absolute inset-x-1.5 bottom-1 h-[24%] rounded-full bg-[linear-gradient(180deg,rgba(2,44,34,0)_0%,rgba(1,30,24,0.34)_100%)]" />
+                                        <div className="pointer-events-none absolute inset-[1px] rounded-[calc(var(--schedule-instance-radius)-1px)] border border-transparent border-t-white/40 border-l-emerald-50/25 border-r-emerald-950/50 border-b-emerald-950/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.18)_0%,rgba(255,255,255,0.06)_16%,rgba(255,255,255,0)_34%,rgba(2,44,34,0.12)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(1,35,27,0.24)] opacity-95" />
+                                        <div className="pointer-events-none absolute inset-[3px] rounded-[calc(var(--schedule-instance-radius)-3px)] border border-transparent border-t-white/15 border-l-white/10 border-r-emerald-950/28 border-b-emerald-950/38 opacity-90" />
+                                        <div className="pointer-events-none absolute inset-x-[16%] top-[2px] h-[28%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.28),transparent_72%)] blur-md opacity-80" />
+                                        <div className="pointer-events-none absolute inset-x-1.5 bottom-1 h-[26%] rounded-full bg-[linear-gradient(180deg,rgba(2,44,34,0)_0%,rgba(1,30,24,0.38)_100%)]" />
                                       </>
                                     ) : null}
                                     <div className="flex flex-col">
@@ -8027,9 +8029,10 @@ export default function SchedulePage() {
                     >
                       {isCompleted ? (
                         <>
-                          <div className="pointer-events-none absolute inset-[1px] rounded-[calc(var(--schedule-instance-radius)-1px)] bg-[linear-gradient(180deg,rgba(255,255,255,0.24)_0%,rgba(255,255,255,0.08)_16%,rgba(255,255,255,0)_38%,rgba(2,44,34,0.12)_100%)] opacity-90" />
-                          <div className="pointer-events-none absolute inset-x-[16%] top-[2px] h-[32%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.34),transparent_72%)] blur-md opacity-85" />
-                          <div className="pointer-events-none absolute inset-x-1.5 bottom-1 h-[24%] rounded-full bg-[linear-gradient(180deg,rgba(2,44,34,0)_0%,rgba(1,30,24,0.34)_100%)]" />
+                          <div className="pointer-events-none absolute inset-[1px] rounded-[calc(var(--schedule-instance-radius)-1px)] border border-transparent border-t-white/40 border-l-emerald-50/25 border-r-emerald-950/50 border-b-emerald-950/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.18)_0%,rgba(255,255,255,0.06)_16%,rgba(255,255,255,0)_34%,rgba(2,44,34,0.12)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),inset_0_-1px_0_rgba(1,35,27,0.24)] opacity-95" />
+                          <div className="pointer-events-none absolute inset-[3px] rounded-[calc(var(--schedule-instance-radius)-3px)] border border-transparent border-t-white/15 border-l-white/10 border-r-emerald-950/28 border-b-emerald-950/38 opacity-90" />
+                          <div className="pointer-events-none absolute inset-x-[16%] top-[2px] h-[28%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.28),transparent_72%)] blur-md opacity-80" />
+                          <div className="pointer-events-none absolute inset-x-1.5 bottom-1 h-[26%] rounded-full bg-[linear-gradient(180deg,rgba(2,44,34,0)_0%,rgba(1,30,24,0.38)_100%)]" />
                         </>
                       ) : null}
                       <div className="flex flex-col">
