@@ -3739,6 +3739,9 @@ export async function scheduleBacklog(
     if (durationMin !== item.duration_min) {
       item.duration_min = durationMin;
     }
+    const projectGoalMonumentId = getProjectGoalMonumentId(item.id);
+    const projectGoalMonumentIds =
+      projectGoalMonumentId !== null ? [projectGoalMonumentId] : null;
     // Create window availability for project placement (fresh per project)
     const projectWindowAvailability = new Map<
       string,
@@ -3884,7 +3887,8 @@ export async function scheduleBacklog(
         {
           ...item,
           skillIds: getProjectSkillIds(item.id),
-          monumentId: getProjectGoalMonumentId(item.id),
+          monumentId: projectGoalMonumentId,
+          monumentIds: projectGoalMonumentIds,
         },
         timeZone,
         {

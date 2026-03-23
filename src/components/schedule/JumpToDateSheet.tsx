@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   CalendarDays,
@@ -1252,6 +1253,17 @@ export function JumpToDateSheet({
     selectedDayTypeId,
   ]);
 
+  const assignedDayType = useMemo(
+    () => dayTypes.find((dayType) => dayType.id === assignmentDayTypeId) ?? null,
+    [assignmentDayTypeId, dayTypes]
+  );
+
+  const showAssignmentOverrideWarning = Boolean(
+    assignmentDayTypeId &&
+      defaultDayTypeForSelection &&
+      assignmentDayTypeId !== defaultDayTypeForSelection.id
+  );
+
   const activeDayTypeId =
     assignmentDayTypeId ?? paintDayType?.id ?? selectedDayTypeId ?? null;
 
@@ -2174,6 +2186,16 @@ export function JumpToDateSheet({
                         </div>
                       </div>
                     </div>
+                    {showAssignmentOverrideWarning ? (
+                      <div className="rounded-lg border border-amber-200/40 bg-amber-200/10 px-3 py-2 text-[11px] sm:text-[12px] text-amber-100 shadow-[0_12px_30px_rgba(0,0,0,0.4)]">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-200" />
+                          <p className="text-[11px] sm:text-[12px] leading-relaxed">
+                            This date is using an assigned custom day type override{assignedDayType?.name ? ` ("${assignedDayType.name}")` : ""}, so edits to the default day type will not affect it until the override is removed or replaced.
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="rounded-md border border-white/10 bg-white/5 p-2.5 sm:p-3 space-y-1.5">
                       <div className="flex items-center justify-between text-[11px] sm:text-sm font-semibold uppercase tracking-[0.12em] text-white/70">
                         <span>Time blocks</span>
@@ -2288,9 +2310,11 @@ export function JumpToDateSheet({
                                 </span>
                               </div>
                             );
+                            const constraintDayTypeId =
+                              paintDayType?.id ?? activeDayTypeId;
                             const constraintKey =
-                              activeDayTypeId && block.id
-                                ? `${activeDayTypeId}:${block.id}`
+                              constraintDayTypeId && block.id
+                                ? `${constraintDayTypeId}:${block.id}`
                                 : null;
                             const allowAllHabits =
                               constraintKey

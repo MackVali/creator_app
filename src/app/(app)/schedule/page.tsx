@@ -6883,7 +6883,11 @@ export default function SchedulePage() {
 
               return (
                 <motion.div
-                  key={`habit-${placement.habitId}-${dayViewDateKey}`}
+                  key={
+                    placement.instanceId
+                      ? `habit-${placement.instanceId}`
+                      : `habit-${placement.habitId}-${dayViewDateKey}-${placement.startMinute}-${placement.endMinute}`
+                  }
                   layout="position"
                   layoutId={habitLayoutTokens?.card}
                   className={clsx(
