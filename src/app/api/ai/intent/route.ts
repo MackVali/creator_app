@@ -21,6 +21,8 @@ import {
 } from "@/lib/ai/usage";
 import type { AiScope, AiThreadPayload } from "@/lib/types/ai";
 
+export const runtime = "nodejs";
+
 const FALLBACK_TIME_ZONE = "America/Chicago";
 const AI_INTENT_TIMEOUT_MS = 45_000;
 

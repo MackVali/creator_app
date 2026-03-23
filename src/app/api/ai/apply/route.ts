@@ -19,6 +19,8 @@ const BASE_INTENT_SCHEMA = z.object({
   message: z.string(),
 });
 
+export const runtime = "nodejs";
+
 const DRAFT_CREATE_GOAL_SCHEMA = BASE_INTENT_SCHEMA.extend({
   type: z.literal("DRAFT_CREATE_GOAL"),
   draft: z.object({
