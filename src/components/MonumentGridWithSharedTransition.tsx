@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
-import { AnimatePresence, motion, type PanInfo } from "framer-motion";
+import { useState, useEffect, useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import {
@@ -19,16 +19,6 @@ interface MonumentGridProps {
   monuments: Monument[];
   showNewCard?: boolean;
 }
-
-const GRID_PAGE_SIZE = 8;
-const SWIPE_CONFIDENCE_THRESHOLD = 1000;
-const SWIPE_OFFSET_THRESHOLD = 120;
-
-type GridItem =
-  | { type: "monument"; id: string; monument: Monument }
-  | { type: "new"; id: "new-monument" };
-
-const clampPage = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 export function MonumentGridWithSharedTransition({
   monuments,
@@ -88,246 +78,44 @@ export function MonumentGridWithSharedTransition({
     );
   }
 
-  const gridItems = useMemo<GridItem[]>(() => {
-    const base = monuments.map((monument) => ({
-      type: "monument" as const,
-      id: monument.id,
-      monument,
-    }));
-
-    if (allowNewMonumentCard) {
-      base.push({ type: "new" as const, id: "new-monument" });
-    }
-
-    return base;
-  }, [monuments, allowNewMonumentCard]);
-
-  if (isEmpty) {
-    return (
+  return (
+    <div>
       <div className="grid grid-cols-4 gap-1">
-        {Array.from({ length: 3 }, (_, index) => (
-          <button
-            key={`empty-${index}`}
-            data-tour="new-monument"
-            onClick={openDialog}
-            className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
-          >
-            <div className="mb-1 text-lg opacity-60">🏛️</div>
-            <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight text-zinc-500">
-              NEW MONUMENT
-            </h3>
-          </button>
-        ))}
+        {isEmpty
+          ? Array.from({ length: 3 }, (_, index) => (
+              <button
+                key={`empty-${index}`}
+                data-tour="new-monument"
+                onClick={openDialog}
+                className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
+              >
+                <div className="mb-1 text-lg opacity-60">🏛️</div>
+                <h3 className="w-full break-words text-center text-[10px] font-semibold leading-tight text-zinc-500">
+                  NEW MONUMENT
+                </h3>
+              </button>
+            ))
+          : monuments.map((m) => (
+              <motion.button
+                key={m.id}
+                layoutId={`card-${m.id}`}
+                onClick={() => setActiveId(m.id)}
+                className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
+              >
+                <motion.div layoutId={`emoji-${m.id}`} className="mb-1 text-lg">
+                  {m.emoji ?? "\uD83C\uDFDB\uFE0F"}
+                </motion.div>
+                <motion.h3
+                  layoutId={`title-${m.id}`}
+                  className="w-full break-words text-center text-[10px] font-semibold leading-tight"
+                >
+                  {m.title}
+                </motion.h3>
+                <p className="mt-0.5 text-[9px] text-zinc-500">{m.stats}</p>
+              </motion.button>
+            ))}
         {allowNewMonumentCard && renderNewMonumentCard()}
       </div>
-    );
-  }
-
-  const pageCount = Math.max(1, Math.ceil(gridItems.length / GRID_PAGE_SIZE));
-  const [page, setPage] = useState(0);
-  const [direction, setDirection] = useState(0);
-
-  useEffect(() => {
-    setPage((current) => clampPage(current, 0, pageCount - 1));
-  }, [pageCount]);
-
-  const paginate = (delta: number) => {
-    setPage((current) => {
-      const nextPage = clampPage(current + delta, 0, pageCount - 1);
-      if (nextPage === current) return current;
-      setDirection(delta);
-      return nextPage;
-    });
-  };
-
-  const swipePower = (offset: number, velocity: number) => Math.abs(offset) * velocity;
-
-  const handleDragEnd = (_: MouseEvent | TouchEvent, info: PanInfo) => {
-    const swipe = swipePower(info.offset.x, info.velocity.x);
-    if (swipe < -SWIPE_CONFIDENCE_THRESHOLD || info.offset.x < -SWIPE_OFFSET_THRESHOLD) {
-      paginate(1);
-    } else if (
-      swipe > SWIPE_CONFIDENCE_THRESHOLD ||
-      info.offset.x > SWIPE_OFFSET_THRESHOLD
-    ) {
-      paginate(-1);
-    }
-  };
-
-  const pageVariants = {
-    enter: (dir: number) => ({
-      x: dir > 0 ? 300 : -300,
-      opacity: 0,
-    }),
-    center: { x: 0, opacity: 1 },
-    exit: (dir: number) => ({
-      x: dir < 0 ? 300 : -300,
-      opacity: 0,
-    }),
-  };
-
-  const currentPageItems = gridItems.slice(page * GRID_PAGE_SIZE, (page + 1) * GRID_PAGE_SIZE);
-
-  return (
-    <div>
-      <div className="relative overflow-hidden">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={page}
-            custom={direction}
-            variants={pageVariants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            drag={pageCount > 1 ? "x" : undefined}
-            dragConstraints={{ left: 0, right: 0 }}
-            dragElastic={0.35}
-            onDragEnd={handleDragEnd}
-            whileTap={pageCount > 1 ? { cursor: "grabbing" } : undefined}
-            className="grid grid-cols-4 gap-1"
-          >
-            {currentPageItems.map((item) =>
-              item.type === "monument" ? (
-                <motion.button
-                  key={item.id}
-                  layoutId={`card-${item.id}`}
-                  onClick={() => setActiveId(item.id)}
-                  className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
-                >
-                  <motion.div layoutId={`emoji-${item.id}`} className="mb-1 text-lg">
-                    {item.monument.emoji ?? "\uD83C\uDFDB\uFE0F"}
-                  </motion.div>
-                  <motion.h3
-                    layoutId={`title-${item.id}`}
-                    className="w-full break-words text-center text-[10px] font-semibold leading-tight"
-                  >
-                    {item.monument.title}
-                  </motion.h3>
-                  <p className="mt-0.5 text-[9px] text-zinc-500">{item.monument.stats}</p>
-                </motion.button>
-              ) : (
-                <div key={item.id}>{renderNewMonumentCard()}</div>
-              )
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </div>
-    );
-  }
-
-  const pages = useMemo(() => {
-    if (gridItems.length === 0) {
-      return [];
-    }
-    const chunks: GridItem[][] = [];
-    for (let index = 0; index < gridItems.length; index += GRID_PAGE_SIZE) {
-      chunks.push(gridItems.slice(index, index + GRID_PAGE_SIZE));
-    }
-    return chunks;
-  }, [gridItems]);
-
-  const pageCount = Math.max(1, pages.length);
-  const [page, setPage] = useState(0);
-
-  useEffect(() => {
-    setPage((current) => clampPage(current, 0, pageCount - 1));
-  }, [pageCount]);
-
-  const paginate = (delta: number) => {
-    setPage((current) => {
-      const nextPage = clampPage(current + delta, 0, pageCount - 1);
-      if (nextPage === current) return current;
-    return nextPage;
-  });
-};
-
-  const swipePower = (offset: number, velocity: number) => Math.abs(offset) * velocity;
-
-  const handleDragEnd = (_: MouseEvent | TouchEvent, info: PanInfo) => {
-    const swipe = swipePower(info.offset.x, info.velocity.x);
-    if (swipe < -SWIPE_CONFIDENCE_THRESHOLD || info.offset.x < -SWIPE_OFFSET_THRESHOLD) {
-      paginate(1);
-    } else if (
-      swipe > SWIPE_CONFIDENCE_THRESHOLD ||
-      info.offset.x > SWIPE_OFFSET_THRESHOLD
-    ) {
-      paginate(-1);
-    }
-  };
-
-  return (
-    <div>
-      <div className="overflow-hidden">
-        <motion.div
-          drag={pageCount > 1 ? "x" : undefined}
-          dragConstraints={{ left: 0, right: 0 }}
-          dragElastic={0.15}
-          onDragEnd={handleDragEnd}
-          whileTap={pageCount > 1 ? { cursor: "grabbing" } : undefined}
-          animate={{ x: `-${page * 100}%` }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="flex"
-        >
-          {pages.map((pageItems, pageIndex) => (
-            <div
-              key={`page-${pageIndex}`}
-              className="grid flex-shrink-0 grid-cols-4 gap-1"
-              style={{ width: "100%" }}
-            >
-              {pageItems.map((item) =>
-                item.type === "monument" ? (
-                  <motion.button
-                    layoutId={`card-${item.id}`}
-                    key={item.id}
-                    onClick={() => setActiveId(item.id)}
-                    className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
-                  >
-                    <motion.div layoutId={`emoji-${item.id}`} className="mb-1 text-lg">
-                      {item.monument.emoji ?? "\uD83C\uDFDB\uFE0F"}
-                    </motion.div>
-                    <motion.h3
-                      layoutId={`title-${item.id}`}
-                      className="w-full break-words text-center text-[10px] font-semibold leading-tight"
-                    >
-                      {item.monument.title}
-                    </motion.h3>
-                    <p className="mt-0.5 text-[9px] text-zinc-500">{item.monument.stats}</p>
-                  </motion.button>
-                ) : (
-                  <div key={item.id}>{renderNewMonumentCard()}</div>
-                )
-              )}
-            </div>
-          ))}
-        </motion.div>
-      </div>
-
-      {pageCount > 1 && (
-        <div className="mt-2 flex items-center justify-center gap-2">
-          {Array.from({ length: pageCount }).map((_, index) => (
-            <span
-              key={`page-${index}`}
-              className={`h-1.5 w-10 rounded-full transition ${
-                index === page ? "bg-white" : "bg-white/30"
-              }`}
-            />
-          ))}
-        </div>
-      )}
-
-      {pageCount > 1 && (
-        <div className="mt-2 flex items-center justify-center gap-2">
-          {Array.from({ length: pageCount }).map((_, index) => (
-            <span
-              key={`page-${index}`}
-              className={`h-1.5 w-10 rounded-full transition ${
-                index === page ? "bg-white" : "bg-white/30"
-              }`}
-            />
-          ))}
-        </div>
-      )}
 
       <AnimatePresence>
         {!isEmpty && selected && (
