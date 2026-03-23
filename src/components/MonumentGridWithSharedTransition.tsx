@@ -123,6 +123,99 @@ export function MonumentGridWithSharedTransition({
     );
   }
 
+  const pageCount = Math.max(1, Math.ceil(gridItems.length / GRID_PAGE_SIZE));
+  const [page, setPage] = useState(0);
+  const [direction, setDirection] = useState(0);
+
+  useEffect(() => {
+    setPage((current) => clampPage(current, 0, pageCount - 1));
+  }, [pageCount]);
+
+  const paginate = (delta: number) => {
+    setPage((current) => {
+      const nextPage = clampPage(current + delta, 0, pageCount - 1);
+      if (nextPage === current) return current;
+      setDirection(delta);
+      return nextPage;
+    });
+  };
+
+  const swipePower = (offset: number, velocity: number) => Math.abs(offset) * velocity;
+
+  const handleDragEnd = (_: MouseEvent | TouchEvent, info: PanInfo) => {
+    const swipe = swipePower(info.offset.x, info.velocity.x);
+    if (swipe < -SWIPE_CONFIDENCE_THRESHOLD || info.offset.x < -SWIPE_OFFSET_THRESHOLD) {
+      paginate(1);
+    } else if (
+      swipe > SWIPE_CONFIDENCE_THRESHOLD ||
+      info.offset.x > SWIPE_OFFSET_THRESHOLD
+    ) {
+      paginate(-1);
+    }
+  };
+
+  const pageVariants = {
+    enter: (dir: number) => ({
+      x: dir > 0 ? 300 : -300,
+      opacity: 0,
+    }),
+    center: { x: 0, opacity: 1 },
+    exit: (dir: number) => ({
+      x: dir < 0 ? 300 : -300,
+      opacity: 0,
+    }),
+  };
+
+  const currentPageItems = gridItems.slice(page * GRID_PAGE_SIZE, (page + 1) * GRID_PAGE_SIZE);
+
+  return (
+    <div>
+      <div className="relative overflow-hidden">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={page}
+            custom={direction}
+            variants={pageVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            drag={pageCount > 1 ? "x" : undefined}
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.35}
+            onDragEnd={handleDragEnd}
+            whileTap={pageCount > 1 ? { cursor: "grabbing" } : undefined}
+            className="grid grid-cols-4 gap-1"
+          >
+            {currentPageItems.map((item) =>
+              item.type === "monument" ? (
+                <motion.button
+                  key={item.id}
+                  layoutId={`card-${item.id}`}
+                  onClick={() => setActiveId(item.id)}
+                  className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
+                >
+                  <motion.div layoutId={`emoji-${item.id}`} className="mb-1 text-lg">
+                    {item.monument.emoji ?? "\uD83C\uDFDB\uFE0F"}
+                  </motion.div>
+                  <motion.h3
+                    layoutId={`title-${item.id}`}
+                    className="w-full break-words text-center text-[10px] font-semibold leading-tight"
+                  >
+                    {item.monument.title}
+                  </motion.h3>
+                  <p className="mt-0.5 text-[9px] text-zinc-500">{item.monument.stats}</p>
+                </motion.button>
+              ) : (
+                <div key={item.id}>{renderNewMonumentCard()}</div>
+              )
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    );
+  }
+
   const pages = useMemo(() => {
     if (gridItems.length === 0) {
       return [];
@@ -209,6 +302,19 @@ export function MonumentGridWithSharedTransition({
           ))}
         </motion.div>
       </div>
+
+      {pageCount > 1 && (
+        <div className="mt-2 flex items-center justify-center gap-2">
+          {Array.from({ length: pageCount }).map((_, index) => (
+            <span
+              key={`page-${index}`}
+              className={`h-1.5 w-10 rounded-full transition ${
+                index === page ? "bg-white" : "bg-white/30"
+              }`}
+            />
+          ))}
+        </div>
+      )}
 
       {pageCount > 1 && (
         <div className="mt-2 flex items-center justify-center gap-2">
