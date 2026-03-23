@@ -303,9 +303,9 @@ function mapWindowRecord(record: WindowRecord): WindowLite {
     location_context_name: label,
     window_kind: normalizeWindowKind(record.window_kind),
     dayTypeTimeBlockId: record.day_type_time_block_id ?? null,
-    allowAllHabitTypes: record.allow_all_habit_types !== false,
-    allowAllSkills: record.allow_all_skills !== false,
-    allowAllMonuments: record.allow_all_monuments !== false,
+    allowAllHabitTypes: record.allow_all_habit_types === true,
+    allowAllSkills: record.allow_all_skills === true,
+    allowAllMonuments: record.allow_all_monuments === true,
     allowedHabitTypes,
     allowedSkillIds,
     allowedMonumentIds,
@@ -801,9 +801,9 @@ export async function getWindowsForDate_v2(
       const locationLabel =
         row.location_context?.label ?? (locationValue ? locationValue : null);
 
-      const allowAllHabitTypes = row.allow_all_habit_types !== false;
-      const allowAllSkills = row.allow_all_skills !== false;
-      const allowAllMonuments = row.allow_all_monuments !== false;
+      const allowAllHabitTypes = row.allow_all_habit_types === true;
+      const allowAllSkills = row.allow_all_skills === true;
+      const allowAllMonuments = row.allow_all_monuments === true;
       const dttbId = (row as { id?: string | null }).id ?? null;
 
       return {

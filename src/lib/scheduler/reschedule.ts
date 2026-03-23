@@ -2805,7 +2805,13 @@ export async function scheduleBacklog(
   }, 0);
   schedulerDebugSummary.projects.alreadyScheduled = alreadyScheduledCount;
 
+  // Eligible placement queue must preserve canonical global-rank ordering with weight as a secondary tie-breaker.
   queue.sort((a, b) => {
+    const aRank = a.globalRank ?? Number.POSITIVE_INFINITY;
+    const bRank = b.globalRank ?? Number.POSITIVE_INFINITY;
+    if (aRank !== bRank) {
+      return aRank - bRank;
+    }
     if (a.weight !== b.weight) {
       return b.weight - a.weight;
     }
@@ -3733,6 +3739,9 @@ export async function scheduleBacklog(
     if (durationMin !== item.duration_min) {
       item.duration_min = durationMin;
     }
+    const projectGoalMonumentId = getProjectGoalMonumentId(item.id);
+    const projectGoalMonumentIds =
+      projectGoalMonumentId !== null ? [projectGoalMonumentId] : null;
     // Create window availability for project placement (fresh per project)
     const projectWindowAvailability = new Map<
       string,
@@ -3878,7 +3887,8 @@ export async function scheduleBacklog(
         {
           ...item,
           skillIds: getProjectSkillIds(item.id),
-          monumentId: getProjectGoalMonumentId(item.id),
+          monumentId: projectGoalMonumentId,
+          monumentIds: projectGoalMonumentIds,
         },
         timeZone,
         {
