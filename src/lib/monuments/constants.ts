@@ -1,1 +1,1 @@
-export const MAX_MONUMENTS = 8;
+export const MAX_MONUMENTS = 16;
