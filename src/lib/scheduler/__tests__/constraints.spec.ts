@@ -16,6 +16,30 @@ describe("passesTimeBlockConstraints", () => {
     expect(result).toBe(true);
   });
 
+  it("allows RELAXER habits in BREAK windows", () => {
+    const result = passesTimeBlockConstraints(
+      { habitType: "RELAXER" },
+      { window_kind: "BREAK" }
+    );
+    expect(result).toBe(true);
+  });
+
+  it("rejects non-RELAXER habits in BREAK windows", () => {
+    const result = passesTimeBlockConstraints(
+      { habitType: "HABIT" },
+      { window_kind: "BREAK" }
+    );
+    expect(result).toBe(false);
+  });
+
+  it("rejects projects from BREAK windows", () => {
+    const result = passesTimeBlockConstraints(
+      { isProject: true },
+      { window_kind: "BREAK" }
+    );
+    expect(result).toBe(false);
+  });
+
   it("fails when habit whitelist empty and allow_all_habit_types is false", () => {
     const result = passesTimeBlockConstraints(
       { habitType: "HABIT" },

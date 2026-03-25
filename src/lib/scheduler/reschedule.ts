@@ -2365,12 +2365,12 @@ export async function scheduleBacklog(
       reuseInstanceByProject.delete(projectId);
     }
   }
-  const keptInstances = [...dedupe.keepers].filter(
+  let keptInstances = [...dedupe.keepers].filter(
     (inst) => !invalidatedInstanceIds.has(inst.id)
   );
 
   // Split kept instances: only locked PROJECT instances should be blockers before HABIT_PASS_START
-  const keptLockedProjects = keptInstances.filter(
+  let keptLockedProjects = keptInstances.filter(
     (inst) => inst.source_type === "PROJECT" && inst.locked === true
   );
   const keptNonLockedProjects = keptInstances.filter(
@@ -2757,7 +2757,7 @@ export async function scheduleBacklog(
   for (const inst of keptNonProjectInstances) {
     registerInstanceForOffsets(inst);
   }
-  const baseBlockers: ScheduleInstance[] = [
+  let baseBlockers: ScheduleInstance[] = [
     ...keptLockedProjects,
     ...keptNonProjectInstances,
   ];
@@ -3635,6 +3635,89 @@ export async function scheduleBacklog(
     })),
   });
 
+  const invalidLockedProjectInstanceIds: string[] = [];
+  const invalidLockedProjectIds = new Set<string>();
+  if (keptLockedProjects.length > 0) {
+    const validatedLockedProjects: ScheduleInstance[] = [];
+    for (const instance of keptLockedProjects) {
+      const instanceId = instance.id ?? null;
+      if (!instanceId) {
+        validatedLockedProjects.push(instance);
+        continue;
+      }
+      const dayTypeTimeBlockId =
+        (instance as any).dayTypeTimeBlockId ??
+        (instance as any).day_type_time_block_id ??
+        null;
+      if (!dayTypeTimeBlockId) {
+        validatedLockedProjects.push(instance);
+        continue;
+      }
+      const start = safeDate(instance.start_utc);
+      if (!start) {
+        validatedLockedProjects.push(instance);
+        continue;
+      }
+      const day = startOfDayInTimeZone(start, timeZone);
+      await prepareWindowsForDay(day);
+      const windowsForDay = getWindowsForDay(day);
+      const targetWindow = windowsForDay.find(
+        (win) =>
+          (win.dayTypeTimeBlockId ??
+            (win as any).day_type_time_block_id ??
+            null) === dayTypeTimeBlockId
+      );
+      if (!targetWindow) {
+        validatedLockedProjects.push(instance);
+        continue;
+      }
+      const projectId = instance.source_id ?? "";
+      if (!projectId) {
+        validatedLockedProjects.push(instance);
+        continue;
+      }
+      const projectGoalMonumentId = getProjectGoalMonumentId(projectId);
+      const constraintItem: ConstraintItem = {
+        habitType: null,
+        skillId: null,
+        skillIds: getProjectSkillIds(projectId),
+        monumentId: projectGoalMonumentId,
+        skillMonumentId: null,
+        monumentIds: projectGoalMonumentId ? [projectGoalMonumentId] : null,
+        isProject: true,
+      };
+      if (passesTimeBlockConstraints(constraintItem, targetWindow)) {
+        validatedLockedProjects.push(instance);
+        continue;
+      }
+      invalidLockedProjectInstanceIds.push(instanceId);
+      invalidLockedProjectIds.add(projectId);
+      logCancel("PROJECT_CONSTRAINT_REVALIDATION", instance, {
+        dayKey: formatDateKeyInTimeZone(day, timeZone),
+        dayOffset: dayOffsetFor(instance.start_utc ?? "") ?? null,
+      });
+    }
+    keptLockedProjects = validatedLockedProjects;
+    if (invalidLockedProjectInstanceIds.length > 0) {
+      const invalidInstanceIdSet = new Set(invalidLockedProjectInstanceIds);
+      await cancelInstancesAsRescheduleRebuild(
+        supabase,
+        invalidLockedProjectInstanceIds
+      );
+      keptInstances = keptInstances.filter(
+        (inst) => !invalidInstanceIdSet.has(inst.id ?? "")
+      );
+      if (invalidLockedProjectIds.size > 0) {
+        for (const item of queue) {
+          if (invalidLockedProjectIds.has(item.id)) {
+            item.instanceId = undefined;
+          }
+        }
+      }
+    }
+  }
+  baseBlockers = [...keptLockedProjects, ...keptNonProjectInstances];
+
   const dedupedProjectQueue = queue;
   placementDebugCollector?.setQueuedCount(dedupedProjectQueue.length);
 
@@ -3872,13 +3955,19 @@ export async function scheduleBacklog(
       await prepareWindowsForDay(currentDay);
       const preloadedDayWindows = getWindowsForDay(currentDay);
       const preloadedDayWindowCount = preloadedDayWindows.length;
-      const dayWindowResult = await fetchCompatibleWindowsForItem(
+      const projectGoalMonumentId = getProjectGoalMonumentId(item.id);
+      const monumentIdsForProject = projectGoalMonumentId
+        ? [projectGoalMonumentId]
+        : null;
+      const compatibleDayResult = await fetchCompatibleWindowsForItem(
         supabase,
         currentDay,
         {
           ...item,
+          isProject: true,
           skillIds: getProjectSkillIds(item.id),
-          monumentId: getProjectGoalMonumentId(item.id),
+          monumentId: projectGoalMonumentId,
+          monumentIds: monumentIdsForProject,
         },
         timeZone,
         {
@@ -3889,20 +3978,19 @@ export async function scheduleBacklog(
           restMode: isRestMode,
           userId,
           parity: parityOptions,
-          allowedWindowKinds: ["DEFAULT"],
           preloadedWindows: preloadedDayWindows,
           locationDebugContext,
           trackFilterCounters: debugEnabled,
           // Don't use horizonEnd here - we're searching day by day
         }
       );
-      const dayWindows = dayWindowResult.windows;
-      const dayFilterCounters = dayWindowResult.filterCounters;
+      const compatibleWindows = compatibleDayResult.windows;
+      const compatibleFilterCounters = compatibleDayResult.filterCounters;
       placementDebugCollector?.recordDayScan(item.id, {
         dayOffset,
         blocksConsidered: preloadedDayWindowCount,
-        candidatesGenerated: dayWindows.length,
-        filterCounters: dayFilterCounters,
+        candidatesGenerated: compatibleWindows.length,
+        filterCounters: compatibleFilterCounters,
       });
       const windowGateTraceByBlockId = new Map<string, BlockGateSample>();
       const recordPlacementFailureTrace = (
@@ -3973,7 +4061,7 @@ export async function scheduleBacklog(
       };
       if (placementDebugCollector) {
         const blockDateIso = currentDay.toISOString();
-        for (const win of dayWindows) {
+        for (const win of compatibleWindows) {
           const blockId = win.key ?? win.id;
           windowGateTraceByBlockId.set(blockId, win.gateTrace);
           placementDebugCollector.recordBlockGateSample(item.id, {
@@ -3992,11 +4080,11 @@ export async function scheduleBacklog(
         metrics[dayOffset] = {
           windowsFromGetWindowsForDay: preloadedDayWindowCount,
           windowsPassedIntoFetchCompatible: preloadedDayWindowCount,
-          windowsAfterFetchCompatible: dayWindows.length,
+          windowsAfterFetchCompatible: compatibleWindows.length,
         };
       }
 
-      if (dayWindows.length === 0) continue;
+      if (compatibleWindows.length === 0) continue;
       if (isSmallProjectProbe && smallProjectFirstAttemptDayOffset === null) {
         smallProjectFirstAttemptDayOffset = dayOffset;
       }
@@ -4030,21 +4118,21 @@ export async function scheduleBacklog(
       const placed = await placeItemInWindows({
         userId,
         item,
-          windows: dayWindows,
-          date: currentDay, // Use the current day we're searching
-          timeZone,
-          client: supabase,
-          reuseInstanceId: item.instanceId,
-          ignoreProjectIds: new Set([item.id]),
-          notBefore: dayOffset === 0 ? baseDate : undefined, // Only apply notBefore on first day
-          existingInstances: projectBlockingInstances,
-          habitTypeById,
-          maxGapCache: dayMaxGapCache,
-          blockerCache,
-          windowEdgePreference: null,
-          debugEnabled,
-          debugOnFailure: debugEnabled
-            ? (info) => {
+        windows: compatibleWindows,
+        date: currentDay, // Use the current day we're searching
+        timeZone,
+        client: supabase,
+        reuseInstanceId: item.instanceId,
+        ignoreProjectIds: new Set([item.id]),
+        notBefore: dayOffset === 0 ? baseDate : undefined, // Only apply notBefore on first day
+        existingInstances: projectBlockingInstances,
+        habitTypeById,
+        maxGapCache: dayMaxGapCache,
+        blockerCache,
+        windowEdgePreference: null,
+        debugEnabled,
+        debugOnFailure: debugEnabled
+          ? (info) => {
                 projectFailureTrace = info;
                 if (isSmallProjectProbe) {
                   probeSmallFailureTrace = info;
@@ -4073,10 +4161,10 @@ export async function scheduleBacklog(
                     };
                   }
                 }
-                const shouldRecordProbe =
-                  isProbeProject &&
-                  dayWindows.length > 0 &&
-                  !schedulerDebugSummary.probeProject;
+                  const shouldRecordProbe =
+                    isProbeProject &&
+                    compatibleWindows.length > 0 &&
+                    !schedulerDebugSummary.probeProject;
                 if (shouldRecordProbe) {
                   schedulerDebugSummary.probeProject = {
                     projectId: item.id,
@@ -4225,7 +4313,7 @@ export async function scheduleBacklog(
       // Successfully placed!
       placedData = placed.data;
       placementDayOffset = dayOffset;
-      placementWindow = findPlacementWindow(dayWindows, placed.data);
+      placementWindow = findPlacementWindow(compatibleWindows, placed.data);
       break; // Stop searching - we found a slot
     }
 
@@ -5982,9 +6070,7 @@ async function reserveMandatoryHabitsForDay(params: {
     let reserved = false;
     for (const target of compatibleWindows) {
       const window = windowsById.get(target.id);
-      if (!window) {
-        continue;
-      }
+      if (!window) continue;
 
       const bounds = availability.get(target.key);
       const startLimit = target.availableStartLocal.getTime();
@@ -7541,19 +7627,32 @@ async function scheduleHabitsForDay(params: {
     let reservedEndMs: number | null = null;
     let reservedClipped = false;
     if (reservation && windowsById.has(reservation.windowId)) {
-      compatibleWindows = [
-        {
-          id: reservation.windowId,
-          key: reservation.windowKey,
-          startLocal: reservation.startLocal,
-          endLocal: reservation.endLocal,
-          availableStartLocal: reservation.availableStartLocal,
-        },
-      ];
-      usedReservation = true;
-      reservedStartMs = reservation.startMs;
-      reservedEndMs = reservation.endMs;
-      reservedClipped = reservation.clipped;
+      const reservedWindow = windowsById.get(reservation.windowId) ?? null;
+      if (reservedWindow) {
+        const constraintItem = {
+          habitType: habit.habitType ?? null,
+          skillId: habit.skillId ?? null,
+          skillIds: habit.skillIds ?? null,
+          monumentId: habit.monumentId ?? null,
+          skillMonumentId: habit.skillMonumentId ?? null,
+          monumentIds: habit.monumentIds ?? null,
+        };
+        if (passesTimeBlockConstraints(constraintItem, reservedWindow)) {
+          compatibleWindows = [
+            {
+              id: reservation.windowId,
+              key: reservation.windowKey,
+              startLocal: reservation.startLocal,
+              endLocal: reservation.endLocal,
+              availableStartLocal: reservation.availableStartLocal,
+            },
+          ];
+          usedReservation = true;
+          reservedStartMs = reservation.startMs;
+          reservedEndMs = reservation.endMs;
+          reservedClipped = reservation.clipped;
+        }
+      }
     }
 
     const nightEligibleWindows =
@@ -7646,9 +7745,7 @@ async function scheduleHabitsForDay(params: {
     let persistFailed = false;
     for (const target of compatibleWindows) {
       const window = windowsById.get(target.id);
-      if (!window) {
-        continue;
-      }
+      if (!window) continue;
 
       const bounds = availability.get(target.key);
       const startLimit = target.availableStartLocal.getTime();
@@ -8570,6 +8667,7 @@ type ConstraintAwareItem = {
   monumentId?: string | null;
   skillMonumentId?: string | null;
   monumentIds?: string[] | null;
+  isProject?: boolean;
 };
 
 type FetchCompatibleWindowsResult = {
@@ -8722,6 +8820,7 @@ export async function fetchCompatibleWindowsForItem(
     monumentId: item.monumentId ?? null,
     skillMonumentId: item.skillMonumentId ?? null,
     monumentIds: item.monumentIds ?? null,
+    isProject: item.isProject ?? false,
   };
 
   const windowOccurrencesBeforeConstraints = windowOccurrences;
@@ -8767,6 +8866,10 @@ export async function fetchCompatibleWindowsForItem(
         allowedHabitTypesSet: win.allowedHabitTypesSet ?? null,
         allowedSkillIdsSet: win.allowedSkillIdsSet ?? null,
         allowedMonumentIdsSet: win.allowedMonumentIdsSet ?? null,
+        window_kind: win.window_kind,
+        windowKind: (win as any).windowKind ?? null,
+        block_type: (win as any).block_type ?? null,
+        blockType: (win as any).blockType ?? null,
       });
       if (passes) {
         return { passes: true, reason: null };
@@ -8800,22 +8903,16 @@ export async function fetchCompatibleWindowsForItem(
       filteredWindowCount = filtered.length;
     }
 
-    const shouldUseFiltered =
-      originalWindowCount === 0 || filteredWindowCount > 0;
-
-    if (shouldUseFiltered) {
-      if (filteredWindowOccurrences) {
-        windowOccurrences = filteredWindowOccurrences;
-        windows = filteredWindowOccurrences.map((occ) => occ.window);
-      } else if (filteredWindowList) {
-        windows = filteredWindowList;
-      }
-      if (filterCounters && constraintCounts) {
-        mergeFilterCounters(filterCounters, constraintCounts);
-      }
+    if (windowOccurrencesBeforeConstraints) {
+      windowOccurrences = filteredWindowOccurrences;
+      windows = filteredWindowOccurrences.map((occ) => occ.window);
+    } else if (filteredWindowList) {
+      windows = filteredWindowList;
     } else {
-      windowOccurrences = windowOccurrencesBeforeConstraints;
-      windows = windowsBeforeConstraints;
+      windows = [];
+    }
+    if (filterCounters && constraintCounts) {
+      mergeFilterCounters(filterCounters, constraintCounts);
     }
   }
   if (filterCounters) {
