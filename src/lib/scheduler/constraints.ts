@@ -5,6 +5,7 @@ export type ConstraintItem = {
   monumentId?: string | null;
   skillMonumentId?: string | null;
   monumentIds?: string[] | null;
+  isProject?: boolean;
 };
 
 export type WindowConstraint = {
@@ -17,6 +18,26 @@ export type WindowConstraint = {
   allowedHabitTypesSet?: Set<string> | null;
   allowedSkillIdsSet?: Set<string> | null;
   allowedMonumentIdsSet?: Set<string> | null;
+  window_kind?: string | null;
+  windowKind?: string | null;
+  block_type?: string | null;
+  blockType?: string | null;
+};
+
+const extractWindowKind = (window: WindowConstraint): string | null => {
+  const candidates = [
+    window.window_kind,
+    window.windowKind,
+    window.block_type,
+    window.blockType,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const trimmed = candidate.trim();
+    if (!trimmed) continue;
+    return trimmed.toUpperCase();
+  }
+  return null;
 };
 
 export const normalizeSet = (values?: string[] | null): Set<string> | null => {
@@ -53,15 +74,25 @@ export function passesTimeBlockConstraints(
     allowedSkillIds,
     allowedMonumentIds,
   } = window;
+  const windowKind = extractWindowKind(window);
+  const normalizedHabitType = item.habitType
+    ? item.habitType.trim().toUpperCase()
+    : null;
+
+  if (windowKind === "BREAK") {
+    if (item.isProject) return false;
+    if (normalizedHabitType !== "RELAXER") return false;
+  }
 
   // Habit type dimension
   if (!allowAllHabitTypes) {
-    const habitType = item.habitType ? item.habitType.toUpperCase() : null;
-    if (!habitType) return true;
-    const allowed =
-      window.allowedHabitTypesSet ?? normalizeSet(allowedHabitTypes);
-    if (!allowed || allowed.size === 0) return false;
-    if (!allowed.has(habitType)) return false;
+    const habitType = item.habitType ? item.habitType.trim().toUpperCase() : null;
+    if (habitType) {
+      const allowed =
+        window.allowedHabitTypesSet ?? normalizeSet(allowedHabitTypes);
+      if (!allowed || allowed.size === 0) return false;
+      if (!allowed.has(habitType)) return false;
+    }
   }
 
   // Skill dimension

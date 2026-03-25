@@ -237,6 +237,13 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       event: React.PointerEvent<HTMLButtonElement>
     ) => {
       if (event.pointerType !== "touch") return;
+      const target = event.target as HTMLElement | null;
+      const touchedInput =
+        target?.closest?.("input, textarea, select") ||
+        (target instanceof HTMLElement && target.isContentEditable);
+      if (touchedInput) {
+        return;
+      }
       // Toggle immediately on touch to avoid synthesized click delays/double taps.
       event.preventDefault();
       pointerDownHandledRef.current = true;

@@ -2289,6 +2289,11 @@ export function Fab({
     { id: string; name: string; description?: string | null }[]
   >([]);
   const [habitRoutinesLoading, setHabitRoutinesLoading] = useState(false);
+  const [isCreatingHabitRoutineInline, setIsCreatingHabitRoutineInline] =
+    useState(false);
+  const [habitInlineRoutineName, setHabitInlineRoutineName] = useState("");
+  const [habitInlineRoutineDescription, setHabitInlineRoutineDescription] =
+    useState("");
   const findSkillById = useCallback(
     (id: string | null | undefined) =>
       id ? (skills.find((s) => s.id === id) ?? null) : null,
@@ -3071,6 +3076,9 @@ export function Fab({
     setHabitSkillId("");
     setHabitWhy("");
     setHabitRoutineId("");
+    setIsCreatingHabitRoutineInline(false);
+    setHabitInlineRoutineName("");
+    setHabitInlineRoutineDescription("");
 
     setSaveError(null);
   }, [defaultHabitRecurrence, defaultHabitType]);
@@ -4835,9 +4843,15 @@ export function Fab({
                       value={habitRoutineId ?? ""}
                       onValueChange={(value) => {
                         if (value === "__create__") {
-                          router.push("/habits/new");
+                          setHabitRoutineId("");
+                          setIsCreatingHabitRoutineInline(true);
+                          setHabitInlineRoutineName("");
+                          setHabitInlineRoutineDescription("");
                           return;
                         }
+                        setIsCreatingHabitRoutineInline(false);
+                        setHabitInlineRoutineName("");
+                        setHabitInlineRoutineDescription("");
                         setHabitRoutineId(value);
                       }}
                       hideChevron
@@ -4890,6 +4904,35 @@ export function Fab({
                         )}
                       </SelectContent>
                     </Select>
+                    {isCreatingHabitRoutineInline && (
+                      <div className="grid gap-2">
+                        <Label htmlFor="habit-inline-routine-name">
+                          Routine name
+                        </Label>
+                        <Input
+                          id="habit-inline-routine-name"
+                          value={habitInlineRoutineName}
+                          onChange={(event) =>
+                            setHabitInlineRoutineName(event.target.value)
+                          }
+                          placeholder="Name the routine"
+                          className="h-12 md:h-12 rounded-md !border-white/10 bg-white/[0.05] focus:!border-blue-400/60 focus-visible:ring-0"
+                        />
+                        <Label htmlFor="habit-inline-routine-description">
+                          Description
+                        </Label>
+                        <Textarea
+                          id="habit-inline-routine-description"
+                          value={habitInlineRoutineDescription}
+                          onChange={(event) =>
+                            setHabitInlineRoutineDescription(event.target.value)
+                          }
+                          placeholder="Describe what this routine does (optional)"
+                          rows={2}
+                          className="min-h-[68px] rounded-md border border-white/10 bg-white/[0.05] focus-visible:ring-0"
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
                     <div className="grid gap-2 col-span-3">
@@ -6517,6 +6560,30 @@ export function Fab({
           const duration = Number.isFinite(parsedDuration)
             ? parsedDuration
             : null;
+          let routineIdToUse: string | null = habitRoutineId || null;
+          if (isCreatingHabitRoutineInline) {
+            const trimmedRoutineName = habitInlineRoutineName.trim();
+            if (!trimmedRoutineName) {
+              setSaveError("Please name the routine before saving.");
+              return;
+            }
+            const trimmedRoutineDescription =
+              habitInlineRoutineDescription.trim();
+            const { data: routineData, error: routineError } = await supabase
+              .from("habit_routines")
+              .insert({
+                user_id: user.id,
+                name: trimmedRoutineName,
+                description:
+                  trimmedRoutineDescription.length > 0
+                    ? trimmedRoutineDescription
+                    : null,
+              })
+              .select("id")
+              .single();
+            if (routineError) throw routineError;
+            routineIdToUse = routineData?.id ?? null;
+          }
           const { error } = await supabase.from("habits").insert({
             user_id: user.id,
             name: trimmedName,
@@ -6526,7 +6593,7 @@ export function Fab({
             duration_minutes: duration,
             energy: habitEnergy,
             skill_id: habitSkillId || null,
-            routine_id: habitRoutineId || null,
+            routine_id: routineIdToUse,
             goal_id: habitGoalId || null,
           });
           if (error) throw error;
@@ -6564,11 +6631,15 @@ export function Fab({
     habitDuration,
     habitEnergy,
     habitGoalId,
+    habitInlineRoutineDescription,
+    habitInlineRoutineName,
     habitRecurrence,
+    habitRoutineId,
     habitSkillId,
     habitType,
     habitWhy,
     habitName,
+    isCreatingHabitRoutineInline,
     isSavingFab,
     goalDue,
     goalEnergy,

@@ -758,14 +758,8 @@ const selectedWindowOption = useMemo(() => {
           </div>
         ) : null}
 
-        <div
-          className={cn(
-            "grid gap-3",
-            footerSlot
-              ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
-              : "grid-cols-1"
-          )}
-        >
+        <div className="space-y-3">
+          {footerSlot}
           <div className="space-y-3 min-w-0">
             <Label className={FAB_FIELD_LABEL_CLASS}>Skill focus</Label>
             <Select
@@ -861,9 +855,6 @@ const selectedWindowOption = useMemo(() => {
             ) : null}
           </div>
 
-          {footerSlot ? (
-            <div className="space-y-3 min-w-0">{footerSlot}</div>
-          ) : null}
         </div>
       </div>
 
