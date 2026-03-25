@@ -2639,6 +2639,7 @@ export default function SchedulePage() {
   const [expandedProjects, setExpandedProjects_REAL] = useState<Set<string>>(
     new Set()
   );
+  const expandedProjectsRef = useRef<Set<string>>(expandedProjects);
 
   function setScheduledProjectIds(next) {
     debugger;
@@ -2664,6 +2665,9 @@ export default function SchedulePage() {
     debugger;
     setExpandedProjects_REAL(next);
   }
+  useEffect(() => {
+    expandedProjectsRef.current = expandedProjects;
+  }, [expandedProjects]);
   const [hasInteractedWithProjects, setHasInteractedWithProjects] =
     useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
@@ -3189,6 +3193,21 @@ export default function SchedulePage() {
     },
     [setExpandedProjects, setHasInteractedWithProjects]
   );
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handleSchedulePointerDown = (event: PointerEvent) => {
+      if (!expandedProjectsRef.current.size) return;
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest("[data-expanded-project-id]")) return;
+      if (!target.closest("[data-schedule-root]")) return;
+      setExpandedProjects(new Set());
+    };
+    document.addEventListener("pointerdown", handleSchedulePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleSchedulePointerDown);
+    };
+  }, [setExpandedProjects]);
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
   const touchStartWidth = useRef<number>(0);
@@ -6864,7 +6883,11 @@ export default function SchedulePage() {
 
               return (
                 <motion.div
-                  key={`habit-${placement.habitId}-${dayViewDateKey}`}
+                  key={
+                    placement.instanceId
+                      ? `habit-${placement.instanceId}`
+                      : `habit-${placement.habitId}-${dayViewDateKey}-${placement.startMinute}-${placement.endMinute}`
+                  }
                   layout="position"
                   layoutId={habitLayoutTokens?.card}
                   className={clsx(
@@ -7107,7 +7130,13 @@ export default function SchedulePage() {
                   if (!canExpand) return;
                   setProjectExpansion(projectId);
                 };
-                const handleProjectPrimaryAction = handleProjectToggle;
+                const handleProjectPrimaryAction = () => {
+                  if (canExpand) {
+                    handleProjectExpand();
+                    return;
+                  }
+                  handleProjectToggle();
+                };
                 const projectBackground = isCompleted
                   ? "radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)"
                   : "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)";
@@ -7375,6 +7404,7 @@ export default function SchedulePage() {
                       ) : (
                         <motion.div
                           key="tasks"
+                          data-expanded-project-id={projectId}
                           className="relative h-full w-full"
                           initial={
                             prefersReducedMotion ? false : { opacity: 0, y: 4 }
@@ -8149,6 +8179,7 @@ export default function SchedulePage() {
         <div
           className="text-zinc-100 space-y-4"
           style={{ paddingTop: scheduleContentPaddingTop }}
+          data-schedule-root
         >
           <div
             className="relative bg-[var(--surface)]"

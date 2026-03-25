@@ -57,6 +57,15 @@ type DayTypeBlockLink = {
   allow_all_monuments?: boolean | null;
 };
 
+const getDayTypeBlockStateKey = (dayTypeId: string | null | undefined, blockId: string | null | undefined) =>
+  dayTypeId && blockId ? `${dayTypeId}:${blockId}` : "";
+
+const getBlockIdFromStateKey = (stateKey: string) => {
+  if (!stateKey) return "";
+  const idx = stateKey.indexOf(":");
+  return idx >= 0 ? stateKey.slice(idx + 1) : stateKey;
+};
+
 const UNCATEGORIZED_CATEGORY_ID = "__uncategorized__";
 const UNCATEGORIZED_CATEGORY_LABEL = "Uncategorized";
 
@@ -181,12 +190,14 @@ function nudgeTime(value: string, deltaMinutes: number): string {
 async function resolveLocationIdsForBlocks({
   supabase,
   userId,
+  dayTypeId,
   blockIds,
   blockLocations,
   selectableLocations,
 }: {
   supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>;
   userId: string;
+  dayTypeId: string | null | undefined;
   blockIds: string[];
   blockLocations: Map<string, LocationContextOption | null>;
   selectableLocations: LocationContextOption[];
@@ -198,7 +209,8 @@ async function resolveLocationIdsForBlocks({
     candidate && candidate !== "__any__" ? candidate : null;
 
   for (const blockId of blockIds) {
-    const option = blockLocations.get(blockId);
+    const stateKey = getDayTypeBlockStateKey(dayTypeId, blockId);
+    const option = stateKey ? blockLocations.get(stateKey) : null;
     const normalized = normalizeLocationValue(option?.value ?? option?.label ?? null);
     if (!normalized) {
       resolved.set(blockId, null);
@@ -417,6 +429,137 @@ export default function NewDayTypePage() {
     setShowCreateForm(true);
   }, []);
 
+  const removeCompositeStateEntriesForBlock = (blockId: string) => {
+    const suffix = `:${blockId}`;
+    const matchesBlock = (key: string) => key === blockId || key.endsWith(suffix);
+    const prune = <T>(setter: (updater: (prev: Map<string, T>) => Map<string, T>) => void) => {
+      setter((prev) => {
+        const next = new Map(prev);
+        Array.from(next.keys()).forEach((key) => {
+          if (matchesBlock(key)) {
+            next.delete(key);
+          }
+        });
+        return next;
+      });
+    };
+
+    prune(setBlockEnergy);
+    prune(setBlockLocation);
+    prune(setBlockType);
+    prune(setBlockAllowAllHabitTypes);
+    prune(setBlockAllowAllSkills);
+    prune(setBlockAllowAllMonuments);
+    prune(setBlockAllowedHabitTypes);
+    prune(setBlockAllowedSkillIds);
+    prune(setBlockAllowedMonumentIds);
+  };
+
+  const rekeyDayTypeBlockState = (
+    fromDayTypeId: string | null | undefined,
+    toDayTypeId: string,
+    blockIds: string[]
+  ) => {
+    if (!fromDayTypeId || fromDayTypeId === toDayTypeId || blockIds.length === 0) return;
+    const statePairs = blockIds
+      .map((blockId) => {
+        const fromKey = getDayTypeBlockStateKey(fromDayTypeId, blockId);
+        const toKey = getDayTypeBlockStateKey(toDayTypeId, blockId);
+        if (!fromKey || !toKey) return null;
+        return { fromKey, toKey };
+      })
+      .filter((entry): entry is { fromKey: string; toKey: string } => Boolean(entry));
+
+    if (statePairs.length === 0) return;
+
+    const moveEntries = <T>(
+      setter: (updater: (prev: Map<string, T>) => Map<string, T>) => void,
+      cloneFn?: (value: T) => T
+    ) => {
+      setter((prev) => {
+        const next = new Map(prev);
+        statePairs.forEach(({ fromKey, toKey }) => {
+          const value = prev.get(fromKey);
+          next.delete(fromKey);
+          if (value === undefined) return;
+          next.set(toKey, cloneFn ? cloneFn(value) : value);
+        });
+        return next;
+      });
+    };
+
+    moveEntries(setBlockEnergy);
+    moveEntries(setBlockLocation, (value) =>
+      value ? { ...value } : (value as LocationContextOption | null)
+    );
+    moveEntries(setBlockType);
+    moveEntries(setBlockAllowAllHabitTypes);
+    moveEntries(setBlockAllowAllSkills);
+    moveEntries(setBlockAllowAllMonuments);
+    moveEntries(setBlockAllowedHabitTypes, (value) => new Set(value));
+    moveEntries(setBlockAllowedSkillIds, (value) => new Set(value));
+    moveEntries(setBlockAllowedMonumentIds, (value) => new Set(value));
+  };
+
+  const ensureDayTypeBlockSettings = (blockId: string) => {
+    const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, blockId);
+    if (!stateKey) return;
+    setBlockEnergy((prev) => {
+      if (prev.has(stateKey)) return prev;
+      const next = new Map(prev);
+      next.set(stateKey, "NO");
+      return next;
+    });
+    setBlockLocation((prev) => {
+      if (prev.has(stateKey)) return prev;
+      const next = new Map(prev);
+      next.set(stateKey, null);
+      return next;
+    });
+    setBlockType((prev) => {
+      if (prev.has(stateKey)) return prev;
+      const next = new Map(prev);
+      next.set(stateKey, "FOCUS");
+      return next;
+    });
+    setBlockAllowAllHabitTypes((prev) => {
+      if (prev.has(stateKey)) return prev;
+      const next = new Map(prev);
+      next.set(stateKey, true);
+      return next;
+    });
+    setBlockAllowAllSkills((prev) => {
+      if (prev.has(stateKey)) return prev;
+      const next = new Map(prev);
+      next.set(stateKey, true);
+      return next;
+    });
+    setBlockAllowAllMonuments((prev) => {
+      if (prev.has(stateKey)) return prev;
+      const next = new Map(prev);
+      next.set(stateKey, true);
+      return next;
+    });
+    setBlockAllowedHabitTypes((prev) => {
+      if (prev.has(stateKey)) return prev;
+      const next = new Map(prev);
+      next.set(stateKey, new Set());
+      return next;
+    });
+    setBlockAllowedSkillIds((prev) => {
+      if (prev.has(stateKey)) return prev;
+      const next = new Map(prev);
+      next.set(stateKey, new Set());
+      return next;
+    });
+    setBlockAllowedMonumentIds((prev) => {
+      if (prev.has(stateKey)) return prev;
+      const next = new Map(prev);
+      next.set(stateKey, new Set());
+      return next;
+    });
+  };
+
   const emitTimeBlockSavedEvent = () => {
     if (typeof window === "undefined") return;
     window.dispatchEvent(new CustomEvent("tour:time-block-saved"));
@@ -443,168 +586,74 @@ export default function NewDayTypePage() {
   }, [constraintsTarget, emitConstraintsSavedEvent]);
 
   const syncEnergyMap = useCallback((blocks: TimeBlock[]) => {
-    setBlockEnergy((prev) => {
-      const next = new Map(prev);
-      blocks.forEach((block) => {
-        if (!next.has(block.id)) {
-          next.set(block.id, "NO");
-        }
+    const blockIdSet = new Set(blocks.map((block) => block.id));
+    const pruneMap = <T>(setter: (updater: (prev: Map<string, T>) => Map<string, T>) => void) => {
+      setter((prev) => {
+        const next = new Map(prev);
+        Array.from(next.keys()).forEach((key) => {
+          const blockId = getBlockIdFromStateKey(key);
+          if (blockId && !blockIdSet.has(blockId)) {
+            next.delete(key);
+          }
+        });
+        return next;
       });
-      Array.from(next.keys()).forEach((id) => {
-        if (!blocks.find((block) => block.id === id)) {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-    setBlockLocation((prev) => {
-      const next = new Map(prev);
-      blocks.forEach((block) => {
-        if (!next.has(block.id)) {
-          next.set(block.id, null);
-        }
-      });
-      Array.from(next.keys()).forEach((id) => {
-        if (!blocks.find((block) => block.id === id)) {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-    setBlockType((prev) => {
-      const next = new Map(prev);
-      blocks.forEach((block) => {
-        if (!next.has(block.id)) {
-          next.set(block.id, "FOCUS");
-        }
-      });
-      Array.from(next.keys()).forEach((id) => {
-        if (!blocks.find((block) => block.id === id)) {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-    setBlockAllowAllHabitTypes((prev) => {
-      const next = new Map(prev);
-      blocks.forEach((block) => {
-        if (!next.has(block.id)) {
-          next.set(block.id, true);
-        }
-      });
-      Array.from(next.keys()).forEach((id) => {
-        if (!blocks.find((block) => block.id === id)) {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-    setBlockAllowAllSkills((prev) => {
-      const next = new Map(prev);
-      blocks.forEach((block) => {
-        if (!next.has(block.id)) {
-          next.set(block.id, true);
-        }
-      });
-      Array.from(next.keys()).forEach((id) => {
-        if (!blocks.find((block) => block.id === id)) {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-    setBlockAllowAllMonuments((prev) => {
-      const next = new Map(prev);
-      blocks.forEach((block) => {
-        if (!next.has(block.id)) {
-          next.set(block.id, true);
-        }
-      });
-      Array.from(next.keys()).forEach((id) => {
-        if (!blocks.find((block) => block.id === id)) {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-    setBlockAllowedHabitTypes((prev) => {
-      const next = new Map(prev);
-      blocks.forEach((block) => {
-        if (!next.has(block.id)) {
-          next.set(block.id, new Set());
-        }
-      });
-      Array.from(next.keys()).forEach((id) => {
-        if (!blocks.find((block) => block.id === id)) {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-    setBlockAllowedSkillIds((prev) => {
-      const next = new Map(prev);
-      blocks.forEach((block) => {
-        if (!next.has(block.id)) {
-          next.set(block.id, new Set());
-        }
-      });
-      Array.from(next.keys()).forEach((id) => {
-        if (!blocks.find((block) => block.id === id)) {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-    setBlockAllowedMonumentIds((prev) => {
-      const next = new Map(prev);
-      blocks.forEach((block) => {
-        if (!next.has(block.id)) {
-          next.set(block.id, new Set());
-        }
-      });
-      Array.from(next.keys()).forEach((id) => {
-        if (!blocks.find((block) => block.id === id)) {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
+    };
+
+    pruneMap(setBlockEnergy);
+    pruneMap(setBlockLocation);
+    pruneMap(setBlockType);
+    pruneMap(setBlockAllowAllHabitTypes);
+    pruneMap(setBlockAllowAllSkills);
+    pruneMap(setBlockAllowAllMonuments);
+    pruneMap(setBlockAllowedHabitTypes);
+    pruneMap(setBlockAllowedSkillIds);
+    pruneMap(setBlockAllowedMonumentIds);
   }, []);
 
   const cycleEnergy = (id: string) => {
+    const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, id);
     setBlockEnergy((prev) => {
-      const current = prev.get(id) ?? "NO";
+      if (!stateKey) return prev;
+      const current = prev.get(stateKey) ?? "NO";
       const idx = FLAME_LEVELS.indexOf(current);
       const nextLevel = FLAME_LEVELS[(idx + 1) % FLAME_LEVELS.length];
-      return new Map(prev).set(id, nextLevel);
+      return new Map(prev).set(stateKey, nextLevel);
     });
-
   };
 
-  const updateLocationForBlock = (blockId: string, option: LocationContextOption | null) => {
+  const updateLocationForBlock = (
+    blockId: string,
+    option: LocationContextOption | null,
+    dayTypeId: string | null | undefined = selectedDayTypeId
+  ) => {
+    const stateKey = getDayTypeBlockStateKey(dayTypeId, blockId);
+    if (!stateKey) return;
     setBlockLocation((prev) => {
       const next = new Map(prev);
-      next.set(blockId, option);
+      next.set(stateKey, option);
       return next;
     });
   };
 
   const syncResolvedLocations = useCallback(
-    (blockIds: string[], resolved: Map<string, string | null>) => {
+    (dayTypeId: string | null | undefined, blockIds: string[], resolved: Map<string, string | null>) => {
+      if (!dayTypeId) return;
       setBlockLocation((prev) => {
         const next = new Map(prev);
         blockIds.forEach((id) => {
           const resolvedId = resolved.get(id);
-          if (resolvedId) {
-            const current = prev.get(id);
-            const value = normalizeLocationValue(current?.value ?? current?.label ?? null) ?? "";
-            const label = current?.label ?? current?.value ?? value;
-            next.set(id, {
-              id: resolvedId,
-              value: value || resolvedId,
-              label: label || resolvedId,
-            });
-          }
+          if (!resolvedId) return;
+          const stateKey = getDayTypeBlockStateKey(dayTypeId, id);
+          if (!stateKey) return;
+          const current = prev.get(stateKey);
+          const value = normalizeLocationValue(current?.value ?? current?.label ?? null) ?? "";
+          const label = current?.label ?? current?.value ?? value;
+          next.set(stateKey, {
+            id: resolvedId,
+            value: value || resolvedId,
+            label: label || resolvedId,
+          });
         });
         return next;
       });
@@ -715,24 +764,30 @@ export default function NewDayTypePage() {
       const allowHabitMap = new Map<string, boolean>();
       const allowSkillMap = new Map<string, boolean>();
       const allowMonumentMap = new Map<string, boolean>();
-      const dttbToBlockId = new Map<string, string>();
       const allowedHabitMap = new Map<string, Set<string>>();
       const allowedSkillMap = new Map<string, Set<string>>();
       const allowedMonumentMap = new Map<string, Set<string>>();
+      const dttbToStateInfo = new Map<string, { blockId: string; stateKey: string }>();
       (data as DayTypeBlockLink[] | null)?.forEach((row) => {
-        if (row.id && row.time_block_id) {
-          dttbToBlockId.set(row.id, row.time_block_id);
+        if (!row.day_type_id || !row.time_block_id) return;
+        const stateKey = getDayTypeBlockStateKey(row.day_type_id, row.time_block_id);
+        if (!stateKey) return;
+        if (row.id) {
+          dttbToStateInfo.set(row.id, {
+            blockId: row.time_block_id,
+            stateKey,
+          });
         }
         const existing = next.get(row.day_type_id) ?? new Set<string>();
         existing.add(row.time_block_id);
         next.set(row.day_type_id, existing);
         const level = (row.energy as FlameLevel | undefined) ?? "NO";
-        energyMap.set(row.time_block_id, level);
+        energyMap.set(stateKey, level);
         const type = (row.block_type as BlockType | undefined) ?? "FOCUS";
-        typeMap.set(row.time_block_id, type);
-        allowHabitMap.set(row.time_block_id, row.allow_all_habit_types !== false);
-        allowSkillMap.set(row.time_block_id, row.allow_all_skills !== false);
-        allowMonumentMap.set(row.time_block_id, row.allow_all_monuments !== false);
+        typeMap.set(stateKey, type);
+        allowHabitMap.set(stateKey, row.allow_all_habit_types !== false);
+        allowSkillMap.set(stateKey, row.allow_all_skills !== false);
+        allowMonumentMap.set(stateKey, row.allow_all_monuments !== false);
         if (row.location_context_id) {
           const locationContext = (
             row as {
@@ -745,16 +800,16 @@ export default function NewDayTypePage() {
               : null;
           const label =
             typeof locationContext?.label === "string" ? locationContext.label.trim() : value;
-          locationMap.set(row.time_block_id, {
+          locationMap.set(stateKey, {
             id: row.location_context_id,
             value: value ?? row.location_context_id,
             label: label ?? row.location_context_id,
           });
         } else {
-          locationMap.set(row.time_block_id, null);
+          locationMap.set(stateKey, null);
         }
       });
-      const dttbIds = Array.from(dttbToBlockId.keys());
+      const dttbIds = Array.from(dttbToStateInfo.keys());
       if (dttbIds.length > 0) {
         const [habitWhitelist, skillWhitelist, monumentWhitelist] = await Promise.all([
           supabase
@@ -775,36 +830,39 @@ export default function NewDayTypePage() {
         if (monumentWhitelist.error) throw monumentWhitelist.error;
 
         (habitWhitelist.data ?? []).forEach((row) => {
-          const blockId = row.day_type_time_block_id
-            ? dttbToBlockId.get(row.day_type_time_block_id)
+          const info = row.day_type_time_block_id
+            ? dttbToStateInfo.get(row.day_type_time_block_id)
             : null;
+          const stateKey = info?.stateKey;
           const normalized = normalizeHabitTypeValue(
             (row as { habit_type?: string | null })?.habit_type ?? null
           );
-          if (!blockId || !normalized) return;
-          const existing = allowedHabitMap.get(blockId) ?? new Set<string>();
+          if (!stateKey || !normalized) return;
+          const existing = allowedHabitMap.get(stateKey) ?? new Set<string>();
           existing.add(normalized);
-          allowedHabitMap.set(blockId, existing);
+          allowedHabitMap.set(stateKey, existing);
         });
         (skillWhitelist.data ?? []).forEach((row) => {
-          const blockId = row.day_type_time_block_id
-            ? dttbToBlockId.get(row.day_type_time_block_id)
+          const info = row.day_type_time_block_id
+            ? dttbToStateInfo.get(row.day_type_time_block_id)
             : null;
+          const stateKey = info?.stateKey;
           const skillId = (row as { skill_id?: string | null })?.skill_id?.trim();
-          if (!blockId || !skillId) return;
-          const existing = allowedSkillMap.get(blockId) ?? new Set<string>();
+          if (!stateKey || !skillId) return;
+          const existing = allowedSkillMap.get(stateKey) ?? new Set<string>();
           existing.add(skillId);
-          allowedSkillMap.set(blockId, existing);
+          allowedSkillMap.set(stateKey, existing);
         });
         (monumentWhitelist.data ?? []).forEach((row) => {
-          const blockId = row.day_type_time_block_id
-            ? dttbToBlockId.get(row.day_type_time_block_id)
+          const info = row.day_type_time_block_id
+            ? dttbToStateInfo.get(row.day_type_time_block_id)
             : null;
+          const stateKey = info?.stateKey;
           const monumentId = (row as { monument_id?: string | null })?.monument_id?.trim();
-          if (!blockId || !monumentId) return;
-          const existing = allowedMonumentMap.get(blockId) ?? new Set<string>();
+          if (!stateKey || !monumentId) return;
+          const existing = allowedMonumentMap.get(stateKey) ?? new Set<string>();
           existing.add(monumentId);
-          allowedMonumentMap.set(blockId, existing);
+          allowedMonumentMap.set(stateKey, existing);
         });
       }
       setBlockEnergy((prev) => {
@@ -988,7 +1046,7 @@ export default function NewDayTypePage() {
     const nextIsDefault = availableForNewDefault.length > 0;
 
     setIsCreatingDayType(true);
-    setSelectedDayTypeId(null);
+    setSelectedDayTypeId(makeId());
     setSelectedIds(new Set());
     setDayTypeName("");
     setSchedulerMode("REGULAR");
@@ -1128,46 +1186,7 @@ export default function NewDayTypePage() {
       if (!supabase) {
         setTimeBlocks((prev) => sortTimeBlocks([...prev, optimistic]));
         setSelectedIds((prev) => new Set(prev).add(optimistic.id));
-        setBlockEnergy((prev) => {
-          const next = new Map(prev);
-          next.set(optimistic.id, "NO");
-          return next;
-        });
-        setBlockType((prev) => {
-          const next = new Map(prev);
-          next.set(optimistic.id, "FOCUS");
-          return next;
-        });
-        setBlockAllowAllHabitTypes((prev) => {
-          const next = new Map(prev);
-          next.set(optimistic.id, true);
-          return next;
-        });
-        setBlockAllowAllSkills((prev) => {
-          const next = new Map(prev);
-          next.set(optimistic.id, true);
-          return next;
-        });
-        setBlockAllowAllMonuments((prev) => {
-          const next = new Map(prev);
-          next.set(optimistic.id, true);
-          return next;
-        });
-        setBlockAllowedHabitTypes((prev) => {
-          const next = new Map(prev);
-          next.set(optimistic.id, new Set());
-          return next;
-        });
-        setBlockAllowedSkillIds((prev) => {
-          const next = new Map(prev);
-          next.set(optimistic.id, new Set());
-          return next;
-        });
-        setBlockAllowedMonumentIds((prev) => {
-          const next = new Map(prev);
-          next.set(optimistic.id, new Set());
-          return next;
-        });
+        ensureDayTypeBlockSettings(optimistic.id);
         setConstraintsTarget(optimistic);
       } else {
         const {
@@ -1199,46 +1218,7 @@ export default function NewDayTypePage() {
         };
         setTimeBlocks((prev) => sortTimeBlocks([...prev, inserted]));
         setSelectedIds((prev) => new Set(prev).add(inserted.id));
-        setBlockEnergy((prev) => {
-          const next = new Map(prev);
-          next.set(inserted.id, prev.get(inserted.id) ?? "NO");
-          return next;
-        });
-        setBlockType((prev) => {
-          const next = new Map(prev);
-          next.set(inserted.id, prev.get(inserted.id) ?? "FOCUS");
-          return next;
-        });
-        setBlockAllowAllHabitTypes((prev) => {
-          const next = new Map(prev);
-          next.set(inserted.id, prev.get(inserted.id) ?? true);
-          return next;
-        });
-        setBlockAllowAllSkills((prev) => {
-          const next = new Map(prev);
-          next.set(inserted.id, prev.get(inserted.id) ?? true);
-          return next;
-        });
-        setBlockAllowAllMonuments((prev) => {
-          const next = new Map(prev);
-          next.set(inserted.id, prev.get(inserted.id) ?? true);
-          return next;
-        });
-        setBlockAllowedHabitTypes((prev) => {
-          const next = new Map(prev);
-          next.set(inserted.id, prev.get(inserted.id) ?? new Set());
-          return next;
-        });
-        setBlockAllowedSkillIds((prev) => {
-          const next = new Map(prev);
-          next.set(inserted.id, prev.get(inserted.id) ?? new Set());
-          return next;
-        });
-        setBlockAllowedMonumentIds((prev) => {
-          const next = new Map(prev);
-          next.set(inserted.id, prev.get(inserted.id) ?? new Set());
-          return next;
-        });
+        ensureDayTypeBlockSettings(inserted.id);
         setConstraintsTarget(inserted);
       }
 
@@ -1310,51 +1290,7 @@ export default function NewDayTypePage() {
           });
           return next;
         });
-      setBlockEnergy((prev) => {
-        const next = new Map(prev);
-        next.delete(id);
-        return next;
-      });
-      setBlockLocation((prev) => {
-        const next = new Map(prev);
-        next.delete(id);
-        return next;
-      });
-      setBlockType((prev) => {
-        const next = new Map(prev);
-        next.delete(id);
-        return next;
-      });
-      setBlockAllowAllHabitTypes((prev) => {
-        const next = new Map(prev);
-        next.delete(id);
-        return next;
-      });
-      setBlockAllowAllSkills((prev) => {
-        const next = new Map(prev);
-        next.delete(id);
-        return next;
-      });
-      setBlockAllowAllMonuments((prev) => {
-        const next = new Map(prev);
-        next.delete(id);
-        return next;
-      });
-      setBlockAllowedHabitTypes((prev) => {
-        const next = new Map(prev);
-        next.delete(id);
-        return next;
-      });
-      setBlockAllowedSkillIds((prev) => {
-        const next = new Map(prev);
-        next.delete(id);
-        return next;
-      });
-      setBlockAllowedMonumentIds((prev) => {
-        const next = new Map(prev);
-        next.delete(id);
-        return next;
-      });
+      removeCompositeStateEntriesForBlock(id);
       setConstraintsTarget((prev) => (prev?.id === id ? null : prev));
       if (editingBlockId === id) {
         resetBlockForm();
@@ -1400,11 +1336,12 @@ export default function NewDayTypePage() {
     return selectedBlocks
       .map((block) => {
         const blockId = block.id;
-        const allowAllSkills = blockAllowAllSkills.get(blockId) ?? true;
-        const allowAllMonuments = blockAllowAllMonuments.get(blockId) ?? true;
-        const allowedHabitTypes = blockAllowedHabitTypes.get(blockId);
+        const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, blockId);
+        const allowAllSkills = stateKey ? blockAllowAllSkills.get(stateKey) ?? true : true;
+        const allowAllMonuments = stateKey ? blockAllowAllMonuments.get(stateKey) ?? true : true;
+        const allowedHabitTypes = stateKey ? blockAllowedHabitTypes.get(stateKey) : undefined;
         const allowsChores = allowedHabitTypes?.has("CHORE") ?? false;
-        const blockTypeValue = blockType.get(blockId) ?? "FOCUS";
+        const blockTypeValue = stateKey ? blockType.get(stateKey) ?? "FOCUS" : "FOCUS";
 
         return {
           id: block.id,
@@ -1422,6 +1359,7 @@ export default function NewDayTypePage() {
     blockAllowedHabitTypes,
     blockType,
     selectedBlocks,
+    selectedDayTypeId,
   ]);
 
   const coverageStatus: CoverageStatus = useMemo(() => {
@@ -1457,6 +1395,14 @@ export default function NewDayTypePage() {
 
   const handleSaveDayType = useCallback(async () => {
     if (!canSaveDayType) return;
+    console.info("[DAY_TYPE_SAVE_START]", {
+      isCreatingDayType,
+      isEditingExisting,
+      selectedDayTypeId,
+      dayTypeName,
+      isDefault,
+      selectedIds: Array.from(selectedIds),
+    });
     const energyById = new Map<string, string>(blockEnergy);
     setSaving(true);
     setSaveMessage(null);
@@ -1477,7 +1423,8 @@ export default function NewDayTypePage() {
       const name = dayTypeName.trim();
 
       const insertWhitelists = async (
-        links: Array<{ id?: string | null; time_block_id?: string | null }>
+        links: Array<{ id?: string | null; time_block_id?: string | null }>,
+        dayTypeId: string | null | undefined
       ) => {
         const linkMap = new Map<string, string>();
         links.forEach((row) => {
@@ -1489,6 +1436,7 @@ export default function NewDayTypePage() {
         });
 
         if (linkMap.size === 0) return;
+        if (!dayTypeId) return;
 
         const habitRows: Array<{
           user_id: string;
@@ -1507,12 +1455,14 @@ export default function NewDayTypePage() {
         }> = [];
 
         linkMap.forEach((linkId, blockId) => {
-          const allowHabits = blockAllowAllHabitTypes.get(blockId) ?? true;
-          const allowSkills = blockAllowAllSkills.get(blockId) ?? true;
-          const allowMonuments = blockAllowAllMonuments.get(blockId) ?? true;
+          const stateKey = getDayTypeBlockStateKey(dayTypeId, blockId);
+          if (!stateKey) return;
+          const allowHabits = blockAllowAllHabitTypes.get(stateKey) ?? true;
+          const allowSkills = blockAllowAllSkills.get(stateKey) ?? true;
+          const allowMonuments = blockAllowAllMonuments.get(stateKey) ?? true;
 
           if (!allowHabits) {
-            const allowed = blockAllowedHabitTypes.get(blockId) ?? new Set<string>();
+            const allowed = blockAllowedHabitTypes.get(stateKey) ?? new Set<string>();
             allowed.forEach((habitType) => {
               const normalized = normalizeHabitTypeValue(habitType);
               if (normalized) {
@@ -1526,7 +1476,7 @@ export default function NewDayTypePage() {
           }
 
           if (!allowSkills) {
-            const allowed = blockAllowedSkillIds.get(blockId) ?? new Set<string>();
+            const allowed = blockAllowedSkillIds.get(stateKey) ?? new Set<string>();
             allowed.forEach((skillId) => {
               const normalized = skillId.trim();
               if (normalized) {
@@ -1540,7 +1490,7 @@ export default function NewDayTypePage() {
           }
 
           if (!allowMonuments) {
-            const allowed = blockAllowedMonumentIds.get(blockId) ?? new Set<string>();
+            const allowed = blockAllowedMonumentIds.get(stateKey) ?? new Set<string>();
             allowed.forEach((monumentId) => {
               const normalized = monumentId.trim();
               if (normalized) {
@@ -1575,6 +1525,11 @@ export default function NewDayTypePage() {
       };
 
       if (isEditingExisting && selectedDayTypeId) {
+        console.info("[DAY_TYPE_SAVE_BRANCH]", {
+          mode: "update-existing",
+          selectedDayTypeId,
+          dayTypeName: name,
+        });
         const { data: updated, error: updateError } = await supabase
           .from("day_types")
           .update({
@@ -1594,46 +1549,168 @@ export default function NewDayTypePage() {
 
         if (updateError) throw updateError;
 
-        const { error: deleteLinksError } = await supabase
+        const { data: existingLinks, error: fetchError } = await supabase
           .from("day_type_time_blocks")
-          .delete()
+          .select("id,time_block_id")
           .eq("day_type_id", selectedDayTypeId);
-        if (deleteLinksError) throw deleteLinksError;
+        if (fetchError) throw fetchError;
+
+        const existingEntries = (existingLinks ?? []).filter(
+          (link): link is { id?: string | null; time_block_id: string } =>
+            Boolean(link.time_block_id)
+        );
+        const existingMap = new Map(existingEntries.map((link) => [link.time_block_id, link.id ?? null]));
+        const existingIds = new Set(existingMap.keys());
+        const currentIds = new Set(selectedIds);
+        const isMismatch =
+          existingIds.size !== currentIds.size ||
+          Array.from(existingIds).some((id) => !currentIds.has(id));
+
+        if (isMismatch) {
+          setSaveMessage("Save blocked: state not fully loaded. Please refresh and try again.");
+          setSaving(false);
+          return;
+        }
 
         const blockIds = Array.from(selectedIds);
+        const missingConstraintState = blockIds.some((id) => {
+          const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, id);
+          return (
+            !stateKey ||
+            !blockAllowAllHabitTypes.has(stateKey) ||
+            !blockAllowAllSkills.has(stateKey) ||
+            !blockAllowAllMonuments.has(stateKey)
+          );
+        });
+
+        if (missingConstraintState) {
+          setSaveMessage(
+            "Save blocked: constraint state not fully loaded. Please interact with all blocks or refresh."
+          );
+          setSaving(false);
+          return;
+        }
+
+        const toDelete = Array.from(existingIds).filter((id) => !currentIds.has(id));
+        const toInsert = Array.from(currentIds).filter((id) => !existingIds.has(id));
+        const toKeep = Array.from(currentIds).filter((id) => existingIds.has(id));
+        const keptLinks = (existingLinks ?? [])
+          .filter(
+            (row): row is { id: string; time_block_id: string } =>
+              Boolean(row.id) && Boolean(row.time_block_id) && toKeep.includes(row.time_block_id)
+          )
+          .map((row) => ({ id: row.id, time_block_id: row.time_block_id }));
+        const keptLinkIds = keptLinks.map((link) => link.id);
+        void toKeep;
+
+        if (toDelete.length > 0) {
+          const { error: deleteLinksError } = await supabase
+            .from("day_type_time_blocks")
+            .delete()
+            .in("time_block_id", toDelete)
+            .eq("day_type_id", selectedDayTypeId);
+          if (deleteLinksError) throw deleteLinksError;
+        }
+
         const resolvedLocations = await resolveLocationIdsForBlocks({
           supabase,
           userId: user.id,
+          dayTypeId: selectedDayTypeId,
           blockIds,
           blockLocations: blockLocation,
           selectableLocations,
         });
+
         if (blockIds.length > 0) {
-          const payload = blockIds.map((id) => {
-            const energy = energyById.get(id) ?? "NO";
-            return {
-              user_id: user.id,
-              day_type_id: selectedDayTypeId,
-              time_block_id: id,
-              energy,
-              block_type: blockType.get(id) ?? "FOCUS",
-              location_context_id: resolvedLocations.get(id) ?? null,
-              allow_all_habit_types: blockAllowAllHabitTypes.get(id) ?? true,
-              allow_all_skills: blockAllowAllSkills.get(id) ?? true,
-              allow_all_monuments: blockAllowAllMonuments.get(id) ?? true,
-            };
-          });
+          if (toInsert.length > 0) {
+            const payload = toInsert.map((id) => {
+              const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, id);
+              const energy = stateKey ? energyById.get(stateKey) ?? "NO" : "NO";
+              return {
+                user_id: user.id,
+                day_type_id: selectedDayTypeId,
+                time_block_id: id,
+                energy,
+                block_type: stateKey ? blockType.get(stateKey) ?? "FOCUS" : "FOCUS",
+                location_context_id: resolvedLocations.get(id) ?? null,
+                allow_all_habit_types: stateKey ? blockAllowAllHabitTypes.get(stateKey) ?? true : true,
+                allow_all_skills: stateKey ? blockAllowAllSkills.get(stateKey) ?? true : true,
+                allow_all_monuments: stateKey
+                  ? blockAllowAllMonuments.get(stateKey) ?? true
+                  : true,
+              };
+            });
 
-          const { data: linksInserted, error: linkError } = await supabase
-            .from("day_type_time_blocks")
-            .insert(payload)
-            .select("id,time_block_id");
-          if (linkError) throw linkError;
+            const { data: linksInserted, error: linkError } = await supabase
+              .from("day_type_time_blocks")
+              .insert(payload)
+              .select("id,time_block_id");
+            if (linkError) throw linkError;
 
-          if (linksInserted) {
-            await insertWhitelists(linksInserted as { id?: string | null; time_block_id?: string | null }[]);
+            if (linksInserted) {
+              await insertWhitelists(
+                linksInserted as { id?: string | null; time_block_id?: string | null }[],
+                selectedDayTypeId
+              );
+            }
           }
-          syncResolvedLocations(blockIds, resolvedLocations);
+
+          if (toKeep.length > 0) {
+            const updates = toKeep.map((id) => {
+              const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, id);
+              return {
+                time_block_id: id,
+                user_id: user.id,
+                day_type_id: selectedDayTypeId,
+                energy: stateKey ? energyById.get(stateKey) ?? "NO" : "NO",
+                block_type: stateKey ? blockType.get(stateKey) ?? "FOCUS" : "FOCUS",
+                location_context_id: resolvedLocations.get(id) ?? null,
+                allow_all_habit_types: stateKey
+                  ? blockAllowAllHabitTypes.get(stateKey) ?? true
+                  : true,
+                allow_all_skills: stateKey ? blockAllowAllSkills.get(stateKey) ?? true : true,
+                allow_all_monuments: stateKey
+                  ? blockAllowAllMonuments.get(stateKey) ?? true
+                  : true,
+              };
+            });
+
+            for (const row of updates) {
+              const { error } = await supabase
+                .from("day_type_time_blocks")
+                .update({
+                  energy: row.energy,
+                  block_type: row.block_type,
+                  location_context_id: row.location_context_id,
+                  allow_all_habit_types: row.allow_all_habit_types,
+                  allow_all_skills: row.allow_all_skills,
+                  allow_all_monuments: row.allow_all_monuments,
+                })
+                .eq("day_type_id", selectedDayTypeId)
+                .eq("time_block_id", row.time_block_id);
+              if (error) throw error;
+            }
+          }
+
+          if (keptLinkIds.length > 0) {
+            const whitelistTables = [
+              "day_type_time_block_allowed_habit_types",
+              "day_type_time_block_allowed_skills",
+              "day_type_time_block_allowed_monuments",
+            ];
+
+            for (const table of whitelistTables) {
+              const { error } = await supabase
+                .from(table)
+                .delete()
+                .in("day_type_time_block_id", keptLinkIds);
+              if (error) throw error;
+            }
+
+            await insertWhitelists(keptLinks, selectedDayTypeId);
+          }
+
+          syncResolvedLocations(selectedDayTypeId, blockIds, resolvedLocations);
         }
 
         setDayTypeBlockMap((prev) => {
@@ -1679,8 +1756,13 @@ export default function NewDayTypePage() {
         setIsCreatingDayType(false);
         setIsEditingExisting(false);
         setShowCreateForm(false);
-        setSaveMessage("Day type updated.");
+        setSaveMessage(`Updated existing day type: ${selectedDayTypeId}`);
       } else {
+        console.info("[DAY_TYPE_SAVE_BRANCH]", {
+          mode: "create-new",
+          selectedDayTypeId,
+          dayTypeName: name,
+        });
         const { data: inserted, error: insertError } = await supabase
           .from("day_types")
           .insert({
@@ -1704,23 +1786,25 @@ export default function NewDayTypePage() {
         const resolvedLocations = await resolveLocationIdsForBlocks({
           supabase,
           userId: user.id,
+          dayTypeId: selectedDayTypeId,
           blockIds,
           blockLocations: blockLocation,
           selectableLocations,
         });
         if (blockIds.length > 0) {
           const payload = blockIds.map((id) => {
-            const energy = energyById.get(id) ?? "NO";
+            const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, id);
+            const energy = stateKey ? energyById.get(stateKey) ?? "NO" : "NO";
             return {
               user_id: user.id,
               day_type_id: inserted.id,
               time_block_id: id,
               energy,
-              block_type: blockType.get(id) ?? "FOCUS",
+              block_type: stateKey ? (blockType.get(stateKey) ?? "FOCUS") : "FOCUS",
               location_context_id: resolvedLocations.get(id) ?? null,
-              allow_all_habit_types: blockAllowAllHabitTypes.get(id) ?? true,
-              allow_all_skills: blockAllowAllSkills.get(id) ?? true,
-              allow_all_monuments: blockAllowAllMonuments.get(id) ?? true,
+              allow_all_habit_types: stateKey ? (blockAllowAllHabitTypes.get(stateKey) ?? true) : true,
+              allow_all_skills: stateKey ? (blockAllowAllSkills.get(stateKey) ?? true) : true,
+              allow_all_monuments: stateKey ? (blockAllowAllMonuments.get(stateKey) ?? true) : true,
             };
           });
 
@@ -1730,17 +1814,21 @@ export default function NewDayTypePage() {
             .select("id,time_block_id");
           if (linkError) throw linkError;
 
+          rekeyDayTypeBlockState(selectedDayTypeId, inserted.id, blockIds);
+          if (linksInserted) {
+            await insertWhitelists(
+              linksInserted as { id?: string | null; time_block_id?: string | null }[],
+              inserted.id
+            );
+          }
+          syncResolvedLocations(inserted.id, blockIds, resolvedLocations);
+        }
+
         setDayTypeBlockMap((prev) => {
           const next = new Map(prev);
           next.set(inserted.id, new Set(blockIds));
           return next;
         });
-
-          if (linksInserted) {
-            await insertWhitelists(linksInserted as { id?: string | null; time_block_id?: string | null }[]);
-          }
-          syncResolvedLocations(blockIds, resolvedLocations);
-        }
 
         const insertedDays =
           inserted.days?.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) ??
@@ -1775,7 +1863,7 @@ export default function NewDayTypePage() {
         setIsEditingExisting(false);
         setShowCreateForm(false);
 
-        setSaveMessage("Day type saved.");
+        setSaveMessage(`Created new day type: ${inserted.id}`);
       }
     } catch (err) {
       console.error(err);
@@ -1837,29 +1925,33 @@ export default function NewDayTypePage() {
                   </span>
                   <span className="text-sm text-white/60">Define a new 24-hour template.</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCreatingDayType(false);
-                    setShowCreateForm(false);
-                    setSaveMessage(null);
-                    setIsEditingExisting(false);
-                    setEditingBlockId(null);
-                    setConstraintsTarget(null);
-                    setMenuOpenId(null);
-                    setCreateError(null);
-                    setCreateState(DEFAULT_FORM);
-                    if (selectedDayTypeId) {
-                      const current = dayTypes.find((dt) => dt.id === selectedDayTypeId);
-                      if (current) {
-                        setDayTypeName(current.name);
-                        setIsDefault(current.is_default);
-                        setSchedulerMode(current.scheduler_mode ?? "REGULAR");
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const previousDayTypeId = selectedDayTypeId;
+                      setIsCreatingDayType(false);
+                      setSelectedDayTypeId(null);
+                      setShowCreateForm(false);
+                      setSaveMessage(null);
+                      setIsEditingExisting(false);
+                      setEditingBlockId(null);
+                      setConstraintsTarget(null);
+                      setMenuOpenId(null);
+                      setCreateError(null);
+                      setCreateState(DEFAULT_FORM);
+                      if (previousDayTypeId) {
+                        const current = dayTypes.find((dt) => dt.id === previousDayTypeId);
+                        if (current) {
+                          setDayTypeName(current.name);
+                          setIsDefault(current.is_default);
+                          setSchedulerMode(current.scheduler_mode ?? "REGULAR");
+                        } else {
+                          setSchedulerMode("REGULAR");
+                        }
+                      } else {
+                        setSchedulerMode("REGULAR");
                       }
-                    } else {
-                      setSchedulerMode("REGULAR");
-                    }
-                  }}
+                    }}
                   className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
                 >
                   Close creation
@@ -2272,15 +2364,22 @@ export default function NewDayTypePage() {
                   const isConstraintsTargetBlock = constraintsTarget?.id === block.id;
                   const tourHighlightBlock = isConstraintsTargetBlock || editingBlockId === block.id;
                   const label = normalizeLabel(block.label) ?? "TIME BLOCK";
-                  const energyLevel = blockEnergy.get(block.id) ?? "NO";
-                  const locationOption = blockLocation.get(block.id);
-                  const allowAllHabits = blockAllowAllHabitTypes.get(block.id) ?? true;
-                  const allowAllSkills = blockAllowAllSkills.get(block.id) ?? true;
-                  const allowAllMonuments = blockAllowAllMonuments.get(block.id) ?? true;
-                  const allowedHabitTypes = blockAllowedHabitTypes.get(block.id) ?? new Set<string>();
-                  const allowedSkillIds = blockAllowedSkillIds.get(block.id) ?? new Set<string>();
-                  const allowedMonumentIds =
-                    blockAllowedMonumentIds.get(block.id) ?? new Set<string>();
+                  const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, block.id);
+                  const energyLevel = stateKey ? blockEnergy.get(stateKey) ?? "NO" : "NO";
+                  const locationOption = stateKey ? blockLocation.get(stateKey) : null;
+                  const allowAllHabits = stateKey ? blockAllowAllHabitTypes.get(stateKey) ?? true : true;
+                  const allowAllSkills = stateKey ? blockAllowAllSkills.get(stateKey) ?? true : true;
+                  const allowAllMonuments =
+                    stateKey ? blockAllowAllMonuments.get(stateKey) ?? true : true;
+                  const allowedHabitTypes = stateKey
+                    ? blockAllowedHabitTypes.get(stateKey) ?? new Set<string>()
+                    : new Set<string>();
+                  const allowedSkillIds = stateKey
+                    ? blockAllowedSkillIds.get(stateKey) ?? new Set<string>()
+                    : new Set<string>();
+                  const allowedMonumentIds = stateKey
+                    ? blockAllowedMonumentIds.get(stateKey) ?? new Set<string>()
+                    : new Set<string>();
                   const filteredSkills = skills
                     .filter((skill) =>
                       (skill.name ?? "").toLowerCase().includes(skillSearch.toLowerCase())
@@ -2425,11 +2524,14 @@ export default function NewDayTypePage() {
                                     <span>Block type</span>
                                   </div>
                                   <Select
-                                    value={(blockType.get(block.id) ?? "FOCUS") as BlockType}
+                                    value={
+                                      (stateKey ? blockType.get(stateKey) ?? "FOCUS" : "FOCUS") as BlockType
+                                    }
                                     onValueChange={(value) => {
+                                      if (!stateKey) return;
                                       setBlockType((prev) => {
                                         const next = new Map(prev);
-                                        next.set(block.id, value as BlockType);
+                                        next.set(stateKey, value as BlockType);
                                         return next;
                                       });
                                       if (isConstraintsTargetBlock && value === "BREAK") {
@@ -2472,7 +2574,7 @@ export default function NewDayTypePage() {
                                     <span>Location context</span>
                                   </div>
                                   <Select
-                                    value={(blockLocation.get(block.id)?.id ?? "ANY") as string}
+                                    value={(stateKey ? blockLocation.get(stateKey)?.id : "ANY") as string}
                                     onValueChange={(value) => {
                                       const dispatchWorkLocationSelected = (candidate?: string | null) => {
                                         const normalized = normalizeLocationValue(candidate ?? value);
@@ -2482,7 +2584,7 @@ export default function NewDayTypePage() {
                                       };
 
                                       if (value === "ANY") {
-                                        updateLocationForBlock(block.id, null);
+                                        updateLocationForBlock(block.id, null, selectedDayTypeId);
                                         dispatchWorkLocationSelected(null);
                                         return;
                                       }
@@ -2494,15 +2596,19 @@ export default function NewDayTypePage() {
                                         );
 
                                       if (match) {
-                                        updateLocationForBlock(block.id, match);
+                                        updateLocationForBlock(block.id, match, selectedDayTypeId);
                                         dispatchWorkLocationSelected(match.value ?? match.label ?? value);
                                       } else {
                                         const normalized = normalizeLocationValue(value) ?? value;
-                                        updateLocationForBlock(block.id, {
-                                          id: value,
-                                          value: normalized,
-                                          label: match?.label ?? value,
-                                        });
+                                        updateLocationForBlock(
+                                          block.id,
+                                          {
+                                            id: value,
+                                            value: normalized,
+                                            label: match?.label ?? value,
+                                          },
+                                          selectedDayTypeId
+                                        );
                                         dispatchWorkLocationSelected(normalized);
                                       }
                                     }}
@@ -2555,8 +2661,9 @@ export default function NewDayTypePage() {
                                         checked={allowAllHabits}
                                         onChange={(event) =>
                                           setBlockAllowAllHabitTypes((prev) => {
+                                            if (!stateKey) return prev;
                                             const next = new Map(prev);
-                                            next.set(block.id, event.target.checked);
+                                            next.set(stateKey, event.target.checked);
                                             return next;
                                           })
                                         }
@@ -2575,17 +2682,18 @@ export default function NewDayTypePage() {
                                               key={option.value}
                                               type="button"
                                               onClick={() =>
-                                                setBlockAllowedHabitTypes((prev) => {
-                                                  const next = new Map(prev);
-                                                  const set = new Set(next.get(block.id) ?? []);
-                                                  if (set.has(option.value)) {
-                                                    set.delete(option.value);
-                                                  } else {
-                                                    set.add(option.value);
-                                                  }
-                                                  next.set(block.id, set);
-                                                  return next;
-                                                })
+                                            setBlockAllowedHabitTypes((prev) => {
+                                              if (!stateKey) return prev;
+                                              const next = new Map(prev);
+                                              const set = new Set(next.get(stateKey) ?? []);
+                                              if (set.has(option.value)) {
+                                                set.delete(option.value);
+                                              } else {
+                                                set.add(option.value);
+                                              }
+                                              next.set(stateKey, set);
+                                              return next;
+                                            })
                                               }
                                               className={cn(
                                                 "flex items-center justify-between rounded-lg border px-3 py-2 text-xs transition",
@@ -2617,8 +2725,9 @@ export default function NewDayTypePage() {
                                         checked={allowAllSkills}
                                         onChange={(event) =>
                                           setBlockAllowAllSkills((prev) => {
+                                            if (!stateKey) return prev;
                                             const next = new Map(prev);
-                                            next.set(block.id, event.target.checked);
+                                            next.set(stateKey, event.target.checked);
                                             return next;
                                           })
                                         }
@@ -2653,14 +2762,15 @@ export default function NewDayTypePage() {
                                                 selectedCount > 0 && selectedCount < groupSkillIds.length;
                                               const toggleGroup = () =>
                                                 setBlockAllowedSkillIds((prev) => {
+                                                  if (!stateKey) return prev;
                                                   const next = new Map(prev);
-                                                  const set = new Set(next.get(block.id) ?? []);
+                                                  const set = new Set(next.get(stateKey) ?? []);
                                                   if (allSelected) {
                                                     groupSkillIds.forEach((id) => set.delete(id));
                                                   } else {
                                                     groupSkillIds.forEach((id) => set.add(id));
                                                   }
-                                                  next.set(block.id, set);
+                                                  next.set(stateKey, set);
                                                   return next;
                                                 });
                                               const skillButtons = group.skills.map((skill) => {
@@ -2669,19 +2779,20 @@ export default function NewDayTypePage() {
                                                   <button
                                                     key={skill.id}
                                                     type="button"
-                                                    onClick={() =>
-                                                      setBlockAllowedSkillIds((prev) => {
-                                                        const next = new Map(prev);
-                                                        const set = new Set(next.get(block.id) ?? []);
-                                                        if (set.has(skill.id)) {
-                                                          set.delete(skill.id);
-                                                        } else {
-                                                          set.add(skill.id);
-                                                        }
-                                                        next.set(block.id, set);
-                                                        return next;
-                                                      })
-                                                    }
+                                                      onClick={() =>
+                                                        setBlockAllowedSkillIds((prev) => {
+                                                          if (!stateKey) return prev;
+                                                          const next = new Map(prev);
+                                                          const set = new Set(next.get(stateKey) ?? []);
+                                                          if (set.has(skill.id)) {
+                                                            set.delete(skill.id);
+                                                          } else {
+                                                            set.add(skill.id);
+                                                          }
+                                                          next.set(stateKey, set);
+                                                          return next;
+                                                        })
+                                                      }
                                                     className={cn(
                                                       "flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition",
                                                       selectedSkill
@@ -2759,8 +2870,9 @@ export default function NewDayTypePage() {
                                       checked={allowAllMonuments}
                                       onChange={(event) =>
                                         setBlockAllowAllMonuments((prev) => {
+                                          if (!stateKey) return prev;
                                           const next = new Map(prev);
-                                          next.set(block.id, event.target.checked);
+                                          next.set(stateKey, event.target.checked);
                                           return next;
                                         })
                                       }
@@ -2791,15 +2903,16 @@ export default function NewDayTypePage() {
                                                 key={monument.id}
                                                 type="button"
                                                 onClick={() =>
-                                                  setBlockAllowedMonumentIds((prev) => {
+                                                setBlockAllowedMonumentIds((prev) => {
+                                                    if (!stateKey) return prev;
                                                     const next = new Map(prev);
-                                                    const set = new Set(next.get(block.id) ?? []);
+                                                    const set = new Set(next.get(stateKey) ?? []);
                                                     if (set.has(monument.id)) {
                                                       set.delete(monument.id);
                                                     } else {
                                                       set.add(monument.id);
                                                     }
-                                                    next.set(block.id, set);
+                                                    next.set(stateKey, set);
                                                     return next;
                                                   })
                                                 }
