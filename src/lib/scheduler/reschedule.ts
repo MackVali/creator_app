@@ -2357,6 +2357,10 @@ export async function scheduleBacklog(
       );
     }
   }
+  // Overlap-invalidated projects must be treated as fresh placements, so drop their reuse state before reassigning instance IDs.
+  for (const projectId of overlapProjectIds) {
+    reuseInstanceByProject.delete(projectId);
+  }
   for (const [projectId, reuseId] of reuseInstanceByProject) {
     if (
       invalidatedInstanceIds.has(reuseId) &&
@@ -4709,8 +4713,12 @@ export async function scheduleBacklog(
     const id = entry.instance.id ?? "";
     return id.length > 0 && !cancelIdSet.has(id);
   });
+  // Rebuild still needs to honor the PROJECT exclusion used above.
+  const remainingNonProjectInstances = remainingInstances.filter(
+    (inst) => !inst.isProject
+  );
   const { canceled: remainingCancels, overlapPairs: remainingOverlapPairs } =
-    collectFinalInvariantCancels(remainingInstances, {
+    collectFinalInvariantCancels(remainingNonProjectInstances, {
       nonDailyHabitIds,
       replacementInstanceIds: nonDailyReplacementInstanceIds,
     });
