@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowLeft, BatteryCharging, Flame, MoreHorizontal } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -30,10 +32,36 @@ interface MonumentDetailProps {
 }
 
 export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
+  const router = useRouter();
   const { id } = monument;
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  // Always use the compact goal cards on monuments
-  const useNewGoalCards = true;
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteMonument = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch(`/api/monuments/${id}/delete`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || "Failed to delete monument.");
+      }
+
+      setConfirmDeleteOpen(false);
+      router.push("/monuments");
+      router.refresh();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Failed to delete monument.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const containerShell =
     "relative w-full overflow-hidden rounded-3xl border border-white/10";
@@ -108,6 +136,15 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onSelect={() => setEditDialogOpen(true)}>
                   Edit monument
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-red-300 focus:bg-red-950/40 focus:text-red-200"
+                  onSelect={() => {
+                    setDeleteError(null);
+                    setConfirmDeleteOpen(true);
+                  }}
+                >
+                  Delete monument
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -214,6 +251,46 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
           </div>
         </div>
       </div>
+
+      <Dialog.Root open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[240] bg-black/80 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[250] w-[min(90vw,460px)] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-[#05070c] p-5 text-white shadow-[0_30px_60px_rgba(0,0,0,0.55)] focus:outline-none">
+            <Dialog.Title className="text-lg font-semibold">Delete monument?</Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm text-white/70">
+              This will delete <span className="font-semibold text-white">{monument.title}</span>.
+              Related data will stay intact and move to <span className="font-semibold text-white">Uncategorized</span>.
+            </Dialog.Description>
+
+            {deleteError ? (
+              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {deleteError}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Dialog.Close asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={deleting}
+                  className="border-white/20 bg-transparent text-white hover:bg-white/10"
+                >
+                  Cancel
+                </Button>
+              </Dialog.Close>
+              <Button
+                type="button"
+                disabled={deleting}
+                onClick={handleDeleteMonument}
+                className="bg-red-600 text-white hover:bg-red-500"
+              >
+                {deleting ? "Deleting..." : "Yes, delete monument"}
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </main>
   );
 }
