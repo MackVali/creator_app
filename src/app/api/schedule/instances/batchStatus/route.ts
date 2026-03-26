@@ -92,6 +92,23 @@ export async function POST(request: Request) {
           });
         }
       }
+      if (data.source_type === "PROJECT" && data.source_id) {
+        const { error: projectError } = await supabase
+          .from("projects")
+          .update({
+            completed_at: data.status === "completed" ? data.completed_at : null,
+            updated_at: new Date().toISOString(),
+            stage: data.status === "completed" ? "RELEASE" : "BUILD",
+          })
+          .eq("id", data.source_id)
+          .eq("user_id", user.id);
+        if (projectError) {
+          errors.push({
+            id: update.id,
+            message: `project sync: ${projectError.message}`,
+          });
+        }
+      }
     }
 
     if (error || status >= 400) {

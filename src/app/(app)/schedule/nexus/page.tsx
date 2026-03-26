@@ -996,7 +996,12 @@ export default function NexusPage() {
               : null;
           await supabase
             .from("projects")
-            .update({ stage: stageValue || null, priority: priorityValue })
+            .update({
+              stage: stageValue || null,
+              priority: priorityValue,
+              completed_at:
+                stageValue === "RELEASE" ? new Date().toISOString() : null,
+            })
             .eq("id", project.id);
           setProjects(prev =>
             prev.map(item =>
