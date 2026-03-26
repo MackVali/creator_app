@@ -7269,6 +7269,7 @@ export function Fab({
                       onSortModeChange={setOverlaySortMode}
                       availableMonuments={monuments}
                       availableSkills={skills}
+                      availableSkillCategories={skillCategories}
                       showToolbar
                     />
                     <button
@@ -8984,6 +8985,7 @@ type FabNexusProps = {
   onSortModeChange?: (value: OverlaySortMode) => void;
   availableMonuments?: Monument[];
   availableSkills?: Skill[];
+  availableSkillCategories?: CatRow[];
   showToolbar?: boolean;
   inputRef?: RefObject<HTMLInputElement | null>;
 };
@@ -9008,6 +9010,7 @@ function FabNexus({
   onSortModeChange,
   availableMonuments,
   availableSkills,
+  availableSkillCategories,
   showToolbar = false,
   inputRef,
 }: FabNexusProps) {
@@ -9024,7 +9027,6 @@ function FabNexus({
   };
 
   const toolbarMonuments = availableMonuments ?? [];
-  const toolbarSkills = availableSkills ?? [];
   const handleMonumentChange = onFilterMonumentChange ?? (() => {});
   const handleSkillChange = onFilterSkillChange ?? (() => {});
   const handleEventTypeChange = onFilterEventTypeChange ?? (() => {});
@@ -9034,6 +9036,47 @@ function FabNexus({
   const toolbarSelectClass =
     "h-9 min-w-[120px] rounded-2xl border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white/80 focus-visible:border-white/30 focus-visible:ring-0";
   const toolbarContentClass = "bg-black/90 text-white";
+  const groupedToolbarSkills = useMemo(() => {
+    const skills = availableSkills ?? [];
+    const categories = availableSkillCategories ?? [];
+    const UNCATEGORIZED_ID = "__uncategorized_skills__";
+    const categoryOrder = new Map(
+      categories.map((category, index) => [category.id, index]),
+    );
+    const groups = new Map<
+      string,
+      {
+        id: string;
+        label: string;
+        order: number;
+        skills: Skill[];
+      }
+    >();
+
+    skills.forEach((skill) => {
+      const categoryId = skill.cat_id ?? UNCATEGORIZED_ID;
+      const category = categories.find((cat) => cat.id === categoryId);
+      const fallbackLabel = categoryId === UNCATEGORIZED_ID ? "Uncategorized" : "Other";
+      const label = category?.name?.trim() || fallbackLabel;
+      const order =
+        categoryId === UNCATEGORIZED_ID
+          ? Number.MAX_SAFE_INTEGER
+          : (categoryOrder.get(categoryId) ?? Number.MAX_SAFE_INTEGER - 1);
+      if (!groups.has(categoryId)) {
+        groups.set(categoryId, { id: categoryId, label, order, skills: [] });
+      }
+      groups.get(categoryId)?.skills.push(skill);
+    });
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        skills: [...group.skills].sort((a, b) =>
+          (a.name ?? "").localeCompare(b.name ?? ""),
+        ),
+      }))
+      .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+  }, [availableSkillCategories, availableSkills]);
 
   const formatDateTime = (
     value: string | null,
@@ -9135,7 +9178,7 @@ function FabNexus({
                 <SelectItem value="">All monuments</SelectItem>
                 {toolbarMonuments.map((monument) => (
                   <SelectItem key={monument.id} value={monument.id}>
-                    <span className="text-sm">
+                    <span className="text-[10px]">
                       {(monument.emoji ?? "✨") +
                         " " +
                         (monument.title ?? "Monument")}
@@ -9156,13 +9199,24 @@ function FabNexus({
               </SelectTrigger>
               <SelectContent className={toolbarContentClass}>
                 <SelectItem value="">All skills</SelectItem>
-                {toolbarSkills.map((skill) => (
-                  <SelectItem key={skill.id} value={skill.id}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">{skill.icon ?? "🛠️"}</span>
-                      <span>{skill.name}</span>
-                    </div>
-                  </SelectItem>
+                {groupedToolbarSkills.map((group) => (
+                  <React.Fragment key={group.id}>
+                    <SelectItem
+                      value={`__skill_group__${group.id}`}
+                      disabled
+                      className="pointer-events-none px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.22em] text-white/40 hover:bg-transparent"
+                    >
+                      {group.label}
+                    </SelectItem>
+                    {group.skills.map((skill) => (
+                      <SelectItem key={skill.id} value={skill.id}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{skill.icon ?? "🛠️"}</span>
+                          <span className="text-[10px]">{skill.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </React.Fragment>
                 ))}
               </SelectContent>
             </Select>
