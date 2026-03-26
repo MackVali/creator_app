@@ -123,9 +123,13 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
     const shouldComplete = localStatus !== "Done";
     const fallbackStage = localStage && localStage !== "RELEASE" ? localStage : lastActiveStage;
     const nextStage = shouldComplete ? "RELEASE" : fallbackStage || "BUILD";
+    const completedAt = shouldComplete ? new Date().toISOString() : null;
 
     setCompletionPending(true);
-    const { error } = await supabase.from("projects").update({ stage: nextStage }).eq("id", project.id);
+    const { error } = await supabase
+      .from("projects")
+      .update({ stage: nextStage, completed_at: completedAt })
+      .eq("id", project.id);
     setCompletionPending(false);
     if (error) {
       console.error("Failed to toggle project completion", error);
