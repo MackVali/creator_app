@@ -7161,11 +7161,13 @@ export default function SchedulePage() {
                   setProjectExpansion(projectId);
                 };
                 const handleProjectPrimaryAction = () => {
-                  if (canExpand) {
-                    handleProjectExpand();
+                  if (canToggle && !isPending) {
+                    handleProjectToggle();
                     return;
                   }
-                  handleProjectToggle();
+                  if (canExpand) {
+                    handleProjectExpand();
+                  }
                 };
                 const projectBackground = isCompleted
                   ? "radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)"
@@ -7324,7 +7326,7 @@ export default function SchedulePage() {
                             onDoubleClick={(event) => {
                               event.preventDefault();
                               if (options?.disableInteractions) return;
-                              handleProjectExpand();
+                              handleProjectToggle();
                             }}
                             onClick={() => {
                               if (shouldBlockClickFromLongPress()) return;
