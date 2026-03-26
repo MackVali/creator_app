@@ -106,9 +106,9 @@ interface GoalCardProps {
 
 function isProjectComplete(project: Project) {
   return (
-    project.status === "Done" ||
-    project.stage === "RELEASE" ||
-    Number(project.progress ?? 0) >= 100
+    (typeof project.completedAt === "string" &&
+      project.completedAt.trim().length > 0) ||
+    project.status === "Done"
   );
 }
 

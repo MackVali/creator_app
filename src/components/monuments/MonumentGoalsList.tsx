@@ -119,6 +119,7 @@ function buildProjectFromUpdates(
     name: updates.name ?? "New project",
     status: updates.status ?? "In-Progress",
     progress: updates.progress ?? 0,
+    completedAt: updates.completedAt ?? null,
     dueDate: updates.dueDate,
     energy: updates.energy ?? "No",
     emoji: updates.emoji ?? null,
@@ -179,13 +180,6 @@ const TASK_STAGE_MAP: Record<string, string> = {
   PERFECT: "Perfect",
 };
 
-const COMPLETED_PROJECT_STAGES = new Set([
-  "RELEASE",
-  "COMPLETE",
-  "COMPLETED",
-  "DONE",
-]);
-
 const NORMALIZED_PRIORITY_VALUES = new Set([
   "NO",
   "LOW",
@@ -229,10 +223,8 @@ const extractLookupName = (
   return null;
 };
 
-const isProjectStageComplete = (stage?: string | null): boolean => {
-  if (typeof stage !== "string") return false;
-  return COMPLETED_PROJECT_STAGES.has(stage.toUpperCase());
-};
+const hasCompletedAt = (completedAt?: string | null): boolean =>
+  typeof completedAt === "string" && completedAt.trim().length > 0;
 
 function mapSchedulerPriority(priority?: string | null): string {
   if (typeof priority !== "string") return "NO";
@@ -531,14 +523,10 @@ export function MonumentGoalsList({
                   const done = normalizedTasks.filter(
                     (t) => t.stage === "PERFECT"
                   ).length;
-                  const isCompleted =
-                    typeof p.completed_at === "string" &&
-                    p.completed_at.length > 0;
-                  const effectiveStage = isCompleted
-                    ? "RELEASE"
-                    : (p.stage ?? "BUILD");
+                  const isCompleted = hasCompletedAt(p.completed_at);
+                  const effectiveStage = p.stage ?? "BUILD";
                   let progress = total ? Math.round((done / total) * 100) : 0;
-                  if (isCompleted || isProjectStageComplete(effectiveStage)) {
+                  if (isCompleted) {
                     progress = 100;
                   }
                   const status = isCompleted
@@ -579,6 +567,7 @@ export function MonumentGoalsList({
                     name: p.name,
                     status,
                     progress,
+                    completedAt: isCompleted ? p.completed_at ?? null : null,
                     energy: mapEnergy(energyCode),
                     energyCode,
                     dueDate: p.due_date ?? undefined,
@@ -696,11 +685,10 @@ export function MonumentGoalsList({
             const done = normalizedTasks.filter(
               (t) => t.stage === "PERFECT"
             ).length;
-            const isCompleted =
-              typeof p.completed_at === "string" && p.completed_at.length > 0;
-            const effectiveStage = isCompleted ? "RELEASE" : (p.stage ?? "BUILD");
+            const isCompleted = hasCompletedAt(p.completed_at);
+            const effectiveStage = p.stage ?? "BUILD";
             let progress = total ? Math.round((done / total) * 100) : 0;
-            if (isCompleted || isProjectStageComplete(effectiveStage)) {
+            if (isCompleted) {
               progress = 100;
             }
             const status = isCompleted
@@ -741,6 +729,7 @@ export function MonumentGoalsList({
               name: p.name,
               status,
               progress,
+              completedAt: isCompleted ? p.completed_at ?? null : null,
               energy: mapEnergy(energyCode),
               energyCode,
               dueDate: p.due_date ?? undefined,
