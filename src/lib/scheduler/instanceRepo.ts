@@ -330,11 +330,13 @@ export async function updateInstanceStatus(
       const timestamp = new Date().toISOString();
       const projectCompletionAt =
         row.status === "completed" ? row.completed_at : null;
+      const projectStage = row.status === "completed" ? "RELEASE" : "BUILD";
       const { error: projectSyncError } = await supabase
         .from("projects")
         .update({
           completed_at: projectCompletionAt,
           updated_at: timestamp,
+          stage: projectStage,
         })
         .eq("id", row.source_id)
         .eq("user_id", row.user_id);
@@ -352,6 +354,7 @@ export async function updateInstanceStatus(
           projectId: row.source_id,
           status: row.status,
           completed_at: projectCompletionAt,
+          stage: projectStage,
         });
       }
     }

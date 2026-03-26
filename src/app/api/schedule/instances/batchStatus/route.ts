@@ -98,6 +98,7 @@ export async function POST(request: Request) {
           .update({
             completed_at: data.status === "completed" ? data.completed_at : null,
             updated_at: new Date().toISOString(),
+            stage: data.status === "completed" ? "RELEASE" : "BUILD",
           })
           .eq("id", data.source_id)
           .eq("user_id", user.id);
