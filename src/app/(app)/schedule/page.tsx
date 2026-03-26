@@ -4254,29 +4254,29 @@ export default function SchedulePage() {
       for (const direction of ["previous", "next"] as const) {
         const entry = prev[direction];
         if (!entry) continue;
-      const occupiedSegments = buildTimelineOccupiedSegments({
-        projectInstances: entry.projectInstances,
-        habitPlacements: entry.habitPlacements,
-        standaloneTaskInstances: entry.standaloneTaskInstances,
-        taskInstancesByProject: entry.taskInstancesByProject,
-      });
-      const timelineGaps = buildTimelineGaps({
-        occupiedSegments,
-        currentDate: entry.date,
-        timeZone: effectiveTimeZone,
-      });
-      const windowReports = computeWindowReportsForDay({
-        windows: entry.windows,
-        projectInstances: entry.projectInstances,
-        unscheduledProjects,
-        schedulerFailureByProjectId,
-        schedulerDebug,
-        schedulerTimelinePlacements,
-        habitPlacements: entry.habitPlacements,
-        currentDate: entry.date,
-        timeZone: effectiveTimeZone,
-        gaps: timelineGaps,
-      });
+        const occupiedSegments = buildTimelineOccupiedSegments({
+          projectInstances: entry.projectInstances,
+          habitPlacements: entry.habitPlacements,
+          standaloneTaskInstances: entry.standaloneTaskInstances,
+          taskInstancesByProject: entry.taskInstancesByProject,
+        });
+        const timelineGaps = buildTimelineGaps({
+          occupiedSegments,
+          currentDate: entry.date,
+          timeZone: effectiveTimeZone,
+        });
+        const windowReports = computeWindowReportsForDay({
+          windows: entry.windows,
+          projectInstances: entry.projectInstances,
+          unscheduledProjects,
+          schedulerFailureByProjectId,
+          schedulerDebug,
+          schedulerTimelinePlacements,
+          habitPlacements: entry.habitPlacements,
+          currentDate: entry.date,
+          timeZone: effectiveTimeZone,
+          gaps: timelineGaps,
+        });
         nextState[direction] = {
           ...entry,
           startHour,
@@ -6339,6 +6339,29 @@ export default function SchedulePage() {
           syncPairingsByInstanceId: syncPairings,
         });
 
+      const projectInstanceIndexById = new Map<string, number>();
+      dayProjectInstances.forEach((projectInstance, projectIndex) => {
+        const instanceId =
+          projectInstance.instance?.id ?? projectInstance.instanceId ?? null;
+        if (instanceId) {
+          projectInstanceIndexById.set(instanceId, projectIndex);
+        }
+      });
+
+      const habitPairedProjectIndex = new Map<number, number>();
+      dayHabitPlacements.forEach((placement, habitIndex) => {
+        const instanceId = placement.instanceId;
+        if (!instanceId) return;
+        const partnerIds = syncPairings[instanceId] ?? [];
+        for (const partnerId of partnerIds) {
+          const projectIndex = projectInstanceIndexById.get(partnerId);
+          if (projectIndex !== undefined) {
+            habitPairedProjectIndex.set(habitIndex, projectIndex);
+            break;
+          }
+        }
+      });
+
       return (
         <div
           className={containerClass}
@@ -6715,7 +6738,14 @@ export default function SchedulePage() {
               const habitPaddingClass = practiceContextLabel
                 ? "pt-4 pb-2"
                 : "py-2";
-              const layoutMode = habitLayouts[index] ?? "full";
+              const originalLayoutMode = habitLayouts[index] ?? "full";
+              const pairedProjectIndex = habitPairedProjectIndex.get(index);
+              const pairedProjectIsLeft =
+                pairedProjectIndex !== undefined &&
+                projectLayouts[pairedProjectIndex] === "paired-left";
+              const layoutMode = pairedProjectIsLeft
+                ? "paired-right"
+                : originalLayoutMode;
               const habitCornerClass = getTimelineCardCornerClass(layoutMode);
               const useCompactShadow =
                 habitHeightPx <= HABIT_COMPACT_SHADOW_HEIGHT_PX;

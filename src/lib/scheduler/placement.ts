@@ -974,7 +974,6 @@ export async function placeItemInWindows(
   const shouldEvaluateMaxGap =
     !candidateIsSync && windowRecords.length > 0 && durationMs > 0;
   const gapCache = maxGapCache ?? new Map<string, number>();
-  let skipDayForMaxGap = false;
   let computedMaxGapMs: number | null = null;
   if (shouldEvaluateMaxGap) {
     const baseCacheKey = buildMaxGapCacheKey(params.date, windows, {
@@ -1001,173 +1000,117 @@ export async function placeItemInWindows(
       gapCache.set(cacheKey, maxGapMs);
     }
     computedMaxGapMs = maxGapMs;
-    skipDayForMaxGap = maxGapMs < durationMs;
   }
-
-  if (skipDayForMaxGap) {
-    const failureStage = determinePlacementFailureStage({
-      durationMs,
-      longestWindowMs,
-      availabilityGapMs,
-      maxGapMs: computedMaxGapMs,
-      dayBlockingInstances,
-      notBeforeMs,
-      windowRecords,
-    });
-    debugOnFailure?.({
-      windowsConsidered: windows.length,
-      longestWindowMinutes: Math.round(longestWindowMs / 60000),
-      availabilityGapMinutes: Math.round(availabilityGapMs / 60000),
-      gapWithBlockersMinutes:
-        computedMaxGapMs !== null
-          ? Math.round(computedMaxGapMs / 60000)
-          : null,
-      overlapBlockers: dayBlockingInstances.length,
-      notBeforeApplied: notBeforeMs !== null,
-      failureStage,
-    });
-    if (windowRecordsByWindow.length > 0) {
-      for (const [index, record] of windowRecordsByWindow.entries()) {
-        if (!record) continue;
-        const windowDef = windows[index];
-        if (!windowDef) continue;
-        const taken = filterBlockersForWindow(record.startMs, record.endMs);
-        const freeSegmentMs = computeLargestGapMs(
-          record.startMs,
-          record.endMs,
-          taken
-        );
-        recordWindowDiagnostic({
-          blockId: windowDef.key ?? windowDef.id,
-          windowId: windowDef.id ?? null,
-          freeSegmentMs,
-          collisionCount: taken.length,
-          firstCollision: describeInstanceCollision(taken[0]),
-        });
-      }
+  for (const [index, w] of windows.entries()) {
+    const windowRecord = windowRecordsByWindow[index];
+    if (!windowRecord) {
+      continue;
     }
-    return {
-      error: "NO_FIT",
-      skippedDueToMaxGap: true,
-      maxGapMs: computedMaxGapMs,
-      debug: {
-        windowDiagnostics: windowDiagnostics.slice(),
-        largestFreeSegmentMs: computedMaxGapMs ?? null,
-      },
-    };
-  }
+    const windowStartMs = windowRecord.startMs;
+    const windowEndMs = windowRecord.endMs;
+    const effectiveWindowStartMs = Math.max(
+      windowStartMs,
+      windowRecord.availableStartMs
+    );
 
-  if (!skipDayForMaxGap) {
-    for (const [index, w] of windows.entries()) {
-      const windowRecord = windowRecordsByWindow[index];
-      if (!windowRecord) {
-        continue;
-      }
-      const windowStartMs = windowRecord.startMs;
-      const windowEndMs = windowRecord.endMs;
-      const effectiveWindowStartMs = Math.max(
-        windowStartMs,
-        windowRecord.availableStartMs
-      );
+    if (typeof notBeforeMs === "number" && windowEndMs <= notBeforeMs) {
+      continue;
+    }
 
-      if (typeof notBeforeMs === "number" && windowEndMs <= notBeforeMs) {
-        continue;
-      }
+    const startMs =
+      typeof notBeforeMs === "number"
+        ? Math.max(effectiveWindowStartMs, notBeforeMs)
+        : effectiveWindowStartMs;
 
-      const startMs =
-        typeof notBeforeMs === "number"
-          ? Math.max(effectiveWindowStartMs, notBeforeMs)
-          : effectiveWindowStartMs;
+    const taken = filterBlockersForWindow(windowStartMs, windowEndMs);
+    const windowBlockId = w.key ?? w.id;
+    const freeSegmentMs = computeLargestGapMs(
+      windowStartMs,
+      windowEndMs,
+      taken
+    );
+    recordWindowDiagnostic({
+      blockId: windowBlockId,
+      windowId: w.id ?? null,
+      freeSegmentMs,
+      collisionCount: taken.length,
+      firstCollision: describeInstanceCollision(taken[0]),
+    });
 
-      const taken = filterBlockersForWindow(windowStartMs, windowEndMs);
-      const windowBlockId = w.key ?? w.id;
-      const freeSegmentMs = computeLargestGapMs(
-        windowStartMs,
-        windowEndMs,
-        taken
-      );
-      recordWindowDiagnostic({
-        blockId: windowBlockId,
-        windowId: w.id ?? null,
-        freeSegmentMs,
-        collisionCount: taken.length,
-        firstCollision: describeInstanceCollision(taken[0]),
-      });
+    const capacityBlockers: ScheduleInstance[] = [];
+    const syncBlockers: ScheduleInstance[] = [];
+    const projectBlockers: ScheduleInstance[] = [];
 
-      const capacityBlockers: ScheduleInstance[] = [];
-      const syncBlockers: ScheduleInstance[] = [];
-      const projectBlockers: ScheduleInstance[] = [];
-
-      for (const inst of taken) {
-        if (!inst) continue;
-        if (inst.id === reuseInstanceId) continue;
-        if (ignoreProjectIds && inst.source_type === "PROJECT") {
-          const projectId = inst.source_id ?? "";
-          if (projectId && ignoreProjectIds.has(projectId)) {
-            continue;
-          }
-        }
-        if (inst.source_type === "HABIT") {
-          const habitType = normalizeHabitTypeValue(
-            habitTypeById?.get(inst.source_id ?? "") ?? "HABIT"
-          );
-          if (habitType === "SYNC") {
-            syncBlockers.push(inst);
-          } else {
-            capacityBlockers.push(inst);
-          }
+    for (const inst of taken) {
+      if (!inst) continue;
+      if (inst.id === reuseInstanceId) continue;
+      if (ignoreProjectIds && inst.source_type === "PROJECT") {
+        const projectId = inst.source_id ?? "";
+        if (projectId && ignoreProjectIds.has(projectId)) {
           continue;
         }
-        if (inst.source_type === "PROJECT") {
-          projectBlockers.push(inst);
-        }
-        capacityBlockers.push(inst);
       }
-
-      const sorted = (candidateIsSync ? [] : capacityBlockers).sort(
-        (a, b) =>
-          new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
-      );
-      const hardBlockers = candidateIsSync ? [] : capacityBlockers;
-
-      const hasSyncOverlapLimit = (
-        startMs: number,
-        endMs: number,
-        blocks: ScheduleInstance[],
-        limit: number
-      ) => {
-        const events: Array<{ time: number; delta: number }> = [];
-        for (const block of blocks) {
-          const blockStartMs = new Date(block.start_utc).getTime();
-          const blockEndMs = new Date(block.end_utc).getTime();
-          if (!Number.isFinite(blockStartMs) || !Number.isFinite(blockEndMs)) {
-            continue;
-          }
-          if (!overlapsHalfOpen(startMs, endMs, blockStartMs, blockEndMs)) continue;
-          const overlapStart = Math.max(blockStartMs, startMs);
-          const overlapEnd = Math.min(blockEndMs, endMs);
-          if (overlapEnd <= overlapStart) continue;
-          events.push({ time: overlapStart, delta: 1 });
-          events.push({ time: overlapEnd, delta: -1 });
+      if (inst.source_type === "HABIT") {
+        const habitType = normalizeHabitTypeValue(
+          habitTypeById?.get(inst.source_id ?? "") ?? "HABIT"
+        );
+        if (habitType === "SYNC") {
+          syncBlockers.push(inst);
+        } else {
+          capacityBlockers.push(inst);
         }
-        if (events.length === 0) return false;
-        events.sort((a, b) => a.time - b.time || a.delta - b.delta);
-        let active = 0;
-        let prevTime = startMs;
-        let index = 0;
-        while (index < events.length) {
-          const time = events[index].time;
-          if (active >= limit && time > prevTime) {
-            return true;
-          }
-          while (index < events.length && events[index].time === time) {
-            active += events[index].delta;
-            index += 1;
-          }
-          prevTime = time;
+        continue;
+      }
+      if (inst.source_type === "PROJECT") {
+        projectBlockers.push(inst);
+      }
+      capacityBlockers.push(inst);
+    }
+
+    const sorted = (candidateIsSync ? [] : capacityBlockers).sort(
+      (a, b) =>
+        new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
+    );
+    const hardBlockers = candidateIsSync ? [] : capacityBlockers;
+
+    const hasSyncOverlapLimit = (
+      startMs: number,
+      endMs: number,
+      blocks: ScheduleInstance[],
+      limit: number
+    ) => {
+      const events: Array<{ time: number; delta: number }> = [];
+      for (const block of blocks) {
+        const blockStartMs = new Date(block.start_utc).getTime();
+        const blockEndMs = new Date(block.end_utc).getTime();
+        if (!Number.isFinite(blockStartMs) || !Number.isFinite(blockEndMs)) {
+          continue;
         }
-        return active >= limit;
-      };
+        if (!overlapsHalfOpen(startMs, endMs, blockStartMs, blockEndMs)) continue;
+        const overlapStart = Math.max(blockStartMs, startMs);
+        const overlapEnd = Math.min(blockEndMs, endMs);
+        if (overlapEnd <= overlapStart) continue;
+        events.push({ time: overlapStart, delta: 1 });
+        events.push({ time: overlapEnd, delta: -1 });
+      }
+      if (events.length === 0) return false;
+      events.sort((a, b) => a.time - b.time || a.delta - b.delta);
+      let active = 0;
+      let prevTime = startMs;
+      let index = 0;
+      while (index < events.length) {
+        const time = events[index].time;
+        if (active >= limit && time > prevTime) {
+          return true;
+        }
+        while (index < events.length && events[index].time === time) {
+          active += events[index].delta;
+          index += 1;
+        }
+        prevTime = time;
+      }
+      return active >= limit;
+    };
 
     const findSyncCandidate = () => {
       if (durationMs <= 0) {
@@ -1246,12 +1189,19 @@ export async function placeItemInWindows(
       }
     };
 
-    let cursorMs = advanceCursorPastHardBlockers(startMs);
+    // Always try placing at the very start of the window before skipping ahead;
+    // prematurely advancing the cursor can hide valid spots when blockers are stale.
+    let cursorMs = startMs;
     let candidate: Date | null = candidateIsSync ? findSyncCandidate() : null;
+    let hasEvaluatedInitialCursor = false; // gate the very first advance so we assess startMs first
 
     if (!candidate) {
       for (const block of sorted) {
-        cursorMs = advanceCursorPastHardBlockers(cursorMs);
+        if (hasEvaluatedInitialCursor) {
+          cursorMs = advanceCursorPastHardBlockers(cursorMs);
+        } else {
+          hasEvaluatedInitialCursor = true;
+        }
         const blockStart = new Date(block.start_utc);
         const blockEnd = new Date(block.end_utc);
 
@@ -1315,8 +1265,6 @@ export async function placeItemInWindows(
       }
       best = { window: w, windowIndex: index, start: candidate };
     }
-  }
-
   }
 
   if (!best) {

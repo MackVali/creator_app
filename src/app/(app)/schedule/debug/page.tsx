@@ -10,6 +10,24 @@ type FailureSummary = {
   detail?: string;
 };
 
+type BottleneckAggregate = {
+  reason: string;
+  blockLabel: string;
+  largestFreeSegmentMin?: number | null;
+  requiredDurationMin?: number | null;
+  firstCollisionLabel?: string;
+  count: number;
+};
+
+type AffectedProjectInfo = {
+  itemId: string;
+  projectLabel: string;
+  reason: string;
+  blockLabel?: string;
+  requiredDurationMin?: number | null;
+  bestGapMin?: number | null;
+};
+
 type DebugPayload =
   | PlacementTruthTrace
   | {
@@ -39,6 +57,7 @@ export default function ScheduleDebugPage() {
     useState<PlacementTruthTrace | null>(null);
   const [failures, setFailures] = useState<FailureSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const formatCount = (value?: number | null) => (value ?? "—");
 
   const handleRunDebug = useCallback(async () => {
     setIsRunning(true);
@@ -92,6 +111,16 @@ export default function ScheduleDebugPage() {
     }
   }, []);
 
+  const formatProjectLabel = useCallback(
+    (id?: string | null) => formatLookupId(id, debugDisplay?.projectsById),
+    [debugDisplay]
+  );
+
+  const formatBlockLabel = useCallback(
+    (id?: string | null) => formatBlockDisplay(id, debugDisplay),
+    [debugDisplay]
+  );
+
   const groupedFailures = useMemo(() => {
     const groups: Record<string, FailureSummary[]> = {};
     for (const failure of failures) {
@@ -101,18 +130,92 @@ export default function ScheduleDebugPage() {
     }
     return Object.entries(groups);
   }, [failures]);
+
   const unplacedProjects = useMemo(
     () =>
       placementTrace?.projectPass.items.filter((item) => !item.placed) ?? [],
     [placementTrace]
   );
+
   const occupancyLedger = placementTrace?.projectPass.occupancyLedger ?? [];
 
-  const formatProjectLabel = (id?: string | null) =>
-    formatLookupId(id, debugDisplay?.projectsById);
+  const placementCounts = placementTrace?.projectPass;
 
-  const formatBlockLabel = (id?: string | null) =>
-    formatBlockDisplay(id, debugDisplay);
+  const topBottlenecks = useMemo(() => {
+    const map = new Map<string, BottleneckAggregate>();
+    for (const item of unplacedProjects) {
+      const reason = item.topReasons?.[0]?.code ?? "unknown";
+      const candidate = item.closestCandidates?.[0];
+      const noSlot = item.passedGatesButNoSlot ?? item.noSlotDetails?.[0];
+      const blockId =
+        noSlot?.blockId ?? candidate?.blockId ?? undefined;
+      const blockLabel = blockId ? formatBlockLabel(blockId) : "unknown";
+      const existing = map.get(reason);
+      const largestFreeSegmentMin =
+        noSlot?.largestFreeSegmentMin ??
+        candidate?.largestFreeSegmentMin ??
+        existing?.largestFreeSegmentMin;
+      const requiredDurationMin =
+        noSlot?.requiredDurationMin ??
+        candidate?.requiredDurationMin ??
+        existing?.requiredDurationMin;
+      const firstCollisionLabel = noSlot?.firstCollision?.itemId
+        ? formatProjectLabel(noSlot.firstCollision.itemId)
+        : existing?.firstCollisionLabel;
+      map.set(reason, {
+        reason,
+        blockLabel,
+        largestFreeSegmentMin,
+        requiredDurationMin,
+        firstCollisionLabel,
+        count: (existing?.count ?? 0) + 1,
+      });
+    }
+    return Array.from(map.values()).sort((a, b) => b.count - a.count);
+  }, [unplacedProjects, formatBlockLabel, formatProjectLabel]);
+
+  const affectedProjects = useMemo(() => {
+    const projects = unplacedProjects
+      .map((item) => {
+        const candidate = item.closestCandidates?.[0];
+        const noSlot = item.passedGatesButNoSlot ?? item.noSlotDetails?.[0];
+        const bestGapMin =
+          candidate?.largestFreeSegmentMin ?? noSlot?.largestFreeSegmentMin ?? null;
+        const requiredDurationMin =
+          candidate?.requiredDurationMin ?? noSlot?.requiredDurationMin ?? null;
+        const blockLabel = formatBlockLabel(
+          candidate?.blockId ?? noSlot?.blockId
+        );
+        return {
+          itemId: item.itemId,
+          projectLabel: formatProjectLabel(item.itemId),
+          reason: item.topReasons?.[0]?.code ?? "unspecified",
+          blockLabel,
+          requiredDurationMin,
+          bestGapMin,
+        } as AffectedProjectInfo;
+      })
+      .sort((a, b) => (b.requiredDurationMin ?? 0) - (a.requiredDurationMin ?? 0));
+    return projects.slice(0, 4);
+  }, [unplacedProjects, formatProjectLabel, formatBlockLabel]);
+
+  const topFailureGroup = groupedFailures[0];
+  const topFailureReason = topFailureGroup?.[0] ?? null;
+  const topFailureCount = topFailureGroup?.[1]?.length ?? 0;
+  const topBottleneck = topBottlenecks[0];
+
+  const summarySentence = useMemo(() => {
+    if (!topBottleneck) {
+      return "Unable to determine a dominant bottleneck yet.";
+    }
+    const gapDesc = topBottleneck.largestFreeSegmentMin
+      ? `${topBottleneck.largestFreeSegmentMin}m free`
+      : "very limited free time";
+    const reqDesc = topBottleneck.requiredDurationMin
+      ? `${topBottleneck.requiredDurationMin}m required`
+      : "more time than slots provide";
+    return `Most unplaced projects failed because the best matching windows only had ${gapDesc}, while those projects required ${reqDesc}.`;
+  }, [topBottleneck]);
 
   return (
     <main className="min-h-screen w-full px-4 pb-8 pt-32 sm:px-6 lg:px-8">
@@ -144,18 +247,160 @@ export default function ScheduleDebugPage() {
             </div>
           )}
         </section>
-        <section className="space-y-3 rounded-2xl border border-white/5 bg-white/5 p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Debug Summary</h2>
-            <span className="text-xs text-white/60">
-              {debugSummary ? "Loaded" : "No data"}
+        <section className="space-y-3 rounded-2xl border border-white/5 bg-white/5 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Plain English Summary</h2>
+              <p className="text-xs text-white/60">
+                {placementTrace
+                  ? `Run ${placementTrace.runId} · ${placementTrace.tz}`
+                  : "Run the scheduler debug pass for a fresh snapshot."}
+              </p>
+            </div>
+            {placementTrace && (
+              <div className="text-right text-xs text-white/60">
+                <p>Base date: {placementTrace.baseDateIso}</p>
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-white">
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
+              <p className="text-[0.65rem] uppercase tracking-wide text-white/60">Queued</p>
+              <p className="text-2xl font-semibold text-white">
+                {formatCount(placementCounts?.queuedCount)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
+              <p className="text-[0.65rem] uppercase tracking-wide text-white/60">Placed</p>
+              <p className="text-2xl font-semibold text-white">
+                {formatCount(placementCounts?.placedCount)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
+              <p className="text-[0.65rem] uppercase tracking-wide text-white/60">Unplaced</p>
+              <p className="text-2xl font-semibold text-white">
+                {formatCount(placementCounts?.unplacedCount)}
+              </p>
+            </div>
+          </div>
+          <p className="text-sm text-white/70">{summarySentence}</p>
+          <div className="flex flex-col gap-1 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Top failure reason:{" "}
+              <span className="font-semibold text-white">
+                {topFailureReason ?? "n/a"}
+              </span>
+              {topFailureCount > 0 && (
+                <> ({topFailureCount} item{topFailureCount === 1 ? "" : "s"})</>
+              )}
+            </span>
+            <span>
+              Top blocking block/window:{" "}
+              <span className="font-semibold text-white">
+                {topBottleneck?.blockLabel ?? "n/a"}
+              </span>
             </span>
           </div>
-          <pre className="overflow-x-auto rounded-lg border border-white/10 bg-black/40 p-3 text-xs text-white">
-            {debugSummary
-              ? JSON.stringify(debugSummary, null, 2)
-              : "Run the debug pass to view summary data."}
-          </pre>
+        </section>
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white">Top Bottlenecks</h2>
+            <span className="text-xs text-white/60">
+              {topBottlenecks.length
+                ? `${topBottlenecks.length} reason${topBottlenecks.length === 1 ? "" : "s"}`
+                : "Awaiting data"}
+            </span>
+          </div>
+          {topBottlenecks.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
+              Bottlenecks will appear here after running the debug trace.
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {topBottlenecks.map((bottleneck) => (
+                <article
+                  key={`${bottleneck.reason}-${bottleneck.blockLabel}`}
+                  className="rounded-2xl border border-white/10 bg-black/25 p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-white">{bottleneck.reason}</p>
+                    <span className="text-[0.65rem] uppercase text-white/60">
+                      {bottleneck.count} item{bottleneck.count === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-white/60">
+                    Block/window: {bottleneck.blockLabel}
+                  </p>
+                  <div className="mt-3 space-y-2 text-xs text-white/70">
+                    <div className="flex items-center justify-between">
+                      <span>Largest gap</span>
+                      <span>
+                        {bottleneck.largestFreeSegmentMin != null
+                          ? `${bottleneck.largestFreeSegmentMin}m`
+                          : "n/a"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Required duration</span>
+                      <span>
+                        {bottleneck.requiredDurationMin != null
+                          ? `${bottleneck.requiredDurationMin}m`
+                          : "n/a"}
+                      </span>
+                    </div>
+                  </div>
+                  {bottleneck.firstCollisionLabel && (
+                    <p className="mt-2 text-[0.65rem] text-white/50">
+                      First collision with {bottleneck.firstCollisionLabel}
+                    </p>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white">Most Affected Projects</h2>
+            <span className="text-xs text-white/60">
+              Showing {affectedProjects.length} project
+              {affectedProjects.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {affectedProjects.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
+              No unplaced projects were captured.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {affectedProjects.map((project) => (
+                <article
+                  key={project.itemId}
+                  className="rounded-2xl border border-white/10 bg-black/25 p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-white">{project.projectLabel}</p>
+                    <span className="text-[0.65rem] uppercase text-white/60">
+                      {project.reason}
+                    </span>
+                  </div>
+                  <div className="mt-2 space-y-1 text-xs text-white/70">
+                    <p>
+                      Required:{" "}
+                      <span className="font-semibold text-white">
+                        {project.requiredDurationMin ?? "—"}m
+                      </span>{" "}
+                      · Gap:{" "}
+                      <span className="font-semibold text-white">
+                        {project.bestGapMin ?? "—"}m
+                      </span>
+                    </p>
+                    <p>Preferred block/window: {project.blockLabel}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
         <section className="space-y-3">
           <div className="flex items-center justify-between">
@@ -165,7 +410,7 @@ export default function ScheduleDebugPage() {
             </span>
           </div>
           {failures.length === 0 ? (
-            <div className="rounded-2xl border border-white/5 bg-black/20 p-4 text-sm text-white/70">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
               No failures reported yet.
             </div>
           ) : (
@@ -200,44 +445,65 @@ export default function ScheduleDebugPage() {
             </div>
           )}
         </section>
-        {placementTrace && (
-          <section className="space-y-4 rounded-2xl border border-white/5 bg-white/5 p-4">
-            <div className="flex items-start justify-between gap-6">
-              <div>
-                <h2 className="text-lg font-semibold text-white">Placement Truth Trace</h2>
-                <p className="text-xs text-white/60">
-                  Run {placementTrace.runId} · {placementTrace.tz}
-                </p>
-                <p className="text-xs text-white/60">
-                  Base date: {placementTrace.baseDateIso}
-                </p>
-              </div>
-              <div className="text-right text-xs text-white/60">
-                <p>Queued: {placementTrace.projectPass.queuedCount}</p>
-                <p>Placed: {placementTrace.projectPass.placedCount}</p>
-                <p>Unplaced: {placementTrace.projectPass.unplacedCount}</p>
-              </div>
+        <section className="space-y-3">
+          <details className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm text-white/70">
+            <summary className="cursor-pointer text-sm font-semibold text-white">
+              Raw debug summary
+            </summary>
+            <div className="mt-3">
+              <pre className="overflow-x-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[0.65rem] text-white">
+                {debugSummary
+                  ? JSON.stringify(debugSummary, null, 2)
+                  : "Run the debug pass to view the raw summary."}
+              </pre>
             </div>
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-white">Waterfall counters</h3>
-              <div className="grid grid-cols-2 gap-2 text-xs text-white">
-                {Object.entries(placementTrace.projectPass.waterfall).map(
-                  ([reason, count]) => (
-                    <div
-                      key={reason}
-                      className="rounded-lg border border-white/10 bg-black/30 p-2"
-                    >
-                      <p className="text-[0.6rem] uppercase tracking-wide text-white/60">
-                        {reason}
-                      </p>
-                      <p className="text-sm font-semibold text-white">{count}</p>
-                    </div>
-                  )
-                )}
+          </details>
+          <details className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm text-white/70">
+            <summary className="cursor-pointer text-sm font-semibold text-white">
+              Full placement trace
+            </summary>
+            {placementTrace ? (
+              <div className="mt-3 space-y-3">
+                <div className="text-xs text-white/60">
+                  <p>Run {placementTrace.runId}</p>
+                  <p>{placementTrace.tz}</p>
+                  <p>Base date: {placementTrace.baseDateIso}</p>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-[0.65rem] uppercase tracking-wide text-white/60">
+                    Waterfall counters
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-[0.65rem] text-white/70">
+                    {Object.entries(placementTrace.projectPass.waterfall).map(
+                      ([reason, count]) => (
+                        <div
+                          key={reason}
+                          className="rounded-lg border border-white/10 bg-black/30 p-2"
+                        >
+                          <p className="text-[0.6rem] uppercase tracking-wide text-white/60">
+                            {reason}
+                          </p>
+                          <p className="text-sm font-semibold text-white">{count}</p>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+                <pre className="overflow-x-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[0.65rem] text-white">
+                  {JSON.stringify(placementTrace, null, 2)}
+                </pre>
               </div>
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-white">Block occupancy ledger</h3>
+            ) : (
+              <p className="mt-3 text-sm text-white/60">
+                Run the debug pass to capture the full placement trace.
+              </p>
+            )}
+          </details>
+          <details className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm text-white/70">
+            <summary className="cursor-pointer text-sm font-semibold text-white">
+              Block occupancy ledger
+            </summary>
+            <div className="mt-3 space-y-3">
               {occupancyLedger.length === 0 ? (
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-white/70">
                   No occupancy ledger entries recorded yet.
@@ -283,228 +549,8 @@ export default function ScheduleDebugPage() {
                 </div>
               )}
             </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-white">Unplaced projects</h3>
-                <span className="text-xs text-white/60">
-                  {unplacedProjects.length} item
-                  {unplacedProjects.length === 1 ? "" : "s"}
-                </span>
-              </div>
-              {unplacedProjects.length === 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
-                  No unplaced projects detected.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {unplacedProjects.map((item) => {
-                    const noSlotDetails = item.noSlotDetails ?? [];
-                    const noSlotSummary =
-                      item.passedGatesButNoSlot ?? noSlotDetails[0] ?? null;
-                    return (
-                      <div
-                        key={item.itemId}
-                        className="rounded-2xl border border-white/10 bg-black/25 p-4"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-semibold text-white">
-                              {formatProjectLabel(item.itemId)}
-                            </p>
-                            <p className="text-xs text-white/60">
-                              Days scanned: {item.daysScanned} · Blocks: {item.blocksScanned} ·
-                              Attempts: {item.placementAttempts}
-                            </p>
-                          </div>
-                          <span className="text-xs text-white/60">
-                            Candidates: {item.candidatesGenerated}
-                          </span>
-                        </div>
-                        <div className="mt-3 space-y-4 text-xs text-white/80">
-                          <div className="grid grid-cols-2 gap-3 text-[0.65rem] text-white/70">
-                            <p>Attempted blocks: {item.attemptedBlockCount}</p>
-                            <p>
-                              Sample IDs:{" "}
-                              {(item.attemptedBlockIdsSample?.length ?? 0) > 0
-                                ? (item.attemptedBlockIdsSample ?? []).join(", ")
-                                : "none"}
-                            </p>
-                          </div>
-                          {(item.closestCandidates?.length ?? 0) > 0 && (
-                            <div className="space-y-1 rounded-xl border border-white/5 bg-black/30 p-3 text-[0.75rem] text-white/70">
-                              <p className="text-[0.65rem] uppercase tracking-wide text-white/60">
-                                Closest candidates
-                              </p>
-                              <ul className="space-y-1">
-                                {(item.closestCandidates ?? []).map((candidate, index) => (
-                                  <li
-                                    key={`${item.itemId}-closest-${candidate.blockId}-${index}`}
-                                  >
-                                    <span className="font-mono text-[0.65rem] text-white/60">
-                                      {formatBlockLabel(candidate.blockId)}
-                                    </span>
-                                    <span className="ml-2 text-[0.7rem] text-white/60">
-                                      Gate: {candidate.firstFailGate ?? "passed"} · Gap:{" "}
-                                      {candidate.largestFreeSegmentMin}m · Required:{" "}
-                                      {candidate.requiredDurationMin}m · Collisions:{" "}
-                                      {candidate.collisionCount ?? 0} · Location:{" "}
-                                      {candidate.locationContextId ??
-                                        candidate.locationContextValue ??
-                                        "any"}
-                                    </span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {(item.blockGateSamples?.length ?? 0) > 0 && (
-                            <div className="space-y-3">
-                              <p className="text-[0.65rem] uppercase tracking-wide text-white/60">
-                                Gate trace samples
-                              </p>
-                              <div className="space-y-2">
-                                {(item.blockGateSamples ?? []).map((sample, index) => (
-                                  <div
-                                    key={`${item.itemId}-trace-${sample.blockId}-${index}`}
-                                    className="rounded-2xl border border-white/10 bg-black/25 p-3"
-                                  >
-                                    <div className="flex items-center justify-between text-[0.65rem] text-white/60">
-                                      <span className="font-mono">
-                                        {formatBlockLabel(sample.blockId)}
-                                      </span>
-                                      <span>
-                                        {sample.attempted ? "Attempted" : "Not attempted"}
-                                      </span>
-                                    </div>
-                                    <div className="mt-2 grid grid-cols-2 gap-2 text-[0.65rem] text-white/60">
-                                      <p>Duration: {sample.durationMin}m</p>
-                                      <p>Energy: {sample.energy ?? "—"}</p>
-                                      <p>
-                                        Location:{" "}
-                                        {sample.locationContextId ??
-                                          sample.locationContextValue ??
-                                          "—"}
-                                      </p>
-                                      <p>
-                                        Free segment: {sample.freeSegmentMinutes ?? "—"}m
-                                      </p>
-                                      <p>Collisions: {sample.collisionCount ?? "—"}</p>
-                                      <p>First fail: {sample.firstFailGate ?? "N/A"}</p>
-                                    </div>
-                                    <div className="mt-3 space-y-1 text-[0.65rem]">
-                                      {(sample.stageResults ?? []).map((stage) => (
-                                        <div
-                                          key={`${sample.blockId}-${stage.name}-${stage.passed}`}
-                                          className="flex items-center justify-between"
-                                        >
-                                          <span
-                                            className={`${
-                                              stage.passed
-                                                ? "text-emerald-400"
-                                                : "text-rose-400"
-                                            } text-[0.65rem]`}
-                                          >
-                                            {stage.passed ? "PASS" : "FAIL"} {stage.name}
-                                          </span>
-                                          {stage.details && (
-                                            <span className="text-white/60">
-                                              — {stage.details}
-                                            </span>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {((item.noSlotDetails?.length ?? 0) > 0 || noSlotSummary) && (
-                            <div className="space-y-2 rounded-2xl border border-white/10 bg-black/30 p-3 text-[0.7rem] text-white/70">
-                              <p className="text-[0.65rem] uppercase tracking-wide text-white/60">
-                                No feasible slot
-                              </p>
-                              {noSlotSummary && (
-                                <div className="space-y-1">
-                                  <p>
-                                    Block:{" "}
-                                    <span className="font-mono">
-                                      {formatBlockLabel(noSlotSummary.blockId)}
-                                    </span>
-                                  </p>
-                                  <p>
-                                    Largest free segment: {noSlotSummary.largestFreeSegmentMin}m
-                                  </p>
-                                  <p>
-                                    Required duration: {noSlotSummary.requiredDurationMin}m
-                                  </p>
-                                  {noSlotSummary.firstCollision && (
-                                    <p>
-                                      First collision:{" "}
-                                      {formatProjectLabel(
-                                        noSlotSummary.firstCollision.itemId
-                                      )}{" "}
-                                      ({noSlotSummary.firstCollision.type}) at{" "}
-                                      {noSlotSummary.firstCollision.start}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-                              {(item.noSlotDetails?.length ?? 0) > 0 && (
-                                <div className="space-y-1 text-[0.65rem] text-white/60">
-                                  {(item.noSlotDetails ?? []).map((detail) => (
-                                    <p
-                                      key={`${item.itemId}-noslot-${detail.blockId}`}
-                                    >
-                                      Block {formatBlockLabel(detail.blockId)} · gap{" "}
-                                      {detail.largestFreeSegmentMin}m · required{" "}
-                                      {detail.requiredDurationMin}m
-                                    </p>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          <div className="space-y-2">
-                            <p className="text-[0.65rem] uppercase tracking-wide text-white/60">
-                              Top reasons
-                            </p>
-                            {(item.topReasons?.length ?? 0) === 0 ? (
-                              <p>No reasons captured.</p>
-                            ) : (
-                              (item.topReasons ?? []).map((reason) => (
-                                <div key={reason.code} className="space-y-1">
-                                  <p className="text-[0.65rem] uppercase tracking-wide text-white/60">
-                                    {reason.code} ({reason.count})
-                                  </p>
-                                  {(reason.examples ?? []).map((example, index) => (
-                                    <p
-                                      key={`${reason.code}-${example.blockId ?? "unknown"}-${index}`}
-                                      className="text-white/80"
-                                    >
-                                      <span className="font-mono text-[0.65rem] text-white/70">
-                                        {formatBlockLabel(example.blockId ?? null)}
-                                      </span>
-                                      {example.details ? (
-                                        <span className="ml-2 text-[0.65rem] text-white/60">
-                                          — {example.details}
-                                        </span>
-                                      ) : null}
-                                    </p>
-                                  ))}
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </section>
-        )}
+          </details>
+        </section>
       </div>
     </main>
   );

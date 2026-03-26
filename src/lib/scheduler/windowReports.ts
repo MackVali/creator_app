@@ -205,6 +205,7 @@ export function describeEmptyWindowReport({
 
   if (unscheduledProjects.length === 0) {
     if (futurePlacements.length > 0) {
+      // Use careful wording here because we only infer causes from later placements.
       const runStartedAtMs = runStartedAt?.getTime()
       const windowStartMs = segmentStartMs
       const windowEndMs = segmentEndMs
@@ -215,8 +216,10 @@ export function describeEmptyWindowReport({
           .filter(value => Number.isFinite(value))
         const shortest = Math.min(...durations)
         const summary = Number.isFinite(shortest)
-          ? `${windowLabel} is shorter than the ${formatDurationLabel(shortest)} needed by upcoming compatible projects, so they were scheduled later.`
-          : `${windowLabel} stayed open because upcoming compatible projects require longer blocks than it provides.`
+          ? `${windowLabel} remained open in the final schedule; compatible projects needing at least ${formatDurationLabel(
+              shortest
+            )} appear later, which suggests the scheduler did not use this slot for them. A reschedule or debug run may be needed to explain why.`
+          : `${windowLabel} remained open in the final schedule; compatible projects requiring longer blocks appear later, which suggests the scheduler did not use this slot for them. A reschedule or debug run may be needed to explain why.`
         const detailItems = futurePlacements.slice(0, 4).map(entry => {
           const lengthLabel = entry.durationMinutes
             ? formatDurationLabel(entry.durationMinutes)
@@ -243,7 +246,9 @@ export function describeEmptyWindowReport({
             return entry.durationMinutes > remainingMinutes
           })
           if (needsMoreTime.length > 0) {
-            const summary = `${windowLabel} had only ${formatDurationLabel(remainingMinutes)} remaining when the scheduler ran at ${TIME_FORMATTER.format(runStartedAt!)}, so compatible projects stayed in later windows.`
+            const summary = `${windowLabel} remained open in the final schedule; when the scheduler ran at ${TIME_FORMATTER.format(
+              runStartedAt!
+            )}, only ${formatDurationLabel(remainingMinutes)} was left, so compatible projects appear in later windows. This suggests the scheduler did not use this earlier slot, and a reschedule or debug run may be needed to explain why.`
             const detailItems = needsMoreTime.slice(0, 4).map(entry => {
               const lengthLabel = entry.durationMinutes
                 ? formatDurationLabel(entry.durationMinutes)
@@ -259,9 +264,9 @@ export function describeEmptyWindowReport({
         entry => entry.sameDay && entry.fits !== false
       )
       if (sameDay.length > 0) {
-        const summary = `${windowLabel} stayed open because ${sameDay.length} compatible project${
+        const summary = `${windowLabel} remained open in the final schedule; ${sameDay.length} compatible project${
           sameDay.length === 1 ? '' : 's'
-        } already occupy later slots today.`
+        } appear later today, which suggests the scheduler did not use this earlier slot. A reschedule or debug run may be needed to explain why.`
         const detailItems = sameDay.slice(0, 4).map(entry => {
           const lengthLabel = entry.durationMinutes
             ? formatDurationLabel(entry.durationMinutes)
@@ -275,7 +280,7 @@ export function describeEmptyWindowReport({
         entry => !entry.sameDay && entry.fits !== false
       )
       if (futureDay.length > 0) {
-        const summary = `${windowLabel} stayed open because compatible projects were placed in upcoming windows.`
+        const summary = `${windowLabel} remained open in the final schedule; compatible projects were placed in upcoming windows, which suggests the scheduler did not use this slot. A reschedule or debug run may be needed to explain why.`
         const detailItems = futureDay.slice(0, 4).map(entry => {
           const lengthLabel = entry.durationMinutes
             ? formatDurationLabel(entry.durationMinutes)
