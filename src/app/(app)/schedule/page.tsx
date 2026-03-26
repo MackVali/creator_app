@@ -3152,7 +3152,7 @@ export default function SchedulePage() {
         console.error("Failed to sync habit completion metadata", error);
       }
     },
-    [localTimeZone, userId]
+    [effectiveTimeZone, userId]
   );
   const completionTimestampForDateKey = useCallback(
     (dateKey: string) => {
