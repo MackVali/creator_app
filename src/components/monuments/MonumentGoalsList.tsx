@@ -39,6 +39,7 @@ type GoalRowWithRelations = GoalRow & {
     priority: string | null;
     energy: string | null;
     stage: string | null;
+    completed_at?: string | null;
     duration_min?: number | null;
     created_at: string;
     due_date?: string | null;
@@ -313,7 +314,7 @@ async function fetchGoalsWithRelationsForMonument(
   const selectWithEnumColumns = `
     ${baseSelect},
     projects (
-      id, name, goal_id, stage, duration_min, created_at, due_date,
+      id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
       priority,
       energy,
       tasks (
@@ -327,7 +328,7 @@ async function fetchGoalsWithRelationsForMonument(
   const selectWithLookupRelations = `
     ${baseSelect},
     projects (
-      id, name, goal_id, stage, duration_min, created_at, due_date,
+      id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
       priority,
       energy,
       tasks (
@@ -530,11 +531,19 @@ export function MonumentGoalsList({
                   const done = normalizedTasks.filter(
                     (t) => t.stage === "PERFECT"
                   ).length;
+                  const isCompleted =
+                    typeof p.completed_at === "string" &&
+                    p.completed_at.length > 0;
+                  const effectiveStage = isCompleted
+                    ? "RELEASE"
+                    : (p.stage ?? "BUILD");
                   let progress = total ? Math.round((done / total) * 100) : 0;
-                  if (isProjectStageComplete(p.stage)) {
+                  if (isCompleted || isProjectStageComplete(effectiveStage)) {
                     progress = 100;
                   }
-                  const status = projectStageToStatus(p.stage ?? "BUILD");
+                  const status = isCompleted
+                    ? "Done"
+                    : projectStageToStatus(effectiveStage);
                   const schedulerTasks: TaskLite[] =
                     normalizedTasks.map(toSchedulerTask);
                   const relatedTaskWeightSum = schedulerTasks.reduce(
@@ -545,7 +554,7 @@ export function MonumentGoalsList({
                     toSchedulerProject({
                       id: p.id,
                       priorityCode: p.priority ?? undefined,
-                      stage: p.stage ?? undefined,
+                      stage: effectiveStage,
                       dueDate: p.due_date ?? undefined,
                     }),
                     relatedTaskWeightSum
@@ -574,7 +583,7 @@ export function MonumentGoalsList({
                     energyCode,
                     dueDate: p.due_date ?? undefined,
                     emoji: projectEmoji,
-                    stage: p.stage ?? "BUILD",
+                    stage: effectiveStage,
                     priorityCode,
                     durationMinutes:
                       typeof p.duration_min === "number" &&
@@ -687,11 +696,16 @@ export function MonumentGoalsList({
             const done = normalizedTasks.filter(
               (t) => t.stage === "PERFECT"
             ).length;
+            const isCompleted =
+              typeof p.completed_at === "string" && p.completed_at.length > 0;
+            const effectiveStage = isCompleted ? "RELEASE" : (p.stage ?? "BUILD");
             let progress = total ? Math.round((done / total) * 100) : 0;
-            if (isProjectStageComplete(p.stage)) {
+            if (isCompleted || isProjectStageComplete(effectiveStage)) {
               progress = 100;
             }
-            const status = projectStageToStatus(p.stage ?? "BUILD");
+            const status = isCompleted
+              ? "Done"
+              : projectStageToStatus(effectiveStage);
             const schedulerTasks: TaskLite[] =
               normalizedTasks.map(toSchedulerTask);
             const relatedTaskWeightSum = schedulerTasks.reduce(
@@ -702,7 +716,7 @@ export function MonumentGoalsList({
               toSchedulerProject({
                 id: p.id,
                 priorityCode: p.priority ?? undefined,
-                stage: p.stage ?? undefined,
+                stage: effectiveStage,
                 dueDate: p.due_date ?? undefined,
               }),
               relatedTaskWeightSum
@@ -731,7 +745,7 @@ export function MonumentGoalsList({
               energyCode,
               dueDate: p.due_date ?? undefined,
               emoji: projectEmoji,
-              stage: p.stage ?? "BUILD",
+              stage: effectiveStage,
               priorityCode,
               durationMinutes:
                 typeof p.duration_min === "number" &&

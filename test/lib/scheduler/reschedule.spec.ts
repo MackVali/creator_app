@@ -1729,7 +1729,7 @@ describe("scheduleBacklog", () => {
     ).toBe(false);
   });
 
-  it("reschedules projects whose only completed instance starts after now", async () => {
+  it("does not reschedule projects completed ahead of their scheduled start", async () => {
     const { client } = createSupabaseMock();
 
     const futureCompletedInstance = createInstanceRecord({
@@ -1781,12 +1781,12 @@ describe("scheduleBacklog", () => {
 
     const result = await scheduleBacklog(userId, baseDate, client);
 
-    expect(placeSpy).toHaveBeenCalled();
+    expect(placeSpy).not.toHaveBeenCalled();
     expect(
       result.timeline.some(
         (entry) => entry.type === "PROJECT" && entry.projectId === "proj-1"
       )
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("only retains completed instances that fall within the three-day lookback window", async () => {

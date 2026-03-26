@@ -326,6 +326,38 @@ export async function updateInstanceStatus(
       "debug",
       `[WRITE] id=${row.id} matched=1 status=${row.status} completed_at=${row.completed_at} src=${row.source_type} start=${row.start_utc} end=${row.end_utc} duration=${row.duration_min} user=${row.user_id}`
     );
+    if (row.source_type === "PROJECT" && row.source_id) {
+      const timestamp = new Date().toISOString();
+      const projectCompletionAt =
+        row.status === "completed" ? row.completed_at : null;
+      const projectStage = row.status === "completed" ? "RELEASE" : "BUILD";
+      const { error: projectSyncError } = await supabase
+        .from("projects")
+        .update({
+          completed_at: projectCompletionAt,
+          updated_at: timestamp,
+          stage: projectStage,
+        })
+        .eq("id", row.source_id)
+        .eq("user_id", row.user_id);
+      if (projectSyncError) {
+        log("error", "[PROJECT_SYNC_FAIL]", {
+          instanceId: row.id,
+          projectId: row.source_id,
+          status: row.status,
+          message: projectSyncError.message,
+          code: projectSyncError.code,
+        });
+      } else {
+        log("debug", "[PROJECT_SYNC_OK]", {
+          instanceId: row.id,
+          projectId: row.source_id,
+          status: row.status,
+          completed_at: projectCompletionAt,
+          stage: projectStage,
+        });
+      }
+    }
   }
 
   return response;

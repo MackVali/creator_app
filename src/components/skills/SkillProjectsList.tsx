@@ -732,11 +732,12 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
       const originalProject = goalSnapshot?.projects.find((project) => project.id === projectId);
 
       const nextStage = currentStage === "RELEASE" ? "BUILD" : "RELEASE";
+      const completedAt = nextStage === "RELEASE" ? new Date().toISOString() : null;
 
       try {
         const { error } = await supabase
           .from("projects")
-          .update({ stage: nextStage })
+          .update({ stage: nextStage, completed_at: completedAt })
           .eq("id", projectId);
 
         if (error) {
