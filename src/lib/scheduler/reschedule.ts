@@ -2623,6 +2623,20 @@ export async function scheduleBacklog(
     return true;
   };
 
+  const shouldTreatProjectAsCompleted = (
+    instance: ScheduleInstance | null | undefined
+  ) => {
+    if (!instance) return false;
+    if (instance.source_type !== "PROJECT") return false;
+    if (instance.status !== "completed") return false;
+    const completionAnchorMs = new Date(
+      instance.completed_at ?? instance.end_utc ?? instance.start_utc ?? ""
+    ).getTime();
+    if (!Number.isFinite(completionAnchorMs)) return false;
+    if (completionAnchorMs < completedRetentionStartMs) return false;
+    return true;
+  };
+
   const isBlockingInstance = (
     instance: ScheduleInstance | null | undefined
   ) => {
@@ -2736,7 +2750,7 @@ export async function scheduleBacklog(
       inst.status === "completed" &&
       typeof inst.source_id === "string" &&
       inst.source_id &&
-      shouldRetainCompletedInstance(inst)
+      shouldTreatProjectAsCompleted(inst)
     ) {
       completedProjectIds.add(inst.source_id);
     }
