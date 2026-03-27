@@ -160,6 +160,7 @@ type FabSearchResult = {
   energy?: string | null;
   skillId?: string | null;
   skill_id?: string | null;
+  skillIds?: string[] | null;
   monumentId?: string | null;
   monument_id?: string | null;
   priority?: string | null;
@@ -174,6 +175,7 @@ type OverlaySortMode =
   | "priority"
   | "global_rank"
   | "scheduled";
+type OverlayEventTypeFilter = "ALL" | "PROJECT" | "HABIT";
 const OVERLAY_SORT_OPTIONS: { value: OverlaySortMode; label: string }[] = [
   { value: "recent", label: "Recently updated" },
   { value: "alphabetical", label: "Alphabetical" },
@@ -2532,6 +2534,8 @@ export function Fab({
   const [overlayFilterMonumentId, setOverlayFilterMonumentId] =
     useState<string>("");
   const [overlayFilterSkillId, setOverlayFilterSkillId] = useState<string>("");
+  const [overlayFilterEventType, setOverlayFilterEventType] =
+    useState<OverlayEventTypeFilter>("ALL");
   const [overlaySortMode, setOverlaySortMode] =
     useState<OverlaySortMode>("scheduled");
   const [rescheduleTarget, setRescheduleTarget] =
@@ -2557,6 +2561,7 @@ export function Fab({
   const overlayPickerResults = useMemo(() => {
     const matchesMonument = overlayFilterMonumentId.trim().length > 0;
     const matchesSkill = overlayFilterSkillId.trim().length > 0;
+    const matchesEventType = overlayFilterEventType !== "ALL";
 
     const resolveMonumentId = (result: FabSearchResult): string | null => {
       const explicit =
@@ -2576,8 +2581,21 @@ export function Fab({
       return null;
     };
 
-    const resolveSkillId = (result: FabSearchResult): string | null =>
-      result.skillId ?? result.skill_id ?? null;
+    const resolveSkillIds = (result: FabSearchResult): string[] => {
+      const values = [
+        result.skillId,
+        result.skill_id,
+        ...(Array.isArray(result.skillIds) ? result.skillIds : []),
+      ];
+      return Array.from(
+        new Set(
+          values.filter(
+            (value): value is string =>
+              typeof value === "string" && value.trim().length > 0,
+          ),
+        ),
+      );
+    };
 
     const normalizePriorityValue = (value?: string | null): string | null => {
       if (!value) return null;
@@ -2674,7 +2692,12 @@ export function Fab({
     }
     if (matchesSkill) {
       filtered = filtered.filter(
-        (result) => resolveSkillId(result) === overlayFilterSkillId,
+        (result) => resolveSkillIds(result).includes(overlayFilterSkillId),
+      );
+    }
+    if (matchesEventType) {
+      filtered = filtered.filter(
+        (result) => result.type === overlayFilterEventType,
       );
     }
 
@@ -2692,6 +2715,7 @@ export function Fab({
     goalsById,
     overlayFilterMonumentId,
     overlayFilterSkillId,
+    overlayFilterEventType,
     overlaySortMode,
     searchResults,
   ]);
@@ -5738,7 +5762,12 @@ export function Fab({
   }, [selected]);
 
   useEffect(() => {
-    if (selected !== "GOAL") return;
+    const shouldLoadMonuments =
+      selected === "GOAL" ||
+      overlayOpen ||
+      overlayPickerOpen ||
+      FAB_PAGES[activeFabPage] === "nexus";
+    if (!shouldLoadMonuments) return;
     let cancelled = false;
     const loadMonuments = async () => {
       try {
@@ -5779,7 +5808,7 @@ export function Fab({
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [activeFabPage, overlayOpen, overlayPickerOpen, selected]);
 
   useEffect(() => {
     if (selected !== "TASK") return;
@@ -5826,8 +5855,14 @@ export function Fab({
   }, [selected]);
 
   useEffect(() => {
-    if (selected !== "HABIT" && selected !== "PROJECT" && selected !== "TASK")
-      return;
+    const shouldLoadSkills =
+      selected === "HABIT" ||
+      selected === "PROJECT" ||
+      selected === "TASK" ||
+      overlayOpen ||
+      overlayPickerOpen ||
+      FAB_PAGES[activeFabPage] === "nexus";
+    if (!shouldLoadSkills) return;
     let cancelled = false;
     const loadSkills = async () => {
       try {
@@ -5870,7 +5905,7 @@ export function Fab({
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [activeFabPage, overlayOpen, overlayPickerOpen, selected]);
 
   useEffect(() => {
     if (selected !== "HABIT") return;
@@ -7242,6 +7277,8 @@ export function Fab({
                       onFilterMonumentChange={setOverlayFilterMonumentId}
                       filterSkillId={overlayFilterSkillId}
                       onFilterSkillChange={setOverlayFilterSkillId}
+                      filterEventType={overlayFilterEventType}
+                      onFilterEventTypeChange={setOverlayFilterEventType}
                       sortMode={overlaySortMode}
                       onSortModeChange={setOverlaySortMode}
                       availableMonuments={monuments}
@@ -8955,6 +8992,8 @@ type FabNexusProps = {
   onFilterMonumentChange?: (value: string) => void;
   filterSkillId?: string;
   onFilterSkillChange?: (value: string) => void;
+  filterEventType?: OverlayEventTypeFilter;
+  onFilterEventTypeChange?: (value: OverlayEventTypeFilter) => void;
   sortMode?: OverlaySortMode;
   onSortModeChange?: (value: OverlaySortMode) => void;
   availableMonuments?: Monument[];
@@ -8977,6 +9016,8 @@ function FabNexus({
   onFilterMonumentChange,
   filterSkillId,
   onFilterSkillChange,
+  filterEventType,
+  onFilterEventTypeChange,
   sortMode,
   onSortModeChange,
   availableMonuments,
@@ -9000,8 +9041,10 @@ function FabNexus({
   const toolbarSkills = availableSkills ?? [];
   const handleMonumentChange = onFilterMonumentChange ?? (() => {});
   const handleSkillChange = onFilterSkillChange ?? (() => {});
+  const handleEventTypeChange = onFilterEventTypeChange ?? (() => {});
   const handleSortChange = onSortModeChange ?? (() => {});
   const sortValue = sortMode ?? "scheduled";
+  const eventTypeValue = filterEventType ?? "ALL";
   const toolbarSelectClass =
     "h-9 min-w-[120px] rounded-2xl border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white/80 focus-visible:border-white/30 focus-visible:ring-0";
   const toolbarContentClass = "bg-black/90 text-white";
@@ -9135,6 +9178,24 @@ function FabNexus({
                     </div>
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={eventTypeValue}
+              onValueChange={(value) =>
+                handleEventTypeChange(value as OverlayEventTypeFilter)
+              }
+            >
+              <SelectTrigger
+                aria-label="Filter by event type"
+                className={toolbarSelectClass}
+              >
+                <SelectValue placeholder="Event type" />
+              </SelectTrigger>
+              <SelectContent className={toolbarContentClass}>
+                <SelectItem value="ALL">All events</SelectItem>
+                <SelectItem value="PROJECT">Projects</SelectItem>
+                <SelectItem value="HABIT">Habits</SelectItem>
               </SelectContent>
             </Select>
             <Select value={sortValue} onValueChange={handleSortChange}>

@@ -33,6 +33,12 @@ type SearchResult = {
   updatedAt?: string | null;
   updated_at?: string | null;
   currentStreakDays?: number | null;
+  skillId?: string | null;
+  skill_id?: string | null;
+  skillIds?: string[];
+  monumentId?: string | null;
+  monument_id?: string | null;
+  goalMonumentId?: string | null;
 };
 
 type ProjectSearchRecord = {
@@ -51,9 +57,20 @@ type HabitSearchRecord = {
   id: string;
   name?: string | null;
   habit_type?: string | null;
+  skill_id?: string | null;
   current_streak_days?: number | null;
   updated_at?: string | null;
   created_at?: string | null;
+};
+
+type ProjectSkillRow = {
+  project_id: string | null;
+  skill_id: string | null;
+};
+
+type SkillMonumentRecord = {
+  id: string;
+  monument_id?: string | null;
 };
 
 type ScheduleInstanceRow = {
@@ -257,7 +274,9 @@ export async function GET(request: NextRequest) {
     .eq("user_id", user.id);
   let habitQuery = supabase
     .from("habits")
-    .select("id,name,habit_type,current_streak_days,updated_at,created_at")
+    .select(
+      "id,name,habit_type,skill_id,current_streak_days,updated_at,created_at"
+    )
     .eq("user_id", user.id);
   if (likeQuery) {
     projectQuery = projectQuery.ilike("name", likeQuery);
@@ -309,19 +328,70 @@ export async function GET(request: NextRequest) {
   }
 
   const goalLookup = new Map<string, string>();
+  const goalMonumentLookup = new Map<string, string | null>();
   if (goalIds.size > 0) {
     const { data: goalData, error: goalError } = await supabase
       .from("goals")
-      .select("id,name")
+      .select("id,name,monument_id")
       .eq("user_id", user.id)
       .in("id", Array.from(goalIds));
     if (goalError) {
       console.error("FAB search goals error", goalError);
     } else {
       for (const goal of goalData ?? []) {
-        if (goal?.id && typeof goal.name === "string") {
+        if (!goal?.id) continue;
+        if (typeof goal.name === "string") {
           goalLookup.set(goal.id, goal.name);
         }
+        goalMonumentLookup.set(goal.id, goal.monument_id ?? null);
+      }
+    }
+  }
+
+  const projectSkillIds = new Map<string, string[]>();
+  if (projectIds.length > 0) {
+    const { data: projectSkillData, error: projectSkillError } = await supabase
+      .from("project_skills")
+      .select("project_id,skill_id")
+      .in("project_id", projectIds);
+    if (projectSkillError) {
+      console.error("FAB search project skills error", projectSkillError);
+    } else {
+      for (const row of (projectSkillData ?? []) as ProjectSkillRow[]) {
+        const projectId = row.project_id;
+        const skillId = row.skill_id;
+        if (!projectId || !skillId) continue;
+        const current = projectSkillIds.get(projectId) ?? [];
+        if (!current.includes(skillId)) {
+          current.push(skillId);
+          projectSkillIds.set(projectId, current);
+        }
+      }
+    }
+  }
+
+  const allSkillIds = new Set<string>();
+  for (const ids of projectSkillIds.values()) {
+    ids.forEach((id) => allSkillIds.add(id));
+  }
+  for (const habit of habitData) {
+    if (habit?.skill_id) {
+      allSkillIds.add(habit.skill_id);
+    }
+  }
+
+  const skillMonumentLookup = new Map<string, string | null>();
+  if (allSkillIds.size > 0) {
+    const { data: skillsData, error: skillsError } = await supabase
+      .from("skills")
+      .select("id,monument_id")
+      .in("id", Array.from(allSkillIds));
+    if (skillsError) {
+      console.error("FAB search skills metadata error", skillsError);
+    } else {
+      for (const row of (skillsData ?? []) as SkillMonumentRecord[]) {
+        if (!row?.id) continue;
+        skillMonumentLookup.set(row.id, row.monument_id ?? null);
       }
     }
   }
@@ -368,6 +438,11 @@ export async function GET(request: NextRequest) {
     const projectGoalName = projectGoalId
       ? goalLookup.get(projectGoalId) ?? null
       : null;
+    const projectGoalMonumentId = projectGoalId
+      ? goalMonumentLookup.get(projectGoalId) ?? null
+      : null;
+    const projectSkills = projectSkillIds.get(project.id) ?? [];
+    const projectPrimarySkillId = projectSkills[0] ?? null;
     const normalizedUpdated =
       typeof project.updated_at === "string" && project.updated_at.length > 0
         ? project.updated_at
@@ -398,6 +473,12 @@ export async function GET(request: NextRequest) {
       priority_label: priorityValue,
       updatedAt: normalizedUpdated,
       updated_at: normalizedUpdated,
+      skillId: projectPrimarySkillId,
+      skill_id: projectPrimarySkillId,
+      skillIds: projectSkills,
+      goalMonumentId: projectGoalMonumentId,
+      monumentId: projectGoalMonumentId,
+      monument_id: projectGoalMonumentId,
     });
   }
   for (const habit of habitData) {
@@ -411,6 +492,10 @@ export async function GET(request: NextRequest) {
         ? habit.created_at
         : null;
     const normalizedHabitType = normalizeHabitType(habit.habit_type);
+    const habitSkillId = habit.skill_id ?? null;
+    const habitMonumentId = habitSkillId
+      ? skillMonumentLookup.get(habitSkillId) ?? null
+      : null;
     results.push({
       id: habit.id,
       name: habit.name?.trim() || "Untitled habit",
@@ -433,6 +518,11 @@ export async function GET(request: NextRequest) {
           : null,
       updatedAt: normalizedUpdated,
       updated_at: normalizedUpdated,
+      skillId: habitSkillId,
+      skill_id: habitSkillId,
+      skillIds: habitSkillId ? [habitSkillId] : [],
+      monumentId: habitMonumentId,
+      monument_id: habitMonumentId,
     });
   }
 
