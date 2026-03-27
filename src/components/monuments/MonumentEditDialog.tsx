@@ -2,10 +2,9 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { ChevronDown, X } from "lucide-react";
+import { Check, ChevronDown, X } from "lucide-react";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -98,6 +97,9 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [availableSkills, setAvailableSkills] = useState<SkillRow[]>([]);
+  const [monumentSkillLookup, setMonumentSkillLookup] = useState<
+    Map<string, { emoji: string | null; title: string | null }>
+  >(new Map());
   const [categories, setCategories] = useState<CatRow[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillsError, setSkillsError] = useState<string | null>(null);
@@ -129,20 +131,31 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
           return;
         }
 
-        const [skillsResult, categoriesData] = await Promise.all([
+        const [skillsResult, categoriesData, monumentsResult] = await Promise.all([
           supabase
             .from("skills")
             .select("id, name, icon, cat_id, monument_id")
             .eq("user_id", user.id)
             .order("name", { ascending: true }),
           getCatsForUser(user.id, supabase),
+          supabase.from("monuments").select("id, title, emoji").eq("user_id", user.id),
         ]);
 
         if (skillsResult.error) throw skillsResult.error;
+        if (monumentsResult.error) throw monumentsResult.error;
 
         if (!cancelled) {
           const safeSkills = (skillsResult.data ?? []) as SkillRow[];
+          const monumentMap = new Map<string, { emoji: string | null; title: string | null }>();
+          (monumentsResult.data ?? []).forEach((monument) => {
+            if (!monument.id) return;
+            monumentMap.set(monument.id, {
+              emoji: monument.emoji ?? null,
+              title: monument.title ?? null,
+            });
+          });
           setAvailableSkills(safeSkills);
+          setMonumentSkillLookup(monumentMap);
           setCategories(categoriesData);
           setSkills((prev) =>
             prev.filter((skillId) => safeSkills.some((skill) => skill.id === skillId)),
@@ -152,6 +165,7 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
         if (!cancelled) {
           console.error("Failed to load skills", err);
           setAvailableSkills([]);
+          setMonumentSkillLookup(new Map());
           setCategories([]);
           setSkillsError("Unable to load your skills right now.");
         }
@@ -484,15 +498,36 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
                   </p>
                   <div className="flex flex-col gap-1">
                     {group.skills.map((skill) => (
-                      <DropdownMenuCheckboxItem
+                      <DropdownMenuItem
                         key={skill.id}
-                        checked={skills.includes(skill.id)}
-                        onCheckedChange={() => toggleSkill(skill.id)}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          toggleSkill(skill.id);
+                        }}
                         className="gap-3 text-sm text-white"
                       >
+                        {skills.includes(skill.id) ? (
+                          <span className="flex size-5 items-center justify-center text-white">
+                            <Check className="size-4" />
+                          </span>
+                        ) : skill.monument_id && skill.monument_id !== monumentId ? (
+                          <span
+                            className="inline-flex size-5 items-center justify-center text-base leading-none"
+                            title={`Assigned to ${
+                              monumentSkillLookup.get(skill.monument_id)?.title ?? "another monument"
+                            }`}
+                            aria-label={`Assigned to ${
+                              monumentSkillLookup.get(skill.monument_id)?.title ?? "another monument"
+                            }`}
+                          >
+                            {monumentSkillLookup.get(skill.monument_id)?.emoji ?? "🏛️"}
+                          </span>
+                        ) : (
+                          <span className="size-5" aria-hidden="true" />
+                        )}
                         <span className="text-base">{skill.icon ?? "•"}</span>
                         <span>{skill.name}</span>
-                      </DropdownMenuCheckboxItem>
+                      </DropdownMenuItem>
                     ))}
                   </div>
                 </div>
