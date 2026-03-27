@@ -93,6 +93,7 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("🏛️");
   const [skills, setSkills] = useState<string[]>([]);
+  const [initialSkills, setInitialSkills] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,7 +132,7 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
         const [skillsResult, categoriesData] = await Promise.all([
           supabase
             .from("skills")
-            .select("id, name, icon, cat_id")
+            .select("id, name, icon, cat_id, monument_id")
             .eq("user_id", user.id)
             .order("name", { ascending: true }),
           getCatsForUser(user.id, supabase),
@@ -175,7 +176,7 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
 
     async function loadMonument() {
       try {
-        const [monumentResult, skillRelations] = await Promise.all([
+        const [monumentResult, skillRelationsResult, skillsByMonumentResult] = await Promise.all([
           supabase
             .from("monuments")
             .select("title,emoji")
@@ -185,6 +186,10 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
             .from("monument_skills")
             .select("skill_id")
             .eq("monument_id", monumentId),
+          supabase
+            .from("skills")
+            .select("id")
+            .eq("monument_id", monumentId),
         ]);
 
         if (cancelled) return;
@@ -193,13 +198,20 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
           throw monumentResult.error;
         }
 
+        const skillLinksFromJoin = (skillRelationsResult.data ?? [])
+          .map((row) => row.skill_id)
+          .filter((skillId): skillId is string => Boolean(skillId));
+        const skillLinksFromSkillsTable = (skillsByMonumentResult.data ?? [])
+          .map((row) => row.id)
+          .filter((skillId): skillId is string => Boolean(skillId));
+        const combinedSkillIds = Array.from(
+          new Set([...skillLinksFromJoin, ...skillLinksFromSkillsTable]),
+        );
+
         setTitle(monumentResult.data?.title ?? "");
         setEmoji(monumentResult.data?.emoji ?? "🏛️");
-        setSkills(
-          (skillRelations.data ?? [])
-            .map((row) => row.skill_id)
-            .filter(Boolean) as string[],
-        );
+        setSkills(combinedSkillIds);
+        setInitialSkills(combinedSkillIds);
       } catch (err) {
         console.error("Failed to load monument", err);
         if (!cancelled) {
@@ -316,35 +328,67 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
       return;
     }
 
-    const { error: deleteError } = await supabase
-      .from("monument_skills")
-      .delete()
-      .eq("monument_id", monumentId);
+    const existingSkillIds = new Set(initialSkills);
+    const nextSkillIds = new Set(skills);
 
-    if (deleteError) {
-      setError("Could not update skill links");
-      setSaving(false);
-      return;
-    }
+    const skillsToAdd = skills.filter((skillId) => !existingSkillIds.has(skillId));
+    const skillsToRemove = Array.from(existingSkillIds).filter(
+      (skillId) => !nextSkillIds.has(skillId),
+    );
 
-    if (skills.length > 0) {
-      const relationPayload = skills.map((skillId) => ({
-        monument_id: monumentId,
-        skill_id: skillId,
-        user_id: user.id,
-      }));
+    if (skillsToAdd.length > 0) {
+      const { error: addSkillLinkError } = await supabase
+        .from("skills")
+        .update({ monument_id: monumentId })
+        .in("id", skillsToAdd);
 
-      const { error: relationError } = await supabase
-        .from("monument_skills")
-        .insert(relationPayload);
-
-      if (relationError) {
-        setError("Monument saved, but failed to update skills");
+      if (addSkillLinkError) {
+        setError("Monument saved, but failed to link selected skills");
         setSaving(false);
         return;
       }
     }
 
+    if (skillsToRemove.length > 0) {
+      const { error: removeSkillLinkError } = await supabase
+        .from("skills")
+        .update({ monument_id: null })
+        .eq("monument_id", monumentId)
+        .in("id", skillsToRemove);
+
+      if (removeSkillLinkError) {
+        setError("Monument saved, but failed to remove unselected skills");
+        setSaving(false);
+        return;
+      }
+    }
+
+    if (skillsToAdd.length > 0) {
+      const relationPayload = skillsToAdd.map((skillId) => ({
+        monument_id: monumentId,
+        skill_id: skillId,
+        user_id: user.id,
+      }));
+      const { error: relationError } = await supabase
+        .from("monument_skills")
+        .upsert(relationPayload, { onConflict: "monument_id,skill_id" });
+      if (relationError) {
+        console.warn("Failed to sync monument_skills additions", relationError);
+      }
+    }
+
+    if (skillsToRemove.length > 0) {
+      const { error: deleteError } = await supabase
+        .from("monument_skills")
+        .delete()
+        .eq("monument_id", monumentId)
+        .in("skill_id", skillsToRemove);
+      if (deleteError) {
+        console.warn("Failed to sync monument_skills removals", deleteError);
+      }
+    }
+
+    setInitialSkills(skills);
     setSaving(false);
     onSaved?.();
   };
