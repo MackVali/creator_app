@@ -380,13 +380,12 @@ async function fetchGoalsWithRelationsForMonument(
 export function MonumentGoalsList({
   monumentId,
   monumentEmoji,
+  goalSection = "active",
 }: {
   monumentId: string;
   monumentEmoji?: string | null;
+  goalSection?: "active" | "completed";
 }) {
-  const [goalSection, setGoalSection] = useState<"active" | "completed">(
-    "active"
-  );
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [roadmaps, setRoadmaps] = useState<Roadmap[]>([]);
@@ -407,7 +406,6 @@ export function MonumentGoalsList({
 
   useEffect(() => {
     setOpenGoalId(null);
-    setGoalSection("active");
   }, [monumentId]);
 
   const decorate = useCallback((goal: Goal) => {
@@ -1108,32 +1106,6 @@ export function MonumentGoalsList({
 
   return (
     <div className="monument-goals-list">
-      <div className="mb-3 inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-1">
-        <button
-          type="button"
-          onClick={() => setGoalSection("active")}
-          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-            goalSection === "active"
-              ? "bg-white text-[#0B1020]"
-              : "text-[#A7B0BD] hover:text-white"
-          }`}
-          aria-pressed={goalSection === "active"}
-        >
-          Active
-        </button>
-        <button
-          type="button"
-          onClick={() => setGoalSection("completed")}
-          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-            goalSection === "completed"
-              ? "bg-white text-[#0B1020]"
-              : "text-[#A7B0BD] hover:text-white"
-          }`}
-          aria-pressed={goalSection === "completed"}
-        >
-          Completed
-        </button>
-      </div>
       {content}
       <style jsx global>{`
         /* Prevent lift/overlap across browsers */

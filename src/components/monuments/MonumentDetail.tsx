@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, BatteryCharging, Flame, MoreHorizontal } from "lucide-react";
 
@@ -32,8 +32,13 @@ interface MonumentDetailProps {
 export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
   const { id } = monument;
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  // Always use the compact goal cards on monuments
-  const useNewGoalCards = true;
+  const [goalSection, setGoalSection] = useState<"active" | "completed">(
+    "active"
+  );
+
+  useEffect(() => {
+    setGoalSection("active");
+  }, [id]);
 
   const containerShell =
     "relative w-full overflow-hidden rounded-3xl border border-white/10";
@@ -173,17 +178,39 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
               <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
                 GOALS
               </h2>
-              <Button
-                asChild
-                size="sm"
-                variant="outline"
-                className="rounded-full border border-black bg-white/5 px-4 text-white backdrop-blur hover:border-black hover:bg-white/10"
-              >
-                <Link href="/goals/new">New goal</Link>
-              </Button>
+              <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-1">
+                <button
+                  type="button"
+                  onClick={() => setGoalSection("active")}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                    goalSection === "active"
+                      ? "bg-white text-[#0B1020]"
+                      : "text-[#A7B0BD] hover:text-white"
+                  }`}
+                  aria-pressed={goalSection === "active"}
+                >
+                  Active
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGoalSection("completed")}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                    goalSection === "completed"
+                      ? "bg-white text-[#0B1020]"
+                      : "text-[#A7B0BD] hover:text-white"
+                  }`}
+                  aria-pressed={goalSection === "completed"}
+                >
+                  Completed
+                </button>
+              </div>
             </header>
             <div className="relative mt-4 overflow-visible">
-              <MonumentGoalsList monumentId={id} monumentEmoji={monument.emoji} />
+              <MonumentGoalsList
+                monumentId={id}
+                monumentEmoji={monument.emoji}
+                goalSection={goalSection}
+              />
             </div>
           </section>
 
