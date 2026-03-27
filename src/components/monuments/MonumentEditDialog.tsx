@@ -316,19 +316,31 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
       return;
     }
 
-    const { error: deleteError } = await supabase
+    const { data: existingRelations, error: existingRelationsError } = await supabase
       .from("monument_skills")
-      .delete()
+      .select("skill_id")
       .eq("monument_id", monumentId);
 
-    if (deleteError) {
-      setError("Could not update skill links");
+    if (existingRelationsError) {
+      setError("Monument saved, but we couldn't load current skill links.");
       setSaving(false);
       return;
     }
 
-    if (skills.length > 0) {
-      const relationPayload = skills.map((skillId) => ({
+    const existingSkillIds = new Set(
+      (existingRelations ?? [])
+        .map((row) => row.skill_id)
+        .filter((skillId): skillId is string => Boolean(skillId)),
+    );
+    const nextSkillIds = new Set(skills);
+
+    const skillsToAdd = skills.filter((skillId) => !existingSkillIds.has(skillId));
+    const skillsToRemove = Array.from(existingSkillIds).filter(
+      (skillId) => !nextSkillIds.has(skillId),
+    );
+
+    if (skillsToAdd.length > 0) {
+      const relationPayload = skillsToAdd.map((skillId) => ({
         monument_id: monumentId,
         skill_id: skillId,
         user_id: user.id,
@@ -336,10 +348,24 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
 
       const { error: relationError } = await supabase
         .from("monument_skills")
-        .insert(relationPayload);
+        .upsert(relationPayload, { onConflict: "monument_id,skill_id" });
 
       if (relationError) {
         setError("Monument saved, but failed to update skills");
+        setSaving(false);
+        return;
+      }
+    }
+
+    if (skillsToRemove.length > 0) {
+      const { error: deleteError } = await supabase
+        .from("monument_skills")
+        .delete()
+        .eq("monument_id", monumentId)
+        .in("skill_id", skillsToRemove);
+
+      if (deleteError) {
+        setError("Monument saved, but failed to remove unselected skills");
         setSaving(false);
         return;
       }
