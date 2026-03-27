@@ -469,6 +469,9 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
                       <DropdownMenuCheckboxItem
                         key={skill.id}
                         checked={skills.includes(skill.id)}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                        }}
                         onCheckedChange={() => toggleSkill(skill.id)}
                         className="gap-3 text-sm text-white"
                       >
