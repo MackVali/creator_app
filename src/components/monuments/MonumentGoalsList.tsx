@@ -384,6 +384,9 @@ export function MonumentGoalsList({
   monumentId: string;
   monumentEmoji?: string | null;
 }) {
+  const [goalSection, setGoalSection] = useState<"active" | "completed">(
+    "active"
+  );
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [roadmaps, setRoadmaps] = useState<Roadmap[]>([]);
@@ -404,6 +407,7 @@ export function MonumentGoalsList({
 
   useEffect(() => {
     setOpenGoalId(null);
+    setGoalSection("active");
   }, [monumentId]);
 
   const decorate = useCallback((goal: Goal) => {
@@ -1019,12 +1023,24 @@ export function MonumentGoalsList({
       roadmaps.flatMap((r) => (roadmapGoals.get(r.id) ?? []).map((g) => g.id))
     );
     const standaloneGoals = goals.filter((g) => !roadmapGoalIds.has(g.id));
+    const isCompletedGoal = (goal: Goal) => goal.status === "Completed";
+    const filterGoalBySection = (goal: Goal) =>
+      goalSection === "completed" ? isCompletedGoal(goal) : !isCompletedGoal(goal);
+    const filteredStandaloneGoals = standaloneGoals.filter(filterGoalBySection);
+    const filteredRoadmaps = roadmaps
+      .map((roadmap) => ({
+        roadmap,
+        goals: (roadmapGoals.get(roadmap.id) ?? []).filter(filterGoalBySection),
+      }))
+      .filter((entry) => entry.goals.length > 0);
 
     // If there are no roadmaps and no standalone goals, show empty state
-    if (roadmaps.length === 0 && standaloneGoals.length === 0) {
+    if (filteredRoadmaps.length === 0 && filteredStandaloneGoals.length === 0) {
       return (
         <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-          No goals linked to this monument yet.
+          {goalSection === "completed"
+            ? "No completed goals linked to this monument yet."
+            : "No active goals linked to this monument yet."}
         </Card>
       );
     }
@@ -1032,8 +1048,7 @@ export function MonumentGoalsList({
     // Render both roadmap cards first and then standalone goals in the same grid
     return (
       <div className={GOAL_GRID_CLASS}>
-        {roadmaps.map((roadmap) => {
-          const roadmapGoalsList = roadmapGoals.get(roadmap.id) ?? [];
+        {filteredRoadmaps.map(({ roadmap, goals: roadmapGoalsList }) => {
           return (
             <div
               key={roadmap.id}
@@ -1051,7 +1066,7 @@ export function MonumentGoalsList({
           );
         })}
 
-        {standaloneGoals.map((goal) => (
+        {filteredStandaloneGoals.map((goal) => (
           <div
             key={goal.id}
             className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-0"
@@ -1082,14 +1097,43 @@ export function MonumentGoalsList({
     goals,
     roadmaps,
     roadmapGoals,
+    goalSection,
     openGoalId,
+    handleGoalEdit,
     handleGoalOpenChange,
     handleProjectUpdated,
     handleProjectDeleted,
+    handleRoadmapGoalEdit,
   ]);
 
   return (
     <div className="monument-goals-list">
+      <div className="mb-3 inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-1">
+        <button
+          type="button"
+          onClick={() => setGoalSection("active")}
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+            goalSection === "active"
+              ? "bg-white text-[#0B1020]"
+              : "text-[#A7B0BD] hover:text-white"
+          }`}
+          aria-pressed={goalSection === "active"}
+        >
+          Active
+        </button>
+        <button
+          type="button"
+          onClick={() => setGoalSection("completed")}
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+            goalSection === "completed"
+              ? "bg-white text-[#0B1020]"
+              : "text-[#A7B0BD] hover:text-white"
+          }`}
+          aria-pressed={goalSection === "completed"}
+        >
+          Completed
+        </button>
+      </div>
       {content}
       <style jsx global>{`
         /* Prevent lift/overlap across browsers */
