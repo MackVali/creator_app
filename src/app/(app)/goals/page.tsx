@@ -9,6 +9,7 @@ import { GoalsHeader } from "./components/GoalsHeader";
 import {
   GoalsUtilityBar,
   EnergyFilter,
+  GoalViewFilter,
   PriorityFilter,
   SortOption,
 } from "./components/GoalsUtilityBar";
@@ -653,6 +654,7 @@ export default function GoalsPage() {
     new Map()
   );
   const [search, setSearch] = useState("");
+  const [view, setView] = useState<GoalViewFilter>("Active");
   const [energy, setEnergy] = useState<EnergyFilter>("All");
   const [priority, setPriority] = useState<PriorityFilter>("All");
   const [sort, setSort] = useState<SortOption>("A→Z");
@@ -1223,6 +1225,12 @@ export default function GoalsPage() {
 
   const filteredGoals = useMemo(() => {
     let data = goals.filter((g) => {
+      if (view === "Completed") {
+        return g.status === "Completed";
+      }
+      return g.status !== "Completed";
+    });
+    data = data.filter((g) => {
       const term = search.toLowerCase();
       if (!term) return true;
       const goalMatch = g.title.toLowerCase().includes(term);
@@ -1269,7 +1277,10 @@ export default function GoalsPage() {
       }
     });
     return sorted;
-  }, [goals, search, energy, priority, monument, skill, sort]);
+  }, [goals, view, search, energy, priority, monument, skill, sort]);
+
+  const roadmapCards =
+    view === "Active" ? roadmaps : ([] as Roadmap[]);
 
   const goalStats = useMemo(() => {
     if (goals.length === 0) {
@@ -1290,7 +1301,7 @@ export default function GoalsPage() {
 
   useEffect(() => {
     setVisibleGoalCount(GOAL_BATCH_SIZE);
-  }, [search, energy, priority, monument, skill, sort]);
+  }, [view, search, energy, priority, monument, skill, sort]);
 
   const visibleGoals = useMemo(
     () => filteredGoals.slice(0, visibleGoalCount),
@@ -1554,6 +1565,8 @@ export default function GoalsPage() {
         <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 pb-24 pt-10 sm:px-6 lg:px-8">
           <GoalsHeader stats={goalStats} onCreate={() => setDrawer(true)} />
           <GoalsUtilityBar
+            view={view}
+            onView={setView}
             search={search}
             onSearch={setSearch}
             energy={energy}
@@ -1573,20 +1586,26 @@ export default function GoalsPage() {
             <div className="rounded-[32px] border border-white/10 bg-white/[0.03] p-8 backdrop-blur">
               <LoadingSkeleton />
             </div>
-          ) : filteredGoals.length === 0 && roadmaps.length === 0 ? (
+          ) : filteredGoals.length === 0 && roadmapCards.length === 0 ? (
             <div className="rounded-[32px] border border-dashed border-white/20 bg-white/[0.02] p-10 text-center backdrop-blur">
-              <EmptyState onCreate={() => setDrawer(true)} />
+              {view === "Completed" ? (
+                <p className="text-sm text-white/70">
+                  No completed goals yet. Finish a goal to see it here.
+                </p>
+              ) : (
+                <EmptyState onCreate={() => setDrawer(true)} />
+              )}
             </div>
           ) : (
             <div className="relative">
-              {(visibleGoals.length > 0 || roadmaps.length > 0) && (
+              {(visibleGoals.length > 0 || roadmapCards.length > 0) && (
                 <div className="pointer-events-none absolute -top-8 right-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-white/60 sm:hidden">
                   Swipe to browse
                   <ArrowRight className="h-3 w-3" />
                 </div>
               )}
               <div className="grid auto-cols-[minmax(280px,1fr)] grid-flow-col gap-6 overflow-x-auto pb-6 snap-x snap-mandatory sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 sm:snap-none xl:grid-cols-3">
-                {roadmaps.map((roadmap) => {
+                {roadmapCards.map((roadmap) => {
                   const roadmapGoalsList = roadmapGoals.get(roadmap.id) ?? [];
                   return (
                     <div
