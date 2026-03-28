@@ -40,20 +40,28 @@ export function ProjectsDropdown({
   addingProject = false,
   onTaskToggleCompletion,
 }: ProjectsDropdownProps) {
+  const selectedProject = useMemo(
+    () => (projectTasksOnly ? projects[0] ?? null : null),
+    [projectTasksOnly, projects]
+  );
+
   const taskEntries = useMemo(() => {
     if (!projectTasksOnly) {
       return [] as TaskEntry[];
     }
-    return projects.flatMap((project) =>
-      project.tasks.map((task) => ({ project, task }))
-    );
-  }, [projects, projectTasksOnly]);
+    if (!selectedProject) {
+      return [] as TaskEntry[];
+    }
+    return selectedProject.tasks.map((task) => ({ project: selectedProject, task }));
+  }, [projectTasksOnly, selectedProject]);
 
   return (
     <div
       id={id}
       role="region"
-      aria-label={`Projects for ${goalTitle}`}
+      aria-label={
+        projectTasksOnly ? `Tasks for ${goalTitle}` : `Projects for ${goalTitle}`
+      }
       className="overflow-hidden px-5 pb-5 pt-4"
     >
       <div className="space-y-4 text-sm text-white/70">
@@ -105,7 +113,13 @@ export function ProjectsDropdown({
           disabled={addingProject || !onAddProject}
           className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-3 text-xs font-semibold uppercase tracking-[0.28em] text-white/80 transition hover:border-white/30 hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {addingProject ? "Adding project" : "Add a new project"}
+          {addingProject
+            ? projectTasksOnly
+              ? "Adding task"
+              : "Adding project"
+            : projectTasksOnly
+              ? "Add a new task"
+              : "Add a new project"}
         </button>
       </div>
     </div>
