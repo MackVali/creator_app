@@ -1229,22 +1229,32 @@ export async function fetchGoalsForUser(
   type GoalRecord = {
     id: string;
     name?: string | null;
-    weight?: number | null;
+    global_rank?: number | null;
     monument_id?: string | null;
     emoji?: string | null;
   };
   const { data, error } = await supabase
     .from("goals")
-    .select("id, name, weight, monument_id, emoji")
+    .select("id, name, global_rank, monument_id, emoji")
     .eq("user_id", userId);
 
   if (error) throw error;
 
-  return ((data ?? []) as GoalRecord[]).map((goal) => ({
-    id: goal.id,
-    name: goal.name ?? null,
-    weight: Number(goal.weight ?? 0) || 0,
-    monumentId: goal.monument_id ?? null,
-    emoji: goal.emoji ?? null,
-  }));
+  return ((data ?? []) as GoalRecord[]).map((goal) => {
+    const globalRank = goal.global_rank;
+    const weight =
+      typeof globalRank === "number" &&
+      Number.isFinite(globalRank) &&
+      globalRank > 0
+        ? 100000 - globalRank
+        : 0;
+    // Temporary compatibility bridge from global_rank to legacy weight.
+    return {
+      id: goal.id,
+      name: goal.name ?? null,
+      weight,
+      monumentId: goal.monument_id ?? null,
+      emoji: goal.emoji ?? null,
+    };
+  });
 }

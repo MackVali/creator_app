@@ -50,6 +50,7 @@ export interface Goal {
   skills?: string[];
   weight?: number;
   weightBoost?: number;
+  globalRank?: number | null;
   why?: string;
   priorityRank?: number;
 }

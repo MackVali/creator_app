@@ -3701,6 +3701,9 @@ export default function SchedulePage() {
         }
         return end > startMs && start < endMs;
       });
+      filtered = filtered.filter(
+        (instance) => instance.status !== "missed" && instance.status !== "canceled"
+      );
 
       // Filter out completed instances that overlap with scheduled instances
       const scheduledInstances = filtered.filter(

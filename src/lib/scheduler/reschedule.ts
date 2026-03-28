@@ -7177,7 +7177,12 @@ async function scheduleHabitsForDay(params: {
 
   for (const inst of dayInstances) {
     if (!inst || inst.status !== "scheduled") continue;
-    if (inst.source_type === "PROJECT") continue;
+    const isSyncOverlapInstance =
+      inst.source_type === "HABIT" &&
+      Boolean(
+        inst.source_id && habitTypeById.get(inst.source_id) === "SYNC"
+      );
+    if (isSyncOverlapInstance) continue;
     placedSoFar.push(inst);
   }
 

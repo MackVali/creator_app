@@ -221,6 +221,7 @@ interface RoadmapCardProps {
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  onRoadmapOrderSaved?: () => void | Promise<void>;
   monumentContext?: boolean;
 }
 
@@ -234,12 +235,12 @@ function RoadmapCardImpl({
   onGoalToggleActive,
   onGoalDelete,
   monumentContext = false,
+  onRoadmapOrderSaved,
 }: RoadmapCardProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [localGoals, setLocalGoals] = useState(goals);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -306,28 +307,15 @@ function RoadmapCardImpl({
 
       setIsSaving(true);
       try {
-        // Batch update priority_rank for all goals in this roadmap
-        const updates = goalsToSave.map((goal) => ({
-          id: goal.id,
-          priority_rank: goal.priorityRank!,
-        }));
+        const orderedGoalIds = goalsToSave.map((goal) => goal.id);
+        const { error } = await supabase.rpc("save_roadmap_goal_order", {
+          p_roadmap_id: roadmap.id,
+          p_goal_ids: orderedGoalIds,
+        });
 
-        // Update each goal sequentially
-        for (const { id, priority_rank } of updates) {
-          const { error } = await supabase
-            .from("goals")
-            .update({ priority_rank })
-            .eq("id", id)
-            .eq("roadmap_id", roadmap.id); // Ensure we only update goals in this roadmap
-
-          if (error) {
-            console.error(`Failed to update goal ${id}:`, error);
-          }
+        if (error) {
+          console.error("Failed to save roadmap goal order:", error);
         }
-
-        console.log(
-          `Saved priority ranks for ${updates.length} goals in roadmap ${roadmap.id}`
-        );
       } catch (error) {
         console.error("Failed to save priority ranks:", error);
       } finally {
@@ -337,43 +325,29 @@ function RoadmapCardImpl({
     [roadmap.id]
   );
 
-  const debouncedSave = useCallback(
-    (goalsToSave: Goal[]) => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      saveTimeoutRef.current = setTimeout(() => {
-        savePriorityRanks(goalsToSave);
-      }, 1000); // Debounce for 1 second
-    },
-    [savePriorityRanks]
-  );
-
   const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
+    async (event: DragEndEvent) => {
+      console.log("🎯 Drag ended:", event);
       const { active, over } = event;
 
       if (over && active.id !== over.id) {
-        setLocalGoals((items) => {
-          const oldIndex = items.findIndex((item) => item.id === active.id);
-          const newIndex = items.findIndex((item) => item.id === over.id);
+        const oldIndex = localGoals.findIndex((item) => item.id === active.id);
+        const newIndex = localGoals.findIndex((item) => item.id === over.id);
 
-          const reordered = arrayMove(items, oldIndex, newIndex);
+        console.log(`Moving from index ${oldIndex} to ${newIndex}`);
+        const reordered = arrayMove(localGoals, oldIndex, newIndex);
 
-          // Generate contiguous priority_rank values
-          const updatedGoals = reordered.map((goal, index) => ({
-            ...goal,
-            priorityRank: index + 1,
-          }));
+        const updatedGoals = reordered.map((goal, index) => ({
+          ...goal,
+          priorityRank: index + 1,
+        }));
 
-          // Debounced save
-          debouncedSave(updatedGoals);
-
-          return updatedGoals;
-        });
+        setLocalGoals(updatedGoals);
+        await savePriorityRanks(updatedGoals);
+        await onRoadmapOrderSaved?.();
       }
     },
-    [debouncedSave]
+    [localGoals, savePriorityRanks, onRoadmapOrderSaved]
   );
 
   const hasGoals = goals.length > 0;
@@ -480,21 +454,7 @@ function RoadmapCardImpl({
                 onDragStart={(event) => {
                   console.log("🎯 Drag started:", event.active.id);
                 }}
-                onDragEnd={(event) => {
-                  console.log("🎯 Drag ended:", event);
-                  const { active, over } = event;
-                  if (over && active.id !== over.id) {
-                    const oldIndex = localGoals.findIndex(
-                      (g) => g.id === active.id
-                    );
-                    const newIndex = localGoals.findIndex(
-                      (g) => g.id === over.id
-                    );
-                    console.log(`Moving from index ${oldIndex} to ${newIndex}`);
-                    const reordered = arrayMove(localGoals, oldIndex, newIndex);
-                    setLocalGoals(reordered);
-                  }
-                }}
+                onDragEnd={handleDragEnd}
               >
                 <SortableContext items={localGoals.map((g) => g.id)}>
                   <div
@@ -800,7 +760,8 @@ export const RoadmapCard = memo(RoadmapCardImpl, (prev, next) => {
     prev.goalCount === next.goalCount &&
     prev.variant === next.variant &&
     prev.goals === next.goals &&
-    prev.monumentContext === next.monumentContext
+    prev.monumentContext === next.monumentContext &&
+    prev.onRoadmapOrderSaved === next.onRoadmapOrderSaved
   );
 });
 
