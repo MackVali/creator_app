@@ -1,6 +1,13 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 
@@ -8,46 +15,29 @@ import CategoryCard from "./CategoryCard";
 import useSkillProgress from "./useSkillProgress";
 import useSkillsData, { type Category, type Skill } from "./useSkillsData";
 import { deriveInitialIndex } from "./carouselUtils";
+import {
+  CATEGORY_COLOR_OPTIONS,
+  FALLBACK_CATEGORY_COLOR,
+  withAlpha,
+} from "./categoryColorSystem";
 import { updateCatOrder } from "@/lib/data/cats";
 import { createRecord, updateRecord } from "@/lib/db";
 import { useToastHelpers } from "@/components/ui/toast";
 import type { SkillRow } from "@/lib/types/skill";
 
-const FALLBACK_COLOR = "#6366f1";
 const MAX_CATEGORY_SLOTS = 10;
 const DEFAULT_CATEGORY_EMOJI = "⚓";
-
-function parseHex(hex?: string | null) {
-  if (!hex) {
-    return { r: 99, g: 102, b: 241 };
-  }
-
-  const normalized = hex.replace("#", "");
-  if (normalized.length !== 6) {
-    return { r: 99, g: 102, b: 241 };
-  }
-
-  const r = parseInt(normalized.slice(0, 2), 16);
-  const g = parseInt(normalized.slice(2, 4), 16);
-  const b = parseInt(normalized.slice(4, 6), 16);
-
-  if ([r, g, b].some((channel) => Number.isNaN(channel))) {
-    return { r: 99, g: 102, b: 241 };
-  }
-
-  return { r, g, b };
-}
-
-function withAlpha(hex: string | null | undefined, alpha: number) {
-  const { r, g, b } = parseHex(hex);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
 
 const isReorderable = (category: Category) =>
   category.id !== "uncategorized" && !category.is_locked;
 
 export default function SkillsCarousel() {
-  const { categories: fetchedCategories, skillsByCategory, isLoading, reload } = useSkillsData();
+  const {
+    categories: fetchedCategories,
+    skillsByCategory,
+    isLoading,
+    reload,
+  } = useSkillsData();
   const { progressBySkillId } = useSkillProgress();
   const router = useRouter();
   const search = useSearchParams();
@@ -68,13 +58,21 @@ export default function SkillsCarousel() {
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [draggingSkill, setDraggingSkill] = useState<Skill | null>(null);
-  const [dragOriginCategoryId, setDragOriginCategoryId] = useState<string | null>(null);
-  const [dropTargetCategoryId, setDropTargetCategoryId] = useState<string | null>(null);
+  const [dragOriginCategoryId, setDragOriginCategoryId] = useState<
+    string | null
+  >(null);
+  const [dropTargetCategoryId, setDropTargetCategoryId] = useState<
+    string | null
+  >(null);
   const [isMovingSkill, setIsMovingSkill] = useState(false);
   const [isAddCategoryMenuOpen, setIsAddCategoryMenuOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
-  const [newCategoryColor, setNewCategoryColor] = useState(FALLBACK_COLOR);
-  const [newCategoryEmoji, setNewCategoryEmoji] = useState(DEFAULT_CATEGORY_EMOJI);
+  const [newCategoryColor, setNewCategoryColor] = useState(
+    FALLBACK_CATEGORY_COLOR,
+  );
+  const [newCategoryEmoji, setNewCategoryEmoji] = useState(
+    DEFAULT_CATEGORY_EMOJI,
+  );
   const addCategoryMenuRef = useRef<HTMLDivElement | null>(null);
   const addCategoryNameRef = useRef<HTMLInputElement | null>(null);
 
@@ -82,23 +80,28 @@ export default function SkillsCarousel() {
   const skeletonChipPlaceholders = [0, 1, 2, 3];
 
   const getCategoryColor = (category: (typeof categories)[number]) =>
-    catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
+    catOverrides[category.id]?.color ??
+    category.color_hex ??
+    FALLBACK_CATEGORY_COLOR;
   const getCategoryIcon = (category: (typeof categories)[number]) =>
     catOverrides[category.id]?.icon ?? category.icon ?? null;
 
   const activeCategory = categories[activeIndex];
   const activeColor = useMemo(() => {
     if (!activeCategory) {
-      return FALLBACK_COLOR;
+      return FALLBACK_CATEGORY_COLOR;
     }
     const override = catOverrides[activeCategory.id];
-    return override?.color ?? activeCategory.color_hex ?? FALLBACK_COLOR;
+    return (
+      override?.color ?? activeCategory.color_hex ?? FALLBACK_CATEGORY_COLOR
+    );
   }, [activeCategory, catOverrides]);
   const canGoPrev = activeIndex > 0;
   const canGoNext = activeIndex < categories.length - 1;
   const actualCategoryCount = useMemo(
-    () => categories.filter((category) => category.id !== "uncategorized").length,
-    [categories]
+    () =>
+      categories.filter((category) => category.id !== "uncategorized").length,
+    [categories],
   );
   const canAddCategory = actualCategoryCount < MAX_CATEGORY_SLOTS;
 
@@ -112,7 +115,7 @@ export default function SkillsCarousel() {
     if (!isAddCategoryMenuOpen) {
       setNewCategoryName("");
       setNewCategoryEmoji(DEFAULT_CATEGORY_EMOJI);
-      setNewCategoryColor(FALLBACK_COLOR);
+      setNewCategoryColor(FALLBACK_CATEGORY_COLOR);
     }
   }, [isAddCategoryMenuOpen]);
 
@@ -149,17 +152,20 @@ export default function SkillsCarousel() {
     };
   }, [isAddCategoryMenuOpen]);
 
-  const handleSkillDragStart = useCallback((skill: Skill, categoryId: string) => {
-    setDraggingSkill(skill);
-    setDragOriginCategoryId(categoryId);
-  }, []);
+  const handleSkillDragStart = useCallback(
+    (skill: Skill, categoryId: string) => {
+      setDraggingSkill(skill);
+      setDragOriginCategoryId(categoryId);
+    },
+    [],
+  );
 
   const handleCategoryDragEnter = useCallback(
     (categoryId: string) => {
       if (!draggingSkill) return;
       setDropTargetCategoryId(categoryId);
     },
-    [draggingSkill]
+    [draggingSkill],
   );
 
   const handleCategoryDragLeave = useCallback(
@@ -168,7 +174,7 @@ export default function SkillsCarousel() {
         setDropTargetCategoryId(null);
       }
     },
-    [dropTargetCategoryId]
+    [dropTargetCategoryId],
   );
 
   const moveSkillBetweenCategories = useCallback(
@@ -177,8 +183,12 @@ export default function SkillsCarousel() {
       try {
         const targetSkills = skillsByCategory[targetCategoryId] ?? [];
         const nextSortOrder =
-          targetSkills.reduce((max, item) => Math.max(max, item.sort_order ?? 0), 0) + 1;
-        const targetCatId = targetCategoryId === "uncategorized" ? null : targetCategoryId;
+          targetSkills.reduce(
+            (max, item) => Math.max(max, item.sort_order ?? 0),
+            0,
+          ) + 1;
+        const targetCatId =
+          targetCategoryId === "uncategorized" ? null : targetCategoryId;
 
         const { error } = await updateRecord<SkillRow>("skills", skill.id, {
           cat_id: targetCatId,
@@ -190,12 +200,15 @@ export default function SkillsCarousel() {
         await reload();
       } catch (error) {
         console.error("Failed to move skill between categories", error);
-        toast.error("Could not move skill", error instanceof Error ? error.message : "Try again.");
+        toast.error(
+          "Could not move skill",
+          error instanceof Error ? error.message : "Try again.",
+        );
       } finally {
         setIsMovingSkill(false);
       }
     },
-    [reload, skillsByCategory, toast]
+    [reload, skillsByCategory, toast],
   );
 
   const handleSkillDragEnd = useCallback(() => {
@@ -223,7 +236,10 @@ export default function SkillsCarousel() {
     moveSkillBetweenCategories,
   ]);
 
-  const firstReorderableIndex = useMemo(() => categories.findIndex(isReorderable), [categories]);
+  const firstReorderableIndex = useMemo(
+    () => categories.findIndex(isReorderable),
+    [categories],
+  );
   const lastReorderableIndex = useMemo(() => {
     for (let idx = categories.length - 1; idx >= 0; idx -= 1) {
       const category = categories[idx];
@@ -268,10 +284,14 @@ export default function SkillsCarousel() {
   useEffect(() => {
     setCatOverrides((prev) => {
       let changed = false;
-      const next: Record<string, { color?: string | null; icon?: string | null }> = {};
+      const next: Record<
+        string,
+        { color?: string | null; icon?: string | null }
+      > = {};
       for (const category of categories) {
         const existing = prev[category.id];
-        const color = existing?.color ?? category.color_hex ?? FALLBACK_COLOR;
+        const color =
+          existing?.color ?? category.color_hex ?? FALLBACK_CATEGORY_COLOR;
         const icon = existing?.icon ?? category.icon ?? null;
         next[category.id] = { color, icon };
         if (!existing || existing.color !== color || existing.icon !== icon) {
@@ -327,7 +347,7 @@ export default function SkillsCarousel() {
         }
       }
     },
-    [categories, router, search]
+    [categories, router, search],
   );
 
   const syncToNearestCard = useCallback(() => {
@@ -443,22 +463,27 @@ export default function SkillsCarousel() {
     return () => window.removeEventListener("resize", handleResize);
   }, [scrollToIndex, syncToNearestCard]);
 
-  const persistCategoryOrder = useCallback(async (nextCategories: Category[]) => {
-    const reorderable = nextCategories.filter(isReorderable);
-    if (reorderable.length === 0) {
-      return;
-    }
-    setIsSavingOrder(true);
-    try {
-      await Promise.all(
-        reorderable.map((category, index) => updateCatOrder(category.id, index + 1))
-      );
-    } catch (error) {
-      console.error("Failed to update category order", error);
-    } finally {
-      setIsSavingOrder(false);
-    }
-  }, []);
+  const persistCategoryOrder = useCallback(
+    async (nextCategories: Category[]) => {
+      const reorderable = nextCategories.filter(isReorderable);
+      if (reorderable.length === 0) {
+        return;
+      }
+      setIsSavingOrder(true);
+      try {
+        await Promise.all(
+          reorderable.map((category, index) =>
+            updateCatOrder(category.id, index + 1),
+          ),
+        );
+      } catch (error) {
+        console.error("Failed to update category order", error);
+      } finally {
+        setIsSavingOrder(false);
+      }
+    },
+    [],
+  );
 
   const handleAddCategoryButtonClick = useCallback(() => {
     if (!canAddCategory || isCreatingCategory) return;
@@ -488,17 +513,23 @@ export default function SkillsCarousel() {
         icon: newCategoryEmoji.trim() || null,
       });
       if (error || !data) {
-        toast.error("Failed to create category", error?.message || "Please try again.");
+        toast.error(
+          "Failed to create category",
+          error?.message || "Please try again.",
+        );
         return;
       }
-      toast.success("Category created", `${trimmedName} is now available in the carousel.`);
+      toast.success(
+        "Category created",
+        `${trimmedName} is now available in the carousel.`,
+      );
       reload();
       setIsAddCategoryMenuOpen(false);
     } catch (err) {
       console.error("Failed to create category", err);
       toast.error(
         "Failed to create category",
-        err instanceof Error ? err.message : "Please try again."
+        err instanceof Error ? err.message : "Please try again.",
       );
     } finally {
       setIsCreatingCategory(false);
@@ -513,13 +544,16 @@ export default function SkillsCarousel() {
 
       let nextCategories: Category[] | null = null;
       setCategories((previous) => {
-        const currentIndex = previous.findIndex((category) => category.id === categoryId);
+        const currentIndex = previous.findIndex(
+          (category) => category.id === categoryId,
+        );
         if (currentIndex === -1) return previous;
         const currentCategory = previous[currentIndex];
         if (!currentCategory || !isReorderable(currentCategory)) {
           return previous;
         }
-        const targetIndex = direction === "left" ? currentIndex - 1 : currentIndex + 1;
+        const targetIndex =
+          direction === "left" ? currentIndex - 1 : currentIndex + 1;
 
         const firstReorderableIndex = previous.findIndex(isReorderable);
         const lastReorderableIndex = (() => {
@@ -539,7 +573,10 @@ export default function SkillsCarousel() {
         let updated: Category[] | null = null;
 
         if (direction === "left" || direction === "right") {
-          if (targetIndex < firstReorderableIndex || targetIndex > lastReorderableIndex) {
+          if (
+            targetIndex < firstReorderableIndex ||
+            targetIndex > lastReorderableIndex
+          ) {
             return previous;
           }
           const targetCategory = previous[targetIndex];
@@ -580,8 +617,13 @@ export default function SkillsCarousel() {
 
         const activeId = previous[activeIndexRef.current]?.id;
         if (activeId) {
-          const nextActiveIndex = mapped.findIndex((category) => category.id === activeId);
-          if (nextActiveIndex !== -1 && nextActiveIndex !== activeIndexRef.current) {
+          const nextActiveIndex = mapped.findIndex(
+            (category) => category.id === activeId,
+          );
+          if (
+            nextActiveIndex !== -1 &&
+            nextActiveIndex !== activeIndexRef.current
+          ) {
             activeIndexRef.current = nextActiveIndex;
             setActiveIndex(nextActiveIndex);
           }
@@ -594,22 +636,24 @@ export default function SkillsCarousel() {
         void persistCategoryOrder(nextCategories);
       }
     },
-    [isSavingOrder, persistCategoryOrder]
+    [isSavingOrder, persistCategoryOrder],
   );
 
   const handleCategoryNameChange = useCallback(
     (_categoryId: string, _nextName: string) => {
       reload();
     },
-    [reload]
+    [reload],
   );
 
   const handleCategoryDelete = useCallback(
     (categoryId: string) => {
-      setCategories((previous) => previous.filter((category) => category.id !== categoryId));
+      setCategories((previous) =>
+        previous.filter((category) => category.id !== categoryId),
+      );
       reload();
     },
-    [reload]
+    [reload],
   );
 
   if (isLoading) {
@@ -634,7 +678,10 @@ export default function SkillsCarousel() {
                     <div className="h-6 w-2/3 rounded-full bg-white/[0.08]" />
                     <div className="space-y-3">
                       {skeletonCategoryPlaceholders.map((line) => (
-                        <div key={line} className="h-5 w-full rounded-full bg-white/[0.06]" />
+                        <div
+                          key={line}
+                          className="h-5 w-full rounded-full bg-white/[0.06]"
+                        />
                       ))}
                     </div>
                   </div>
@@ -670,10 +717,13 @@ export default function SkillsCarousel() {
       <div className="relative">
         <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-4 py-6 shadow-lg sm:px-6">
           <div className="space-y-1 text-left">
-            <p className="text-xs font-semibold tracking-[0.4em] text-slate-300/70">SKILLS</p>
+            <p className="text-xs font-semibold tracking-[0.4em] text-slate-300/70">
+              SKILLS
+            </p>
             <h3 className="text-xl font-semibold text-white">No skills yet</h3>
             <p className="text-sm text-slate-400">
-              Set up your skill stack (5 categories, ~25 skills) to personalize CREATOR.
+              Set up your skill stack (5 categories, ~25 skills) to personalize
+              CREATOR.
             </p>
           </div>
           <div className="mt-6 flex flex-wrap justify-end gap-2">
@@ -690,7 +740,8 @@ export default function SkillsCarousel() {
     );
   }
 
-  const isCreateCategoryDisabled = isCreatingCategory || newCategoryName.trim().length === 0;
+  const isCreateCategoryDisabled =
+    isCreatingCategory || newCategoryName.trim().length === 0;
 
   return (
     <div
@@ -715,7 +766,10 @@ export default function SkillsCarousel() {
       }}
     >
       <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-2 py-6 shadow-lg sm:px-4">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black" aria-hidden />
+        <div
+          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black"
+          aria-hidden
+        />
         {categories.length > 1 && (
           <>
             <button
@@ -751,7 +805,9 @@ export default function SkillsCarousel() {
         <div
           ref={trackRef}
           className={`relative flex snap-x gap-5 overflow-x-auto overflow-y-hidden px-2 sm:px-3 ${
-            skillDragging ? "snap-none touch-none" : "snap-mandatory touch-pan-x"
+            skillDragging
+              ? "snap-none touch-none"
+              : "snap-mandatory touch-pan-x"
           }`}
         >
           {categories.map((category, idx) => {
@@ -759,9 +815,15 @@ export default function SkillsCarousel() {
             const isUncategorized = category.id === "uncategorized";
             const isLocked = Boolean(category.is_locked);
             const canMoveLeft =
-              !isUncategorized && !isLocked && idx > firstReorderableIndex && firstReorderableIndex !== -1;
+              !isUncategorized &&
+              !isLocked &&
+              idx > firstReorderableIndex &&
+              firstReorderableIndex !== -1;
             const canMoveRight =
-              !isUncategorized && !isLocked && idx < lastReorderableIndex && lastReorderableIndex !== -1;
+              !isUncategorized &&
+              !isLocked &&
+              idx < lastReorderableIndex &&
+              lastReorderableIndex !== -1;
             return (
               <div
                 key={category.id}
@@ -783,10 +845,16 @@ export default function SkillsCarousel() {
                   progressBySkillId={progressBySkillId}
                   isDropTarget={dropTargetCategoryId === category.id}
                   isDraggingSkill={Boolean(draggingSkill)}
-                  onSkillDragStart={(skill) => handleSkillDragStart(skill, category.id)}
+                  onSkillDragStart={(skill) =>
+                    handleSkillDragStart(skill, category.id)
+                  }
                   onSkillDragEnd={handleSkillDragEnd}
-                  onDragCategoryHover={() => handleCategoryDragEnter(category.id)}
-                  onDragCategoryLeave={() => handleCategoryDragLeave(category.id)}
+                  onDragCategoryHover={() =>
+                    handleCategoryDragEnter(category.id)
+                  }
+                  onDragCategoryLeave={() =>
+                    handleCategoryDragLeave(category.id)
+                  }
                   menuOpen={openMenuFor === category.id}
                   onMenuOpenChange={(open) => {
                     setOpenMenuFor((current) => {
@@ -812,11 +880,16 @@ export default function SkillsCarousel() {
                       [category.id]: {
                         ...(prev[category.id] || {}),
                         icon,
-                        color: prev[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR,
+                        color:
+                          prev[category.id]?.color ??
+                          category.color_hex ??
+                          FALLBACK_CATEGORY_COLOR,
                       },
                     }))
                   }
-                  onNameChange={(name) => handleCategoryNameChange(category.id, name)}
+                  onNameChange={(name) =>
+                    handleCategoryNameChange(category.id, name)
+                  }
                   onDeleteCategory={handleCategoryDelete}
                   onReorder={(direction) => {
                     if (category.is_locked) return;
@@ -833,11 +906,14 @@ export default function SkillsCarousel() {
           })}
         </div>
       </div>
-      <div className="mt-6 flex flex-wrap justify-center gap-2.5" role="tablist">
+      <div
+        className="mt-6 flex flex-wrap justify-center gap-2.5"
+        role="tablist"
+      >
         {categories.map((category, idx) => {
           const isActive = idx === activeIndex;
           const previewSkill = (skillsByCategory[category.id] || []).find(
-            (skill) => skill.emoji
+            (skill) => skill.emoji,
           )?.emoji;
           const catIcon = getCategoryIcon(category);
           const resolvedIcon = catIcon?.trim();
@@ -845,7 +921,8 @@ export default function SkillsCarousel() {
             resolvedIcon && resolvedIcon.length > 0
               ? resolvedIcon
               : previewSkill || category.name.charAt(0).toUpperCase();
-          const chipColor = getCategoryColor(category) || FALLBACK_COLOR;
+          const chipColor =
+            getCategoryColor(category) || FALLBACK_CATEGORY_COLOR;
 
           return (
             <button
@@ -864,11 +941,17 @@ export default function SkillsCarousel() {
                 });
               }}
               className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
-                isActive ? "text-slate-100" : "text-slate-300/85 hover:text-slate-100"
+                isActive
+                  ? "text-slate-100"
+                  : "text-slate-300/85 hover:text-slate-100"
               }`}
               style={{
-                backgroundColor: isActive ? withAlpha(chipColor, 0.24) : "rgba(0, 0, 0, 0.65)",
-                borderColor: isActive ? withAlpha(chipColor, 0.45) : "rgba(148, 163, 184, 0.25)",
+                backgroundColor: isActive
+                  ? withAlpha(chipColor, 0.24)
+                  : "rgba(0, 0, 0, 0.65)",
+                borderColor: isActive
+                  ? withAlpha(chipColor, 0.45)
+                  : "rgba(148, 163, 184, 0.25)",
                 boxShadow: isActive
                   ? `0 16px 32px ${withAlpha(chipColor, 0.28)}`
                   : "0 6px 18px rgba(0, 0, 0, 0.3)",
@@ -877,8 +960,12 @@ export default function SkillsCarousel() {
               <span
                 className="flex h-6 w-6 items-center justify-center rounded-full text-base font-semibold shadow"
                 style={{
-                  backgroundColor: isActive ? withAlpha(chipColor, 0.55) : withAlpha(chipColor, 0.18),
-                  color: isActive ? "rgba(0, 0, 0, 0.85)" : "rgba(255,255,255,0.92)",
+                  backgroundColor: isActive
+                    ? withAlpha(chipColor, 0.55)
+                    : withAlpha(chipColor, 0.18),
+                  color: isActive
+                    ? "rgba(0, 0, 0, 0.85)"
+                    : "rgba(255,255,255,0.92)",
                   boxShadow: isActive
                     ? `0 12px 24px ${withAlpha(chipColor, 0.32)}`
                     : "0 6px 14px rgba(0,0,0,0.28)",
@@ -899,12 +986,12 @@ export default function SkillsCarousel() {
                   isCreatingCategory
                     ? "border-white/30 bg-white/10 text-white/60 cursor-wait"
                     : "border-dashed border-white/30 bg-white/5 text-white/80 hover:border-white/50 hover:bg-white/10"
-              } ${isAddCategoryMenuOpen ? "ring-2 ring-white/60" : ""}`}
-              onClick={handleAddCategoryButtonClick}
-              disabled={isCreatingCategory}
-              aria-label="Add a new category"
-              aria-expanded={isAddCategoryMenuOpen}
-              aria-controls="add-category-panel"
+                } ${isAddCategoryMenuOpen ? "ring-2 ring-white/60" : ""}`}
+                onClick={handleAddCategoryButtonClick}
+                disabled={isCreatingCategory}
+                aria-label="Add a new category"
+                aria-expanded={isAddCategoryMenuOpen}
+                aria-controls="add-category-panel"
               >
                 <Plus className="h-4 w-4" />
                 <span>Add category</span>
@@ -916,111 +1003,187 @@ export default function SkillsCarousel() {
                 <div
                   ref={addCategoryMenuRef}
                   id="add-category-panel"
-                  className="relative z-10 w-full max-w-sm rounded-3xl border px-4 py-3 text-white shadow-2xl backdrop-blur"
+                  className="relative z-10 w-full max-w-sm overflow-hidden rounded-3xl border px-4 py-4 text-white shadow-2xl backdrop-blur"
                   style={{
-                    background: `linear-gradient(150deg, ${withAlpha(activeColor, 0.35)}, ${withAlpha(
+                    background: `radial-gradient(circle at top left, ${withAlpha("#ffffff", 0.18)} 0%, ${withAlpha(
+                      "#ffffff",
+                      0,
+                    )} 38%), linear-gradient(165deg, ${withAlpha(activeColor, 0.38)} 0%, ${withAlpha(
                       activeColor,
-                      0.08
-                    )})`,
-                    borderColor: withAlpha(activeColor, 0.55),
-                    boxShadow: `0 25px 45px ${withAlpha("#0f172a", 0.55)}, 0 12px 30px ${withAlpha(
+                      0.16,
+                    )} 42%, rgba(9, 14, 24, 0.94) 100%)`,
+                    borderColor: withAlpha(activeColor, 0.42),
+                    boxShadow: `0 28px 55px ${withAlpha("#020617", 0.6)}, 0 14px 34px ${withAlpha(
                       activeColor,
-                      0.35
+                      0.24,
                     )}`,
                   }}
                 >
-                  <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
-                      New category
-                    </p>
-                    <p className="text-base font-semibold">Style & name</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsAddCategoryMenuOpen(false)}
-                    className="rounded-full p-1 text-white/70 transition hover:text-white"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="mt-3 space-y-4">
-                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,4fr)] gap-3">
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">
-                        Emoji
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                      background: `radial-gradient(circle at 85% 8%, ${withAlpha(activeColor, 0.28)} 0%, ${withAlpha(
+                        activeColor,
+                        0,
+                      )} 36%), linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 24%, rgba(2,6,23,0.18) 100%)`,
+                    }}
+                  />
+                  <div className="relative flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
+                        New category
                       </p>
-                      <div className="flex items-center justify-center">
+                      <p className="text-base font-semibold">Style & name</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddCategoryMenuOpen(false)}
+                      className="rounded-full p-1 text-white/70 transition hover:text-white"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="relative mt-4 space-y-4">
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,4fr)] gap-3">
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                          Emoji
+                        </p>
+                        <div className="flex items-center justify-center">
+                          <input
+                            type="text"
+                            value={newCategoryEmoji}
+                            onChange={(event) =>
+                              setNewCategoryEmoji(event.target.value)
+                            }
+                            maxLength={4}
+                            className="aspect-square h-10 w-full max-w-[64px] rounded-[18px] border border-white/20 bg-white/8 px-3 text-center text-lg text-white placeholder-transparent transition focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                            aria-label="Choose an emoji for the category"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="category-name"
+                          className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70"
+                        >
+                          Name
+                        </label>
                         <input
+                          ref={addCategoryNameRef}
+                          id="category-name"
                           type="text"
-                          value={newCategoryEmoji}
-                          onChange={(event) => setNewCategoryEmoji(event.target.value)}
-                          maxLength={4}
-                          className="aspect-square h-10 w-full max-w-[64px] rounded-[18px] border border-white/20 bg-white/5 px-3 text-center text-lg text-white placeholder-transparent transition focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
-                          aria-label="Choose an emoji for the category"
+                          value={newCategoryName}
+                          onChange={(event) =>
+                            setNewCategoryName(event.target.value)
+                          }
+                          placeholder="Example: Flow, Business, Studio"
+                          maxLength={36}
+                          className="w-full rounded-2xl border border-white/20 bg-white/8 px-3 py-2 text-sm text-white placeholder-white/50 transition focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
                         />
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <label
-                        htmlFor="category-name"
-                        className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70"
-                      >
-                        Name
-                      </label>
-                      <input
-                        ref={addCategoryNameRef}
-                        id="category-name"
-                        type="text"
-                        value={newCategoryName}
-                        onChange={(event) => setNewCategoryName(event.target.value)}
-                        placeholder="Example: Flow, Business, Studio"
-                        maxLength={36}
-                        className="w-full rounded-2xl border border-white/20 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/50 transition focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
-                      />
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                          Color palette
+                        </p>
+                        <p className="mt-1 text-[11px] text-white/55">
+                          Curated rich tones with cleaner contrast for the card
+                          surface.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {CATEGORY_COLOR_OPTIONS.map((option) => {
+                          const isSelected =
+                            option.value.toLowerCase() ===
+                            newCategoryColor.toLowerCase();
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => setNewCategoryColor(option.value)}
+                              className="group relative h-11 rounded-2xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                              style={{
+                                background: `linear-gradient(160deg, ${option.value} 0%, ${withAlpha(option.value, 0.78)} 100%)`,
+                                borderColor: isSelected
+                                  ? "rgba(255,255,255,0.72)"
+                                  : "rgba(255,255,255,0.14)",
+                                boxShadow: isSelected
+                                  ? `0 0 0 1px rgba(255,255,255,0.24), 0 16px 28px ${withAlpha(option.value, 0.32)}`
+                                  : `0 10px 20px ${withAlpha(option.value, 0.18)}`,
+                              }}
+                              aria-label={`Select ${option.label}`}
+                              title={option.label}
+                            >
+                              <span
+                                aria-hidden
+                                className="absolute inset-x-2 top-1.5 h-3 rounded-full"
+                                style={{
+                                  background:
+                                    "linear-gradient(180deg, rgba(255,255,255,0.48), rgba(255,255,255,0))",
+                                }}
+                              />
+                              {isSelected && (
+                                <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold uppercase tracking-[0.28em] text-white">
+                                  ✓
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/6 px-3 py-2">
+                        <input
+                          type="color"
+                          value={newCategoryColor}
+                          onChange={(event) =>
+                            setNewCategoryColor(event.target.value)
+                          }
+                          className="h-10 w-10 cursor-pointer rounded-xl border border-white/20 bg-transparent p-0 transition"
+                          aria-label="Pick a custom color for the new category"
+                        />
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/60">
+                          {newCategoryColor}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">
-                      Color
-                    </p>
-                    <input
-                      type="color"
-                      value={newCategoryColor}
-                      onChange={(event) => setNewCategoryColor(event.target.value)}
-                      className="h-10 w-10 cursor-pointer rounded-xl border border-white/40 p-0 transition"
-                      aria-label="Pick a color for the new category"
-                    />
+                  <div className="relative mt-5 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsAddCategoryMenuOpen(false)}
+                      className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/60 transition hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCreateCategory}
+                      disabled={
+                        isCreatingCategory ||
+                        newCategoryName.trim().length === 0
+                      }
+                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] transition ${
+                        isCreatingCategory ||
+                        newCategoryName.trim().length === 0
+                          ? "cursor-not-allowed bg-white/20 text-white/60"
+                          : "bg-white text-slate-900 shadow-lg shadow-white/40 hover:bg-white/90"
+                      }`}
+                    >
+                      <Plus
+                        className={`h-4 w-4 ${
+                          isCreateCategoryDisabled
+                            ? "text-white/60"
+                            : "text-slate-900"
+                        }`}
+                      />
+                      Create category
+                    </button>
                   </div>
                 </div>
-                <div className="mt-4 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddCategoryMenuOpen(false)}
-                    className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/60 transition hover:text-white"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCreateCategory}
-                    disabled={isCreatingCategory || newCategoryName.trim().length === 0}
-                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] transition ${
-                      isCreatingCategory || newCategoryName.trim().length === 0
-                        ? "cursor-not-allowed bg-white/20 text-white/60"
-                        : "bg-white text-slate-900 shadow-lg shadow-white/40 hover:bg-white/90"
-                    }`}
-                  >
-                    <Plus
-                      className={`h-4 w-4 ${
-                        isCreateCategoryDisabled ? "text-white/60" : "text-slate-900"
-                      }`}
-                    />
-                    Create category
-                  </button>
-                </div>
               </div>
-            </div>
             )}
           </>
         )}
