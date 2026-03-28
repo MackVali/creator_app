@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   CalendarDays,
@@ -928,24 +927,6 @@ export default function SkillDetailPage() {
               </CardContent>
             </Card>
 
-            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-white/5 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.7)] backdrop-blur">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(129,140,248,0.14),_transparent_70%)]" />
-              <CardHeader className="relative">
-                <CardTitle className="text-base font-semibold text-white">Need a different view?</CardTitle>
-                <CardDescription className="text-white/70">
-                  Jump back to your full skills library to reorganize, add new abilities, or explore other focuses.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="relative">
-                <Button
-                  asChild
-                  size="sm"
-                  className="rounded-full bg-white px-5 text-slate-900 shadow-sm transition hover:bg-white/90"
-                >
-                  <Link href="/skills">Open skills dashboard</Link>
-                </Button>
-              </CardContent>
-            </Card>
           </section>
         </div>
       </div>
