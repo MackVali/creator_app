@@ -870,6 +870,104 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     }
   }, [openGoalId, projects]);
 
+  const handleTaskCreate = useCallback(
+    async (goalId: string) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+
+      const targetGoal = projects.find((goal) => goal.id === goalId);
+      const targetProject = targetGoal?.projects[0];
+      if (!targetProject?.id) return;
+
+      let resolvedUserId = userId;
+      if (!resolvedUserId) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user?.id) {
+          return;
+        }
+        resolvedUserId = user.id;
+        setUserId(user.id);
+      }
+
+      const taskId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `draft-task-${Date.now()}`;
+
+      const newTask = {
+        id: taskId,
+        name: "New task",
+        stage: "PREPARE",
+        skillId,
+        priorityCode: "NO",
+        isNew: false,
+      };
+
+      const { error } = await supabase.from("tasks").insert({
+        id: taskId,
+        name: newTask.name,
+        stage: newTask.stage,
+        project_id: targetProject.id,
+        user_id: resolvedUserId,
+        skill_id: skillId,
+        priority: "NO",
+      });
+
+      if (error) {
+        console.error("Failed to create task from skill project dropdown", error);
+        return;
+      }
+
+      setProjects((prev) =>
+        prev.map((goal) => {
+          if (goal.id !== goalId) return goal;
+
+          const updatedProjects = goal.projects.map((project) => {
+            if (project.id !== targetProject.id) return project;
+            const updatedTasks = [...project.tasks, newTask];
+            const total = updatedTasks.length;
+            const done = updatedTasks.filter((task) => task.stage === "PERFECT").length;
+            const progress = total ? Math.round((done / total) * 100) : 0;
+            const schedulerTasks = updatedTasks.map(toSchedulerTask);
+            const relatedTaskWeightSum = schedulerTasks.reduce((sum, t) => sum + taskWeight(t), 0);
+            const weightValue = projectWeight(
+              toSchedulerProject({
+                id: project.id,
+                priorityCode: project.priorityCode ?? undefined,
+                stage: project.stage ?? undefined,
+                dueDate: project.dueDate ?? null,
+              }),
+              relatedTaskWeightSum
+            );
+            return {
+              ...project,
+              tasks: updatedTasks,
+              progress,
+              weight: weightValue,
+            };
+          });
+
+          const goalProgress =
+            updatedProjects.length > 0
+              ? Math.round(
+                  updatedProjects.reduce((sum, project) => sum + (project.progress ?? 0), 0) /
+                    updatedProjects.length
+                )
+              : 0;
+
+          return decorate({
+            ...goal,
+            projects: updatedProjects,
+            progress: goalProgress,
+          });
+        })
+      );
+    },
+    [decorate, projects, skillId, userId]
+  );
+
   const content = useMemo(() => {
     if (loading) {
       return (
@@ -907,6 +1005,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
                 handleProjectUpdated(goal.id, projectId, updates)
               }
               onTaskToggleCompletion={handleTaskToggleCompletion}
+              onAddTask={handleTaskCreate}
               onProjectHoldComplete={(goalId, projectId, stage) =>
                 handleProjectToggleCompletion(goalId, projectId, stage)
               }
@@ -923,6 +1022,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     handleGoalOpenChange,
     handleProjectUpdated,
     handleProjectDeleted,
+    handleTaskCreate,
   ]);
 
   return (
