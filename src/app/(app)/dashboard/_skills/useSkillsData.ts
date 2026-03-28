@@ -103,11 +103,16 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
     let resolved = false;
     let lastError: unknown = error;
     for (const columns of fallbackSelects) {
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from("skills")
-        .select(columns)
-        .eq("user_id", userId)
-        .order("name", { ascending: true });
+      let fallbackQuery = supabase.from("skills").select(columns).eq("user_id", userId);
+      if (columns.includes("sort_order")) {
+        fallbackQuery = fallbackQuery
+          .order("sort_order", { ascending: true, nullsFirst: false })
+          .order("name", { ascending: true });
+      } else {
+        fallbackQuery = fallbackQuery.order("name", { ascending: true });
+      }
+
+      const { data: fallbackData, error: fallbackError } = await fallbackQuery;
 
       if (!fallbackError) {
         rows = (fallbackData as SkillRow[] | null) ?? [];

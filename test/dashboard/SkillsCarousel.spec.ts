@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { deriveInitialIndex, computeNextIndex, shouldPreventScroll } from "../../src/app/(app)/dashboard/_skills/carouselUtils";
+import {
+  deriveInitialIndex,
+  computeNextIndex,
+  shouldPreventScroll,
+  derivePersistedCategoryOrders,
+} from "../../src/app/(app)/dashboard/_skills/carouselUtils";
 import type { SimpleCategory as Category } from "../../src/app/(app)/dashboard/_skills/carouselUtils";
 
 describe("SkillsCarousel helpers", () => {
@@ -27,5 +32,18 @@ describe("SkillsCarousel helpers", () => {
     expect(shouldPreventScroll(10, 5)).toBe(false);
     expect(shouldPreventScroll(20, 40)).toBe(false);
   });
-});
 
+  it("persists reorderable orders without colliding with locked slots", () => {
+    const orders = derivePersistedCategoryOrders([
+      { id: "locked-core", isReorderable: false },
+      { id: "creative", isReorderable: true },
+      { id: "technical", isReorderable: true },
+      { id: "uncategorized", isReorderable: false },
+    ]);
+
+    expect(orders).toEqual({
+      creative: 2,
+      technical: 3,
+    });
+  });
+});
