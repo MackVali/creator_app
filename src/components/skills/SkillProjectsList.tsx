@@ -871,13 +871,22 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
   }, [openGoalId, projects]);
 
   const handleTaskCreate = useCallback(
-    async (goalId: string) => {
+    async (goalId: string, taskName: string) => {
       const supabase = getSupabaseBrowser();
-      if (!supabase) return;
+      if (!supabase) {
+        throw new Error("Supabase client not available");
+      }
 
       const targetGoal = projects.find((goal) => goal.id === goalId);
       const targetProject = targetGoal?.projects[0];
-      if (!targetProject?.id) return;
+      if (!targetProject?.id) {
+        throw new Error("Project not found");
+      }
+
+      const trimmedTaskName = taskName.trim();
+      if (!trimmedTaskName) {
+        throw new Error("Task name is required");
+      }
 
       let resolvedUserId = userId;
       if (!resolvedUserId) {
@@ -885,7 +894,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user?.id) {
-          return;
+          throw new Error("Unable to resolve user");
         }
         resolvedUserId = user.id;
         setUserId(user.id);
@@ -898,7 +907,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
 
       const newTask = {
         id: taskId,
-        name: "New task",
+        name: trimmedTaskName,
         stage: "PREPARE",
         skillId,
         priorityCode: "NO",
@@ -917,7 +926,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
 
       if (error) {
         console.error("Failed to create task from skill project dropdown", error);
-        return;
+        throw error;
       }
 
       setProjects((prev) =>

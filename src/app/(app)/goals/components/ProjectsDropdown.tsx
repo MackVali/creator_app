@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useMemo, useRef, type PointerEvent } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type PointerEvent,
+} from "react";
 import { ProjectRow, type ProjectCardMorphOrigin } from "./ProjectRow";
 import type { Project } from "../types";
 import { Progress } from "@/components/ui/Progress";
@@ -14,7 +21,7 @@ interface ProjectsDropdownProps {
   onProjectLongPress?: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   projectTasksOnly?: boolean;
-  onAddProject?: () => void;
+  onAddProject?: (name?: string) => void | Promise<void>;
   addingProject?: boolean;
   onTaskToggleCompletion?: (
     goalId: string,
@@ -40,6 +47,11 @@ export function ProjectsDropdown({
   addingProject = false,
   onTaskToggleCompletion,
 }: ProjectsDropdownProps) {
+  const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
+  const [taskName, setTaskName] = useState("");
+  const [isSubmittingTask, setIsSubmittingTask] = useState(false);
+  const [taskFormError, setTaskFormError] = useState<string | null>(null);
+
   const selectedProject = useMemo(
     () => (projectTasksOnly ? projects[0] ?? null : null),
     [projectTasksOnly, projects]
@@ -54,6 +66,37 @@ export function ProjectsDropdown({
     }
     return selectedProject.tasks.map((task) => ({ project: selectedProject, task }));
   }, [projectTasksOnly, selectedProject]);
+
+  const handleAddAction = useCallback(async () => {
+    if (!onAddProject) return;
+    if (!projectTasksOnly) {
+      await onAddProject();
+      return;
+    }
+    setTaskFormError(null);
+    setIsTaskFormOpen(true);
+  }, [onAddProject, projectTasksOnly]);
+
+  const handleTaskSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const trimmed = taskName.trim();
+      if (!trimmed || !onAddProject || isSubmittingTask) return;
+      setIsSubmittingTask(true);
+      setTaskFormError(null);
+      try {
+        await onAddProject(trimmed);
+        setTaskName("");
+        setIsTaskFormOpen(false);
+      } catch (error) {
+        console.error("Failed to create task from projects dropdown", error);
+        setTaskFormError("Unable to create task right now. Please try again.");
+      } finally {
+        setIsSubmittingTask(false);
+      }
+    },
+    [isSubmittingTask, onAddProject, taskName]
+  );
 
   return (
     <div
@@ -107,20 +150,56 @@ export function ProjectsDropdown({
             No projects linked yet. Head to Projects to tether the first track.
           </div>
         )}
-        <button
-          type="button"
-          onClick={onAddProject}
-          disabled={addingProject || !onAddProject}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-3 text-xs font-semibold uppercase tracking-[0.28em] text-white/80 transition hover:border-white/30 hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {addingProject
-            ? projectTasksOnly
-              ? "Adding task"
-              : "Adding project"
-            : projectTasksOnly
-              ? "Add a new task"
-              : "Add a new project"}
-        </button>
+        {projectTasksOnly && isTaskFormOpen ? (
+          <form onSubmit={handleTaskSubmit} className="mt-4 space-y-2">
+            <input
+              value={taskName}
+              onChange={(event) => setTaskName(event.target.value)}
+              placeholder="Task name"
+              className="w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={!taskName.trim() || isSubmittingTask || addingProject}
+                className="inline-flex flex-1 items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSubmittingTask || addingProject ? "Creating task" : "Create task"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsTaskFormOpen(false);
+                  setTaskName("");
+                  setTaskFormError(null);
+                }}
+                disabled={isSubmittingTask || addingProject}
+                className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-transparent px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+            {taskFormError ? (
+              <p className="text-xs text-rose-300">{taskFormError}</p>
+            ) : null}
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={handleAddAction}
+            disabled={addingProject || !onAddProject}
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-3 text-xs font-semibold uppercase tracking-[0.28em] text-white/80 transition hover:border-white/30 hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {addingProject
+              ? projectTasksOnly
+                ? "Adding task"
+                : "Adding project"
+              : projectTasksOnly
+                ? "Add a new task"
+                : "Add a new project"}
+          </button>
+        )}
       </div>
     </div>
   );
