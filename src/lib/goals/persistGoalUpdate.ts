@@ -297,6 +297,12 @@ export async function persistGoalUpdate({
     throw error;
   }
 
+  const { error: rankError } = await supabase.rpc("recalculate_goal_global_rank");
+  if (rankError) {
+    console.error("Error recalculating goal global rank:", rankError);
+    throw rankError;
+  }
+
   if (!context) {
     return;
   }

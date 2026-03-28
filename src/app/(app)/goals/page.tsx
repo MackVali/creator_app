@@ -36,8 +36,8 @@ import {
   taskWeight,
   type TaskLite,
   type ProjectLite,
-  dueDateUrgencyBoost,
 } from "@/lib/scheduler/weight";
+import { computeGoalWeight } from "@/lib/goals/weight";
 
 function mapPriority(
   priority: { name?: string | null } | string | null | undefined
@@ -216,37 +216,6 @@ function mapSchedulerTaskStage(stage?: string | null): string {
   return TASK_STAGE_MAP[upper] || "Produce";
 }
 
-function normalizePriorityCode(code?: string | null) {
-  if (typeof code !== "string") return "NO";
-  return code.toUpperCase();
-}
-
-function computeGoalWeight(goal: Goal): number {
-  const priorityCode = normalizePriorityCode(goal.priorityCode);
-  const priorityWeight = GOAL_PRIORITY_WEIGHT[priorityCode] ?? 0;
-  const projectWeightSum = goal.projects.reduce(
-    (sum, project) => sum + (project.weight ?? 0),
-    0
-  );
-  const ageInDays =
-    goal.status === "Completed"
-      ? 0
-      : Math.max(
-          0,
-          Math.floor((Date.now() - Date.parse(goal.updatedAt)) / DAY_IN_MS)
-        );
-  const boost = goal.weightBoost ?? 0;
-  const dueDateBoost = dueDateUrgencyBoost(goal.dueDate ?? null, {
-    linearMax: 220,
-    surgeMax: 420,
-    surgeWindowDays: 4,
-    linearWindowDays: 30,
-    overdueBonusPerDay: 85,
-    overdueMax: 360,
-  });
-  return priorityWeight + projectWeightSum + ageInDays + boost + dueDateBoost;
-}
-
 const GOAL_WEIGHT_UPDATE_BATCH_SIZE = 8;
 
 async function persistGoalWeights(
@@ -260,6 +229,55 @@ async function persistGoalWeights(
         supabase.from("goals").update({ weight }).eq("id", id)
       )
     );
+  }
+}
+
+// Goal global rank is derived from the computed goal weight (lower is better).
+async function persistGoalGlobalRanks(
+  supabase: SupabaseClient,
+  goals: Array<
+    | Goal
+    | { id: string; weight: number; createdAt?: string | null }
+  >
+) {
+  const normalizedGoals = goals
+    .map((goal) => {
+      const parsedCreatedAt =
+        typeof goal.createdAt === "string"
+          ? Date.parse(goal.createdAt)
+          : NaN;
+      return {
+        id: goal.id,
+        weight: goal.weight ?? 0,
+        createdAtMs: Number.isNaN(parsedCreatedAt)
+          ? null
+          : parsedCreatedAt,
+      };
+    })
+    .sort((a, b) => {
+      const weightDiff = a.weight - b.weight;
+      if (weightDiff !== 0) return weightDiff;
+      if (a.createdAtMs !== null && b.createdAtMs !== null) {
+        const createdDiff = a.createdAtMs - b.createdAtMs;
+        if (createdDiff !== 0) return createdDiff;
+      }
+      return a.id.localeCompare(b.id);
+    });
+
+  const rankUpdates = normalizedGoals.map((goal, index) => ({
+    id: goal.id,
+    global_rank: index + 1,
+  }));
+
+  for (const { id, global_rank } of rankUpdates) {
+    const { error } = await supabase
+      .from("goals")
+      .update({ global_rank })
+      .eq("id", id);
+
+    if (error) {
+      console.error(`Failed to update global_rank for goal ${id}`, error);
+    }
   }
 }
 
@@ -292,7 +310,7 @@ async function fetchGoalsWithRelations(
   userId: string
 ): Promise<GoalRowWithRelations[]> {
   const baseSelect =
-    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date, emoji";
+    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, global_rank, weight_boost, due_date, emoji, priority_rank";
   const selectWithEnumColumns = `
     ${baseSelect},
     projects (
@@ -802,13 +820,13 @@ export default function GoalsPage() {
     }
   }, [searchParams, goals]);
 
-  useEffect(() => {
-    const load = async () => {
-      const supabase = getSupabaseBrowser();
-      if (!supabase) {
-        setLoading(false);
-        return;
-      }
+  const refreshGoalsAndRoadmaps = useCallback(async () => {
+    setLoading(true);
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
 
       try {
         const {
@@ -1045,9 +1063,11 @@ export default function GoalsPage() {
             id: goal.id,
             weight: goal.weight ?? 0,
           }));
-          persistGoalWeights(supabase, weightUpdates).catch((err) => {
+          try {
+            await persistGoalWeights(supabase, weightUpdates);
+          } catch (err) {
             console.error("Error updating goal weights:", err);
-          });
+          }
         }
 
         // Fetch goals for each roadmap
@@ -1217,9 +1237,11 @@ export default function GoalsPage() {
       } finally {
         setLoading(false);
       }
-    };
-    load();
   }, [decorateGoal]);
+
+  useEffect(() => {
+    void refreshGoalsAndRoadmaps();
+  }, [refreshGoalsAndRoadmaps]);
 
   const filteredGoals = useMemo(() => {
     let data = goals.filter((g) => {
@@ -1247,7 +1269,19 @@ export default function GoalsPage() {
       data = data.filter((g) => g.skills?.includes(skill));
     }
     const sorted = [...data];
-    const primarySort = (a: Goal, b: Goal) => (b.weight ?? 0) - (a.weight ?? 0);
+    const hasFiniteGlobalRank = (goal: Goal) =>
+      typeof goal.globalRank === "number" && Number.isFinite(goal.globalRank);
+    const primarySort = (a: Goal, b: Goal) => {
+      const aHas = hasFiniteGlobalRank(a);
+      const bHas = hasFiniteGlobalRank(b);
+      if (aHas && bHas) {
+        return (a.globalRank as number) - (b.globalRank as number);
+      }
+      if (aHas !== bHas) {
+        return aHas ? -1 : 1;
+      }
+      return 0;
+    };
     sorted.sort((a, b) => {
       const weightDelta = primarySort(a, b);
       if (weightDelta !== 0) return weightDelta;
@@ -1414,13 +1448,6 @@ export default function GoalsPage() {
       }
 
       const newGoalId = inserted.id;
-
-      // If there are any projects/tasks in context, sync them now
-      if (_context) {
-        await syncProjectsAndTasks(supabase, user.id, newGoalId, _context);
-      }
-
-      // Reflect the saved goal in local state with the server id
       const saved: Goal = decorateGoal({
         ..._goal,
         id: newGoalId,
@@ -1431,6 +1458,56 @@ export default function GoalsPage() {
         weight: inserted.weight ?? _goal.weight,
         weightBoost: inserted.weight_boost ?? _goal.weightBoost,
       });
+
+      const recalcGoalRanks = async (extraGoals: Goal[] = []) => {
+        const goalsById = new Map<string, Goal>();
+        goals.forEach((goal) => goalsById.set(goal.id, goal));
+        extraGoals.forEach((goal) => goalsById.set(goal.id, goal));
+
+        const goalsToRecompute = Array.from(goalsById.values());
+        if (goalsToRecompute.length === 0) {
+          return;
+        }
+
+        const recomputedGoals = goalsToRecompute.map((goal) => ({
+          ...goal,
+          weight: computeGoalWeight(goal),
+        }));
+
+        const weightUpdates = recomputedGoals.map((goal) => ({
+          id: goal.id,
+          weight: goal.weight ?? 0,
+        }));
+
+        try {
+          await persistGoalWeights(supabase, weightUpdates);
+          await persistGoalGlobalRanks(supabase, recomputedGoals);
+          const weightMap = new Map(
+            recomputedGoals.map((goal) => [goal.id, goal.weight ?? 0])
+          );
+          setGoals((prev) =>
+            prev.map((goal) =>
+              weightMap.has(goal.id)
+                ? { ...goal, weight: weightMap.get(goal.id) }
+                : goal
+            )
+          );
+        } catch (error) {
+          console.error(
+            "Error recalculating goal weights and ranks after create:",
+            error
+          );
+        }
+      };
+
+      // If there are any projects/tasks in context, sync them now
+      if (_context) {
+        await syncProjectsAndTasks(supabase, user.id, newGoalId, _context);
+      }
+
+      await recalcGoalRanks([saved]);
+
+      // Reflect the saved goal in local state with the server id
       setGoals((g) => [saved, ...g]);
     } catch (err) {
       console.error("Unexpected error creating goal:", err);
@@ -1597,6 +1674,7 @@ export default function GoalsPage() {
                         roadmap={roadmap}
                         goalCount={roadmapGoalsList.length}
                         goals={roadmapGoalsList}
+                        onRoadmapOrderSaved={refreshGoalsAndRoadmaps}
                         onClick={() => {
                           setSelectedRoadmap(roadmap);
                           setRoadmapDrawer(true);

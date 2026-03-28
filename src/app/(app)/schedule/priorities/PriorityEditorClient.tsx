@@ -32,6 +32,8 @@ import {
 
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import type { Goal } from "@/app/(app)/goals/types";
+import { computeGoalWeight } from "@/lib/goals/weight";
 import {
   formatEnumLabel,
   normalizeStage,
@@ -78,6 +80,9 @@ export default function PriorityEditorClient({
   const [priorityUpdateError, setPriorityUpdateError] = useState<string | null>(null);
   const [view, setView] = useState<PriorityView>("projects");
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [isGoalRecalculating, setIsGoalRecalculating] = useState(false);
+  const [goalActionError, setGoalActionError] = useState<string | null>(null);
+  const [goalActionMessage, setGoalActionMessage] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -245,6 +250,131 @@ export default function PriorityEditorClient({
     }
   };
 
+  const handleGoalRecalculate = async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      setGoalActionError("Unable to contact the backend.");
+      return;
+    }
+
+    setGoalActionError(null);
+    setGoalActionMessage(null);
+    setIsGoalRecalculating(true);
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user?.id) {
+        console.error("GOAL USER ERROR", userError);
+        setGoalActionError("Could not determine user for goal recompute.");
+        return;
+      }
+
+      const { data: goalRows, error: fetchError } = await supabase
+        .from("goals")
+        .select(
+          `
+            id,
+            name,
+            active,
+            roadmap_id,
+            priority_code,
+            priority_rank,
+            created_at,
+            updated_at,
+            projects (
+              id,
+              name,
+              stage
+            )
+          `
+        )
+        .eq("user_id", user.id);
+
+      if (fetchError) {
+        console.error("GOAL FETCH ERROR", JSON.stringify(fetchError, null, 2));
+        setGoalActionError(fetchError.message || "Fetch failed");
+        return;
+      }
+
+      const weightUpdates =
+        (goalRows ?? []).map((goalRow) => {
+          const canonicalGoal = {
+            id: goalRow.id,
+            title: goalRow.name ?? "Untitled goal",
+            priority: "No",
+            energy: "No",
+            progress: 0,
+            status: "Active",
+            active: goalRow.active ?? true,
+            createdAt:
+              goalRow.created_at ??
+              new Date().toISOString(),
+            updatedAt:
+              goalRow.updated_at ??
+              goalRow.created_at ??
+              new Date().toISOString(),
+            projects: (goalRow.projects ?? []).map((project) => ({
+              id: project.id,
+              name: project.name ?? "Untitled project",
+              status: "Active",
+              progress: 0,
+              energy: "No",
+              tasks: [],
+              weight: project.weight ?? 0,
+            })),
+            roadmapId: goalRow.roadmap_id ?? null,
+            priorityCode: goalRow.priority_code ?? null,
+            priorityRank:
+              typeof goalRow.priority_rank === "number" &&
+              Number.isFinite(goalRow.priority_rank)
+                ? goalRow.priority_rank
+                : null,
+          } as Goal;
+
+          return {
+            id: goalRow.id,
+            weight: computeGoalWeight(canonicalGoal),
+          };
+        });
+
+      for (const update of weightUpdates) {
+        const { error: updateError } = await supabase
+          .from("goals")
+          .update({ weight: update.weight })
+          .eq("id", update.id);
+
+        if (updateError) {
+          console.error("Failed to persist goal weight", updateError);
+          setGoalActionError("Could not persist goal weights.");
+          return;
+        }
+      }
+
+      const { error: rpcError } = await supabase.rpc(
+        "recalculate_goal_global_rank"
+      );
+      if (rpcError) {
+        console.error("Failed to recalculate goal global rank", rpcError);
+        setGoalActionError("Could not recalculate goal ranks.");
+        return;
+      }
+
+      setGoalActionMessage("Goal ranks refreshed.");
+      setLoading(true);
+      await router.refresh();
+    } catch (caught) {
+      console.error("Goal recalc request failed", caught);
+      setGoalActionError("Could not recalculate goal ranks.");
+    } finally {
+      setIsGoalRecalculating(false);
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pb-8 pt-6">
@@ -280,7 +410,7 @@ export default function PriorityEditorClient({
               <p className="text-xs text-red-300">{priorityUpdateError}</p>
             )}
           </div>
-          {isProjectView && (
+          {isProjectView ? (
             <div className="flex flex-col items-start gap-1 sm:items-end">
               <button
                 type="button"
@@ -296,6 +426,26 @@ export default function PriorityEditorClient({
               {actionError && <p className="text-xs text-red-300">{actionError}</p>}
               {!actionError && actionMessage && (
                 <p className="text-xs text-emerald-200">{actionMessage}</p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-1 sm:items-end">
+              <button
+                type="button"
+                disabled={isGoalRecalculating || loading}
+                onClick={handleGoalRecalculate}
+                className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:border-white/40 disabled:cursor-not-allowed disabled:border-white/10 disabled:opacity-60"
+              >
+                {isGoalRecalculating ? "Recalculating…" : "Recalculate Goal Ranks"}
+              </button>
+              <p className="text-xs text-zinc-400">
+                Updates goal global_rank from the computed goal weight formula.
+              </p>
+              {goalActionError && (
+                <p className="text-xs text-red-300">{goalActionError}</p>
+              )}
+              {!goalActionError && goalActionMessage && (
+                <p className="text-xs text-emerald-200">{goalActionMessage}</p>
               )}
             </div>
           )}
@@ -413,7 +563,7 @@ function PriorityItemCard({ type, item }: PriorityItemCardProps) {
   } = useSortable({ id: draggableId });
 
   const stageLabel = item.stage ? `Stage: ${formatEnumLabel(item.stage)}` : null;
-  const goalEmoji = type === "goal" ? item.emoji ?? "🎯" : null;
+  const displayEmoji = item.emoji ?? (type === "goal" ? "🎯" : null);
   const transformStyle = transform ? CSS.Transform.toString(transform) : undefined;
   const style: CSSProperties = {
     touchAction: "none",
@@ -433,12 +583,17 @@ function PriorityItemCard({ type, item }: PriorityItemCardProps) {
     >
       <div>
         <div className="flex items-center gap-2">
-          {goalEmoji && <span className="text-base">{goalEmoji}</span>}
+          {displayEmoji && <span className="text-base">{displayEmoji}</span>}
           <p className="text-sm font-semibold text-white">{item.name}</p>
         </div>
         {stageLabel && <p className="text-xs text-zinc-500">{stageLabel}</p>}
       </div>
       {type === "project" && item.globalRank !== undefined && (
+        <span className="text-xs font-semibold text-[var(--accent-red)]">
+          #{item.globalRank}
+        </span>
+      )}
+      {type === "goal" && item.globalRank !== undefined && (
         <span className="text-xs font-semibold text-[var(--accent-red)]">
           #{item.globalRank}
         </span>

@@ -19,13 +19,13 @@ import {
   taskWeight,
   type TaskLite,
   type ProjectLite,
-  dueDateUrgencyBoost,
 } from "@/lib/scheduler/weight";
 import { getSkillsForUser } from "@/lib/queries/skills";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { persistGoalUpdate } from "@/lib/goals/persistGoalUpdate";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import { listRoadmaps, type Roadmap } from "@/lib/queries/roadmaps";
+import { computeGoalWeight } from "@/lib/goals/weight";
 
 type GoalRowWithRelations = GoalRow & {
   due_date?: string | null;
@@ -274,32 +274,6 @@ function toSchedulerProject(project: {
     stage: project.stage ?? "BUILD",
     due_date: project.dueDate ?? null,
   };
-}
-
-function computeGoalWeight(goal: Goal): number {
-  const priorityCode = normalizePriorityCode(goal.priorityCode);
-  const priorityWeight = GOAL_PRIORITY_WEIGHT[priorityCode] ?? 0;
-  const projectWeightSum = goal.projects.reduce(
-    (sum, project) => sum + (project.weight ?? 0),
-    0
-  );
-  const ageInDays =
-    goal.status === "Completed"
-      ? 0
-      : Math.max(
-          0,
-          Math.floor((Date.now() - Date.parse(goal.updatedAt)) / DAY_IN_MS)
-        );
-  const boost = goal.weightBoost ?? 0;
-  const dueDateBoost = dueDateUrgencyBoost(goal.dueDate ?? null, {
-    linearMax: 220,
-    surgeMax: 420,
-    surgeWindowDays: 4,
-    linearWindowDays: 30,
-    overdueBonusPerDay: 85,
-    overdueMax: 360,
-  });
-  return priorityWeight + projectWeightSum + ageInDays + boost + dueDateBoost;
 }
 
 async function fetchGoalsWithRelationsForMonument(
