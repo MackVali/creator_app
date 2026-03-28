@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import CategoryCard from "./CategoryCard";
 import useSkillProgress from "./useSkillProgress";
 import useSkillsData, { type Category, type Skill } from "./useSkillsData";
-import { deriveInitialIndex } from "./carouselUtils";
+import { deriveInitialIndex, derivePersistedCategoryOrders } from "./carouselUtils";
 import { updateCatOrder } from "@/lib/data/cats";
 import { createRecord, updateRecord } from "@/lib/db";
 import { useToastHelpers } from "@/components/ui/toast";
@@ -444,14 +444,20 @@ export default function SkillsCarousel() {
   }, [scrollToIndex, syncToNearestCard]);
 
   const persistCategoryOrder = useCallback(async (nextCategories: Category[]) => {
-    const reorderable = nextCategories.filter(isReorderable);
-    if (reorderable.length === 0) {
+    const persistedOrders = derivePersistedCategoryOrders(
+      nextCategories.map((category) => ({
+        id: category.id,
+        isReorderable: isReorderable(category),
+      }))
+    );
+    const categoryIds = Object.keys(persistedOrders);
+    if (categoryIds.length === 0) {
       return;
     }
     setIsSavingOrder(true);
     try {
       await Promise.all(
-        reorderable.map((category, index) => updateCatOrder(category.id, index + 1))
+        categoryIds.map((categoryId) => updateCatOrder(categoryId, persistedOrders[categoryId] ?? 1))
       );
     } catch (error) {
       console.error("Failed to update category order", error);
