@@ -827,10 +827,17 @@ function CompactProjectsOverlay({
           <DropdownMenuContent align="end" className="z-[80]">
             <DropdownMenuItem
               onSelect={() => {
+                if (projectDropdownMode === "tasks-only") {
+                  const firstProject = goal.projects[0];
+                  if (firstProject) {
+                    onProjectLongPress(firstProject, null);
+                  }
+                  return;
+                }
                 onEdit?.();
               }}
             >
-              EDIT GOAL
+              {projectDropdownMode === "tasks-only" ? "EDIT PROJECT" : "EDIT GOAL"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
