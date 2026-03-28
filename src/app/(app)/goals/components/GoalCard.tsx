@@ -95,6 +95,7 @@ interface GoalCardProps {
     taskId: string,
     currentStage: string
   ) => void;
+  onAddTask?: (goalId: string, taskName: string) => void | Promise<void>;
   onProjectHoldComplete?: (
     goalId: string,
     projectId: string,
@@ -130,6 +131,7 @@ function GoalCardImpl({
   onOpenChange,
   projectDropdownMode = "default",
   onTaskToggleCompletion,
+  onAddTask,
   onProjectHoldComplete,
   completeWhenProjectsDone = false,
   completionTheme = "auto",
@@ -229,10 +231,16 @@ function GoalCardImpl({
     setIsHolding(false);
   }, [cancelProjectLongPress]);
 
-  const handleAddProject = useCallback(async () => {
+  const handleAddProject = useCallback(async (name?: string) => {
     if (addingProject) return;
     setAddingProject(true);
     try {
+      if (projectDropdownMode === "tasks-only") {
+        const taskName = name?.trim();
+        if (!taskName) return;
+        await onAddTask?.(goal.id, taskName);
+        return;
+      }
       const draftId =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
@@ -259,7 +267,7 @@ function GoalCardImpl({
     } finally {
       setAddingProject(false);
     }
-  }, [addingProject]);
+  }, [addingProject, goal.id, onAddTask, projectDropdownMode]);
 
   const handleProjectLongPress = useCallback(
     (project: Project, origin: ProjectCardMorphOrigin | null) => {
