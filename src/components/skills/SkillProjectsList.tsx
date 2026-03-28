@@ -855,19 +855,12 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
   const handleGoalOpenChange = useCallback(
     (goalId: string, isOpen: boolean) => {
       if (isOpen) {
-        const goal = projects.find((item) => item.id === goalId);
-        const goalHasTasks = goal?.projects.some(
-          (project) => (project.tasks?.length ?? 0) > 0
-        );
-        if (!goalHasTasks) {
-          return;
-        }
         setOpenGoalId(goalId);
         return;
       }
       setOpenGoalId((current) => (current === goalId ? null : current));
     },
-    [projects]
+    []
   );
 
   useEffect(() => {
