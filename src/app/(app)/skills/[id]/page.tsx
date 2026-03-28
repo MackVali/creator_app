@@ -180,6 +180,8 @@ export default function SkillDetailPage() {
   const [monuments, setMonuments] = useState<{ id: string; title: string }[]>([]);
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const supabase = getSupabaseBrowser();
   const router = useRouter();
   const toast = useToastHelpers();
@@ -697,11 +699,6 @@ export default function SkillDetailPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Remove "${skill.name}"? This will permanently delete the skill.`
-    );
-    if (!confirmed) return;
-
     try {
       setIsDeleting(true);
       const { error: deleteError } = await deleteRecord("skills", skill.id);
@@ -712,6 +709,8 @@ export default function SkillDetailPage() {
       }
 
       toast.success("Skill removed", "The skill was deleted.");
+      setDeleteConfirmationOpen(false);
+      setActionsMenuOpen(false);
       router.push("/skills");
     } finally {
       setIsDeleting(false);
@@ -749,7 +748,15 @@ export default function SkillDetailPage() {
 
         <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-6 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-8">
           <div className="absolute right-4 top-4 z-20">
-            <DropdownMenu>
+            <DropdownMenu
+              open={actionsMenuOpen}
+              onOpenChange={(open) => {
+                setActionsMenuOpen(open);
+                if (!open) {
+                  setDeleteConfirmationOpen(false);
+                }
+              }}
+            >
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
@@ -768,9 +775,23 @@ export default function SkillDetailPage() {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   disabled={skill.is_locked || isDeleting}
-                  onSelect={handleDeleteSkill}
+                  className={
+                    deleteConfirmationOpen ? "text-amber-200 focus:text-amber-100" : ""
+                  }
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    if (deleteConfirmationOpen) {
+                      void handleDeleteSkill();
+                      return;
+                    }
+                    setDeleteConfirmationOpen(true);
+                  }}
                 >
-                  {isDeleting ? "Removing..." : "Remove skill"}
+                  {isDeleting
+                    ? "Removing..."
+                    : deleteConfirmationOpen
+                      ? "Are you sure? Remove"
+                      : "Remove skill"}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
