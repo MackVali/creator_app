@@ -432,7 +432,7 @@ export default function NewDayTypePage() {
   const removeCompositeStateEntriesForBlock = (blockId: string) => {
     const suffix = `:${blockId}`;
     const matchesBlock = (key: string) => key === blockId || key.endsWith(suffix);
-    const prune = <T>(setter: (updater: (prev: Map<string, T>) => Map<string, T>) => void) => {
+    const prune = <T,>(setter: (updater: (prev: Map<string, T>) => Map<string, T>) => void) => {
       setter((prev) => {
         const next = new Map(prev);
         Array.from(next.keys()).forEach((key) => {
@@ -472,7 +472,7 @@ export default function NewDayTypePage() {
 
     if (statePairs.length === 0) return;
 
-    const moveEntries = <T>(
+    const moveEntries = <T,>(
       setter: (updater: (prev: Map<string, T>) => Map<string, T>) => void,
       cloneFn?: (value: T) => T
     ) => {
@@ -587,7 +587,7 @@ export default function NewDayTypePage() {
 
   const syncEnergyMap = useCallback((blocks: TimeBlock[]) => {
     const blockIdSet = new Set(blocks.map((block) => block.id));
-    const pruneMap = <T>(setter: (updater: (prev: Map<string, T>) => Map<string, T>) => void) => {
+    const pruneMap = <T,>(setter: (updater: (prev: Map<string, T>) => Map<string, T>) => void) => {
       setter((prev) => {
         const next = new Map(prev);
         Array.from(next.keys()).forEach((key) => {
@@ -1896,34 +1896,34 @@ export default function NewDayTypePage() {
 
   return (
     <ProtectedRoute>
-      <main className="min-h-screen bg-gray-950 text-white">
-        <div className="mx-auto max-w-4xl px-4 py-10 space-y-8">
+      <main className="min-h-screen bg-black text-white">
+        <div className="mx-auto max-w-4xl space-y-6 px-3 py-6 sm:px-4 sm:py-8">
           <div className="flex items-center justify-between">
             <Link
               href="/schedule"
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:border-white/25 hover:bg-white/10"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/75 transition hover:border-white/25 hover:bg-white/10"
             >
               ← Back to schedule
             </Link>
           </div>
           <div className="flex flex-col gap-2">
-            <h1 className="text-3xl font-semibold uppercase tracking-[0.22em]">
+            <h1 className="text-2xl font-semibold uppercase tracking-[0.2em] sm:text-3xl sm:tracking-[0.22em]">
               DAY TYPES
             </h1>
-            <p className="text-sm text-white/60">
+            <p className="text-xs text-white/55 sm:text-sm">
               Shape your day by selecting time blocks and previewing the flow at a glance.
             </p>
           </div>
 
           <section className="space-y-3">
             {isCreatingDayType ? (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-[0_16px_32px_rgba(0,0,0,0.28)]">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-[0_16px_32px_rgba(0,0,0,0.28)] sm:p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2 sm:flex-1">
                   <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                     DAY TYPE
                   </span>
-                  <span className="text-sm text-white/60">Define a new 24-hour template.</span>
+                  <span className="text-xs text-white/55 sm:text-sm">Define a new 24-hour template.</span>
                 </div>
                   <button
                     type="button"
@@ -1952,7 +1952,7 @@ export default function NewDayTypePage() {
                         setSchedulerMode("REGULAR");
                       }
                     }}
-                  className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
+                  className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
                 >
                   Close creation
                 </button>
@@ -1964,18 +1964,14 @@ export default function NewDayTypePage() {
                   placeholder="Default day"
                   disabled={!isCreatingDayType}
                   data-tour="day-type-name"
-                  className="mt-3 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/20 focus:outline-none"
+                  className="mt-2.5 w-full rounded-lg border border-white/10 bg-black/50 px-2.5 py-1.5 text-[13px] text-white placeholder:text-white/40 focus:border-white/20 focus:outline-none sm:px-3 sm:py-2 sm:text-sm"
                 />
-                <div className="mt-2 text-sm" data-tour="day-type-coverage">
+                <div className="mt-2 text-xs sm:text-sm" data-tour="day-type-coverage">
                   {coverageStatus.ok ? (
-                    <span className="text-emerald-200/80">Covers full 24 hours.</span>
+                    <span className="text-white/75">Covers full 24 hours.</span>
                   ) : (
                     <span
-                      className={cn(
-                        coverageStatus.reason === "Add time blocks to cover the full 24 hours."
-                          ? "text-red-400/80"
-                          : "text-amber-200/80"
-                      )}
+                      className="text-white/60"
                     >
                       {coverageStatus.reason}
                     </span>
@@ -1985,7 +1981,7 @@ export default function NewDayTypePage() {
                   <div className="flex flex-col gap-2">
                     <label
                       className={cn(
-                        "flex items-center gap-2 text-sm text-white/80",
+                        "flex items-center gap-2 text-xs text-white/80 sm:text-sm",
                         !isCreatingDayType || (!isDefault && availableDayKeys.length === 0) ? "opacity-60" : ""
                       )}
                     >
@@ -2008,7 +2004,7 @@ export default function NewDayTypePage() {
                             setSelectedDays(new Set());
                           }
                         }}
-                        className="h-4 w-4 rounded border-white/30 bg-black/30 text-white focus:ring-white"
+                        className="h-3.5 w-3.5 rounded border-white/30 bg-black/40 text-white focus:ring-white sm:h-4 sm:w-4"
                       />
                       <span className="text-xs uppercase tracking-[0.14em]">Set as default</span>
                     </label>
@@ -2036,7 +2032,7 @@ export default function NewDayTypePage() {
                               className={cn(
                                 "flex h-6 w-6 items-center justify-center rounded-full border text-[10px] font-semibold transition",
                                 conflict && active
-                                  ? "border-red-400/80 bg-red-500/25 text-red-50"
+                                  ? "border-white/35 bg-white/15 text-white"
                                   : active
                                     ? "border-white/50 bg-black text-white"
                                     : conflict
@@ -2054,11 +2050,11 @@ export default function NewDayTypePage() {
                       <span className="text-xs text-white/50">All days are already assigned to defaults.</span>
                     ) : null}
                     {isDefault && selectedDays.size === 0 ? (
-                      <span className="text-xs text-amber-200/80">Pick at least one day for this default.</span>
+                      <span className="text-xs text-white/60">Pick at least one day for this default.</span>
                     ) : null}
                     {isDefault && conflictingSelectedDays.size > 0 ? (
-                      <span className="text-xs text-red-200/80">
-                        Remove red days — they are used by another default day type.
+                      <span className="text-xs text-white/60">
+                        Remove conflicting days — they are used by another default day type.
                       </span>
                     ) : null}
                   </div>
@@ -2073,7 +2069,7 @@ export default function NewDayTypePage() {
                         onValueChange={(next) => setSchedulerMode(normalizeSchedulerMode(next))}
                         disabled={!isCreatingDayType}
                       >
-                        <SelectTrigger className="mt-1 h-11 w-full rounded-xl border border-white/15 bg-black/30 px-3 text-left text-sm font-semibold text-white/85 hover:border-white/25 focus:ring-0">
+                        <SelectTrigger className="mt-1 h-9 w-full rounded-xl border border-white/15 bg-black/50 px-2.5 text-left text-xs font-semibold text-white/85 hover:border-white/25 focus:ring-0 sm:h-11 sm:px-3 sm:text-sm">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="border-white/10 bg-[#0F0F15]/95 text-white shadow-[0_18px_48px_rgba(0,0,0,0.45)] p-0">
@@ -2082,17 +2078,17 @@ export default function NewDayTypePage() {
                               key={option.value}
                               value={option.value}
                               label={option.label}
-                              className="text-sm text-white focus:bg-white/10 focus:text-white"
+                              className="text-xs text-white focus:bg-white/10 focus:text-white sm:text-sm"
                             >
                               <div className="flex flex-col gap-0.5">
                                 <span className="font-semibold">{option.label}</span>
-                                <span className="text-[11px] text-white/60">{option.description}</span>
+                                <span className="text-[10px] text-white/55 sm:text-[11px]">{option.description}</span>
                               </div>
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="mt-1 text-[11px] text-white/50">
+                      <p className="mt-1 text-[10px] text-white/50 sm:text-[11px]">
                         Applied automatically whenever this day type is used.
                       </p>
                     </div>
@@ -2102,7 +2098,7 @@ export default function NewDayTypePage() {
                       disabled={!isCreatingDayType || !canSaveDayType || saving}
                       data-tour="day-type-save"
                       className={cn(
-                        "w-full max-w-[220px] rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white/90 transition sm:w-auto",
+                        "w-full max-w-[220px] rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/90 transition sm:w-auto sm:px-4 sm:py-2 sm:text-sm",
                         isCreatingDayType
                           ? "bg-white/15 hover:border-white/25 hover:bg-white/20"
                           : "bg-white/10 opacity-60",
@@ -2118,7 +2114,7 @@ export default function NewDayTypePage() {
               </div>
               </div>
             ) : (
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 shadow-[0_12px_24px_rgba(0,0,0,0.22)]">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 shadow-[0_12px_24px_rgba(0,0,0,0.22)] sm:px-4 sm:py-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                     DAY TYPE
@@ -2127,7 +2123,7 @@ export default function NewDayTypePage() {
                     type="button"
                     onClick={startCreateDayType}
                     data-tour="day-type-create"
-                    className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
+                    className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
                   >
                     Create day type
                   </button>
@@ -2136,7 +2132,7 @@ export default function NewDayTypePage() {
             )}
 
             {dayTypes.length > 0 ? (
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 shadow-[0_12px_28px_rgba(0,0,0,0.24)]">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.24)] sm:px-4 sm:py-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="text-[11px] uppercase tracking-[0.16em] text-white/60">
                     Created day types
@@ -2197,7 +2193,7 @@ export default function NewDayTypePage() {
                           setSelectedDays(new Set(defaults ?? []));
                         }}
                         className={cn(
-                          "flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition",
+                          "flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs transition sm:px-3 sm:py-1.5 sm:text-sm",
                           active
                             ? "border-white/40 bg-white/15 text-white shadow-[0_10px_24px_rgba(0,0,0,0.3)]"
                             : "border-white/12 bg-white/[0.04] text-white/80 hover:border-white/20 hover:bg-white/10"
@@ -2236,7 +2232,7 @@ export default function NewDayTypePage() {
           </section>
 
           {isCreatingDayType ? (
-            <section className="space-y-4">
+            <section className="space-y-3 sm:space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                     TIME BLOCKS
@@ -2246,7 +2242,7 @@ export default function NewDayTypePage() {
                       type="button"
                       onClick={startCreateBlock}
                       data-tour="day-type-add-block"
-                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-white/80 transition hover:border-white/20 hover:bg-white/10"
+                      className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80 transition hover:border-white/20 hover:bg-white/10 sm:px-3 sm:py-1.5 sm:text-xs"
                     >
                   Create time block
                 </button>
@@ -2260,10 +2256,10 @@ export default function NewDayTypePage() {
             ) : null}
 
             {!hasBlocks ? (
-              <div className="rounded-2xl border border-white/10 bg-[var(--surface-elevated)]/70 p-6 shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
+              <div className="rounded-2xl border border-white/10 bg-[var(--surface-elevated)]/70 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.35)] sm:p-6">
                 <div className="space-y-2 text-center">
-                  <h3 className="text-lg font-semibold text-white">No time blocks yet</h3>
-                  <p className="text-sm text-white/60">
+                  <h3 className="text-base font-semibold text-white sm:text-lg">No time blocks yet</h3>
+                  <p className="text-xs text-white/60 sm:text-sm">
                     Create a few blocks to form the skeleton of your day.
                   </p>
                 <div className="mt-4 flex justify-center">
@@ -2271,7 +2267,7 @@ export default function NewDayTypePage() {
                     type="button"
                     onClick={startCreateBlock}
                     data-tour="day-type-add-block"
-                    className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-white/90 transition hover:border-white/20 hover:bg-white/15"
+                    className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90 transition hover:border-white/20 hover:bg-white/15 sm:px-4 sm:py-2 sm:text-sm"
                   >
                     Create time block
                     </button>
@@ -2281,7 +2277,7 @@ export default function NewDayTypePage() {
             ) : null}
 
             {showCreateForm ? (
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-black/30 p-5 shadow-[0_20px_48px_rgba(0,0,0,0.35)] backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-black/50 p-3.5 shadow-[0_20px_48px_rgba(0,0,0,0.35)] backdrop-blur sm:p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="space-y-1">
                     <div className="text-[11px] uppercase tracking-[0.16em] text-white/50">
@@ -2297,7 +2293,7 @@ export default function NewDayTypePage() {
                     <button
                       type="button"
                       onClick={resetBlockForm}
-                      className="rounded-full border border-white/10 px-4 py-2 text-sm font-semibold text-white/70 transition hover:border-white/20 hover:bg-white/5"
+                      className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/70 transition hover:border-white/20 hover:bg-white/5 sm:px-4 sm:py-2 sm:text-sm"
                     >
                       Cancel
                     </button>
@@ -2306,7 +2302,7 @@ export default function NewDayTypePage() {
                       onClick={handleSubmitBlock}
                       disabled={savingBlock}
                     data-tour="selected-time-block-save"
-                      className="rounded-full border border-white/20 bg-white/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/20 disabled:opacity-60"
+                      className="rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-white/30 hover:bg-white/20 disabled:opacity-60 sm:px-4 sm:py-2 sm:text-sm"
                     >
                       {savingBlock
                         ? isEditingBlock
@@ -2352,7 +2348,7 @@ export default function NewDayTypePage() {
                   />
                 </div>
                 {createError ? (
-                  <div className="mt-3 text-sm text-red-200">{createError}</div>
+                  <div className="mt-3 text-sm text-white/70">{createError}</div>
                 ) : null}
               </div>
             ) : null}
@@ -2709,7 +2705,7 @@ export default function NewDayTypePage() {
                                         })}
                                       </div>
                                       {allowedHabitTypes.size === 0 ? (
-                                        <div className="text-xs text-amber-200/80">
+                                        <div className="text-xs text-white/60">
                                           Nothing allowed in this block for habits.
                                         </div>
                                       ) : null}
@@ -2852,7 +2848,7 @@ export default function NewDayTypePage() {
                                         )}
                                       </div>
                                       {allowedSkillIds.size === 0 ? (
-                                        <div className="text-xs text-amber-200/80">
+                                        <div className="text-xs text-white/60">
                                           No skills allowed yet
                                         </div>
                                       ) : null}
@@ -2937,7 +2933,7 @@ export default function NewDayTypePage() {
                                       )}
                                     </div>
                                     {allowedMonumentIds.size === 0 ? (
-                                      <div className="text-xs text-amber-200/80">
+                                      <div className="text-xs text-white/60">
                                         Nothing allowed in this block for monuments.
                                       </div>
                                     ) : null}
