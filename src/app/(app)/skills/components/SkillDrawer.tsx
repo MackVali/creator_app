@@ -115,9 +115,9 @@ export function SkillDrawer({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:px-6">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="absolute right-3 top-4 h-[calc(100%-2rem)] w-[340px] overflow-hidden rounded-2xl border border-white/10 bg-black/95 shadow-[0_35px_90px_-60px_rgba(0,0,0,0.8)] sm:right-4 sm:top-6 sm:h-[calc(100%-3rem)] sm:w-[360px]">
+      <div className="relative z-10 flex max-h-[min(720px,calc(100vh-3rem))] w-full max-w-[560px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/95 shadow-[0_35px_90px_-60px_rgba(0,0,0,0.8)]">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5 sm:py-4">
           <div>
             <p className="text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-white/50">
@@ -135,7 +135,7 @@ export function SkillDrawer({
             Close
           </button>
         </div>
-        <form onSubmit={submit} className="flex h-full flex-col gap-3 overflow-y-auto px-4 py-3 sm:gap-4 sm:px-5 sm:py-4">
+        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3 sm:gap-4 sm:px-5 sm:py-4">
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,4fr)] gap-3">
             <div className="space-y-2.5">
               <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">

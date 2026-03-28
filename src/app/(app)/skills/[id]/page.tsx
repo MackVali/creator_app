@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CalendarDays, Clock3, Target, ArrowLeft, Award } from "lucide-react";
+import {
+  CalendarDays,
+  Clock3,
+  Target,
+  ArrowLeft,
+  Award,
+  MoreHorizontal,
+} from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { SkillProjectsList } from "@/components/skills/SkillProjectsList";
 import {
@@ -16,10 +23,20 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { NotesGrid } from "@/components/notes/NotesGrid";
 import { Button } from "@/components/ui/button";
+import { useToastHelpers } from "@/components/ui/toast";
+import { SkillDrawer, type Category, type Skill as DrawerSkill } from "@/app/(app)/skills/components/SkillDrawer";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import { normalizeTimeZone } from "@/lib/scheduler/timezone";
 import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "@/lib/scheduler/limits";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
+import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
+import type { SkillRow } from "@/lib/types/skill";
 import {
   mapRowToProgress,
   type SkillProgressData,
@@ -32,6 +49,11 @@ interface Skill {
   icon: string | null;
   level: number;
   created_at: string;
+  cat_id: string | null;
+  monument_id: string | null;
+  sort_order: number | null;
+  is_default: boolean;
+  is_locked: boolean;
 }
 
 interface HabitSummary {
@@ -154,8 +176,13 @@ export default function SkillDetailPage() {
   const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
   const [habitsLoading, setHabitsLoading] = useState(true);
   const [habitsError, setHabitsError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [monuments, setMonuments] = useState<{ id: string; title: string }[]>([]);
+  const [editDrawerOpen, setEditDrawerOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const supabase = getSupabaseBrowser();
   const router = useRouter();
+  const toast = useToastHelpers();
   const timeZone = useMemo(() => {
     try {
       return normalizeTimeZone(
@@ -344,7 +371,9 @@ export default function SkillDetailPage() {
 
         let skillQuery = supabase
           .from("skills")
-          .select("id,name,icon,level,created_at")
+          .select(
+            "id,name,icon,level,created_at,cat_id,monument_id,sort_order,is_default,is_locked"
+          )
           .eq("id", id);
 
         if (userId) {
@@ -363,6 +392,37 @@ export default function SkillDetailPage() {
             await Promise.all([
               fetchRelatedHabits(userId),
               fetchSkillProgress(userId),
+              userId
+                ? Promise.all([
+                    supabase
+                      .from("cats")
+                      .select("id,name")
+                      .eq("user_id", userId)
+                      .then(({ data: catsData, error: catsError }) => {
+                        if (catsError) {
+                          console.error("Error loading categories:", catsError);
+                          return;
+                        }
+                        setCategories((catsData ?? []) as Category[]);
+                      }),
+                    supabase
+                      .from("monuments")
+                      .select("id,title")
+                      .eq("user_id", userId)
+                      .then(({ data: monumentsData, error: monumentsError }) => {
+                        if (monumentsError) {
+                          console.error("Error loading monuments:", monumentsError);
+                          return;
+                        }
+                        setMonuments(
+                          (monumentsData ?? []).map((monument) => ({
+                            id: monument.id,
+                            title: monument.title,
+                          }))
+                        );
+                      }),
+                  ])
+                : Promise.resolve(),
             ]);
           }
         }
@@ -567,7 +627,96 @@ export default function SkillDetailPage() {
   ];
 
   const icon = skill.icon || "💡";
-  
+
+  const skillForDrawer: DrawerSkill = {
+    id: skill.id,
+    name: skill.name,
+    icon: skill.icon ?? "",
+    level: skill.level ?? 1,
+    progress: 0,
+    cat_id: skill.cat_id,
+    monument_id: skill.monument_id,
+    sort_order: skill.sort_order,
+    created_at: skill.created_at,
+    is_default: skill.is_default,
+    is_locked: skill.is_locked,
+  };
+
+  const handleSaveSkill = async (updatedSkill: DrawerSkill) => {
+    const { error: updateError } = await updateRecord<SkillRow>("skills", skill.id, {
+      name: updatedSkill.name,
+      icon: updatedSkill.icon || null,
+      level: updatedSkill.level,
+      cat_id: updatedSkill.cat_id,
+      monument_id: updatedSkill.monument_id,
+    });
+
+    if (updateError) {
+      console.error("Failed to update skill from detail page:", updateError);
+      toast.error("Update failed", updateError.message || "Unable to save skill.");
+      return;
+    }
+
+    setSkill((prev) =>
+      prev
+        ? {
+            ...prev,
+            name: updatedSkill.name,
+            icon: updatedSkill.icon || null,
+            level: updatedSkill.level,
+            cat_id: updatedSkill.cat_id,
+            monument_id: updatedSkill.monument_id,
+          }
+        : prev
+    );
+    toast.success("Skill updated", "Your skill details were saved.");
+  };
+
+  const handleAddCategory = async (name: string): Promise<Category | null> => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return null;
+
+    const { data, error: createError } = await createRecord<Category>("cats", {
+      name: trimmedName,
+    });
+
+    if (createError || !data) {
+      console.error("Failed to create category from skill detail:", createError);
+      toast.error("Category failed", createError?.message || "Unable to add category.");
+      return null;
+    }
+
+    const createdCategory = { id: data.id, name: data.name };
+    setCategories((prev) => [...prev, createdCategory]);
+    return createdCategory;
+  };
+
+  const handleDeleteSkill = async () => {
+    if (skill.is_locked) {
+      toast.error("Locked skill", "This skill is locked and can’t be removed.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remove "${skill.name}"? This will permanently delete the skill.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsDeleting(true);
+      const { error: deleteError } = await deleteRecord("skills", skill.id);
+      if (deleteError) {
+        console.error("Failed to delete skill from detail page:", deleteError);
+        toast.error("Delete failed", deleteError.message || "Unable to delete skill.");
+        return;
+      }
+
+      toast.success("Skill removed", "The skill was deleted.");
+      router.push("/skills");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleCreateGoal = () => {
     router.push("/goals/new");
@@ -575,6 +724,16 @@ export default function SkillDetailPage() {
 
   return (
     <main className="px-4 py-6 sm:px-6 lg:px-8">
+      <SkillDrawer
+        open={editDrawerOpen}
+        onClose={() => setEditDrawerOpen(false)}
+        onAdd={async () => {}}
+        categories={categories}
+        monuments={monuments}
+        onAddCategory={handleAddCategory}
+        initialSkill={skillForDrawer}
+        onUpdate={handleSaveSkill}
+      />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <Button
           asChild
@@ -589,6 +748,33 @@ export default function SkillDetailPage() {
         </Button>
 
         <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-6 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-8">
+          <div className="absolute right-4 top-4 z-20">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Skill actions"
+                  className="rounded-full border border-white/10 bg-white/5 p-2 text-white/70 transition hover:border-white/20 hover:bg-white/10"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  disabled={skill.is_locked}
+                  onSelect={() => setEditDrawerOpen(true)}
+                >
+                  Edit skill
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={skill.is_locked || isDeleting}
+                  onSelect={handleDeleteSkill}
+                >
+                  {isDeleting ? "Removing..." : "Remove skill"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           <div className="absolute inset-0">
             <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
             <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.12),_transparent_65%)] blur-3xl" />
