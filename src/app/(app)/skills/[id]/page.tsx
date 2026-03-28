@@ -7,7 +7,6 @@ import {
   CalendarDays,
   Clock3,
   Target,
-  ArrowLeft,
   Award,
   MoreHorizontal,
 } from "lucide-react";
@@ -734,18 +733,6 @@ export default function SkillDetailPage() {
         onUpdate={handleSaveSkill}
       />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="w-fit gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-medium text-white/70 backdrop-blur transition hover:border-white/20 hover:bg-white/10 hover:text-white"
-        >
-          <Link href="/skills">
-            <ArrowLeft className="size-4" aria-hidden="true" />
-            Back to skills
-          </Link>
-        </Button>
-
         <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-6 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-8">
           <div className="absolute right-4 top-4 z-20">
             <DropdownMenu
