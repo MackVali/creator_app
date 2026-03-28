@@ -2260,7 +2260,7 @@ export default function NewDayTypePage() {
             ) : null}
 
             {!hasBlocks ? (
-              <div className="rounded-2xl border border-white/10 bg-[var(--surface-elevated)]/70 p-6 shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
                 <div className="space-y-2 text-center">
                   <h3 className="text-lg font-semibold text-white">No time blocks yet</h3>
                   <p className="text-sm text-white/60">
@@ -2281,7 +2281,7 @@ export default function NewDayTypePage() {
             ) : null}
 
             {showCreateForm ? (
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-black/30 p-5 shadow-[0_20px_48px_rgba(0,0,0,0.35)] backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-black/35 p-5 shadow-[0_20px_48px_rgba(0,0,0,0.35)] backdrop-blur">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="space-y-1">
                     <div className="text-[11px] uppercase tracking-[0.16em] text-white/50">
@@ -2835,11 +2835,11 @@ export default function NewDayTypePage() {
                                                         onChange={toggleGroup}
                                                         className="peer absolute inset-0 h-full w-full opacity-0"
                                                       />
-                                                      <span className="pointer-events-none absolute inset-0 h-full w-full rounded border border-slate-600 bg-slate-900 transition peer-checked:bg-slate-400 peer-checked:border-slate-400 peer-[aria-checked=mixed]:bg-slate-600"></span>
-                                                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-slate-950 opacity-0 peer-checked:opacity-100">
+                                                      <span className="pointer-events-none absolute inset-0 h-full w-full rounded border border-zinc-600 bg-zinc-900 transition peer-checked:bg-zinc-400 peer-checked:border-zinc-400 peer-[aria-checked=mixed]:bg-zinc-600"></span>
+                                                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-zinc-950 opacity-0 peer-checked:opacity-100">
                                                         ✓
                                                       </span>
-                                                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-slate-200 opacity-0 peer-[aria-checked=mixed]:opacity-100">
+                                                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-zinc-200 opacity-0 peer-[aria-checked=mixed]:opacity-100">
                                                         —
                                                       </span>
                                                     </label>
