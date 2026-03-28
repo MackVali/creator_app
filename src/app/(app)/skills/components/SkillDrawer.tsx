@@ -135,82 +135,84 @@ export function SkillDrawer({
             Close
           </button>
         </div>
-        <form onSubmit={submit} className="flex h-full flex-col gap-3 overflow-y-auto px-4 py-3 sm:gap-4 sm:px-5 sm:py-4">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,4fr)] gap-3">
-            <div className="space-y-2.5">
-              <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-                Emoji
-              </label>
-              <input
-                value={emoji}
-                onChange={(e) => setEmoji(e.target.value)}
-                placeholder=""
-                className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
-              />
+        <form onSubmit={submit} className="flex h-full flex-col">
+          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3 sm:space-y-4 sm:px-5 sm:py-4">
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,4fr)] gap-3">
+              <div className="space-y-2.5">
+                <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                  Emoji
+                </label>
+                <input
+                  value={emoji}
+                  onChange={(e) => setEmoji(e.target.value)}
+                  placeholder=""
+                  className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
+                />
+              </div>
+              <div className="space-y-2.5">
+                <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                  Skill name
+                </label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  placeholder="e.g. Creative direction"
+                  className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
+                />
+              </div>
             </div>
             <div className="space-y-2.5">
               <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-                Skill name
+                Monument
               </label>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                placeholder="e.g. Creative direction"
-                className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
-              />
+              <Select
+                value={monument}
+                onValueChange={setMonument}
+                placeholder="Select..."
+              >
+                <SelectTrigger className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-left text-white focus:border-white/30 focus-visible:ring-0 sm:h-11 sm:px-4 sm:text-sm">
+                  <SelectValue placeholder="Select..." />
+                </SelectTrigger>
+                <SelectContent className="bg-black text-sm text-white">
+                  <SelectItem value="">None</SelectItem>
+                  {monuments.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2.5">
+              <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                Category
+              </label>
+              <Select value={cat} onValueChange={setCat} placeholder="Select...">
+                <SelectTrigger className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-left text-white focus:border-white/30 focus-visible:ring-0 sm:h-11 sm:px-4 sm:text-sm">
+                  <SelectValue placeholder="Select..." />
+                </SelectTrigger>
+                <SelectContent className="bg-black text-sm text-white">
+                  <SelectItem value="">Uncategorized</SelectItem>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="new">+ New Category</SelectItem>
+                </SelectContent>
+              </Select>
+              {cat === "new" && (
+                <input
+                  value={newCat}
+                  onChange={(e) => setNewCat(e.target.value)}
+                  placeholder="New category"
+                  className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
+                />
+              )}
             </div>
           </div>
-          <div className="space-y-2.5">
-            <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-              Monument
-            </label>
-            <Select
-              value={monument}
-              onValueChange={setMonument}
-              placeholder="Select..."
-            >
-              <SelectTrigger className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-left text-white focus:border-white/30 focus-visible:ring-0 sm:h-11 sm:px-4 sm:text-sm">
-                <SelectValue placeholder="Select..." />
-              </SelectTrigger>
-              <SelectContent className="bg-black text-sm text-white">
-                <SelectItem value="">None</SelectItem>
-                {monuments.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2.5">
-            <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-              Category
-            </label>
-            <Select value={cat} onValueChange={setCat} placeholder="Select...">
-              <SelectTrigger className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-left text-white focus:border-white/30 focus-visible:ring-0 sm:h-11 sm:px-4 sm:text-sm">
-                <SelectValue placeholder="Select..." />
-              </SelectTrigger>
-              <SelectContent className="bg-black text-sm text-white">
-                <SelectItem value="">Uncategorized</SelectItem>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-                <SelectItem value="new">+ New Category</SelectItem>
-              </SelectContent>
-            </Select>
-            {cat === "new" && (
-              <input
-                value={newCat}
-                onChange={(e) => setNewCat(e.target.value)}
-                placeholder="New category"
-                className="h-9 w-full rounded-2xl border border-white/10 bg-white/5 px-3 text-[11px] text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none sm:h-11 sm:px-4 sm:text-sm"
-              />
-            )}
-          </div>
-          <div className="mt-auto flex items-center justify-between gap-2 border-t border-white/10 pt-3 sm:pt-4">
+          <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-black/95 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5 sm:py-4">
             <p className="text-[11px] text-white/50 sm:text-xs">
               {editing ? "Changes apply instantly." : "Ready to start tracking."}
             </p>
