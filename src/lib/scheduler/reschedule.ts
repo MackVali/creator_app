@@ -1848,41 +1848,82 @@ export async function scheduleBacklog(
     goals: any[],
     supabase: Client
   ) {
-    // Calculate new global ranks based on goal priority + project priority + stage
-    const projectScores: Array<{ id: string; score: number }> = [];
-
-    for (const [projectId, project] of Object.entries(projectsMap)) {
-      const goal = goals.find((g) => g.id === project.goal_id);
-      if (!goal) continue;
-
-      // Score calculation: goal_priority * 1000000 + project_priority * 10000 + stage * 100
-      const goalPriority = goal.priority_code
-        ? getPriorityIndex(goal.priority_code)
-        : 3;
-      const projectPriority = project.priority
-        ? getPriorityIndex(project.priority)
-        : 3;
-      const stage = project.stage ? getStageIndex(project.stage) : 3;
-
-      const score =
-        goalPriority * 1000000 + projectPriority * 10000 + stage * 100;
-      projectScores.push({ id: projectId, score });
+    // Hierarchical project ranking: parent goal global rank first, then
+    // project priority strength, then stage strength (project ID as tie-breaker).
+    const goalById = new Map<string, any>();
+    for (const goal of goals) {
+      if (goal && goal.id) {
+        goalById.set(goal.id, goal);
+      }
     }
 
-    // Sort by score descending (higher score = higher priority = lower rank number)
-    projectScores.sort((a, b) => b.score - a.score);
+    const normalizeGoalRank = (value: unknown): number | null => {
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+        return value;
+      }
+      if (typeof value === "string") {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          return parsed;
+        }
+      }
+      return null;
+    };
+
+    const deriveGoalGlobalRank = (goal: any): number | null => {
+      if (!goal) return null;
+      return normalizeGoalRank(goal.global_rank ?? goal.globalRank);
+    };
+
+    const projectRankRecords: Array<{
+      id: string;
+      goalGlobalRank: number | null;
+      priorityStrength: number;
+      stageStrength: number;
+    }> = [];
+
+    for (const [projectId, project] of Object.entries(projectsMap)) {
+      const goal = project.goal_id ? goalById.get(project.goal_id) : null;
+      if (!goal) continue;
+
+      const goalGlobalRank = deriveGoalGlobalRank(goal);
+      const priorityStrength = project.priority
+        ? getPriorityIndex(project.priority)
+        : 3;
+      const stageStrength = project.stage ? getStageIndex(project.stage) : 3;
+
+      projectRankRecords.push({
+        id: projectId,
+        goalGlobalRank,
+        priorityStrength,
+        stageStrength,
+      });
+    }
+
+    projectRankRecords.sort((a, b) => {
+      const aGoalRank = a.goalGlobalRank ?? Number.POSITIVE_INFINITY;
+      const bGoalRank = b.goalGlobalRank ?? Number.POSITIVE_INFINITY;
+      if (aGoalRank !== bGoalRank) return aGoalRank - bGoalRank;
+      if (a.priorityStrength !== b.priorityStrength) {
+        return b.priorityStrength - a.priorityStrength;
+      }
+      if (a.stageStrength !== b.stageStrength) {
+        return b.stageStrength - a.stageStrength;
+      }
+      return a.id.localeCompare(b.id);
+    });
 
     // Update global_rank in database (rank 1 = highest priority)
-    for (let i = 0; i < projectScores.length; i++) {
+    for (let i = 0; i < projectRankRecords.length; i++) {
       const rank = i + 1;
+      const projectId = projectRankRecords[i].id;
       await supabase
         .from("projects")
         .update({ global_rank: rank })
-        .eq("id", projectScores[i].id);
+        .eq("id", projectId);
 
-      // Update in-memory map too
-      if (projectsMap[projectScores[i].id]) {
-        projectsMap[projectScores[i].id].globalRank = rank;
+      if (projectsMap[projectId]) {
+        projectsMap[projectId].globalRank = rank;
       }
     }
   }
