@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import type { GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
+import { getNextRoadmapPriorityRank } from "@/lib/goals/roadmapPriorityRank";
 
 export const LIMIT_ERROR_CODES = [
   "GOAL_LIMIT_REACHED",
@@ -255,6 +256,43 @@ export async function persistGoalUpdate({
 }: PersistGoalOptions) {
   const priorityDb = PRIORITY_TO_DB[goal.priority] ?? "LOW";
   const energyDb = energyToDbValue(goal.energy);
+  const normalizedRoadmapId = goal.roadmapId || null;
+  let assignedPriorityRank: number | null = null;
+
+  if (normalizedRoadmapId) {
+    const hasValidProvidedRank =
+      typeof goal.priorityRank === "number" &&
+      Number.isFinite(goal.priorityRank) &&
+      goal.priorityRank > 0;
+
+    const { data: existingGoalRow, error: existingGoalError } = await supabase
+      .from("goals")
+      .select("roadmap_id")
+      .eq("id", goal.id)
+      .single();
+    if (existingGoalError) {
+      console.error(
+        "Error fetching existing goal roadmap assignment:",
+        existingGoalError
+      );
+      throw existingGoalError;
+    }
+
+    const existingRoadmapId = existingGoalRow?.roadmap_id ?? null;
+    const movedToDifferentRoadmap = existingRoadmapId !== normalizedRoadmapId;
+
+    if (hasValidProvidedRank && !movedToDifferentRoadmap) {
+      assignedPriorityRank = goal.priorityRank ?? null;
+    } else {
+      assignedPriorityRank = await getNextRoadmapPriorityRank(
+        supabase,
+        normalizedRoadmapId,
+        { excludeGoalId: goal.id }
+      );
+    }
+  }
+
+  goal.priorityRank = assignedPriorityRank ?? undefined;
 
   const sharedFields = {
     name: goal.title,
@@ -262,7 +300,8 @@ export async function persistGoalUpdate({
     status: STATUS_TO_DB[goal.status] ?? "ACTIVE",
     why: goal.why ?? null,
     monument_id: goal.monumentId || null,
-    roadmap_id: goal.roadmapId || null,
+    roadmap_id: normalizedRoadmapId,
+    priority_rank: assignedPriorityRank,
     due_date: goal.dueDate ?? null,
     emoji: goal.emoji ?? null,
   };

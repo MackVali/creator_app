@@ -766,6 +766,7 @@ export function GoalDrawer({
       projects: preparedProjects,
       monumentId: monumentId || null,
       roadmapId: roadmapId || null,
+      priorityRank: initialGoal?.priorityRank,
       skills: initialGoal?.skills,
       weight: initialGoal?.weight,
       why: why.trim() ? why.trim() : undefined,

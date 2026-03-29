@@ -25,6 +25,7 @@ import {
   LimitReachedError,
   isGoalCodeColumnMissingError,
 } from "@/lib/goals/persistGoalUpdate";
+import { getNextRoadmapPriorityRank } from "@/lib/goals/roadmapPriorityRank";
 import { presentUpgrade } from "@/lib/revenuecat/presentUpgrade";
 import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
@@ -1386,6 +1387,11 @@ export default function GoalsPage() {
           : "ACTIVE";
 
       const performInsert = (includeCodeColumns: boolean) => {
+        const normalizedRoadmapId = _goal.roadmapId || null;
+        const hasValidPriorityRank =
+          typeof _goal.priorityRank === "number" &&
+          Number.isFinite(_goal.priorityRank) &&
+          _goal.priorityRank > 0;
         const payload = {
           user_id: user.id,
           name: _goal.title.trim(),
@@ -1393,7 +1399,11 @@ export default function GoalsPage() {
           status: statusDb,
           why: _goal.why ?? null,
           monument_id: _goal.monumentId || null,
-          roadmap_id: _goal.roadmapId || null,
+          roadmap_id: normalizedRoadmapId,
+          priority_rank:
+            normalizedRoadmapId && hasValidPriorityRank
+              ? _goal.priorityRank
+              : null,
           due_date: _goal.dueDate ?? null,
           emoji: goalEmoji || undefined,
           ...(includeCodeColumns
@@ -1422,10 +1432,19 @@ export default function GoalsPage() {
           .from("goals")
           .insert(payload)
           .select(
-            "id, created_at, weight, weight_boost, monument_id, roadmap_id, due_date"
+            "id, created_at, weight, weight_boost, monument_id, roadmap_id, due_date, priority_rank"
           )
           .single();
       };
+
+      if (_goal.roadmapId) {
+        _goal.priorityRank = await getNextRoadmapPriorityRank(
+          supabase,
+          _goal.roadmapId
+        );
+      } else {
+        _goal.priorityRank = undefined;
+      }
 
       let insertResult = await performInsert(true);
       if (
@@ -1454,6 +1473,11 @@ export default function GoalsPage() {
         createdAt: inserted.created_at ?? _goal.createdAt,
         monumentId: inserted.monument_id ?? _goal.monumentId ?? null,
         roadmapId: inserted.roadmap_id ?? _goal.roadmapId ?? null,
+        priorityRank:
+          typeof inserted.priority_rank === "number" &&
+          Number.isFinite(inserted.priority_rank)
+            ? inserted.priority_rank
+            : _goal.priorityRank,
         dueDate: inserted.due_date ?? _goal.dueDate,
         weight: inserted.weight ?? _goal.weight,
         weightBoost: inserted.weight_boost ?? _goal.weightBoost,
