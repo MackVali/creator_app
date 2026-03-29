@@ -55,6 +55,7 @@ type GoalRowWithRelations = GoalRow & {
       skill_id: string | null;
     }[];
   }[];
+  priority_rank?: number | null;
 };
 
 function mapPriority(
@@ -284,7 +285,7 @@ async function fetchGoalsWithRelationsForMonument(
   if (!supabase) return [] as GoalRowWithRelations[];
 
   const baseSelect =
-    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date, emoji";
+    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank";
   const selectWithEnumColumns = `
     ${baseSelect},
     projects (
@@ -609,11 +610,16 @@ export function MonumentGoalsList({
                   projects: projList,
                   monumentId: g.monument_id ?? null,
                   roadmapId: g.roadmap_id ?? null,
-                  priorityCode: normalizedGoalPriorityCode,
-                  energyCode: normalizedGoalEnergyCode,
-                  weightBoost: g.weight_boost ?? 0,
-                  skills: Array.from(goalSkills),
-                  why: g.why || undefined,
+          priorityCode: normalizedGoalPriorityCode,
+          energyCode: normalizedGoalEnergyCode,
+          weightBoost: g.weight_boost ?? 0,
+          skills: Array.from(goalSkills),
+          priorityRank:
+            typeof g.priority_rank === "number" &&
+            Number.isFinite(g.priority_rank)
+              ? g.priority_rank
+              : undefined,
+          why: g.why || undefined,
                 };
                 return decorate(base);
               });
@@ -771,12 +777,17 @@ export function MonumentGoalsList({
             projects: projList,
             monumentId: g.monument_id ?? null,
             monumentEmoji: monumentEmoji ?? null,
-            priorityCode: normalizedGoalPriorityCode,
-            energyCode: normalizedGoalEnergyCode,
-            weightBoost: g.weight_boost ?? 0,
-            skills: Array.from(goalSkills),
-            why: g.why || undefined,
-          };
+                  priorityCode: normalizedGoalPriorityCode,
+                  energyCode: normalizedGoalEnergyCode,
+                  weightBoost: g.weight_boost ?? 0,
+                  skills: Array.from(goalSkills),
+                  priorityRank:
+                    typeof g.priority_rank === "number" &&
+                    Number.isFinite(g.priority_rank)
+                      ? g.priority_rank
+                      : undefined,
+                  why: g.why || undefined,
+                };
           return decorate(base);
         });
 
@@ -1000,11 +1011,16 @@ export function MonumentGoalsList({
       goalSection === "completed" ? isCompletedGoal(goal) : !isCompletedGoal(goal);
     const filteredStandaloneGoals = standaloneGoals.filter(filterGoalBySection);
     const filteredRoadmaps = roadmaps
-      .map((roadmap) => ({
-        roadmap,
-        goals: (roadmapGoals.get(roadmap.id) ?? []).filter(filterGoalBySection),
-      }))
-      .filter((entry) => entry.goals.length > 0);
+      .map((roadmap) => {
+        const allRoadmapGoals = roadmapGoals.get(roadmap.id) ?? [];
+        const filteredGoals = allRoadmapGoals.filter(filterGoalBySection);
+        return {
+          roadmap,
+          goals: filteredGoals,
+          goalCount: allRoadmapGoals.length,
+        };
+      })
+      .filter((entry) => entry.goalCount > 0);
 
     // If there are no roadmaps and no standalone goals, show empty state
     if (filteredRoadmaps.length === 0 && filteredStandaloneGoals.length === 0) {
@@ -1020,20 +1036,20 @@ export function MonumentGoalsList({
     // Render both roadmap cards first and then standalone goals in the same grid
     return (
       <div className={GOAL_GRID_CLASS}>
-        {filteredRoadmaps.map(({ roadmap, goals: roadmapGoalsList }) => {
+        {filteredRoadmaps.map(({ roadmap, goals: roadmapGoalsList, goalCount }) => {
           return (
             <div
               key={roadmap.id}
               className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-0"
             >
-            <RoadmapCard
-              roadmap={roadmap}
-              goalCount={roadmapGoalsList.length}
-              goals={roadmapGoalsList}
-              variant="compact"
-              onGoalEdit={handleRoadmapGoalEdit}
-              monumentContext
-            />
+              <RoadmapCard
+                roadmap={roadmap}
+                goalCount={goalCount}
+                goals={roadmapGoalsList}
+                variant="compact"
+                onGoalEdit={handleRoadmapGoalEdit}
+                monumentContext
+              />
             </div>
           );
         })}
