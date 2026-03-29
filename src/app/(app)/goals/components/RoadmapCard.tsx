@@ -110,7 +110,7 @@ function DraggableGoalCard({
       {...attributes}
     >
       {/* Drag Handle */}
-      <div className="absolute -left-7 top-2 z-10 flex items-center gap-1.5">
+      <div className="absolute left-1 top-2 z-10 flex items-center gap-1.5">
         <span className="min-w-[2ch] select-none text-base font-black text-white/55">
           {index + 1}.
         </span>
@@ -125,7 +125,7 @@ function DraggableGoalCard({
       </div>
 
       {/* Goal Card with inline expansion */}
-      <div className="ml-5">
+      <div className="ml-8">
         {isOpen ? (
           <GoalCard
             goal={goal}
@@ -386,13 +386,17 @@ function RoadmapCardImpl({
           {open && hasGoals && (
             <CompactGoalsOverlay
               roadmap={roadmap}
-              goals={goals}
+              goals={localGoals}
               onClose={handleToggle}
               anchorRect={null}
               onGoalEdit={onGoalEdit}
               onGoalToggleActive={onGoalToggleActive}
               onGoalDelete={onGoalDelete}
               monumentContext={monumentContext}
+              onGoalsReordered={async (reordered) => {
+                setLocalGoals(reordered);
+                await onRoadmapOrderSaved?.();
+              }}
             />
           )}
         </div>
@@ -506,6 +510,7 @@ type CompactGoalsOverlayProps = {
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
   monumentContext?: boolean;
+  onGoalsReordered?: (goals: Goal[]) => void | Promise<void>;
 };
 
 function CompactGoalsOverlay({
@@ -517,6 +522,7 @@ function CompactGoalsOverlay({
   onGoalToggleActive,
   onGoalDelete,
   monumentContext,
+  onGoalsReordered,
 }: CompactGoalsOverlayProps) {
   const [mounted, setMounted] = useState(false);
   const [localGoals, setLocalGoals] = useState(goals);
@@ -534,6 +540,28 @@ function CompactGoalsOverlay({
         tolerance: 10,
       },
     })
+  );
+
+  const savePriorityRanks = useCallback(
+    async (goalsToSave: Goal[]) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+
+      try {
+        const orderedGoalIds = goalsToSave.map((goal) => goal.id);
+        const { error } = await supabase.rpc("save_roadmap_goal_order", {
+          p_roadmap_id: roadmap.id,
+          p_goal_ids: orderedGoalIds,
+        });
+
+        if (error) {
+          console.error("Failed to save roadmap goal order:", error);
+        }
+      } catch (error) {
+        console.error("Failed to save priority ranks:", error);
+      }
+    },
+    [roadmap.id]
   );
 
   useEffect(() => {
@@ -637,15 +665,22 @@ function CompactGoalsOverlay({
           onDragStart={(event) => {
             console.log("🎯 Drag started:", event.active.id);
           }}
-          onDragEnd={(event) => {
+          onDragEnd={async (event) => {
             console.log("🎯 Drag ended:", event);
             const { active, over } = event;
             if (over && active.id !== over.id) {
               const oldIndex = localGoals.findIndex((g) => g.id === active.id);
               const newIndex = localGoals.findIndex((g) => g.id === over.id);
               console.log(`Moving from index ${oldIndex} to ${newIndex}`);
-              const reordered = arrayMove(localGoals, oldIndex, newIndex);
+              const reordered = arrayMove(localGoals, oldIndex, newIndex).map(
+                (goal, index) => ({
+                  ...goal,
+                  priorityRank: index + 1,
+                })
+              );
               setLocalGoals(reordered);
+              await savePriorityRanks(reordered);
+              await onGoalsReordered?.(reordered);
             }
           }}
         >
