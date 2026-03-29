@@ -30,13 +30,16 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 
-import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/supabase";
 import type { Goal } from "@/app/(app)/goals/types";
 import { computeGoalWeight } from "@/lib/goals/weight";
 import {
   formatEnumLabel,
+  normalizePriority,
   normalizeStage,
+  parseGlobalRank,
   PRIORITY_LABELS,
   PRIORITY_ORDER,
   PriorityBucketId,
@@ -69,7 +72,6 @@ export default function PriorityEditorClient({
   initialGoals = [],
   initialError = null,
 }: PriorityEditorClientProps) {
-  const router = useRouter();
   const [projects, setProjects] = useState(initialProjects);
   const [goals, setGoals] = useState(initialGoals);
   const [loading, setLoading] = useState(false);
@@ -116,11 +118,19 @@ export default function PriorityEditorClient({
     );
 
     const sortedProjects = [...projects].sort((a, b) => {
-      if (a.globalRank !== undefined && b.globalRank !== undefined) {
-        return a.globalRank - b.globalRank;
-      }
-      if (a.globalRank !== undefined) return -1;
-      if (b.globalRank !== undefined) return 1;
+      const priorityDelta =
+        PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority);
+      if (priorityDelta !== 0) return priorityDelta;
+
+      const aStage = normalizeStage(a.stage) ?? STAGE_ORDER[0];
+      const bStage = normalizeStage(b.stage) ?? STAGE_ORDER[0];
+      const stageDelta =
+        STAGE_ORDER.indexOf(aStage) - STAGE_ORDER.indexOf(bStage);
+      if (stageDelta !== 0) return stageDelta;
+
+      const rankDelta = compareGlobalRankValues(a.globalRank, b.globalRank);
+      if (rankDelta !== 0) return rankDelta;
+
       return a.name.localeCompare(b.name);
     });
 
@@ -137,7 +147,16 @@ export default function PriorityEditorClient({
       buckets[bucketId] = [];
     }
 
-    const sortedGoals = [...goals].sort((a, b) => a.name.localeCompare(b.name));
+    const sortedGoals = [...goals].sort((a, b) => {
+      const priorityDelta =
+        PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority);
+      if (priorityDelta !== 0) return priorityDelta;
+
+      const rankDelta = compareGlobalRankValues(a.globalRank, b.globalRank);
+      if (rankDelta !== 0) return rankDelta;
+
+      return a.name.localeCompare(b.name);
+    });
     for (const goal of sortedGoals) {
       buckets[goal.priority].push(goal);
     }
@@ -229,20 +248,36 @@ export default function PriorityEditorClient({
     setActionError(null);
     setActionMessage(null);
     setIsRecalculating(true);
+    setLoading(true);
 
     try {
-      const { error: rpcError } = await supabase.rpc("recalculate_global_rank");
-      if (rpcError) {
-        console.error("Failed to recalculate global rank", rpcError);
-        setActionError("Could not recalculate ranks.");
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user?.id) {
+        console.error("RECALC USER ERROR", userError);
+        setActionError("Could not determine user for priority recalculation.");
         return;
       }
 
+      const { goals: updatedGoals, projectRankById } = await rebuildPriorityStack(
+        supabase,
+        user.id,
+      );
+
+      setGoals(updatedGoals);
+      setProjects((previous) =>
+        previous.map((entry) => ({
+          ...entry,
+          globalRank: projectRankById.get(entry.id) ?? entry.globalRank,
+        })),
+      );
+
       setActionMessage("Global ranks refreshed.");
-      setLoading(true);
-      await router.refresh();
     } catch (caught) {
-      console.error("Recalculation request failed", caught);
+      console.error("Failed to recalculate global rank", caught);
       setActionError("Could not recalculate ranks.");
     } finally {
       setIsRecalculating(false);
@@ -260,6 +295,7 @@ export default function PriorityEditorClient({
     setGoalActionError(null);
     setGoalActionMessage(null);
     setIsGoalRecalculating(true);
+    setLoading(true);
 
     try {
       const {
@@ -273,99 +309,20 @@ export default function PriorityEditorClient({
         return;
       }
 
-      const { data: goalRows, error: fetchError } = await supabase
-        .from("goals")
-        .select(
-          `
-            id,
-            name,
-            active,
-            roadmap_id,
-            priority_code,
-            priority_rank,
-            created_at,
-            updated_at,
-            projects (
-              id,
-              name,
-              stage
-            )
-          `
-        )
-        .eq("user_id", user.id);
-
-      if (fetchError) {
-        console.error("GOAL FETCH ERROR", JSON.stringify(fetchError, null, 2));
-        setGoalActionError(fetchError.message || "Fetch failed");
-        return;
-      }
-
-      const weightUpdates =
-        (goalRows ?? []).map((goalRow) => {
-          const canonicalGoal = {
-            id: goalRow.id,
-            title: goalRow.name ?? "Untitled goal",
-            priority: "No",
-            energy: "No",
-            progress: 0,
-            status: "Active",
-            active: goalRow.active ?? true,
-            createdAt:
-              goalRow.created_at ??
-              new Date().toISOString(),
-            updatedAt:
-              goalRow.updated_at ??
-              goalRow.created_at ??
-              new Date().toISOString(),
-            projects: (goalRow.projects ?? []).map((project) => ({
-              id: project.id,
-              name: project.name ?? "Untitled project",
-              status: "Active",
-              progress: 0,
-              energy: "No",
-              tasks: [],
-              weight: project.weight ?? 0,
-            })),
-            roadmapId: goalRow.roadmap_id ?? null,
-            priorityCode: goalRow.priority_code ?? null,
-            priorityRank:
-              typeof goalRow.priority_rank === "number" &&
-              Number.isFinite(goalRow.priority_rank)
-                ? goalRow.priority_rank
-                : null,
-          } as Goal;
-
-          return {
-            id: goalRow.id,
-            weight: computeGoalWeight(canonicalGoal),
-          };
-        });
-
-      for (const update of weightUpdates) {
-        const { error: updateError } = await supabase
-          .from("goals")
-          .update({ weight: update.weight })
-          .eq("id", update.id);
-
-        if (updateError) {
-          console.error("Failed to persist goal weight", updateError);
-          setGoalActionError("Could not persist goal weights.");
-          return;
-        }
-      }
-
-      const { error: rpcError } = await supabase.rpc(
-        "recalculate_goal_global_rank"
+      const { goals: updatedGoals, projectRankById } = await rebuildPriorityStack(
+        supabase,
+        user.id,
       );
-      if (rpcError) {
-        console.error("Failed to recalculate goal global rank", rpcError);
-        setGoalActionError("Could not recalculate goal ranks.");
-        return;
-      }
+
+      setGoals(updatedGoals);
+      setProjects((previous) =>
+        previous.map((entry) => ({
+          ...entry,
+          globalRank: projectRankById.get(entry.id) ?? entry.globalRank,
+        })),
+      );
 
       setGoalActionMessage("Goal ranks refreshed.");
-      setLoading(true);
-      await router.refresh();
     } catch (caught) {
       console.error("Goal recalc request failed", caught);
       setGoalActionError("Could not recalculate goal ranks.");
@@ -410,18 +367,19 @@ export default function PriorityEditorClient({
               <p className="text-xs text-red-300">{priorityUpdateError}</p>
             )}
           </div>
-          {isProjectView ? (
-            <div className="flex flex-col items-start gap-1 sm:items-end">
-              <button
-                type="button"
-                disabled={isRecalculating || loading}
-                onClick={handleRecalculate}
-                className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:border-white/40 disabled:cursor-not-allowed disabled:border-white/10 disabled:opacity-60"
-              >
-                {isRecalculating ? "Recalculating…" : "Recalculate ranks"}
-              </button>
-              <p className="text-xs text-zinc-400">
-                Updates global_rank from priority/stage formula.
+        {isProjectView ? (
+          <div className="flex flex-col items-start gap-1 sm:items-end">
+            {/* Rebuilds the full priority stack: goals first, then projects. */}
+            <button
+              type="button"
+              disabled={isRecalculating || loading}
+              onClick={handleRecalculate}
+              className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:border-white/40 disabled:cursor-not-allowed disabled:border-white/10 disabled:opacity-60"
+            >
+              {isRecalculating ? "Recalculating…" : "Recalculate ranks"}
+            </button>
+            <p className="text-xs text-zinc-400">
+                Rebuilds the full priority stack: goals first, then projects.
               </p>
               {actionError && <p className="text-xs text-red-300">{actionError}</p>}
               {!actionError && actionMessage && (
@@ -545,6 +503,219 @@ export default function PriorityEditorClient({
       </div>
     </>
   );
+}
+
+type PriorityRebuildResult = {
+  goals: PriorityGoal[];
+  projectRankById: Map<string, number>;
+};
+
+const PROJECT_PRIORITY_STRENGTH_MAP: Record<PriorityBucketId, number> = {
+  "ULTRA-CRITICAL": 6,
+  CRITICAL: 5,
+  HIGH: 4,
+  MEDIUM: 3,
+  LOW: 2,
+  NO: 1,
+};
+
+const PROJECT_STAGE_STRENGTH_MAP: Record<StageId, number> = {
+  RESEARCH: 6,
+  TEST: 5,
+  REFINE: 4,
+  BUILD: 3,
+  RELEASE: 2,
+};
+
+async function rebuildPriorityStack(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+): Promise<PriorityRebuildResult> {
+  const { data: goalRows, error: goalFetchError } = await supabase
+    .from("goals")
+    .select(
+      `
+        id,
+        name,
+        active,
+        roadmap_id,
+        priority_code,
+        priority_rank,
+        created_at,
+        updated_at,
+        projects (
+          id,
+          name,
+          stage
+        )
+      `,
+    )
+    .eq("user_id", userId);
+
+  if (goalFetchError) {
+    throw goalFetchError;
+  }
+
+  const weightUpdates =
+    (goalRows ?? []).map((goalRow) => {
+      const canonicalGoal = {
+        id: goalRow.id,
+        title: goalRow.name ?? "Untitled goal",
+        priority: "No",
+        energy: "No",
+        progress: 0,
+        status: "Active",
+        active: goalRow.active ?? true,
+        createdAt:
+          goalRow.created_at ?? new Date().toISOString(),
+        updatedAt:
+          goalRow.updated_at ?? goalRow.created_at ?? new Date().toISOString(),
+        projects: (goalRow.projects ?? []).map((project) => ({
+          id: project.id,
+          name: project.name ?? "Untitled project",
+          status: "Active",
+          progress: 0,
+          energy: "No",
+          tasks: [],
+          weight: project.weight ?? 0,
+        })),
+        roadmapId: goalRow.roadmap_id ?? null,
+        priorityCode: goalRow.priority_code ?? null,
+        priorityRank:
+          typeof goalRow.priority_rank === "number" &&
+          Number.isFinite(goalRow.priority_rank)
+            ? goalRow.priority_rank
+            : null,
+      } as Goal;
+
+      return {
+        id: goalRow.id,
+        weight: computeGoalWeight(canonicalGoal),
+      };
+    });
+
+  for (const update of weightUpdates) {
+    const { error: updateError } = await supabase
+      .from("goals")
+      .update({ weight: update.weight })
+      .eq("id", update.id);
+
+    if (updateError) {
+      throw updateError;
+    }
+  }
+
+  const { error: rpcError } = await supabase.rpc("recalculate_goal_global_rank");
+  if (rpcError) {
+    throw rpcError;
+  }
+
+  const { data: refreshedGoalRows, error: refreshedGoalError } = await supabase
+    .from("goals")
+    .select("id,name,emoji,priority,priority_code,status,global_rank")
+    .neq("status", "COMPLETED")
+    .eq("user_id", userId);
+
+  if (refreshedGoalError) {
+    throw refreshedGoalError;
+  }
+
+  const normalizedGoals: PriorityGoal[] =
+    (refreshedGoalRows ?? []).map((row) => ({
+      id: row.id,
+      name: (row.name ?? "").trim() || "Untitled goal",
+      emoji: row.emoji ?? null,
+      priority: normalizePriority(row.priority ?? row.priority_code),
+      stage: null,
+      globalRank: parseGlobalRank(row.global_rank),
+    }));
+
+  const goalRankById = new Map<string, number | null>();
+  for (const goalRow of refreshedGoalRows ?? []) {
+    if (!goalRow?.id) continue;
+    goalRankById.set(goalRow.id, parseGlobalRank(goalRow.global_rank) ?? null);
+  }
+
+  const { data: projectRows, error: projectFetchError } = await supabase
+    .from("projects")
+    .select("id,name,priority,stage,goal_id")
+    .eq("user_id", userId)
+    .is("completed_at", null);
+
+  if (projectFetchError) {
+    throw projectFetchError;
+  }
+
+  type ProjectRankRecord = {
+    id: string;
+    goalGlobalRank: number | null;
+    priorityStrength: number;
+    stageStrength: number;
+  };
+
+  const projectRankRecords: ProjectRankRecord[] = [];
+  for (const projectRow of projectRows ?? []) {
+    if (!projectRow?.id) continue;
+    const projectGoalRank =
+      projectRow.goal_id && goalRankById.has(projectRow.goal_id)
+        ? goalRankById.get(projectRow.goal_id) ?? null
+        : null;
+    projectRankRecords.push({
+      id: projectRow.id,
+      goalGlobalRank: projectGoalRank,
+      priorityStrength: getPriorityStrength(projectRow.priority),
+      stageStrength: getStageStrength(projectRow.stage),
+    });
+  }
+
+  projectRankRecords.sort((a, b) => {
+    const aGoalRank = a.goalGlobalRank ?? Number.POSITIVE_INFINITY;
+    const bGoalRank = b.goalGlobalRank ?? Number.POSITIVE_INFINITY;
+    if (aGoalRank !== bGoalRank) {
+      return aGoalRank - bGoalRank;
+    }
+    if (a.priorityStrength !== b.priorityStrength) {
+      return b.priorityStrength - a.priorityStrength;
+    }
+    if (a.stageStrength !== b.stageStrength) {
+      return b.stageStrength - a.stageStrength;
+    }
+    return a.id.localeCompare(b.id);
+  });
+
+  const projectRankById = new Map<string, number>();
+  for (let index = 0; index < projectRankRecords.length; index++) {
+    const record = projectRankRecords[index];
+    const rank = index + 1;
+    const { error: projectUpdateError } = await supabase
+      .from("projects")
+      .update({ global_rank: rank })
+      .eq("id", record.id);
+
+    if (projectUpdateError) {
+      throw projectUpdateError;
+    }
+
+    projectRankById.set(record.id, rank);
+  }
+
+  return {
+    goals: normalizedGoals,
+    projectRankById,
+  };
+}
+
+function getPriorityStrength(value?: string | null): number {
+  const normalized = normalizePriority(value);
+  return PROJECT_PRIORITY_STRENGTH_MAP[normalized] ?? 3;
+}
+
+function getStageStrength(value?: string | null): number {
+  const normalized = normalizeStage(value);
+  if (normalized && normalized in PROJECT_STAGE_STRENGTH_MAP) {
+    return PROJECT_STAGE_STRENGTH_MAP[normalized];
+  }
+  return 3;
 }
 
 type PriorityItemCardProps =
@@ -742,4 +913,16 @@ function parseDraggableId(id?: string | null): DraggablePayload | null {
     };
   }
   return null;
+}
+
+function compareGlobalRankValues(a?: number, b?: number): number {
+  const normalize = (value?: number): number =>
+    typeof value === "number" && Number.isFinite(value)
+      ? value
+      : Number.POSITIVE_INFINITY;
+
+  const aValue = normalize(a);
+  const bValue = normalize(b);
+  if (aValue === bValue) return 0;
+  return aValue < bValue ? -1 : 1;
 }
