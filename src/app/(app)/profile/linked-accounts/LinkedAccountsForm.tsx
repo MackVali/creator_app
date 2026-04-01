@@ -10,7 +10,6 @@ import {
   getLinkedAccounts,
   upsertLinkedAccount,
   deleteLinkedAccount,
-  validateLinkedAccountUrl,
 } from "@/lib/db/linked-accounts";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -26,6 +25,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { buildSocialUrl, normalizeUsername } from "@/lib/profile/socialLinks";
 
 const ICON_MAP: Record<SupportedPlatform, LucideIcon> = {
   instagram: Instagram,
@@ -40,6 +40,7 @@ const ICON_MAP: Record<SupportedPlatform, LucideIcon> = {
 interface AccountState {
   id?: string;
   url: string;
+  username: string;
 }
 
 const platformKeys: SupportedPlatform[] = [
@@ -52,6 +53,11 @@ const platformKeys: SupportedPlatform[] = [
   "twitter",
 ];
 
+const USERNAME_PLACEHOLDERS: Partial<Record<SupportedPlatform, string>> = {
+  tiktok: "@username",
+  youtube: "@username",
+};
+
 const glassCardStyles =
   "relative overflow-hidden rounded-[28px] border border-white/10 bg-background/40 p-6 shadow-[0_25px_60px_-40px_rgba(15,23,42,0.65)] backdrop-blur";
 
@@ -62,13 +68,13 @@ export default function LinkedAccountsForm() {
   const { user } = useAuth();
   const userId = user?.id;
   const [accounts, setAccounts] = useState<Record<SupportedPlatform, AccountState>>({
-    instagram: { url: "" },
-    tiktok: { url: "" },
-    youtube: { url: "" },
-    spotify: { url: "" },
-    snapchat: { url: "" },
-    facebook: { url: "" },
-    twitter: { url: "" },
+    instagram: { url: "", username: "" },
+    tiktok: { url: "", username: "" },
+    youtube: { url: "", username: "" },
+    spotify: { url: "", username: "" },
+    snapchat: { url: "", username: "" },
+    facebook: { url: "", username: "" },
+    twitter: { url: "", username: "" },
   });
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +93,8 @@ export default function LinkedAccountsForm() {
         const copy = { ...prev };
         data.forEach((acc) => {
           const platform = acc.platform as SupportedPlatform;
-          copy[platform] = { id: acc.id, url: acc.url };
+          const username = normalizeUsername(platform, acc.url);
+          copy[platform] = { id: acc.id, url: acc.url, username };
         });
         return copy;
       });
@@ -99,23 +106,30 @@ export default function LinkedAccountsForm() {
     if (!userId) return;
     setError(null);
     setSuccess(null);
-    const url = accounts[platform].url.trim();
-    const { valid, cleaned, error } = validateLinkedAccountUrl(platform, url);
-    if (!valid || !cleaned) {
-      setError(error || "Invalid URL");
+    const rawInput = accounts[platform].username;
+    const normalizedHandle = normalizeUsername(platform, rawInput);
+    if (!normalizedHandle) {
+      setError("Please enter a username");
       return;
     }
+
+    const canonicalUrl = buildSocialUrl(platform, normalizedHandle);
+
     setSaving(platform);
     const { success, error: saveError } = await upsertLinkedAccount(
       userId,
       platform,
-      cleaned
+      { username: normalizedHandle, url: canonicalUrl }
     );
     setSaving(null);
     if (success) {
       setAccounts((prev) => ({
         ...prev,
-        [platform]: { ...prev[platform], url: cleaned },
+        [platform]: {
+          ...prev[platform],
+          url: canonicalUrl,
+          username: normalizedHandle,
+        },
       }));
       setSuccess(`${PLATFORM_CONFIG[platform].label} link saved`);
     } else {
@@ -131,7 +145,7 @@ export default function LinkedAccountsForm() {
     const { success, error: delError } = await deleteLinkedAccount(userId, platform);
     setSaving(null);
     if (success) {
-      setAccounts((prev) => ({ ...prev, [platform]: { url: "" } }));
+      setAccounts((prev) => ({ ...prev, [platform]: { url: "", username: "" } }));
       setSuccess(`${PLATFORM_CONFIG[platform].label} link removed`);
     } else {
       setError(delError || "Failed to remove link");
@@ -141,17 +155,20 @@ export default function LinkedAccountsForm() {
   const renderRow = (platform: SupportedPlatform) => {
     const Icon = ICON_MAP[platform];
     const config = PLATFORM_CONFIG[platform];
-    const value = accounts[platform]?.url || "";
+    const usernameValue = accounts[platform]?.username || "";
+    const isConnected = Boolean(accounts[platform]?.url.trim().length);
     const accentPrimary = withOpacity(config.color, 0.28);
     const accentSecondary = withOpacity(config.color, 0.08);
     const isSaving = saving === platform;
+    const placeholderBase = USERNAME_PLACEHOLDERS[platform] ?? "username";
+    const placeholderText = `${placeholderBase} (username only)`;
 
     return (
       <div
         key={platform}
         className={cn(
           "group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition-all hover:border-white/20 hover:shadow-[0_25px_50px_-25px_rgba(15,23,42,0.65)]",
-          value ? "shadow-[0_25px_60px_-45px_rgba(15,23,42,0.9)]" : ""
+          isConnected ? "shadow-[0_25px_60px_-45px_rgba(15,23,42,0.9)]" : ""
         )}
         style={{
           backgroundImage: `linear-gradient(135deg, ${accentSecondary}, rgba(17, 24, 39, 0.4)), linear-gradient(135deg, ${accentPrimary}, transparent)`
@@ -171,7 +188,7 @@ export default function LinkedAccountsForm() {
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 {config.label}
-                {value ? (
+                {isConnected ? (
                   <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
                     Connected
                   </span>
@@ -182,20 +199,20 @@ export default function LinkedAccountsForm() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground/80">
-                {`https://${config.domain}`}
+                {`Add your ${config.label} username or handle (no URL)`}
               </p>
             </div>
           </div>
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[280px] sm:flex-row sm:items-center">
             <Input
-              value={value}
+              value={usernameValue}
               onChange={(e) =>
                 setAccounts((prev) => ({
                   ...prev,
-                  [platform]: { ...prev[platform], url: e.target.value },
+                  [platform]: { ...prev[platform], username: e.target.value },
                 }))
               }
-              placeholder={`https://${config.domain}/username`}
+              placeholder={placeholderText}
               className="h-11 flex-1 rounded-xl border border-white/20 bg-white/5 text-sm text-foreground placeholder:text-muted-foreground/60 focus-visible:border-white/40 focus-visible:bg-white/10"
             />
             <div className="flex gap-2 sm:w-auto">
@@ -205,9 +222,9 @@ export default function LinkedAccountsForm() {
                 size="sm"
                 className="w-full sm:w-auto"
               >
-                {isSaving ? "Saving" : value ? "Update" : "Save"}
+                {isSaving ? "Saving" : isConnected ? "Update" : "Save"}
               </Button>
-              {value && (
+              {isConnected && (
                 <Button
                   variant="outline"
                   onClick={() => handleRemove(platform)}
@@ -235,7 +252,7 @@ export default function LinkedAccountsForm() {
               {hasConnectedAccount ? "Your socials are synced" : "Start connecting platforms"}
             </div>
             <p className="text-xs text-muted-foreground/80">
-              Use polished, verified links to keep your profile feeling premium across the internet.
+              Type only your username or handle for each platform and we’ll build the link for you.
             </p>
           </div>
           <span className={pillStyles}>

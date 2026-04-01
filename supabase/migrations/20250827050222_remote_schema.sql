@@ -72,6 +72,7 @@ create table "public"."social_links" (
   "id" uuid not null default gen_random_uuid(),
   "user_id" uuid not null,
   "platform" text not null,
+  "username" text,
   "url" text not null,
   "icon" text,
   "color" text,

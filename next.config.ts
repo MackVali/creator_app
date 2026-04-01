@@ -10,6 +10,11 @@ const nextConfig = {
     remotePatterns: [
       { hostname: "i.pravatar.cc" },
       { hostname: "upload.wikimedia.org" },
+      {
+        protocol: "https",
+        hostname: "ndluqrtcevprjlzzdjbi.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
     ],
   },
   typescript: { ignoreBuildErrors: true },

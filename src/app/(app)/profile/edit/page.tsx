@@ -1,21 +1,43 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
+import { getLinkedAccounts } from "@/lib/db/linked-accounts";
+import { getSocialLinks } from "@/lib/db/profile-management";
 import { updateMyOnboarding } from "@/lib/db/profiles-client";
-import { Profile, ProfileFormData } from "@/lib/types";
+import { Profile, ProfileFormData, SocialLink, LinkedAccount } from "@/lib/types";
 import { uploadAvatar, uploadBanner } from "@/lib/storage";
+import { buildSocialUrl, normalizeUsername, resolveSocialLink } from "@/lib/profile/socialLinks";
+import { SocialIcon, getSocialIconDefinition } from "@/components/profile/SocialIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Save, User, Calendar, MapPin, FileText } from "lucide-react";
+import { ArrowLeft, Save, User, Calendar, MapPin, FileText, Camera } from "lucide-react";
 import Link from "next/link";
+import SocialPillsRow from "@/components/profile/SocialPillsRow";
+
+const SOCIAL_EDIT_CONFIG: Array<{
+  platform: string;
+  placeholder: string;
+  helper?: string;
+}> = [
+  { platform: "instagram", placeholder: "Instagram handle", helper: "Handle only, no @ or extra prefixes" },
+  { platform: "tiktok", placeholder: "TikTok handle", helper: "Handle only, no @ or extra prefixes" },
+  { platform: "x", placeholder: "X handle", helper: "Handle only, no @ or extra prefixes" },
+  { platform: "twitter", placeholder: "Twitter handle", helper: "Handle only, no @ or extra prefixes" },
+  { platform: "youtube", placeholder: "YouTube handle", helper: "Handle only, no @ or extra prefixes" },
+  { platform: "facebook", placeholder: "Facebook handle", helper: "Handle only, no @ or extra prefixes" },
+  { platform: "spotify", placeholder: "Spotify handle", helper: "Handle only, no @ or extra prefixes" },
+  { platform: "snapchat", placeholder: "Snapchat handle", helper: "Handle only, no @ or extra prefixes" },
+  { platform: "linkedin", placeholder: "LinkedIn handle", helper: "Handle only, no @ or extra prefixes" },
+  { platform: "pinterest", placeholder: "Pinterest handle", helper: "Handle only, no @ or extra prefixes" },
+];
 
 export default function ProfileEditPage() {
   const router = useRouter();
@@ -43,6 +65,8 @@ export default function ProfileEditPage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
+  const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
 
   const onboarding = searchParams.get("onboarding") === "1";
   const redirectPath = searchParams.get("redirect");
@@ -81,6 +105,145 @@ export default function ProfileEditPage() {
 
     loadProfile();
   }, [user, router]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    if (!profile?.user_id) {
+      setSocialLinks([]);
+      return;
+    }
+
+    (async () => {
+      try {
+        const links = await getSocialLinks(profile.user_id);
+        if (isActive) {
+          const normalizedLinks = links.map((link) => {
+            const usernameSource = link.username ?? link.url;
+            const normalizedUsername = normalizeUsername(link.platform, usernameSource);
+            const canonicalUrl = normalizedUsername
+              ? buildSocialUrl(link.platform, normalizedUsername)
+              : link.url;
+            return {
+              ...link,
+              username: normalizedUsername || link.username,
+              url: canonicalUrl ?? link.url,
+            };
+          });
+          setSocialLinks(normalizedLinks);
+        }
+      } catch (err) {
+        console.error("Error loading social links:", err);
+        if (isActive) {
+          setSocialLinks([]);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, [profile?.user_id]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    if (!profile?.user_id) {
+      setLinkedAccounts([]);
+      return;
+    }
+
+    (async () => {
+      try {
+        const accounts = await getLinkedAccounts(profile.user_id);
+        if (isActive) {
+          setLinkedAccounts(accounts);
+        }
+      } catch (err) {
+        console.error("Error loading linked accounts:", err);
+        if (isActive) {
+          setLinkedAccounts([]);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, [profile?.user_id]);
+
+  const socialsData = useMemo(() => {
+    const data: Record<string, string | undefined> = {};
+    socialLinks.forEach((link) => {
+      const resolved = resolveSocialLink(link);
+      if (resolved.url) {
+        data[link.platform.toLowerCase()] = resolved.url;
+      }
+    });
+    return data;
+  }, [socialLinks]);
+
+  const linkedHandlePrefills = useMemo(() => {
+    const prefills: Record<string, string> = {};
+    linkedAccounts.forEach((account) => {
+      const platformKey = account.platform?.toLowerCase?.();
+      if (!platformKey) return;
+      const handle = normalizeUsername(platformKey, account.url);
+      if (handle) {
+        prefills[platformKey] = handle;
+      }
+    });
+    return prefills;
+  }, [linkedAccounts]);
+
+  const handleManageSocials = useCallback(() => {
+    router.push("/profile/linked-accounts");
+  }, [router]);
+
+  const handleSocialChange = useCallback(
+    (platform: string, rawValue: string) => {
+      setSocialLinks((current) => {
+        const normalized = normalizeUsername(platform, rawValue);
+        const canonicalUrl = normalized ? buildSocialUrl(platform, normalized) : "";
+        const platformKey = platform.toLowerCase();
+        const existingIndex = current.findIndex(
+          (link) => link.platform?.toLowerCase?.() === platformKey,
+        );
+
+        if (existingIndex !== -1) {
+          const updated = [...current];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            username: normalized || null,
+            url: canonicalUrl,
+            updated_at: new Date().toISOString(),
+          };
+          return updated;
+        }
+
+        if (!normalized) {
+          return current;
+        }
+
+        const newEntry: SocialLink = {
+          id: `draft-${platformKey}`,
+          user_id: profile?.user_id ?? "",
+          platform,
+          url: canonicalUrl,
+          username: normalized,
+          icon: null,
+          color: null,
+          position: current.length,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        return [...current, newEntry];
+      });
+    },
+    [profile?.user_id],
+  );
 
   const handleInputChange = (field: keyof ProfileFormData, value: string) => {
     setFormData(prev => ({
@@ -268,31 +431,132 @@ export default function ProfileEditPage() {
     );
   }
 
+  if (!profile) {
+    return null;
+  }
+
+  const heroBannerUrl =
+    bannerPreview ??
+    profile.banner_url ??
+    profile.cover_image ??
+    profile.hero_media_url ??
+    null;
+  const heroAvatarUrl = avatarPreview ?? profile.avatar_url ?? null;
+  const heroName = profile.name?.trim() || profile.username || "Your profile";
+  const heroHandle = profile.username ? `@${profile.username}` : null;
+  const heroBio =
+    profile.bio?.trim() ||
+    profile.tagline?.trim() ||
+    "Add a short story so visitors understand what to expect from your profile.";
+
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
-      {/* Header */}
-      <div className="bg-[#15161A] border-b border-white/5">
-        <div className="max-w-2xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+      <section className="relative min-h-[520px] w-full overflow-hidden border-b border-white/5">
+        <div className="absolute inset-0 pointer-events-none">
+          {heroBannerUrl ? (
+            <div className="h-full w-full">
+              <img
+                src={heroBannerUrl}
+                alt=""
+                className="h-full w-full object-cover"
+                aria-hidden="true"
+              />
+            </div>
+          ) : (
+            <div className="h-full w-full bg-gradient-to-br from-slate-900 via-slate-950 to-black" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/95" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_65%)]" />
+        </div>
+
+        <div className="relative z-10 flex flex-col">
+          <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4">
+            <div className="flex items-center gap-3">
               <Link href="/profile">
                 <Button variant="ghost" size="sm" className="p-2">
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
               </Link>
-              <h1 className="text-2xl font-bold text-zinc-100">Edit Profile</h1>
+              <span className="text-sm font-semibold uppercase tracking-[0.35em] text-white/60">
+                Edit profile
+              </span>
             </div>
             <Link href="/profile/linked-accounts">
-              <Button variant="outline" size="sm">Linked Accounts</Button>
+              <Button variant="outline" size="sm" className="text-white">
+                Linked Accounts
+              </Button>
             </Link>
           </div>
-        </div>
-      </div>
 
-      {/* Form */}
-      <div className="max-w-2xl mx-auto px-4 py-8">
+          <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-5 px-4 pb-8 pt-6 text-center">
+            <div className="relative">
+              <input
+                id="avatar"
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarChange}
+                className="sr-only"
+              />
+              <label
+                htmlFor="avatar"
+                className="group relative inline-flex items-center justify-center rounded-full"
+              >
+                <Avatar className="h-32 w-32 rounded-full border border-white/20 bg-black/60 shadow-[0_25px_80px_rgba(0,0,0,0.85)] ring-2 ring-white/10 transition duration-200 group-hover:ring-white/60">
+                  {heroAvatarUrl ? (
+                    <AvatarImage src={heroAvatarUrl} alt={`${heroName}'s avatar`} />
+                  ) : (
+                    <AvatarFallback className="text-3xl text-white/60">
+                      <User className="h-12 w-12 text-white/70" />
+                    </AvatarFallback>
+                  )}
+                </Avatar>
+                <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-end gap-1 rounded-full bg-black/40 text-[0.6rem] font-semibold tracking-[0.3em] uppercase text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                  <Camera className="h-3.5 w-3.5" />
+                  Edit
+                </span>
+              </label>
+            </div>
+
+            <div>
+              <p className="text-4xl font-semibold text-white sm:text-5xl">{heroName}</p>
+              {heroHandle ? (
+                <p className="mt-2 text-xs uppercase tracking-[0.35em] text-white/70">
+                  {heroHandle}
+                </p>
+              ) : null}
+            </div>
+
+            <p className="max-w-3xl text-sm leading-relaxed text-white/70">{heroBio}</p>
+
+            <input
+              id="banner"
+              type="file"
+              accept="image/*"
+              onChange={handleBannerChange}
+              className="sr-only"
+            />
+            <label
+              htmlFor="banner"
+              className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-white transition hover:border-white/50"
+            >
+              <Camera className="h-3.5 w-3.5 text-white/80" />
+              Change hero media
+            </label>
+          </div>
+
+          <div className="mx-auto w-full max-w-5xl px-4 pb-10">
+            <SocialPillsRow
+              socials={socialsData}
+              editMode
+              onAddLink={handleManageSocials}
+            />
+          </div>
+        </div>
+      </section>
+
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10">
         {onboarding && (
-          <div className="mb-6 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-200">
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-200">
             <p className="font-medium">Complete your profile to continue.</p>
             <p className="mt-1 text-zinc-400">
               Add your name, username, and details so we can personalize your experience.
@@ -328,68 +592,6 @@ export default function ProfileEditPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Cover & Profile Photo */}
-              <div className="space-y-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                  Cover + Profile
-                </p>
-                <div className="relative">
-                  <label
-                    htmlFor="banner"
-                    className="group block rounded-2xl border border-white/10 bg-white/5 shadow-inner overflow-hidden"
-                  >
-                    <input
-                      id="banner"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleBannerChange}
-                      className="sr-only"
-                    />
-                    <div className="relative h-48 w-full bg-gradient-to-br from-white/10 to-white/0">
-                      {bannerPreview ? (
-                        <img
-                          src={bannerPreview}
-                          alt="Cover preview"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : null}
-                      <div className="absolute inset-0 bg-black/30 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
-                      <div className="absolute inset-x-0 bottom-2 flex items-center justify-center text-xs font-semibold text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                        Change cover photo
-                      </div>
-                      <div className="absolute inset-x-0 bottom-3 text-center text-xs font-semibold uppercase tracking-[0.35em] text-white/80">
-                        Add a cover photo
-                      </div>
-                    </div>
-                  </label>
-
-                  <label
-                    htmlFor="avatar"
-                    className="group absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-[#0F0F12] bg-transparent shadow-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-white/60"
-                  >
-                    <input
-                      id="avatar"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleAvatarChange}
-                      className="sr-only"
-                    />
-                    <Avatar className="h-28 w-28 rounded-full border border-white/10 bg-zinc-900/60 ring-4 ring-[#0F0F12] shadow-xl transition duration-200 group-hover:ring-white/60">
-                      {avatarPreview ? (
-                        <AvatarImage src={avatarPreview} alt="Avatar preview" />
-                      ) : (
-                        <AvatarFallback className="text-3xl text-zinc-500">
-                          <User className="h-12 w-12 text-zinc-500" />
-                        </AvatarFallback>
-                      )}
-                    </Avatar>
-                    <div className="pointer-events-none absolute inset-0 flex items-end justify-end p-2 text-[10px] font-semibold uppercase tracking-[0.3em] text-white opacity-0 transition-opacity duration-200 group-hover:opacity-70">
-                      Upload
-                    </div>
-                  </label>
-                </div>
-              </div>
-
               {/* Name */}
               <div className="space-y-2">
                 <Label htmlFor="name" className="flex items-center space-x-2">
@@ -536,6 +738,66 @@ export default function ProfileEditPage() {
                 </label>
               </div>
 
+              {/* Social handles */}
+              <div className="space-y-3 border-t border-white/5 pt-6">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-white">Social handles</span>
+                  <span className="text-xs uppercase tracking-[0.3em] text-zinc-500">
+                    Handles only
+                  </span>
+                </div>
+                <p className="text-sm text-zinc-400">
+                  Enter the username you use on each platform; we take care of the rest automatically.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {SOCIAL_EDIT_CONFIG.map(({ platform, placeholder, helper }) => {
+                    const platformKey = platform.toLowerCase();
+                    const currentLink = socialLinks.find(
+                      (entry) => entry.platform?.toLowerCase?.() === platformKey,
+                    );
+                    const label = getSocialIconDefinition(platform).label;
+                    const currentHandle = currentLink?.username ?? "";
+                    const prefillHandle = linkedHandlePrefills[platformKey];
+                    const showPrefillButton =
+                      !!prefillHandle && prefillHandle !== currentHandle;
+
+                    return (
+                      <label key={platform} className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                          <SocialIcon platform={platform} className="h-10 w-10" iconClassName="h-4 w-4" />
+                          {label}
+                        </div>
+                        <Input
+                          value={currentLink?.username ?? ""}
+                          placeholder={placeholder}
+                          onChange={(e) => handleSocialChange(platform, e.target.value)}
+                          className="h-11 text-sm text-white border-zinc-700 placeholder:text-zinc-500 focus-visible:border-white/40 focus-visible:ring-white/20"
+                        />
+                        {helper ? (
+                          <p className="text-xs text-zinc-500">{helper}</p>
+                        ) : null}
+                        {prefillHandle ? (
+                          <div className="flex items-center justify-between text-xs text-zinc-500">
+                            <span>Connected: @{prefillHandle}</span>
+                            {showPrefillButton ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSocialChange(platform, prefillHandle)}
+                                className="text-xs font-semibold text-emerald-300 hover:text-emerald-100"
+                              >
+                                Use connected account
+                              </button>
+                            ) : (
+                              <span className="text-emerald-300">Applied</span>
+                            )}
+                          </div>
+                        ) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Submit Button */}
               <div className="pt-6">
                 <Button
@@ -559,7 +821,7 @@ export default function ProfileEditPage() {
             </form>
           </CardContent>
         </Card>
-      </div>
+      </main>
     </div>
   );
 }

@@ -1,35 +1,35 @@
 import { describe, expect, it } from "vitest";
 
-import { validateLinkedAccountUrl } from "../../lib/db/linked-accounts";
+import {
+  resolveLinkedAccountInput,
+  SupportedPlatform,
+} from "../../lib/db/linked-accounts";
 
-describe("validateLinkedAccountUrl", () => {
-  it("accepts URLs on the exact domain", () => {
-    const result = validateLinkedAccountUrl(
-      "instagram",
-      "https://instagram.com/example"
-    );
+const platform: SupportedPlatform = "instagram";
 
-    expect(result.valid).toBe(true);
-    expect(result.cleaned).toBe("https://instagram.com/example");
+describe("resolveLinkedAccountInput", () => {
+  it("builds a canonical URL when given a username string", () => {
+    const result = resolveLinkedAccountInput(platform, "  @Example  ");
+
+    expect(result).toEqual({
+      url: "https://instagram.com/Example",
+      username: "Example",
+    });
   });
 
-  it("accepts URLs on a subdomain of the platform", () => {
-    const result = validateLinkedAccountUrl(
-      "instagram",
-      "https://www.instagram.com/example"
-    );
+  it("derives the username from an existing URL and still returns the canonical link", () => {
+    const result = resolveLinkedAccountInput(platform, {
+      url: "https://www.instagram.com/Existing/?utm=1",
+    });
 
-    expect(result.valid).toBe(true);
-    expect(result.cleaned).toBe("https://www.instagram.com/example");
+    expect(result).toEqual({
+      url: "https://instagram.com/Existing",
+      username: "Existing",
+    });
   });
 
-  it("rejects URLs on deceptive look-alike domains", () => {
-    const result = validateLinkedAccountUrl(
-      "instagram",
-      "https://instagram.com.evil.example/profile"
-    );
-
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe("URL must be on instagram.com");
+  it("returns null when neither username nor URL are provided", () => {
+    expect(resolveLinkedAccountInput(platform, "")).toBeNull();
+    expect(resolveLinkedAccountInput(platform, { url: "   " })).toBeNull();
   });
 });

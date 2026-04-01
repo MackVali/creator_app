@@ -1,5 +1,12 @@
 'use client';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import type {
   DiscoveryProfile,
   Friend,
@@ -12,8 +19,28 @@ import SearchFriends from '@/components/friends/SearchFriends';
 import RequestsInvites from '@/components/friends/RequestsInvites';
 import { Select, SelectContent, SelectItem } from '@/components/ui/select';
 
+type StatsCardProps = {
+  label: string;
+  value: number;
+  helper?: string;
+};
+
+function StatsCard({ label, value, helper }: StatsCardProps) {
+  return (
+    <article className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 shadow-sm shadow-black/30">
+      <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">
+        {label}
+      </span>
+      <p className="text-2xl font-semibold text-white">{value.toLocaleString()}</p>
+      {helper ? (
+        <p className="text-xs text-white/60">{helper}</p>
+      ) : null}
+    </article>
+  );
+}
+
 export default function FriendsPage() {
-  const [tab, setTab] = useState<'friends' | 'requests' | 'search'>('friends');
+  const [tab, setTab] = useState<'friends' | 'requests' | 'discover'>('friends');
   const [sort, setSort] =
     useState<'default' | 'alphabetical' | 'online'>('default');
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -29,155 +56,167 @@ export default function FriendsPage() {
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const friendsTabRef = useRef<HTMLButtonElement>(null);
   const requestsTabRef = useRef<HTMLButtonElement>(null);
-  const searchTabRef = useRef<HTMLButtonElement>(null);
+  const discoverTabRef = useRef<HTMLButtonElement>(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function loadFriends() {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const response = await fetch('/api/friends', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-        });
-
-        if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
-          throw new Error(data?.error ?? 'Unable to load friends.');
-        }
-
-        const data = (await response.json()) as { friends: Friend[] };
-        if (isMounted) {
-          setFriends(data.friends);
-        }
-      } catch (err) {
-        if (!isMounted) return;
-        const message =
-          err instanceof Error ? err.message : 'Unable to load friends.';
-        setError(message);
-        setFriends([]);
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void loadFriends();
+    isMountedRef.current = true;
 
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
     };
   }, []);
 
-  useEffect(() => {
-    let isMounted = true;
+  const refreshFriends = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-    async function loadRequests() {
-      try {
-        setIsLoadingRequests(true);
-        setRequestsError(null);
+      const response = await fetch('/api/friends', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      });
 
-        const response = await fetch('/api/friends/requests', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-        });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(data?.error ?? 'Unable to load friends.');
+      }
 
-        if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
-          throw new Error(data?.error ?? 'Unable to load requests.');
-        }
+      const data = (await response.json()) as { friends: Friend[] };
+      if (!isMountedRef.current) {
+        return;
+      }
 
-        const data = (await response.json()) as { requests: FriendRequest[] };
-        if (!isMounted) return;
-        setRequests(data.requests ?? []);
-      } catch (err) {
-        if (!isMounted) return;
-        const message =
-          err instanceof Error ? err.message : 'Unable to load requests.';
-        setRequestsError(message);
-        setRequests([]);
-      } finally {
-        if (isMounted) {
-          setIsLoadingRequests(false);
-        }
+      setFriends(data.friends);
+    } catch (err) {
+      if (!isMountedRef.current) {
+        return;
+      }
+      const message =
+        err instanceof Error ? err.message : 'Unable to load friends.';
+      setError(message);
+      setFriends([]);
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false);
       }
     }
-
-    void loadRequests();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
-  useEffect(() => {
-    let isMounted = true;
+  const refreshRequests = useCallback(async () => {
+    try {
+      setIsLoadingRequests(true);
+      setRequestsError(null);
 
-    async function loadDiscovery() {
-      try {
-        setIsLoadingDiscovery(true);
-        setDiscoveryError(null);
+      const response = await fetch('/api/friends/requests', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      });
 
-        const response = await fetch('/api/friends/discovery', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-        });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(data?.error ?? 'Unable to load requests.');
+      }
 
-        if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
-          throw new Error(data?.error ?? 'Unable to load invites.');
-        }
-
-        const data = (await response.json()) as {
-          invites?: SentInvite[];
-          suggestions?: SuggestedFriend[];
-          discoveryProfiles?: DiscoveryProfile[];
-        };
-
-        if (!isMounted) return;
-
-        setInvites(data.invites ?? []);
-        setSuggested(data.suggestions ?? []);
-        setDiscoveryProfiles(data.discoveryProfiles ?? []);
-      } catch (err) {
-        if (!isMounted) return;
-        const message =
-          err instanceof Error ? err.message : 'Unable to load invites.';
-        setDiscoveryError(message);
-        setInvites([]);
-        setSuggested([]);
-        setDiscoveryProfiles([]);
-      } finally {
-        if (isMounted) {
-          setIsLoadingDiscovery(false);
-        }
+      const data = (await response.json()) as { requests: FriendRequest[] };
+      if (!isMountedRef.current) {
+        return;
+      }
+      setRequests(data.requests ?? []);
+    } catch (err) {
+      if (!isMountedRef.current) {
+        return;
+      }
+      const message =
+        err instanceof Error ? err.message : 'Unable to load requests.';
+      setRequestsError(message);
+      setRequests([]);
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoadingRequests(false);
       }
     }
-
-    void loadDiscovery();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
+
+  const refreshDiscovery = useCallback(async () => {
+    try {
+      setIsLoadingDiscovery(true);
+      setDiscoveryError(null);
+
+      const response = await fetch('/api/friends/discovery', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(data?.error ?? 'Unable to load invites.');
+      }
+
+      const data = (await response.json()) as {
+        invites?: SentInvite[];
+        suggestions?: SuggestedFriend[];
+        discoveryProfiles?: DiscoveryProfile[];
+      };
+
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      setInvites(data.invites ?? []);
+      setSuggested(data.suggestions ?? []);
+      setDiscoveryProfiles(data.discoveryProfiles ?? []);
+    } catch (err) {
+      if (!isMountedRef.current) {
+        return;
+      }
+      const message =
+        err instanceof Error ? err.message : 'Unable to load invites.';
+      setDiscoveryError(message);
+      setInvites([]);
+      setSuggested([]);
+      setDiscoveryProfiles([]);
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoadingDiscovery(false);
+      }
+    }
+  }, []);
+
+  const handleRequestResolved = useCallback(() => {
+    void Promise.all([
+      refreshFriends(),
+      refreshRequests(),
+      refreshDiscovery(),
+    ]);
+  }, [refreshDiscovery, refreshFriends, refreshRequests]);
+
+  useEffect(() => {
+    void refreshFriends();
+  }, [refreshFriends]);
+
+  useEffect(() => {
+    void refreshRequests();
+  }, [refreshRequests]);
+
+  useEffect(() => {
+    void refreshDiscovery();
+  }, [refreshDiscovery]);
 
   const sortedFriends = useMemo(() => {
     if (!friends.length) {
@@ -209,6 +248,29 @@ export default function FriendsPage() {
     return [...friends];
   }, [friends, sort]);
 
+  const stats = useMemo(
+    () => [
+      {
+        label: 'Total friends',
+        value: friends.length,
+        helper: `${friends.length} connection${friends.length === 1 ? '' : 's'}`,
+      },
+      {
+        label: 'Pending requests',
+        value: requests.length,
+        helper: requests.length
+          ? `${requests.length} awaiting response`
+          : 'No new requests',
+      },
+      {
+        label: 'Discover',
+        value: discoveryProfiles.length,
+        helper: 'People you can meet',
+      },
+    ],
+    [discoveryProfiles.length, friends.length, requests.length]
+  );
+
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
       return;
@@ -216,10 +278,10 @@ export default function FriendsPage() {
 
     event.preventDefault();
 
-    const order: Array<'friends' | 'requests' | 'search'> = [
+    const order: Array<'friends' | 'requests' | 'discover'> = [
       'friends',
       'requests',
-      'search',
+      'discover',
     ];
     const currentIndex = order.indexOf(tab);
     const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
@@ -230,28 +292,37 @@ export default function FriendsPage() {
 
     const targetRef =
       nextTab === 'friends'
-        ? friendsTabRef
-        : nextTab === 'requests'
-          ? requestsTabRef
-          : searchTabRef;
+      ? friendsTabRef
+      : nextTab === 'requests'
+        ? requestsTabRef
+        : discoverTabRef;
     targetRef.current?.focus();
   };
 
   return (
-    <main className="mx-auto max-w-screen-sm px-4 py-4 space-y-4">
-      {/* Header */}
-      <header className="space-y-1">
-        <h1 className="text-xl font-semibold text-white">Friends</h1>
-        <div className="flex items-center justify-between text-xs text-white/60">
-          <div className="flex items-center gap-3">
-            <span className="text-white/60">Sort by</span>
+    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 pb-10 pt-6">
+      <section className="space-y-5 rounded-3xl border border-white/10 bg-gradient-to-b from-black/90 via-neutral-950/70 to-neutral-900/60 p-5 shadow-2xl shadow-black/40">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <p className="text-[11px] uppercase tracking-[0.4em] text-white/50">
+              Social hub
+            </p>
+            <div className="space-y-1">
+              <h1 className="text-3xl font-semibold text-white">Friends</h1>
+              <p className="text-sm text-white/70">
+                Keep up with your circle, answer invites, and explore new profiles.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-white/60 md:text-sm">
+            <span className="uppercase tracking-[0.3em] text-white/50">Sort</span>
             <Select
               value={sort}
               onValueChange={(value) =>
                 setSort(value as 'default' | 'alphabetical' | 'online')
               }
               className="w-36"
-              triggerClassName="h-8 rounded-lg border-white/10 bg-white/[0.07] px-3 text-left text-xs text-white/80 hover:bg-white/10"
+              triggerClassName="h-9 rounded-xl border border-white/10 bg-white/[0.08] px-3 text-left text-xs text-white/80 hover:bg-white/10"
               contentWrapperClassName="bg-slate-900/95"
             >
               <SelectContent className="text-xs text-white/80">
@@ -262,13 +333,17 @@ export default function FriendsPage() {
             </Select>
           </div>
         </div>
-      </header>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {stats.map((stat) => (
+            <StatsCard key={stat.label} {...stat} />
+          ))}
+        </div>
+      </section>
 
-      {/* Tabs */}
       <div
         role="tablist"
         aria-label="Friend options"
-        className="flex items-center gap-2 rounded-xl bg-white/5 p-1 ring-1 ring-white/10"
+        className="grid grid-cols-1 gap-2 rounded-2xl border border-white/10 bg-black/30 p-1 shadow-xl shadow-black/40 md:grid-cols-3"
       >
         <button
           ref={friendsTabRef}
@@ -280,7 +355,11 @@ export default function FriendsPage() {
           aria-selected={tab === 'friends'}
           aria-controls="friends-panel"
           tabIndex={tab === 'friends' ? 0 : -1}
-          className={`flex-1 rounded-lg px-3 py-2 text-sm transition ${tab === 'friends' ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10'}`}
+          className={`rounded-2xl px-4 py-2 text-center text-sm font-semibold transition ${
+            tab === 'friends'
+              ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
+              : 'text-white/60 hover:bg-white/10 hover:text-white'
+          }`}
         >
           Friends
         </button>
@@ -294,27 +373,34 @@ export default function FriendsPage() {
           aria-selected={tab === 'requests'}
           aria-controls="requests-panel"
           tabIndex={tab === 'requests' ? 0 : -1}
-          className={`flex-1 rounded-lg px-3 py-2 text-sm transition ${tab === 'requests' ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10'}`}
+          className={`rounded-2xl px-4 py-2 text-center text-sm font-semibold transition ${
+            tab === 'requests'
+              ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
+              : 'text-white/60 hover:bg-white/10 hover:text-white'
+          }`}
         >
-          Requests & Invites
+          Requests
         </button>
         <button
-          ref={searchTabRef}
-          id="search-tab"
+          ref={discoverTabRef}
+          id="discover-tab"
           role="tab"
-          onClick={() => setTab('search')}
+          onClick={() => setTab('discover')}
           onKeyDown={handleKeyDown}
           type="button"
-          aria-selected={tab === 'search'}
-          aria-controls="search-panel"
-          tabIndex={tab === 'search' ? 0 : -1}
-          className={`flex-1 rounded-lg px-3 py-2 text-sm transition ${tab === 'search' ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10'}`}
+          aria-selected={tab === 'discover'}
+          aria-controls="discover-panel"
+          tabIndex={tab === 'discover' ? 0 : -1}
+          className={`rounded-2xl px-4 py-2 text-center text-sm font-semibold transition ${
+            tab === 'discover'
+              ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
+              : 'text-white/60 hover:bg-white/10 hover:text-white'
+          }`}
         >
-          Search
+          Discover
         </button>
       </div>
 
-      {/* Content */}
       <section
         id="friends-panel"
         role="tabpanel"
@@ -327,6 +413,7 @@ export default function FriendsPage() {
           error={error}
         />
       </section>
+
       <section
         id="requests-panel"
         role="tabpanel"
@@ -347,6 +434,7 @@ export default function FriendsPage() {
           requests={requests}
           invites={invites}
           suggestions={suggested}
+          onRequestResolved={handleRequestResolved}
         />
         {isLoadingRequests ? (
           <p className="mt-3 text-xs text-white/50">Loading requests…</p>
@@ -355,16 +443,20 @@ export default function FriendsPage() {
           <p className="mt-1 text-xs text-white/50">Loading invites…</p>
         ) : null}
       </section>
+
       <section
-        id="search-panel"
+        id="discover-panel"
         role="tabpanel"
-        aria-labelledby="search-tab"
-        hidden={tab !== 'search'}
+        aria-labelledby="discover-tab"
+        hidden={tab !== 'discover'}
       >
-        <SearchFriends data={sortedFriends} discoveryProfiles={discoveryProfiles} />
+        <SearchFriends
+          data={sortedFriends}
+          discoveryProfiles={discoveryProfiles}
+          onRequestResolved={handleRequestResolved}
+        />
       </section>
 
-      {/* Bottom padding for safe-area / bottom nav */}
       <div className="pb-[env(safe-area-inset-bottom)]" />
     </main>
   );

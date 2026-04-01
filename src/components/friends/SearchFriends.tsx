@@ -1,5 +1,6 @@
 "use client";
 import Image from "next/image";
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import FriendsList from "./FriendsList";
@@ -11,16 +12,18 @@ type SearchFriendsProps = {
   data: Friend[];
   discoveryProfiles?: DiscoveryProfile[];
   onRemoveFriend?: (friend: Friend) => void;
+  onRequestResolved?: () => void;
 };
 
 type DiscoveryProfileState = DiscoveryProfile & {
-  status: "idle" | "sending" | "requested";
+  status: "idle" | "sending" | "requested" | "connected";
 };
 
 export default function SearchFriends({
   data,
   discoveryProfiles = [],
   onRemoveFriend,
+  onRequestResolved,
 }: SearchFriendsProps) {
   const [q, setQ] = useState("");
   const [me, setMe] = useState<Friend | null>(null);
@@ -240,14 +243,11 @@ export default function SearchFriends({
           });
 
           const payload = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | { request?: unknown }
+            | { error?: string; request?: { status?: string } }
             | null;
 
           if (!response.ok) {
-            const message =
-              (payload as { error?: string } | null)?.error ??
-              "Unable to send request.";
+            const message = payload?.error ?? "Unable to send request.";
             if (
               response.status === 409 &&
               message?.toLowerCase().includes("already sent")
@@ -270,12 +270,16 @@ export default function SearchFriends({
             return;
           }
 
+          const requestStatus = payload?.request?.status;
+          const nextStatus =
+            requestStatus === "accepted" ? "connected" : "requested";
           setDiscovery((prev) =>
             prev.map((item) =>
-              item.id === profile.id ? { ...item, status: "requested" } : item
+              item.id === profile.id ? { ...item, status: nextStatus } : item
             )
           );
           setConnectError(null);
+          onRequestResolved?.();
         } catch (error) {
           console.error("Failed to send friend request", error);
           setDiscovery((prev) =>
@@ -291,7 +295,7 @@ export default function SearchFriends({
         }
       })();
     },
-    [setConnectError, setDiscovery]
+    [onRequestResolved, setConnectError, setDiscovery]
   );
 
   const handleImportContacts = () => {
@@ -394,44 +398,55 @@ export default function SearchFriends({
           key={profile.id}
           className="flex items-center gap-3 rounded-2xl bg-white/[0.08] px-3 py-3 ring-1 ring-white/10"
         >
-          <Image
-            src={profile.avatarUrl || DEFAULT_AVATAR_URL}
-            alt={`${profile.displayName} avatar`}
-            width={48}
-            height={48}
-            className="h-12 w-12 rounded-full object-cover"
-          />
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex items-baseline justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-white">{profile.displayName}</p>
-                <p className="truncate text-xs text-white/60">
-                  @{profile.username} • {profile.role}
-                </p>
+          <Link
+            href={profile.profileUrl ?? `/profile/${profile.username}`}
+            className="flex flex-1 items-center gap-3"
+          >
+            <Image
+              src={profile.avatarUrl || DEFAULT_AVATAR_URL}
+              alt={`${profile.displayName} avatar`}
+              width={48}
+              height={48}
+              className="h-12 w-12 rounded-full object-cover"
+            />
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-white">{profile.displayName}</p>
+                  <p className="truncate text-xs text-white/60">
+                    @{profile.username} • {profile.role}
+                  </p>
+                </div>
+                <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                  {profile.mutualFriends} mutual
+                </span>
               </div>
-              <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/60">
-                {profile.mutualFriends} mutual
-              </span>
+              <p className="text-xs text-white/70">
+                {profile.bio ?? profile.highlight}
+              </p>
             </div>
-            <p className="text-xs text-white/70">{profile.highlight}</p>
-          </div>
+          </Link>
           <button
             type="button"
             onClick={() => handleConnect(profile)}
             disabled={profile.status !== "idle"}
             className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${
-              profile.status === "requested"
+              profile.status === "connected"
                 ? "cursor-default bg-white/10 text-white/70"
-                : profile.status === "sending"
-                  ? "bg-white text-slate-900 opacity-80"
-                  : "bg-white text-slate-900 hover:bg-white/90"
+                : profile.status === "requested"
+                  ? "cursor-default bg-white/10 text-white/70"
+                  : profile.status === "sending"
+                    ? "bg-white text-black/80 opacity-80"
+                    : "bg-white text-black/80 hover:bg-white/90"
             } disabled:cursor-not-allowed disabled:opacity-70`}
           >
-            {profile.status === "requested"
-              ? "Invite sent"
-              : profile.status === "sending"
-                ? "Sending…"
-                : "Connect"}
+            {profile.status === "connected"
+              ? "Friends"
+              : profile.status === "requested"
+                ? "Invite sent"
+                : profile.status === "sending"
+                  ? "Sending…"
+                  : "Connect"}
           </button>
         </article>
       ))}
@@ -445,7 +460,7 @@ export default function SearchFriends({
   );
 
   const discoveryPanel = (
-    <section className="space-y-5 rounded-2xl bg-slate-900/60 p-5 ring-1 ring-white/10">
+  <section className="space-y-5 rounded-2xl bg-black/60 p-5 ring-1 ring-white/10">
       <header className="space-y-1">
         <h2 className="text-sm font-semibold text-white">{discoveryTitle}</h2>
         <p className="text-xs text-white/60">{discoveryDescription}</p>
@@ -521,12 +536,12 @@ export default function SearchFriends({
                   }
                 }}
                 placeholder="collaborator@email.com"
-                className="w-full rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none"
+                className="w-full rounded-lg border border-white/10 bg-black/60 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none"
               />
             </div>
             <button
               type="submit"
-              className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white/90 active:scale-[0.98]"
+              className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-2 text-sm font-semibold text-black/80 transition hover:bg-white/90 active:scale-[0.98]"
             >
               Send invite
             </button>
@@ -534,7 +549,9 @@ export default function SearchFriends({
               <p className="text-xs text-rose-300">{inviteError}</p>
             ) : null}
             {inviteSuccess ? (
-              <p className="text-xs text-emerald-300">Invite sent! We’ll let you know when they join.</p>
+              <p className="text-xs font-semibold text-white/80">
+                Invite sent! We’ll let you know when they join.
+              </p>
             ) : null}
           </form>
         </div>

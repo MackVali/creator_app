@@ -233,6 +233,7 @@ export interface Profile {
   bio?: string | null;
   pronouns?: string | null;
   avatar_url?: string | null;
+  cover_image?: string | null;
   banner_url?: string | null;
   hero_background_type?: "gradient" | "image" | "video" | null;
   hero_gradient_preset?: string | null;
@@ -284,6 +285,7 @@ export interface LinkedAccount {
   id: string;
   user_id: string;
   platform: string;
+  username?: string | null;
   url: string;
   created_at: string;
   updated_at: string;
@@ -294,6 +296,7 @@ export interface SocialLink {
   user_id: string;
   platform: string;
   url: string;
+  username?: string | null;
   icon?: string | null;
   color?: string | null;
   position: number;
@@ -484,6 +487,7 @@ export interface LinkedAccountFormData {
 export interface SocialLinkFormData {
   platform: string;
   url: string;
+  username?: string | null;
   icon?: string;
   color?: string;
   position?: number;

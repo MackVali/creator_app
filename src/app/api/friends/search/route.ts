@@ -216,6 +216,7 @@ export async function GET(request: Request) {
         mutualFriends: 0,
         highlight: trimmed ? `Search match for “${trimmed}”` : "Creator profile",
         role: "Creator",
+        profileUrl: `/profile/${username}`,
       });
       seenUsernames.add(normalized);
       seenProfileIds.add(row.id);
@@ -342,6 +343,7 @@ export async function GET(request: Request) {
             mutualFriends: 0,
             highlight: `Search match for “${trimmed}”`,
             role: "Creator",
+            profileUrl: `/profile/${usernameCandidate}`,
           });
           seenUsernames.add(normalizedCandidate);
           seenProfileIds.add(adminUser.id);

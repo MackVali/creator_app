@@ -53,6 +53,9 @@ importers:
       '@revenuecat/purchases-capacitor':
         specifier: ^12.1.1
         version: 12.1.1(@capacitor/core@8.0.2)
+      '@revenuecat/purchases-js':
+        specifier: ^1.30.0
+        version: 1.30.0
       '@supabase/ssr':
         specifier: ^0.6.1
         version: 0.6.1(@supabase/supabase-js@2.87.1)
@@ -1328,6 +1331,9 @@ packages:
     resolution: {integrity: sha512-3FnhllZ13J6g7DlBaLdhP4utW1errI3Ci8XEcVZ8D0/qgfKZXofsefC1q4OKdZN7Xt43JoS6NNmpi6dsKP2OXQ==}
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
+
+  '@revenuecat/purchases-js@1.30.0':
+    resolution: {integrity: sha512-aNlk6lPWrJ1DncPnw0WZh8nZKbd5S++EcsQxlLnv3HX/jOnMO54zr0SKsz3GJyFa6zh04N6b3qHAgWWm51EWpg==}
 
   '@revenuecat/purchases-typescript-internal-esm@17.31.0':
     resolution: {integrity: sha512-ZarEmHkj7icibOJSJsY9c1y6Ju8J3de/8UggTxS7N6W/qyxl0zimIQ3cMPWn6ySYFd4pS1gqN4RdBgzA27/R0Q==}
@@ -4715,6 +4721,8 @@ snapshots:
     dependencies:
       '@capacitor/core': 8.0.2
       '@revenuecat/purchases-typescript-internal-esm': 17.31.0
+
+  '@revenuecat/purchases-js@1.30.0': {}
 
   '@revenuecat/purchases-typescript-internal-esm@17.31.0': {}
 

@@ -5,10 +5,12 @@ import {
   ProfileModuleEmbeddedMediaAccordion,
   ProfileModuleFeaturedCarousel,
   ProfileModuleLinkCards,
+  ProfileModuleSocialProofItem,
   ProfileModuleSocialProofStrip,
   ProfileModuleType,
   SocialLink,
 } from "@/lib/types";
+import { resolveSocialLink } from "@/lib/profile/socialLinks";
 
 function getMediaTypeFromUrl(url?: string | null): "video" | "audio" | "article" | "gallery" | null {
   if (!url) return null;
@@ -17,20 +19,6 @@ function getMediaTypeFromUrl(url?: string | null): "video" | "audio" | "article"
   if (/(spotify|soundcloud|apple\.com\/podcasts|anchor\.fm)/.test(normalized)) return "audio";
   if (/(gallery|carousel)/.test(normalized)) return "gallery";
   return "article";
-}
-
-function extractHandleFromUrl(url?: string | null) {
-  if (!url) return "";
-  try {
-    const parsed = new URL(url);
-    const segments = parsed.pathname.split("/").filter(Boolean);
-    if (segments.length === 0) {
-      return parsed.hostname.replace(/^www\./, "");
-    }
-    return segments[segments.length - 1];
-  } catch {
-    return url.replace(/^https?:\/\//, "");
-  }
 }
 
 function baseModule<T extends ProfileModuleType>(
@@ -110,16 +98,27 @@ export function buildProfileModules({
 
   modules.push(linkCardsModule);
 
-  const socialProofItems = (socialLinks || [])
-    .filter((link) => link.is_active && !!link.url)
-    .map((link) => ({
-      id: `social-${link.id}`,
-      label: link.platform,
-      value: extractHandleFromUrl(link.url) || link.platform,
-      platform: link.platform,
-      url: link.url,
-      analytics_event: `profile.social_proof.click.${link.platform.toLowerCase()}`,
-    }));
+  const socialProofItems = (socialLinks || []).reduce<ProfileModuleSocialProofItem[]>(
+    (items, link) => {
+      if (!link.is_active) {
+        return items;
+      }
+      const resolved = resolveSocialLink(link);
+      if (!resolved.url) {
+        return items;
+      }
+      items.push({
+        id: `social-${link.id}`,
+        label: link.platform,
+        value: resolved.display || link.platform,
+        platform: link.platform,
+        url: resolved.url,
+        analytics_event: `profile.social_proof.click.${link.platform.toLowerCase()}`,
+      });
+      return items;
+    },
+    [],
+  );
 
   const socialProofModule: ProfileModuleSocialProofStrip = {
     ...baseModule("social_proof_strip", modules.length, {

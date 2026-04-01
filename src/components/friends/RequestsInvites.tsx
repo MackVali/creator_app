@@ -218,7 +218,7 @@ export default function RequestsInvites({
                     <button
                       type="button"
                       onClick={() => handleRespond(req.id, "accepted")}
-                      className={`${actionButtonClass} bg-white text-slate-900 hover:bg-white/90 active:scale-[0.98]`}
+                      className={`${actionButtonClass} bg-white text-black/80 hover:bg-white/90 active:scale-[0.98]`}
                     >
                       Confirm
                     </button>
@@ -284,9 +284,9 @@ export default function RequestsInvites({
               invite.status === "cancelled"
                 ? "text-rose-300"
                 : invite.status === "accepted"
-                ? "text-emerald-300"
+                ? "text-white/80"
                 : invite.status === "pending"
-                ? "text-amber-200"
+                ? "text-white/60"
                 : "text-white/50";
             const disableFollowUps =
               invite.status === "accepted" || invite.status === "cancelled";
@@ -371,14 +371,14 @@ export default function RequestsInvites({
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {suggestion.status === "requested" ? (
-                    <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-200">
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/80">
                       Invite sent
                     </span>
                   ) : (
                     <button
                       type="button"
                       onClick={() => handleSendInvite(suggestion.id)}
-                      className={`${actionButtonClass} bg-white text-slate-900 hover:bg-white/90 active:scale-[0.98]`}
+                      className={`${actionButtonClass} bg-white text-black/80 hover:bg-white/90 active:scale-[0.98]`}
                     >
                       Send invite
                     </button>

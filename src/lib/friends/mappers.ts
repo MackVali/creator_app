@@ -65,13 +65,27 @@ function formatRelativeTimeFromNow(value: string | null): string | null {
 }
 
 export function mapFriendConnection(row: FriendConnectionRow): Friend {
+  const canonicalProfileUrl = `/profile/${encodeURIComponent(
+    row.friend_username
+  )}`;
+  const rawProfileUrl = row.friend_profile_url ?? "";
+  const profileUrl = rawProfileUrl
+    ? rawProfileUrl.startsWith("http://") || rawProfileUrl.startsWith("https://")
+      ? rawProfileUrl
+      : rawProfileUrl.startsWith("/friends/")
+      ? canonicalProfileUrl
+      : rawProfileUrl.startsWith("/profile/")
+      ? rawProfileUrl
+      : canonicalProfileUrl
+    : canonicalProfileUrl;
+
   return {
     id: row.id,
     userId: row.friend_user_id,
     username: row.friend_username,
     displayName: row.friend_display_name ?? row.friend_username,
     avatarUrl: row.friend_avatar_url,
-    profileUrl: row.friend_profile_url,
+    profileUrl,
     hasRing: row.has_ring,
     isOnline: row.is_online,
   };

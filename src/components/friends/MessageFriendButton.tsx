@@ -176,7 +176,7 @@ export default function MessageFriendButton({
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
                 placeholder={`Say hi to ${displayName}...`}
-                className="min-h-[140px] resize-none border-white/10 bg-slate-900/60 text-sm text-white placeholder:text-white/40 focus-visible:ring-blue-400"
+                className="min-h-[140px] resize-none border-white/10 bg-slate-900/60 text-sm text-white placeholder:text-white/40 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               />
             </label>
             <p className="text-xs text-white/40">

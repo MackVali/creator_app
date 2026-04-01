@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ArrowRight } from "lucide-react";
@@ -24,8 +24,8 @@ import {
   persistGoalUpdate,
   LimitReachedError,
   isGoalCodeColumnMissingError,
+  type LimitErrorCode,
 } from "@/lib/goals/persistGoalUpdate";
-import { presentUpgrade } from "@/lib/revenuecat/presentUpgrade";
 import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
@@ -38,6 +38,7 @@ import {
   type ProjectLite,
 } from "@/lib/scheduler/weight";
 import { computeGoalWeight } from "@/lib/goals/weight";
+import { PaywallModal } from "@/components/billing/PaywallModal";
 
 function mapPriority(
   priority: { name?: string | null } | string | null | undefined
@@ -138,6 +139,11 @@ function energyToDbValue(energy: Goal["energy"]): string {
 }
 
 const DAY_IN_MS = 86_400_000;
+const GOAL_PAYWALL_FEATURES = [
+  "Unlock unlimited active goals and roadmaps with CREATOR PLUS.",
+  "Creator Plus focus tools keep every milestone prioritized.",
+  "Faster sync, backups, and priority support to stay on track.",
+];
 const GOAL_BATCH_SIZE = 6;
 
 const GOAL_PRIORITY_WEIGHT: Record<string, number> = {
@@ -689,8 +695,8 @@ export default function GoalsPage() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [saveDisabled, setSaveDisabled] = useState(false);
+  const [paywallOpen, setPaywallOpen] = useState(false);
   const [visibleGoalCount, setVisibleGoalCount] = useState(GOAL_BATCH_SIZE);
-  const seenLimitPopupsRef = useRef<Record<string, boolean>>({});
 
   const getMonumentEmoji = useCallback(
     (monumentId?: string | null) => {
@@ -1349,6 +1355,25 @@ export default function GoalsPage() {
       .eq("id", goal.id);
   };
 
+  const handleGoalLimitReached = useCallback(
+    (_limitCode: LimitErrorCode) => {
+      setSaveDisabled(true);
+      setPaywallOpen(true);
+    },
+    []
+  );
+
+  const handlePaywallOpenChange = useCallback((next: boolean) => {
+    setPaywallOpen(next);
+    if (!next) {
+      setSaveDisabled(false);
+    }
+  }, []);
+
+  const handlePaywallCta = useCallback(() => {
+    void router.push("/settings/billing");
+  }, [router]);
+
   const addGoal = async (_goal: Goal, _context: GoalUpdateContext) => {
     const supabase = getSupabaseBrowser();
     if (!supabase) {
@@ -1510,6 +1535,12 @@ export default function GoalsPage() {
       // Reflect the saved goal in local state with the server id
       setGoals((g) => [saved, ...g]);
     } catch (err) {
+      if (err instanceof LimitReachedError) {
+        console.warn("Goal limit reached during create:", err.limitCode);
+        setGoals((g) => [decorateGoal(_goal), ...g]);
+        return { limitCode: err.limitCode };
+      }
+
       console.error("Unexpected error creating goal:", err);
       // Keep optimistic add to avoid losing user input
       setGoals((g) => [decorateGoal(_goal), ...g]);
@@ -1746,21 +1777,14 @@ export default function GoalsPage() {
                 updateGoal(goal);
               } catch (err) {
                 if (err instanceof LimitReachedError) {
-                  const code = err.limitCode;
-
-                  if (!seenLimitPopupsRef.current[code]) {
-                    seenLimitPopupsRef.current[code] = true;
-                    await presentUpgrade();
-                  }
-
-                  setSaveDisabled(true);
-                  return; // do NOT call updateGoal
+                  return { limitCode: err.limitCode };
                 }
 
                 console.error("Unexpected error updating goal:", err);
               }
             }
           }}
+          onGoalLimitReached={handleGoalLimitReached}
           onDelete={handleDelete}
           saveDisabled={saveDisabled}
         />
@@ -1784,6 +1808,16 @@ export default function GoalsPage() {
           onGoalDelete={handleDelete}
           onProjectUpdated={handleProjectUpdated}
           onProjectDeleted={handleProjectDeleted}
+        />
+        <PaywallModal
+          open={paywallOpen}
+          onOpenChange={handlePaywallOpenChange}
+          title="Unlock more goals with CREATOR PLUS"
+          description="Free users keep a lean goal list. Upgrade to CREATOR PLUS to lift the limit, expand your roadmap, and keep the momentum flowing."
+          featureList={GOAL_PAYWALL_FEATURES}
+          ctaLabel="Go to billing"
+          onCta={handlePaywallCta}
+          secondaryLabel="Maybe later"
         />
       </div>
     </ProtectedRoute>
