@@ -25,6 +25,55 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  const res = NextResponse.next();
+
+  const bypassToken = process.env.CODEX_UI_BYPASS_TOKEN;
+  const isProduction = process.env.VERCEL_ENV === "production";
+  const bypassAllowed = Boolean(bypassToken) && !isProduction;
+  const codexBypassParam = req.nextUrl.searchParams.get("codex_bypass");
+  const codexBypassLogoutParam = req.nextUrl.searchParams.get(
+    "codex_bypass_logout"
+  );
+  const hasBypassCookie = req.cookies.get("codex_ui_bypass")?.value === "1";
+  const activatingPreviewBypass =
+    bypassAllowed && codexBypassParam && codexBypassParam === bypassToken;
+  const clearingPreviewBypass =
+    bypassAllowed && codexBypassLogoutParam === "1";
+
+  // Preview-only automation/UI review bypass (non-production only).
+  if (clearingPreviewBypass) {
+    console.log(
+      `[Middleware] Clearing preview bypass cookie for ${pathname}`
+    );
+    res.cookies.set("codex_ui_bypass", "", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0,
+    });
+  }
+
+  if (activatingPreviewBypass) {
+    console.log(`[Middleware] Activating preview bypass for ${pathname}`);
+    res.cookies.set("codex_ui_bypass", "1", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/",
+    });
+  }
+
+  const previewBypassActive =
+    bypassAllowed &&
+    !clearingPreviewBypass &&
+    (hasBypassCookie || activatingPreviewBypass);
+
+  if (previewBypassActive) {
+    console.log(`[Middleware] Preview bypass active for ${pathname}`);
+    return res;
+  }
+
   try {
     // Check if environment variables are available
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -45,9 +94,6 @@ export async function middleware(req: NextRequest) {
       }
       return NextResponse.next();
     }
-
-    // Create Supabase client for auth check
-    const res = NextResponse.next();
 
     const supabase = createServerClient<Database>(supabaseUrl, supabaseKey, {
       cookies: {
