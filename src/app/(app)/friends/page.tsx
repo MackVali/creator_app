@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
 } from 'react';
 import type {
   DiscoveryProfile,
@@ -40,7 +39,6 @@ function StatsCard({ label, value, helper }: StatsCardProps) {
 }
 
 export default function FriendsPage() {
-  const [tab, setTab] = useState<'friends' | 'requests' | 'discover'>('friends');
   const [sort, setSort] =
     useState<'default' | 'alphabetical' | 'online'>('default');
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -54,9 +52,6 @@ export default function FriendsPage() {
   const [discoveryProfiles, setDiscoveryProfiles] = useState<DiscoveryProfile[]>([]);
   const [isLoadingDiscovery, setIsLoadingDiscovery] = useState(true);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
-  const friendsTabRef = useRef<HTMLButtonElement>(null);
-  const requestsTabRef = useRef<HTMLButtonElement>(null);
-  const discoverTabRef = useRef<HTMLButtonElement>(null);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -271,34 +266,6 @@ export default function FriendsPage() {
     [discoveryProfiles.length, friends.length, requests.length]
   );
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
-      return;
-    }
-
-    event.preventDefault();
-
-    const order: Array<'friends' | 'requests' | 'discover'> = [
-      'friends',
-      'requests',
-      'discover',
-    ];
-    const currentIndex = order.indexOf(tab);
-    const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
-    const nextIndex = (currentIndex + direction + order.length) % order.length;
-    const nextTab = order[nextIndex];
-
-    setTab(nextTab);
-
-    const targetRef =
-      nextTab === 'friends'
-      ? friendsTabRef
-      : nextTab === 'requests'
-        ? requestsTabRef
-        : discoverTabRef;
-    targetRef.current?.focus();
-  };
-
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-4 pb-10 pt-6">
       <section className="space-y-5 rounded-3xl border border-white/10 bg-gradient-to-b from-black/90 via-neutral-950/70 to-neutral-900/60 p-5 shadow-2xl shadow-black/40">
@@ -340,121 +307,56 @@ export default function FriendsPage() {
         </div>
       </section>
 
-      <div
-        role="tablist"
-        aria-label="Friend options"
-        className="grid grid-cols-1 gap-2 rounded-2xl border border-white/10 bg-black/30 p-1 shadow-xl shadow-black/40 md:grid-cols-3"
-      >
-        <button
-          ref={friendsTabRef}
-          id="friends-tab"
-          role="tab"
-          onClick={() => setTab('friends')}
-          onKeyDown={handleKeyDown}
-          type="button"
-          aria-selected={tab === 'friends'}
-          aria-controls="friends-panel"
-          tabIndex={tab === 'friends' ? 0 : -1}
-          className={`rounded-2xl px-4 py-2 text-center text-sm font-semibold transition ${
-            tab === 'friends'
-              ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
-              : 'text-white/60 hover:bg-white/10 hover:text-white'
-          }`}
-        >
-          Friends
-        </button>
-        <button
-          ref={requestsTabRef}
-          id="requests-tab"
-          role="tab"
-          onClick={() => setTab('requests')}
-          onKeyDown={handleKeyDown}
-          type="button"
-          aria-selected={tab === 'requests'}
-          aria-controls="requests-panel"
-          tabIndex={tab === 'requests' ? 0 : -1}
-          className={`rounded-2xl px-4 py-2 text-center text-sm font-semibold transition ${
-            tab === 'requests'
-              ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
-              : 'text-white/60 hover:bg-white/10 hover:text-white'
-          }`}
-        >
-          Requests
-        </button>
-        <button
-          ref={discoverTabRef}
-          id="discover-tab"
-          role="tab"
-          onClick={() => setTab('discover')}
-          onKeyDown={handleKeyDown}
-          type="button"
-          aria-selected={tab === 'discover'}
-          aria-controls="discover-panel"
-          tabIndex={tab === 'discover' ? 0 : -1}
-          className={`rounded-2xl px-4 py-2 text-center text-sm font-semibold transition ${
-            tab === 'discover'
-              ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
-              : 'text-white/60 hover:bg-white/10 hover:text-white'
-          }`}
-        >
-          Discover
-        </button>
-      </div>
+      <section className="grid grid-cols-3 gap-3">
+        <article className="min-w-0 space-y-3 rounded-2xl border border-white/10 bg-black/25 p-3">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-white/70">
+            Friends
+          </h2>
+          <FriendsList
+            data={sortedFriends}
+            isLoading={isLoading}
+            error={error}
+          />
+        </article>
 
-      <section
-        id="friends-panel"
-        role="tabpanel"
-        aria-labelledby="friends-tab"
-        hidden={tab !== 'friends'}
-      >
-        <FriendsList
-          data={sortedFriends}
-          isLoading={isLoading}
-          error={error}
-        />
-      </section>
+        <article className="min-w-0 space-y-3 rounded-2xl border border-white/10 bg-black/25 p-3">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-white/70">
+            Search
+          </h2>
+          <SearchFriends
+            data={sortedFriends}
+            discoveryProfiles={discoveryProfiles}
+            onRequestResolved={handleRequestResolved}
+          />
+        </article>
 
-      <section
-        id="requests-panel"
-        role="tabpanel"
-        aria-labelledby="requests-tab"
-        hidden={tab !== 'requests'}
-      >
-        {requestsError ? (
-          <div className="mb-3 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200 ring-1 ring-rose-400/20">
-            {requestsError}
-          </div>
-        ) : null}
-        {discoveryError ? (
-          <div className="mb-3 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200 ring-1 ring-rose-400/20">
-            {discoveryError}
-          </div>
-        ) : null}
-        <RequestsInvites
-          requests={requests}
-          invites={invites}
-          suggestions={suggested}
-          onRequestResolved={handleRequestResolved}
-        />
-        {isLoadingRequests ? (
-          <p className="mt-3 text-xs text-white/50">Loading requests…</p>
-        ) : null}
-        {isLoadingDiscovery ? (
-          <p className="mt-1 text-xs text-white/50">Loading invites…</p>
-        ) : null}
-      </section>
-
-      <section
-        id="discover-panel"
-        role="tabpanel"
-        aria-labelledby="discover-tab"
-        hidden={tab !== 'discover'}
-      >
-        <SearchFriends
-          data={sortedFriends}
-          discoveryProfiles={discoveryProfiles}
-          onRequestResolved={handleRequestResolved}
-        />
+        <article className="min-w-0 space-y-3 rounded-2xl border border-white/10 bg-black/25 p-3">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-white/70">
+            Requests
+          </h2>
+          {requestsError ? (
+            <div className="mb-3 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200 ring-1 ring-rose-400/20">
+              {requestsError}
+            </div>
+          ) : null}
+          {discoveryError ? (
+            <div className="mb-3 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200 ring-1 ring-rose-400/20">
+              {discoveryError}
+            </div>
+          ) : null}
+          <RequestsInvites
+            requests={requests}
+            invites={invites}
+            suggestions={suggested}
+            onRequestResolved={handleRequestResolved}
+          />
+          {isLoadingRequests ? (
+            <p className="mt-3 text-xs text-white/50">Loading requests…</p>
+          ) : null}
+          {isLoadingDiscovery ? (
+            <p className="mt-1 text-xs text-white/50">Loading invites…</p>
+          ) : null}
+        </article>
       </section>
 
       <div className="pb-[env(safe-area-inset-bottom)]" />
