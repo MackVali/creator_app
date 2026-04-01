@@ -412,7 +412,7 @@ export default function HeroHeader({
       ref={(node) => {
         heroRef.current = node;
       }}
-      className="relative min-h-screen w-full overflow-hidden"
+      className="relative min-h-[68vh] w-full overflow-hidden sm:min-h-screen"
     >
       <div className="absolute inset-x-0 -top-36 -z-10 flex justify-center">
         <div className="h-72 w-72 rounded-full bg-gradient-to-br from-neutral-500/35 via-neutral-900/20 to-transparent blur-[160px]" />
@@ -474,7 +474,7 @@ export default function HeroHeader({
           </div>
         </div>
 
-        <div className="relative z-10 mx-auto w-full max-w-6xl flex flex-col gap-8 px-5 pb-10 pt-12 sm:gap-10 sm:px-8 sm:pb-12 sm:pt-14 md:px-12 md:pt-16">
+        <div className="relative z-10 mx-auto w-full max-w-6xl flex flex-col gap-6 px-4 pb-8 pt-8 sm:gap-10 sm:px-8 sm:pb-12 sm:pt-14 md:px-12 md:pt-16">
           <header className="flex items-center justify-start text-white/80">
             <div className="flex items-center gap-2">
               {onBack ? (
@@ -500,16 +500,16 @@ export default function HeroHeader({
             </div>
           </header>
 
-          <div className="grid gap-8 text-white sm:gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-start">
-            <div className="flex flex-col gap-8 sm:gap-10">
-              <div className="relative isolate -mt-12 flex flex-col gap-6 sm:-mt-16 sm:gap-8 lg:-mt-20">
+          <div className="grid gap-6 text-white sm:gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-start">
+            <div className="flex flex-col gap-6 sm:gap-10">
+              <div className="relative isolate -mt-6 flex flex-col gap-5 sm:-mt-16 sm:gap-8 lg:-mt-20">
                 <div
                   className="pointer-events-none absolute inset-x-2 top-14 h-36 rounded-full bg-black/45 blur-[80px] sm:inset-x-6 sm:top-16 sm:h-40 lg:inset-x-10 lg:h-48"
                   aria-hidden="true"
                 />
 
-                <div className="relative flex flex-col items-center gap-6 px-6 py-8 text-center text-white sm:px-8 sm:py-9 lg:flex-row lg:items-start lg:gap-10 lg:px-0 lg:text-left">
-                  <div className="relative mx-auto w-32 sm:w-36 lg:mx-0">
+                <div className="relative flex flex-col items-center gap-5 px-4 py-6 text-center text-white sm:px-8 sm:py-9 lg:flex-row lg:items-start lg:gap-10 lg:px-0 lg:text-left">
+                  <div className="relative mx-auto w-24 sm:w-36 lg:mx-0">
                     {isHaloFrame ? (
                       <div
                         aria-hidden="true"
