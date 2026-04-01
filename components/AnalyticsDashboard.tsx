@@ -299,10 +299,12 @@ export default function AnalyticsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
+    const cacheKey = `analytics-cache:${dateRange}`;
     const load = async () => {
       const rangeParam = dateRange === "custom" ? "30d" : dateRange;
       setLoading(true);
@@ -327,6 +329,9 @@ export default function AnalyticsDashboard() {
         if (!cancelled) {
           setAnalytics(payload);
           setLastUpdated(payload.generatedAt);
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem(cacheKey, JSON.stringify(payload));
+          }
         }
       } catch (err) {
         if (cancelled) return;
@@ -334,8 +339,28 @@ export default function AnalyticsDashboard() {
           return;
         }
         console.error("Failed to load analytics data", err);
-        setAnalytics(null);
-        setError("Unable to load analytics data.");
+        if (typeof window !== "undefined") {
+          const cached = window.sessionStorage.getItem(cacheKey);
+          if (cached) {
+            try {
+              const parsed = JSON.parse(cached) as AnalyticsResponse;
+              setAnalytics(parsed);
+              setLastUpdated(parsed.generatedAt);
+              setError(
+                "Live feed unavailable. Showing your most recently synced analytics snapshot."
+              );
+            } catch {
+              setAnalytics(null);
+              setError("Unable to load analytics data.");
+            }
+          } else {
+            setAnalytics(null);
+            setError("Unable to load analytics data.");
+          }
+        } else {
+          setAnalytics(null);
+          setError("Unable to load analytics data.");
+        }
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -349,7 +374,9 @@ export default function AnalyticsDashboard() {
       cancelled = true;
       controller.abort();
     };
-  }, [dateRange]);
+  }, [dateRange, refreshNonce]);
+
+  const retryLoad = () => setRefreshNonce((value) => value + 1);
 
   const kpis = (analytics?.kpis ?? []).map((kpi) => ({
     ...kpi,
@@ -447,7 +474,7 @@ export default function AnalyticsDashboard() {
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-[#050505] via-[#080808] to-[#050505] text-[#E6E6EB]">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-[-40%] h-[520px] bg-[radial-gradient(circle_at_top,rgba(248,113,113,0.35),transparent_65%)] blur-3xl"
+        className="pointer-events-none absolute inset-x-0 top-[-40%] h-[520px] bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.28),transparent_65%)] blur-3xl"
       />
       <div className="relative mx-auto max-w-7xl space-y-10 px-4 pb-16 pt-10 sm:px-6 lg:px-8">
         <Header
@@ -465,7 +492,7 @@ export default function AnalyticsDashboard() {
           {loading ? (
             <Skeleton className="h-48" />
           ) : error ? (
-            <ErrorState message={error} />
+            <ErrorState message={error} onRetry={retryLoad} />
           ) : (
             <div className="relative overflow-hidden">
               <div className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[#050505] via-[#050505]/60 to-transparent" />
@@ -511,7 +538,7 @@ export default function AnalyticsDashboard() {
               {loading ? (
                 <Skeleton className="h-56" />
               ) : error ? (
-                <ErrorState message={error} />
+                <ErrorState message={error} onRetry={retryLoad} />
               ) : recentSchedules.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
                   Wrap a scheduled task, project, or habit to see it showcased
@@ -530,7 +557,7 @@ export default function AnalyticsDashboard() {
             {loading ? (
               <Skeleton className="h-56" />
             ) : error ? (
-              <ErrorState message={error} />
+              <ErrorState message={error} onRetry={retryLoad} />
             ) : (
               <div className="space-y-6">
                 <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
@@ -562,7 +589,7 @@ export default function AnalyticsDashboard() {
                 <div className="flex justify-end">
                   <Link
                     href="#"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#86EFAC] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]"
                   >
                     Review rituals<span aria-hidden="true">→</span>
                   </Link>
@@ -580,7 +607,7 @@ export default function AnalyticsDashboard() {
             {loading ? (
               <Skeleton className="h-56" />
             ) : error ? (
-              <ErrorState message={error} />
+              <ErrorState message={error} onRetry={retryLoad} />
             ) : (
               <div className="space-y-6">
                 <BarChart data={projectVelocity} />
@@ -592,7 +619,7 @@ export default function AnalyticsDashboard() {
                 <div className="flex justify-end">
                   <Link
                     href="/projects"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#86EFAC] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]"
                   >
                     Open projects<span aria-hidden="true">→</span>
                   </Link>
@@ -608,7 +635,7 @@ export default function AnalyticsDashboard() {
             {loading ? (
               <Skeleton className="h-56" />
             ) : error ? (
-              <ErrorState message={error} />
+              <ErrorState message={error} onRetry={retryLoad} />
             ) : monuments.length === 0 ? (
               <EmptyState title="No monuments yet" cta="Add Monument" />
             ) : (
@@ -629,7 +656,7 @@ export default function AnalyticsDashboard() {
             {loading ? (
               <Skeleton className="h-56" />
             ) : error ? (
-              <ErrorState message={error} />
+              <ErrorState message={error} onRetry={retryLoad} />
             ) : windows.energy.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
                 Log a few focus windows to see the energy breakdown.
@@ -647,12 +674,12 @@ export default function AnalyticsDashboard() {
             {loading ? (
               <Skeleton className="h-56" />
             ) : error ? (
-              <ErrorState message={error} />
+              <ErrorState message={error} onRetry={retryLoad} />
             ) : (
               <>
                 <ActivityTimeline events={activity} />
                 <div className="mt-6 flex justify-end">
-                  <button className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-4 py-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]">
+                  <button className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-4 py-2 text-sm font-medium text-[#86EFAC] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]">
                     Show more
                   </button>
                 </div>
@@ -684,7 +711,7 @@ function Header({
             <button
               onClick={() => router.push("/dashboard")}
               aria-label="Back to dashboard"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#272727] bg-[#080808] text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171] sm:h-11 sm:w-11"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#272727] bg-[#080808] text-[#86EFAC] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E] sm:h-11 sm:w-11"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
@@ -745,9 +772,9 @@ function DateRangeSelector({
               type="button"
               onClick={() => onChange(range.value)}
               className={classNames(
-                "min-w-[72px] rounded-full px-3 py-1.5 text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80",
+                "min-w-[72px] rounded-full px-3 py-1.5 text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]/80",
                 active
-                  ? "bg-[#F87171] text-white shadow-[0_12px_30px_rgba(248,113,113,0.45)]"
+                  ? "bg-[#22C55E] text-white shadow-[0_12px_30px_rgba(34,197,94,0.35)]"
                   : "text-[#A1ADC7] hover:text-white"
               )}
             >
@@ -769,7 +796,7 @@ function SkillCard({ skill, view }: { skill: Skill; view: "grid" | "list" }) {
   return (
     <div
       className={classNames(
-        "group rounded-2xl border border-[#1B1B1B] bg-[#101010]/90 p-5 transition hover:border-[#F87171]/60 hover:shadow-[0_18px_40px_rgba(8,10,16,0.4)]",
+        "group rounded-2xl border border-[#1B1B1B] bg-[#101010]/90 p-5 transition hover:border-[#22C55E]/60 hover:shadow-[0_18px_40px_rgba(8,10,16,0.4)]",
         view === "grid"
           ? "flex flex-col items-center gap-4 text-center"
           : "flex items-center justify-between gap-4"
@@ -801,7 +828,7 @@ function SkillCard({ skill, view }: { skill: Skill; view: "grid" | "list" }) {
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke="#F87171"
+            stroke="#22C55E"
             strokeWidth={strokeWidth}
             fill="none"
             strokeDasharray={circumference}
@@ -843,7 +870,7 @@ function SkillCard({ skill, view }: { skill: Skill; view: "grid" | "list" }) {
           )}
         >
           <div
-            className="h-full rounded-full bg-gradient-to-r from-[#F87171] via-[#FECACA] to-[#6DD3A8]"
+            className="h-full rounded-full bg-gradient-to-r from-[#22C55E] via-[#86EFAC] to-[#6DD3A8]"
             style={{ width: `${skill.progress}%` }}
           />
         </div>
@@ -867,7 +894,7 @@ function RecentScheduleShowcase({
   });
 
   return (
-    <ul className="space-y-4">
+    <ul className="space-y-3">
       {items.map((item) => {
         const start = safeDate(item.startUtc);
         const end = safeDate(item.endUtc);
@@ -881,15 +908,15 @@ function RecentScheduleShowcase({
         return (
           <li
             key={item.id}
-            className="flex flex-col gap-4 rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)] sm:flex-row sm:items-center sm:justify-between"
+            className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-2xl border border-[#16422B] bg-gradient-to-r from-[#07120C] via-[#0A1410] to-[#07100B] px-4 py-3 font-mono shadow-[0_10px_22px_rgba(0,0,0,0.35)]"
           >
-            <div className="flex flex-1 items-start gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#272727] bg-[#0B0B0B] text-[#FECACA]">
-                <Icon className="h-4 w-4" />
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#1B5338] bg-[#08130D] text-[#86EFAC]">
+                <Icon className="h-3.5 w-3.5" />
               </span>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-sm font-semibold text-white">
+                  <span className="truncate text-sm font-semibold text-[#E8FFF1]">
                     {item.title}
                   </span>
                   <span
@@ -901,8 +928,8 @@ function RecentScheduleShowcase({
                     {item.type}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-[#8A94AB]">{timeRange}</p>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#C4CBDC]">
+                <p className="mt-1 text-[11px] text-[#8ACCA5]">{timeRange}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-[#B8EACD]">
                   <span className="rounded-full border border-white/10 px-2 py-0.5 text-white/80">
                     {formatDurationLabel(item.durationMinutes)}
                   </span>
@@ -912,9 +939,9 @@ function RecentScheduleShowcase({
                 </div>
               </div>
             </div>
-            <div className="text-xs text-[#8A94AB] sm:text-right">
-              <div className="font-semibold text-white">{completedLabel}</div>
-              <div className="text-[11px] uppercase tracking-[0.2em] text-[#5F6783]">
+            <div className="text-right text-[11px] text-[#8ACCA5]">
+              <div className="font-semibold text-[#DBFCE7]">{completedLabel}</div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-[#5EA97C]">
                 Completed
               </div>
             </div>
@@ -1028,10 +1055,10 @@ function BarChart({ data }: { data: number[] }) {
               </span>
               <div
                 className={classNames(
-                  "w-full rounded-t-lg shadow-[0_12px_24px_rgba(248,113,113,0.35)]",
+                  "w-full rounded-t-lg shadow-[0_12px_24px_rgba(34,197,94,0.28)]",
                   isZero
                     ? "bg-[#222222]"
-                    : "bg-gradient-to-t from-[#F87171]/30 via-[#F87171]/70 to-[#FECACA]"
+                    : "bg-gradient-to-t from-[#22C55E]/30 via-[#22C55E]/70 to-[#86EFAC]"
                 )}
                 style={{ height: barHeight }}
               />
@@ -1069,13 +1096,13 @@ function ProjectCard({ project }: { project: Project }) {
             {project.tasksDone}/{project.tasksTotal} tasks complete
           </div>
         </div>
-        <span className="text-sm font-semibold text-[#FECACA]">
+        <span className="text-sm font-semibold text-[#86EFAC]">
           {project.progress}%
         </span>
       </div>
       <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-[#222222]">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-[#F87171] to-[#6DD3A8]"
+          className="h-full rounded-full bg-gradient-to-r from-[#22C55E] to-[#6DD3A8]"
           style={{ width: `${project.progress}%` }}
         />
       </div>
@@ -1173,10 +1200,10 @@ function ActivityTimeline({ events }: { events: ActivityEvent[] }) {
           <li key={event.id} className="relative flex gap-4">
             <div className="flex flex-col items-center">
               <span className="relative z-10 flex h-4 w-4 items-center justify-center">
-                <span className="h-3 w-3 rounded-full border border-[#F87171] bg-[#080808]" />
+                <span className="h-3 w-3 rounded-full border border-[#22C55E] bg-[#080808]" />
               </span>
               {index !== events.length - 1 && (
-                <span className="mt-1 h-full w-px bg-gradient-to-b from-[#F87171]/60 to-transparent" />
+                <span className="mt-1 h-full w-px bg-gradient-to-b from-[#22C55E]/60 to-transparent" />
               )}
             </div>
             <div className="flex-1 rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] px-4 py-3 shadow-[0_12px_24px_rgba(8,10,16,0.35)]">
@@ -1289,8 +1316,8 @@ function StreakSparkline({
       <svg viewBox={`0 0 ${width} ${height}`} className="h-32 w-full">
         <defs>
           <linearGradient id="streakGradient" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(254,202,202,0.6)" />
-            <stop offset="100%" stopColor="rgba(248,113,113,0.05)" />
+            <stop offset="0%" stopColor="rgba(134,239,172,0.55)" />
+            <stop offset="100%" stopColor="rgba(34,197,94,0.05)" />
           </linearGradient>
         </defs>
         <path d={areaPath} fill="url(#streakGradient)" />
@@ -1387,11 +1414,11 @@ function RoutineHeatmap({
                         const backgroundColor =
                           ratio === 0
                             ? "#080808"
-                            : `rgba(248,113,113,${opacity.toFixed(2)})`;
+                            : `rgba(34,197,94,${opacity.toFixed(2)})`;
                         const boxShadow =
                           ratio === 0
                             ? undefined
-                            : "0 3px 10px rgba(248,113,113,0.35)";
+                            : "0 3px 10px rgba(34,197,94,0.28)";
                         const percent = Math.round(ratio * 100);
                         return (
                           <span
@@ -1447,7 +1474,7 @@ function BestPerformanceList({
                 </div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#222222]">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#F87171] via-[#FECACA] to-[#6DD3A8]"
+                    className="h-full rounded-full bg-gradient-to-r from-[#22C55E] via-[#86EFAC] to-[#6DD3A8]"
                     style={{ width: `${percent}%` }}
                   />
                 </div>
@@ -1580,7 +1607,7 @@ function WeeklyReflectionPanel({
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-[#6E7A96]">
-                    <Sparkles className="h-4 w-4 text-[#FECACA]" />
+                    <Sparkles className="h-4 w-4 text-[#86EFAC]" />
                     {reflection.weekLabel}
                   </div>
                   <h3 className="mt-2 text-lg font-semibold text-white">
@@ -1611,9 +1638,9 @@ function WeeklyReflectionPanel({
                   type="button"
                   onClick={() => handleTogglePin(reflection.id)}
                   className={classNames(
-                    "inline-flex items-center gap-2 self-end rounded-full border px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80",
+                    "inline-flex items-center gap-2 self-end rounded-full border px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]/80",
                     pinned
-                      ? "border-[#F87171] bg-[#F87171]/10 text-[#FECACA]"
+                      ? "border-[#22C55E] bg-[#22C55E]/10 text-[#86EFAC]"
                       : "border-[#2B2B2B] text-[#9DA6BB] hover:text-white"
                   )}
                 >
@@ -1637,14 +1664,14 @@ function WeeklyReflectionPanel({
                     }))
                   }
                   rows={3}
-                  className="w-full resize-none rounded-xl border border-[#2B2B2B] bg-[#050505] p-3 text-sm text-white placeholder:text-[#3F4A63] focus:border-[#F87171] focus:outline-none focus:ring-2 focus:ring-[#F87171]/50"
+                  className="w-full resize-none rounded-xl border border-[#2B2B2B] bg-[#050505] p-3 text-sm text-white placeholder:text-[#3F4A63] focus:border-[#22C55E] focus:outline-none focus:ring-2 focus:ring-[#22C55E]/50"
                   placeholder="Capture the habits, supports, or rituals that unlocked momentum."
                 />
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
                     onClick={() => handleSave(reflection.id)}
-                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#F87171] to-[#FECACA] px-4 py-1.5 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(248,113,113,0.45)] transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80"
+                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#22C55E] to-[#86EFAC] px-4 py-1.5 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(34,197,94,0.35)] transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]/80"
                   >
                     <PenLine className="h-4 w-4" />
                     Save reflection
@@ -1652,7 +1679,7 @@ function WeeklyReflectionPanel({
                   <button
                     type="button"
                     onClick={() => handleShare(reflection.id)}
-                    className="inline-flex items-center gap-2 rounded-full border border-[#2B2B2B] px-4 py-1.5 text-xs font-medium text-[#9DA6BB] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80"
+                    className="inline-flex items-center gap-2 rounded-full border border-[#2B2B2B] px-4 py-1.5 text-xs font-medium text-[#9DA6BB] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]/80"
                   >
                     <Share2 className="h-4 w-4" />
                     Share snapshot
@@ -1663,7 +1690,7 @@ function WeeklyReflectionPanel({
                         Saved! We’ll tailor future nudges.
                       </span>
                     ) : shared === "copied" ? (
-                      <span className="text-[#FECACA]">
+                      <span className="text-[#86EFAC]">
                         Copied summary to clipboard.
                       </span>
                     ) : shared === "error" ? (
@@ -1721,7 +1748,7 @@ function StreakCalendar({
             className={classNames(
               "flex h-8 w-full items-center justify-center rounded-lg border text-sm font-semibold transition",
               isComplete
-                ? "border-transparent bg-gradient-to-br from-[#F87171] to-[#FECACA] text-white shadow-[0_8px_18px_rgba(248,113,113,0.35)]"
+                ? "border-transparent bg-gradient-to-br from-[#22C55E] to-[#86EFAC] text-white shadow-[0_8px_18px_rgba(34,197,94,0.28)]"
                 : "border-[#1B1B1B] bg-[#080808] text-[#6E7A96]"
             )}
             title={date.toDateString()}
@@ -1777,17 +1804,32 @@ function EmptyState({ title, cta }: { title: string; cta: string }) {
       aria-label="Empty state"
     >
       <div>{title}</div>
-      <button className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#0A0A0A] px-4 py-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]">
+      <button className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#0A0A0A] px-4 py-2 text-sm font-medium text-[#86EFAC] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]">
         {cta}
       </button>
     </div>
   );
 }
 
-function ErrorState({ message }: { message: string }) {
+function ErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry?: () => void;
+}) {
   return (
-    <div className="rounded-2xl border border-[#3C1E2A] bg-[#160E12] px-4 py-6 text-sm text-[#F5B8C9]">
-      {message}
+    <div className="rounded-2xl border border-[#1D3B2A] bg-[#0C1711] px-4 py-6 text-sm text-[#9AE6B4]">
+      <div>{message}</div>
+      {onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-4 inline-flex items-center rounded-full border border-[#1B5338] bg-[#08130D] px-3 py-1.5 text-xs font-semibold text-[#86EFAC] transition hover:text-white"
+        >
+          Retry live data
+        </button>
+      ) : null}
     </div>
   );
 }
