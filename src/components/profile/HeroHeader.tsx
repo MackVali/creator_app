@@ -509,7 +509,7 @@ export default function HeroHeader({
                 />
 
                 <div className="relative flex flex-col items-center gap-6 px-6 py-8 text-center text-white sm:px-8 sm:py-9 lg:flex-row lg:items-start lg:gap-10 lg:px-0 lg:text-left">
-                  <div className="relative mx-auto w-32 sm:w-36 lg:mx-0">
+                  <div className="relative mx-auto w-24 sm:w-32 lg:mx-0 lg:w-36">
                     {isHaloFrame ? (
                       <div
                         aria-hidden="true"
@@ -532,12 +532,12 @@ export default function HeroHeader({
                               src={profile.avatar_url}
                               alt={`${displayName}'s avatar`}
                               fill
-                              sizes="(min-width: 1024px) 144px, (min-width: 640px) 160px, 144px"
+                              sizes="(min-width: 1024px) 144px, (min-width: 640px) 128px, 96px"
                               unoptimized
                               className="object-cover"
                             />
                           ) : (
-                            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-4xl font-semibold text-white">
+                            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-3xl font-semibold text-white sm:text-4xl">
                               <span aria-hidden="true">{initials}</span>
                               <span className="sr-only">{`${displayName}'s initials`}</span>
                             </div>
@@ -576,12 +576,12 @@ export default function HeroHeader({
                             src={profile.avatar_url}
                             alt={`${displayName}'s avatar`}
                             fill
-                            sizes="(min-width: 1024px) 144px, (min-width: 640px) 160px, 144px"
+                            sizes="(min-width: 1024px) 144px, (min-width: 640px) 128px, 96px"
                             unoptimized
                             className="object-cover"
                           />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-4xl font-semibold text-white">
+                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-3xl font-semibold text-white sm:text-4xl">
                             <span aria-hidden="true">{initials}</span>
                             <span className="sr-only">{`${displayName}'s initials`}</span>
                           </div>
