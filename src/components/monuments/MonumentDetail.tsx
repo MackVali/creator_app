@@ -182,9 +182,9 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
                 <button
                   type="button"
                   onClick={() => setGoalSection("active")}
-                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
                     goalSection === "active"
-                      ? "bg-white text-[#0B1020]"
+                      ? "bg-[#3B3F49] text-white"
                       : "text-[#A7B0BD] hover:text-white"
                   }`}
                   aria-pressed={goalSection === "active"}
@@ -194,9 +194,9 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
                 <button
                   type="button"
                   onClick={() => setGoalSection("completed")}
-                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
                     goalSection === "completed"
-                      ? "bg-white text-[#0B1020]"
+                      ? "bg-[#3B3F49] text-white"
                       : "text-[#A7B0BD] hover:text-white"
                   }`}
                   aria-pressed={goalSection === "completed"}

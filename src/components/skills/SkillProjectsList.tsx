@@ -8,6 +8,8 @@ import { GoalDrawer, type GoalUpdateContext } from "@/app/(app)/goals/components
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { projectWeight, taskWeight, type TaskLite, type ProjectLite } from "@/lib/scheduler/weight";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
@@ -282,6 +284,16 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [baseGoals, setBaseGoals] = useState<Goal[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [skillOptions, setSkillOptions] = useState<{ id: string; name: string; icon: string | null }[]>([]);
+  const [taskFormOpenForGoalId, setTaskFormOpenForGoalId] = useState<string | null>(null);
+  const [taskNameInput, setTaskNameInput] = useState("");
+  const [taskSkillIdInput, setTaskSkillIdInput] = useState<string>("");
+  const [taskProjectIdInput, setTaskProjectIdInput] = useState<string>("");
+  const [taskEnergyInput, setTaskEnergyInput] = useState("NO");
+  const [taskStageInput, setTaskStageInput] = useState("PREPARE");
+  const [taskPriorityInput, setTaskPriorityInput] = useState("NO");
+  const [taskFormError, setTaskFormError] = useState<string | null>(null);
+  const [taskSaving, setTaskSaving] = useState(false);
 
   useEffect(() => {
     setOpenGoalId(null);
@@ -355,6 +367,13 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
         getMonumentsForUser(user.id).catch(() => []),
         getSkillsForUser(user.id).catch(() => []),
       ]);
+      setSkillOptions(
+        skills.map((skill) => ({
+          id: skill.id,
+          name: skill.name,
+          icon: skill.icon ?? null,
+        }))
+      );
       setMonumentOptions(
         monuments.map((monument) => ({
           id: monument.id,
@@ -542,6 +561,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
       console.error("Error loading skill projects", err);
       setProjects([]);
       setBaseGoals([]);
+      setSkillOptions([]);
     } finally {
       setLoading(false);
     }
@@ -855,19 +875,12 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
   const handleGoalOpenChange = useCallback(
     (goalId: string, isOpen: boolean) => {
       if (isOpen) {
-        const goal = projects.find((item) => item.id === goalId);
-        const goalHasTasks = goal?.projects.some(
-          (project) => (project.tasks?.length ?? 0) > 0
-        );
-        if (!goalHasTasks) {
-          return;
-        }
         setOpenGoalId(goalId);
         return;
       }
       setOpenGoalId((current) => (current === goalId ? null : current));
     },
-    [projects]
+    []
   );
 
   useEffect(() => {
@@ -876,6 +889,165 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
       setOpenGoalId(null);
     }
   }, [openGoalId, projects]);
+
+  const handleTaskCreate = useCallback((goalId: string) => {
+    const targetGoal = projects.find((goal) => goal.id === goalId);
+    const targetProject = targetGoal?.projects[0];
+    if (!targetProject?.id) return;
+
+    setTaskNameInput("");
+    setTaskSkillIdInput(skillId);
+    setTaskProjectIdInput(targetProject.id);
+    setTaskEnergyInput("NO");
+    setTaskStageInput("PREPARE");
+    setTaskPriorityInput("NO");
+    setTaskFormError(null);
+    setTaskFormOpenForGoalId(goalId);
+  }, [projects, skillId]);
+
+  const handleTaskModalClose = useCallback(() => {
+    if (taskSaving) return;
+    setTaskFormOpenForGoalId(null);
+    setTaskFormError(null);
+  }, [taskSaving]);
+
+  const handleTaskModalSubmit = useCallback(async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase || !taskFormOpenForGoalId) return;
+
+    const trimmedName = taskNameInput.trim();
+    if (!trimmedName) {
+      setTaskFormError("Task name is required.");
+      return;
+    }
+    if (!taskProjectIdInput) {
+      setTaskFormError("Choose a project for this task.");
+      return;
+    }
+
+    let resolvedUserId = userId;
+    if (!resolvedUserId) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) {
+        setTaskFormError("Unable to resolve your account. Try again.");
+        return;
+      }
+      resolvedUserId = user.id;
+      setUserId(user.id);
+    }
+
+    setTaskSaving(true);
+    setTaskFormError(null);
+
+    try {
+      const taskId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `draft-task-${Date.now()}`;
+
+      const projectGoal = projects.find((goal) => goal.projects.some((project) => project.id === taskProjectIdInput));
+      const goalIdForInsert = projectGoal?.parentGoalId ?? projectGoal?.id ?? null;
+
+      const payload: Record<string, string | null> = {
+        id: taskId,
+        name: trimmedName,
+        stage: taskStageInput,
+        project_id: taskProjectIdInput,
+        user_id: resolvedUserId,
+        goal_id: goalIdForInsert,
+        skill_id: taskSkillIdInput || null,
+        priority: taskPriorityInput,
+        energy: taskEnergyInput,
+      };
+
+      const { error } = await supabase.from("tasks").insert(payload);
+      if (error) {
+        setTaskFormError("Failed to save task. Please try again.");
+        console.error("Failed to create task from skill project modal", error);
+        return;
+      }
+
+      const newTask = {
+        id: taskId,
+        name: trimmedName,
+        stage: taskStageInput,
+        skillId: taskSkillIdInput || null,
+        priorityCode: taskPriorityInput,
+        isNew: false,
+      };
+
+      setProjects((prev) =>
+        prev.map((goal) => {
+          const updatedProjects = goal.projects.map((project) => {
+            if (project.id !== taskProjectIdInput) return project;
+            const updatedTasks = [...project.tasks, newTask];
+            const total = updatedTasks.length;
+            const done = updatedTasks.filter((task) => task.stage === "PERFECT").length;
+            const progress = total ? Math.round((done / total) * 100) : 0;
+            const schedulerTasks = updatedTasks.map(toSchedulerTask);
+            const relatedTaskWeightSum = schedulerTasks.reduce((sum, t) => sum + taskWeight(t), 0);
+            const weightValue = projectWeight(
+              toSchedulerProject({
+                id: project.id,
+                priorityCode: project.priorityCode ?? undefined,
+                stage: project.stage ?? undefined,
+                dueDate: project.dueDate ?? null,
+              }),
+              relatedTaskWeightSum
+            );
+            return {
+              ...project,
+              tasks: updatedTasks,
+              progress,
+              weight: weightValue,
+            };
+          });
+
+          const goalProgress =
+            updatedProjects.length > 0
+              ? Math.round(
+                  updatedProjects.reduce((sum, project) => sum + (project.progress ?? 0), 0) /
+                    updatedProjects.length
+                )
+              : 0;
+
+          return decorate({
+            ...goal,
+            projects: updatedProjects,
+            progress: goalProgress,
+          });
+        })
+      );
+
+      setTaskFormOpenForGoalId(null);
+    } finally {
+      setTaskSaving(false);
+    }
+  }, [
+    decorate,
+    projects,
+    taskEnergyInput,
+    taskFormOpenForGoalId,
+    taskNameInput,
+    taskPriorityInput,
+    taskProjectIdInput,
+    taskSkillIdInput,
+    taskStageInput,
+    userId,
+  ]);
+
+  const availableProjects = useMemo(
+    () =>
+      projects.flatMap((goal) =>
+        goal.projects.map((project) => ({
+          id: project.id,
+          title: project.name,
+        }))
+      ),
+    [projects]
+  );
 
   const content = useMemo(() => {
     if (loading) {
@@ -914,6 +1086,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
                 handleProjectUpdated(goal.id, projectId, updates)
               }
               onTaskToggleCompletion={handleTaskToggleCompletion}
+              onAddTask={handleTaskCreate}
               onProjectHoldComplete={(goalId, projectId, stage) =>
                 handleProjectToggleCompletion(goalId, projectId, stage)
               }
@@ -930,11 +1103,141 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     handleGoalOpenChange,
     handleProjectUpdated,
     handleProjectDeleted,
+    handleTaskCreate,
   ]);
 
   return (
     <div className="skill-projects-list">
       {content}
+      {taskFormOpenForGoalId ? (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center px-4 py-8">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/75"
+            aria-label="Close task creation"
+            onClick={handleTaskModalClose}
+          />
+          <div className="relative z-[90] w-full max-w-lg rounded-2xl border border-white/15 bg-[#090b12] p-5 text-white shadow-[0_30px_60px_rgba(0,0,0,0.7)]">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.22em] text-white/80">
+              Add a new task
+            </h3>
+            <p className="mt-1 text-xs text-white/60">
+              Fill out task details and save to the selected project.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <label className="block text-xs uppercase tracking-[0.18em] text-white/65">
+                Task name
+                <Input
+                  value={taskNameInput}
+                  onChange={(event) => setTaskNameInput(event.target.value)}
+                  placeholder="Name this task"
+                  className="mt-1 border-white/20 bg-white/5 text-white placeholder:text-white/45"
+                />
+              </label>
+
+              <label className="block text-xs uppercase tracking-[0.18em] text-white/65">
+                Skill relation
+                <select
+                  value={taskSkillIdInput}
+                  onChange={(event) => setTaskSkillIdInput(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-400/60"
+                >
+                  <option value="" className="bg-[#0d111b] text-white">No skill</option>
+                  {skillOptions.map((skill) => (
+                    <option key={skill.id} value={skill.id} className="bg-[#0d111b] text-white">
+                      {skill.icon ? `${skill.icon} ` : ""}
+                      {skill.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-xs uppercase tracking-[0.18em] text-white/65">
+                Project relation
+                <select
+                  value={taskProjectIdInput}
+                  onChange={(event) => setTaskProjectIdInput(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-400/60"
+                >
+                  {availableProjects.map((project) => (
+                    <option key={project.id} value={project.id} className="bg-[#0d111b] text-white">
+                      {project.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-xs uppercase tracking-[0.18em] text-white/65">
+                  Energy
+                  <select
+                    value={taskEnergyInput}
+                    onChange={(event) => setTaskEnergyInput(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-400/60"
+                  >
+                    {["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"].map((value) => (
+                      <option key={value} value={value} className="bg-[#0d111b] text-white">
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block text-xs uppercase tracking-[0.18em] text-white/65">
+                  Stage
+                  <select
+                    value={taskStageInput}
+                    onChange={(event) => setTaskStageInput(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-400/60"
+                  >
+                    {["PREPARE", "PRODUCE", "PERFECT"].map((value) => (
+                      <option key={value} value={value} className="bg-[#0d111b] text-white">
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="block text-xs uppercase tracking-[0.18em] text-white/65">
+                Priority
+                <select
+                  value={taskPriorityInput}
+                  onChange={(event) => setTaskPriorityInput(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-400/60"
+                >
+                  {["NO", "LOW", "MEDIUM", "HIGH", "CRITICAL", "ULTRA-CRITICAL"].map((value) => (
+                    <option key={value} value={value} className="bg-[#0d111b] text-white">
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {taskFormError ? (
+                <p className="rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                  {taskFormError}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleTaskModalClose}
+                disabled={taskSaving}
+              >
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void handleTaskModalSubmit()} disabled={taskSaving}>
+                {taskSaving ? "Saving..." : "Save task"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <style jsx global>{`
         .skill-projects-list .group { transform: none !important; will-change: auto !important; z-index: 0 !important; }
         .skill-projects-list .group:hover { transform: none !important; }
