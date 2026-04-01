@@ -23,7 +23,7 @@ type FriendRowProps = {
 
 export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
   const router = useRouter();
-  const defaultProfileHref = `/profile/${encodeURIComponent(f.username)}`;
+  const defaultProfileHref = `/friends/${encodeURIComponent(f.username)}`;
   const rawProfileUrl = f.profileUrl ?? defaultProfileHref;
   const isInternalProfile = rawProfileUrl.startsWith("/");
   const isExternalProfile = /^https?:\/\//i.test(rawProfileUrl);
