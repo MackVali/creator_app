@@ -354,7 +354,7 @@ function BillingPageClient() {
           {isPlus ? (
             <div className="space-y-4">
               <p className="text-sm text-zinc-300">
-                You're already on {UPGRADE_PLAN_NAME}. Manage your subscription through the
+                You&apos;re already on {UPGRADE_PLAN_NAME}. Manage your subscription through the
                 store or web billing portal you used to purchase it.
               </p>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -362,10 +362,10 @@ function BillingPageClient() {
                   Subscription managed through third-party billing
                 </Button>
                 <Link
-                  href="/settings"
+                  href="/dashboard"
                   className="text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
                 >
-                  Back to settings
+                  Back to dashboard
                 </Link>
               </div>
             </div>
@@ -459,10 +459,10 @@ function BillingPageClient() {
                     : "Select a plan"}
                 </Button>
                 <Link
-                  href="/settings"
+                  href="/dashboard"
                   className="text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
                 >
-                  Back to settings
+                  Back to dashboard
                 </Link>
               </div>
             </div>
