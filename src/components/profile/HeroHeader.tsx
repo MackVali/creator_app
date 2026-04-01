@@ -475,7 +475,7 @@ export default function HeroHeader({
         </div>
 
         <div className="relative z-10 mx-auto w-full max-w-6xl flex flex-col gap-8 px-5 pb-10 pt-12 sm:gap-10 sm:px-8 sm:pb-12 sm:pt-14 md:px-12 md:pt-16">
-          <header className="flex items-center justify-end text-white/80">
+          <header className="flex items-center justify-start text-white/80">
             <div className="flex items-center gap-2">
               {onBack ? (
                 <button
