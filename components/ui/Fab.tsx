@@ -3802,7 +3802,7 @@ export function Fab({
             aria-label="Expanded placeholder"
           >
             <div
-              className="relative grid gap-4 p-4 pb-4 md:p-8 md:pb-6"
+              className="relative grid gap-4 px-3 py-4 md:p-8 md:pb-6"
               style={{
                 paddingBottom: `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
                 scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
@@ -3855,8 +3855,8 @@ export function Fab({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                    <div className="grid gap-2 col-span-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[3fr_1fr] md:gap-4">
+                    <div className="grid gap-2">
                       <Label htmlFor="goal-name" className="sr-only">
                         Goal name
                       </Label>
@@ -3870,7 +3870,7 @@ export function Fab({
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
-                    <div className="grid gap-2 col-span-1">
+                    <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
                       <EnergyCycleButton
                         value={goalEnergy}
@@ -4186,8 +4186,8 @@ export function Fab({
                       )}
                     </div>
                   </div>
-                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                    <div className="grid gap-2 col-span-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[3fr_1fr] md:gap-4">
+                    <div className="grid gap-2">
                       <Label htmlFor="project-name" className="sr-only">
                         Project name
                       </Label>
@@ -4201,7 +4201,7 @@ export function Fab({
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
-                    <div className="grid gap-2 col-span-1">
+                    <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
                       <EnergyCycleButton
                         value={projectEnergy}
@@ -4669,8 +4669,8 @@ export function Fab({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                    <div className="grid gap-2 col-span-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[3fr_1fr] md:gap-4">
+                    <div className="grid gap-2">
                       <Label htmlFor="task-name" className="sr-only">
                         Task name
                       </Label>
@@ -4684,7 +4684,7 @@ export function Fab({
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
-                    <div className="grid gap-2 col-span-1">
+                    <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
                       <EnergyCycleButton
                         value={taskEnergy}
@@ -5024,8 +5024,8 @@ export function Fab({
                       </div>
                     )}
                   </div>
-                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                    <div className="grid gap-2 col-span-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[3fr_1fr] md:gap-4">
+                    <div className="grid gap-2">
                       <Label htmlFor="habit-name" className="sr-only">
                         Habit name
                       </Label>
@@ -5039,7 +5039,7 @@ export function Fab({
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
-                    <div className="grid gap-2 col-span-1">
+                    <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
                       <EnergyCycleButton
                         value={habitEnergy}
@@ -6990,7 +6990,9 @@ export function Fab({
                 }}
                 className={cn(
                   "border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
-                  expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
+                  expanded
+                    ? "w-[calc(100vw-1rem)] max-w-[920px] sm:w-[92vw]"
+                    : "min-w-[200px]",
                 )}
                 layout={!expanded}
                 onTouchStart={(event) => event.stopPropagation()}
