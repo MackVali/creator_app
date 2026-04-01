@@ -141,32 +141,32 @@ export default function MonumentNotePage() {
   }, [noteText]);
 
   return (
-    <main className="min-h-screen bg-[#f9f3df] px-4 py-6 text-[#1f1f1f]">
+    <main className="min-h-screen bg-[#020202] px-4 py-6 text-white">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
         <div className="flex items-center justify-between">
           <Button
             type="button"
             variant="ghost"
-            className="h-9 rounded-full px-3 text-sm text-[#484848] hover:bg-[#f1ead2]"
+            className="h-9 rounded-full px-3 text-sm text-white/80 hover:bg-white/10"
             onClick={() => router.push(`/monuments/${monumentId}`)}
           >
             <ChevronLeft className="mr-1 h-4 w-4" />
             Back
           </Button>
-          <p className="text-xs font-medium text-[#6f6652]">{isSaving ? "Saving…" : "Autosaved"}</p>
+          <p className="text-xs font-medium text-white/60">{isSaving ? "Saving…" : "Autosaved"}</p>
         </div>
 
-        <section className="rounded-[20px] bg-[#fff8e4] p-4 shadow-[0_12px_30px_-20px_rgba(62,39,0,0.6)]">
+        <section className="rounded-[20px] bg-[#0a0a0a] p-4 shadow-[0_12px_30px_-20px_rgba(0,0,0,0.9)] border border-white/10">
           {isLoading ? (
-            <p className="text-sm text-[#6f6652]">Loading note…</p>
+            <p className="text-sm text-white/60">Loading note…</p>
           ) : (
             <>
-              <h1 className="mb-2 text-lg font-semibold text-[#3e3522]">{heading}</h1>
+              <h1 className="mb-2 text-lg font-semibold text-white">{heading}</h1>
               <textarea
                 value={noteText}
                 onChange={(event) => setNoteText(event.target.value)}
                 placeholder="Title\nStart typing your note…"
-                className="min-h-[70vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-[#2e2b24] outline-none placeholder:text-[#9f9278]"
+                className="min-h-[70vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/35"
                 aria-label="Note editor"
               />
             </>

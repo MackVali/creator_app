@@ -262,23 +262,23 @@ export default function NotePage() {
   }, [noteText]);
 
   return (
-    <main className="min-h-screen bg-[#f9f3df] px-4 py-6 text-[#1f1f1f]">
+    <main className="min-h-screen bg-[#020202] px-4 py-6 text-white">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         <div className="flex items-center justify-between">
           <Button
             type="button"
             variant="ghost"
-            className="h-9 rounded-full px-3 text-sm text-[#484848] hover:bg-[#f1ead2]"
+            className="h-9 rounded-full px-3 text-sm text-white/80 hover:bg-white/10"
             onClick={() => router.push(`/skills/${skillId}`)}
           >
             <ChevronLeft className="mr-1 h-4 w-4" />
             Back
           </Button>
-          <p className="text-xs font-medium text-[#6f6652]">{isSaving ? "Saving…" : "Autosaved"}</p>
+          <p className="text-xs font-medium text-white/60">{isSaving ? "Saving…" : "Autosaved"}</p>
         </div>
 
-        <section className="space-y-3 rounded-[20px] bg-[#fff8e4] p-4 shadow-[0_12px_30px_-20px_rgba(62,39,0,0.6)]">
-          <Label className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#7f7358]">
+        <section className="space-y-3 rounded-[20px] bg-[#0a0a0a] p-4 shadow-[0_12px_30px_-20px_rgba(0,0,0,0.9)] border border-white/10">
+          <Label className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/55">
             Parent page
           </Label>
           <Select
@@ -291,9 +291,9 @@ export default function NotePage() {
               }
             }}
             placeholder="Top-level page"
-            triggerClassName="h-11 rounded-[12px] border-0 bg-[#f4ecd5] px-3 text-left text-sm text-[#3e3522]"
+            triggerClassName="h-11 rounded-[12px] border-0 bg-[#141414] px-3 text-left text-sm text-white"
           >
-            <SelectContent className="border-0 bg-[#f4ecd5] text-[#3e3522]">
+            <SelectContent className="border-0 bg-[#141414] text-white">
               <SelectItem value={ROOT_PARENT_VALUE}>
                 {isLoadingParents ? "Loading…" : "Top-level page"}
               </SelectItem>
@@ -305,21 +305,21 @@ export default function NotePage() {
             </SelectContent>
           </Select>
           {parentNote ? (
-            <p className="text-xs text-[#7f7358]">
+            <p className="text-xs text-white/55">
               Nested under <span className="font-semibold">{getNoteTitle(parentNote)}</span>
             </p>
           ) : null}
 
           {isLoading ? (
-            <p className="text-sm text-[#6f6652]">Loading note…</p>
+            <p className="text-sm text-white/60">Loading note…</p>
           ) : (
             <>
-              <h1 className="text-lg font-semibold text-[#3e3522]">{heading}</h1>
+              <h1 className="text-lg font-semibold text-white">{heading}</h1>
               <textarea
                 value={noteText}
                 onChange={(event) => setNoteText(event.target.value)}
                 placeholder="Title\nStart typing your note…"
-                className="min-h-[60vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-[#2e2b24] outline-none placeholder:text-[#9f9278]"
+                className="min-h-[60vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/35"
                 aria-label="Note editor"
               />
             </>
@@ -327,13 +327,13 @@ export default function NotePage() {
         </section>
 
         {currentNoteId ? (
-          <section className="space-y-3 rounded-[20px] bg-[#fff8e4] p-4 shadow-[0_12px_30px_-20px_rgba(62,39,0,0.5)]">
+          <section className="space-y-3 rounded-[20px] border border-white/10 bg-[#0a0a0a] p-4 shadow-[0_12px_30px_-20px_rgba(0,0,0,0.9)]">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-[#7f7358]">Sub-pages</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-white/55">Sub-pages</h2>
               <Button
                 type="button"
                 size="sm"
-                className="rounded-full bg-[#f1e7c8] px-3 text-[#3e3522] hover:bg-[#e8ddb9]"
+                className="rounded-full bg-white/10 px-3 text-white hover:bg-white/20"
                 onClick={() => router.push(`/skills/${skillId}/notes/new?parent=${currentNoteId}`)}
               >
                 Add sub-page
@@ -348,17 +348,17 @@ export default function NotePage() {
                     <li key={child.id}>
                       <Link
                         href={`/skills/${skillId}/notes/${child.id}`}
-                        className="flex items-center justify-between gap-3 rounded-xl bg-[#f4ecd5] px-3 py-2 text-sm text-[#3e3522]"
+                        className="flex items-center justify-between gap-3 rounded-xl bg-[#141414] px-3 py-2 text-sm text-white"
                       >
                         <span className="truncate font-medium">{childTitle}</span>
-                        {subtitle ? <span className="text-xs text-[#7f7358]">{subtitle}</span> : null}
+                        {subtitle ? <span className="text-xs text-white/55">{subtitle}</span> : null}
                       </Link>
                     </li>
                   );
                 })}
               </ul>
             ) : (
-              <div className="rounded-xl bg-[#f4ecd5] px-3 py-4 text-center text-sm text-[#7f7358]">
+              <div className="rounded-xl bg-[#141414] px-3 py-4 text-center text-sm text-white/55">
                 No sub-pages yet.
               </div>
             )}
