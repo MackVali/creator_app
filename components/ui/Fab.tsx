@@ -72,6 +72,7 @@ import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
 import { normalizeHabitType } from "@/lib/scheduler/habits";
+import { enforceHabitLimit } from "@/lib/habits/enforceHabitLimit";
 import { useProjectedGlobalRank } from "@/lib/hooks/useProjectedGlobalRank";
 import {
   HABIT_RECURRENCE_OPTIONS,
@@ -85,6 +86,13 @@ import type {
   AiSchedulerOp,
   AiThreadPayload,
 } from "@/lib/types/ai";
+import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
+import { PaywallModal } from "@/components/billing/PaywallModal";
+import {
+  LimitErrorCode,
+  LimitReachedError,
+  getLimitCodeFromError,
+} from "@/lib/goals/persistGoalUpdate";
 
 function ErrorBoundary({ children }: { children: React.ReactNode }) {
   const [err, setErr] = React.useState<Error | null>(null);
@@ -200,6 +208,42 @@ const FLAME_LEVELS: FlameLevel[] = [
   "ULTRA",
   "EXTREME",
 ];
+
+const LIMIT_MODAL_FEATURES = [
+  "Unlimited goals, projects, and tasks with CREATOR PLUS.",
+  "Creator Plus focus tools keep every milestone prioritized.",
+  "Faster sync, backups, and priority support to stay on track.",
+];
+
+const LIMIT_MODAL_COPY: Partial<
+  Record<LimitErrorCode, { title: string; description: string }>
+> = {
+  GOAL_LIMIT_REACHED: {
+    title: "Goal limit reached",
+    description:
+      "CREATOR PLUS removes the cap on goals so you can keep building out your roadmap.",
+  },
+  PROJECT_LIMIT_REACHED: {
+    title: "Project limit reached",
+    description:
+      "CREATOR PLUS unlocks more projects across every goal so nothing gets blocked.",
+  },
+  PROJECTS_PER_GOAL_LIMIT_REACHED: {
+    title: "Project per goal limit reached",
+    description:
+      "Upgrade to CREATOR PLUS to add more projects under this goal and keep momentum going.",
+  },
+  TASK_LIMIT_REACHED: {
+    title: "Task limit reached",
+    description:
+      "CREATOR PLUS removes the cap on tasks so you can keep executing without stopping.",
+  },
+  HABIT_LIMIT_REACHED: {
+    title: "Habit limit reached",
+    description:
+      "Creator Plus removes the cap on habits so you can keep building your routines.",
+  },
+};
 
 const normalizeFlameLevel = (value?: string | null): FlameLevel => {
   const normalized = String(value ?? "MEDIUM")
@@ -2548,6 +2592,8 @@ export function Fab({
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSavingFab, setIsSavingFab] = useState(false);
+  const [activeLimitCode, setActiveLimitCode] =
+    useState<LimitErrorCode | null>(null);
   const fabSavePendingRef = useRef(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
@@ -2729,6 +2775,26 @@ export function Fab({
   const pageDragControls = useDragControls();
   const prefersReducedMotion = useReducedMotion();
   const router = useRouter();
+  const { isPlus } = useEntitlement();
+  const goToBilling = useCallback(() => {
+    setActiveLimitCode(null);
+    router.push("/settings/billing");
+  }, [router]);
+  const handleLimitModalOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        setActiveLimitCode(null);
+      }
+    },
+    [setActiveLimitCode],
+  );
+  const limitModalCopy = activeLimitCode
+    ? LIMIT_MODAL_COPY[activeLimitCode]
+    : null;
+  const limitModalTitle = limitModalCopy?.title ?? "Upgrade to CREATOR PLUS";
+  const limitModalDescription =
+    limitModalCopy?.description ?? "Upgrade to CREATOR PLUS to add more.";
+  const limitModalCtaLabel = isPlus ? "Manage subscription" : "Upgrade to CREATOR PLUS";
   const VERTICAL_WHEEL_TRIGGER = 20;
   const DRAG_THRESHOLD_PX = 80;
   const EDGE_SWIPE_ZONE_RATIO = 0.12;
@@ -6539,6 +6605,14 @@ export function Fab({
       }
       setIsSavingFab(true);
       try {
+        const throwIfLimitError = (error: unknown) => {
+          const limitCode = getLimitCodeFromError(error);
+          if (limitCode) {
+            throw new LimitReachedError(limitCode, error);
+          }
+          throw error;
+        };
+
         if (selected === "GOAL") {
           const { error } = await supabase.from("goals").insert({
             user_id: user.id,
@@ -6549,7 +6623,7 @@ export function Fab({
             monument_id: goalMonumentId || null,
             due_date: goalDue ?? null,
           });
-          if (error) throw error;
+          if (error) throwIfLimitError(error);
         } else if (selected === "PROJECT") {
           const { data: projectData, error } = await supabase
             .from("projects")
@@ -6569,7 +6643,7 @@ export function Fab({
             })
             .select("id")
             .single();
-          if (error) throw error;
+          if (error) throwIfLimitError(error);
           if (projectData?.id && projectSkillIds.length > 0) {
             const { error: projectSkillsError } = await supabase
               .from("project_skills")
@@ -6579,7 +6653,7 @@ export function Fab({
                   skill_id: skillId,
                 })),
               );
-            if (projectSkillsError) throw projectSkillsError;
+            if (projectSkillsError) throwIfLimitError(projectSkillsError);
           }
         } else if (selected === "TASK") {
           const { error } = await supabase.from("tasks").insert({
@@ -6589,8 +6663,13 @@ export function Fab({
             stage: taskStage,
             skill_id: taskSkillId || null,
           });
-          if (error) throw error;
+          if (error) throwIfLimitError(error);
         } else if (selected === "HABIT") {
+          try {
+            await enforceHabitLimit({ supabase, userId: user.id });
+          } catch (error) {
+            throwIfLimitError(error);
+          }
           const parsedDuration = Number.parseInt(habitDuration || "0", 10);
           const duration = Number.isFinite(parsedDuration)
             ? parsedDuration
@@ -6616,7 +6695,7 @@ export function Fab({
               })
               .select("id")
               .single();
-            if (routineError) throw routineError;
+            if (routineError) throwIfLimitError(routineError);
             routineIdToUse = routineData?.id ?? null;
           }
           const { error } = await supabase.from("habits").insert({
@@ -6631,7 +6710,7 @@ export function Fab({
             routine_id: routineIdToUse,
             goal_id: habitGoalId || null,
           });
-          if (error) throw error;
+          if (error) throwIfLimitError(error);
           await notifySchedulerOfChange();
         }
         resetFabFormState();
@@ -6649,11 +6728,16 @@ export function Fab({
                   ? "Habit"
                   : "Item";
         toast.success(`${successLabel} created`);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Failed to save item", error);
+        if (error instanceof LimitReachedError) {
+          setSaveError(null);
+          setActiveLimitCode(error.limitCode);
+          return;
+        }
         const errorMessage =
-          error?.message ||
-          error?.error?.message ||
+          (error as { message?: string })?.message ||
+          (error as { error?: { message?: string } })?.error?.message ||
           "Unable to save right now.";
         setSaveError(errorMessage);
       } finally {
@@ -7905,6 +7989,17 @@ export function Fab({
         onClose={handleCloseReschedule}
         onSave={handleRescheduleSave}
         onDelete={handleDeleteEvent}
+      />
+      <PaywallModal
+        open={Boolean(activeLimitCode)}
+        onOpenChange={handleLimitModalOpenChange}
+        title={limitModalTitle}
+        description={limitModalDescription}
+        featureList={LIMIT_MODAL_FEATURES}
+        ctaLabel={limitModalCtaLabel}
+        onCta={goToBilling}
+        secondaryLabel="Maybe later"
+        onSecondary={() => setActiveLimitCode(null)}
       />
     </div>
   );

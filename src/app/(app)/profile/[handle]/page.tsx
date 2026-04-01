@@ -1,31 +1,169 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Profile, SocialLink, ContentCard, ProfileModule } from "@/lib/types";
 import { getProfileByHandle, getProfileLinks } from "@/lib/db";
 import { getSocialLinks } from "@/lib/db/profile-management";
+import { getSupabaseBrowser } from "@/lib/supabase";
+import { uploadAvatar } from "@/lib/storage";
 import HeroHeader from "@/components/profile/HeroHeader";
 import ProfileModules from "@/components/profile/modules/ProfileModules";
 import { buildProfileModules } from "@/components/profile/modules/buildProfileModules";
 import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
+
+type RelationshipStatus =
+  | "self"
+  | "friends"
+  | "incoming_request"
+  | "outgoing_request"
+  | "none";
 
 export default function ProfileByHandlePage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [isAvatarUploading, setIsAvatarUploading] = useState(false);
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [contentCards, setContentCards] = useState<ContentCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [relationshipStatus, setRelationshipStatus] = useState<RelationshipStatus | null>(null);
+  const [relationshipLoading, setRelationshipLoading] = useState(false);
+  const [requestingFriend, setRequestingFriend] = useState(false);
+  const [incomingRequestId, setIncomingRequestId] = useState<string | null>(null);
+  const [respondingRequest, setRespondingRequest] = useState(false);
 
-  const handle = params.handle as string;
+  const rawHandleParam = params.handle;
+  const normalizedHandle = useMemo(() => {
+    const candidate = Array.isArray(rawHandleParam)
+      ? rawHandleParam[0]
+      : rawHandleParam;
+
+    if (!candidate) {
+      return "";
+    }
+
+    let decodedHandle = candidate;
+    try {
+      decodedHandle = decodeURIComponent(candidate);
+    } catch {
+      // If decoding fails, keep the raw param.
+    }
+
+    return decodedHandle.trim();
+  }, [rawHandleParam]);
+
+  useEffect(() => {
+    if (!profile?.username || !normalizedHandle || user?.id === profile.user_id) {
+      setRelationshipStatus(null);
+      setRelationshipLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    const controller = new AbortController();
+
+    (async () => {
+      setRelationshipLoading(true);
+      try {
+        const response = await fetch(
+          `/api/friends/relationship/${encodeURIComponent(profile.username)}`,
+          { signal: controller.signal }
+        );
+
+        if (!isActive) return;
+
+        if (!response.ok) {
+          console.error(`Failed to load relationship (${response.status})`);
+          setRelationshipStatus("none");
+          return;
+        }
+
+        const payload = (await response.json()) as { relationship?: RelationshipStatus };
+        const relationship = payload?.relationship;
+
+        if (!relationship) {
+          setRelationshipStatus("none");
+        } else {
+          setRelationshipStatus(relationship);
+        }
+      } catch (err) {
+        if ((err as { name?: string }).name === "AbortError") {
+          return;
+        }
+        console.error("Error fetching relationship status", err);
+        setRelationshipStatus("none");
+      } finally {
+        if (isActive) {
+          setRelationshipLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, [normalizedHandle, profile?.username, profile?.user_id, user?.id]);
+
+  useEffect(() => {
+    if (relationshipStatus !== "incoming_request" || !profile?.username) {
+      setIncomingRequestId(null);
+      return;
+    }
+
+    let isCurrent = true;
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const response = await fetch("/api/friends/requests", {
+          signal: controller.signal,
+        });
+
+        if (!isCurrent) return;
+
+        if (!response.ok) {
+          console.error("Failed to load incoming requests", response.status);
+          return;
+        }
+
+        const payload = (await response.json().catch(() => null)) as
+          | { requests?: { id: string; username?: string }[] }
+          | null;
+        const requests = payload?.requests ?? [];
+
+        const match = requests.find(
+          (req) =>
+            typeof req.username === "string" &&
+            req.username.toLowerCase() === profile.username.toLowerCase()
+        );
+
+        if (match) {
+          setIncomingRequestId(match.id);
+        } else {
+          setIncomingRequestId(null);
+        }
+      } catch (err) {
+        if ((err as { name?: string }).name === "AbortError") {
+          return;
+        }
+        console.error("Error loading incoming requests", err);
+      }
+    })();
+
+    return () => {
+      isCurrent = false;
+      controller.abort();
+    };
+  }, [relationshipStatus, profile?.username]);
 
   useEffect(() => {
     async function loadProfileData() {
-      if (!handle) {
+      if (!normalizedHandle) {
         router.push("/dashboard");
         return;
       }
@@ -35,7 +173,7 @@ export default function ProfileByHandlePage() {
         setError(null);
 
         // Load profile by handle
-        const userProfile = await getProfileByHandle(handle);
+        const userProfile = await getProfileByHandle(normalizedHandle);
         if (!userProfile) {
           setError("Profile not found");
           return;
@@ -60,7 +198,7 @@ export default function ProfileByHandlePage() {
     }
 
     loadProfileData();
-  }, [handle, router]);
+  }, [normalizedHandle, router]);
 
   // Handle share functionality
   const handleShare = async () => {
@@ -93,6 +231,106 @@ export default function ProfileByHandlePage() {
     } else {
       // If viewing someone else's profile, go back
       router.back();
+    }
+  };
+
+  const handleAvatarChange = useCallback(
+    async (file: File) => {
+      if (!user?.id) {
+        return;
+      }
+
+      setIsAvatarUploading(true);
+      try {
+        const uploadResult = await uploadAvatar(file, user.id);
+        if (!uploadResult.success || !uploadResult.url) {
+          console.error("Avatar upload failed", uploadResult.error);
+          return;
+        }
+
+        const supabase = getSupabaseBrowser();
+        if (supabase) {
+          const { error: updateError } = await supabase
+            .from("profiles")
+            .update({
+              avatar_url: uploadResult.url,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", user.id);
+
+          if (updateError) {
+            console.error("Failed to persist updated avatar", updateError);
+            return;
+          }
+        } else {
+          console.error("Supabase client unavailable to persist avatar");
+        }
+
+        setProfile((prev) =>
+          prev ? { ...prev, avatar_url: uploadResult.url } : prev,
+        );
+      } catch (err) {
+        console.error("Failed to update avatar", err);
+      } finally {
+        setIsAvatarUploading(false);
+      }
+    },
+    [user?.id],
+  );
+
+  const handleAddFriend = async () => {
+    if (!profile?.username || requestingFriend) {
+      return;
+    }
+
+    setRequestingFriend(true);
+    try {
+      const response = await fetch("/api/friends/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: profile.username }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.text().catch(() => null);
+        console.error("Failed to send friend request", response.status, payload);
+        return;
+      }
+
+      setRelationshipStatus("outgoing_request");
+    } catch (err) {
+      console.error("Failed to send friend request", err);
+    } finally {
+      setRequestingFriend(false);
+    }
+  };
+
+  const handleRespondToRequest = async (status: "accepted" | "declined") => {
+    if (!incomingRequestId || respondingRequest) {
+      return;
+    }
+
+    setRespondingRequest(true);
+    try {
+      const response = await fetch("/api/friends/requests/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: incomingRequestId, status }),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        console.error("Failed to respond to friend request", payload);
+        return;
+      }
+
+      setRelationshipStatus(status === "accepted" ? "friends" : "none");
+      setIncomingRequestId(null);
+    } catch (err) {
+      console.error("Failed to respond to friend request", err);
+    } finally {
+      setRespondingRequest(false);
     }
   };
 
@@ -161,9 +399,77 @@ export default function ProfileByHandlePage() {
   ).length;
   const activeLinkCount = contentCards.filter((card) => card.is_active).length;
   const isOwner = user?.id === profile.user_id;
+  const actionSlot = (() => {
+    if (isOwner) return undefined;
+    if (!profile?.username || !relationshipStatus) return undefined;
+
+    const baseClasses =
+      "inline-flex items-center justify-center rounded-full border border-white/30 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
+
+    switch (relationshipStatus) {
+      case "none":
+        return (
+          <button
+            type="button"
+            className={baseClasses + " hover:border-white/60 hover:bg-white/10"}
+            onClick={handleAddFriend}
+            disabled={relationshipLoading || requestingFriend}
+          >
+            {requestingFriend ? "Sending..." : "Add Friend"}
+          </button>
+        );
+      case "outgoing_request":
+        return (
+          <button
+            type="button"
+            className={baseClasses}
+            disabled
+          >
+            Requested
+          </button>
+        );
+      case "friends":
+        return (
+          <button
+            type="button"
+            className={baseClasses}
+            disabled
+          >
+            Friends
+          </button>
+        );
+      case "incoming_request":
+        return (
+          <div className="flex items-center justify-center gap-2">
+            <button
+              type="button"
+              className={baseClasses + " hover:border-white/60 hover:bg-white/10"}
+              onClick={() => handleRespondToRequest("accepted")}
+              disabled={respondingRequest || !incomingRequestId}
+            >
+              {respondingRequest ? "Processing..." : "Accept"}
+            </button>
+            <button
+              type="button"
+              className={
+                baseClasses +
+                " border-transparent bg-white/10 text-white/70 hover:border-white/60 hover:bg-white/20"
+              }
+              onClick={() => handleRespondToRequest("declined")}
+              disabled={respondingRequest || !incomingRequestId}
+            >
+              Decline
+            </button>
+          </div>
+        );
+      case "self":
+      default:
+        return undefined;
+    }
+  })();
 
   return (
-    <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
+    <div className="relative min-h-screen pb-[env(safe-area-inset-bottom)] text-white">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -left-24 h-[360px] w-[360px] rounded-full bg-gradient-to-br from-neutral-700/30 via-neutral-900/25 to-transparent blur-[140px]" />
         <div className="absolute -top-32 right-[-10%] h-[300px] w-[300px] rounded-full bg-gradient-to-bl from-neutral-800/30 via-neutral-950/25 to-transparent blur-[160px]" />
@@ -178,6 +484,10 @@ export default function ProfileByHandlePage() {
           stats={{ linkCount: activeLinkCount, socialCount: activeSocialCount }}
           onShare={handleShare}
           onBack={handleBack}
+          isOwner={isOwner}
+          onAvatarChange={handleAvatarChange}
+          isAvatarUploading={isAvatarUploading}
+          actionSlot={actionSlot}
         />
 
         <section className="mx-auto mt-14 w-full max-w-5xl px-4 pb-20">

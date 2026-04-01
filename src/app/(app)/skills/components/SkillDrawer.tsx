@@ -117,7 +117,7 @@ export function SkillDrawer({
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="absolute right-3 top-4 h-[calc(100%-2rem)] w-[340px] overflow-hidden rounded-2xl border border-white/10 bg-black/95 shadow-[0_35px_90px_-60px_rgba(0,0,0,0.8)] sm:right-4 sm:top-6 sm:h-[calc(100%-3rem)] sm:w-[360px]">
+      <div className="absolute left-1/2 top-1/2 max-h-[calc(100%-48px)] w-[min(420px,calc(100%-48px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-white/10 bg-black/95 shadow-[0_35px_90px_-60px_rgba(0,0,0,0.8)]">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5 sm:py-4">
           <div>
             <p className="text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-white/50">

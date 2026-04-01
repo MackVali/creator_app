@@ -34,6 +34,11 @@ import { useHabitWindows } from "@/lib/hooks/useHabitWindows";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
 import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
+import { enforceHabitLimit } from "@/lib/habits/enforceHabitLimit";
+import {
+  LimitReachedError,
+  getLimitCodeFromError,
+} from "@/lib/goals/persistGoalUpdate";
 
 interface RoutineOption {
   id: string;
@@ -485,6 +490,14 @@ export default function NewHabitPage() {
       return;
     }
 
+    const throwIfLimitError = (error: unknown) => {
+      const limitCode = getLimitCodeFromError(error);
+      if (limitCode) {
+        throw new LimitReachedError(limitCode, error);
+      }
+      throw error;
+    };
+
     if (!name.trim()) {
       setError("Please provide a name for your habit.");
       return;
@@ -562,6 +575,15 @@ export default function NewHabitPage() {
       if (!user) {
         setError("You need to be signed in to create a habit.");
         return;
+      }
+
+      try {
+        await enforceHabitLimit({
+          supabase,
+          userId: user.id,
+        });
+      } catch (limitError) {
+        throwIfLimitError(limitError);
       }
 
       const trimmedDescription = description.trim();
@@ -655,13 +677,19 @@ export default function NewHabitPage() {
         .insert(payload);
 
       if (insertError) {
-        throw insertError;
+        throwIfLimitError(insertError);
       }
 
       router.push("/habits");
       router.refresh();
     } catch (err) {
       console.error("Failed to create habit:", err);
+      if (err instanceof LimitReachedError) {
+        setError(
+          "Free-tier accounts can create up to 20 habits. Upgrade to CREATOR PLUS to drop the limit."
+        );
+        return;
+      }
       setError(
         err instanceof Error
           ? err.message

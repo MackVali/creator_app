@@ -28,6 +28,13 @@ const ICON_MAP: Record<SupportedPlatform, LucideIcon> = {
   twitter: Twitter,
 };
 
+const isSupportedPlatform = (
+  platform?: string
+): platform is SupportedPlatform =>
+  typeof platform === "string" &&
+  platform in ICON_MAP &&
+  platform in PLATFORM_CONFIG;
+
 interface Props {
   userId: string;
 }
@@ -48,13 +55,24 @@ export default function LinkedAccountsBar({ userId }: Props) {
   return (
     <div className="flex space-x-3 justify-center mt-4">
       {accounts.map((acc) => {
-        const platform = acc.platform as SupportedPlatform;
-        const Icon = ICON_MAP[platform];
-        const color = PLATFORM_CONFIG[platform].color;
+        if (!acc.url) return null;
+
+        let safeUrl: string;
+        try {
+          safeUrl = new URL(acc.url).toString();
+        } catch {
+          return null;
+        }
+
+        if (!isSupportedPlatform(acc.platform)) return null;
+
+        const Icon = ICON_MAP[acc.platform];
+        const color = PLATFORM_CONFIG[acc.platform].color;
+
         return (
           <a
             key={acc.platform}
-            href={acc.url}
+            href={safeUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="p-2 rounded-full bg-gray-100 hover:bg-gray-200"

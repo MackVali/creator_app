@@ -700,6 +700,7 @@ export interface Database {
           id: string;
           user_id: string;
           platform: string;
+          username: string | null;
           url: string;
           created_at: string;
           updated_at: string;
@@ -708,6 +709,7 @@ export interface Database {
           id?: string;
           user_id: string;
           platform: string;
+          username?: string | null;
           url: string;
           created_at?: string;
           updated_at?: string;
@@ -716,6 +718,7 @@ export interface Database {
           id?: string;
           user_id?: string;
           platform?: string;
+          username?: string | null;
           url?: string;
           created_at?: string;
           updated_at?: string;
@@ -727,6 +730,7 @@ export interface Database {
           user_id: string;
           platform: string;
           url: string;
+          username: string | null;
           icon: string | null;
           color: string | null;
           position: number;
@@ -739,6 +743,7 @@ export interface Database {
           user_id: string;
           platform: string;
           url: string;
+          username?: string | null;
           icon?: string | null;
           color?: string | null;
           position?: number;
@@ -751,6 +756,7 @@ export interface Database {
           user_id?: string;
           platform?: string;
           url?: string;
+          username?: string | null;
           icon?: string | null;
           color?: string | null;
           position?: number;

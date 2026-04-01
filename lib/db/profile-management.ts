@@ -54,17 +54,20 @@ export async function createSocialLink(
       ? existingLinks[0].position + 1 
       : 0;
 
+    const insertPayload = {
+      user_id: userId,
+      platform: linkData.platform,
+      url: linkData.url,
+      username: linkData.username ?? null,
+      icon: linkData.icon,
+      color: linkData.color,
+      position: nextPosition,
+      is_active: true,
+    };
+
     const { data, error } = await supabase
       .from("social_links")
-      .insert({
-        user_id: userId,
-        platform: linkData.platform,
-        url: linkData.url,
-        icon: linkData.icon,
-        color: linkData.color,
-        position: nextPosition,
-        is_active: true,
-      })
+      .insert(insertPayload)
       .select()
       .single();
 
@@ -376,4 +379,3 @@ export async function getProfileTheme(themeId: string): Promise<ProfileTheme | n
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
-

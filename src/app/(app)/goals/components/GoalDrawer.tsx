@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import type { LimitErrorCode } from "@/lib/goals/persistGoalUpdate";
 import {
   Select,
   SelectContent,
@@ -33,21 +34,32 @@ export interface GoalUpdateContext {
   removedTaskIds: string[];
 }
 
+type GoalDrawerSubmitResult = {
+  limitCode: LimitErrorCode;
+};
+
 interface GoalDrawerProps {
   open: boolean;
   onClose(): void;
   /** Callback when creating a new goal */
-  onAdd(goal: Goal, context: GoalUpdateContext): void;
+  onAdd(
+    goal: Goal,
+    context: GoalUpdateContext
+  ): Promise<GoalDrawerSubmitResult | void> | GoalDrawerSubmitResult | void;
   /** Existing goal to edit */
   initialGoal?: Goal | null;
   /** Callback when updating an existing goal */
-  onUpdate?(goal: Goal, context: GoalUpdateContext): void;
+  onUpdate?(
+    goal: Goal,
+    context: GoalUpdateContext
+  ): Promise<GoalDrawerSubmitResult | void> | GoalDrawerSubmitResult | void;
   /** Optional delete handler shown only while editing */
   onDelete?(goal: Goal): Promise<void> | void;
   monuments?: { id: string; title: string; emoji?: string | null }[];
   roadmaps?: { id: string; title: string; emoji?: string | null }[];
   hideProjects?: boolean;
   saveDisabled?: boolean;
+  onGoalLimitReached?(limitCode: LimitErrorCode): void;
 }
 
 const PRIORITY_OPTIONS: {
@@ -699,7 +711,7 @@ export function GoalDrawer({
     }
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!canSubmit || deleteLoading) return;
 
@@ -771,11 +783,17 @@ export function GoalDrawer({
       why: why.trim() ? why.trim() : undefined,
     };
 
-    if (editing && onUpdate) {
-      onUpdate(nextGoal, context);
-    } else {
-      onAdd(nextGoal, context);
+    const result = editing && onUpdate
+      ? await onUpdate(nextGoal, context)
+      : await onAdd(nextGoal, context);
+
+    if (result?.limitCode) {
+      if (result.limitCode === "GOAL_LIMIT_REACHED") {
+        onGoalLimitReached?.(result.limitCode);
+      }
+      return;
     }
+
     onClose();
   };
 

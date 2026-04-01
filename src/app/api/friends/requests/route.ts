@@ -5,6 +5,13 @@ import { z } from "zod";
 import { mapFriendRequest } from "@/lib/friends/mappers";
 import { getSupabaseServer } from "@/lib/supabase";
 
+const profileSelect = "user_id, username, name, avatar_url";
+
+function getDisplayName(profile?: { name?: string | null; username: string }) {
+  const trimmed = profile?.name?.trim();
+  return trimmed ? trimmed : profile?.username;
+}
+
 const RequestSchema = z.object({
   username: z
     .string()
@@ -94,26 +101,34 @@ export async function POST(request: Request) {
     );
   }
 
-  const metadata = (user.user_metadata ?? {}) as Record<string, unknown>;
-  const viewerUsername =
-    (typeof metadata.username === "string" && metadata.username.trim())
-      ? metadata.username.trim()
-      : null;
-  const viewerDisplayName =
-    (typeof metadata.full_name === "string" && metadata.full_name.trim())
-      ? metadata.full_name.trim()
-      : user.email ?? viewerUsername ?? "Creator";
-  const viewerAvatar =
-    (typeof metadata.avatar_url === "string" && metadata.avatar_url.trim())
-      ? metadata.avatar_url.trim()
-      : null;
+  const {
+    data: requesterProfile,
+    error: requesterProfileError,
+  } = await supabase
+    .from("profiles")
+    .select(profileSelect)
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-  if (viewerUsername && viewerUsername.toLowerCase() === normalizedUsername) {
+  if (requesterProfileError) {
+    console.error("Failed to load requester profile", requesterProfileError);
     return NextResponse.json(
-      { error: "You can’t send a request to yourself." },
-      { status: 400 }
+      { error: "Unable to send request." },
+      { status: 500 }
     );
   }
+
+  if (!requesterProfile?.username?.trim()) {
+    console.error("Requester profile missing canonical username", requesterProfile);
+    return NextResponse.json(
+      { error: "Unable to send request." },
+      { status: 500 }
+    );
+  }
+
+  const canonicalRequesterUsername = requesterProfile.username.trim();
+  const requesterDisplayName = getDisplayName(requesterProfile);
+  const requesterAvatarUrl = requesterProfile.avatar_url ?? null;
 
   const { data: targetId, error: lookupError } = await supabase.rpc(
     "get_profile_user_id",
@@ -136,6 +151,45 @@ export async function POST(request: Request) {
   }
 
   if (targetId === user.id) {
+    return NextResponse.json(
+      { error: "You can’t send a request to yourself." },
+      { status: 400 }
+    );
+  }
+
+  const {
+    data: targetProfile,
+    error: targetProfileError,
+  } = await supabase
+    .from("profiles")
+    .select(profileSelect)
+    .eq("user_id", targetId)
+    .maybeSingle();
+
+  if (targetProfileError) {
+    console.error("Failed to load target profile", targetProfileError);
+    return NextResponse.json(
+      { error: "Unable to send request." },
+      { status: 500 }
+    );
+  }
+
+  if (!targetProfile?.username?.trim()) {
+    console.error("Target profile missing canonical username", targetProfile);
+    return NextResponse.json(
+      { error: "We couldn’t find that creator." },
+      { status: 404 }
+    );
+  }
+
+  const canonicalTargetUsername = targetProfile.username.trim();
+  const targetDisplayName = getDisplayName(targetProfile);
+  const targetAvatarUrl = targetProfile.avatar_url ?? null;
+
+  if (
+    canonicalRequesterUsername.toLowerCase() ===
+    canonicalTargetUsername.toLowerCase()
+  ) {
     return NextResponse.json(
       { error: "You can’t send a request to yourself." },
       { status: 400 }
@@ -197,9 +251,12 @@ export async function POST(request: Request) {
           status: "pending",
           note: parseResult.data.note ?? existing.note,
           responded_at: null,
-          requester_username: viewerUsername ?? existing.requester_username,
-          requester_display_name: viewerDisplayName,
-          requester_avatar_url: viewerAvatar ?? existing.requester_avatar_url,
+          requester_username: canonicalRequesterUsername,
+          requester_display_name: requesterDisplayName,
+          requester_avatar_url: requesterAvatarUrl ?? existing.requester_avatar_url,
+          target_username: canonicalTargetUsername,
+          target_display_name: targetDisplayName,
+          target_avatar_url: targetAvatarUrl ?? existing.target_avatar_url,
         })
         .eq("id", existing.id)
         .select(
@@ -222,12 +279,83 @@ export async function POST(request: Request) {
     }
 
     if (existing.status === "pending") {
-      return NextResponse.json(
+      const now = new Date().toISOString();
+
+      const { data: updated, error: updateError } = await supabase
+        .from("friend_requests")
+        .update({ status: "accepted", responded_at: now })
+        .eq("id", existing.id)
+        .select(
+          "id, requester_id, requester_username, requester_display_name, requester_avatar_url, target_id, target_username, target_display_name, target_avatar_url, note, status, mutual_friends, responded_at, created_at, updated_at"
+        )
+        .single();
+
+      if (updateError || !updated) {
+        console.error("Failed to accept reciprocal friend request", updateError);
+        return NextResponse.json(
+          { error: "Unable to send request." },
+          { status: 500 }
+        );
+      }
+
+      const connectionSeeds = [
         {
-          error:
-            "They already sent you a request. Check your requests tab to respond.",
+          user_id: updated.requester_id,
+          friend_user_id: updated.target_id,
+          friend_username: updated.target_username,
+          friend_display_name:
+            updated.target_display_name ?? updated.target_username,
+          friend_avatar_url: updated.target_avatar_url,
+          friend_profile_url: null,
+          has_ring: false,
+          is_online: false,
         },
-        { status: 409 }
+        {
+          user_id: updated.target_id,
+          friend_user_id: updated.requester_id,
+          friend_username: updated.requester_username,
+          friend_display_name:
+            updated.requester_display_name ?? updated.requester_username,
+          friend_avatar_url: updated.requester_avatar_url,
+          friend_profile_url: null,
+          has_ring: false,
+          is_online: false,
+        },
+      ];
+
+      for (const connection of connectionSeeds) {
+        const { data: existingConnection, error: existingConnectionError } =
+          await supabase
+            .from("friend_connections")
+            .select("id")
+            .eq("user_id", connection.user_id)
+            .eq("friend_user_id", connection.friend_user_id)
+            .maybeSingle();
+
+        if (existingConnectionError && existingConnectionError.code !== "PGRST116") {
+          console.error(
+            "Failed to check existing friend connection",
+            existingConnectionError
+          );
+          continue;
+        }
+
+        if (existingConnection) {
+          continue;
+        }
+
+        const { error: insertError } = await supabase
+          .from("friend_connections")
+          .insert(connection);
+
+        if (insertError) {
+          console.error("Failed to insert friend connection", insertError);
+        }
+      }
+
+      return NextResponse.json(
+        { request: mapFriendRequest(updated, user.id) },
+        { status: 200 }
       );
     }
 
@@ -244,13 +372,13 @@ export async function POST(request: Request) {
     .from("friend_requests")
     .insert({
       requester_id: user.id,
-      requester_username: viewerUsername ?? user.email ?? "creator",
-      requester_display_name: viewerDisplayName,
-      requester_avatar_url: viewerAvatar,
-      target_id: targetId,
-      target_username: normalizedUsername,
-      target_display_name: normalizedUsername,
-      target_avatar_url: null,
+      requester_username: canonicalRequesterUsername,
+      requester_display_name: requesterDisplayName,
+      requester_avatar_url: requesterAvatarUrl,
+      target_id: targetProfile.user_id,
+      target_username: canonicalTargetUsername,
+      target_display_name: targetDisplayName,
+      target_avatar_url: targetAvatarUrl,
       note: parseResult.data.note ?? null,
       status: "pending",
       mutual_friends: 0,

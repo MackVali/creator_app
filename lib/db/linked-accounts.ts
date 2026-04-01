@@ -1,5 +1,6 @@
 import { getSupabaseBrowser } from "../supabase";
 import { LinkedAccount } from "../types";
+import { buildSocialUrl, normalizeUsername } from "@/lib/profile/socialLinks";
 
 export type SupportedPlatform =
   | "instagram"
@@ -27,6 +28,49 @@ export const PLATFORM_CONFIG: Record<
   twitter: { label: "X/Twitter", domain: "twitter.com", color: "#000000" },
 };
 
+export type LinkedAccountInput =
+  | string
+  | {
+      username?: string | null;
+      url?: string | null;
+    };
+
+export function resolveLinkedAccountInput(
+  platform: SupportedPlatform,
+  input: LinkedAccountInput
+): { url: string; username: string | null } | null {
+  const rawInput =
+    typeof input === "string"
+      ? { username: input, url: undefined }
+      : { username: input.username, url: input.url };
+
+  const trimmedUsername = rawInput.username?.trim();
+  const trimmedUrl = rawInput.url?.trim() ?? "";
+
+  const normalizedFromUsername = trimmedUsername
+    ? normalizeUsername(platform, trimmedUsername)
+    : "";
+  const normalizedFromUrl =
+    !normalizedFromUsername && trimmedUrl
+      ? normalizeUsername(platform, trimmedUrl)
+      : "";
+  const normalizedUsername = normalizedFromUsername || normalizedFromUrl;
+  const usernameMaybe = normalizedUsername || null;
+
+  const canonicalUrl = normalizedUsername
+    ? buildSocialUrl(platform, normalizedUsername)
+    : trimmedUrl;
+
+  if (!canonicalUrl) {
+    return null;
+  }
+
+  return {
+    url: canonicalUrl,
+    username: usernameMaybe,
+  };
+}
+
 export async function getLinkedAccounts(
   userId: string
 ): Promise<LinkedAccount[]> {
@@ -49,17 +93,30 @@ export async function getLinkedAccounts(
 export async function upsertLinkedAccount(
   userId: string,
   platform: SupportedPlatform,
-  url: string
+  input: LinkedAccountInput
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = getSupabaseBrowser();
   if (!supabase) {
     return { success: false, error: "Supabase client not initialized" };
   }
 
+  const resolved = resolveLinkedAccountInput(platform, input);
+  if (!resolved) {
+    return {
+      success: false,
+      error: "Please provide a username or link for this platform",
+    };
+  }
+
   const { error } = await supabase
     .from("linked_accounts")
     .upsert(
-      { user_id: userId, platform, url },
+      {
+        user_id: userId,
+        platform,
+        url: resolved.url,
+        username: resolved.username,
+      },
       { onConflict: "user_id,platform" }
     );
 
@@ -92,27 +149,4 @@ export async function deleteLinkedAccount(
   }
 
   return { success: true };
-}
-
-export function validateLinkedAccountUrl(
-  platform: SupportedPlatform,
-  url: string
-): { valid: boolean; cleaned?: string; error?: string } {
-  try {
-    const config = PLATFORM_CONFIG[platform];
-    const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);
-    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
-    const domain = config.domain.toLowerCase();
-    const isExactMatch = hostname === domain;
-    const isSubdomainMatch = hostname.endsWith(`.${domain}`);
-
-    if (!isExactMatch && !isSubdomainMatch) {
-      return { valid: false, error: `URL must be on ${config.domain}` };
-    }
-    parsed.search = ""; // remove query params
-    const cleaned = `${parsed.protocol}//${parsed.hostname}${parsed.pathname}`;
-    return { valid: true, cleaned };
-  } catch {
-    return { valid: false, error: "Invalid URL" };
-  }
 }

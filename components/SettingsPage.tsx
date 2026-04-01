@@ -7,6 +7,7 @@ import { useProfile } from "@/lib/hooks/useProfile";
 import type { Profile as ProfileType } from "@/lib/types";
 import { updateProfilePreferences } from "@/lib/db";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
 import {
   ArrowLeft,
   Bell,
@@ -97,6 +98,7 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState(true);
   const { profile, userId, loading, error, refreshProfile } = useProfile();
   const { user } = useAuth();
+  const { tier, isPlus, is_active, isReady, current_period_end } = useEntitlement();
   const [email, setEmail] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
@@ -118,6 +120,24 @@ export default function SettingsPage() {
     }));
   }, [baseTimeZones, timezone]);
   const router = useRouter();
+
+  const planLabel = isPlus ? "CREATOR PLUS" : "CREATOR";
+  const planStatusLabel = !isReady ? "Loading" : is_active ? "Active" : "Free plan";
+  const handlePlanAction = () => router.push("/settings/billing");
+  const planRenewalDate = (() => {
+    if (!current_period_end) {
+      return null;
+    }
+    const parsedDate = new Date(current_period_end);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return null;
+    }
+    return parsedDate.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  })();
 
   useEffect(() => {
     const authUser = user ?? null;
@@ -255,6 +275,50 @@ export default function SettingsPage() {
     <SettingsErrorState message={error} onRetry={handleRetry} />
   ) : (
     <>
+      <section className="grid gap-6">
+        <section className="card overflow-hidden">
+          <div className="px-6 py-5 inner-hair">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
+                  Plan · {planLabel}
+                </p>
+                <h2 className="text-xl font-semibold text-[var(--text)]">{planLabel}</h2>
+              </div>
+              <span className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+                {planStatusLabel}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-col gap-4 border-t border-white/5 px-6 py-6">
+            {planRenewalDate && (
+              <p className="text-sm text-[var(--muted)]">Renews {planRenewalDate}</p>
+            )}
+            <div className="flex flex-wrap items-center gap-3">
+              {isPlus ? (
+                <button
+                  type="button"
+                  onClick={handlePlanAction}
+                  className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-[var(--text)] transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                >
+                  Manage plan
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handlePlanAction}
+                  className="inline-flex items-center justify-center rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                >
+                  Upgrade
+                </button>
+              )}
+              <p className="text-sm text-[var(--muted)]">
+                {isPlus ? "Premium active" : "Upgrade to unlock Creator Plus."}
+              </p>
+            </div>
+          </div>
+        </section>
+      </section>
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <ProfileOverview
           profile={profile}

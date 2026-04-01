@@ -5,6 +5,16 @@ import { z } from "zod";
 import { mapFriendRequest } from "@/lib/friends/mappers";
 import { getSupabaseServer } from "@/lib/supabase";
 
+const profileSelect = "user_id, username, name, avatar_url";
+
+function getDisplayName(profile?: {
+  name?: string | null;
+  username?: string | null;
+}) {
+  const trimmed = profile?.name?.trim();
+  return trimmed ? trimmed : profile?.username;
+}
+
 const RespondSchema = z.object({
   id: z.string().min(1),
   status: z.enum(["accepted", "declined"]),
@@ -120,14 +130,53 @@ export async function POST(request: Request) {
     );
   }
 
+  const { data: profileRows, error: profileError } = await supabase
+    .from("profiles")
+    .select(profileSelect)
+    .in("user_id", [updated.requester_id, updated.target_id]);
+
+  if (profileError) {
+    console.error("Failed to load canonical profiles", profileError);
+    return NextResponse.json(
+      { error: "Unable to respond to request." },
+      { status: 500 }
+    );
+  }
+
+  const requesterProfile = (profileRows ?? []).find(
+    (profile) => profile.user_id === updated.requester_id
+  );
+  const targetProfile = (profileRows ?? []).find(
+    (profile) => profile.user_id === updated.target_id
+  );
+
+  if (!requesterProfile?.username?.trim() || !targetProfile?.username?.trim()) {
+    console.error("Missing canonical profile data", {
+      requesterProfile,
+      targetProfile,
+    });
+    return NextResponse.json(
+      { error: "Unable to respond to request." },
+      { status: 500 }
+    );
+  }
+
+  const canonicalRequesterUsername = requesterProfile.username.trim();
+  const canonicalTargetUsername = targetProfile.username.trim();
+  const requesterDisplayName =
+    getDisplayName(requesterProfile) ?? canonicalRequesterUsername;
+  const targetDisplayName =
+    getDisplayName(targetProfile) ?? canonicalTargetUsername;
+  const requesterAvatarUrl = requesterProfile.avatar_url ?? null;
+  const targetAvatarUrl = targetProfile.avatar_url ?? null;
+
   const connectionSeeds = [
     {
       user_id: updated.requester_id,
       friend_user_id: updated.target_id,
-      friend_username: updated.target_username,
-      friend_display_name:
-        updated.target_display_name ?? updated.target_username,
-      friend_avatar_url: updated.target_avatar_url,
+      friend_username: canonicalTargetUsername,
+      friend_display_name: targetDisplayName,
+      friend_avatar_url: targetAvatarUrl,
       friend_profile_url: null,
       has_ring: false,
       is_online: false,
@@ -135,10 +184,9 @@ export async function POST(request: Request) {
     {
       user_id: updated.target_id,
       friend_user_id: updated.requester_id,
-      friend_username: updated.requester_username,
-      friend_display_name:
-        updated.requester_display_name ?? updated.requester_username,
-      friend_avatar_url: updated.requester_avatar_url,
+      friend_username: canonicalRequesterUsername,
+      friend_display_name: requesterDisplayName,
+      friend_avatar_url: requesterAvatarUrl,
       friend_profile_url: null,
       has_ring: false,
       is_online: false,

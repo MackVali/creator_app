@@ -25,6 +25,8 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
+  type MouseEvent,
 } from "react";
 
 import { Profile } from "@/lib/types";
@@ -152,6 +154,9 @@ interface HeroHeaderProps {
   };
   onShare?: () => void;
   onBack?: () => void;
+  isOwner?: boolean;
+  onAvatarChange?: (file: File) => Promise<void> | void;
+  isAvatarUploading?: boolean;
 }
 
 export default function HeroHeader({
@@ -160,8 +165,12 @@ export default function HeroHeader({
   stats,
   onShare,
   onBack,
+  isOwner = false,
+  onAvatarChange,
+  isAvatarUploading = false,
 }: HeroHeaderProps) {
   const heroRef = useRef<HTMLElement | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
   const [shouldLoadMedia, setShouldLoadMedia] = useState(false);
   const [mediaFailed, setMediaFailed] = useState(false);
@@ -226,6 +235,10 @@ export default function HeroHeader({
   const avatarBorderClass = isHaloFrame
     ? "border border-white/25 bg-black/80"
     : "border border-white/15 bg-black";
+  const avatarWrapperClasses = `relative aspect-square overflow-hidden ${avatarShapeClass} ${avatarBorderClass} shadow-[0_40px_90px_rgba(2,6,23,0.65)]`;
+  const avatarOverlayVisibilityClass = isAvatarUploading
+    ? "opacity-100"
+    : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100";
 
   const joinedDate = profile.created_at
     ? new Intl.DateTimeFormat(undefined, {
@@ -237,7 +250,7 @@ export default function HeroHeader({
   const linkCount = stats?.linkCount ?? 0;
   const socialCount = stats?.socialCount ?? 0;
 
-  const heroMediaUrl = profile.hero_media_url ?? profile.banner_url ?? null;
+  const heroMediaUrl = profile.avatar_url ?? null;
   const heroMediaType = detectMediaType(heroMediaUrl, profile.hero_media_type);
   const normalizedBackgroundType = useMemo(() => {
     if (profile.hero_background_type === "gradient") return "gradient" as const;
@@ -363,6 +376,29 @@ export default function HeroHeader({
     };
   }, [parallaxDepth.max, parallaxDepth.min, shouldAnimateParallax]);
 
+  const handleAvatarClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      if (isAvatarUploading) return;
+      if (!onAvatarChange) return;
+      avatarInputRef.current?.click();
+    },
+    [isAvatarUploading, onAvatarChange],
+  );
+
+  const handleAvatarInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file || !onAvatarChange) {
+        event.target.value = "";
+        return;
+      }
+      onAvatarChange(file);
+      event.target.value = "";
+    },
+    [onAvatarChange],
+  );
+
   const handleMediaError = useCallback(() => {
     setMediaFailed(true);
   }, []);
@@ -376,13 +412,12 @@ export default function HeroHeader({
       ref={(node) => {
         heroRef.current = node;
       }}
-      className="relative mx-auto w-full max-w-6xl px-4"
+      className="relative min-h-screen w-full overflow-hidden"
     >
       <div className="absolute inset-x-0 -top-36 -z-10 flex justify-center">
         <div className="h-72 w-72 rounded-full bg-gradient-to-br from-neutral-500/35 via-neutral-900/20 to-transparent blur-[160px]" />
       </div>
 
-      <article className="relative overflow-hidden rounded-[30px] border border-white/12 bg-black/70 shadow-[0_70px_140px_-45px_rgba(2,6,23,0.9)] backdrop-blur-xl sm:rounded-[38px] md:rounded-[46px]">
         <div className="absolute inset-0" aria-hidden="true">
           <div
             className="absolute inset-0"
@@ -434,12 +469,12 @@ export default function HeroHeader({
               </div>
             ) : null}
 
-            <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/20 to-black/65" />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/80" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.12),_transparent_58%)]" />
           </div>
         </div>
 
-        <div className="relative flex flex-col gap-10 px-5 pb-10 pt-24 sm:gap-12 sm:px-8 sm:pb-12 sm:pt-28 md:px-12 md:pt-32">
+        <div className="relative z-10 mx-auto w-full max-w-6xl flex flex-col gap-10 px-5 pb-10 pt-24 sm:gap-12 sm:px-8 sm:pb-12 sm:pt-28 md:px-12 md:pt-32">
           <header className="flex flex-col gap-3 text-white/80 sm:flex-row sm:items-center sm:justify-between">
             <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.35em] sm:gap-3 sm:px-4 sm:text-xs">
               <Sparkles className="h-3.5 w-3.5 text-white/50 sm:h-4 sm:w-4" aria-hidden="true" />
@@ -479,7 +514,7 @@ export default function HeroHeader({
                   aria-hidden="true"
                 />
 
-                <div className="relative flex flex-col items-center gap-6 overflow-hidden rounded-[30px] border border-white/12 bg-black/65 px-6 py-8 text-center text-white shadow-[0_45px_120px_-45px_rgba(2,6,23,0.85)] backdrop-blur-2xl sm:rounded-[36px] sm:px-8 sm:py-9 lg:flex-row lg:items-start lg:gap-10 lg:px-10 lg:py-10 lg:text-left">
+                <div className="relative flex flex-col items-center gap-6 px-6 py-8 text-center text-white sm:px-8 sm:py-9 lg:flex-row lg:items-start lg:gap-10 lg:px-0 lg:text-left">
                   <div className="relative mx-auto w-32 sm:w-36 lg:mx-0">
                     {isHaloFrame ? (
                       <div
@@ -488,26 +523,81 @@ export default function HeroHeader({
                       />
                     ) : null}
 
-                    <div
-                      className={`relative aspect-square overflow-hidden ${avatarShapeClass} ${avatarBorderClass} shadow-[0_40px_90px_rgba(2,6,23,0.65)]`}
-                    >
-                      {profile.avatar_url ? (
-                        <Image
-                          src={profile.avatar_url}
-                          alt={`${displayName}'s avatar`}
-                          fill
-                          sizes="(min-width: 1024px) 144px, (min-width: 640px) 160px, 144px"
-                          unoptimized
-                          className="object-cover"
+                    {isOwner ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleAvatarClick}
+                          disabled={isAvatarUploading}
+                          aria-label="Change profile photo"
+                          aria-busy={isAvatarUploading}
+                          className={`${avatarWrapperClasses} group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-70`}
+                        >
+                          {profile.avatar_url ? (
+                            <Image
+                              src={profile.avatar_url}
+                              alt={`${displayName}'s avatar`}
+                              fill
+                              sizes="(min-width: 1024px) 144px, (min-width: 640px) 160px, 144px"
+                              unoptimized
+                              className="object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-4xl font-semibold text-white">
+                              <span aria-hidden="true">{initials}</span>
+                              <span className="sr-only">{`${displayName}'s initials`}</span>
+                            </div>
+                          )}
+                          <div
+                            className={`pointer-events-none absolute inset-0 ${avatarShapeClass} ring-1 ring-white/12 z-10`}
+                            aria-hidden="true"
+                          />
+                          <span
+                            aria-hidden="true"
+                            className={`pointer-events-none absolute inset-0 ${avatarShapeClass} z-20 flex items-center justify-center bg-black/50 text-[0.55rem] font-semibold uppercase tracking-[0.35em] text-white transition-opacity duration-200 ${avatarOverlayVisibilityClass}`}
+                          >
+                            {isAvatarUploading ? (
+                              <span>Uploading...</span>
+                            ) : (
+                              <span className="flex items-center gap-2">
+                                <Sparkles className="h-3 w-3" aria-hidden="true" />
+                                <span>Edit</span>
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                        <input
+                          ref={avatarInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          aria-hidden="true"
+                          onChange={handleAvatarInputChange}
                         />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-4xl font-semibold text-white">
-                          <span aria-hidden="true">{initials}</span>
-                          <span className="sr-only">{`${displayName}'s initials`}</span>
-                        </div>
-                      )}
-                      <div className={`pointer-events-none absolute inset-0 ${avatarShapeClass} ring-1 ring-white/12`} aria-hidden="true" />
-                    </div>
+                      </>
+                    ) : (
+                      <div className={avatarWrapperClasses}>
+                        {profile.avatar_url ? (
+                          <Image
+                            src={profile.avatar_url}
+                            alt={`${displayName}'s avatar`}
+                            fill
+                            sizes="(min-width: 1024px) 144px, (min-width: 640px) 160px, 144px"
+                            unoptimized
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-4xl font-semibold text-white">
+                            <span aria-hidden="true">{initials}</span>
+                            <span className="sr-only">{`${displayName}'s initials`}</span>
+                          </div>
+                        )}
+                        <div
+                          className={`pointer-events-none absolute inset-0 ${avatarShapeClass} ring-1 ring-white/12`}
+                          aria-hidden="true"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex-1 text-center lg:text-left">
@@ -695,7 +785,6 @@ export default function HeroHeader({
             </aside>
           </div>
         </div>
-      </article>
-    </section>
+      </section>
   );
 }

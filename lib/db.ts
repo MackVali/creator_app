@@ -291,10 +291,29 @@ export async function updateProfile(
       return { success: false, error: "Supabase client not initialized" };
     }
 
-    // Prepare update data
+    const rawUsername = profileData.username;
+    const trimmedIncomingUsername =
+      typeof rawUsername === "string" ? rawUsername.trim() : "";
+    const normalizedIncomingUsername =
+      trimmedIncomingUsername.length > 0 ? trimmedIncomingUsername : undefined;
+
+    const { data: existingProfile, error: fetchError } = await supabase
+      .from("profiles")
+      .select("id, username")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (fetchError && fetchError.code !== "PGRST116") {
+      console.error("❌ Failed to determine if profile exists:", fetchError);
+      return { success: false, error: fetchError.message };
+    }
+
+    const fallbackUsername = `user_${userId.slice(0, 8)}`;
+    const guaranteedUsername =
+      normalizedIncomingUsername ?? existingProfile?.username ?? fallbackUsername;
     const updateData: Partial<Profile> = {
       name: profileData.name,
-      username: profileData.username,
+      username: guaranteedUsername,
       dob: profileData.dob || null,
       city: profileData.city || null,
       bio: profileData.bio || null,
@@ -318,18 +337,6 @@ export async function updateProfile(
     if (bannerUrl) {
       updateData.banner_url = bannerUrl;
     }
-
-    const { data: existingProfile, error: fetchError } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (fetchError && fetchError.code !== "PGRST116") {
-      console.error("❌ Failed to determine if profile exists:", fetchError);
-      return { success: false, error: fetchError.message };
-    }
-
     const timestamp = new Date().toISOString();
     const mutation = existingProfile
       ? supabase

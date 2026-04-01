@@ -45,6 +45,8 @@ export type DiscoveryProfile = {
   mutualFriends: number;
   highlight: string;
   role: string;
+  bio?: string | null;
+  profileUrl?: string | null;
 };
 
 export type ContactImportStatus = {
