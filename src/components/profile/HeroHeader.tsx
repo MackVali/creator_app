@@ -474,14 +474,9 @@ export default function HeroHeader({
           </div>
         </div>
 
-        <div className="relative z-10 mx-auto w-full max-w-6xl flex flex-col gap-10 px-5 pb-10 pt-24 sm:gap-12 sm:px-8 sm:pb-12 sm:pt-28 md:px-12 md:pt-32">
-          <header className="flex flex-col gap-3 text-white/80 sm:flex-row sm:items-center sm:justify-between">
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.35em] sm:gap-3 sm:px-4 sm:text-xs">
-              <Sparkles className="h-3.5 w-3.5 text-white/50 sm:h-4 sm:w-4" aria-hidden="true" />
-              <span>Creator Spotlight</span>
-            </div>
-
-            <div className="flex items-center gap-2 sm:gap-3">
+        <div className="relative z-10 mx-auto w-full max-w-6xl flex flex-col gap-8 px-5 pb-10 pt-12 sm:gap-10 sm:px-8 sm:pb-12 sm:pt-14 md:px-12 md:pt-16">
+          <header className="flex items-center justify-end text-white/80">
+            <div className="flex items-center gap-2">
               {onBack ? (
                 <button
                   type="button"
@@ -492,7 +487,6 @@ export default function HeroHeader({
                   <span className="sr-only">Back</span>
                 </button>
               ) : null}
-
               {onShare ? (
                 <button
                   type="button"
