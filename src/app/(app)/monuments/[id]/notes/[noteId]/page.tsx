@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
   createMonumentNote,
@@ -12,25 +11,50 @@ import {
 } from "@/lib/monumentNotesStorage";
 import type { MonumentNote } from "@/lib/types/monument-note";
 
+function splitNoteText(text: string) {
+  const normalized = text.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  const firstLineIndex = lines.findIndex((line) => line.trim().length > 0);
+
+  if (firstLineIndex === -1) {
+    return { title: "", content: "" };
+  }
+
+  const title = lines[firstLineIndex].trim();
+  const content = lines.slice(firstLineIndex + 1).join("\n").trim();
+  return { title, content };
+}
+
+function combineNoteText(note: Pick<MonumentNote, "title" | "content"> | null) {
+  if (!note) return "";
+  const title = note.title?.trim() ?? "";
+  const content = note.content?.trim() ?? "";
+
+  if (!title && !content) return "";
+  if (!content) return title;
+  if (!title) return content;
+  return `${title}\n\n${content}`;
+}
+
 export default function MonumentNotePage() {
   const params = useParams();
   const router = useRouter();
   const monumentId = params.id as string;
   const noteId = params.noteId as string;
 
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+  const [noteText, setNoteText] = useState("");
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(noteId !== "new");
   const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedText, setLastSavedText] = useState("");
 
   useEffect(() => {
     let isMounted = true;
 
     if (noteId === "new") {
       setCurrentNoteId(null);
-      setTitle("");
-      setContent("");
+      setNoteText("");
+      setLastSavedText("");
       setIsLoading(false);
       return () => {
         isMounted = false;
@@ -45,20 +69,21 @@ export default function MonumentNotePage() {
         if (!isMounted) return;
 
         if (note) {
+          const combined = combineNoteText(note);
           setCurrentNoteId(note.id);
-          setTitle(note.title ?? "");
-          setContent(note.content ?? "");
+          setNoteText(combined);
+          setLastSavedText(combined);
         } else {
           setCurrentNoteId(null);
-          setTitle("");
-          setContent("");
+          setNoteText("");
+          setLastSavedText("");
         }
       } catch (error) {
         console.error("Failed to load monument note", { error, monumentId, noteId });
         if (!isMounted) return;
         setCurrentNoteId(null);
-        setTitle("");
-        setContent("");
+        setNoteText("");
+        setLastSavedText("");
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -71,82 +96,81 @@ export default function MonumentNotePage() {
     };
   }, [monumentId, noteId]);
 
-  const canSave = title.trim().length > 0 || content.trim().length > 0;
+  useEffect(() => {
+    if (isLoading || isSaving) return;
 
-  const onSave = async () => {
-    if (!canSave || isSaving) return;
-
-    setIsSaving(true);
-
-    try {
-      let saved: MonumentNote | null = null;
-
-      if (currentNoteId) {
-        saved = await updateMonumentNote(monumentId, currentNoteId, {
-          title,
-          content,
-        });
-      } else {
-        saved = await createMonumentNote(monumentId, {
-          title,
-          content,
-        });
-      }
-
-      if (!saved) return;
-
-      setCurrentNoteId(saved.id);
-      router.push(`/monuments/${monumentId}`);
-    } catch (error) {
-      console.error("Failed to save monument note", { error, monumentId, noteId });
-    } finally {
-      setIsSaving(false);
+    const trimmed = noteText.trim();
+    if (!trimmed || noteText === lastSavedText) {
+      return;
     }
-  };
 
-  const fieldClass =
-    "bg-transparent text-white placeholder:text-white/60 border border-white/20 rounded-[16px] px-4 py-3 text-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50";
+    const timer = setTimeout(async () => {
+      setIsSaving(true);
+      try {
+        const parsed = splitNoteText(noteText);
+        let saved: MonumentNote | null = null;
+
+        if (currentNoteId) {
+          saved = await updateMonumentNote(monumentId, currentNoteId, parsed);
+        } else {
+          saved = await createMonumentNote(monumentId, parsed);
+        }
+
+        if (!saved) return;
+
+        const combined = combineNoteText(saved);
+        setCurrentNoteId(saved.id);
+        setLastSavedText(combined);
+
+        if (noteId === "new") {
+          router.replace(`/monuments/${monumentId}/notes/${saved.id}`);
+        }
+      } catch (error) {
+        console.error("Failed to autosave monument note", { error, monumentId, noteId });
+      } finally {
+        setIsSaving(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [currentNoteId, isLoading, isSaving, lastSavedText, monumentId, noteId, noteText, router]);
+
+  const heading = useMemo(() => {
+    const { title } = splitNoteText(noteText);
+    return title || "New note";
+  }, [noteText]);
 
   return (
-    <main className="min-h-screen bg-[#010101] text-white px-4 py-10">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <header className="space-y-1">
-          <h1 className="text-3xl font-semibold tracking-tight text-white">
-            {title.trim() || "Untitled note"}
-          </h1>
-        </header>
+    <main className="min-h-screen bg-[#020202] px-4 py-6 text-white">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-9 rounded-full px-3 text-sm text-white/80 hover:bg-white/10"
+            onClick={() => router.push(`/monuments/${monumentId}`)}
+          >
+            <ChevronLeft className="mr-1 h-4 w-4" />
+            Back
+          </Button>
+          <p className="text-xs font-medium text-white/60">{isSaving ? "Saving…" : "Autosaved"}</p>
+        </div>
 
-        <section className="space-y-5">
+        <section className="rounded-[20px] bg-[#0a0a0a] p-4 shadow-[0_12px_30px_-20px_rgba(0,0,0,0.9)] border border-white/10">
           {isLoading ? (
-            <p className="text-sm text-white/70">Loading note…</p>
+            <p className="text-sm text-white/60">Loading note…</p>
           ) : (
             <>
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Title your insight"
-                disabled={isLoading}
-                className={fieldClass + " text-2xl font-semibold tracking-tight"}
-              />
-              <Textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="Document what you observed, why it matters, and what comes next..."
-                className={`${fieldClass} min-h-[440px] tracking-tight leading-6 text-base`}
-                disabled={isLoading}
+              <h1 className="mb-2 text-lg font-semibold text-white">{heading}</h1>
+              <textarea
+                value={noteText}
+                onChange={(event) => setNoteText(event.target.value)}
+                placeholder="Title\nStart typing your note…"
+                className="min-h-[70vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/35"
+                aria-label="Note editor"
               />
             </>
           )}
-          <div className="flex justify-end pt-4">
-            <Button
-              onClick={onSave}
-              disabled={!canSave || isSaving || isLoading}
-              aria-busy={isSaving}
-              className="h-12 rounded-[18px] border border-white/20 bg-white/10 px-6 text-sm font-semibold uppercase tracking-[0.3em] text-white transition hover:border-white/40 hover:bg-white/20"
-            >
-              {isSaving ? "Saving…" : currentNoteId ? "Update note" : "Save note"}
-            </Button>
-          </div>
         </section>
       </div>
     </main>
