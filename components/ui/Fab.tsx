@@ -2807,6 +2807,7 @@ export function Fab({
   >(null);
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [viewportWidth, setViewportWidth] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
   const [isTextInputFocused, setIsTextInputFocused] = useState(false);
   const isKeyboardVisible = useMemo(() => {
@@ -2820,6 +2821,8 @@ export function Fab({
   }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
   const shouldHideOverhangButtons =
     expanded && (isKeyboardVisible || isTextInputFocused);
+  const shouldInlineOverhangButtons =
+    expanded && (viewportWidth ?? 1024) < 768;
 
   useEffect(() => {
     if (!expanded) return;
@@ -2833,6 +2836,9 @@ export function Fab({
       setViewportHeight(
         (prev) => prev ?? window.visualViewport?.height ?? window.innerHeight,
       );
+      setViewportWidth(
+        (prev) => prev ?? window.visualViewport?.width ?? window.innerWidth,
+      );
       const safeBottom =
         Number.parseFloat(
           getComputedStyle(document.documentElement)
@@ -2844,12 +2850,14 @@ export function Fab({
     const handleResize = () => {
       if (typeof window === "undefined") return;
       const nextHeight = window.innerHeight;
+      const nextWidth = window.innerWidth;
       setStableViewportHeight((prev) => {
         if (prev === null) return nextHeight;
         // Ignore shrinkage (likely keyboard); allow growth (rotation/fullscreen).
         if (nextHeight > prev * 0.98) return nextHeight;
         return prev;
       });
+      setViewportWidth(nextWidth);
     };
     measureOnce();
     window.addEventListener("resize", handleResize);
@@ -2874,8 +2882,12 @@ export function Fab({
         return;
       }
       const viewportH = viewport.height ?? window.innerHeight;
+      const viewportW = viewport.width ?? window.innerWidth;
       if (viewportH) {
         setViewportHeight(viewportH);
+      }
+      if (viewportW) {
+        setViewportWidth(viewportW);
       }
       const heightLoss = Math.max(0, window.innerHeight - viewport.height);
       const offsetTop = viewport.offsetTop ?? 0;
@@ -7122,8 +7134,48 @@ export function Fab({
                 </motion.button>
               )}
             </div>
-            {expanded && !shouldHideOverhangButtons
-              ? createPortal(
+            {expanded && !shouldHideOverhangButtons ? (
+              shouldInlineOverhangButtons ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
+                  className="pointer-events-auto mt-3 flex items-center justify-end gap-3 border-t border-white/10 pt-3"
+                >
+                  <Button
+                    type="button"
+                    aria-label="Discard"
+                    variant="cancelSquare"
+                    size="iconSquare"
+                    className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation"
+                    {...overhangCancelTapHandlers}
+                  >
+                    <X
+                      className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+                      aria-hidden="true"
+                    />
+                  </Button>
+                  <Button
+                    type="button"
+                    aria-label="Save"
+                    variant="confirmSquare"
+                    size="iconSquare"
+                    disabled={isSaveDisabled}
+                    className={cn(
+                      "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation bg-white/10 text-white transition hover:bg-white/20",
+                      isSaveDisabled ? "opacity-50" : "",
+                    )}
+                    {...overhangSaveTapHandlers}
+                  >
+                    <Check
+                      className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+                      aria-hidden="true"
+                    />
+                  </Button>
+                </motion.div>
+              ) : (
+                createPortal(
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9, y: 6 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -7184,7 +7236,8 @@ export function Fab({
                   </motion.div>,
                   document.body,
                 )
-              : null}
+              )
+            ) : null}
           </>
         )}
       </AnimatePresence>
