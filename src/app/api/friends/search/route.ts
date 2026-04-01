@@ -22,7 +22,8 @@ function escapeForILike(value: string) {
   return value.replace(/[\\%_]/g, "\\$&");
 }
 
-function buildAvatarFromSeed(_seedSource: string) {
+function buildAvatarFromSeed(seedSource: string) {
+  void seedSource;
   return DEFAULT_AVATAR_URL;
 }
 
@@ -95,13 +96,11 @@ export async function GET(request: Request) {
   }
 
   const admin = createAdminClient();
-  const profileClient = admin;
+  const profileClient = admin ?? supabase;
 
-  if (!profileClient) {
-    console.error("Admin client missing or misconfigured");
-    return NextResponse.json(
-      { error: "Admin client not configured" },
-      { status: 500 }
+  if (!admin && process.env.NODE_ENV !== "production") {
+    console.warn(
+      "[friends/search] Admin client not configured; using standard Supabase client fallback."
     );
   }
 
@@ -227,10 +226,10 @@ export async function GET(request: Request) {
     if (aggregated.length >= maxDiscoveryResults) {
       break;
     }
+    const rowWithOptionalName = row as typeof row & { name?: string | null };
     const normalizedRow = {
       ...row,
-      display_name:
-        (row as any).name ?? (row as any).display_name ?? null,
+      display_name: rowWithOptionalName.name ?? row.display_name ?? null,
     };
     const profile = mapDiscoveryProfile(normalizedRow);
     const normalized = profile.username.toLowerCase();

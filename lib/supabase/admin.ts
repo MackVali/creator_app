@@ -3,14 +3,27 @@ import type { SupabaseClientOptions } from "@supabase/supabase-js";
 import type { Database } from "../../types/supabase";
 import type { SupabaseServerOptions } from "../supabase";
 
+function resolveAdminCredentials() {
+  const url =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ??
+    process.env.SUPABASE_URL ??
+    process.env.SUPABASE_PROJECT_URL ??
+    null;
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.SUPABASE_SERVICE_KEY ??
+    null;
+
+  return { url, serviceKey };
+}
+
 export function createAdminClient(options?: SupabaseServerOptions) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const { url, serviceKey } = resolveAdminCredentials();
 
   if (!url || !serviceKey) {
     if (process.env.NODE_ENV !== "production") {
       console.warn(
-        "Supabase admin client unavailable: missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
+        "[supabase/admin] Admin client unavailable. Set SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL)."
       );
     }
     return null;
