@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
@@ -78,6 +79,23 @@ export default function ProfileEditPage() {
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [isAvatarEditorOpen, setIsAvatarEditorOpen] = useState(false);
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [pendingAvatarSourceUrl, setPendingAvatarSourceUrl] = useState<string | null>(null);
+  const [editorZoom, setEditorZoom] = useState(1);
+  const [editorOffset, setEditorOffset] = useState({ x: 0, y: 0 });
+  const [editorImageSize, setEditorImageSize] = useState({ width: 0, height: 0 });
+  const [editorFrameSize, setEditorFrameSize] = useState({ width: 0, height: 0 });
+  const [editorFrameAspectRatio, setEditorFrameAspectRatio] = useState(3 / 2);
+  const avatarEditorFrameRef = useRef<HTMLDivElement | null>(null);
+  const heroPhotoSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const gestureStateRef = useRef<{
+    mode: "pan" | "pinch";
+    startDistance: number;
+    startMidpoint: { x: number; y: number };
+    startZoom: number;
+    startOffset: { x: number; y: number };
+  } | null>(null);
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
   const [inlineSelectedPlatform, setInlineSelectedPlatform] = useState<SupportedPlatform | null>(
@@ -302,16 +320,209 @@ export default function ProfileEditPage() {
     return Object.keys(errors).length === 0;
   };
 
+  const MIN_EDITOR_ZOOM = 0.2;
+  const MAX_EDITOR_ZOOM = 4;
+
+  const getTouchDistance = (a: React.Touch, b: React.Touch) => {
+    const dx = b.clientX - a.clientX;
+    const dy = b.clientY - a.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const getTouchMidpoint = (a: React.Touch, b: React.Touch) => ({
+    x: (a.clientX + b.clientX) / 2,
+    y: (a.clientY + b.clientY) / 2,
+  });
+
+  const clampEditorOffset = useCallback(
+    (nextOffset: { x: number; y: number }, zoomLevel: number) => {
+      if (
+        !editorImageSize.width ||
+        !editorImageSize.height ||
+        !editorFrameSize.width ||
+        !editorFrameSize.height
+      ) {
+        return nextOffset;
+      }
+
+      const baseContainScale = Math.min(
+        editorFrameSize.width / editorImageSize.width,
+        editorFrameSize.height / editorImageSize.height,
+      );
+      const renderedWidth = editorImageSize.width * baseContainScale * zoomLevel;
+      const renderedHeight = editorImageSize.height * baseContainScale * zoomLevel;
+      const maxOffsetX = Math.abs(renderedWidth - editorFrameSize.width) / 2;
+      const maxOffsetY = Math.abs(renderedHeight - editorFrameSize.height) / 2;
+
+      return {
+        x: Math.min(maxOffsetX, Math.max(-maxOffsetX, nextOffset.x)),
+        y: Math.min(maxOffsetY, Math.max(-maxOffsetY, nextOffset.y)),
+      };
+    },
+    [editorFrameSize.height, editorFrameSize.width, editorImageSize.height, editorImageSize.width],
+  );
+
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setAvatarFile(file);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setAvatarPreview(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+      const heroRect = heroPhotoSurfaceRef.current?.getBoundingClientRect();
+      if (heroRect?.width && heroRect?.height) {
+        setEditorFrameAspectRatio(heroRect.width / heroRect.height);
+      }
+      if (pendingAvatarSourceUrl) {
+        URL.revokeObjectURL(pendingAvatarSourceUrl);
+      }
+      const sourceUrl = URL.createObjectURL(file);
+      setPendingAvatarFile(file);
+      setPendingAvatarSourceUrl(sourceUrl);
+      setEditorZoom(1);
+      setEditorOffset({ x: 0, y: 0 });
+      setEditorImageSize({ width: 0, height: 0 });
+      setIsAvatarEditorOpen(true);
     }
+    e.target.value = "";
+  };
+
+  const handleEditorTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length === 1) {
+      const touch = event.touches[0];
+      gestureStateRef.current = {
+        mode: "pan",
+        startDistance: 0,
+        startMidpoint: { x: touch.clientX, y: touch.clientY },
+        startZoom: editorZoom,
+        startOffset: { ...editorOffset },
+      };
+      return;
+    }
+    if (event.touches.length === 2) {
+      const [touchA, touchB] = [event.touches[0], event.touches[1]];
+      gestureStateRef.current = {
+        mode: "pinch",
+        startDistance: getTouchDistance(touchA, touchB),
+        startMidpoint: getTouchMidpoint(touchA, touchB),
+        startZoom: editorZoom,
+        startOffset: { ...editorOffset },
+      };
+    }
+  };
+
+  const handleEditorTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (!gestureStateRef.current) return;
+    event.preventDefault();
+    if (gestureStateRef.current.mode === "pan" && event.touches.length === 1) {
+      const touch = event.touches[0];
+      const deltaX = touch.clientX - gestureStateRef.current.startMidpoint.x;
+      const deltaY = touch.clientY - gestureStateRef.current.startMidpoint.y;
+      const nextOffset = clampEditorOffset(
+        {
+          x: gestureStateRef.current.startOffset.x + deltaX,
+          y: gestureStateRef.current.startOffset.y + deltaY,
+        },
+        editorZoom,
+      );
+      setEditorOffset(nextOffset);
+      return;
+    }
+
+    if (event.touches.length === 2) {
+      const [touchA, touchB] = [event.touches[0], event.touches[1]];
+      const nextDistance = getTouchDistance(touchA, touchB);
+      const nextMidpoint = getTouchMidpoint(touchA, touchB);
+      const baselineDistance = gestureStateRef.current.startDistance || nextDistance;
+      const zoomRatio = nextDistance / baselineDistance;
+      const nextZoom = Math.min(
+        MAX_EDITOR_ZOOM,
+        Math.max(MIN_EDITOR_ZOOM, gestureStateRef.current.startZoom * zoomRatio),
+      );
+      const deltaX = nextMidpoint.x - gestureStateRef.current.startMidpoint.x;
+      const deltaY = nextMidpoint.y - gestureStateRef.current.startMidpoint.y;
+      const nextOffset = clampEditorOffset(
+        {
+          x: gestureStateRef.current.startOffset.x + deltaX,
+          y: gestureStateRef.current.startOffset.y + deltaY,
+        },
+        nextZoom,
+      );
+
+      setEditorZoom(nextZoom);
+      setEditorOffset(nextOffset);
+    }
+  };
+
+  const handleEditorTouchEnd = () => {
+    if (gestureStateRef.current && gestureStateRef.current.startDistance) {
+      gestureStateRef.current = null;
+    }
+  };
+
+  const handleAvatarEditorCancel = () => {
+    setIsAvatarEditorOpen(false);
+    if (pendingAvatarSourceUrl) {
+      URL.revokeObjectURL(pendingAvatarSourceUrl);
+    }
+    setPendingAvatarFile(null);
+    setPendingAvatarSourceUrl(null);
+    setEditorZoom(1);
+    setEditorOffset({ x: 0, y: 0 });
+    setEditorImageSize({ width: 0, height: 0 });
+    setEditorFrameSize({ width: 0, height: 0 });
+    gestureStateRef.current = null;
+  };
+
+  const handleAvatarEditorSave = async () => {
+    if (!pendingAvatarFile || !pendingAvatarSourceUrl || !avatarEditorFrameRef.current || !editorImageSize.width) {
+      return;
+    }
+
+    const frameRect = avatarEditorFrameRef.current.getBoundingClientRect();
+    const frameWidth = frameRect.width;
+    const frameHeight = frameRect.height;
+    if (!frameWidth || !frameHeight) return;
+
+    const outputWidth = 1200;
+    const outputHeight = Math.round((frameHeight / frameWidth) * outputWidth);
+    const canvas = document.createElement("canvas");
+    canvas.width = outputWidth;
+    canvas.height = outputHeight;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const image = new Image();
+    image.src = pendingAvatarSourceUrl;
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Failed to load selected image"));
+    });
+
+    const clampedOffset = clampEditorOffset(editorOffset, editorZoom);
+    const baseContainScale = Math.min(frameWidth / editorImageSize.width, frameHeight / editorImageSize.height);
+    const renderedScale = baseContainScale * editorZoom;
+    const renderedWidth = editorImageSize.width * renderedScale;
+    const renderedHeight = editorImageSize.height * renderedScale;
+    const drawX = (frameWidth - renderedWidth) / 2 + clampedOffset.x;
+    const drawY = (frameHeight - renderedHeight) / 2 + clampedOffset.y;
+    const renderToCanvasScale = outputWidth / frameWidth;
+
+    ctx.drawImage(
+      image,
+      drawX * renderToCanvasScale,
+      drawY * renderToCanvasScale,
+      renderedWidth * renderToCanvasScale,
+      renderedHeight * renderToCanvasScale,
+    );
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((result) => resolve(result), "image/jpeg", 0.92);
+    });
+    if (!blob) return;
+
+    const croppedAvatarFile = new File([blob], `avatar-${Date.now()}.jpg`, { type: "image/jpeg" });
+    const croppedAvatarDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    setAvatarFile(croppedAvatarFile);
+    setAvatarPreview(croppedAvatarDataUrl);
+    handleAvatarEditorCancel();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -403,6 +614,34 @@ export default function ProfileEditPage() {
     }
   };
 
+  useEffect(() => {
+    if (!isAvatarEditorOpen || !avatarEditorFrameRef.current) {
+      return;
+    }
+
+    const updateFrameSize = () => {
+      if (!avatarEditorFrameRef.current) return;
+      const rect = avatarEditorFrameRef.current.getBoundingClientRect();
+      setEditorFrameSize({ width: rect.width, height: rect.height });
+    };
+
+    updateFrameSize();
+    const observer = new ResizeObserver(updateFrameSize);
+    observer.observe(avatarEditorFrameRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [isAvatarEditorOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingAvatarSourceUrl) {
+        URL.revokeObjectURL(pendingAvatarSourceUrl);
+      }
+    };
+  }, [pendingAvatarSourceUrl]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0F0F12] flex items-center justify-center">
@@ -442,13 +681,22 @@ export default function ProfileEditPage() {
     profile.tagline?.trim() ||
     "Add a short story so visitors understand what to expect from your profile.";
   const heroInitials = getHeroInitials(profile.name, profile.username);
+  const editorBaseContainScale =
+    editorImageSize.width && editorImageSize.height && editorFrameSize.width && editorFrameSize.height
+      ? Math.min(
+          editorFrameSize.width / editorImageSize.width,
+          editorFrameSize.height / editorImageSize.height,
+        )
+      : 1;
+  const editorRenderedWidth = editorImageSize.width * editorBaseContainScale;
+  const editorRenderedHeight = editorImageSize.height * editorBaseContainScale;
 
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
       <section className="w-full border-b border-white/5 bg-gradient-to-b from-slate-950 via-slate-950/80 to-black">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 pb-8 pt-5 text-center">
           <div className="relative w-full overflow-visible rounded-[32px] border border-white/10 bg-black/40 shadow-[0_25px_60px_rgba(2,6,23,0.55)]">
-            <div className={`relative ${HERO_HEIGHT_CLASSES}`}>
+            <div ref={heroPhotoSurfaceRef} className={`relative ${HERO_HEIGHT_CLASSES}`}>
               <div className="absolute inset-0">
                 {heroAvatarUrl ? (
                   <img
@@ -571,6 +819,67 @@ export default function ProfileEditPage() {
           </div>
         ) : null}
       </section>
+      <Dialog.Root
+        open={isAvatarEditorOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleAvatarEditorCancel();
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[220] bg-black/80 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[230] w-[min(95vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-white/10 bg-[#05070c] p-4 text-white shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none sm:p-5">
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Dialog.Title className="text-lg font-semibold">Adjust profile photo</Dialog.Title>
+                <Dialog.Description className="text-sm text-zinc-400">
+                  Zoom and move your image so it looks perfect in your profile hero.
+                </Dialog.Description>
+              </div>
+              <div
+                ref={avatarEditorFrameRef}
+                className="relative w-full touch-none overflow-hidden rounded-[24px] border border-white/10 bg-black/70"
+                style={{ aspectRatio: editorFrameAspectRatio.toString() }}
+                onTouchStart={handleEditorTouchStart}
+                onTouchMove={handleEditorTouchMove}
+                onTouchEnd={handleEditorTouchEnd}
+                onTouchCancel={handleEditorTouchEnd}
+              >
+                {pendingAvatarSourceUrl ? (
+                  <img
+                    src={pendingAvatarSourceUrl}
+                    alt="Selected profile"
+                    onLoad={(event) =>
+                      setEditorImageSize({
+                        width: event.currentTarget.naturalWidth,
+                        height: event.currentTarget.naturalHeight,
+                      })
+                    }
+                    className="absolute left-1/2 top-1/2 max-w-none"
+                    style={{
+                      width: `${Math.max(editorRenderedWidth, 1)}px`,
+                      height: `${Math.max(editorRenderedHeight, 1)}px`,
+                      transform: `translate(calc(-50% + ${editorOffset.x}px), calc(-50% + ${editorOffset.y}px)) scale(${editorZoom})`,
+                      transformOrigin: "center center",
+                    }}
+                  />
+                ) : null}
+                <div className="pointer-events-none absolute inset-0 border border-white/20" />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-black/60 to-black/95" />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button type="button" variant="ghost" onClick={handleAvatarEditorCancel}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={handleAvatarEditorSave}>
+                  Save photo
+                </Button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10">
         {onboarding && (
