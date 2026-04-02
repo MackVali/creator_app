@@ -37,7 +37,7 @@ const LINKED_ACCOUNT_ORDER: SupportedPlatform[] = [
 ];
 
 const HERO_HEIGHT_CLASSES =
-  "min-h-[360px] sm:min-h-[420px] lg:min-h-[480px] xl:min-h-[520px]";
+  "min-h-[308px] sm:min-h-[380px] lg:min-h-[440px] xl:min-h-[500px]";
 
 function getHeroInitials(name?: string | null, username?: string | null) {
   if (name && name.trim()) {
@@ -446,7 +446,7 @@ export default function ProfileEditPage() {
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
       <section className="w-full border-b border-white/5 bg-gradient-to-b from-slate-950 via-slate-950/80 to-black">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-10 pt-6 text-center">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 pb-8 pt-5 text-center">
           <div className="relative w-full overflow-visible rounded-[32px] border border-white/10 bg-black/40 shadow-[0_25px_60px_rgba(2,6,23,0.55)]">
             <div className={`relative ${HERO_HEIGHT_CLASSES}`}>
               <div className="absolute inset-0">
@@ -464,14 +464,14 @@ export default function ProfileEditPage() {
                 )}
               </div>
               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/60 to-black/95" />
-              <header className="pointer-events-auto absolute inset-x-4 top-4 flex items-center text-white/80">
-                <div className="flex items-center gap-3">
+              <header className="pointer-events-auto absolute inset-x-4 top-3 flex items-center text-white/80 sm:top-4">
+                <div className="flex items-center gap-2.5">
                   <Link href="/profile">
                     <Button variant="ghost" size="sm" className="p-2">
                       <ArrowLeft className="h-5 w-5" />
                     </Button>
                   </Link>
-                  <span className="text-sm font-semibold uppercase tracking-[0.35em] text-white/60">
+                  <span className="text-xs font-semibold uppercase tracking-[0.32em] text-white/60 sm:text-sm">
                     Edit profile
                   </span>
                 </div>
@@ -483,26 +483,26 @@ export default function ProfileEditPage() {
                 onChange={handleAvatarChange}
                 className="sr-only"
               />
-              <div className="absolute inset-x-6 bottom-6 z-10 flex flex-col items-center gap-3 text-center text-white">
-                <p className="text-4xl font-semibold text-white sm:text-5xl">{heroName}</p>
+              <div className="absolute inset-x-5 bottom-4 z-10 flex flex-col items-center gap-2 text-center text-white sm:inset-x-6 sm:bottom-6 sm:gap-2.5">
+                <p className="text-3xl font-semibold text-white sm:text-4xl lg:text-5xl">{heroName}</p>
                 {heroHandle ? (
-                  <span className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-black/40 px-4 py-1 text-xs font-medium uppercase tracking-[0.35em] text-white/80">
+                  <span className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-black/40 px-3.5 py-1 text-[11px] font-medium uppercase tracking-[0.3em] text-white/80 sm:px-4 sm:text-xs sm:tracking-[0.35em]">
                     {heroHandle}
                   </span>
                 ) : null}
                 {heroBio ? (
-                  <p className="max-w-3xl text-sm leading-relaxed text-white/80">
+                  <p className="max-w-2xl text-xs leading-relaxed text-white/80 sm:text-sm">
                     {heroBio}
                   </p>
                 ) : null}
                 <label
                   htmlFor="avatar"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-black/60 px-5 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-white transition hover:border-white/50"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-black/60 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.32em] text-white transition hover:border-white/50 sm:px-5 sm:py-2 sm:text-xs sm:tracking-[0.35em]"
                 >
                   <Camera className="h-3.5 w-3.5" />
                   Edit profile photo
                 </label>
-                <div className="mt-4 w-full max-w-3xl pointer-events-auto">
+                <div className="mt-2 w-full max-w-2xl pointer-events-auto sm:mt-3 sm:max-w-3xl">
                   <SocialPillsRow
                     socials={socialsData}
                     editMode
