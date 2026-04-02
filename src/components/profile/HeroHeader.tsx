@@ -252,12 +252,12 @@ export default function HeroHeader({
               )}
 
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
+              <div className="pointer-events-auto absolute left-4 top-1/2 z-20 -translate-y-1/2 sm:left-6">
+                <SocialPillsRow socials={socials || {}} layout="vertical" />
+              </div>
               <div className="absolute inset-x-0 bottom-0 z-10 flex w-full flex-col items-center gap-3 px-6 pb-6 text-center text-white pointer-events-none sm:px-8">
                 <h1 className="text-3xl font-semibold sm:text-4xl md:text-5xl">{displayName}</h1>
                 <p className="text-sm font-medium text-white/80">@{profile.username}</p>
-                <div className="w-full max-w-3xl pointer-events-auto">
-                  <SocialPillsRow socials={socials || {}} />
-                </div>
               </div>
             </div>
           </div>

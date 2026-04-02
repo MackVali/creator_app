@@ -21,12 +21,14 @@ interface SocialPillsRowProps {
   socials: Record<string, string | undefined>;
   editMode?: boolean;
   onPlatformSelect?: (platform?: SupportedPlatform) => void;
+  layout?: "horizontal" | "vertical";
 }
 
 export default function SocialPillsRow({
   socials,
   editMode = false,
   onPlatformSelect,
+  layout = "horizontal",
 }: SocialPillsRowProps) {
   // Filter out undefined URLs and sort by platform priority
   const priority = [
@@ -55,6 +57,9 @@ export default function SocialPillsRow({
   const hasSocials = availableSocials.length > 0;
 
   if (!hasSocials && !editMode) {
+    if (layout === "vertical") {
+      return null;
+    }
     return (
       <div className="w-full text-center text-sm text-white/60">
         No social links added yet
@@ -151,9 +156,14 @@ export default function SocialPillsRow({
   const circleClasses =
     "group relative inline-flex h-12 w-12 shrink-0 snap-center items-center justify-center rounded-full text-white transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-11 sm:w-11";
 
+  const rowClasses =
+    layout === "vertical"
+      ? "flex flex-col items-center gap-3"
+      : "-mx-2 flex snap-x snap-mandatory items-center gap-4 overflow-x-auto overflow-y-visible px-2 pb-2 sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 lg:justify-start";
+
   return (
     <>
-      <div className="-mx-2 flex snap-x snap-mandatory items-center gap-4 overflow-x-auto overflow-y-visible px-2 pb-2 sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 lg:justify-start">
+      <div className={rowClasses}>
         {editMode && onPlatformSelect ? (
           <div className="relative">
             <button
