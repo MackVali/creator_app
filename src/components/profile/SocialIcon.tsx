@@ -198,7 +198,7 @@ export function SocialIcon({ platform, className, iconClassName }: SocialIconPro
   return (
     <span
       className={cn(
-        "flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg transition-transform duration-200",
+        "flex h-8 w-8 items-center justify-center rounded-full text-white transition-transform duration-200",
         definition.background,
         className
       )}
@@ -208,7 +208,7 @@ export function SocialIcon({ platform, className, iconClassName }: SocialIconPro
       {definition.brandIcon ? (
         <svg
           viewBox="0 0 24 24"
-          className={cn("h-5 w-5", iconClassName)}
+          className={cn("h-4 w-4", iconClassName)}
           fill={platform.toLowerCase() === "snapchat" ? "#000" : "currentColor"}
           role="img"
           aria-label={definition.label}
@@ -216,7 +216,7 @@ export function SocialIcon({ platform, className, iconClassName }: SocialIconPro
           <path d={definition.brandIcon.path} />
         </svg>
       ) : (
-        <Icon className={cn("h-5 w-5", iconClassName)} />
+        <Icon className={cn("h-4 w-4", iconClassName)} />
       )}
     </span>
   );
