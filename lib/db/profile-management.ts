@@ -58,7 +58,6 @@ export async function createSocialLink(
       user_id: userId,
       platform: linkData.platform,
       url: linkData.url,
-      username: linkData.username ?? null,
       icon: linkData.icon,
       color: linkData.color,
       position: nextPosition,
@@ -94,9 +93,21 @@ export async function updateSocialLink(
   }
 
   try {
+    const updatePayload = {
+      url: linkData.url,
+      icon: linkData.icon,
+      color: linkData.color,
+      position: linkData.position,
+      is_active: linkData.is_active,
+    };
+
     const { data, error } = await supabase
       .from("social_links")
-      .update(linkData)
+      .update(
+        Object.fromEntries(
+          Object.entries(updatePayload).filter(([, value]) => value !== undefined),
+        ),
+      )
       .eq("id", linkId)
       .eq("user_id", userId)
       .select()
