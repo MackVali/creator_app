@@ -86,8 +86,6 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
     return data;
   }, [socialLinks]);
 
-  const activeSocialCount = socialLinks.filter((link) => !!link.url).length;
-  const activeLinkCount = contentCards.filter((card) => card.is_active !== false).length;
 
   const composedModules = useMemo(
     () => buildProfileModules({ profile, contentCards, socialLinks }),
@@ -183,7 +181,6 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
           <HeroHeader
             profile={profile}
             socials={socialsData}
-            stats={{ linkCount: activeLinkCount, socialCount: activeSocialCount }}
           />
 
           <section className="mx-auto mt-6 w-full max-w-5xl px-1 pb-12 sm:mt-10">

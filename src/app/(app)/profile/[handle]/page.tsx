@@ -444,8 +444,6 @@ export default function ProfileByHandlePage() {
     );
   }
 
-  const activeSocialCount = Object.keys(socialsData).length;
-  const activeLinkCount = contentCards.filter((card) => card.is_active).length;
   const isOwner = user?.id === profile.user_id;
   const actionSlot = (() => {
     if (isOwner) return undefined;
@@ -550,7 +548,6 @@ export default function ProfileByHandlePage() {
         <HeroHeader
           profile={profile}
           socials={socialsData}
-          stats={{ linkCount: activeLinkCount, socialCount: activeSocialCount }}
           onShare={handleShare}
           onBack={handleBack}
           isOwner={isOwner}
