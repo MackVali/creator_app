@@ -80,7 +80,8 @@ export default function ProfileEditPage() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isAvatarEditorOpen, setIsAvatarEditorOpen] = useState(false);
-  const [pendingAvatarDataUrl, setPendingAvatarDataUrl] = useState<string | null>(null);
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [pendingAvatarSourceUrl, setPendingAvatarSourceUrl] = useState<string | null>(null);
   const [editorZoom, setEditorZoom] = useState(1);
   const [editorOffset, setEditorOffset] = useState({ x: 0, y: 0 });
   const [editorImageSize, setEditorImageSize] = useState({ width: 0, height: 0 });
@@ -350,22 +351,22 @@ export default function ProfileEditPage() {
       if (heroRect?.width && heroRect?.height) {
         setEditorFrameAspectRatio(heroRect.width / heroRect.height);
       }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
-        setPendingAvatarDataUrl(dataUrl);
-        setEditorZoom(1);
-        setEditorOffset({ x: 0, y: 0 });
-        setEditorImageSize({ width: 0, height: 0 });
-        setIsAvatarEditorOpen(true);
-      };
-      reader.readAsDataURL(file);
+      if (pendingAvatarSourceUrl) {
+        URL.revokeObjectURL(pendingAvatarSourceUrl);
+      }
+      const sourceUrl = URL.createObjectURL(file);
+      setPendingAvatarFile(file);
+      setPendingAvatarSourceUrl(sourceUrl);
+      setEditorZoom(1);
+      setEditorOffset({ x: 0, y: 0 });
+      setEditorImageSize({ width: 0, height: 0 });
+      setIsAvatarEditorOpen(true);
     }
     e.target.value = "";
   };
 
   const handleEditorPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!pendingAvatarDataUrl) return;
+    if (!pendingAvatarSourceUrl) return;
     event.preventDefault();
     setIsEditorDragging(true);
     editorDragStartRef.current = { x: event.clientX, y: event.clientY };
@@ -393,7 +394,11 @@ export default function ProfileEditPage() {
 
   const handleAvatarEditorCancel = () => {
     setIsAvatarEditorOpen(false);
-    setPendingAvatarDataUrl(null);
+    if (pendingAvatarSourceUrl) {
+      URL.revokeObjectURL(pendingAvatarSourceUrl);
+    }
+    setPendingAvatarFile(null);
+    setPendingAvatarSourceUrl(null);
     setEditorZoom(1);
     setEditorOffset({ x: 0, y: 0 });
     setEditorImageSize({ width: 0, height: 0 });
@@ -402,7 +407,7 @@ export default function ProfileEditPage() {
   };
 
   const handleAvatarEditorSave = async () => {
-    if (!pendingAvatarDataUrl || !avatarEditorFrameRef.current || !editorImageSize.width) {
+    if (!pendingAvatarFile || !pendingAvatarSourceUrl || !avatarEditorFrameRef.current || !editorImageSize.width) {
       return;
     }
 
@@ -421,7 +426,7 @@ export default function ProfileEditPage() {
     if (!ctx) return;
 
     const image = new Image();
-    image.src = pendingAvatarDataUrl;
+    image.src = pendingAvatarSourceUrl;
     await new Promise<void>((resolve, reject) => {
       image.onload = () => resolve();
       image.onerror = () => reject(new Error("Failed to load selected image"));
@@ -565,6 +570,14 @@ export default function ProfileEditPage() {
     };
   }, [isAvatarEditorOpen]);
 
+  useEffect(() => {
+    return () => {
+      if (pendingAvatarSourceUrl) {
+        URL.revokeObjectURL(pendingAvatarSourceUrl);
+      }
+    };
+  }, [pendingAvatarSourceUrl]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0F0F12] flex items-center justify-center">
@@ -604,6 +617,15 @@ export default function ProfileEditPage() {
     profile.tagline?.trim() ||
     "Add a short story so visitors understand what to expect from your profile.";
   const heroInitials = getHeroInitials(profile.name, profile.username);
+  const editorBaseCoverScale =
+    editorImageSize.width && editorImageSize.height && editorFrameSize.width && editorFrameSize.height
+      ? Math.max(
+          editorFrameSize.width / editorImageSize.width,
+          editorFrameSize.height / editorImageSize.height,
+        )
+      : 1;
+  const editorRenderedWidth = editorImageSize.width * editorBaseCoverScale;
+  const editorRenderedHeight = editorImageSize.height * editorBaseCoverScale;
 
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
@@ -760,9 +782,9 @@ export default function ProfileEditPage() {
                 onPointerUp={stopEditorDragging}
                 onPointerCancel={stopEditorDragging}
               >
-                {pendingAvatarDataUrl ? (
+                {pendingAvatarSourceUrl ? (
                   <img
-                    src={pendingAvatarDataUrl}
+                    src={pendingAvatarSourceUrl}
                     alt="Selected profile"
                     onLoad={(event) =>
                       setEditorImageSize({
@@ -770,10 +792,12 @@ export default function ProfileEditPage() {
                         height: event.currentTarget.naturalHeight,
                       })
                     }
-                    className="absolute left-1/2 top-1/2 h-full w-full max-w-none object-cover"
+                    className="absolute left-1/2 top-1/2 max-w-none"
                     style={{
+                      width: `${Math.max(editorRenderedWidth, 1)}px`,
+                      height: `${Math.max(editorRenderedHeight, 1)}px`,
                       transform: `translate(calc(-50% + ${editorOffset.x}px), calc(-50% + ${editorOffset.y}px)) scale(${editorZoom})`,
-                      transformOrigin: "center",
+                      transformOrigin: "center center",
                       cursor: isEditorDragging ? "grabbing" : "grab",
                     }}
                   />
