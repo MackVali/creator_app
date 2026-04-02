@@ -63,10 +63,6 @@ function getPartnerBadgeIcon(name?: string | null) {
 interface HeroHeaderProps {
   profile: Profile;
   socials?: Record<string, string | undefined>;
-  stats?: {
-    linkCount: number;
-    socialCount: number;
-  };
   onShare?: () => void;
   onBack?: () => void;
   isOwner?: boolean;
@@ -77,7 +73,6 @@ interface HeroHeaderProps {
 export default function HeroHeader({
   profile,
   socials,
-  stats,
   onShare,
   onBack,
   isOwner = false,
@@ -150,9 +145,6 @@ export default function HeroHeader({
         year: "numeric",
       }).format(new Date(profile.created_at))
     : null;
-
-  const linkCount = stats?.linkCount ?? 0;
-  const socialCount = stats?.socialCount ?? 0;
 
   const handleAvatarClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -383,33 +375,7 @@ export default function HeroHeader({
             ) : null}
           </section>
 
-          <section className="space-y-6 rounded-[28px] border border-white/12 bg-gradient-to-br from-white/5 via-white/2 to-transparent px-6 py-8 shadow-[0_30px_60px_-25px_rgba(2,6,23,0.7)] sm:px-7 sm:py-9">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.35em] text-white/45 sm:text-xs">Snapshot</p>
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-white/50 sm:text-[0.65rem]">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/70" />
-                Live
-              </span>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 sm:gap-5">
-              <div className="rounded-3xl border border-white/10 bg-black/60 px-5 py-5 text-center">
-                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.35em] text-white/45 sm:text-xs">Featured</span>
-                <p className="mt-3 text-3xl font-semibold text-white sm:text-4xl">{linkCount}</p>
-                <p className="text-xs text-white/55">
-                  {linkCount === 1 ? "Curated link" : "Curated links"}
-                </p>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-black/60 px-5 py-5 text-center">
-                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.35em] text-white/45 sm:text-xs">Networks</span>
-                <p className="mt-3 text-3xl font-semibold text-white sm:text-4xl">{socialCount}</p>
-                <p className="text-xs text-white/55">
-                  {socialCount === 1 ? "Social channel" : "Social channels"}
-                </p>
-              </div>
-            </div>
-
+          <section className="rounded-[28px] border border-white/12 bg-gradient-to-br from-white/5 via-white/2 to-transparent px-6 py-8 shadow-[0_30px_60px_-25px_rgba(2,6,23,0.7)] sm:px-7 sm:py-9">
             <div className="rounded-3xl border border-white/10 bg-black/50 px-5 py-5 text-sm leading-relaxed text-white/85 sm:px-6">
               <p className="text-[0.925rem] leading-relaxed text-white/85 sm:text-sm">
                 {profile.bio
