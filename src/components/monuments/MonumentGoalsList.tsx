@@ -378,6 +378,7 @@ export function MonumentGoalsList({
     null
   );
   const [roadmapDrawerOpen, setRoadmapDrawerOpen] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
 
   useEffect(() => {
     setOpenGoalId(null);
@@ -823,7 +824,7 @@ export function MonumentGoalsList({
       }
     };
     load();
-  }, [monumentId, monumentEmoji, decorate]);
+  }, [monumentId, monumentEmoji, decorate, refreshVersion]);
 
   const refreshGoalStatus = useCallback(
     async (goalId: string) => {
@@ -955,6 +956,7 @@ export function MonumentGoalsList({
           userId,
           onUserResolved: setUserId,
         });
+        setRefreshVersion((current) => current + 1);
       } catch (err) {
         console.error("Error updating goal from monument detail:", err);
       }
