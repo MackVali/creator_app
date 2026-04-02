@@ -26,6 +26,7 @@ import {
   isGoalCodeColumnMissingError,
   type LimitErrorCode,
 } from "@/lib/goals/persistGoalUpdate";
+import { ensureGoalRoadmapPriorityRank } from "@/lib/goals/roadmapPriority";
 import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
@@ -288,6 +289,7 @@ async function persistGoalGlobalRanks(
 }
 
 type GoalRowWithRelations = GoalRow & {
+  priority_rank?: number | null;
   projects?: {
     id: string;
     name: string;
@@ -383,7 +385,7 @@ async function fetchGoalsByRoadmapId(
   roadmapId: string
 ): Promise<GoalRowWithRelations[]> {
   const baseSelect =
-    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date, emoji";
+    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank";
   const selectWithEnumColumns = `
     ${baseSelect},
     projects (
@@ -418,6 +420,7 @@ async function fetchGoalsByRoadmapId(
       .select(select)
       .eq("user_id", userId)
       .eq("roadmap_id", roadmapId)
+      .order("priority_rank", { ascending: true, nullsFirst: false })
       .order("priority_code", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true });
 
@@ -1035,6 +1038,12 @@ export default function GoalsPage() {
             projects: projList,
             monumentId: g.monument_id ?? null,
             roadmapId: g.roadmap_id ?? null,
+            priorityRank:
+              typeof g.priority_rank === "number" &&
+              Number.isFinite(g.priority_rank) &&
+              g.priority_rank > 0
+                ? g.priority_rank
+                : undefined,
             priorityCode: normalizedGoalPriorityCode,
             energyCode: normalizedGoalEnergyCode,
             weightBoost: g.weight_boost ?? 0,
@@ -1215,6 +1224,12 @@ export default function GoalsPage() {
                 projects: projList,
                 monumentId: g.monument_id ?? null,
                 roadmapId: g.roadmap_id ?? null,
+                priorityRank:
+                  typeof g.priority_rank === "number" &&
+                  Number.isFinite(g.priority_rank) &&
+                  g.priority_rank > 0
+                    ? g.priority_rank
+                    : undefined,
                 priorityCode: normalizedGoalPriorityCode,
                 energyCode: normalizedGoalEnergyCode,
                 weightBoost: g.weight_boost ?? 0,
@@ -1447,7 +1462,7 @@ export default function GoalsPage() {
           .from("goals")
           .insert(payload)
           .select(
-            "id, created_at, weight, weight_boost, monument_id, roadmap_id, due_date"
+            "id, created_at, weight, weight_boost, monument_id, roadmap_id, due_date, priority_rank"
           )
           .single();
       };
@@ -1473,7 +1488,7 @@ export default function GoalsPage() {
       }
 
       const newGoalId = inserted.id;
-      const saved: Goal = decorateGoal({
+      const savedBase: Goal = {
         ..._goal,
         id: newGoalId,
         createdAt: inserted.created_at ?? _goal.createdAt,
@@ -1482,7 +1497,37 @@ export default function GoalsPage() {
         dueDate: inserted.due_date ?? _goal.dueDate,
         weight: inserted.weight ?? _goal.weight,
         weightBoost: inserted.weight_boost ?? _goal.weightBoost,
-      });
+        priorityRank:
+          typeof inserted.priority_rank === "number" &&
+          Number.isFinite(inserted.priority_rank) &&
+          inserted.priority_rank > 0
+            ? inserted.priority_rank
+            : _goal.priorityRank,
+      };
+
+      if (savedBase.roadmapId) {
+        await ensureGoalRoadmapPriorityRank({
+          supabase,
+          goalId: newGoalId,
+          roadmapId: savedBase.roadmapId,
+        });
+
+        const { data: rankedGoal } = await supabase
+          .from("goals")
+          .select("priority_rank")
+          .eq("id", newGoalId)
+          .maybeSingle();
+
+        if (
+          typeof rankedGoal?.priority_rank === "number" &&
+          Number.isFinite(rankedGoal.priority_rank) &&
+          rankedGoal.priority_rank > 0
+        ) {
+          savedBase.priorityRank = rankedGoal.priority_rank;
+        }
+      }
+
+      const saved: Goal = decorateGoal(savedBase);
 
       const recalcGoalRanks = async (extraGoals: Goal[] = []) => {
         const goalsById = new Map<string, Goal>();

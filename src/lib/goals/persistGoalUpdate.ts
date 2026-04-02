@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import type { GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
+import { ensureGoalRoadmapPriorityRank } from "@/lib/goals/roadmapPriority";
 
 export const LIMIT_ERROR_CODES = [
   "GOAL_LIMIT_REACHED",
@@ -254,6 +255,23 @@ export async function persistGoalUpdate({
   userId,
   onUserResolved,
 }: PersistGoalOptions) {
+  const { data: existingGoalRow } = await supabase
+    .from("goals")
+    .select("roadmap_id, priority_rank")
+    .eq("id", goal.id)
+    .maybeSingle();
+
+  const previousRoadmapId =
+    typeof existingGoalRow?.roadmap_id === "string"
+      ? existingGoalRow.roadmap_id
+      : null;
+  const previousPriorityRank =
+    typeof existingGoalRow?.priority_rank === "number" &&
+    Number.isFinite(existingGoalRow.priority_rank) &&
+    existingGoalRow.priority_rank > 0
+      ? existingGoalRow.priority_rank
+      : null;
+
   const priorityDb = PRIORITY_TO_DB[goal.priority] ?? "LOW";
   const energyDb = energyToDbValue(goal.energy);
 
@@ -296,6 +314,24 @@ export async function persistGoalUpdate({
   if (error) {
     console.error("Error updating goal:", error);
     throw error;
+  }
+
+  const hasValidIncomingPriorityRank =
+    typeof goal.priorityRank === "number" &&
+    Number.isFinite(goal.priorityRank) &&
+    goal.priorityRank > 0;
+
+  if (
+    goal.roadmapId &&
+    (previousRoadmapId !== goal.roadmapId ||
+      !hasValidIncomingPriorityRank ||
+      !previousPriorityRank)
+  ) {
+    await ensureGoalRoadmapPriorityRank({
+      supabase,
+      goalId: goal.id,
+      roadmapId: goal.roadmapId,
+    });
   }
 
   const { error: rankError } = await supabase.rpc("recalculate_goal_global_rank");

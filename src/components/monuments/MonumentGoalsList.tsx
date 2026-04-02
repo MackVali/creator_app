@@ -384,10 +384,23 @@ export function MonumentGoalsList({
   }, [monumentId]);
 
   const decorate = useCallback((goal: Goal) => {
-    return {
-      ...goal,
-      weight: computeGoalWeight(goal),
-    };
+    try {
+      return {
+        ...goal,
+        weight: computeGoalWeight(goal),
+      };
+    } catch (error) {
+      console.error("Failed to compute monument goal weight:", {
+        goalId: goal.id,
+        roadmapId: goal.roadmapId ?? null,
+        priorityRank: goal.priorityRank ?? null,
+        error,
+      });
+      return {
+        ...goal,
+        weight: typeof goal.weight === "number" ? goal.weight : 0,
+      };
+    }
   }, []);
 
   const fetchGoalForEditing = useCallback(async (goal: Goal) => {
