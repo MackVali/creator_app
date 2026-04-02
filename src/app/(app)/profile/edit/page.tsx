@@ -90,6 +90,7 @@ export default function ProfileEditPage() {
   const avatarEditorFrameRef = useRef<HTMLDivElement | null>(null);
   const heroPhotoSurfaceRef = useRef<HTMLDivElement | null>(null);
   const gestureStateRef = useRef<{
+    mode: "pan" | "pinch";
     startDistance: number;
     startMidpoint: { x: number; y: number };
     startZoom: number;
@@ -319,7 +320,7 @@ export default function ProfileEditPage() {
     return Object.keys(errors).length === 0;
   };
 
-  const MIN_EDITOR_ZOOM = 0.7;
+  const MIN_EDITOR_ZOOM = 0.2;
   const MAX_EDITOR_ZOOM = 4;
 
   const getTouchDistance = (a: React.Touch, b: React.Touch) => {
@@ -344,14 +345,14 @@ export default function ProfileEditPage() {
         return nextOffset;
       }
 
-      const baseCoverScale = Math.max(
+      const baseContainScale = Math.min(
         editorFrameSize.width / editorImageSize.width,
         editorFrameSize.height / editorImageSize.height,
       );
-      const renderedWidth = editorImageSize.width * baseCoverScale * zoomLevel;
-      const renderedHeight = editorImageSize.height * baseCoverScale * zoomLevel;
-      const maxOffsetX = Math.max(0, (renderedWidth - editorFrameSize.width) / 2);
-      const maxOffsetY = Math.max(0, (renderedHeight - editorFrameSize.height) / 2);
+      const renderedWidth = editorImageSize.width * baseContainScale * zoomLevel;
+      const renderedHeight = editorImageSize.height * baseContainScale * zoomLevel;
+      const maxOffsetX = Math.abs(renderedWidth - editorFrameSize.width) / 2;
+      const maxOffsetY = Math.abs(renderedHeight - editorFrameSize.height) / 2;
 
       return {
         x: Math.min(maxOffsetX, Math.max(-maxOffsetX, nextOffset.x)),
@@ -383,39 +384,70 @@ export default function ProfileEditPage() {
   };
 
   const handleEditorTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
-    if (event.touches.length !== 2) return;
-    const [touchA, touchB] = [event.touches[0], event.touches[1]];
-    gestureStateRef.current = {
-      startDistance: getTouchDistance(touchA, touchB),
-      startMidpoint: getTouchMidpoint(touchA, touchB),
-      startZoom: editorZoom,
-      startOffset: { ...editorOffset },
-    };
+    if (event.touches.length === 1) {
+      const touch = event.touches[0];
+      gestureStateRef.current = {
+        mode: "pan",
+        startDistance: 0,
+        startMidpoint: { x: touch.clientX, y: touch.clientY },
+        startZoom: editorZoom,
+        startOffset: { ...editorOffset },
+      };
+      return;
+    }
+    if (event.touches.length === 2) {
+      const [touchA, touchB] = [event.touches[0], event.touches[1]];
+      gestureStateRef.current = {
+        mode: "pinch",
+        startDistance: getTouchDistance(touchA, touchB),
+        startMidpoint: getTouchMidpoint(touchA, touchB),
+        startZoom: editorZoom,
+        startOffset: { ...editorOffset },
+      };
+    }
   };
 
   const handleEditorTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
-    if (event.touches.length !== 2 || !gestureStateRef.current) return;
+    if (!gestureStateRef.current) return;
     event.preventDefault();
-    const [touchA, touchB] = [event.touches[0], event.touches[1]];
-    const nextDistance = getTouchDistance(touchA, touchB);
-    const nextMidpoint = getTouchMidpoint(touchA, touchB);
-    const zoomRatio = nextDistance / gestureStateRef.current.startDistance;
-    const nextZoom = Math.min(
-      MAX_EDITOR_ZOOM,
-      Math.max(MIN_EDITOR_ZOOM, gestureStateRef.current.startZoom * zoomRatio),
-    );
-    const deltaX = nextMidpoint.x - gestureStateRef.current.startMidpoint.x;
-    const deltaY = nextMidpoint.y - gestureStateRef.current.startMidpoint.y;
-    const nextOffset = clampEditorOffset(
-      {
-        x: gestureStateRef.current.startOffset.x + deltaX,
-        y: gestureStateRef.current.startOffset.y + deltaY,
-      },
-      nextZoom,
-    );
+    if (gestureStateRef.current.mode === "pan" && event.touches.length === 1) {
+      const touch = event.touches[0];
+      const deltaX = touch.clientX - gestureStateRef.current.startMidpoint.x;
+      const deltaY = touch.clientY - gestureStateRef.current.startMidpoint.y;
+      const nextOffset = clampEditorOffset(
+        {
+          x: gestureStateRef.current.startOffset.x + deltaX,
+          y: gestureStateRef.current.startOffset.y + deltaY,
+        },
+        editorZoom,
+      );
+      setEditorOffset(nextOffset);
+      return;
+    }
 
-    setEditorZoom(nextZoom);
-    setEditorOffset(nextOffset);
+    if (event.touches.length === 2) {
+      const [touchA, touchB] = [event.touches[0], event.touches[1]];
+      const nextDistance = getTouchDistance(touchA, touchB);
+      const nextMidpoint = getTouchMidpoint(touchA, touchB);
+      const baselineDistance = gestureStateRef.current.startDistance || nextDistance;
+      const zoomRatio = nextDistance / baselineDistance;
+      const nextZoom = Math.min(
+        MAX_EDITOR_ZOOM,
+        Math.max(MIN_EDITOR_ZOOM, gestureStateRef.current.startZoom * zoomRatio),
+      );
+      const deltaX = nextMidpoint.x - gestureStateRef.current.startMidpoint.x;
+      const deltaY = nextMidpoint.y - gestureStateRef.current.startMidpoint.y;
+      const nextOffset = clampEditorOffset(
+        {
+          x: gestureStateRef.current.startOffset.x + deltaX,
+          y: gestureStateRef.current.startOffset.y + deltaY,
+        },
+        nextZoom,
+      );
+
+      setEditorZoom(nextZoom);
+      setEditorOffset(nextOffset);
+    }
   };
 
   const handleEditorTouchEnd = () => {
@@ -465,8 +497,8 @@ export default function ProfileEditPage() {
     });
 
     const clampedOffset = clampEditorOffset(editorOffset, editorZoom);
-    const baseCoverScale = Math.max(frameWidth / editorImageSize.width, frameHeight / editorImageSize.height);
-    const renderedScale = baseCoverScale * editorZoom;
+    const baseContainScale = Math.min(frameWidth / editorImageSize.width, frameHeight / editorImageSize.height);
+    const renderedScale = baseContainScale * editorZoom;
     const renderedWidth = editorImageSize.width * renderedScale;
     const renderedHeight = editorImageSize.height * renderedScale;
     const drawX = (frameWidth - renderedWidth) / 2 + clampedOffset.x;
@@ -649,15 +681,15 @@ export default function ProfileEditPage() {
     profile.tagline?.trim() ||
     "Add a short story so visitors understand what to expect from your profile.";
   const heroInitials = getHeroInitials(profile.name, profile.username);
-  const editorBaseCoverScale =
+  const editorBaseContainScale =
     editorImageSize.width && editorImageSize.height && editorFrameSize.width && editorFrameSize.height
-      ? Math.max(
+      ? Math.min(
           editorFrameSize.width / editorImageSize.width,
           editorFrameSize.height / editorImageSize.height,
         )
       : 1;
-  const editorRenderedWidth = editorImageSize.width * editorBaseCoverScale;
-  const editorRenderedHeight = editorImageSize.height * editorBaseCoverScale;
+  const editorRenderedWidth = editorImageSize.width * editorBaseContainScale;
+  const editorRenderedHeight = editorImageSize.height * editorBaseContainScale;
 
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
