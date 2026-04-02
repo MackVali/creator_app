@@ -87,11 +87,14 @@ export default function ProfileEditPage() {
   const [editorImageSize, setEditorImageSize] = useState({ width: 0, height: 0 });
   const [editorFrameSize, setEditorFrameSize] = useState({ width: 0, height: 0 });
   const [editorFrameAspectRatio, setEditorFrameAspectRatio] = useState(3 / 2);
-  const [isEditorDragging, setIsEditorDragging] = useState(false);
   const avatarEditorFrameRef = useRef<HTMLDivElement | null>(null);
   const heroPhotoSurfaceRef = useRef<HTMLDivElement | null>(null);
-  const editorDragStartRef = useRef({ x: 0, y: 0 });
-  const editorDragOffsetStartRef = useRef({ x: 0, y: 0 });
+  const gestureStateRef = useRef<{
+    startDistance: number;
+    startMidpoint: { x: number; y: number };
+    startZoom: number;
+    startOffset: { x: number; y: number };
+  } | null>(null);
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
   const [inlineSelectedPlatform, setInlineSelectedPlatform] = useState<SupportedPlatform | null>(
@@ -316,6 +319,20 @@ export default function ProfileEditPage() {
     return Object.keys(errors).length === 0;
   };
 
+  const MIN_EDITOR_ZOOM = 0.7;
+  const MAX_EDITOR_ZOOM = 4;
+
+  const getTouchDistance = (a: React.Touch, b: React.Touch) => {
+    const dx = b.clientX - a.clientX;
+    const dy = b.clientY - a.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const getTouchMidpoint = (a: React.Touch, b: React.Touch) => ({
+    x: (a.clientX + b.clientX) / 2,
+    y: (a.clientY + b.clientY) / 2,
+  });
+
   const clampEditorOffset = useCallback(
     (nextOffset: { x: number; y: number }, zoomLevel: number) => {
       if (
@@ -365,30 +382,45 @@ export default function ProfileEditPage() {
     e.target.value = "";
   };
 
-  const handleEditorPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!pendingAvatarSourceUrl) return;
+  const handleEditorTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 2) return;
+    const [touchA, touchB] = [event.touches[0], event.touches[1]];
+    gestureStateRef.current = {
+      startDistance: getTouchDistance(touchA, touchB),
+      startMidpoint: getTouchMidpoint(touchA, touchB),
+      startZoom: editorZoom,
+      startOffset: { ...editorOffset },
+    };
+  };
+
+  const handleEditorTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 2 || !gestureStateRef.current) return;
     event.preventDefault();
-    setIsEditorDragging(true);
-    editorDragStartRef.current = { x: event.clientX, y: event.clientY };
-    editorDragOffsetStartRef.current = { ...editorOffset };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const [touchA, touchB] = [event.touches[0], event.touches[1]];
+    const nextDistance = getTouchDistance(touchA, touchB);
+    const nextMidpoint = getTouchMidpoint(touchA, touchB);
+    const zoomRatio = nextDistance / gestureStateRef.current.startDistance;
+    const nextZoom = Math.min(
+      MAX_EDITOR_ZOOM,
+      Math.max(MIN_EDITOR_ZOOM, gestureStateRef.current.startZoom * zoomRatio),
+    );
+    const deltaX = nextMidpoint.x - gestureStateRef.current.startMidpoint.x;
+    const deltaY = nextMidpoint.y - gestureStateRef.current.startMidpoint.y;
+    const nextOffset = clampEditorOffset(
+      {
+        x: gestureStateRef.current.startOffset.x + deltaX,
+        y: gestureStateRef.current.startOffset.y + deltaY,
+      },
+      nextZoom,
+    );
+
+    setEditorZoom(nextZoom);
+    setEditorOffset(nextOffset);
   };
 
-  const handleEditorPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!isEditorDragging) return;
-    const deltaX = event.clientX - editorDragStartRef.current.x;
-    const deltaY = event.clientY - editorDragStartRef.current.y;
-    setEditorOffset(clampEditorOffset({
-      x: editorDragOffsetStartRef.current.x + deltaX,
-      y: editorDragOffsetStartRef.current.y + deltaY,
-    }, editorZoom));
-  };
-
-  const stopEditorDragging = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!isEditorDragging) return;
-    setIsEditorDragging(false);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
+  const handleEditorTouchEnd = () => {
+    if (gestureStateRef.current && gestureStateRef.current.startDistance) {
+      gestureStateRef.current = null;
     }
   };
 
@@ -403,7 +435,7 @@ export default function ProfileEditPage() {
     setEditorOffset({ x: 0, y: 0 });
     setEditorImageSize({ width: 0, height: 0 });
     setEditorFrameSize({ width: 0, height: 0 });
-    setIsEditorDragging(false);
+    gestureStateRef.current = null;
   };
 
   const handleAvatarEditorSave = async () => {
@@ -777,10 +809,10 @@ export default function ProfileEditPage() {
                 ref={avatarEditorFrameRef}
                 className="relative w-full touch-none overflow-hidden rounded-[24px] border border-white/10 bg-black/70"
                 style={{ aspectRatio: editorFrameAspectRatio.toString() }}
-                onPointerDown={handleEditorPointerDown}
-                onPointerMove={handleEditorPointerMove}
-                onPointerUp={stopEditorDragging}
-                onPointerCancel={stopEditorDragging}
+                onTouchStart={handleEditorTouchStart}
+                onTouchMove={handleEditorTouchMove}
+                onTouchEnd={handleEditorTouchEnd}
+                onTouchCancel={handleEditorTouchEnd}
               >
                 {pendingAvatarSourceUrl ? (
                   <img
@@ -798,31 +830,11 @@ export default function ProfileEditPage() {
                       height: `${Math.max(editorRenderedHeight, 1)}px`,
                       transform: `translate(calc(-50% + ${editorOffset.x}px), calc(-50% + ${editorOffset.y}px)) scale(${editorZoom})`,
                       transformOrigin: "center center",
-                      cursor: isEditorDragging ? "grabbing" : "grab",
                     }}
                   />
                 ) : null}
                 <div className="pointer-events-none absolute inset-0 border border-white/20" />
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-black/60 to-black/95" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.24em] text-zinc-400">
-                  <span>Zoom</span>
-                  <span>{editorZoom.toFixed(2)}x</span>
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={3}
-                  step={0.01}
-                  value={editorZoom}
-                  onChange={(event) => {
-                    const nextZoom = Number(event.target.value);
-                    setEditorZoom(nextZoom);
-                    setEditorOffset((prev) => clampEditorOffset(prev, nextZoom));
-                  }}
-                  className="w-full accent-white"
-                />
               </div>
               <div className="flex items-center justify-end gap-2 pt-1">
                 <Button type="button" variant="ghost" onClick={handleAvatarEditorCancel}>
