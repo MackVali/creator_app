@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
@@ -78,6 +79,15 @@ export default function ProfileEditPage() {
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [isAvatarEditorOpen, setIsAvatarEditorOpen] = useState(false);
+  const [pendingAvatarDataUrl, setPendingAvatarDataUrl] = useState<string | null>(null);
+  const [editorZoom, setEditorZoom] = useState(1);
+  const [editorOffset, setEditorOffset] = useState({ x: 0, y: 0 });
+  const [editorImageSize, setEditorImageSize] = useState({ width: 0, height: 0 });
+  const [isEditorDragging, setIsEditorDragging] = useState(false);
+  const avatarEditorFrameRef = useRef<HTMLDivElement | null>(null);
+  const editorDragStartRef = useRef({ x: 0, y: 0 });
+  const editorDragOffsetStartRef = useRef({ x: 0, y: 0 });
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
   const [inlineSelectedPlatform, setInlineSelectedPlatform] = useState<SupportedPlatform | null>(
@@ -305,13 +315,108 @@ export default function ProfileEditPage() {
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setAvatarFile(file);
       const reader = new FileReader();
       reader.onload = (event) => {
-        setAvatarPreview(event.target?.result as string);
+        const dataUrl = event.target?.result as string;
+        setPendingAvatarDataUrl(dataUrl);
+        setEditorZoom(1);
+        setEditorOffset({ x: 0, y: 0 });
+        setEditorImageSize({ width: 0, height: 0 });
+        setIsAvatarEditorOpen(true);
       };
       reader.readAsDataURL(file);
     }
+    e.target.value = "";
+  };
+
+  const handleEditorPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!pendingAvatarDataUrl) return;
+    event.preventDefault();
+    setIsEditorDragging(true);
+    editorDragStartRef.current = { x: event.clientX, y: event.clientY };
+    editorDragOffsetStartRef.current = { ...editorOffset };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleEditorPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isEditorDragging) return;
+    const deltaX = event.clientX - editorDragStartRef.current.x;
+    const deltaY = event.clientY - editorDragStartRef.current.y;
+    setEditorOffset({
+      x: editorDragOffsetStartRef.current.x + deltaX,
+      y: editorDragOffsetStartRef.current.y + deltaY,
+    });
+  };
+
+  const stopEditorDragging = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isEditorDragging) return;
+    setIsEditorDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const handleAvatarEditorCancel = () => {
+    setIsAvatarEditorOpen(false);
+    setPendingAvatarDataUrl(null);
+    setEditorZoom(1);
+    setEditorOffset({ x: 0, y: 0 });
+    setEditorImageSize({ width: 0, height: 0 });
+    setIsEditorDragging(false);
+  };
+
+  const handleAvatarEditorSave = async () => {
+    if (!pendingAvatarDataUrl || !avatarEditorFrameRef.current || !editorImageSize.width) {
+      return;
+    }
+
+    const frameRect = avatarEditorFrameRef.current.getBoundingClientRect();
+    const frameWidth = frameRect.width;
+    const frameHeight = frameRect.height;
+    if (!frameWidth || !frameHeight) return;
+
+    const outputWidth = 1200;
+    const outputHeight = Math.round((frameHeight / frameWidth) * outputWidth);
+    const canvas = document.createElement("canvas");
+    canvas.width = outputWidth;
+    canvas.height = outputHeight;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const image = new Image();
+    image.src = pendingAvatarDataUrl;
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Failed to load selected image"));
+    });
+
+    const baseCoverScale = Math.max(frameWidth / editorImageSize.width, frameHeight / editorImageSize.height);
+    const renderedScale = baseCoverScale * editorZoom;
+    const renderedWidth = editorImageSize.width * renderedScale;
+    const renderedHeight = editorImageSize.height * renderedScale;
+    const drawX = (frameWidth - renderedWidth) / 2 + editorOffset.x;
+    const drawY = (frameHeight - renderedHeight) / 2 + editorOffset.y;
+    const renderToCanvasScale = outputWidth / frameWidth;
+
+    ctx.drawImage(
+      image,
+      drawX * renderToCanvasScale,
+      drawY * renderToCanvasScale,
+      renderedWidth * renderToCanvasScale,
+      renderedHeight * renderToCanvasScale,
+    );
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((result) => resolve(result), "image/jpeg", 0.92);
+    });
+    if (!blob) return;
+
+    const croppedAvatarFile = new File([blob], `avatar-${Date.now()}.jpg`, { type: "image/jpeg" });
+    const croppedAvatarDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    setAvatarFile(croppedAvatarFile);
+    setAvatarPreview(croppedAvatarDataUrl);
+    handleAvatarEditorCancel();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -571,6 +676,81 @@ export default function ProfileEditPage() {
           </div>
         ) : null}
       </section>
+      <Dialog.Root
+        open={isAvatarEditorOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleAvatarEditorCancel();
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[220] bg-black/80 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[230] w-[min(95vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-white/10 bg-[#05070c] p-4 text-white shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none sm:p-5">
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Dialog.Title className="text-lg font-semibold">Adjust profile photo</Dialog.Title>
+                <Dialog.Description className="text-sm text-zinc-400">
+                  Zoom and move your image so it looks perfect in your profile hero.
+                </Dialog.Description>
+              </div>
+              <div
+                ref={avatarEditorFrameRef}
+                className="relative w-full touch-none overflow-hidden rounded-[24px] border border-white/10 bg-black/70"
+                style={{ aspectRatio: "3 / 2" }}
+                onPointerDown={handleEditorPointerDown}
+                onPointerMove={handleEditorPointerMove}
+                onPointerUp={stopEditorDragging}
+                onPointerCancel={stopEditorDragging}
+              >
+                {pendingAvatarDataUrl ? (
+                  <img
+                    src={pendingAvatarDataUrl}
+                    alt="Selected profile"
+                    onLoad={(event) =>
+                      setEditorImageSize({
+                        width: event.currentTarget.naturalWidth,
+                        height: event.currentTarget.naturalHeight,
+                      })
+                    }
+                    className="absolute left-1/2 top-1/2 h-full w-full max-w-none object-cover"
+                    style={{
+                      transform: `translate(calc(-50% + ${editorOffset.x}px), calc(-50% + ${editorOffset.y}px)) scale(${editorZoom})`,
+                      transformOrigin: "center",
+                      cursor: isEditorDragging ? "grabbing" : "grab",
+                    }}
+                  />
+                ) : null}
+                <div className="pointer-events-none absolute inset-0 border border-white/20" />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/15" />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.24em] text-zinc-400">
+                  <span>Zoom</span>
+                  <span>{editorZoom.toFixed(2)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={3}
+                  step={0.01}
+                  value={editorZoom}
+                  onChange={(event) => setEditorZoom(Number(event.target.value))}
+                  className="w-full accent-white"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button type="button" variant="ghost" onClick={handleAvatarEditorCancel}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={handleAvatarEditorSave}>
+                  Save photo
+                </Button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10">
         {onboarding && (
