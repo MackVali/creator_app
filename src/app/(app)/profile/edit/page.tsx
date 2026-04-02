@@ -464,7 +464,7 @@ export default function ProfileEditPage() {
                 )}
               </div>
               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/60 to-black/95" />
-              <header className="pointer-events-auto absolute inset-x-4 top-4 flex items-center justify-between text-white/80">
+              <header className="pointer-events-auto absolute inset-x-4 top-4 flex items-center text-white/80">
                 <div className="flex items-center gap-3">
                   <Link href="/profile">
                     <Button variant="ghost" size="sm" className="p-2">
@@ -475,11 +475,6 @@ export default function ProfileEditPage() {
                     Edit profile
                   </span>
                 </div>
-                <Link href="/profile/linked-accounts">
-                  <Button variant="outline" size="sm" className="text-white">
-                    Linked Accounts
-                  </Button>
-                </Link>
               </header>
               <input
                 id="avatar"
