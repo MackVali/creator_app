@@ -15,8 +15,25 @@ type SearchFriendsProps = {
   onRequestResolved?: () => void;
 };
 
+type DiscoveryRelationship =
+  | "friends"
+  | "following"
+  | "followed_by"
+  | "incoming_request"
+  | "outgoing_request"
+  | "none"
+  | "self";
+
 type DiscoveryProfileState = DiscoveryProfile & {
-  status: "idle" | "sending" | "requested" | "connected";
+  relationship?: DiscoveryRelationship;
+  status: "idle" | "sending" | "following" | "friends";
+};
+
+const getDiscoveryIdentityKey = (
+  profile: DiscoveryProfile | DiscoveryProfileState
+) => {
+  const normalizedUsername = profile.username?.trim().toLowerCase();
+  return normalizedUsername || profile.id;
 };
 
 export default function SearchFriends({
@@ -37,7 +54,7 @@ export default function SearchFriends({
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState(false);
-  const [connectError, setConnectError] = useState<string | null>(null);
+  const [followError, setFollowError] = useState<string | null>(null);
 
   const syncDiscoveryProfiles = useCallback(
     (profiles: DiscoveryProfile[]) => {
@@ -46,11 +63,48 @@ export default function SearchFriends({
           return [];
         }
 
-        const statusMap = new Map(prev.map((item) => [item.id, item.status]));
-        return profiles.map((profile) => ({
-          ...profile,
-          status: statusMap.get(profile.id) ?? "idle",
-        }));
+        const statusMap = new Map(
+          prev.map((item) => [getDiscoveryIdentityKey(item), item.status])
+        );
+        const mapRelationshipToStatus = (
+          relationship?: DiscoveryRelationship
+        ): DiscoveryProfileState["status"] | null => {
+          switch (relationship) {
+            case "friends":
+              return "friends";
+            case "following":
+              return "following";
+            case "followed_by":
+            case "incoming_request":
+            case "outgoing_request":
+            case "none":
+              return "idle";
+            case "self":
+              return null;
+            default:
+              return null;
+          }
+        };
+
+        return profiles.map((profile) => {
+          const typedProfile = profile as DiscoveryProfile & {
+            relationship?: DiscoveryRelationship;
+          };
+          const relationship = typedProfile.relationship;
+          const relationshipStatus = mapRelationshipToStatus(relationship);
+          const identityKey = getDiscoveryIdentityKey(profile);
+
+          return {
+            ...profile,
+            relationship,
+            status:
+              statusMap.get(identityKey) === "sending"
+                ? "sending"
+                : relationshipStatus ??
+                  statusMap.get(identityKey) ??
+                  "idle",
+          };
+        });
       });
     },
     []
@@ -98,7 +152,7 @@ export default function SearchFriends({
   }, [data]);
 
   useEffect(() => {
-    setConnectError(null);
+    setFollowError(null);
   }, [q]);
 
   useEffect(() => {
@@ -204,11 +258,17 @@ export default function SearchFriends({
   const uniqueDiscovery = useMemo(() => {
     const seen = new Set<string>();
     return discovery.filter((profile) => {
-      if (seen.has(profile.id)) return false;
-      seen.add(profile.id);
+      const identityKey = getDiscoveryIdentityKey(profile);
+      if (seen.has(identityKey)) return false;
+      seen.add(identityKey);
       return true;
     });
   }, [discovery]);
+
+  const actionableDiscovery = useMemo(
+    () => uniqueDiscovery.filter((profile) => profile.relationship !== "self"),
+    [uniqueDiscovery]
+  );
 
   const dataset = useMemo(
     () => (me ? [me, ...matches] : matches),
@@ -219,22 +279,29 @@ export default function SearchFriends({
   const hasQuery = trimmedQuery.length > 0;
   const shouldShowDiscovery = uniqueDiscovery.length > 0 || hasQuery;
 
-  const handleConnect = useCallback(
+  const handleFollow = useCallback(
     (profile: DiscoveryProfileState) => {
-      if (profile.status === "requested" || profile.status === "sending") {
+      if (profile.status !== "idle") {
         return;
       }
 
-      setDiscovery((prev) =>
-        prev.map((item) =>
-          item.id === profile.id ? { ...item, status: "sending" } : item
-        )
-      );
-      setConnectError(null);
+      const identityKey = getDiscoveryIdentityKey(profile);
+      const updateStatus = (status: DiscoveryProfileState["status"]) => {
+        setDiscovery((prev) =>
+          prev.map((item) =>
+            getDiscoveryIdentityKey(item) === identityKey
+              ? { ...item, status }
+              : item
+          )
+        );
+      };
+
+      updateStatus("sending");
+      setFollowError(null);
 
       void (async () => {
         try {
-          const response = await fetch("/api/friends/requests", {
+          const response = await fetch("/api/friends", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -243,59 +310,29 @@ export default function SearchFriends({
           });
 
           const payload = (await response.json().catch(() => null)) as
-            | { error?: string; request?: { status?: string } }
+            | { error?: string }
             | null;
 
           if (!response.ok) {
-            const message = payload?.error ?? "Unable to send request.";
-            if (
-              response.status === 409 &&
-              message?.toLowerCase().includes("already sent")
-            ) {
-              setDiscovery((prev) =>
-                prev.map((item) =>
-                  item.id === profile.id
-                    ? { ...item, status: "requested" }
-                    : item
-                )
-              );
-            } else {
-              setDiscovery((prev) =>
-                prev.map((item) =>
-                  item.id === profile.id ? { ...item, status: "idle" } : item
-                )
-              );
-            }
-            setConnectError(message);
+            const message = payload?.error ?? "Unable to follow right now.";
+            updateStatus("idle");
+            setFollowError(message);
             return;
           }
 
-          const requestStatus = payload?.request?.status;
-          const nextStatus =
-            requestStatus === "accepted" ? "connected" : "requested";
-          setDiscovery((prev) =>
-            prev.map((item) =>
-              item.id === profile.id ? { ...item, status: nextStatus } : item
-            )
-          );
-          setConnectError(null);
+          updateStatus("following");
+          setFollowError(null);
           onRequestResolved?.();
         } catch (error) {
-          console.error("Failed to send friend request", error);
-          setDiscovery((prev) =>
-            prev.map((item) =>
-              item.id === profile.id ? { ...item, status: "idle" } : item
-            )
-          );
-          setConnectError(
-            error instanceof Error
-              ? error.message
-              : "Unable to send request."
+          console.error("Failed to follow user", error);
+          updateStatus("idle");
+          setFollowError(
+            error instanceof Error ? error.message : "Unable to follow right now."
           );
         }
       })();
     },
-    [onRequestResolved, setConnectError, setDiscovery]
+    [onRequestResolved]
   );
 
   const handleImportContacts = () => {
@@ -377,7 +414,7 @@ export default function SearchFriends({
       : `No matches for “${trimmedQuery}”`;
 
   const discoveryDescription = hasQuery
-    ? "We pull matches from every profile on the platform so you can connect with anyone."
+    ? "We pull matches from every profile on the platform so you can follow anyone."
     : dataset.length
       ? "Invite collaborators directly or explore a few creators we think you’ll click with."
       : "Invite them straight from here or explore creators we handpicked for your scene.";
@@ -387,13 +424,13 @@ export default function SearchFriends({
     : "Recommended creators";
 
   const discoveryResultsCount =
-    hasQuery && uniqueDiscovery.length > 0
-      ? `${uniqueDiscovery.length} profile${uniqueDiscovery.length === 1 ? "" : "s"}`
+    hasQuery && actionableDiscovery.length > 0
+      ? `${actionableDiscovery.length} profile${actionableDiscovery.length === 1 ? "" : "s"}`
       : null;
 
-  const discoveryResultsList = uniqueDiscovery.length ? (
+  const discoveryResultsList = actionableDiscovery.length ? (
     <div className="space-y-2">
-      {uniqueDiscovery.map((profile) => (
+      {actionableDiscovery.map((profile) => (
         <article
           key={profile.id}
           className="flex items-center gap-3 rounded-2xl bg-white/[0.08] px-3 py-3 ring-1 ring-white/10"
@@ -428,25 +465,25 @@ export default function SearchFriends({
           </Link>
           <button
             type="button"
-            onClick={() => handleConnect(profile)}
+            onClick={() => handleFollow(profile)}
             disabled={profile.status !== "idle"}
             className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${
-              profile.status === "connected"
+              profile.status === "friends"
                 ? "cursor-default bg-white/10 text-white/70"
-                : profile.status === "requested"
+                : profile.status === "following"
                   ? "cursor-default bg-white/10 text-white/70"
                   : profile.status === "sending"
                     ? "bg-white text-black/80 opacity-80"
                     : "bg-white text-black/80 hover:bg-white/90"
             } disabled:cursor-not-allowed disabled:opacity-70`}
           >
-            {profile.status === "connected"
+            {profile.status === "friends"
               ? "Friends"
-              : profile.status === "requested"
-                ? "Invite sent"
+              : profile.status === "following"
+                ? "Following"
                 : profile.status === "sending"
-                  ? "Sending…"
-                  : "Connect"}
+                  ? "Following…"
+                  : "Follow"}
           </button>
         </article>
       ))}
@@ -455,7 +492,7 @@ export default function SearchFriends({
     <p className="text-xs text-white/60">
       {hasQuery
         ? `No profiles matched “${trimmedQuery}”. Try a different name and we’ll search every account.`
-        : "Connect with creators to see personalized recommendations in this space."}
+        : "Follow creators to see personalized recommendations in this space."}
     </p>
   );
 
@@ -478,8 +515,8 @@ export default function SearchFriends({
               </span>
             ) : null}
           </div>
-          {connectError ? (
-            <p className="text-xs text-rose-300">{connectError}</p>
+          {followError ? (
+            <p className="text-xs text-rose-300">{followError}</p>
           ) : null}
           {discoveryResultsList}
         </div>

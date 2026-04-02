@@ -6,6 +6,8 @@ import { getSupabaseServer } from "@/lib/supabase";
 type RelationshipStatus =
   | "self"
   | "friends"
+  | "following"
+  | "followed_by"
   | "incoming_request"
   | "outgoing_request"
   | "none";
@@ -74,12 +76,11 @@ export async function GET(_: Request, context: { params: { username?: string } }
     return respond("none");
   }
 
-  const { data: existingFriend, error: friendError } = await supabase
+  const { data: followConnections, error: friendError } = await supabase
     .from("friend_connections")
-    .select("id")
-    .eq("user_id", viewerId)
-    .eq("friend_user_id", targetId)
-    .maybeSingle();
+    .select("user_id, friend_user_id")
+    .in("user_id", [viewerId, targetId])
+    .in("friend_user_id", [viewerId, targetId]);
 
   if (friendError && friendError.code !== "PGRST116") {
     console.error("Failed to check friend connections", friendError);
@@ -89,8 +90,23 @@ export async function GET(_: Request, context: { params: { username?: string } }
     );
   }
 
-  if (existingFriend) {
+  const viewerFollowsTarget = !!followConnections?.some(
+    (connection) => connection.user_id === viewerId && connection.friend_user_id === targetId
+  );
+  const targetFollowsViewer = !!followConnections?.some(
+    (connection) => connection.user_id === targetId && connection.friend_user_id === viewerId
+  );
+
+  if (viewerFollowsTarget && targetFollowsViewer) {
     return respond("friends");
+  }
+
+  if (viewerFollowsTarget) {
+    return respond("following");
+  }
+
+  if (targetFollowsViewer) {
+    return respond("followed_by");
   }
 
   const { data: pendingRequests, error: requestError } = await supabase

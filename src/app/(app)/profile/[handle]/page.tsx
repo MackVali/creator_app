@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { Profile, SocialLink, ContentCard, ProfileModule } from "@/lib/types";
+import { Profile, SocialLink, ContentCard, ProfileModule, LinkedAccount } from "@/lib/types";
 import { getProfileByHandle, getProfileLinks } from "@/lib/db";
+import { getLinkedAccounts } from "@/lib/db/linked-accounts";
 import { getSocialLinks } from "@/lib/db/profile-management";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { uploadAvatar } from "@/lib/storage";
+import { resolveSocialLink } from "@/lib/profile/socialLinks";
 import HeroHeader from "@/components/profile/HeroHeader";
 import ProfileModules from "@/components/profile/modules/ProfileModules";
 import { buildProfileModules } from "@/components/profile/modules/buildProfileModules";
@@ -18,6 +20,8 @@ type RelationshipStatus =
   | "friends"
   | "incoming_request"
   | "outgoing_request"
+  | "following"
+  | "followed_by"
   | "none";
 
 export default function ProfileByHandlePage() {
@@ -28,6 +32,7 @@ export default function ProfileByHandlePage() {
   const [isAvatarUploading, setIsAvatarUploading] = useState(false);
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [contentCards, setContentCards] = useState<ContentCard[]>([]);
+  const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [relationshipStatus, setRelationshipStatus] = useState<RelationshipStatus | null>(null);
@@ -182,13 +187,15 @@ export default function ProfileByHandlePage() {
         setProfile(userProfile);
 
         // Load social links and content cards
-        const [links, cards] = await Promise.all([
+        const [links, cards, linked] = await Promise.all([
           getSocialLinks(userProfile.user_id),
           getProfileLinks(userProfile.user_id),
+          getLinkedAccounts(userProfile.user_id),
         ]);
 
         setSocialLinks(links);
         setContentCards(cards);
+        setLinkedAccounts(linked);
       } catch (err) {
         console.error("Error loading profile:", err);
         setError("Failed to load profile");
@@ -278,14 +285,14 @@ export default function ProfileByHandlePage() {
     [user?.id],
   );
 
-  const handleAddFriend = async () => {
+  const handleFollow = async () => {
     if (!profile?.username || requestingFriend) {
       return;
     }
 
     setRequestingFriend(true);
     try {
-      const response = await fetch("/api/friends/requests", {
+      const response = await fetch("/api/friends", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: profile.username }),
@@ -293,13 +300,43 @@ export default function ProfileByHandlePage() {
 
       if (!response.ok) {
         const payload = await response.text().catch(() => null);
-        console.error("Failed to send friend request", response.status, payload);
+        console.error("Failed to add follow connection", response.status, payload);
         return;
       }
 
-      setRelationshipStatus("outgoing_request");
+      setRelationshipLoading(true);
+      try {
+        const refreshResponse = await fetch(
+          `/api/friends/relationship/${encodeURIComponent(profile.username)}`
+        );
+
+        if (!refreshResponse.ok) {
+          console.error(
+            "Failed to refresh relationship status",
+            refreshResponse.status
+          );
+          setRelationshipStatus("none");
+          return;
+        }
+
+        const payload = (await refreshResponse.json()) as {
+          relationship?: RelationshipStatus;
+        };
+        const relationship = payload?.relationship;
+
+        if (!relationship) {
+          setRelationshipStatus("none");
+        } else {
+          setRelationshipStatus(relationship);
+        }
+      } catch (refreshError) {
+        console.error("Failed to refresh relationship status", refreshError);
+        setRelationshipStatus("none");
+      } finally {
+        setRelationshipLoading(false);
+      }
     } catch (err) {
-      console.error("Failed to send friend request", err);
+      console.error("Failed to add follow connection", err);
     } finally {
       setRequestingFriend(false);
     }
@@ -358,6 +395,27 @@ export default function ProfileByHandlePage() {
     [modules],
   );
 
+  const socialsData = useMemo(() => {
+    const data: Record<string, string | undefined> = {};
+
+    linkedAccounts.forEach((account) => {
+      const key = account.platform?.toLowerCase();
+      if (!key || !account.url) return;
+      data[key] = account.url;
+    });
+
+    socialLinks.forEach((link) => {
+      if (!link.is_active) return;
+      const key = link.platform?.toLowerCase();
+      if (!key || data[key]) return;
+      const resolved = resolveSocialLink(link);
+      if (!resolved.url) return;
+      data[key] = resolved.url;
+    });
+
+    return data;
+  }, [linkedAccounts, socialLinks]);
+
   if (loading) {
     return <ProfileSkeleton />;
   }
@@ -386,17 +444,7 @@ export default function ProfileByHandlePage() {
     );
   }
 
-  // Prepare social links data for SocialPillsRow
-  const socialsData: Record<string, string | undefined> = {};
-  socialLinks.forEach((link) => {
-    if (link.is_active && link.url) {
-      socialsData[link.platform.toLowerCase()] = link.url;
-    }
-  });
-
-  const activeSocialCount = socialLinks.filter(
-    (link) => link.is_active && !!link.url,
-  ).length;
+  const activeSocialCount = Object.keys(socialsData).length;
   const activeLinkCount = contentCards.filter((card) => card.is_active).length;
   const isOwner = user?.id === profile.user_id;
   const actionSlot = (() => {
@@ -412,10 +460,10 @@ export default function ProfileByHandlePage() {
           <button
             type="button"
             className={baseClasses + " hover:border-white/60 hover:bg-white/10"}
-            onClick={handleAddFriend}
+            onClick={handleFollow}
             disabled={relationshipLoading || requestingFriend}
           >
-            {requestingFriend ? "Sending..." : "Add Friend"}
+            {requestingFriend ? "Sending..." : "Follow"}
           </button>
         );
       case "outgoing_request":
@@ -425,7 +473,7 @@ export default function ProfileByHandlePage() {
             className={baseClasses}
             disabled
           >
-            Requested
+            Follow Request Sent
           </button>
         );
       case "friends":
@@ -462,6 +510,27 @@ export default function ProfileByHandlePage() {
             </button>
           </div>
         );
+      case "following":
+        return (
+          <button
+            type="button"
+            className={baseClasses}
+            disabled
+          >
+            Following
+          </button>
+        );
+      case "followed_by":
+        return (
+          <button
+            type="button"
+            className={baseClasses + " hover:border-white/60 hover:bg-white/10"}
+            onClick={handleFollow}
+            disabled={relationshipLoading || requestingFriend}
+          >
+            {requestingFriend ? "Sending..." : "Follow Back"}
+          </button>
+        );
       case "self":
       default:
         return undefined;
@@ -477,7 +546,7 @@ export default function ProfileByHandlePage() {
         <div className="absolute bottom-[-25%] right-[-15%] h-[360px] w-[360px] rounded-full bg-neutral-800/20 blur-[200px]" />
       </div>
 
-      <main className="relative z-10 py-14">
+      <main className="relative z-10 pb-14 pt-0">
         <HeroHeader
           profile={profile}
           socials={socialsData}

@@ -21,18 +21,25 @@ export default function BottomNav() {
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50" data-bottom-nav>
-      <div className="relative">
-        <BottomBarNav
-          items={items}
-          currentPath={pathname}
-          onNavigate={(href) => router.push(href)}
-        />
-        <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-6">
-          <Fab />
+    <>
+      <div className="fixed bottom-0 left-0 right-0 z-50" data-bottom-nav>
+        <div className="relative">
+          <BottomBarNav
+            items={items}
+            currentPath={pathname}
+            onNavigate={(href) => router.push(href)}
+          />
+          <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-6">
+            <Fab />
+          </div>
         </div>
       </div>
-    </div>
+      <style jsx>{`
+        :global([data-bottom-nav] [data-tour="fab"]) {
+          box-shadow: 0 16px 30px rgba(0, 0, 0, 0.65) !important;
+          filter: none !important;
+        }
+      `}</style>
+    </>
   );
 }
-
