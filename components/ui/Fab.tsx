@@ -7195,9 +7195,9 @@ export function Fab({
         ref={buttonRef}
         onClick={handleFabButtonClick}
         aria-label={isOpen ? "Open ILAV" : "Add new item"}
-      className={`relative flex items-center justify-center h-14 w-14 rounded-full text-white shadow-lg hover:scale-110 transition overflow-visible ${
-        isOpen ? "rotate-45" : ""
-      }`}
+        className={`relative flex items-center justify-center h-14 w-14 rounded-full text-white shadow-lg hover:scale-110 transition overflow-visible ${
+          isOpen ? "rotate-45" : ""
+        }`}
         onTouchStart={handleFabButtonTouchStart}
         onTouchEnd={handleFabButtonTouchEnd}
         onTouchCancel={handleFabButtonTouchCancel}
@@ -7205,13 +7205,13 @@ export function Fab({
         whileTap={{ scale: 0.9 }}
         transition={{ type: "spring", stiffness: 500, damping: 25 }}
         style={{
-        background:
-          "linear-gradient(145deg, #111827 0%, #0f172a 55%, #020617 100%)",
-        boxShadow:
-          "0 25px 60px rgba(15, 23, 42, 0.85), 0 12px 32px rgba(15, 23, 42, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.18)",
-        filter: "drop-shadow(0 12px 28px rgba(0, 0, 0, 0.55))",
-      }}
-    >
+          background:
+            "linear-gradient(145deg, #111827 0%, #0f172a 55%, #020617 100%)",
+          boxShadow:
+            "0 25px 60px rgba(15, 23, 42, 0.85), 0 12px 32px rgba(15, 23, 42, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 0 20px rgba(255, 255, 255, 0.18)",
+          filter: "drop-shadow(0 12px 28px rgba(0, 0, 0, 0.55))",
+        }}
+      >
         {isOpen ? (
           <Sparkles className="h-8 w-8" aria-hidden="true" />
         ) : (

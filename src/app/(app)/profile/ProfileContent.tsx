@@ -124,18 +124,9 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
   const activeModuleCount = useMemo(
     () =>
       moduleLayout.filter((module) => {
-        switch (module.type) {
-          case "featured_carousel":
-            return module.slides.length > 0;
-          case "link_cards":
-            return module.cards.some((card) => card.is_active);
-          case "social_proof_strip":
-            return module.items.length > 0;
-          case "embedded_media_accordion":
-            return module.sections.length > 0;
-          default:
-            return false;
-        }
+        return module.type === "link_cards"
+          ? module.cards.some((card) => card.is_active)
+          : false;
       }).length,
     [moduleLayout],
   );

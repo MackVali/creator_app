@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, Calendar, Users, DollarSign } from "lucide-react";
+import { Home, Calendar, Link, DollarSign } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import BottomBarNav from "./BottomBarNav";
 import { Fab } from "@/components/ui/Fab";
@@ -12,7 +12,7 @@ export default function BottomNav() {
   const items = [
     { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: <Home className="h-6 w-6" /> },
     { key: "schedule", label: "Schedule", href: "/schedule", icon: <Calendar className="h-6 w-6" /> },
-    { key: "friends", label: "Friends", href: "/friends", icon: <Users className="h-6 w-6" /> },
+    { key: "friends", label: "CONNECT", href: "/friends", icon: <Link className="h-6 w-6" /> },
     { key: "source", label: "Source", href: "/source", icon: <DollarSign className="h-6 w-6" /> },
   ];
 

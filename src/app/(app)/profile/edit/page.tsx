@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Save, User, Calendar, MapPin, FileText, Camera } from "lucide-react";
 import Link from "next/link";
+import ContentCardManager from "@/components/profile/ContentCardManager";
 import SocialPillsRow from "@/components/profile/SocialPillsRow";
 
 const LINKED_ACCOUNT_ORDER: SupportedPlatform[] = [
@@ -1089,6 +1090,12 @@ export default function ProfileEditPage() {
           </CardContent>
         </Card>
       </main>
+
+      {user?.id ? (
+        <section className="mx-auto w-full max-w-6xl px-4 py-12">
+          <ContentCardManager userId={user.id} onCardsChange={refreshProfile} />
+        </section>
+      ) : null}
 
       {inlineSelectedPlatform ? (
         <div className="fixed inset-0 z-60 flex items-center justify-center px-4">

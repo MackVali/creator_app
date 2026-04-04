@@ -121,6 +121,7 @@ export interface ContentCard {
   category?: string | null;
   position: number;
   is_active: boolean;
+  size: "small" | "medium";
   media_type?: "video" | "audio" | "article" | "livestream" | "gallery" | null;
   embed_url?: string | null;
   embed_html?: string | null;
@@ -135,11 +136,7 @@ export interface ContentCard {
   updated_at: string;
 }
 
-export type ProfileModuleType =
-  | "featured_carousel"
-  | "link_cards"
-  | "social_proof_strip"
-  | "embedded_media_accordion";
+export type ProfileModuleType = "link_cards";
 
 export interface ProfileModuleBase {
   id: string;
@@ -153,73 +150,13 @@ export interface ProfileModuleBase {
   settings?: Record<string, unknown> | null;
 }
 
-export interface ProfileModuleFeaturedSlide {
-  id: string;
-  title: string;
-  description?: string | null;
-  media_url?: string | null;
-  media_type?: "image" | "video" | "gradient" | null;
-  href?: string | null;
-  cta_label?: string | null;
-  accent_color?: string | null;
-  analytics_event?: string | null;
-}
-
-export interface ProfileModuleFeaturedCarousel extends ProfileModuleBase {
-  type: "featured_carousel";
-  slides: ProfileModuleFeaturedSlide[];
-  autoplay?: boolean;
-  loop?: boolean;
-  interval_ms?: number | null;
-}
-
 export interface ProfileModuleLinkCards extends ProfileModuleBase {
   type: "link_cards";
   cards: ContentCard[];
   layout?: "stacked" | "grid" | "list" | null;
 }
 
-export interface ProfileModuleSocialProofItem {
-  id: string;
-  label: string;
-  value: string;
-  platform?: string | null;
-  url?: string | null;
-  icon?: string | null;
-  aria_label?: string | null;
-  analytics_event?: string | null;
-}
-
-export interface ProfileModuleSocialProofStrip extends ProfileModuleBase {
-  type: "social_proof_strip";
-  items: ProfileModuleSocialProofItem[];
-  display_mode?: "row" | "grid" | "marquee" | null;
-}
-
-export interface ProfileModuleEmbeddedSection {
-  id: string;
-  title: string;
-  description?: string | null;
-  media_url?: string | null;
-  media_type?: "video" | "audio" | "article" | "gallery" | null;
-  embed_html?: string | null;
-  poster_url?: string | null;
-  cta_label?: string | null;
-  cta_href?: string | null;
-  analytics_event?: string | null;
-}
-
-export interface ProfileModuleEmbeddedMediaAccordion extends ProfileModuleBase {
-  type: "embedded_media_accordion";
-  sections: ProfileModuleEmbeddedSection[];
-  allow_multiple_open?: boolean | null;
-}
-
-export type ProfileModule =
-  | ProfileModuleFeaturedCarousel
-  | ProfileModuleLinkCards
-  | ProfileModuleSocialProofStrip
-  | ProfileModuleEmbeddedMediaAccordion;
+export type ProfileModule = ProfileModuleLinkCards;
 
 export interface Profile {
   id: number;
@@ -499,8 +436,11 @@ export interface ContentCardFormData {
   description?: string;
   url: string;
   thumbnail?: File;
+  thumbnail_url?: string;
   category?: string;
   position?: number;
+  size?: "small" | "medium";
+  is_active?: boolean;
 }
 
 // Profile Update Result
