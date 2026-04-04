@@ -51,7 +51,6 @@ import { PostModal } from "./ui/PostModal"
 import type {
   IntegrationsResponse,
   ListingsResponse,
-  PublishResult,
   SourceIntegration,
   SourceListing,
 } from "@/types/source"
@@ -207,11 +206,12 @@ type IntegrationPreset = {
   build(inputs: Record<string, string>): Partial<IntegrationFormState>
 }
 
+type OverviewSectionKey = "products" | "services" | "media" | "orders" | "inquiries"
+
 type OverviewTile = {
-  key: string
+  key: OverviewSectionKey
   title: string
   meta: string
-  targetId?: string
 }
 
 const integrationPresets: IntegrationPreset[] = [
@@ -1307,7 +1307,9 @@ export default function Source() {
   const [isPostModalOpen, setIsPostModalOpen] = useState(false)
   const oauthWindowRef = useRef<Window | null>(null)
   const oauthCompletionRef = useRef(false)
-  const [activeOverviewTile, setActiveOverviewTile] = useState("products")
+  const [selectedOverviewSection, setSelectedOverviewSection] =
+    useState<OverviewSectionKey>("products")
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -1379,6 +1381,12 @@ export default function Source() {
       isActive = false
     }
   }, [])
+
+  useEffect(() => {
+    if (selectedOverviewSection !== "products" && selectedProductId) {
+      setSelectedProductId(null)
+    }
+  }, [selectedOverviewSection, selectedProductId])
 
   const clearProductImagePreview = () => {
     setProductImagePreview((previous) => {
@@ -1732,6 +1740,7 @@ export default function Source() {
 
   const integrations = integrationsQuery.data?.integrations ?? []
   const listings = listingsQuery.data?.listings ?? []
+  const productListings = listings.filter((listing) => listing.type === "product")
 
   const activeIntegrationCount = integrations.filter(
     (integration) =>
@@ -1741,14 +1750,6 @@ export default function Source() {
 
   const integrationAdvancedForced = integrationForm.authMode === "oauth2"
   const integrationAdvancedVisible = integrationAdvancedForced || showIntegrationAdvanced
-
-  const scrollToIntegrationForm = () => {
-    if (typeof document === "undefined") return
-    const el = document.getElementById("integration-form")
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" })
-    }
-  }
 
   const handleProductSheetOpenChange = (next: boolean) => {
     if (next) {
@@ -1841,222 +1842,19 @@ export default function Source() {
     isProductImageUploading || (isProductSheetSubmitting && createListing.isPending)
 
   const overviewTiles: OverviewTile[] = [
-    { key: "products", title: "Products", meta: "0 active", targetId: "listing-form" },
-    { key: "services", title: "Services", meta: "Coming soon", targetId: "integration-form" },
-    { key: "media", title: "Media", meta: "0 assets", targetId: "media-section" },
-    { key: "orders", title: "Orders", meta: "Awaiting sync", targetId: "recent-listings" },
-    { key: "inquiries", title: "Inquiries", meta: "Muted alerts", targetId: "connected-websites" },
+    { key: "products", title: "Products", meta: "0 active" },
+    { key: "services", title: "Services", meta: "Coming soon" },
+    { key: "media", title: "Media", meta: "0 assets" },
+    { key: "orders", title: "Orders", meta: "Awaiting sync" },
+    { key: "inquiries", title: "Inquiries", meta: "Muted alerts" },
   ]
-
-  const handleOverviewTileClick = (tile: OverviewTile) => {
-    if (!tile.targetId) return
-    setActiveOverviewTile(tile.key)
-    if (typeof document === "undefined") return
-    const target = document.getElementById(tile.targetId)
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" })
-    }
-  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-900/60 bg-zinc-950/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6">
           <div className="flex flex-col gap-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <Sheet
-                  open={isProductSheetOpen}
-                  onOpenChange={handleProductSheetOpenChange}
-                >
-                  <SheetTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="flex h-12 w-12 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950/70 text-white transition hover:border-zinc-700"
-                    >
-                      <Plus className="size-5" />
-                      <span className="sr-only">Create product</span>
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent
-                    side="right"
-                    className="max-w-sm border-l border-zinc-900/60 bg-zinc-950 text-white"
-                  >
-                    <form className="flex h-full flex-col" onSubmit={handleProductSheetSubmit}>
-                      <SheetHeader className="border-b border-white/5">
-                        <SheetTitle className="text-lg font-semibold text-white">
-                          add PRODUCT
-                        </SheetTitle>
-                        <SheetDescription className="text-sm text-zinc-400">
-                          Publish a focused product listing across every connected storefront.
-                        </SheetDescription>
-                      </SheetHeader>
-                      <div className="flex-1 space-y-5 overflow-y-auto px-6 py-4">
-                        {productSheetError && (
-                          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-                            {productSheetError}
-                          </div>
-                        )}
-                        <FieldStack label="Title" htmlFor="product-sheet-title">
-                          <Input
-                            id="product-sheet-title"
-                            value={productSheetForm.title}
-                            onChange={(event) =>
-                              setProductSheetForm((prev) => ({
-                                ...prev,
-                                title: event.target.value,
-                              }))
-                            }
-                            placeholder="Product name"
-                            required
-                            className="border-black/60 bg-zinc-950/70 focus-visible:border-black/60 focus-visible:ring-0 focus-visible:ring-offset-0"
-                          />
-                        </FieldStack>
-
-                        <FieldStack label="Description" htmlFor="product-sheet-description">
-                          <Textarea
-                            id="product-sheet-description"
-                            value={productSheetForm.description}
-                            onChange={(event) =>
-                              setProductSheetForm((prev) => ({
-                                ...prev,
-                                description: event.target.value,
-                              }))
-                            }
-                            rows={4}
-                            placeholder="What shoppers receive when they checkout"
-                            className="border-black/60 bg-zinc-950/70 focus-visible:border-black/60 focus-visible:ring-0 focus-visible:ring-offset-0"
-                          />
-                        </FieldStack>
-
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <FieldStack label="Price" htmlFor="product-sheet-price">
-                            <Input
-                              id="product-sheet-price"
-                              type="number"
-                              inputMode="decimal"
-                              step="0.01"
-                              min="0"
-                              value={productSheetForm.price}
-                              onChange={(event) =>
-                                setProductSheetForm((prev) => ({
-                                  ...prev,
-                                  price: event.target.value,
-                                }))
-                              }
-                              placeholder="99.00"
-                              className="border-black/60 bg-zinc-950/70 focus-visible:border-black/60 focus-visible:ring-0 focus-visible:ring-offset-0"
-                            />
-                          </FieldStack>
-                          <FieldStack label="Currency" htmlFor="product-sheet-currency">
-                            <Input
-                              id="product-sheet-currency"
-                              value={productSheetForm.currency}
-                              onChange={(event) =>
-                                setProductSheetForm((prev) => ({
-                                  ...prev,
-                                  currency: event.target.value.toUpperCase().slice(0, 3),
-                                }))
-                              }
-                              placeholder="USD"
-                              maxLength={3}
-                              className="border-black/60 bg-zinc-950/70 focus-visible:border-black/60 focus-visible:ring-0 focus-visible:ring-offset-0"
-                            />
-                          </FieldStack>
-                        </div>
-
-                        <FieldStack label="Inventory" htmlFor="product-sheet-inventory">
-                          <Input
-                            id="product-sheet-inventory"
-                            type="number"
-                            inputMode="numeric"
-                            min="0"
-                            value={productSheetForm.inventory}
-                            onChange={(event) =>
-                              setProductSheetForm((prev) => ({
-                                ...prev,
-                                inventory: event.target.value,
-                              }))
-                            }
-                            placeholder="50"
-                            className="border-black/60 bg-zinc-950/70 focus-visible:border-black/60 focus-visible:ring-0 focus-visible:ring-offset-0"
-                          />
-                        </FieldStack>
-
-                        <div className="space-y-2">
-                          <Label
-                            className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400"
-                            htmlFor="product-sheet-image"
-                          >
-                            Product image
-                          </Label>
-                          <p className="text-xs text-zinc-500">
-                            Upload an image that represents the product card inside Source.
-                          </p>
-                          <label
-                            className="group flex cursor-pointer items-center justify-between rounded-xl border border-black/60 bg-zinc-950/70 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-white transition hover:border-zinc-300/80"
-                            htmlFor="product-sheet-image"
-                          >
-                            <span>
-                              {isProductImageUploading
-                                ? "Uploading…"
-                                : productImageUrl
-                                ? "Replace image"
-                                : "Upload image"}
-                            </span>
-                            {isProductImageUploading && (
-                              <Loader2 className="size-4 animate-spin text-white/70" />
-                            )}
-                            <input
-                              id="product-sheet-image"
-                              type="file"
-                              accept="image/*"
-                              className="sr-only"
-                              onChange={handleProductImageChange}
-                              disabled={isProductImageUploading}
-                            />
-                          </label>
-                          {productImagePreview && (
-                            <div className="overflow-hidden rounded-xl border border-white/10 bg-white/5">
-                              <img
-                                src={productImagePreview}
-                                alt="Product preview"
-                                className="h-36 w-full object-cover"
-                              />
-                            </div>
-                          )}
-                          {productImageUploadError && (
-                            <p className="text-xs text-red-400">
-                              {productImageUploadError}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <SheetFooter className="border-t border-white/10">
-                        <div className="flex items-center justify-between gap-2">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => handleProductSheetOpenChange(false)}
-                          >
-                            Cancel
-                          </Button>
-                          <Button type="submit" disabled={productSheetBusy}>
-                            {productSheetBusy ? "Publishing..." : "Create product"}
-                          </Button>
-                        </div>
-                      </SheetFooter>
-                    </form>
-                  </SheetContent>
-                </Sheet>
-                <div className="text-sm">
-                  <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">New listing</p>
-                  <p className="text-sm font-semibold leading-none text-white">
-                    Create a product
-                  </p>
-                </div>
-              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
@@ -2077,59 +1875,48 @@ export default function Source() {
                 Manage listings, services, and support touchpoints while keeping every storefront synced from one dedicated hub.
               </p>
             </div>
-            <div className="grid min-w-full grid-cols-[repeat(5,minmax(0,1fr))] gap-2 text-xs sm:gap-3 sm:text-sm">
-              {overviewTiles.map((tile) => {
-                const isActive = activeOverviewTile === tile.key
-                return (
-                  <button
-                    key={tile.key}
-                    type="button"
-                    onClick={() => handleOverviewTileClick(tile)}
-                    disabled={!tile.targetId}
-                    aria-pressed={isActive}
-                    className={cn(
-                      "flex flex-col rounded-2xl border bg-zinc-950/70 px-3 py-4 text-xs text-zinc-200 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60 sm:px-4 sm:py-5 sm:text-sm",
-                      "border-zinc-900/60",
-                      isActive &&
-                        "border-emerald-500/60 bg-zinc-900/70 text-white shadow-lg shadow-emerald-500/20",
-                      !tile.targetId && "cursor-not-allowed opacity-60"
-                    )}
-                  >
-                    <p className="text-sm font-semibold text-white sm:text-base">{tile.title}</p>
-                    <p className="text-[9px] text-zinc-500 sm:text-xs">{tile.meta}</p>
+            <div className="rounded-[28px] border border-zinc-800/70 bg-zinc-900/60 p-1 shadow-[0_20px_45px_rgba(0,0,0,0.8)]">
+              <div className="grid min-w-full grid-cols-[repeat(5,minmax(0,1fr))] gap-2 text-xs sm:gap-3 sm:text-sm">
+                {overviewTiles.map((tile) => {
+                  const isActive = selectedOverviewSection === tile.key
+                  return (
+                    <button
+                      key={tile.key}
+                      type="button"
+                      onClick={() => setSelectedOverviewSection(tile.key)}
+                      aria-pressed={isActive}
+                      className={cn(
+                        "flex flex-col items-center justify-center gap-1 rounded-2xl border px-3 py-4 text-center text-xs text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60 sm:px-4 sm:py-5 sm:text-sm",
+                        "border-transparent bg-zinc-950/60",
+                        isActive &&
+                          "border-zinc-600 bg-zinc-900/80 text-white shadow-[inset_0_2px_6px_rgba(255,255,255,0.08),0_14px_35px_rgba(0,0,0,0.75)]"
+                      )}
+                    >
+                    <div className="flex h-6 min-h-[1.5rem] items-center justify-center">
+                      <p className="text-sm font-semibold leading-tight text-white sm:text-base whitespace-nowrap">
+                        {tile.title}
+                      </p>
+                    </div>
+                    <div className="flex h-4 min-h-[1rem] items-center justify-center">
+                      <p className="text-[9px] text-zinc-500 sm:text-xs truncate">
+                        {tile.meta}
+                      </p>
+                    </div>
                   </button>
-                )
-              })}
-            </div>
-            <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
-              <div className="flex items-center gap-2">
-                <Plug className="size-4 text-zinc-300" />
-                <span>
-                  {integrationsQuery.isLoading
-                    ? "Loading connections..."
-                    : `${activeIntegrationCount} active connection${
-                        activeIntegrationCount === 1 ? "" : "s"
-                      }`}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <UploadCloud className="size-4 text-zinc-300" />
-                <span>
-                  {listingsQuery.isLoading
-                    ? "Loading listings..."
-                    : `${listings.length} recent listing${listings.length === 1 ? "" : "s"}`}
-                </span>
+                  )
+                })}
               </div>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10">
-        <section
-          id="media-section"
-          className="overflow-hidden rounded-2xl border border-zinc-900/60 bg-zinc-950/70 shadow-lg shadow-zinc-950/40"
-        >
+      <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 pb-10 pt-6">
+        {selectedOverviewSection === "media" && (
+          <section
+            id="media-section"
+            className="overflow-hidden rounded-2xl border border-zinc-900/60 bg-zinc-950/70 shadow-lg shadow-zinc-950/40"
+          >
           <div className="flex flex-col gap-3 border-b border-zinc-900/60 px-6 py-5 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-white">How Source syncs your listings</h2>
@@ -2142,7 +1929,7 @@ export default function Source() {
               variant="secondary"
               size="sm"
               className="self-start md:self-auto"
-              onClick={scrollToIntegrationForm}
+              onClick={() => setSelectedOverviewSection("services")}
             >
               Start connecting
             </Button>
@@ -2166,9 +1953,11 @@ export default function Source() {
               )
             })}
           </div>
-        </section>
+          </section>
+        )}
 
-        <section id="connected-websites" className="space-y-4">
+        {selectedOverviewSection === "inquiries" && (
+          <section id="connected-websites" className="space-y-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-xl font-semibold text-white">
@@ -2234,23 +2023,25 @@ export default function Source() {
               />
             ))}
           </div>
-        </section>
+          </section>
+        )}
 
-        <section className="grid gap-6 lg:grid-cols-2">
-          <form
-            id="integration-form"
-            className="rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-6 shadow-xl shadow-zinc-950/40"
-            onSubmit={(event) => {
-              event.preventDefault()
-              setIntegrationError(null)
+        {selectedOverviewSection === "services" && (
+          <section className="grid gap-6 lg:grid-cols-2">
+              <form
+                id="integration-form"
+                className="rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-6 shadow-xl shadow-zinc-950/40"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  setIntegrationError(null)
 
-              try {
-                createIntegration.mutate(integrationForm)
-              } catch (err) {
-                if (err instanceof Error) setIntegrationError(err.message)
-              }
-            }}
-          >
+                  try {
+                    createIntegration.mutate(integrationForm)
+                  } catch (err) {
+                    if (err instanceof Error) setIntegrationError(err.message)
+                  }
+                }}
+              >
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-white">
@@ -2897,237 +2688,97 @@ export default function Source() {
               </Button>
             </div>
           </form>
-
-          <form
-            id="listing-form"
-            className="rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-6 shadow-xl shadow-zinc-950/40"
-            onSubmit={(event) => {
-              event.preventDefault()
-              setListingError(null)
-
-              try {
-                createListing.mutate(listingForm)
-              } catch (err) {
-                if (err instanceof Error) setListingError(err.message)
-              }
-            }}
-          >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-white">
-                    Create product or service
-                  </h3>
-                  <p className="mt-1 text-xs text-zinc-400">
-                    Quickly spin up a product listing and push it to every active
-                    integration when you hit “Publish now”.
-                  </p>
-                </div>
-              </div>
-
-            {listingError && (
-              <div className="mt-4 rounded-md border border-zinc-500/40 bg-zinc-950/40 p-3 text-sm text-zinc-200">
-                {listingError}
-              </div>
-            )}
-
-
-            <div className="mt-5 space-y-6">
-              <div className="rounded-xl border border-zinc-900/60 bg-zinc-950/60 p-4 text-xs text-zinc-300">
-                {activeIntegrationCount > 0 ? (
-                  <span>
-                    Publishing now will post to
-                    {" "}
-                    <span className="font-semibold text-white">
-                      all {activeIntegrationCount} active connection{activeIntegrationCount === 1 ? "" : "s"}
-                    </span>
-                    . Check the delivery log below to confirm every marketplace accepts the payload.
-                  </span>
-                ) : (
-                  <span>
-                    Connect at least one integration above to start auto-posting listings everywhere you sell. We&apos;ll keep the draft ready until you finish connecting.
-                  </span>
-                )}
-              </div>
-
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                <div className="space-y-5">
-                  <FormSubheading
-                    title="Listing basics"
-                    description="Give shoppers the title and context they&apos;ll see across every channel."
-                  />
-                  <div className="grid gap-4">
-                    <FieldStack label="Type" htmlFor="listing-type">
-                      <Select
-                        value={listingForm.type}
-                        onValueChange={(value) =>
-                          setListingForm((prev) => ({
-                            ...prev,
-                            type: value as ListingFormState["type"],
-                          }))
-                        }
-                      >
-                        <SelectContent>
-                          <SelectItem value="product">Product</SelectItem>
-                          <SelectItem value="service">Service</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FieldStack>
-
-                    <FieldStack label="Title" htmlFor="listing-title">
-                      <Input
-                        id="listing-title"
-                        value={listingForm.title}
-                        onChange={(event) =>
-                          setListingForm((prev) => ({
-                            ...prev,
-                            title: event.target.value,
-                          }))
-                        }
-                        placeholder="Summer drop or design sprint"
-                        required
-                      />
-                    </FieldStack>
-
-                    <FieldStack label="Description" htmlFor="listing-description">
-                      <Textarea
-                        id="listing-description"
-                        value={listingForm.description}
-                        onChange={(event) =>
-                          setListingForm((prev) => ({
-                            ...prev,
-                            description: event.target.value,
-                          }))
-                        }
-                        placeholder="What customers receive when they purchase"
-                        rows={5}
-                      />
-                    </FieldStack>
-                  </div>
-                </div>
-
-                <div className="space-y-5">
-                  <FormSubheading
-                    title="Pricing & availability"
-                    description="These values merge into every integration payload the moment you publish."
-                  />
-                  <div className="grid gap-4">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <FieldStack label="Price" htmlFor="listing-price">
-                        <Input
-                          id="listing-price"
-                          type="number"
-                          inputMode="decimal"
-                          step="0.01"
-                          min="0"
-                          value={listingForm.price}
-                          onChange={(event) =>
-                            setListingForm((prev) => ({
-                              ...prev,
-                              price: event.target.value,
-                            }))
-                          }
-                          placeholder="99.00"
-                        />
-                      </FieldStack>
-
-                      <FieldStack label="Currency" htmlFor="listing-currency">
-                        <Input
-                          id="listing-currency"
-                          value={listingForm.currency}
-                          onChange={(event) =>
-                            setListingForm((prev) => ({
-                              ...prev,
-                              currency: event.target.value.toUpperCase(),
-                            }))
-                          }
-                          placeholder="USD"
-                          maxLength={3}
-                        />
-                      </FieldStack>
-                    </div>
-
-                    {listingForm.type === "product" && (
-                      <FieldStack label="Inventory" htmlFor="listing-inventory">
-                        <Input
-                          id="listing-inventory"
-                          type="number"
-                          inputMode="numeric"
-                          min="0"
-                          value={listingForm.inventory}
-                          onChange={(event) =>
-                            setListingForm((prev) => ({
-                              ...prev,
-                              inventory: event.target.value,
-                            }))
-                          }
-                          placeholder="50"
-                        />
-                      </FieldStack>
-                    )}
-
-                    {listingForm.type === "service" && (
-                      <FieldStack
-                        label="Duration (minutes)"
-                        htmlFor="listing-duration"
-                      >
-                        <Input
-                          id="listing-duration"
-                          type="number"
-                          inputMode="numeric"
-                          min="0"
-                          value={listingForm.durationMinutes}
-                          onChange={(event) =>
-                            setListingForm((prev) => ({
-                              ...prev,
-                              durationMinutes: event.target.value,
-                            }))
-                          }
-                          placeholder="60"
-                        />
-                      </FieldStack>
-                    )}
-
-                    <FieldStack
-                      label="Additional metadata (JSON)"
-                      htmlFor="listing-metadata"
-                      description="Merge extra fields into the payload you send to partners."
-                    >
-                      <Textarea
-                        id="listing-metadata"
-                        value={listingForm.metadata}
-                        onChange={(event) =>
-                          setListingForm((prev) => ({
-                            ...prev,
-                            metadata: event.target.value,
-                          }))
-                        }
-                        rows={4}
-                        placeholder='{"tags": ["summer", "drop"], "sku": "SKU-1001"}'
-                      />
-                    </FieldStack>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setListingForm(defaultListingForm)
-                  setListingError(null)
-                }}
-              >
-                Reset
-              </Button>
-              <Button type="submit" disabled={createListing.isPending}>
-                {createListing.isPending ? "Publishing..." : "Create listing"}
-              </Button>
-            </div>
-          </form>
         </section>
+      )}
 
-        <section id="recent-listings" className="space-y-4">
+      {selectedOverviewSection === "products" && (
+        <section className="space-y-2">
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              className="gap-2 rounded-full border border-zinc-900/70 bg-zinc-950/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-zinc-700 hover:bg-zinc-900"
+              onClick={() => handleProductSheetOpenChange(true)}
+            >
+              <Plus className="size-4" />
+              Add product
+            </Button>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {productListings.map((listing) => {
+              const coverImage =
+                listing.metadata && typeof listing.metadata["coverImage"] === "string"
+                  ? listing.metadata["coverImage"]
+                  : null
+              const priceLabel =
+                listing.price !== null
+                  ? formatCurrency(listing.price, listing.currency)
+                  : "Price TBD"
+              const inventoryCount =
+                listing.metadata && typeof listing.metadata["inventory"] === "number"
+                  ? listing.metadata["inventory"]
+                  : null
+              const isSelected = selectedProductId === listing.id
+              return (
+                <button
+                  key={listing.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() =>
+                    setSelectedProductId((prev) => (prev === listing.id ? null : listing.id))
+                  }
+                  className={cn(
+                    "flex h-full flex-col overflow-hidden rounded-2xl border bg-zinc-950/60 text-left text-[11px] text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70",
+                    isSelected
+                      ? "border-zinc-500/70 bg-zinc-900/70"
+                      : "border-zinc-900/70 hover:border-zinc-700"
+                  )}
+                >
+                  <div className="relative h-20 w-full overflow-hidden bg-zinc-900">
+                    {coverImage ? (
+                      <img
+                        src={coverImage}
+                        alt={listing.title}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-800 text-zinc-500">
+                        <span className="text-[10px] uppercase tracking-[0.3em]">
+                          No image
+                        </span>
+                      </div>
+                    )}
+                    <Badge
+                      className={cn(
+                        "absolute top-2 right-2 rounded-full bg-black/70 px-2 py-0.5 text-[9px] uppercase tracking-[0.3em]",
+                        statusAccent[listing.status]
+                      )}
+                    >
+                      {listingStatuses[listing.status]}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-grow flex-col gap-1 px-3 py-3">
+                    <p className="text-[11px] font-semibold text-white line-clamp-2">
+                      {listing.title}
+                    </p>
+                    <p className="text-[10px] text-zinc-400">{priceLabel}</p>
+                    {inventoryCount !== null && (
+                      <span className="text-[9px] uppercase tracking-[0.3em] text-zinc-500">
+                        {inventoryCount} in stock
+                      </span>
+                    )}
+                    <p className="mt-auto text-[8px] uppercase tracking-[0.3em] text-zinc-500">
+                      Updated {formatRelativeTime(listing.updated_at)}
+                    </p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
+      {selectedOverviewSection === "orders" && (
+          <section id="recent-listings" className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-white">
@@ -3179,7 +2830,8 @@ export default function Source() {
               <ListingCard key={listing.id} listing={listing} />
             ))}
           </div>
-        </section>
+          </section>
+        )}
       </main>
       <PostModal isOpen={isPostModalOpen} onClose={() => setIsPostModalOpen(false)} />
     </div>
@@ -3392,14 +3044,11 @@ type ListingCardProps = {
 
 function ListingCard({ listing }: ListingCardProps) {
   const status = listing.status
-  const publishResults = listing.publish_results ?? []
   const postMetadata = parsePostMetadata(listing.metadata)
   const isPost = listing.type === "post" || Boolean(postMetadata)
   const description = isPost
     ? postMetadata?.content?.trim() || "No message included."
     : listing.description || "No description"
-  const showGenericMetadata =
-    !postMetadata && listing.metadata && Object.keys(listing.metadata).length > 0
 
   return (
     <div className="rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-5">
@@ -3430,31 +3079,7 @@ function ListingCard({ listing }: ListingCardProps) {
 
       {postMetadata ? (
         <PostDetails metadata={postMetadata} />
-      ) : showGenericMetadata ? (
-        <div className="mt-4 space-y-1 rounded-lg border border-zinc-900/60 bg-zinc-950/80 p-3 text-xs text-zinc-300">
-          <p className="font-semibold text-zinc-200">Metadata</p>
-          <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-zinc-400">
-            {JSON.stringify(listing.metadata, null, 2)}
-          </pre>
-        </div>
       ) : null}
-
-      <div className="mt-4 space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-          Delivery log
-        </p>
-        {publishResults.length === 0 ? (
-          <p className="text-xs text-zinc-400">
-            Not sent to any integrations yet.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {publishResults.map((result, index) => (
-              <PublishRow key={`${result.integrationId}-${index}`} result={result} />
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   )
 }
