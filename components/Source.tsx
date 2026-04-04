@@ -1,6 +1,13 @@
 "use client"
 
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import {
+  type ChangeEvent,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 import {
   useMutation,
   useQuery,
@@ -16,6 +23,7 @@ import {
   Lock,
   Music4,
   Plug,
+  Plus,
   RefreshCcw,
   Send,
   UploadCloud,
@@ -28,6 +36,15 @@ import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Select, SelectContent, SelectItem } from "./ui/select"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "./ui/sheet"
 import { Textarea } from "./ui/textarea"
 import { PostModal } from "./ui/PostModal"
 
@@ -39,6 +56,8 @@ import type {
   SourceListing,
 } from "@/types/source"
 import { cn } from "@/lib/utils"
+import { getSupabaseBrowser } from "@/lib/supabase"
+import { uploadAvatar } from "@/lib/storage"
 
 const httpMethods = ["POST", "PUT", "PATCH"] as const
 const authModes = ["none", "bearer", "basic", "api_key", "oauth2"] as const
@@ -146,6 +165,22 @@ const defaultListingForm: ListingFormState = {
   metadata: "",
 }
 
+type ProductSheetFormState = {
+  title: string
+  description: string
+  price: string
+  currency: string
+  inventory: string
+}
+
+const defaultProductSheetForm: ProductSheetFormState = {
+  title: "",
+  description: "",
+  price: "",
+  currency: "USD",
+  inventory: "",
+}
+
 type IntegrationPresetField = {
   id: string
   label: string
@@ -170,6 +205,13 @@ type IntegrationPreset = {
   oauthRequired?: boolean
   prerequisites?: IntegrationPresetPrerequisite[]
   build(inputs: Record<string, string>): Partial<IntegrationFormState>
+}
+
+type OverviewTile = {
+  key: string
+  title: string
+  meta: string
+  targetId?: string
 }
 
 const integrationPresets: IntegrationPreset[] = [
@@ -1243,6 +1285,19 @@ export default function Source() {
   const [listingForm, setListingForm] = useState(defaultListingForm)
   const [integrationError, setIntegrationError] = useState<string | null>(null)
   const [listingError, setListingError] = useState<string | null>(null)
+  const [isProductSheetOpen, setIsProductSheetOpen] = useState(false)
+  const [productSheetForm, setProductSheetForm] = useState<ProductSheetFormState>(
+    defaultProductSheetForm
+  )
+  const [productSheetError, setProductSheetError] = useState<string | null>(null)
+  const [isProductSheetSubmitting, setIsProductSheetSubmitting] = useState(false)
+  const [productImageUrl, setProductImageUrl] = useState<string | null>(null)
+  const [productImagePreview, setProductImagePreview] = useState<string | null>(null)
+  const [productImageUploadError, setProductImageUploadError] = useState<string | null>(
+    null
+  )
+  const [isProductImageUploading, setIsProductImageUploading] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
   const [presetInputs, setPresetInputs] = useState<Record<string, string>>({})
   const [presetNotice, setPresetNotice] = useState<string | null>(null)
@@ -1252,6 +1307,7 @@ export default function Source() {
   const [isPostModalOpen, setIsPostModalOpen] = useState(false)
   const oauthWindowRef = useRef<Window | null>(null)
   const oauthCompletionRef = useRef(false)
+  const [activeOverviewTile, setActiveOverviewTile] = useState("products")
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -1308,6 +1364,37 @@ export default function Source() {
 
     return () => window.clearInterval(watcher)
   }, [connectingIntegrationId, oauthCompletionRef, queryClient])
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowser()
+    if (!supabase) return
+
+    let isActive = true
+    supabase.auth.getUser().then(({ data }) => {
+      if (!isActive) return
+      setUserId(data.user?.id ?? null)
+    })
+
+    return () => {
+      isActive = false
+    }
+  }, [])
+
+  const clearProductImagePreview = () => {
+    setProductImagePreview((previous) => {
+      if (previous && typeof window !== "undefined") {
+        URL.revokeObjectURL(previous)
+      }
+      return null
+    })
+  }
+
+  const resetProductImageState = () => {
+    clearProductImagePreview()
+    setProductImageUrl(null)
+    setProductImageUploadError(null)
+    setIsProductImageUploading(false)
+  }
 
   const beginOAuthConnection = async (integration: SourceIntegration) => {
     if (integration.auth_mode !== "oauth2") return
@@ -1663,64 +1750,386 @@ export default function Source() {
     }
   }
 
+  const handleProductSheetOpenChange = (next: boolean) => {
+    if (next) {
+      setProductSheetForm(defaultProductSheetForm)
+      setProductSheetError(null)
+      resetProductImageState()
+    } else {
+      setIsProductSheetSubmitting(false)
+      resetProductImageState()
+      setProductSheetError(null)
+    }
+    setIsProductSheetOpen(next)
+  }
+
+  const handleProductSheetSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setProductSheetError(null)
+
+    const metadataFields: Record<string, string> = {}
+    if (productImageUrl) {
+      metadataFields.coverImage = productImageUrl
+    }
+
+    setIsProductSheetSubmitting(true)
+
+    createListing.mutate(
+      {
+        type: "product",
+        title: productSheetForm.title,
+        description: productSheetForm.description,
+        price: productSheetForm.price,
+        currency: productSheetForm.currency,
+        inventory: productSheetForm.inventory,
+        durationMinutes: "",
+        metadata: Object.keys(metadataFields).length
+          ? JSON.stringify(metadataFields)
+          : "",
+    },
+      {
+        onSuccess: () => {
+          setIsProductSheetSubmitting(false)
+          handleProductSheetOpenChange(false)
+        },
+        onError: (err) => {
+          setProductSheetError(err.message)
+          setIsProductSheetSubmitting(false)
+        },
+      }
+    )
+  }
+
+  const handleProductImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    input.value = ""
+
+    if (!userId) {
+      setProductImageUploadError("Sign in to upload product images.")
+      return
+    }
+
+    const previousPreview = productImagePreview
+    if (previousPreview && typeof window !== "undefined") {
+      URL.revokeObjectURL(previousPreview)
+    }
+
+    const previewUrl = typeof window !== "undefined" ? URL.createObjectURL(file) : null
+    if (previewUrl) {
+      setProductImagePreview(previewUrl)
+    }
+
+    setProductImageUploadError(null)
+    setProductImageUrl(null)
+    setIsProductImageUploading(true)
+
+    const uploadResult = await uploadAvatar(file, userId)
+    setIsProductImageUploading(false)
+
+    if (!uploadResult.success || !uploadResult.url) {
+      setProductImageUploadError(uploadResult.error || "Failed to upload image.")
+      return
+    }
+
+    setProductImageUploadError(null)
+    setProductImageUrl(uploadResult.url)
+  }
+
+  const productSheetBusy =
+    isProductImageUploading || (isProductSheetSubmitting && createListing.isPending)
+
+  const overviewTiles: OverviewTile[] = [
+    { key: "products", title: "Products", meta: "0 active", targetId: "listing-form" },
+    { key: "services", title: "Services", meta: "Coming soon", targetId: "integration-form" },
+    { key: "media", title: "Media", meta: "0 assets", targetId: "media-section" },
+    { key: "orders", title: "Orders", meta: "Awaiting sync", targetId: "recent-listings" },
+    { key: "inquiries", title: "Inquiries", meta: "Muted alerts", targetId: "connected-websites" },
+  ]
+
+  const handleOverviewTileClick = (tile: OverviewTile) => {
+    if (!tile.targetId) return
+    setActiveOverviewTile(tile.key)
+    if (typeof document === "undefined") return
+    const target = document.getElementById(tile.targetId)
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-900/60 bg-zinc-950/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-zinc-400">
-                Source
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Sheet
+                  open={isProductSheetOpen}
+                  onOpenChange={handleProductSheetOpenChange}
+                >
+                  <SheetTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="flex h-12 w-12 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950/70 text-white transition hover:border-zinc-700"
+                    >
+                      <Plus className="size-5" />
+                      <span className="sr-only">Create product</span>
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent
+                    side="right"
+                    className="max-w-sm border-l border-zinc-900/60 bg-zinc-950 text-white"
+                  >
+                    <form className="flex h-full flex-col" onSubmit={handleProductSheetSubmit}>
+                      <SheetHeader className="border-b border-white/5">
+                        <SheetTitle className="text-lg font-semibold text-white">
+                          add PRODUCT
+                        </SheetTitle>
+                        <SheetDescription className="text-sm text-zinc-400">
+                          Publish a focused product listing across every connected storefront.
+                        </SheetDescription>
+                      </SheetHeader>
+                      <div className="flex-1 space-y-5 overflow-y-auto px-6 py-4">
+                        {productSheetError && (
+                          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                            {productSheetError}
+                          </div>
+                        )}
+                        <FieldStack label="Title" htmlFor="product-sheet-title">
+                          <Input
+                            id="product-sheet-title"
+                            value={productSheetForm.title}
+                            onChange={(event) =>
+                              setProductSheetForm((prev) => ({
+                                ...prev,
+                                title: event.target.value,
+                              }))
+                            }
+                            placeholder="Product name"
+                            required
+                            className="border-black/60 bg-zinc-950/70 focus-visible:border-black/60 focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                        </FieldStack>
+
+                        <FieldStack label="Description" htmlFor="product-sheet-description">
+                          <Textarea
+                            id="product-sheet-description"
+                            value={productSheetForm.description}
+                            onChange={(event) =>
+                              setProductSheetForm((prev) => ({
+                                ...prev,
+                                description: event.target.value,
+                              }))
+                            }
+                            rows={4}
+                            placeholder="What shoppers receive when they checkout"
+                            className="border-black/60 bg-zinc-950/70 focus-visible:border-black/60 focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                        </FieldStack>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <FieldStack label="Price" htmlFor="product-sheet-price">
+                            <Input
+                              id="product-sheet-price"
+                              type="number"
+                              inputMode="decimal"
+                              step="0.01"
+                              min="0"
+                              value={productSheetForm.price}
+                              onChange={(event) =>
+                                setProductSheetForm((prev) => ({
+                                  ...prev,
+                                  price: event.target.value,
+                                }))
+                              }
+                              placeholder="99.00"
+                              className="border-black/60 bg-zinc-950/70 focus-visible:border-black/60 focus-visible:ring-0 focus-visible:ring-offset-0"
+                            />
+                          </FieldStack>
+                          <FieldStack label="Currency" htmlFor="product-sheet-currency">
+                            <Input
+                              id="product-sheet-currency"
+                              value={productSheetForm.currency}
+                              onChange={(event) =>
+                                setProductSheetForm((prev) => ({
+                                  ...prev,
+                                  currency: event.target.value.toUpperCase().slice(0, 3),
+                                }))
+                              }
+                              placeholder="USD"
+                              maxLength={3}
+                              className="border-black/60 bg-zinc-950/70 focus-visible:border-black/60 focus-visible:ring-0 focus-visible:ring-offset-0"
+                            />
+                          </FieldStack>
+                        </div>
+
+                        <FieldStack label="Inventory" htmlFor="product-sheet-inventory">
+                          <Input
+                            id="product-sheet-inventory"
+                            type="number"
+                            inputMode="numeric"
+                            min="0"
+                            value={productSheetForm.inventory}
+                            onChange={(event) =>
+                              setProductSheetForm((prev) => ({
+                                ...prev,
+                                inventory: event.target.value,
+                              }))
+                            }
+                            placeholder="50"
+                            className="border-black/60 bg-zinc-950/70 focus-visible:border-black/60 focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                        </FieldStack>
+
+                        <div className="space-y-2">
+                          <Label
+                            className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400"
+                            htmlFor="product-sheet-image"
+                          >
+                            Product image
+                          </Label>
+                          <p className="text-xs text-zinc-500">
+                            Upload an image that represents the product card inside Source.
+                          </p>
+                          <label
+                            className="group flex cursor-pointer items-center justify-between rounded-xl border border-black/60 bg-zinc-950/70 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] text-white transition hover:border-zinc-300/80"
+                            htmlFor="product-sheet-image"
+                          >
+                            <span>
+                              {isProductImageUploading
+                                ? "Uploading…"
+                                : productImageUrl
+                                ? "Replace image"
+                                : "Upload image"}
+                            </span>
+                            {isProductImageUploading && (
+                              <Loader2 className="size-4 animate-spin text-white/70" />
+                            )}
+                            <input
+                              id="product-sheet-image"
+                              type="file"
+                              accept="image/*"
+                              className="sr-only"
+                              onChange={handleProductImageChange}
+                              disabled={isProductImageUploading}
+                            />
+                          </label>
+                          {productImagePreview && (
+                            <div className="overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                              <img
+                                src={productImagePreview}
+                                alt="Product preview"
+                                className="h-36 w-full object-cover"
+                              />
+                            </div>
+                          )}
+                          {productImageUploadError && (
+                            <p className="text-xs text-red-400">
+                              {productImageUploadError}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <SheetFooter className="border-t border-white/10">
+                        <div className="flex items-center justify-between gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => handleProductSheetOpenChange(false)}
+                          >
+                            Cancel
+                          </Button>
+                          <Button type="submit" disabled={productSheetBusy}>
+                            {productSheetBusy ? "Publishing..." : "Create product"}
+                          </Button>
+                        </div>
+                      </SheetFooter>
+                    </form>
+                  </SheetContent>
+                </Sheet>
+                <div className="text-sm">
+                  <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">New listing</p>
+                  <p className="text-sm font-semibold leading-none text-white">
+                    Create a product
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  className="gap-2 bg-zinc-500 text-white hover:bg-zinc-400"
+                  onClick={() => setIsPostModalOpen(true)}
+                >
+                  <Send className="size-4" /> Post everywhere
+                </Button>
+                <Badge className="h-fit gap-2 bg-zinc-500/20 text-zinc-200">
+                  <Plug className="size-3" /> Paid upgrade
+                </Badge>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-[0.3em] text-zinc-400">Source</p>
+              <h1 className="text-3xl font-semibold text-white">Seller control center</h1>
+              <p className="text-sm text-zinc-300 max-w-3xl">
+                Manage listings, services, and support touchpoints while keeping every storefront synced from one dedicated hub.
               </p>
-              <h1 className="mt-1 text-3xl font-semibold text-white">
-                Connect your storefronts
-              </h1>
-              <p className="mt-3 max-w-3xl text-sm text-zinc-300">
-                Link every website you sell on and publish listings once. Source
-                will send the payload to each integration with the structure and
-                headers you provide.
-              </p>
             </div>
-            <div className="flex flex-col gap-2 self-start md:flex-row md:items-center md:gap-3">
-              <Button
-                type="button"
-                className="gap-2 bg-zinc-500 text-white hover:bg-zinc-400"
-                onClick={() => setIsPostModalOpen(true)}
-              >
-                <Send className="size-4" /> Post everywhere
-              </Button>
-              <Badge className="h-fit gap-2 bg-zinc-500/20 text-zinc-200">
-                <Plug className="size-3" /> Paid upgrade
-              </Badge>
+            <div className="grid min-w-full grid-cols-[repeat(5,minmax(0,1fr))] gap-2 text-xs sm:gap-3 sm:text-sm">
+              {overviewTiles.map((tile) => {
+                const isActive = activeOverviewTile === tile.key
+                return (
+                  <button
+                    key={tile.key}
+                    type="button"
+                    onClick={() => handleOverviewTileClick(tile)}
+                    disabled={!tile.targetId}
+                    aria-pressed={isActive}
+                    className={cn(
+                      "flex flex-col rounded-2xl border bg-zinc-950/70 px-3 py-4 text-xs text-zinc-200 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60 sm:px-4 sm:py-5 sm:text-sm",
+                      "border-zinc-900/60",
+                      isActive &&
+                        "border-emerald-500/60 bg-zinc-900/70 text-white shadow-lg shadow-emerald-500/20",
+                      !tile.targetId && "cursor-not-allowed opacity-60"
+                    )}
+                  >
+                    <p className="text-sm font-semibold text-white sm:text-base">{tile.title}</p>
+                    <p className="text-[9px] text-zinc-500 sm:text-xs">{tile.meta}</p>
+                  </button>
+                )
+              })}
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
-            <div className="flex items-center gap-2">
-              <Plug className="size-4 text-zinc-300" />
-              <span>
-                {integrationsQuery.isLoading
-                  ? "Loading connections..."
-                  : `${activeIntegrationCount} active connection${
-                      activeIntegrationCount === 1 ? "" : "s"
-                    }`}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <UploadCloud className="size-4 text-zinc-300" />
-              <span>
-                {listingsQuery.isLoading
-                  ? "Loading listings..."
-                  : `${listings.length} recent listing${
-                      listings.length === 1 ? "" : "s"
-                    }`}
-              </span>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
+              <div className="flex items-center gap-2">
+                <Plug className="size-4 text-zinc-300" />
+                <span>
+                  {integrationsQuery.isLoading
+                    ? "Loading connections..."
+                    : `${activeIntegrationCount} active connection${
+                        activeIntegrationCount === 1 ? "" : "s"
+                      }`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <UploadCloud className="size-4 text-zinc-300" />
+                <span>
+                  {listingsQuery.isLoading
+                    ? "Loading listings..."
+                    : `${listings.length} recent listing${listings.length === 1 ? "" : "s"}`}
+                </span>
+              </div>
             </div>
           </div>
         </div>
       </header>
 
       <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10">
-        <section className="overflow-hidden rounded-2xl border border-zinc-900/60 bg-zinc-950/70 shadow-lg shadow-zinc-950/40">
+        <section
+          id="media-section"
+          className="overflow-hidden rounded-2xl border border-zinc-900/60 bg-zinc-950/70 shadow-lg shadow-zinc-950/40"
+        >
           <div className="flex flex-col gap-3 border-b border-zinc-900/60 px-6 py-5 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-white">How Source syncs your listings</h2>
@@ -1759,7 +2168,7 @@ export default function Source() {
           </div>
         </section>
 
-        <section className="space-y-4">
+        <section id="connected-websites" className="space-y-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-xl font-semibold text-white">
@@ -2490,6 +2899,7 @@ export default function Source() {
           </form>
 
           <form
+            id="listing-form"
             className="rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-6 shadow-xl shadow-zinc-950/40"
             onSubmit={(event) => {
               event.preventDefault()
@@ -2502,17 +2912,17 @@ export default function Source() {
               }
             }}
           >
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-white">
-                  Publish listing
-                </h3>
-                <p className="mt-1 text-xs text-zinc-400">
-                  Listings publish to every active integration immediately when
-                  you choose “Publish now”.
-                </p>
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">
+                    Create product or service
+                  </h3>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    Quickly spin up a product listing and push it to every active
+                    integration when you hit “Publish now”.
+                  </p>
+                </div>
               </div>
-            </div>
 
             {listingError && (
               <div className="mt-4 rounded-md border border-zinc-500/40 bg-zinc-950/40 p-3 text-sm text-zinc-200">
@@ -2717,7 +3127,7 @@ export default function Source() {
           </form>
         </section>
 
-        <section className="space-y-4">
+        <section id="recent-listings" className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-white">

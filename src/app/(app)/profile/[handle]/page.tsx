@@ -3,17 +3,28 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { Profile, SocialLink, ContentCard, ProfileModule, LinkedAccount } from "@/lib/types";
+import {
+  Profile,
+  SocialLink,
+  ContentCard,
+  ProfileModule,
+  ProfileModuleLinkCards,
+  LinkedAccount,
+} from "@/lib/types";
 import { getProfileByHandle, getProfileLinks } from "@/lib/db";
 import { getLinkedAccounts } from "@/lib/db/linked-accounts";
 import { getSocialLinks } from "@/lib/db/profile-management";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { uploadAvatar } from "@/lib/storage";
 import { resolveSocialLink } from "@/lib/profile/socialLinks";
+import type { RelationshipViewCounts } from "@/components/friends/RelationshipViewBar";
 import HeroHeader from "@/components/profile/HeroHeader";
 import ProfileModules from "@/components/profile/modules/ProfileModules";
+import { ContentCardsSection } from "@/components/profile/ContentCardsSection";
 import { buildProfileModules } from "@/components/profile/modules/buildProfileModules";
+import { SourceListing } from "@/types/source";
 import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
+import ProductCarousel from "@/components/profile/ProductCarousel";
 
 type RelationshipStatus =
   | "self"
@@ -33,6 +44,9 @@ export default function ProfileByHandlePage() {
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [contentCards, setContentCards] = useState<ContentCard[]>([]);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>([]);
+  const [sourceProducts, setSourceProducts] = useState<SourceListing[]>([]);
+  const [sourceProductsLoading, setSourceProductsLoading] = useState(false);
+  const [sourceProductsError, setSourceProductsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [relationshipStatus, setRelationshipStatus] = useState<RelationshipStatus | null>(null);
@@ -40,6 +54,7 @@ export default function ProfileByHandlePage() {
   const [requestingFriend, setRequestingFriend] = useState(false);
   const [incomingRequestId, setIncomingRequestId] = useState<string | null>(null);
   const [respondingRequest, setRespondingRequest] = useState(false);
+  const [relationshipCounts, setRelationshipCounts] = useState<RelationshipViewCounts | null>(null);
 
   const rawHandleParam = params.handle;
   const normalizedHandle = useMemo(() => {
@@ -167,6 +182,66 @@ export default function ProfileByHandlePage() {
   }, [relationshipStatus, profile?.username]);
 
   useEffect(() => {
+    if (!profile?.username) {
+      setRelationshipCounts(null);
+      return;
+    }
+
+    let isActive = true;
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const response = await fetch(
+          `/api/profile/${encodeURIComponent(profile.username)}/friend-stats`,
+          { signal: controller.signal },
+        );
+
+        if (!isActive) {
+          return;
+        }
+
+        if (!response.ok) {
+          setRelationshipCounts(null);
+          return;
+        }
+
+        const payload = (await response.json()) as {
+          friends?: number;
+          following?: number;
+          followers?: number;
+        };
+
+        if (!isActive) {
+          return;
+        }
+
+        setRelationshipCounts({
+          friends: typeof payload.friends === "number" ? payload.friends : 0,
+          following: typeof payload.following === "number" ? payload.following : 0,
+          followers: typeof payload.followers === "number" ? payload.followers : 0,
+        });
+      } catch (err) {
+        if (!isActive) {
+          return;
+        }
+
+        if ((err as { name?: string }).name === "AbortError") {
+          return;
+        }
+
+        console.error("Failed to load friend stats", err);
+        setRelationshipCounts(null);
+      }
+    })();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, [profile?.username]);
+
+  useEffect(() => {
     async function loadProfileData() {
       if (!normalizedHandle) {
         router.push("/dashboard");
@@ -206,6 +281,67 @@ export default function ProfileByHandlePage() {
 
     loadProfileData();
   }, [normalizedHandle, router]);
+
+  useEffect(() => {
+    if (!profile?.username) {
+      setSourceProducts([]);
+      setSourceProductsError(null);
+      setSourceProductsLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    const controller = new AbortController();
+
+    setSourceProductsLoading(true);
+    setSourceProductsError(null);
+
+    const fetchProducts = async () => {
+      try {
+        const response = await fetch(
+          `/api/profile/${encodeURIComponent(profile.username)}/source-products`,
+          { signal: controller.signal },
+        );
+
+        if (!isActive) return;
+
+        if (!response.ok) {
+          throw new Error(`Failed to load products (${response.status})`);
+        }
+
+        const payload = (await response.json().catch(() => null)) as
+          | { listings?: SourceListing[] }
+          | null;
+        const listings = Array.isArray(payload?.listings) ? payload.listings : [];
+
+        if (isActive) {
+          setSourceProducts(listings);
+        }
+      } catch (error) {
+        if (!isActive) return;
+        if ((error as { name?: string }).name === "AbortError") {
+          return;
+        }
+
+        console.error("Failed to load profile products:", error);
+        setSourceProducts([]);
+        setSourceProductsError(
+          error instanceof Error ? error.message : "Unable to load product listings.",
+        );
+      } finally {
+        if (isActive) {
+          setSourceProductsLoading(false);
+        }
+      }
+    };
+
+    void fetchProducts();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, [profile?.username]);
 
   // Handle share functionality
   const handleShare = async () => {
@@ -376,22 +512,16 @@ export default function ProfileByHandlePage() {
     return buildProfileModules({ profile, contentCards, socialLinks });
   }, [profile, contentCards, socialLinks]);
 
-  const activeModuleCount = useMemo(
+  const linkCardsModule = useMemo(
     () =>
-      modules.filter((module) => {
-        switch (module.type) {
-          case "featured_carousel":
-            return module.slides.length > 0;
-          case "link_cards":
-            return module.cards.some((card) => card.is_active);
-          case "social_proof_strip":
-            return module.items.length > 0;
-          case "embedded_media_accordion":
-            return module.sections.length > 0;
-          default:
-            return false;
-        }
-      }).length,
+      modules.find(
+        (module): module is ProfileModuleLinkCards => module.type === "link_cards",
+      ),
+    [modules],
+  );
+
+  const otherModules = useMemo(
+    () => modules.filter((module) => module.type !== "link_cards"),
     [modules],
   );
 
@@ -553,32 +683,27 @@ export default function ProfileByHandlePage() {
           isOwner={isOwner}
           onAvatarChange={handleAvatarChange}
           isAvatarUploading={isAvatarUploading}
+          relationshipCounts={relationshipCounts ?? undefined}
           actionSlot={actionSlot}
         />
 
-        <section className="mx-auto mt-14 w-full max-w-5xl px-4 pb-20">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-semibold text-white">Creator lineup</h2>
-              <p className="mt-1 text-sm text-white/55">
-                {activeModuleCount > 0
-                  ? "Tap through the modules to explore their latest drops, socials, and media."
-                  : "Modules will unlock here once this creator publishes their first block."}
-              </p>
+        <div className="mx-auto mt-6 w-full max-w-5xl px-4 pb-20 space-y-12 bg-black">
+          {linkCardsModule ? (
+            <ContentCardsSection module={linkCardsModule} />
+          ) : null}
+
+          <ProductCarousel
+            products={sourceProducts}
+            loading={sourceProductsLoading}
+            error={sourceProductsError}
+          />
+
+          {otherModules.length > 0 ? (
+            <div className="space-y-10">
+              <ProfileModules modules={otherModules} loading={false} isOwner={isOwner} />
             </div>
-
-            {activeModuleCount > 0 ? (
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium text-white/75 shadow-[0_10px_25px_rgba(15,23,42,0.45)]">
-                <span className="inline-block h-2 w-2 rounded-full bg-white/60" />
-                {activeModuleCount} {activeModuleCount === 1 ? "module live" : "modules live"}
-              </span>
-            ) : null}
-          </div>
-
-          <div className="mt-8">
-            <ProfileModules modules={modules} loading={false} isOwner={isOwner} />
-          </div>
-        </section>
+          ) : null}
+        </div>
       </main>
     </div>
   );

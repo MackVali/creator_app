@@ -776,6 +776,7 @@ export interface Database {
           category: string | null;
           position: number;
           is_active: boolean;
+          size: "small" | "medium";
           created_at: string;
           updated_at: string;
         };
@@ -789,6 +790,7 @@ export interface Database {
           category?: string | null;
           position?: number;
           is_active?: boolean;
+          size?: "small" | "medium";
           created_at?: string;
           updated_at?: string;
         };
@@ -802,6 +804,7 @@ export interface Database {
           category?: string | null;
           position?: number;
           is_active?: boolean;
+          size?: "small" | "medium";
           created_at?: string;
           updated_at?: string;
         };
