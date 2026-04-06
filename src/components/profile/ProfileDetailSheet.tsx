@@ -245,32 +245,15 @@ export default function ProfileDetailSheet({
         </div>
 
         {isProduct ? (
-          <div className="relative isolate w-full">
-            <div className="relative h-[min(60vh,460px)] overflow-hidden rounded-t-[32px]">
-              {image ? (
-                <img
-                  src={image}
-                  alt={title}
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center bg-white/5 text-xs uppercase tracking-[0.45em] text-white/40">
-                  No cover
-                </div>
-              )}
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-              <div className="absolute inset-x-6 top-5 z-20 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label={`Close ${badgeLabel} details`}
-                  className="rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.45em] text-white/80 transition hover:border-white hover:text-white"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
+          <div className="absolute inset-x-6 top-5 z-20 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={`Close ${badgeLabel} details`}
+              className="rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.45em] text-white/80 transition hover:border-white hover:text-white"
+            >
+              Close
+            </button>
           </div>
         ) : (
           <div className="relative flex items-center justify-between px-6 pt-5">
@@ -288,89 +271,140 @@ export default function ProfileDetailSheet({
         )}
 
         <div
-          className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 [-webkit-overflow-scrolling:touch] ${isProduct ? "pt-6" : "pt-4"}`}
+          className={`min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] ${isProduct ? "px-0" : "px-6 pt-4 pb-6"}`}
         >
-          <div className="space-y-6">
-            {!isProduct && (
-              <div className="relative">
-                {image ? (
-                  <div className="relative overflow-hidden rounded-[28px] border border-white/5 bg-white/5 shadow-[inset_0_0_45px_rgba(0,0,0,0.35)]">
+          {isProduct ? (
+            <>
+              <div className="relative isolate w-full">
+                <div className="relative h-[min(60vh,460px)] overflow-hidden rounded-t-[32px]">
+                  {image ? (
                     <img
                       src={image}
                       alt={title}
-                      className="h-56 w-full object-cover"
+                      className="h-full w-full object-cover"
                       loading="lazy"
                     />
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                  </div>
-                ) : (
-                  <div className="flex h-56 items-center justify-center rounded-[28px] border border-white/10 bg-white/5 text-xs uppercase tracking-[0.45em] text-white/40">
-                    No cover
-                  </div>
-                )}
+                  ) : (
+                    <div className="flex h-full items-center justify-center bg-white/5 text-xs uppercase tracking-[0.45em] text-white/40">
+                      No cover
+                    </div>
+                  )}
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+                </div>
               </div>
-            )}
-
-            <div className="space-y-1">
-              <p className="text-3xl font-semibold leading-tight text-white sm:text-[2.8rem]">{title}</p>
-              <p className="text-2xl font-semibold text-amber-300">{priceLabel}</p>
-              {description ? (
-                <p className="text-sm leading-relaxed text-white/70">{description}</p>
-              ) : null}
-            </div>
-
-            {isProduct ? (
-              <>
-                {showFulfillmentBlock ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">Fulfillment</p>
-                        <p className="text-sm font-semibold text-white/90">
-                          {productKindLabel ?? "Physical fulfillment"}
-                        </p>
-                      </div>
-                      {productKindLabel ? (
-                        <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
-                          {productKindLabel}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-4 space-y-3">
-                      {productFulfillmentRows.map((row) => (
-                        <SheetRow key={row.label} label={row.label} value={row.value} />
-                      ))}
-                    </div>
-                    {allowsMultipleUnits ? (
-                      <p className="mt-3 text-xs uppercase tracking-[0.45em] text-amber-200/80">
-                        Multiple units supported—quantity picker arriving with the cart experience.
-                      </p>
+              <div className="px-6 pb-6 pt-6">
+                <div className="space-y-6">
+                  <div className="space-y-1">
+                    <p className="text-3xl font-semibold leading-tight text-white sm:text-[2.8rem]">
+                      {title}
+                    </p>
+                    <p className="text-2xl font-semibold text-amber-300">{priceLabel}</p>
+                    {description ? (
+                      <p className="text-sm leading-relaxed text-white/70">{description}</p>
                     ) : null}
                   </div>
-                ) : null}
 
-                {isDigitalProduct ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">Delivery</p>
-                        <p className="text-sm font-semibold text-white/90">Digital product</p>
+                  {showFulfillmentBlock ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                            Fulfillment
+                          </p>
+                          <p className="text-sm font-semibold text-white/90">
+                            {productKindLabel ?? "Physical fulfillment"}
+                          </p>
+                        </div>
+                        {productKindLabel ? (
+                          <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
+                            {productKindLabel}
+                          </span>
+                        ) : null}
                       </div>
-                      <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
-                        {productKindLabel ?? "Digital"}
-                      </span>
+                      <div className="mt-4 space-y-3">
+                        {productFulfillmentRows.map((row) => (
+                          <SheetRow key={row.label} label={row.label} value={row.value} />
+                        ))}
+                      </div>
+                      {allowsMultipleUnits ? (
+                        <p className="mt-3 text-xs uppercase tracking-[0.45em] text-amber-200/80">
+                          Multiple units supported—quantity picker arriving with the cart
+                          experience.
+                        </p>
+                      ) : null}
                     </div>
-                    <p className="mt-3 text-sm leading-relaxed text-white/70">
-                      Instant deliverables are sent straight to your inbox once checkout is complete.
-                    </p>
-                  </div>
+                  ) : null}
+
+                  {isDigitalProduct ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                            Delivery
+                          </p>
+                          <p className="text-sm font-semibold text-white/90">Digital product</p>
+                        </div>
+                        <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
+                          {productKindLabel ?? "Digital"}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm leading-relaxed text-white/70">
+                        Instant deliverables are sent straight to your inbox once checkout is
+                        complete.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {detailRows.length > 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
+                      <div className="flex flex-col gap-3">
+                        {detailRows.map((row) => (
+                          <SheetRow key={row.label} label={row.label} value={row.value} />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-6">
+              {!isProduct && (
+                <div className="relative">
+                  {image ? (
+                    <div className="relative overflow-hidden rounded-[28px] border border-white/5 bg-white/5 shadow-[inset_0_0_45px_rgba(0,0,0,0.35)]">
+                      <img
+                        src={image}
+                        alt={title}
+                        className="h-56 w-full object-cover"
+                        loading="lazy"
+                      />
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                    </div>
+                  ) : (
+                    <div className="flex h-56 items-center justify-center rounded-[28px] border border-white/10 bg-white/5 text-xs uppercase tracking-[0.45em] text-white/40">
+                      No cover
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <p className="text-3xl font-semibold leading-tight text-white sm:text-[2.8rem]">
+                  {title}
+                </p>
+                <p className="text-2xl font-semibold text-amber-300">{priceLabel}</p>
+                {description ? (
+                  <p className="text-sm leading-relaxed text-white/70">{description}</p>
                 ) : null}
-              </>
-            ) : (
+              </div>
+
               <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">Service mode</p>
+                    <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                      Service mode
+                    </p>
                     <p className="text-sm font-semibold text-white/90">{serviceModeLabel}</p>
                   </div>
                   <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
@@ -387,7 +421,9 @@ export default function ProfileDetailSheet({
                 ) : null}
                 {serviceMode === "flat_rate" && serviceDeliverables ? (
                   <div className="mt-4 space-y-1">
-                    <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">Deliverables</p>
+                    <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                      Deliverables
+                    </p>
                     <p className="text-sm leading-relaxed text-white/70 whitespace-pre-line">
                       {serviceDeliverables}
                     </p>
@@ -395,37 +431,39 @@ export default function ProfileDetailSheet({
                 ) : null}
                 {serviceMode === "custom_quote" && serviceRequirements ? (
                   <div className="mt-4 space-y-1">
-                    <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">Requirements</p>
+                    <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                      Requirements
+                    </p>
                     <p className="text-sm leading-relaxed text-white/70 whitespace-pre-line">
                       {serviceRequirements}
                     </p>
                   </div>
                 ) : null}
               </div>
-            )}
-            {detailRows.length > 0 ? (
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
-                <div className="flex flex-col gap-3">
-                  {detailRows.map((row) => (
-                    <SheetRow key={row.label} label={row.label} value={row.value} />
+              {detailRows.length > 0 ? (
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
+                  <div className="flex flex-col gap-3">
+                    {detailRows.map((row) => (
+                      <SheetRow key={row.label} label={row.label} value={row.value} />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {!isProduct && serviceTags.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {serviceTags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-white/20 px-3 py-1 text-[12px] uppercase tracking-[0.4em] text-white/70"
+                    >
+                      {tag}
+                    </span>
                   ))}
                 </div>
-              </div>
-            ) : null}
-
-            {!isProduct && serviceTags.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {serviceTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full border border-white/20 px-3 py-1 text-[12px] uppercase tracking-[0.4em] text-white/70"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </div>
+              ) : null}
+            </div>
+          )}
         </div>
 
         <div className="flex-shrink-0 border-t border-white/5 bg-gradient-to-t from-neutral-900/90 via-neutral-950/70 to-transparent px-6 py-5">
