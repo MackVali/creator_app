@@ -3,9 +3,12 @@
 import {
   type ChangeEvent,
   type FormEvent,
+  type PointerEvent,
   type ReactNode,
   type RefObject,
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react"
@@ -1515,6 +1518,50 @@ export default function Source() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const { tier } = useEntitlement()
   const isAdmin = tier === "ADMIN"
+  const [isCropOpen, setIsCropOpen] = useState(false)
+  const [cropTarget, setCropTarget] = useState<
+    "product" | "product_detail" | "service" | "service_detail" | null
+  >(null)
+  const [cropFile, setCropFile] = useState<File | null>(null)
+  const [cropSourceUrl, setCropSourceUrl] = useState<string | null>(null)
+  const [cropZoom, setCropZoom] = useState(1)
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 })
+  const [cropImageSize, setCropImageSize] = useState<{ width: number; height: number } | null>(
+    null
+  )
+  const [cropFrameSize, setCropFrameSize] = useState(0)
+  const [isCropSaving, setIsCropSaving] = useState(false)
+  const cropFrameRef = useRef<HTMLDivElement | null>(null)
+  const cropDragState = useRef<{
+    pointerId: number | null
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+  }>({ pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 })
+
+  const cropBaseScale = useMemo(() => {
+    if (!cropImageSize || !cropFrameSize) return 1
+    return Math.max(
+      cropFrameSize / cropImageSize.width,
+      cropFrameSize / cropImageSize.height
+    )
+  }, [cropImageSize, cropFrameSize])
+  const cropScale = cropBaseScale * cropZoom
+  const clampCropOffset = useCallback(
+    (next: { x: number; y: number }) => {
+      if (!cropImageSize || !cropFrameSize) return next
+      const displayWidth = cropImageSize.width * cropScale
+      const displayHeight = cropImageSize.height * cropScale
+      const maxX = Math.max(0, (displayWidth - cropFrameSize) / 2)
+      const maxY = Math.max(0, (displayHeight - cropFrameSize) / 2)
+      return {
+        x: Math.min(maxX, Math.max(-maxX, next.x)),
+        y: Math.min(maxY, Math.max(-maxY, next.y)),
+      }
+    },
+    [cropImageSize, cropFrameSize, cropScale]
+  )
 
 
   useEffect(() => {
@@ -1572,6 +1619,39 @@ export default function Source() {
 
     return () => window.clearInterval(watcher)
   }, [connectingIntegrationId, oauthCompletionRef, queryClient])
+
+  useEffect(() => {
+    if (!isCropOpen) return
+    const frame = cropFrameRef.current
+    if (!frame) return
+    const updateSize = () => {
+      setCropFrameSize(frame.getBoundingClientRect().width)
+    }
+    updateSize()
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(frame)
+    return () => observer.disconnect()
+  }, [isCropOpen])
+
+  useEffect(() => {
+    if (!cropSourceUrl) return
+    let canceled = false
+    const img = new Image()
+    img.onload = () => {
+      if (canceled) return
+      setCropImageSize({ width: img.naturalWidth, height: img.naturalHeight })
+      setCropZoom(1)
+      setCropOffset({ x: 0, y: 0 })
+    }
+    img.src = cropSourceUrl
+    return () => {
+      canceled = true
+    }
+  }, [cropSourceUrl])
+
+  useEffect(() => {
+    setCropOffset((prev) => clampCropOffset(prev))
+  }, [clampCropOffset])
 
   useEffect(() => {
     const supabase = getSupabaseBrowser()
@@ -2645,154 +2725,302 @@ export default function Source() {
     updateOrderFulfillment.mutate({ orderId, shipping })
   }
 
-  const handleProductImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget
-    const file = input.files?.[0]
-    if (!file) return
-    input.value = ""
-
-    if (!userId) {
-      setProductImageUploadError("Sign in to upload product images.")
-      return
+  const setListingImageError = (
+    target: "product" | "product_detail" | "service" | "service_detail",
+    message: string | null
+  ) => {
+    switch (target) {
+      case "product":
+        setProductImageUploadError(message)
+        break
+      case "product_detail":
+        setProductDetailImageUploadError(message)
+        break
+      case "service":
+        setServiceImageUploadError(message)
+        break
+      case "service_detail":
+        setServiceDetailImageUploadError(message)
+        break
     }
-
-    const previousPreview = productImagePreview
-    if (previousPreview && typeof window !== "undefined") {
-      URL.revokeObjectURL(previousPreview)
-    }
-
-    const previewUrl = typeof window !== "undefined" ? URL.createObjectURL(file) : null
-    if (previewUrl) {
-      setProductImagePreview(previewUrl)
-    }
-
-    setProductImageUploadError(null)
-    setProductImageUrl(null)
-    setIsProductImageUploading(true)
-
-    const uploadResult = await uploadAvatar(file, userId)
-    setIsProductImageUploading(false)
-
-    if (!uploadResult.success || !uploadResult.url) {
-      setProductImageUploadError(uploadResult.error || "Failed to upload image.")
-      return
-    }
-
-    setProductImageUploadError(null)
-    setProductImageUrl(uploadResult.url)
   }
 
-  const handleProductDetailImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget
-    const file = input.files?.[0]
-    if (!file) return
-    input.value = ""
-
-    if (!userId) {
-      setProductDetailImageUploadError("Sign in to upload product images.")
-      return
+  const setListingImageUploading = (
+    target: "product" | "product_detail" | "service" | "service_detail",
+    value: boolean
+  ) => {
+    switch (target) {
+      case "product":
+        setIsProductImageUploading(value)
+        break
+      case "product_detail":
+        setIsProductDetailImageUploading(value)
+        break
+      case "service":
+        setIsServiceImageUploading(value)
+        break
+      case "service_detail":
+        setIsServiceDetailImageUploading(value)
+        break
     }
-
-    const previousPreview = productDetailImagePreview
-    if (previousPreview && typeof window !== "undefined") {
-      URL.revokeObjectURL(previousPreview)
-    }
-
-    const previewUrl = typeof window !== "undefined" ? URL.createObjectURL(file) : null
-    if (previewUrl) {
-      setProductDetailImagePreview(previewUrl)
-    }
-
-    setProductDetailImageUploadError(null)
-    setProductDetailImageUrl(null)
-    setIsProductDetailImageUploading(true)
-    setProductDetailImageDirty(true)
-
-    const uploadResult = await uploadAvatar(file, userId)
-    setIsProductDetailImageUploading(false)
-
-    if (!uploadResult.success || !uploadResult.url) {
-      setProductDetailImageUploadError(uploadResult.error || "Failed to upload image.")
-      return
-    }
-
-    setProductDetailImageUploadError(null)
-    setProductDetailImageUrl(uploadResult.url)
   }
 
-  const handleServiceImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget
-    const file = input.files?.[0]
-    if (!file) return
-    input.value = ""
-
-    if (!userId) {
-      setServiceImageUploadError("Sign in to upload service images.")
-      return
+  const setListingImageUrl = (
+    target: "product" | "product_detail" | "service" | "service_detail",
+    value: string | null
+  ) => {
+    switch (target) {
+      case "product":
+        setProductImageUrl(value)
+        break
+      case "product_detail":
+        setProductDetailImageUrl(value)
+        break
+      case "service":
+        setServiceImageUrl(value)
+        break
+      case "service_detail":
+        setServiceDetailImageUrl(value)
+        break
     }
-
-    const previousPreview = serviceImagePreview
-    if (previousPreview && typeof window !== "undefined") {
-      URL.revokeObjectURL(previousPreview)
-    }
-
-    const previewUrl = typeof window !== "undefined" ? URL.createObjectURL(file) : null
-    if (previewUrl) {
-      setServiceImagePreview(previewUrl)
-    }
-
-    setServiceImageUploadError(null)
-    setServiceImageUrl(null)
-    setIsServiceImageUploading(true)
-
-    const uploadResult = await uploadAvatar(file, userId)
-    setIsServiceImageUploading(false)
-
-    if (!uploadResult.success || !uploadResult.url) {
-      setServiceImageUploadError(uploadResult.error || "Failed to upload image.")
-      return
-    }
-
-    setServiceImageUploadError(null)
-    setServiceImageUrl(uploadResult.url)
   }
 
-  const handleServiceDetailImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
+  const replaceListingPreview = (
+    target: "product" | "product_detail" | "service" | "service_detail",
+    value: string | null
+  ) => {
+    const revoke = (url: string | null) => {
+      if (url && typeof window !== "undefined") {
+        URL.revokeObjectURL(url)
+      }
+    }
+    switch (target) {
+      case "product":
+        revoke(productImagePreview)
+        setProductImagePreview(value)
+        break
+      case "product_detail":
+        revoke(productDetailImagePreview)
+        setProductDetailImagePreview(value)
+        break
+      case "service":
+        revoke(serviceImagePreview)
+        setServiceImagePreview(value)
+        break
+      case "service_detail":
+        revoke(serviceDetailImagePreview)
+        setServiceDetailImagePreview(value)
+        break
+    }
+  }
+
+  const markListingImageDirty = (
+    target: "product" | "product_detail" | "service" | "service_detail"
+  ) => {
+    if (target === "product_detail") {
+      setProductDetailImageDirty(true)
+    }
+    if (target === "service_detail") {
+      setServiceDetailImageDirty(true)
+    }
+  }
+
+  const beginListingImageCrop = (
+    target: "product" | "product_detail" | "service" | "service_detail",
+    file: File
+  ) => {
+    if (!userId) {
+      const message =
+        target === "service" || target === "service_detail"
+          ? "Sign in to upload service images."
+          : "Sign in to upload product images."
+      setListingImageError(target, message)
+      return
+    }
+
+    if (cropSourceUrl && typeof window !== "undefined") {
+      URL.revokeObjectURL(cropSourceUrl)
+    }
+
+    const previewUrl = typeof window !== "undefined" ? URL.createObjectURL(file) : null
+    if (!previewUrl) return
+    setCropTarget(target)
+    setCropFile(file)
+    setCropSourceUrl(previewUrl)
+    setIsCropOpen(true)
+    setIsCropSaving(false)
+    setCropZoom(1)
+    setCropOffset({ x: 0, y: 0 })
+  }
+
+  const uploadListingImage = async (payload: {
+    target: "product" | "product_detail" | "service" | "service_detail"
+    file: File
+    previewUrl: string
+  }) => {
+    setListingImageError(payload.target, null)
+    setListingImageUrl(payload.target, null)
+    replaceListingPreview(payload.target, payload.previewUrl)
+    setListingImageUploading(payload.target, true)
+    markListingImageDirty(payload.target)
+
+    const uploadResult = await uploadAvatar(payload.file, userId ?? "")
+    setListingImageUploading(payload.target, false)
+
+    if (!uploadResult.success || !uploadResult.url) {
+      setListingImageError(payload.target, uploadResult.error || "Failed to upload image.")
+      return
+    }
+
+    setListingImageError(payload.target, null)
+    setListingImageUrl(payload.target, uploadResult.url)
+  }
+
+  const handleCropCancel = () => {
+    setIsCropOpen(false)
+    setIsCropSaving(false)
+    setCropTarget(null)
+    setCropFile(null)
+    setCropImageSize(null)
+    setCropOffset({ x: 0, y: 0 })
+    setCropZoom(1)
+    if (cropSourceUrl && typeof window !== "undefined") {
+      URL.revokeObjectURL(cropSourceUrl)
+    }
+    setCropSourceUrl(null)
+  }
+
+  const handleCropConfirm = async () => {
+    if (!cropTarget || !cropFile || !cropSourceUrl || !cropImageSize || !cropFrameSize) {
+      return
+    }
+
+    setIsCropSaving(true)
+    try {
+      const image = new Image()
+      image.src = cropSourceUrl
+      await image.decode()
+
+      const displayWidth = cropImageSize.width * cropScale
+      const displayHeight = cropImageSize.height * cropScale
+      const imageLeft = (cropFrameSize - displayWidth) / 2 + cropOffset.x
+      const imageTop = (cropFrameSize - displayHeight) / 2 + cropOffset.y
+      const cropX = (0 - imageLeft) / cropScale
+      const cropY = (0 - imageTop) / cropScale
+      const cropSize = cropFrameSize / cropScale
+
+      const outputSize = 1024
+      const canvas = document.createElement("canvas")
+      canvas.width = outputSize
+      canvas.height = outputSize
+      const ctx = canvas.getContext("2d")
+      if (!ctx) {
+        setIsCropSaving(false)
+        return
+      }
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = "high"
+      ctx.drawImage(
+        image,
+        cropX,
+        cropY,
+        cropSize,
+        cropSize,
+        0,
+        0,
+        outputSize,
+        outputSize
+      )
+
+      const outputType = cropFile.type === "image/png" ? "image/png" : "image/jpeg"
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, outputType, 0.92)
+      )
+
+      if (!blob) {
+        setIsCropSaving(false)
+        return
+      }
+
+      const baseName = cropFile.name.replace(/\.[^/.]+$/, "") || "listing"
+      const extension = outputType === "image/png" ? "png" : "jpg"
+      const croppedFile = new File([blob], `${baseName}-square.${extension}`, {
+        type: outputType,
+      })
+      const previewUrl = URL.createObjectURL(blob)
+      await uploadListingImage({ target: cropTarget, file: croppedFile, previewUrl })
+      handleCropCancel()
+    } catch (error) {
+      setIsCropSaving(false)
+    }
+  }
+
+  const handleCropPointerDown = (event: PointerEvent<HTMLImageElement>) => {
+    if (!cropImageSize) return
+    event.preventDefault()
+    const target = event.currentTarget
+    target.setPointerCapture(event.pointerId)
+    cropDragState.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: cropOffset.x,
+      originY: cropOffset.y,
+    }
+  }
+
+  const handleCropPointerMove = (event: PointerEvent<HTMLImageElement>) => {
+    if (cropDragState.current.pointerId !== event.pointerId) return
+    const deltaX = event.clientX - cropDragState.current.startX
+    const deltaY = event.clientY - cropDragState.current.startY
+    setCropOffset(
+      clampCropOffset({
+        x: cropDragState.current.originX + deltaX,
+        y: cropDragState.current.originY + deltaY,
+      })
+    )
+  }
+
+  const handleCropPointerUp = (event: PointerEvent<HTMLImageElement>) => {
+    if (cropDragState.current.pointerId !== event.pointerId) return
+    cropDragState.current.pointerId = null
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch (error) {
+      // no-op
+    }
+  }
+
+  const handleProductImageChange = (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget
     const file = input.files?.[0]
     if (!file) return
     input.value = ""
+    beginListingImageCrop("product", file)
+  }
 
-    if (!userId) {
-      setServiceDetailImageUploadError("Sign in to upload service images.")
-      return
-    }
+  const handleProductDetailImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    input.value = ""
+    beginListingImageCrop("product_detail", file)
+  }
 
-    const previousPreview = serviceDetailImagePreview
-    if (previousPreview && typeof window !== "undefined") {
-      URL.revokeObjectURL(previousPreview)
-    }
+  const handleServiceImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    input.value = ""
+    beginListingImageCrop("service", file)
+  }
 
-    const previewUrl = typeof window !== "undefined" ? URL.createObjectURL(file) : null
-    if (previewUrl) {
-      setServiceDetailImagePreview(previewUrl)
-    }
-
-    setServiceDetailImageUploadError(null)
-    setServiceDetailImageUrl(null)
-    setIsServiceDetailImageUploading(true)
-    setServiceDetailImageDirty(true)
-
-    const uploadResult = await uploadAvatar(file, userId)
-    setIsServiceDetailImageUploading(false)
-
-    if (!uploadResult.success || !uploadResult.url) {
-      setServiceDetailImageUploadError(uploadResult.error || "Failed to upload image.")
-      return
-    }
-
-    setServiceDetailImageUploadError(null)
-    setServiceDetailImageUrl(uploadResult.url)
+  const handleServiceDetailImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    input.value = ""
+    beginListingImageCrop("service_detail", file)
   }
 
   const productSheetBusy =
@@ -2815,6 +3043,10 @@ export default function Source() {
     { key: "orders", title: "Orders", meta: "Awaiting sync" },
     { key: "inquiries", title: "Inquiries", meta: "Muted alerts" },
   ]
+  const isCropReady = Boolean(cropSourceUrl && cropImageSize && cropFrameSize)
+  const cropImageTransform = isCropReady
+    ? `translate(-50%, -50%) translate(${cropOffset.x}px, ${cropOffset.y}px) scale(${cropScale})`
+    : "translate(-50%, -50%)"
 
   return (
     <>
@@ -4222,6 +4454,80 @@ export default function Source() {
         </section>
       )}
       </main>
+      {isCropOpen && cropSourceUrl ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-6">
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={handleCropCancel}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-[28px] border border-white/10 bg-zinc-950/95 p-5 shadow-[0_30px_80px_rgba(0,0,0,0.7)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.4em] text-zinc-400">Square crop</p>
+                <p className="text-sm font-semibold text-white">Fit your listing image</p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleCropCancel}
+                className="text-zinc-400 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div
+              ref={cropFrameRef}
+              className="relative mt-4 aspect-square w-full overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/70"
+            >
+              <img
+                src={cropSourceUrl}
+                alt="Crop preview"
+                className="absolute left-1/2 top-1/2 max-w-none select-none touch-none"
+                style={{ transform: cropImageTransform }}
+                onPointerDown={handleCropPointerDown}
+                onPointerMove={handleCropPointerMove}
+                onPointerUp={handleCropPointerUp}
+                onPointerCancel={handleCropPointerUp}
+                draggable={false}
+              />
+              <div className="pointer-events-none absolute inset-0 ring-1 ring-white/10" />
+            </div>
+
+            <div className="mt-4 flex items-center gap-3">
+              <span className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+                Zoom
+              </span>
+              <input
+                type="range"
+                min={1}
+                max={3}
+                step={0.01}
+                value={cropZoom}
+                onChange={(event) => setCropZoom(Number(event.target.value))}
+                className="h-1 w-full cursor-pointer appearance-none rounded-full bg-zinc-800/80"
+              />
+            </div>
+
+            <div className="mt-5 flex items-center justify-between gap-3">
+              <Button type="button" variant="ghost" onClick={handleCropCancel}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={handleCropConfirm} disabled={!isCropReady || isCropSaving}>
+                {isCropSaving ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin" />
+                    Saving square
+                  </span>
+                ) : (
+                  "Save square"
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <SourceProductSheet
         listing={currentProductDetailListing}
         formState={productDetailForm}

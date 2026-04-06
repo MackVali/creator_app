@@ -71,14 +71,7 @@ export default function ServiceCarousel({
                   onSelect={onSelectService}
                 />
               ))
-            : (
-              <div className="snap-center min-w-[220px] rounded-2xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-white/70">
-                <p className="font-medium text-white">No services yet</p>
-                <p className="mt-1 text-xs text-white/60">
-                  Publish a service in Source and it automatically appears here.
-                </p>
-              </div>
-            )}
+            : null}
       </div>
     </section>
   )
