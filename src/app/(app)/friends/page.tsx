@@ -203,8 +203,8 @@ export default function FriendsPage() {
     }
   }, []);
 
-  const handleRequestResolved = useCallback(() => {
-    void Promise.all([
+  const handleRequestResolved = useCallback(async () => {
+    await Promise.all([
       refreshFriends(),
       refreshRequests(),
       refreshSearch(),

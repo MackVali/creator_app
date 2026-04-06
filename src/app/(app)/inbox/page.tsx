@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 type InboxThread = {
@@ -68,6 +68,10 @@ export default function InboxPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"primary" | "requests">("primary");
+  const [requestsMeta] = useState({ count: 0, isLoading: false });
+  const primaryTabRef = useRef<HTMLButtonElement>(null);
+  const requestsTabRef = useRef<HTMLButtonElement>(null);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -120,6 +124,25 @@ export default function InboxPage() {
   }, []);
 
   const emptyState = !loading && threads.length === 0;
+  const hasRequests = requestsMeta.count > 0;
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+      return;
+    }
+
+    event.preventDefault();
+    const order: Array<"primary" | "requests"> = ["primary", "requests"];
+    const currentIndex = order.indexOf(tab);
+    const direction =
+      event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex = (currentIndex + direction + order.length) % order.length;
+    const nextTab = order[nextIndex];
+
+    setTab(nextTab);
+    const targetRef = nextTab === "primary" ? primaryTabRef : requestsTabRef;
+    targetRef.current?.focus();
+  };
 
   const threadRows = useMemo(
     () =>
@@ -181,14 +204,110 @@ export default function InboxPage() {
 
   return (
     <div className="min-h-screen bg-[#07070b] text-white">
-      <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-5 sm:px-6 sm:pt-8">
-        <header className="mb-5 space-y-3">
-          <div>
-            <p className="text-[0.65rem] uppercase tracking-[0.4em] text-white/40">
-              Messages
-            </p>
-            <h1 className="text-[1.65rem] font-semibold text-white">Inbox</h1>
+      <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-4 sm:px-6 sm:pt-6">
+        <header className="mb-3 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[0.65rem] uppercase tracking-[0.4em] text-white/40">
+                Messages
+              </p>
+              <h1 className="text-[1.5rem] font-semibold text-white">Inbox</h1>
+            </div>
+            <button
+              type="button"
+              aria-label="Compose new message"
+              className="group inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] shadow-[0_12px_28px_rgba(0,0,0,0.45)] transition hover:border-white/20 hover:bg-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-5 w-5 text-white/85 transition group-hover:text-white"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12.5 6.5h6v6" />
+                <path d="M12.5 6.5 6 13v5h5l6.5-6.5" />
+              </svg>
+            </button>
           </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              aria-label="Filter inbox"
+              className="inline-flex h-9 items-center justify-center rounded-full border border-white/10 bg-black/50 px-3 text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-white/70 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                aria-hidden="true"
+                className="mr-1.5 h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 5h14" />
+                <path d="M6 10h8" />
+                <path d="M8.5 15h3" />
+              </svg>
+              Filters
+            </button>
+
+            <div
+              role="tablist"
+              aria-label="Inbox sections"
+              className="flex items-center gap-1 rounded-full border border-white/10 bg-black/40 p-1"
+            >
+              <button
+                ref={primaryTabRef}
+                id="primary-tab"
+                role="tab"
+                type="button"
+                aria-selected={tab === "primary"}
+                aria-controls="primary-panel"
+                tabIndex={tab === "primary" ? 0 : -1}
+                onClick={() => setTab("primary")}
+                onKeyDown={handleTabKeyDown}
+                className={`h-9 rounded-full px-4 text-[0.75rem] font-semibold transition ${
+                  tab === "primary"
+                    ? "bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60"
+                    : "text-white/60 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                Primary
+              </button>
+              <button
+                ref={requestsTabRef}
+                id="requests-tab"
+                role="tab"
+                type="button"
+                aria-selected={tab === "requests"}
+                aria-controls="requests-panel"
+                tabIndex={tab === "requests" ? 0 : -1}
+                onClick={() => setTab("requests")}
+                onKeyDown={handleTabKeyDown}
+                className={`relative h-9 rounded-full px-4 text-[0.75rem] font-semibold transition ${
+                  tab === "requests"
+                    ? "bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60"
+                    : "text-white/60 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                Requests
+                {requestsMeta.isLoading ? (
+                  <span className="ml-1 text-[0.65rem] text-white/50">…</span>
+                ) : hasRequests ? (
+                  <span className="ml-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-white text-[0.6rem] font-semibold text-black">
+                    {requestsMeta.count}
+                  </span>
+                ) : null}
+              </button>
+            </div>
+          </div>
+
           <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
             <div className="text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-white/40">
               Search
@@ -203,7 +322,13 @@ export default function InboxPage() {
           </div>
         </header>
 
-        <section className="space-y-3 rounded-[28px] border border-white/10 bg-gradient-to-br from-white/5 via-transparent to-black/40 p-3 shadow-[0_30px_80px_rgba(0,0,0,0.6)] backdrop-blur sm:p-4">
+        <section
+          id="primary-panel"
+          role="tabpanel"
+          aria-labelledby="primary-tab"
+          hidden={tab !== "primary"}
+          className="space-y-3 rounded-[26px] border border-white/10 bg-gradient-to-br from-white/5 via-transparent to-black/40 p-3 shadow-[0_30px_80px_rgba(0,0,0,0.6)] backdrop-blur sm:p-4"
+        >
           {loading ? (
             <div className="space-y-2 px-1 py-6">
               {Array.from({ length: 5 }).map((_, index) => (
@@ -247,6 +372,26 @@ export default function InboxPage() {
           {!loading && !error && !emptyState ? (
             <div className="space-y-1.5">{threadRows}</div>
           ) : null}
+        </section>
+
+        <section
+          id="requests-panel"
+          role="tabpanel"
+          aria-labelledby="requests-tab"
+          hidden={tab !== "requests"}
+          className="mt-2 rounded-[26px] border border-white/10 bg-white/[0.03] p-4 text-sm text-white/65 shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">Message requests</p>
+              <p className="mt-1 text-xs text-white/55">
+                Requests will appear here once wired to the inbox API.
+              </p>
+            </div>
+            <div className="rounded-full border border-white/10 bg-black/60 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-white/60">
+              {requestsMeta.isLoading ? "Loading" : `${requestsMeta.count} total`}
+            </div>
+          </div>
         </section>
       </div>
     </div>

@@ -170,27 +170,46 @@ export async function POST(request: Request) {
   const requesterAvatarUrl = requesterProfile.avatar_url ?? null;
   const targetAvatarUrl = targetProfile.avatar_url ?? null;
 
-  const connection = {
-    user_id: updated.requester_id,
-    friend_user_id: updated.target_id,
-    friend_username: canonicalTargetUsername,
-    friend_display_name: targetDisplayName,
-    friend_avatar_url: targetAvatarUrl,
-    friend_profile_url: null,
-    has_ring: false,
-    is_online: false,
-  };
+  const connections = [
+    {
+      user_id: updated.requester_id,
+      friend_user_id: updated.target_id,
+      friend_username: canonicalTargetUsername,
+      friend_display_name: targetDisplayName,
+      friend_avatar_url: targetAvatarUrl,
+      friend_profile_url: null,
+      has_ring: false,
+      is_online: false,
+    },
+    {
+      user_id: updated.target_id,
+      friend_user_id: updated.requester_id,
+      friend_username: canonicalRequesterUsername,
+      friend_display_name: requesterDisplayName,
+      friend_avatar_url: requesterAvatarUrl,
+      friend_profile_url: null,
+      has_ring: false,
+      is_online: false,
+    },
+  ];
 
-  const { data: existing, error: existingError } = await supabase
-    .from("friend_connections")
-    .select("id")
-    .eq("user_id", connection.user_id)
-    .eq("friend_user_id", connection.friend_user_id)
-    .maybeSingle();
+  for (const connection of connections) {
+    const { data: existing, error: existingError } = await supabase
+      .from("friend_connections")
+      .select("id")
+      .eq("user_id", connection.user_id)
+      .eq("friend_user_id", connection.friend_user_id)
+      .maybeSingle();
 
-  if (existingError && existingError.code !== "PGRST116") {
-    console.error("Failed to check existing friend connection", existingError);
-  } else if (!existing) {
+    if (existingError && existingError.code !== "PGRST116") {
+      console.error("Failed to check existing friend connection", existingError);
+      continue;
+    }
+
+    if (existing) {
+      continue;
+    }
+
     const { error: insertError } = await supabase
       .from("friend_connections")
       .insert(connection);

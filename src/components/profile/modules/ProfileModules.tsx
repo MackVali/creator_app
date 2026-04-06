@@ -316,21 +316,61 @@ function ProfileModulesEmptyState({ isOwner }: { isOwner?: boolean }) {
 }
 
 export function ProfileModulesSkeleton() {
+  const modules = [
+    {
+      id: "module-hero-links",
+      titleWidth: "w-40",
+      subtitleWidth: "w-64",
+      tiles: ["square", "square", "wide"],
+    },
+    {
+      id: "module-secondary-links",
+      titleWidth: "w-48",
+      subtitleWidth: "w-56",
+      tiles: ["square", "square", "square", "square"],
+    },
+  ] as const;
+
   return (
-    <div className="flex flex-col gap-8">
-      <div className="h-80 w-full rounded-[36px] border border-white/12 bg-white/5">
-        <div className="h-full w-full animate-pulse rounded-[36px] bg-gradient-to-br from-black/40 via-black/30 to-black/20" />
-      </div>
-      <div className="space-y-4">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <div
-            key={`link-card-skeleton-${index}`}
-            className="h-20 rounded-full border border-white/12 bg-white/5"
-          >
-            <div className="h-full w-full animate-pulse rounded-full bg-gradient-to-r from-black/40 via-black/30 to-black/20" />
+    <div className="flex flex-col gap-10">
+      {modules.map((module) => (
+        <article
+          key={module.id}
+          className="relative overflow-hidden rounded-[36px] border border-white/12 bg-black/50 shadow-[0_60px_120px_-50px_rgba(15,23,42,0.85)]"
+        >
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-white/10 via-white/25 to-white/10" />
+          <div className="relative z-10 grid gap-6 px-6 py-8 sm:px-9 sm:py-10">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-2">
+                <div className={`h-6 rounded-full bg-white/15 ${module.titleWidth}`} />
+                <div className={`h-4 rounded-full bg-white/10 ${module.subtitleWidth}`} />
+              </div>
+              <div className="h-4 w-28 rounded-full bg-white/10" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {module.tiles.map((tile, index) => {
+                const sizeClasses =
+                  tile === "wide"
+                    ? "col-span-2 min-h-[220px] sm:aspect-[5/2]"
+                    : "aspect-square";
+                return (
+                  <div
+                    key={`${module.id}-tile-${index}`}
+                    className={`relative overflow-hidden rounded-[32px] border border-white/10 bg-white/5 ${sizeClasses}`}
+                  >
+                    <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-black/40 via-black/30 to-black/20" />
+                    <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
+                    <div className="relative z-10 flex h-full items-end justify-center px-5 pb-5">
+                      <div className="h-4 w-3/4 rounded-full bg-white/15" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        ))}
-      </div>
+        </article>
+      ))}
     </div>
   );
 }

@@ -12,7 +12,7 @@ type SearchFriendsProps = {
   data: Friend[];
   discoveryProfiles?: DiscoveryProfile[];
   onRemoveFriend?: (friend: Friend) => void;
-  onRequestResolved?: () => void;
+  onRequestResolved?: () => void | Promise<void>;
 };
 
 type DiscoveryRelationship =
@@ -322,7 +322,7 @@ export default function SearchFriends({
 
           updateStatus("following");
           setFollowError(null);
-          onRequestResolved?.();
+          await onRequestResolved?.();
         } catch (error) {
           console.error("Failed to follow user", error);
           updateStatus("idle");
