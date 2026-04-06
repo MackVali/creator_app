@@ -727,6 +727,7 @@ export default function ProfileByHandlePage() {
           item={detailSheetItem}
           onClose={closeDetailSheet}
           cartCount={cartItemCount}
+          isOwner={isOwner}
           onProductAddToCart={handleAddProductToCart}
         />
       </main>

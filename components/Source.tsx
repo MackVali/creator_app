@@ -4372,8 +4372,8 @@ function SourceProductSheet({
               </div>
             )}
           </div>
-          <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
-            <div className="space-y-3 -mx-6">
+          <div className="flex flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden px-6 py-6">
+            <div className="space-y-3">
               <input
                 ref={imageInputRef}
                 type="file"
@@ -4703,8 +4703,8 @@ function SourceServiceSheet({
               </div>
             )}
           </div>
-          <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
-            <div className="space-y-3 -mx-6">
+          <div className="flex flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden px-6 py-6">
+            <div className="space-y-3">
               <input
                 ref={imageInputRef}
                 type="file"

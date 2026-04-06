@@ -34,6 +34,7 @@ interface ProfileDetailSheetProps {
   onClose: () => void;
   onProductAddToCart?: (product: SourceListing) => string;
   cartCount?: number;
+  isOwner?: boolean;
 }
 
 const SheetRow = ({ label, value }: { label: string; value: string }) => (
@@ -54,8 +55,26 @@ export default function ProfileDetailSheet({
   onClose,
   onProductAddToCart,
   cartCount,
+  isOwner = false,
 }: ProfileDetailSheetProps) {
   const [ctaFeedback, setCtaFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!item) {
+      return;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [item]);
 
   useEffect(() => {
     if (!ctaFeedback) {
@@ -181,8 +200,14 @@ export default function ProfileDetailSheet({
   const secondaryActionLabel = isProduct ? "Buy now" : "Send inquiry";
   const servicePrimaryFeedback = `${servicePrimaryActionLabel} flow coming soon`;
   const secondaryFeedback = isProduct ? "Checkout flow coming next" : "Inquiry flow coming soon";
+  const ownerFeedback = "You cannot purchase your own listing.";
+  const isOwnerFeedback = ctaFeedback === ownerFeedback;
 
   const handlePrimaryClick = () => {
+    if (isProduct && isOwner) {
+      setCtaFeedback(ownerFeedback);
+      return;
+    }
     if (isProduct) {
       const message = onProductAddToCart?.(item.data) ?? "Cart flow coming next";
       setCtaFeedback(message);
@@ -190,7 +215,13 @@ export default function ProfileDetailSheet({
     }
     setCtaFeedback(servicePrimaryFeedback);
   };
-  const handleSecondaryClick = () => setCtaFeedback(secondaryFeedback);
+  const handleSecondaryClick = () => {
+    if (isProduct && isOwner) {
+      setCtaFeedback(ownerFeedback);
+      return;
+    }
+    setCtaFeedback(secondaryFeedback);
+  };
 
   const serviceTags =
     !isProduct && Array.isArray(item.data.tags)
@@ -206,7 +237,7 @@ export default function ProfileDetailSheet({
         role="dialog"
         aria-modal="true"
         aria-label={`${badgeLabel} details`}
-        className="relative z-10 mx-auto flex h-[min(95vh,940px)] w-full max-w-3xl flex-col overflow-hidden rounded-t-[32px] border border-white/10 bg-neutral-950/95 shadow-[0_30px_120px_rgba(0,0,0,0.95)] sm:rounded-[32px]"
+        className="relative z-10 mx-auto flex h-[min(95dvh,940px)] w-full max-w-3xl flex-col overflow-hidden rounded-t-[32px] border border-white/10 bg-neutral-950/95 shadow-[0_30px_120px_rgba(0,0,0,0.95)] sm:rounded-[32px]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="absolute left-1/2 top-3 -translate-x-1/2">
@@ -256,7 +287,9 @@ export default function ProfileDetailSheet({
           </div>
         )}
 
-        <div className={`flex-1 overflow-y-auto px-6 pb-6 ${isProduct ? "pt-6" : "pt-4"}`}>
+        <div
+          className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 [-webkit-overflow-scrolling:touch] ${isProduct ? "pt-6" : "pt-4"}`}
+        >
           <div className="space-y-6">
             {!isProduct && (
               <div className="relative">
@@ -397,26 +430,32 @@ export default function ProfileDetailSheet({
 
         <div className="flex-shrink-0 border-t border-white/5 bg-gradient-to-t from-neutral-900/90 via-neutral-950/70 to-transparent px-6 py-5">
           <div className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Button size="lg" className="w-full" onClick={handlePrimaryClick}>
-              {primaryActionLabel}
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="w-full text-white"
-              onClick={handleSecondaryClick}
-            >
-              {secondaryActionLabel}
-            </Button>
-          </div>
-          {cartCount && cartCount > 0 ? (
-            <p className="text-center text-[10px] uppercase tracking-[0.8em] text-white/40">
-              {cartCount} item{cartCount === 1 ? "" : "s"} in cart
-            </p>
-          ) : null}
-          {ctaFeedback ? (
-              <p className="text-center text-sm font-semibold uppercase tracking-[0.4em] text-white/70">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Button size="lg" className="w-full" onClick={handlePrimaryClick}>
+                {primaryActionLabel}
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="w-full text-white"
+                onClick={handleSecondaryClick}
+              >
+                {secondaryActionLabel}
+              </Button>
+            </div>
+            {cartCount && cartCount > 0 ? (
+              <p className="text-center text-[10px] uppercase tracking-[0.8em] text-white/40">
+                {cartCount} item{cartCount === 1 ? "" : "s"} in cart
+              </p>
+            ) : null}
+            {ctaFeedback ? (
+              <p
+                className={`text-center text-sm ${
+                  isOwnerFeedback
+                    ? "rounded-xl border border-amber-200/40 bg-amber-200/10 px-3 py-2 font-semibold text-amber-100"
+                    : "font-semibold text-white/90"
+                }`}
+              >
                 {ctaFeedback}
               </p>
             ) : (
