@@ -6,7 +6,6 @@ import {
   BadgeCheck,
   BookOpen,
   ChevronLeft,
-  ExternalLink,
   Share2,
   ShieldCheck,
   Sparkles,
@@ -93,18 +92,6 @@ export default function HeroHeader({
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [relationshipView, setRelationshipView] = useState<RelationshipView>("friends");
 
-  const getInitials = (name: string | null, username: string) => {
-    if (name) {
-      return name
-        .split(" ")
-        .map((word) => word.charAt(0))
-        .join("")
-        .toUpperCase()
-        .slice(0, 2);
-    }
-    return username.slice(0, 2).toUpperCase();
-  };
-
   const formatBioSegments = (bio: string | null | undefined) => {
     if (!bio) return [] as string[];
 
@@ -118,7 +105,6 @@ export default function HeroHeader({
       );
   };
 
-  const initials = getInitials(profile.name || null, profile.username);
   const displayName = profile.name?.trim() || profile.username;
   const bioSegments = formatBioSegments(profile.bio);
   const tagline = bioSegments.length
@@ -151,13 +137,6 @@ export default function HeroHeader({
   const avatarOverlayVisibilityClass = isAvatarUploading
     ? "opacity-100"
     : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100";
-
-  const joinedDate = profile.created_at
-    ? new Intl.DateTimeFormat(undefined, {
-        month: "long",
-        year: "numeric",
-      }).format(new Date(profile.created_at))
-    : null;
 
   const handleAvatarClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -199,9 +178,14 @@ export default function HeroHeader({
                     className="object-cover"
                   />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-5xl font-semibold text-white">
-                    <span aria-hidden="true">{initials}</span>
-                    <span className="sr-only">{`${displayName}'s initials`}</span>
+                  <div
+                    className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_30%_15%,rgba(255,255,255,0.16),transparent_48%),linear-gradient(160deg,#1b1b20_0%,#111218_42%,#08090d_100%)]"
+                    role="img"
+                    aria-label={`${displayName} profile photo placeholder`}
+                  >
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_65%,rgba(0,0,0,0.14),rgba(0,0,0,0.7)_65%)]" />
+                    <div className="absolute left-1/2 top-[52%] h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/[0.08] blur-[2px] sm:h-56 sm:w-56" />
+                    <div className="absolute bottom-[-8%] left-1/2 h-52 w-[84%] -translate-x-1/2 rounded-t-[44%] bg-white/[0.06] sm:h-56" />
                   </div>
                 )}
               </div>
