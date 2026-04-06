@@ -221,31 +221,6 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
     }
   };
 
-  const handleToggleActive = async (card: ContentCard) => {
-    if (!userId) return;
-    try {
-      const result = await updateContentCard(card.id, userId, {
-        is_active: !card.is_active,
-      });
-      if (!result.success || !result.contentCard) {
-        throw new Error(result.error ?? "Failed to toggle status");
-      }
-      setCards((prev) =>
-        prev
-          .map((current) => (current.id === card.id ? result.contentCard! : current))
-          .sort((a, b) => a.position - b.position),
-      );
-      toast.success(
-        card.is_active ? "Card paused" : "Card activated",
-        "Your profile tile has been updated.",
-      );
-      onCardsChange?.();
-    } catch (error) {
-      console.error("Toggle card failed", error);
-      toast.error("Update failed", "We couldn't change the card status.");
-    }
-  };
-
   const handleDelete = async (card: ContentCard) => {
     if (!userId) return;
     const confirmed = window.confirm("Remove this card from your profile?");
@@ -474,30 +449,22 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
             </p>
           </div>
         ) : (
-          <Reorder.Group axis="y" values={sortedCards} onReorder={handleReorder} className="space-y-3">
-            {sortedCards.map((card) => {
-              const hostLabel = (() => {
-                try {
-                  return new URL(card.url).hostname.replace(/^www\./, "");
-                } catch {
-                  return card.url.replace(/^https?:\/\//, "").split("/")[0] || card.url;
-                }
-              })();
-              return (
+          <Reorder.Group axis="y" values={sortedCards} onReorder={handleReorder} className="space-y-1.5">
+            {sortedCards.map((card) => (
                 <Reorder.Item
                   key={card.id}
                   value={card}
                   whileDrag={{ scale: 1.01 }}
-                  className="group cursor-grab rounded-[28px] border border-white/10 bg-white/5 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.85)] focus-within:ring-2 focus-within:ring-white/60 focus-within:cursor-grabbing"
+                  className="group cursor-grab rounded-[16px] border border-white/10 bg-white/5 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.85)] focus-within:ring-2 focus-within:ring-white/60 focus-within:cursor-grabbing"
                 >
-                  <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:gap-6">
-                    <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 px-3 py-2">
+                    <div className="flex items-center gap-2">
                       <span className="text-slate-500">
-                        <GripVertical className="h-5 w-5 text-white/60" />
+                        <GripVertical className="h-4 w-4 text-white/60" />
                       </span>
                       <div
                         className={cn(
-                          "flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-black/40 text-xs font-semibold text-white/70 overflow-hidden",
+                          "flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-black/40 text-[10px] font-semibold text-white/70 overflow-hidden",
                           !card.thumbnail_url && "bg-gradient-to-br from-indigo-500/30 via-purple-500/30 to-rose-500/35",
                         )}
                         style={
@@ -512,52 +479,33 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
                         {!card.thumbnail_url ? "Preview" : null}
                       </div>
                     </div>
-                    <div className="flex flex-1 flex-col gap-1 text-sm text-white/70">
-                      <p className="text-base font-semibold text-white line-clamp-1">
+                    <div className="flex min-w-0 flex-1">
+                      <p className="text-[14px] font-semibold text-white line-clamp-1">
                         {card.title || "Untitled card"}
-                      </p>
-                      {card.description ? (
-                        <p className="text-xs text-white/50 line-clamp-2">{card.description}</p>
-                      ) : null}
-                      <p className="text-[11px] uppercase tracking-[0.35em] text-white/40">
-                        {hostLabel}
                       </p>
                     </div>
 
-                    <div className="flex flex-col items-end justify-between gap-2 text-right text-xs uppercase tracking-[0.35em] text-white/50">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleActive(card)}
-                        className="rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.35em] text-white/80 transition hover:border-white/40"
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openCardForm(card)}
+                        className="h-7 w-7 rounded-full border border-white/10 p-0"
                       >
-                        {card.is_active ? "Live" : "Paused"}
-                      </button>
-                      <span className="rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.35em] text-white/80">
-                        {card.size ?? "small"}
-                      </span>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openCardForm(card)}
-                          className="h-8 w-8 rounded-full border border-white/10 p-0"
-                        >
-                          <Edit3 className="h-4 w-4 text-white/80" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(card)}
-                          className="h-8 w-8 rounded-full border border-white/10 p-0"
-                        >
-                          <Trash2 className="h-4 w-4 text-rose-400" />
-                        </Button>
-                      </div>
+                        <Edit3 className="h-3.5 w-3.5 text-white/80" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(card)}
+                        className="h-7 w-7 rounded-full border border-white/10 p-0"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-rose-400" />
+                      </Button>
                     </div>
                   </div>
                 </Reorder.Item>
-              );
-            })}
+              ))}
           </Reorder.Group>
         )}
         {sortedCards.length > 0 &&
