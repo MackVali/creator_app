@@ -4,6 +4,7 @@ import {
   type ChangeEvent,
   type FormEvent,
   type ReactNode,
+  type RefObject,
   useEffect,
   useRef,
   useState,
@@ -48,15 +49,23 @@ import {
 import { Textarea } from "./ui/textarea"
 import { PostModal } from "./ui/PostModal"
 
+import {
+  PRODUCT_ORDER_FULFILLMENT_STATUSES,
+} from "@/types/source"
 import type {
   IntegrationsResponse,
   ListingsResponse,
+  OrdersResponse,
+  PublishResult,
+  ProductOrderFulfillmentStatus,
   SourceIntegration,
   SourceListing,
 } from "@/types/source"
 import { cn } from "@/lib/utils"
 import { getSupabaseBrowser } from "@/lib/supabase"
 import { uploadAvatar } from "@/lib/storage"
+import { useEntitlement } from "@/components/entitlement/EntitlementProvider"
+import type { ProductCheckoutLineItem, ProductCheckoutStatus } from "@/types/checkout"
 
 const httpMethods = ["POST", "PUT", "PATCH"] as const
 const authModes = ["none", "bearer", "basic", "api_key", "oauth2"] as const
@@ -78,6 +87,123 @@ const listingTypeLabels: Record<SourceListing["type"], string> = {
   product: "Product",
   service: "Service",
   post: "Post",
+}
+
+const productAvailabilityStatuses: SourceListing["status"][] = [
+  "draft",
+  "queued",
+  "published",
+  "needs_attention",
+]
+
+const availabilityLabels: Record<SourceListing["status"], string> = {
+  draft: "Draft",
+  queued: "Queued for publish",
+  published: "Available / Live",
+  needs_attention: "Needs attention",
+}
+
+const ORDER_STATUS_LABELS: Record<ProductCheckoutStatus, string> = {
+  pending: "Pending",
+  completed: "Completed",
+  canceled: "Canceled",
+  failed: "Failed",
+}
+
+const ORDER_STATUS_ACCENT: Record<ProductCheckoutStatus, string> = {
+  pending: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+  completed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+  canceled: "border-rose-500/30 bg-rose-500/10 text-rose-200",
+  failed: "border-zinc-500/30 bg-zinc-500/10 text-zinc-200",
+}
+
+const ORDER_FULFILLMENT_STATUS_LABELS: Record<ProductOrderFulfillmentStatus, string> = {
+  unfulfilled: "Unfulfilled",
+  packed: "Packed",
+  shipped: "Shipped",
+}
+
+const ORDER_FULFILLMENT_STATUS_ACCENT: Record<ProductOrderFulfillmentStatus, string> = {
+  unfulfilled: "border-zinc-500/30 bg-zinc-500/10 text-zinc-200",
+  packed: "border-indigo-500/30 bg-indigo-500/10 text-indigo-200",
+  shipped: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+}
+
+const PRODUCT_KIND_OPTIONS = [
+  { value: "physical", label: "Physical product" },
+  { value: "digital", label: "Digital product" },
+] as const
+
+type ProductKind = (typeof PRODUCT_KIND_OPTIONS)[number]["value"]
+const DEFAULT_PRODUCT_KIND: ProductKind = PRODUCT_KIND_OPTIONS[0].value
+
+const SERVICE_MODE_OPTIONS = [
+  { value: "bookable", label: "Bookable" },
+  { value: "flat_rate", label: "Flat rate" },
+  { value: "custom_quote", label: "Custom quote" },
+] as const
+
+type ServiceMode = (typeof SERVICE_MODE_OPTIONS)[number]["value"]
+const DEFAULT_SERVICE_MODE: ServiceMode = SERVICE_MODE_OPTIONS[0].value
+
+const QUANTITY_BEHAVIOR_OPTIONS = [
+  { value: "per_unit", label: "Track stock per unit" },
+  { value: "per_order", label: "Reserve the listing per order" },
+  { value: "always_available", label: "Always available" },
+] as const
+
+type QuantityBehavior = (typeof QUANTITY_BEHAVIOR_OPTIONS)[number]["value"]
+const DEFAULT_QUANTITY_BEHAVIOR: QuantityBehavior = QUANTITY_BEHAVIOR_OPTIONS[0].value
+
+const resolveProductKind = (metadata: Record<string, unknown> | null): ProductKind => {
+  const rawValue = metadata?.["product_kind"]
+  if (typeof rawValue === "string") {
+    if (PRODUCT_KIND_OPTIONS.some((option) => option.value === rawValue)) {
+      return rawValue as ProductKind
+    }
+  }
+  return DEFAULT_PRODUCT_KIND
+}
+
+const resolveServiceMode = (metadata: Record<string, unknown> | null): ServiceMode => {
+  const rawValue = metadata?.["service_mode"]
+  if (typeof rawValue === "string") {
+    if (SERVICE_MODE_OPTIONS.some((option) => option.value === rawValue)) {
+      return rawValue as ServiceMode
+    }
+  }
+  return DEFAULT_SERVICE_MODE
+}
+
+const resolveMetadataString = (
+  metadata: Record<string, unknown> | null,
+  key: string
+): string => {
+  const value = metadata?.[key]
+  return typeof value === "string" ? value : ""
+}
+
+const resolveMetadataNumber = (
+  metadata: Record<string, unknown> | null,
+  key: string
+): number | null => {
+  const value = metadata?.[key]
+  if (typeof value === "number") return value
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+  return null
+}
+
+const resolveQuantityBehavior = (
+  metadata: Record<string, unknown> | null
+): QuantityBehavior => {
+  const rawValue = resolveMetadataString(metadata, "quantity_behavior")
+  if (QUANTITY_BEHAVIOR_OPTIONS.some((option) => option.value === rawValue)) {
+    return rawValue as QuantityBehavior
+  }
+  return DEFAULT_QUANTITY_BEHAVIOR
 }
 
 const POST_MEDIA_TYPES = ["text", "image", "video", "link"] as const
@@ -170,6 +296,8 @@ type ProductSheetFormState = {
   price: string
   currency: string
   inventory: string
+  productKind: ProductKind
+  quantityBehavior: QuantityBehavior
 }
 
 const defaultProductSheetForm: ProductSheetFormState = {
@@ -178,6 +306,8 @@ const defaultProductSheetForm: ProductSheetFormState = {
   price: "",
   currency: "USD",
   inventory: "",
+  productKind: DEFAULT_PRODUCT_KIND,
+  quantityBehavior: DEFAULT_QUANTITY_BEHAVIOR,
 }
 
 type ServiceSheetFormState = {
@@ -186,6 +316,10 @@ type ServiceSheetFormState = {
   price: string
   currency: string
   durationMinutes: string
+  serviceMode: ServiceMode
+  turnaround: string
+  deliverables: string
+  requirements: string
 }
 
 const defaultServiceSheetForm: ServiceSheetFormState = {
@@ -194,6 +328,18 @@ const defaultServiceSheetForm: ServiceSheetFormState = {
   price: "",
   currency: "USD",
   durationMinutes: "",
+  serviceMode: DEFAULT_SERVICE_MODE,
+  turnaround: "",
+  deliverables: "",
+  requirements: "",
+}
+
+type ListingUpdatePayload = {
+  listing: SourceListing
+  type: SourceListing["type"]
+  form: ProductSheetFormState | ServiceSheetFormState
+  metadataUpdates?: Record<string, unknown | null>
+  status?: SourceListing["status"]
 }
 
 type IntegrationPresetField = {
@@ -1325,6 +1471,31 @@ export default function Source() {
     null
   )
   const [isServiceImageUploading, setIsServiceImageUploading] = useState(false)
+  const [productDetailForm, setProductDetailForm] = useState<ProductSheetFormState>(
+    defaultProductSheetForm
+  )
+  const [productDetailError, setProductDetailError] = useState<string | null>(null)
+  const [isProductDetailSubmitting, setIsProductDetailSubmitting] = useState(false)
+  const [productDetailImagePreview, setProductDetailImagePreview] = useState<string | null>(null)
+  const [productDetailImageUrl, setProductDetailImageUrl] = useState<string | null>(null)
+  const [productDetailImageUploadError, setProductDetailImageUploadError] = useState<string | null>(null)
+  const [isProductDetailImageUploading, setIsProductDetailImageUploading] = useState(false)
+  const [productDetailImageDirty, setProductDetailImageDirty] = useState(false)
+  const [productDetailStatus, setProductDetailStatus] = useState<SourceListing["status"]>("draft")
+  const productDetailImageInputRef = useRef<HTMLInputElement | null>(null)
+  const [serviceDetailForm, setServiceDetailForm] = useState<ServiceSheetFormState>(
+    defaultServiceSheetForm
+  )
+  const [serviceDetailError, setServiceDetailError] = useState<string | null>(null)
+  const [isServiceDetailSubmitting, setIsServiceDetailSubmitting] = useState(false)
+  const [serviceDetailImagePreview, setServiceDetailImagePreview] = useState<string | null>(null)
+  const [serviceDetailImageUrl, setServiceDetailImageUrl] = useState<string | null>(null)
+  const [serviceDetailImageUploadError, setServiceDetailImageUploadError] = useState<string | null>(null)
+  const [isServiceDetailImageUploading, setIsServiceDetailImageUploading] = useState(false)
+  const [serviceDetailImageDirty, setServiceDetailImageDirty] = useState(false)
+  const serviceDetailImageInputRef = useRef<HTMLInputElement | null>(null)
+  const productDetailListingIdRef = useRef<string | null>(null)
+  const serviceDetailListingIdRef = useRef<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
   const [presetInputs, setPresetInputs] = useState<Record<string, string>>({})
@@ -1340,6 +1511,9 @@ export default function Source() {
     useState<OverviewSectionKey>("products")
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null)
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+  const { tier } = useEntitlement()
+  const isAdmin = tier === "ADMIN"
 
 
   useEffect(() => {
@@ -1425,6 +1599,12 @@ export default function Source() {
     }
   }, [selectedOverviewSection, selectedServiceId])
 
+  useEffect(() => {
+    if (selectedOverviewSection !== "orders" && selectedOrderId) {
+      setSelectedOrderId(null)
+    }
+  }, [selectedOverviewSection, selectedOrderId])
+
   const clearProductImagePreview = () => {
     setProductImagePreview((previous) => {
       if (previous && typeof window !== "undefined") {
@@ -1455,6 +1635,56 @@ export default function Source() {
     setServiceImageUrl(null)
     setServiceImageUploadError(null)
     setIsServiceImageUploading(false)
+  }
+
+  const clearProductDetailImagePreview = () => {
+    setProductDetailImagePreview((previous) => {
+      if (previous && typeof window !== "undefined") {
+        URL.revokeObjectURL(previous)
+      }
+      return null
+    })
+  }
+
+  const resetProductDetailImageState = () => {
+    clearProductDetailImagePreview()
+    setProductDetailImageUrl(null)
+    setProductDetailImageUploadError(null)
+    setIsProductDetailImageUploading(false)
+    setProductDetailImageDirty(false)
+  }
+
+  const removeProductDetailImageSelection = () => {
+    clearProductDetailImagePreview()
+    setProductDetailImageUrl(null)
+    setProductDetailImageUploadError(null)
+    setProductDetailImageDirty(true)
+    setIsProductDetailImageUploading(false)
+  }
+
+  const clearServiceDetailImagePreview = () => {
+    setServiceDetailImagePreview((previous) => {
+      if (previous && typeof window !== "undefined") {
+        URL.revokeObjectURL(previous)
+      }
+      return null
+    })
+  }
+
+  const resetServiceDetailImageState = () => {
+    clearServiceDetailImagePreview()
+    setServiceDetailImageUrl(null)
+    setServiceDetailImageUploadError(null)
+    setIsServiceDetailImageUploading(false)
+    setServiceDetailImageDirty(false)
+  }
+
+  const removeServiceDetailImageSelection = () => {
+    clearServiceDetailImagePreview()
+    setServiceDetailImageUrl(null)
+    setServiceDetailImageUploadError(null)
+    setServiceDetailImageDirty(true)
+    setIsServiceDetailImageUploading(false)
   }
 
   const beginOAuthConnection = async (integration: SourceIntegration) => {
@@ -1603,6 +1833,54 @@ export default function Source() {
       }
 
       return (json ?? { listings: [] }) as ListingsResponse
+    },
+  })
+
+  const ordersQuery = useQuery<OrdersResponse, Error>({
+    queryKey: ["source", "orders"],
+    queryFn: async () => {
+      const res = await fetch("/api/source/orders")
+      const json = (await res.json().catch(() => null)) as OrdersResponse | ApiError | null
+
+      if (!res.ok) {
+        throw new Error((json as ApiError | null)?.error ?? "Unable to load orders")
+      }
+
+      return (json ?? { orders: [] }) as OrdersResponse
+    },
+  })
+
+  const updateOrderFulfillment = useMutation({
+    mutationFn: async ({
+      orderId,
+      fulfillmentStatus,
+      shipping,
+    }: {
+      orderId: string
+      fulfillmentStatus?: ProductOrderFulfillmentStatus
+      shipping?: {
+        trackingNumber: string | null
+        carrier: string | null
+        shippedAt: string | null
+      } | null
+    }) => {
+      const res = await fetch("/api/source/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, fulfillmentStatus, shipping }),
+      })
+      const json = (await res.json().catch(() => null)) as
+        | { order?: unknown; error?: string }
+        | null
+
+      if (!res.ok) {
+        throw new Error(json?.error ?? "Unable to update order")
+      }
+
+      return true
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["source", "orders"] })
     },
   })
 
@@ -1791,10 +2069,257 @@ export default function Source() {
     onError: (err: Error) => setListingError(err.message),
   })
 
+  const updateListing = useMutation({
+    mutationFn: async ({
+      listing,
+      form,
+      type,
+      metadataUpdates,
+      status,
+    }: ListingUpdatePayload) => {
+      if (!userId) {
+        throw new Error("Sign in to manage your listings.")
+      }
+
+      const supabase = getSupabaseBrowser()
+      if (!supabase) {
+        throw new Error("Unable to update this listing.")
+      }
+
+      const trimmedTitle = form.title.trim()
+      if (!trimmedTitle) {
+        throw new Error("A title is required.")
+      }
+
+      const trimmedPrice = form.price.trim()
+      const price = trimmedPrice ? Number.parseFloat(trimmedPrice) : null
+      if (trimmedPrice && Number.isNaN(price)) {
+        throw new Error("Price must be a number.")
+      }
+      if (price !== null && price < 0) {
+        throw new Error("Price cannot be negative.")
+      }
+
+      if (status && !productAvailabilityStatuses.includes(status)) {
+        throw new Error("Invalid availability selection.")
+      }
+
+      const nextMetadata: Record<string, unknown> = {
+        ...((listing.metadata ?? {}) as Record<string, unknown>),
+      }
+
+      if (type === "service") {
+        const durationValue = (form as ServiceSheetFormState).durationMinutes.trim()
+        if (durationValue) {
+          const duration = Number.parseInt(durationValue, 10)
+          if (Number.isNaN(duration) || duration <= 0) {
+            throw new Error("Duration must be a positive number of minutes.")
+          }
+          nextMetadata.duration_minutes = duration
+        } else {
+          delete nextMetadata.duration_minutes
+        }
+      }
+
+      if (metadataUpdates) {
+        for (const [key, value] of Object.entries(metadataUpdates)) {
+          if (value === undefined || value === null) {
+            delete nextMetadata[key]
+          } else {
+            nextMetadata[key] = value
+          }
+        }
+      }
+
+      const formattedCurrency = form.currency.trim() ? form.currency.trim().toUpperCase() : "USD"
+      const nextStatus = status ?? listing.status
+      const { error } = await supabase
+        .from("source_listings")
+        .update({
+          title: trimmedTitle,
+          description: form.description.trim() || null,
+          price,
+          currency: formattedCurrency,
+          metadata: Object.keys(nextMetadata).length ? nextMetadata : null,
+          status: nextStatus,
+        })
+        .match({ id: listing.id, user_id: userId })
+
+      if (error) {
+        throw new Error(error.message || "Unable to update this listing.")
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["source", "listings"] })
+    },
+  })
+
   const integrations = integrationsQuery.data?.integrations ?? []
   const listings = listingsQuery.data?.listings ?? []
   const productListings = listings.filter((listing) => listing.type === "product")
   const serviceListings = listings.filter((listing) => listing.type === "service")
+  const currentProductDetailListing = selectedProductId
+    ? productListings.find((listing) => listing.id === selectedProductId) ?? null
+    : null
+  const currentServiceDetailListing = selectedServiceId
+    ? serviceListings.find((listing) => listing.id === selectedServiceId) ?? null
+    : null
+  useEffect(() => {
+    if (!selectedProductId) {
+      setProductDetailForm(defaultProductSheetForm)
+      setProductDetailError(null)
+      resetProductDetailImageState()
+      productDetailListingIdRef.current = null
+      setProductDetailStatus("draft")
+      return
+    }
+
+    if (!currentProductDetailListing) {
+      return
+    }
+
+    if (currentProductDetailListing.id === productDetailListingIdRef.current) {
+      return
+    }
+
+    const inventoryValue = resolveMetadataNumber(currentProductDetailListing.metadata, "inventory")
+    setProductDetailForm((prev) => ({
+      ...prev,
+      title: currentProductDetailListing.title,
+      description: currentProductDetailListing.description ?? "",
+      price:
+        currentProductDetailListing.price !== null
+          ? String(currentProductDetailListing.price)
+          : "",
+      currency: currentProductDetailListing.currency ?? "USD",
+      productKind: resolveProductKind(currentProductDetailListing.metadata),
+      inventory: inventoryValue !== null ? String(inventoryValue) : "",
+      quantityBehavior: resolveQuantityBehavior(currentProductDetailListing.metadata),
+    }))
+    setProductDetailStatus(currentProductDetailListing.status)
+
+    const coverImage =
+      currentProductDetailListing.metadata &&
+      typeof currentProductDetailListing.metadata["coverImage"] === "string"
+        ? currentProductDetailListing.metadata["coverImage"]
+        : null
+
+    setProductDetailImageUrl(coverImage)
+    setProductDetailImageUploadError(null)
+    setIsProductDetailImageUploading(false)
+    setProductDetailImageDirty(false)
+    clearProductDetailImagePreview()
+
+    productDetailListingIdRef.current = currentProductDetailListing.id
+  }, [selectedProductId, currentProductDetailListing])
+  useEffect(() => {
+    if (!selectedServiceId) {
+      setServiceDetailForm(defaultServiceSheetForm)
+      setServiceDetailError(null)
+      resetServiceDetailImageState()
+      serviceDetailListingIdRef.current = null
+      return
+    }
+
+    if (!currentServiceDetailListing) {
+      return
+    }
+
+    if (currentServiceDetailListing.id === serviceDetailListingIdRef.current) {
+      return
+    }
+
+    const durationValue =
+      currentServiceDetailListing.metadata &&
+      typeof currentServiceDetailListing.metadata["duration_minutes"] === "number"
+        ? String(currentServiceDetailListing.metadata["duration_minutes"])
+        : ""
+    const turnaroundValue = resolveMetadataString(
+      currentServiceDetailListing.metadata,
+      "service_turnaround"
+    )
+    const deliverablesValue = resolveMetadataString(
+      currentServiceDetailListing.metadata,
+      "service_deliverables"
+    )
+    const requirementsValue = resolveMetadataString(
+      currentServiceDetailListing.metadata,
+      "service_requirements"
+    )
+
+    setServiceDetailForm({
+      title: currentServiceDetailListing.title,
+      description: currentServiceDetailListing.description ?? "",
+      price:
+        currentServiceDetailListing.price !== null
+          ? String(currentServiceDetailListing.price)
+          : "",
+      currency: currentServiceDetailListing.currency ?? "USD",
+      durationMinutes: durationValue,
+      serviceMode: resolveServiceMode(currentServiceDetailListing.metadata),
+      turnaround: turnaroundValue,
+      deliverables: deliverablesValue,
+      requirements: requirementsValue,
+    })
+
+    const coverImage =
+      currentServiceDetailListing.metadata &&
+      typeof currentServiceDetailListing.metadata["coverImage"] === "string"
+        ? currentServiceDetailListing.metadata["coverImage"]
+        : null
+
+    setServiceDetailImageUrl(coverImage)
+    setServiceDetailImageUploadError(null)
+    setIsServiceDetailImageUploading(false)
+    setServiceDetailImageDirty(false)
+    clearServiceDetailImagePreview()
+
+    serviceDetailListingIdRef.current = currentServiceDetailListing.id
+  }, [selectedServiceId, currentServiceDetailListing])
+  const orders = ordersQuery.data?.orders ?? []
+  const orderRows: OrderRowData[] = orders.map((order) => {
+    const summaryItems = order.items
+      .slice(0, 2)
+      .map((item) => `${item.title} × ${item.quantity}`)
+      .filter(Boolean)
+    let summary = summaryItems.join(" · ")
+    const extraItemCount = order.items.length - summaryItems.length
+    if (!summary) {
+      summary = "Unknown items"
+    } else if (extraItemCount > 0) {
+      summary = `${summary} +${extraItemCount} more`
+    }
+
+    const amountLabel = formatCurrency(order.totalAmount, order.currency)
+    const dateLabel = new Date(order.createdAt).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })
+    const relativeTime = formatRelativeTime(order.createdAt)
+
+    return {
+      id: order.id,
+      checkoutId: order.checkoutId,
+      currency: order.currency,
+      totalAmount: order.totalAmount,
+      items: order.items,
+      amountLabel,
+      summary,
+      status: order.status,
+      fulfillmentStatus: order.fulfillmentStatus,
+      shipping: order.shipping,
+      dateLabel,
+      relativeTime,
+      stripeSessionId: order.stripeSessionId,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    }
+  })
+  const currentOrderDetail = selectedOrderId
+    ? orderRows.find((order) => order.id === selectedOrderId) ?? null
+    : null
 
   const activeIntegrationCount = integrations.filter(
     (integration) =>
@@ -1835,7 +2360,10 @@ export default function Source() {
     event.preventDefault()
     setProductSheetError(null)
 
-    const metadataFields: Record<string, string> = {}
+    const metadataFields: Record<string, string> = {
+      product_kind: productSheetForm.productKind,
+      quantity_behavior: productSheetForm.quantityBehavior,
+    }
     if (productImageUrl) {
       metadataFields.coverImage = productImageUrl
     }
@@ -1872,9 +2400,23 @@ export default function Source() {
     event.preventDefault()
     setServiceSheetError(null)
 
-    const metadataFields: Record<string, string> = {}
+    const metadataFields: Record<string, string> = {
+      service_mode: serviceSheetForm.serviceMode,
+    }
     if (serviceImageUrl) {
       metadataFields.coverImage = serviceImageUrl
+    }
+    const turnaroundValue = serviceSheetForm.turnaround.trim()
+    if (turnaroundValue) {
+      metadataFields.service_turnaround = turnaroundValue
+    }
+    const deliverablesValue = serviceSheetForm.deliverables.trim()
+    if (deliverablesValue) {
+      metadataFields.service_deliverables = deliverablesValue
+    }
+    const requirementsValue = serviceSheetForm.requirements.trim()
+    if (requirementsValue) {
+      metadataFields.service_requirements = requirementsValue
     }
 
     setIsServiceSheetSubmitting(true)
@@ -1903,6 +2445,200 @@ export default function Source() {
         },
       }
     )
+  }
+
+  const handleProductDetailSheetOpenChange = (next: boolean) => {
+    if (!next) {
+      setSelectedProductId(null)
+      setProductDetailError(null)
+      setIsProductDetailSubmitting(false)
+    }
+  }
+
+  const handleProductDetailFieldChange = (
+    field: keyof ProductSheetFormState,
+    value: string
+  ) => {
+    setProductDetailForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleProductDetailSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedProductId) return
+
+    const listing = productListings.find((item) => item.id === selectedProductId)
+    if (!listing) {
+      setProductDetailError("Unable to locate the selected product.")
+      return
+    }
+
+    setProductDetailError(null)
+    setIsProductDetailSubmitting(true)
+
+    const productDetailMetadataUpdates: Record<string, unknown | null> = {
+      product_kind: productDetailForm.productKind,
+    }
+    if (productDetailImageDirty) {
+      productDetailMetadataUpdates.coverImage = productDetailImageUrl
+    }
+
+    if (productDetailForm.productKind === "physical") {
+      const inventoryRaw = productDetailForm.inventory.trim()
+      if (inventoryRaw) {
+        const count = Number.parseInt(inventoryRaw, 10)
+        if (Number.isNaN(count) || count < 0) {
+          setProductDetailError("Inventory must be a non-negative integer.")
+          setIsProductDetailSubmitting(false)
+          return
+        }
+        productDetailMetadataUpdates.inventory = count
+      } else {
+        productDetailMetadataUpdates.inventory = null
+      }
+      productDetailMetadataUpdates.quantity_behavior = productDetailForm.quantityBehavior
+    } else {
+      productDetailMetadataUpdates.inventory = null
+      productDetailMetadataUpdates.quantity_behavior = null
+    }
+
+    updateListing.mutate(
+      {
+        listing,
+        type: "product",
+        form: productDetailForm,
+        metadataUpdates: productDetailMetadataUpdates,
+        status: productDetailStatus,
+      },
+      {
+        onSuccess: () => {
+          setIsProductDetailSubmitting(false)
+          setSelectedProductId(null)
+        },
+        onError: (err) => {
+          setProductDetailError(err.message)
+          setIsProductDetailSubmitting(false)
+        },
+      }
+    )
+  }
+
+  const handleServiceDetailSheetOpenChange = (next: boolean) => {
+    if (!next) {
+      setSelectedServiceId(null)
+      setServiceDetailError(null)
+      setIsServiceDetailSubmitting(false)
+    }
+  }
+
+  const handleServiceDetailFieldChange = (
+    field: keyof ServiceSheetFormState,
+    value: string
+  ) => {
+    setServiceDetailForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleServiceDetailSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedServiceId) return
+
+    const listing = serviceListings.find((item) => item.id === selectedServiceId)
+    if (!listing) {
+      setServiceDetailError("Unable to locate the selected service.")
+      return
+    }
+
+    setServiceDetailError(null)
+    setIsServiceDetailSubmitting(true)
+
+    const serviceDetailMetadataUpdates: Record<string, unknown | null> = {
+      service_mode: serviceDetailForm.serviceMode,
+    }
+    if (serviceDetailImageDirty) {
+      serviceDetailMetadataUpdates.coverImage = serviceDetailImageUrl
+    }
+    const turnaroundValue = serviceDetailForm.turnaround.trim()
+    if (turnaroundValue) {
+      serviceDetailMetadataUpdates.service_turnaround = turnaroundValue
+    } else {
+      serviceDetailMetadataUpdates.service_turnaround = null
+    }
+    const deliverablesValue = serviceDetailForm.deliverables.trim()
+    if (deliverablesValue) {
+      serviceDetailMetadataUpdates.service_deliverables = deliverablesValue
+    } else {
+      serviceDetailMetadataUpdates.service_deliverables = null
+    }
+    const requirementsValue = serviceDetailForm.requirements.trim()
+    if (requirementsValue) {
+      serviceDetailMetadataUpdates.service_requirements = requirementsValue
+    } else {
+      serviceDetailMetadataUpdates.service_requirements = null
+    }
+
+    updateListing.mutate(
+      {
+        listing,
+        type: "service",
+        form: serviceDetailForm,
+        metadataUpdates: serviceDetailMetadataUpdates,
+      },
+      {
+        onSuccess: () => {
+          setIsServiceDetailSubmitting(false)
+          setSelectedServiceId(null)
+        },
+        onError: (err) => {
+          setServiceDetailError(err.message)
+          setIsServiceDetailSubmitting(false)
+        },
+      }
+    )
+  }
+
+  const handleProductCardClick = (listing: SourceListing) => {
+    if (selectedProductId === listing.id) {
+      setSelectedProductId(null)
+      return
+    }
+    setProductDetailError(null)
+    setSelectedProductId(listing.id)
+  }
+
+  const handleServiceCardClick = (listing: SourceListing) => {
+    if (selectedServiceId === listing.id) {
+      setSelectedServiceId(null)
+      return
+    }
+    setServiceDetailError(null)
+    setSelectedServiceId(listing.id)
+  }
+
+  const handleOrderRowClick = (order: OrderRowData) => {
+    setSelectedOrderId(order.id)
+  }
+
+  const handleOrderDetailOpenChange = (next: boolean) => {
+    if (!next) {
+      setSelectedOrderId(null)
+    }
+  }
+
+  const handleOrderFulfillmentChange = (
+    orderId: string,
+    fulfillmentStatus: ProductOrderFulfillmentStatus
+  ) => {
+    updateOrderFulfillment.mutate({ orderId, fulfillmentStatus })
+  }
+
+  const handleOrderShippingSave = (
+    orderId: string,
+    shipping: {
+      trackingNumber: string | null
+      carrier: string | null
+      shippedAt: string | null
+    }
+  ) => {
+    updateOrderFulfillment.mutate({ orderId, shipping })
   }
 
   const handleProductImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1942,6 +2678,44 @@ export default function Source() {
     setProductImageUrl(uploadResult.url)
   }
 
+  const handleProductDetailImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    input.value = ""
+
+    if (!userId) {
+      setProductDetailImageUploadError("Sign in to upload product images.")
+      return
+    }
+
+    const previousPreview = productDetailImagePreview
+    if (previousPreview && typeof window !== "undefined") {
+      URL.revokeObjectURL(previousPreview)
+    }
+
+    const previewUrl = typeof window !== "undefined" ? URL.createObjectURL(file) : null
+    if (previewUrl) {
+      setProductDetailImagePreview(previewUrl)
+    }
+
+    setProductDetailImageUploadError(null)
+    setProductDetailImageUrl(null)
+    setIsProductDetailImageUploading(true)
+    setProductDetailImageDirty(true)
+
+    const uploadResult = await uploadAvatar(file, userId)
+    setIsProductDetailImageUploading(false)
+
+    if (!uploadResult.success || !uploadResult.url) {
+      setProductDetailImageUploadError(uploadResult.error || "Failed to upload image.")
+      return
+    }
+
+    setProductDetailImageUploadError(null)
+    setProductDetailImageUrl(uploadResult.url)
+  }
+
   const handleServiceImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget
     const file = input.files?.[0]
@@ -1979,11 +2753,56 @@ export default function Source() {
     setServiceImageUrl(uploadResult.url)
   }
 
+  const handleServiceDetailImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    input.value = ""
+
+    if (!userId) {
+      setServiceDetailImageUploadError("Sign in to upload service images.")
+      return
+    }
+
+    const previousPreview = serviceDetailImagePreview
+    if (previousPreview && typeof window !== "undefined") {
+      URL.revokeObjectURL(previousPreview)
+    }
+
+    const previewUrl = typeof window !== "undefined" ? URL.createObjectURL(file) : null
+    if (previewUrl) {
+      setServiceDetailImagePreview(previewUrl)
+    }
+
+    setServiceDetailImageUploadError(null)
+    setServiceDetailImageUrl(null)
+    setIsServiceDetailImageUploading(true)
+    setServiceDetailImageDirty(true)
+
+    const uploadResult = await uploadAvatar(file, userId)
+    setIsServiceDetailImageUploading(false)
+
+    if (!uploadResult.success || !uploadResult.url) {
+      setServiceDetailImageUploadError(uploadResult.error || "Failed to upload image.")
+      return
+    }
+
+    setServiceDetailImageUploadError(null)
+    setServiceDetailImageUrl(uploadResult.url)
+  }
+
   const productSheetBusy =
     isProductImageUploading || (isProductSheetSubmitting && createListing.isPending)
 
   const serviceSheetBusy =
     isServiceImageUploading || (isServiceSheetSubmitting && createListing.isPending)
+  const serviceSheetMode = serviceSheetForm.serviceMode
+  const serviceSheetIsBookable = serviceSheetMode === "bookable"
+  const serviceSheetIsFlatRate = serviceSheetMode === "flat_rate"
+  const serviceSheetIsCustomQuote = serviceSheetMode === "custom_quote"
+  const serviceSheetPriceDescription = serviceSheetIsCustomQuote
+    ? "Optional starting price—use this if you prefer inquiry-based discussions."
+    : undefined
 
   const overviewTiles: OverviewTile[] = [
     { key: "products", title: "Products", meta: "0 active" },
@@ -1994,7 +2813,8 @@ export default function Source() {
   ]
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <>
+      <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-900/60 bg-zinc-950/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6">
           <div className="flex flex-col gap-6">
@@ -2044,7 +2864,8 @@ export default function Source() {
 
       <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 pb-10 pt-6">
         {selectedOverviewSection === "media" && (
-          <>
+          isAdmin ? (
+            <>
             <div className="flex justify-end pb-1">
               <Button
                 type="button"
@@ -2757,7 +3578,13 @@ export default function Source() {
                         </div>
                       </form>
                     </section>
-          </>
+            </>
+          ) : (
+            <section className="rounded-2xl border border-zinc-900/60 bg-zinc-950/70 px-6 py-16 text-center shadow-lg shadow-zinc-950/40">
+              <p className="text-xs uppercase tracking-[0.4em] text-zinc-500">Media</p>
+              <p className="mt-4 text-3xl font-semibold text-white">Coming soon</p>
+            </section>
+          )
         )}
 
         {selectedOverviewSection === "inquiries" && (
@@ -2897,7 +3724,11 @@ export default function Source() {
                       </FieldStack>
 
                       <div className="grid gap-4 sm:grid-cols-2">
-                        <FieldStack label="Price" htmlFor="service-price">
+                        <FieldStack
+                          label="Price"
+                          htmlFor="service-price"
+                          description={serviceSheetPriceDescription}
+                        >
                           <Input
                             id="service-price"
                             type="number"
@@ -2932,10 +3763,36 @@ export default function Source() {
                       </div>
 
                       <FieldStack
-                        label="Duration (minutes)"
-                        htmlFor="service-duration"
-                        description="Optional turnaround estimate for this service."
+                        label="Service mode"
+                        htmlFor="service-mode"
+                        description="Choose how Source should treat this offering when routing requests."
                       >
+                        <Select
+                          id="service-mode"
+                          value={serviceSheetForm.serviceMode}
+                          onValueChange={(value) =>
+                            setServiceSheetForm((prev) => ({
+                              ...prev,
+                              serviceMode: value as ServiceMode,
+                            }))
+                          }
+                        >
+                          <SelectContent>
+                            {SERVICE_MODE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FieldStack>
+
+                      {serviceSheetIsBookable && (
+                        <FieldStack
+                          label="Duration (minutes)"
+                          htmlFor="service-duration"
+                          description="This field controls how long a booking window should last."
+                        >
                           <Input
                             id="service-duration"
                             type="number"
@@ -2950,7 +3807,88 @@ export default function Source() {
                             placeholder="30"
                             className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
                           />
-                      </FieldStack>
+                        </FieldStack>
+                      )}
+
+                      {(serviceSheetIsFlatRate || serviceSheetIsCustomQuote) && (
+                        <div className="space-y-4 border-t border-zinc-900/70 pt-4">
+                          <FormSubheading
+                            title={
+                              serviceSheetIsFlatRate
+                                ? "Flat rate fulfillment"
+                                : "Custom quote expectations"
+                            }
+                            description={
+                              serviceSheetIsFlatRate
+                                ? "Outline turnaround, deliverables, and buyer requirements for fixed offerings."
+                                : "Share expected turnaround and requirements so Source can prompt thoughtful inquiries."
+                            }
+                          />
+                          <FieldStack
+                            label="Turnaround"
+                            htmlFor="service-turnaround"
+                            description={
+                              serviceSheetIsFlatRate
+                                ? "Estimated lead time once the buyer commits."
+                                : "How long it usually takes to respond to an inquiry."
+                            }
+                          >
+                            <Input
+                              id="service-turnaround"
+                              type="text"
+                              value={serviceSheetForm.turnaround}
+                              onChange={(event) =>
+                                setServiceSheetForm((prev) => ({
+                                  ...prev,
+                                  turnaround: event.target.value,
+                                }))
+                              }
+                              placeholder="2 business days"
+                              className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                            />
+                          </FieldStack>
+                          {serviceSheetIsFlatRate && (
+                            <FieldStack
+                              label="Deliverables"
+                              htmlFor="service-deliverables"
+                              description="What the buyer receives for this flat-rate offering."
+                            >
+                              <Textarea
+                                id="service-deliverables"
+                                value={serviceSheetForm.deliverables}
+                                onChange={(event) =>
+                                  setServiceSheetForm((prev) => ({
+                                    ...prev,
+                                    deliverables: event.target.value,
+                                  }))
+                                }
+                                rows={3}
+                                placeholder="Detailed scope of work"
+                                className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                              />
+                            </FieldStack>
+                          )}
+                          <FieldStack
+                            label="Requirements"
+                            htmlFor="service-requirements"
+                            description="List anything the buyer should prepare before requesting this service."
+                          >
+                            <Textarea
+                              id="service-requirements"
+                              value={serviceSheetForm.requirements}
+                              onChange={(event) =>
+                                setServiceSheetForm((prev) => ({
+                                  ...prev,
+                                  requirements: event.target.value,
+                                }))
+                              }
+                              rows={3}
+                              placeholder="Supply access to files or references"
+                              className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                            />
+                          </FieldStack>
+                        </div>
+                      )}
 
                       <FieldStack
                         label="Cover image"
@@ -3057,15 +3995,11 @@ export default function Source() {
                     : null
                 const isSelected = selectedServiceId === listing.id
                 return (
-                  <button
-                    key={listing.id}
-                    type="button"
-                    aria-pressed={isSelected}
-                    onClick={() =>
-                      setSelectedServiceId((prev) =>
-                        prev === listing.id ? null : listing.id
-                      )
-                    }
+                <button
+                  key={listing.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => handleServiceCardClick(listing)}
                     className={cn(
                       "flex h-full flex-col overflow-hidden rounded-2xl border bg-zinc-950/60 text-left text-[11px] text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70",
                       isSelected
@@ -3140,19 +4074,13 @@ export default function Source() {
                 listing.price !== null
                   ? formatCurrency(listing.price, listing.currency)
                   : "Price TBD"
-              const inventoryCount =
-                listing.metadata && typeof listing.metadata["inventory"] === "number"
-                  ? listing.metadata["inventory"]
-                  : null
               const isSelected = selectedProductId === listing.id
               return (
                 <button
                   key={listing.id}
                   type="button"
                   aria-pressed={isSelected}
-                  onClick={() =>
-                    setSelectedProductId((prev) => (prev === listing.id ? null : listing.id))
-                  }
+                  onClick={() => handleProductCardClick(listing)}
                   className={cn(
                     "flex h-full flex-col overflow-hidden rounded-2xl border bg-zinc-950/60 text-left text-[11px] text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70",
                     isSelected
@@ -3188,11 +4116,9 @@ export default function Source() {
                       {listing.title}
                     </p>
                     <p className="text-[10px] text-zinc-400">{priceLabel}</p>
-                    {inventoryCount !== null && (
-                      <span className="text-[9px] uppercase tracking-[0.3em] text-zinc-500">
-                        {inventoryCount} in stock
-                      </span>
-                    )}
+                    <p className="text-[9px] uppercase tracking-[0.3em] text-zinc-500">
+                      Status · {availabilityLabels[listing.status]}
+                    </p>
                     <p className="mt-auto text-[8px] uppercase tracking-[0.3em] text-zinc-500">
                       Updated {formatRelativeTime(listing.updated_at)}
                     </p>
@@ -3203,64 +4129,824 @@ export default function Source() {
           </div>
         </section>
       )}
-      {selectedOverviewSection === "orders" && (
-          <section id="recent-listings" className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-white">
-                Recent listings
-              </h2>
-              <p className="text-sm text-zinc-300">
-                Track what was sent to each integration and surface payload
-                errors instantly.
+        {selectedOverviewSection === "orders" && (
+        <section id="orders-section" className="space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-[0.4em] text-zinc-500">Orders</p>
+              <h2 className="text-2xl font-semibold text-white">Received orders</h2>
+              <p className="text-sm text-zinc-400">
+                A lightweight inbox of product checkouts handled through Stripe.
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                queryClient.invalidateQueries({
-                  queryKey: ["source", "listings"],
-                })
-              }
-              disabled={listingsQuery.isFetching}
-            >
-              <RefreshCcw className="size-4" />
-              Refresh
-            </Button>
+            <div className="flex items-center gap-3 text-right text-xs text-zinc-400">
+              <div className="space-y-0.5">
+                <p className="text-sm font-semibold text-white">{orderRows.length}</p>
+                <p className="uppercase tracking-[0.4em] text-zinc-500">orders</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  queryClient.invalidateQueries({
+                    queryKey: ["source", "orders"],
+                  })
+                }
+                disabled={ordersQuery.isFetching}
+              >
+                <RefreshCcw className="size-4" />
+                Refresh
+              </Button>
+            </div>
           </div>
 
-          {listingsQuery.error && (
+          {ordersQuery.error && (
             <div className="rounded-md border border-zinc-500/40 bg-zinc-950/40 p-3 text-sm text-zinc-200">
-              {listingsQuery.error.message}
+              {ordersQuery.error.message}
             </div>
           )}
 
-          <div className="space-y-4">
-            {listingsQuery.isLoading &&
+          <div className="space-y-3 rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4">
+            {ordersQuery.isLoading &&
               Array.from({ length: 3 }).map((_, idx) => (
                 <div
-                  key={`listing-skeleton-${idx}`}
-                  className="h-32 animate-pulse rounded-xl border border-zinc-900/80 bg-zinc-950/60"
-                />
+                  key={`orders-skeleton-${idx}`}
+                  className="animate-pulse rounded-2xl border border-zinc-900/70 bg-zinc-950/70 p-4"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="space-y-2">
+                      <div className="h-3 w-32 rounded-full bg-zinc-900" />
+                      <div className="h-2 w-24 rounded-full bg-zinc-900" />
+                    </div>
+                    <div className="space-y-2 text-right">
+                      <div className="h-3 w-16 rounded-full bg-zinc-900" />
+                      <div className="h-2 w-12 rounded-full bg-zinc-900" />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-4 text-xs text-zinc-500">
+                    <div className="h-2 w-20 rounded-full bg-zinc-900" />
+                    <div className="h-2 w-24 rounded-full bg-zinc-900" />
+                  </div>
+                </div>
               ))}
 
-            {!listingsQuery.isLoading && listings.length === 0 && (
-              <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-6 text-sm text-zinc-300">
-                No listings yet. When you publish a product or service it will
-                appear here with delivery status per integration.
+            {!ordersQuery.isLoading && orderRows.length === 0 && (
+              <div className="space-y-2 rounded-xl border border-dashed border-zinc-900/70 bg-zinc-950/60 p-6 text-sm text-zinc-400">
+                <p className="text-base font-semibold text-white">No orders yet</p>
+                <p>
+                  Product checkouts processed through Stripe will appear here so you can monitor fulfillment readiness.
+                </p>
+                <p className="text-xs text-zinc-500">
+                  Publish a product and complete a buyer checkout to see the first order record.
+                </p>
               </div>
             )}
 
-            {listings.map((listing) => (
-              <ListingCard key={listing.id} listing={listing} />
-            ))}
+            {!ordersQuery.isLoading && orderRows.length > 0 && (
+              <div className="space-y-3">
+                {orderRows.map((order) => (
+                  <OrderRowCard
+                    key={order.id}
+                    order={order}
+                    isActive={currentOrderDetail?.id === order.id}
+                    onOpen={() => handleOrderRowClick(order)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-          </section>
-        )}
+        </section>
+      )}
       </main>
+      <SourceProductSheet
+        listing={currentProductDetailListing}
+        formState={productDetailForm}
+        onFieldChange={handleProductDetailFieldChange}
+        onSubmit={handleProductDetailSubmit}
+        isOpen={Boolean(selectedProductId)}
+        onOpenChange={handleProductDetailSheetOpenChange}
+        error={productDetailError}
+        isBusy={isProductDetailSubmitting || updateListing.isPending}
+        imagePreview={productDetailImagePreview}
+        imageUrl={productDetailImageUrl}
+        imageInputRef={productDetailImageInputRef}
+        onImageChange={handleProductDetailImageChange}
+        onImageRemove={removeProductDetailImageSelection}
+        imageUploadError={productDetailImageUploadError}
+        isImageUploading={isProductDetailImageUploading}
+        availabilityStatus={productDetailStatus}
+        onAvailabilityChange={setProductDetailStatus}
+      />
+      <SourceServiceSheet
+        listing={currentServiceDetailListing}
+        formState={serviceDetailForm}
+        onFieldChange={handleServiceDetailFieldChange}
+        onSubmit={handleServiceDetailSubmit}
+        isOpen={Boolean(selectedServiceId)}
+        onOpenChange={handleServiceDetailSheetOpenChange}
+        error={serviceDetailError}
+        isBusy={isServiceDetailSubmitting || updateListing.isPending}
+        imagePreview={serviceDetailImagePreview}
+        imageUrl={serviceDetailImageUrl}
+        imageInputRef={serviceDetailImageInputRef}
+        onImageChange={handleServiceDetailImageChange}
+        onImageRemove={removeServiceDetailImageSelection}
+        imageUploadError={serviceDetailImageUploadError}
+        isImageUploading={isServiceDetailImageUploading}
+      />
+      <SourceOrderDetailSheet
+        order={currentOrderDetail}
+        isOpen={Boolean(currentOrderDetail)}
+        onOpenChange={handleOrderDetailOpenChange}
+        onFulfillmentChange={handleOrderFulfillmentChange}
+        onShippingSave={handleOrderShippingSave}
+        isUpdatingFulfillment={updateOrderFulfillment.isPending}
+        fulfillmentError={
+          updateOrderFulfillment.error instanceof Error
+            ? updateOrderFulfillment.error.message
+            : null
+        }
+      />
       <PostModal isOpen={isPostModalOpen} onClose={() => setIsPostModalOpen(false)} />
     </div>
+      <style jsx global>{`
+        .no-default-close [data-slot='sheet-close'] {
+          display: none;
+        }
+      `}</style>
+    </>
+  )
+}
+
+type SourceProductSheetProps = {
+  listing: SourceListing | null
+  formState: ProductSheetFormState
+  onFieldChange(field: keyof ProductSheetFormState, value: string): void
+  onSubmit(event: FormEvent<HTMLFormElement>): void
+  isOpen: boolean
+  onOpenChange(next: boolean): void
+  error: string | null
+  isBusy: boolean
+  imagePreview: string | null
+  imageUrl: string | null
+  imageInputRef: RefObject<HTMLInputElement>
+  onImageChange(event: ChangeEvent<HTMLInputElement>): void
+  onImageRemove(): void
+  imageUploadError: string | null
+  isImageUploading: boolean
+  availabilityStatus: SourceListing["status"]
+  onAvailabilityChange(value: SourceListing["status"]): void
+}
+
+function SourceProductSheet({
+  listing,
+  formState,
+  onFieldChange,
+  onSubmit,
+  isOpen,
+  onOpenChange,
+  error,
+  isBusy,
+  imagePreview,
+  imageUrl,
+  imageInputRef,
+  onImageChange,
+  onImageRemove,
+  imageUploadError,
+  isImageUploading,
+  availabilityStatus,
+  onAvailabilityChange,
+}: SourceProductSheetProps) {
+  if (!listing) return null
+
+  const priceLabel =
+    listing.price !== null ? formatCurrency(listing.price, listing.currency) : "Price TBD"
+  const coverImagePreview = imagePreview || imageUrl
+  const isPhysicalProduct = formState.productKind === "physical"
+
+  return (
+    <Sheet open={isOpen} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="no-default-close inset-0 w-full max-w-none rounded-none border-none bg-zinc-950 text-zinc-100 gap-0"
+      >
+        <form className="flex h-full flex-col" onSubmit={onSubmit}>
+          <div className="border-b border-zinc-900/70 px-5 py-3">
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                disabled={isBusy}
+              >
+                <X className="h-4 w-4" />
+                Close
+              </Button>
+              <div className="rounded-full border border-zinc-800 px-2 py-0.5 text-[10px] uppercase tracking-[0.3em] text-zinc-500">
+                {listingTypeLabels[listing.type]}
+              </div>
+            </div>
+            <p className="mt-2 text-xl font-semibold leading-tight text-zinc-100">{listing.title}</p>
+            <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-400">
+              <Badge
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px]",
+                  statusAccent[listing.status]
+                )}
+              >
+                {listingStatuses[listing.status]}
+              </Badge>
+              <span>{priceLabel}</span>
+              <span>Updated {formatRelativeTime(listing.updated_at)}</span>
+            </div>
+            {error && (
+              <div className="mt-2 rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                {error}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
+            <div className="space-y-3 -mx-6">
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={onImageChange}
+              />
+              <div className="space-y-3">
+                <div className="relative h-56 w-full overflow-hidden rounded-[2rem] border border-zinc-900/70 bg-zinc-900/60">
+                  {coverImagePreview ? (
+                    <img
+                      src={coverImagePreview}
+                      alt={`${listing.title} cover`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+                      No image selected
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={isImageUploading}
+                  >
+                    {coverImagePreview ? "Replace cover image" : "Upload cover image"}
+                  </Button>
+                  {coverImagePreview && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={onImageRemove}
+                      disabled={isImageUploading}
+                    >
+                      Remove image
+                    </Button>
+                  )}
+                  {isImageUploading && (
+                    <span className="text-xs text-zinc-400">Uploading image…</span>
+                  )}
+                </div>
+                {imageUploadError && (
+                  <p className="text-xs text-red-400">{imageUploadError}</p>
+                )}
+              </div>
+            </div>
+            <div className="space-y-4">
+              <FieldStack label="Title" htmlFor="product-detail-title">
+                <Input
+                  id="product-detail-title"
+                  value={formState.title}
+                  onChange={(event) => onFieldChange("title", event.target.value)}
+                  placeholder="Product title"
+                  required
+                  disabled={isBusy}
+                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                />
+              </FieldStack>
+
+              <FieldStack label="Description" htmlFor="product-detail-description">
+                <Textarea
+                  id="product-detail-description"
+                  value={formState.description}
+                  onChange={(event) =>
+                    onFieldChange("description", event.target.value)
+                  }
+                  rows={4}
+                  placeholder="Describe what this product does"
+                  disabled={isBusy}
+                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                />
+              </FieldStack>
+
+              <FieldStack
+                label="Product kind"
+                htmlFor="product-detail-kind"
+                description="Clarify whether this listing is a physical good or digital download."
+              >
+                <Select
+                  id="product-detail-kind"
+                  value={formState.productKind}
+                  onValueChange={(value) => onFieldChange("productKind", value)}
+                >
+                  <SelectContent>
+                    {PRODUCT_KIND_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldStack>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FieldStack label="Price" htmlFor="product-detail-price">
+                  <Input
+                    id="product-detail-price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formState.price}
+                    onChange={(event) =>
+                      onFieldChange("price", event.target.value)
+                    }
+                    placeholder="49.99"
+                    disabled={isBusy}
+                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  />
+                </FieldStack>
+                <FieldStack label="Currency" htmlFor="product-detail-currency">
+                  <Input
+                    id="product-detail-currency"
+                    value={formState.currency}
+                    onChange={(event) =>
+                      onFieldChange("currency", event.target.value.toUpperCase())
+                    }
+                    placeholder="USD"
+                    maxLength={3}
+                    disabled={isBusy}
+                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  />
+                </FieldStack>
+              </div>
+
+              <FieldStack
+                label="Availability"
+                htmlFor="product-detail-status"
+                description="Switch between draft and live states using Source’s listing status."
+              >
+                <Select
+                  value={availabilityStatus}
+                  onValueChange={(value) =>
+                    onAvailabilityChange(value as SourceListing["status"])
+                  }
+                  placeholder="Draft"
+                >
+                  <SelectContent>
+                    {productAvailabilityStatuses.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {availabilityLabels[status]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldStack>
+              {isPhysicalProduct && (
+                <div className="space-y-4 border-t border-zinc-900/70 pt-4">
+                  <FormSubheading
+                    title="Fulfillment & inventory"
+                    description="Track stock and how Source should reserve this item before it ships."
+                  />
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FieldStack
+                      label="Inventory count"
+                      htmlFor="product-detail-inventory"
+                      description="Current stock level synced to connected storefronts."
+                    >
+                      <Input
+                        id="product-detail-inventory"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={formState.inventory}
+                        onChange={(event) =>
+                          onFieldChange("inventory", event.target.value)
+                        }
+                        placeholder="0"
+                        disabled={isBusy}
+                        className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                      />
+                    </FieldStack>
+                    <FieldStack
+                      label="Quantity behavior"
+                      htmlFor="product-detail-quantity-behavior"
+                      description="Choose how Source should hold units when publish requests arrive."
+                    >
+                      <Select
+                        id="product-detail-quantity-behavior"
+                        value={formState.quantityBehavior}
+                        onValueChange={(value) =>
+                          onFieldChange("quantityBehavior", value)
+                        }
+                      >
+                        <SelectContent>
+                          {QUANTITY_BEHAVIOR_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FieldStack>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    Source assumes physical products ship. Keep inventory up to date so storefronts can reserve stock before purchase.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <SheetFooter className="border-t border-zinc-900/70 px-6 py-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onOpenChange(false)}
+                disabled={isBusy}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isBusy}>
+                {isBusy ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin" />
+                    Saving changes
+                  </span>
+                ) : (
+                  "Save changes"
+                )}
+              </Button>
+            </div>
+          </SheetFooter>
+        </form>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+type SourceServiceSheetProps = {
+  listing: SourceListing | null
+  formState: ServiceSheetFormState
+  onFieldChange(field: keyof ServiceSheetFormState, value: string): void
+  onSubmit(event: FormEvent<HTMLFormElement>): void
+  isOpen: boolean
+  onOpenChange(next: boolean): void
+  error: string | null
+  isBusy: boolean
+  imagePreview: string | null
+  imageUrl: string | null
+  imageInputRef: RefObject<HTMLInputElement>
+  onImageChange(event: ChangeEvent<HTMLInputElement>): void
+  onImageRemove(): void
+  imageUploadError: string | null
+  isImageUploading: boolean
+}
+
+function SourceServiceSheet({
+  listing,
+  formState,
+  onFieldChange,
+  onSubmit,
+  isOpen,
+  onOpenChange,
+  error,
+  isBusy,
+  imagePreview,
+  imageUrl,
+  imageInputRef,
+  onImageChange,
+  onImageRemove,
+  imageUploadError,
+  isImageUploading,
+}: SourceServiceSheetProps) {
+  if (!listing) return null
+
+  const priceLabel =
+    listing.price !== null ? formatCurrency(listing.price, listing.currency) : "Price TBD"
+  const coverImagePreview = imagePreview || imageUrl
+  const serviceDetailMode = formState.serviceMode
+  const serviceDetailIsBookable = serviceDetailMode === "bookable"
+  const serviceDetailIsFlatRate = serviceDetailMode === "flat_rate"
+  const serviceDetailIsCustomQuote = serviceDetailMode === "custom_quote"
+  const serviceDetailPriceDescription = serviceDetailIsCustomQuote
+    ? "Optional starting price—use this when inquiries kick off the conversation."
+    : undefined
+
+  return (
+    <Sheet open={isOpen} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="no-default-close inset-0 w-full max-w-none rounded-none border-none bg-zinc-950 text-zinc-100 gap-0"
+      >
+        <form className="flex h-full flex-col" onSubmit={onSubmit}>
+          <div className="border-b border-zinc-900/70 px-5 py-3">
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                disabled={isBusy}
+              >
+                <X className="h-4 w-4" />
+                Close
+              </Button>
+              <div className="rounded-full border border-zinc-800 px-2 py-0.5 text-[10px] uppercase tracking-[0.3em] text-zinc-500">
+                {listingTypeLabels[listing.type]}
+              </div>
+            </div>
+            <p className="mt-2 text-xl font-semibold leading-tight text-zinc-100">{listing.title}</p>
+            <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-400">
+              <Badge
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px]",
+                  statusAccent[listing.status]
+                )}
+              >
+                {listingStatuses[listing.status]}
+              </Badge>
+              <span>{priceLabel}</span>
+              <span>Updated {formatRelativeTime(listing.updated_at)}</span>
+            </div>
+            {error && (
+              <div className="mt-2 rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                {error}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
+            <div className="space-y-3 -mx-6">
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={onImageChange}
+              />
+              <div className="space-y-3">
+                <div className="relative h-56 w-full overflow-hidden rounded-[2rem] border border-zinc-900/70 bg-zinc-900/60">
+                  {coverImagePreview ? (
+                    <img
+                      src={coverImagePreview}
+                      alt={`${listing.title} cover`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+                      No image selected
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={isImageUploading}
+                  >
+                    {coverImagePreview ? "Replace cover image" : "Upload cover image"}
+                  </Button>
+                  {coverImagePreview && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={onImageRemove}
+                      disabled={isImageUploading}
+                    >
+                      Remove image
+                    </Button>
+                  )}
+                  {isImageUploading && (
+                    <span className="text-xs text-zinc-400">Uploading image…</span>
+                  )}
+                </div>
+                {imageUploadError && (
+                  <p className="text-xs text-red-400">{imageUploadError}</p>
+                )}
+              </div>
+            </div>
+            <div className="space-y-4">
+              <FieldStack label="Title" htmlFor="service-detail-title">
+                <Input
+                  id="service-detail-title"
+                  value={formState.title}
+                  onChange={(event) => onFieldChange("title", event.target.value)}
+                  placeholder="Service title"
+                  required
+                  disabled={isBusy}
+                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                />
+              </FieldStack>
+
+              <FieldStack label="Description" htmlFor="service-detail-description">
+                <Textarea
+                  id="service-detail-description"
+                  value={formState.description}
+                  onChange={(event) =>
+                    onFieldChange("description", event.target.value)
+                  }
+                  rows={4}
+                  placeholder="Describe what this service includes"
+                  disabled={isBusy}
+                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                />
+              </FieldStack>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FieldStack
+                  label="Price"
+                  htmlFor="service-detail-price"
+                  description={serviceDetailPriceDescription}
+                >
+                  <Input
+                    id="service-detail-price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formState.price}
+                    onChange={(event) => onFieldChange("price", event.target.value)}
+                    placeholder="49.99"
+                    disabled={isBusy}
+                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  />
+                </FieldStack>
+                <FieldStack label="Currency" htmlFor="service-detail-currency">
+                  <Input
+                    id="service-detail-currency"
+                    value={formState.currency}
+                    onChange={(event) =>
+                      onFieldChange("currency", event.target.value.toUpperCase())
+                    }
+                    placeholder="USD"
+                    maxLength={3}
+                    disabled={isBusy}
+                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  />
+                </FieldStack>
+              </div>
+
+              <FieldStack
+                label="Service mode"
+                htmlFor="service-detail-mode"
+                description="Controls how bookings or quotes should behave once this listing is live."
+              >
+                <Select
+                  id="service-detail-mode"
+                  value={formState.serviceMode}
+                  onValueChange={(value) => onFieldChange("serviceMode", value)}
+                >
+                  <SelectContent>
+                    {SERVICE_MODE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldStack>
+
+              {serviceDetailIsBookable && (
+                <FieldStack
+                  label="Duration (minutes)"
+                  htmlFor="service-detail-duration"
+                  description="This duration drives the booking window and scheduler prompts."
+                >
+                  <Input
+                    id="service-detail-duration"
+                    type="number"
+                    min="1"
+                    value={formState.durationMinutes}
+                    onChange={(event) =>
+                      onFieldChange("durationMinutes", event.target.value)
+                    }
+                    placeholder="30"
+                    disabled={isBusy}
+                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  />
+                </FieldStack>
+              )}
+
+              {(serviceDetailIsFlatRate || serviceDetailIsCustomQuote) && (
+                <div className="space-y-4 border-t border-zinc-900/70 pt-4">
+                  <FormSubheading
+                    title={
+                      serviceDetailIsFlatRate
+                        ? "Flat rate fulfillment"
+                        : "Custom quote expectations"
+                    }
+                    description={
+                      serviceDetailIsFlatRate
+                        ? "Detail the turnaround, deliverables, and requirements for fixed-priced services."
+                        : "Share inquiry expectations so Source can surface the right questions."
+                    }
+                  />
+                  <FieldStack
+                    label="Turnaround"
+                    htmlFor="service-detail-turnaround"
+                    description={
+                      serviceDetailIsFlatRate
+                        ? "Estimate how long fulfillment usually takes."
+                        : "How long it takes you to respond with a quote or availability."
+                    }
+                  >
+                    <Input
+                      id="service-detail-turnaround"
+                      type="text"
+                      value={formState.turnaround}
+                      onChange={(event) =>
+                        onFieldChange("turnaround", event.target.value)
+                      }
+                      placeholder="2 business days"
+                      disabled={isBusy}
+                      className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                    />
+                  </FieldStack>
+                  {serviceDetailIsFlatRate && (
+                    <FieldStack
+                      label="Deliverables"
+                      htmlFor="service-detail-deliverables"
+                      description="List what the buyer receives for this flat-rate service."
+                    >
+                      <Textarea
+                        id="service-detail-deliverables"
+                        value={formState.deliverables}
+                        onChange={(event) =>
+                          onFieldChange("deliverables", event.target.value)
+                        }
+                        rows={3}
+                        placeholder="Done-for-you deliverables"
+                        disabled={isBusy}
+                        className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                      />
+                    </FieldStack>
+                  )}
+                  <FieldStack
+                    label="Requirements"
+                    htmlFor="service-detail-requirements"
+                    description="Share what buyers should submit before requesting this service."
+                  >
+                    <Textarea
+                      id="service-detail-requirements"
+                      value={formState.requirements}
+                      onChange={(event) =>
+                        onFieldChange("requirements", event.target.value)
+                      }
+                      rows={3}
+                      placeholder="Resources or files we need"
+                      disabled={isBusy}
+                      className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                    />
+                  </FieldStack>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <SheetFooter className="border-t border-zinc-900/70 px-6 py-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onOpenChange(false)}
+                disabled={isBusy}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isBusy}>
+                {isBusy ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin" />
+                    Saving changes
+                  </span>
+                ) : (
+                  "Save changes"
+                )}
+              </Button>
+            </div>
+          </SheetFooter>
+        </form>
+      </SheetContent>
+    </Sheet>
   )
 }
 
@@ -3580,6 +5266,409 @@ function PostDetails({ metadata }: PostDetailsProps) {
   )
 }
 
+type OrderRowData = {
+  id: string
+  checkoutId: string
+  currency: string
+  totalAmount: number
+  items: ProductCheckoutLineItem[]
+  summary: string
+  amountLabel: string
+  status: ProductCheckoutStatus
+  fulfillmentStatus: ProductOrderFulfillmentStatus
+  shipping: {
+    trackingNumber: string | null
+    carrier: string | null
+    shippedAt: string | null
+  } | null
+  dateLabel: string
+  relativeTime: string
+  stripeSessionId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+function OrderRowCard({
+  order,
+  onOpen,
+  isActive,
+}: {
+  order: OrderRowData
+  onOpen(): void
+  isActive: boolean
+}) {
+  const shortSessionId =
+    order.stripeSessionId && order.stripeSessionId.length > 8
+      ? `${order.stripeSessionId.slice(0, 8)}…`
+      : order.stripeSessionId
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-pressed={isActive}
+      className={cn(
+        "w-full rounded-2xl border bg-zinc-950/70 p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70",
+        isActive
+          ? "border-zinc-500/70 bg-zinc-900/70"
+          : "border-zinc-900/70 hover:border-zinc-700"
+      )}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-2">
+          <p className="text-sm font-semibold text-white truncate">{order.summary}</p>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
+            <span className="font-mono text-[10px] text-zinc-300">{order.checkoutId}</span>
+            {shortSessionId ? (
+              <span className="uppercase tracking-[0.3em] text-zinc-500">
+                Session{" "}
+                <span className="font-mono text-[10px] text-zinc-400">{shortSessionId}</span>
+              </span>
+            ) : (
+              <span className="uppercase tracking-[0.3em] text-zinc-600">No session ID</span>
+            )}
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-semibold text-white">{order.amountLabel}</p>
+          <p className="text-[11px] text-zinc-500">{order.dateLabel}</p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-400">
+        <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-zinc-500">
+          <span>Payment</span>
+          <Badge
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-[10px]",
+              ORDER_STATUS_ACCENT[order.status]
+            )}
+          >
+            {ORDER_STATUS_LABELS[order.status]}
+          </Badge>
+          <span>Fulfillment</span>
+          <Badge
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-[10px]",
+              ORDER_FULFILLMENT_STATUS_ACCENT[order.fulfillmentStatus]
+            )}
+          >
+            {ORDER_FULFILLMENT_STATUS_LABELS[order.fulfillmentStatus]}
+          </Badge>
+        </div>
+        <p className="text-[11px] text-zinc-500">Received {order.relativeTime}</p>
+      </div>
+      {order.shipping ? (
+        <p className="mt-2 text-[11px] text-zinc-400">
+          {order.shipping.carrier ? `${order.shipping.carrier} · ` : ""}
+          {order.shipping.trackingNumber
+            ? `Tracking ${order.shipping.trackingNumber}`
+            : "Shipping metadata saved"}
+        </p>
+      ) : null}
+    </button>
+  )
+}
+
+type SourceOrderDetailSheetProps = {
+  order: OrderRowData | null
+  isOpen: boolean
+  onOpenChange(next: boolean): void
+  onFulfillmentChange(orderId: string, fulfillmentStatus: ProductOrderFulfillmentStatus): void
+  onShippingSave(
+    orderId: string,
+    shipping: {
+      trackingNumber: string | null
+      carrier: string | null
+      shippedAt: string | null
+    }
+  ): void
+  isUpdatingFulfillment: boolean
+  fulfillmentError: string | null
+}
+
+function SourceOrderDetailSheet({
+  order,
+  isOpen,
+  onOpenChange,
+  onFulfillmentChange,
+  onShippingSave,
+  isUpdatingFulfillment,
+  fulfillmentError,
+}: SourceOrderDetailSheetProps) {
+  const lineItems = order?.items ?? []
+  const [trackingNumber, setTrackingNumber] = useState("")
+  const [carrier, setCarrier] = useState("")
+  const [shippedAtInput, setShippedAtInput] = useState("")
+
+  useEffect(() => {
+    if (!order) {
+      setTrackingNumber("")
+      setCarrier("")
+      setShippedAtInput("")
+      return
+    }
+    setTrackingNumber(order.shipping?.trackingNumber ?? "")
+    setCarrier(order.shipping?.carrier ?? "")
+    setShippedAtInput(toDateTimeLocalInput(order.shipping?.shippedAt ?? null))
+  }, [order])
+
+  return (
+    <Sheet open={isOpen} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="bg-zinc-950 text-zinc-100 border-l border-zinc-900/70 sm:max-w-2xl"
+      >
+        <div className="flex h-full flex-col gap-6 px-4 pb-4 pt-3">
+          <SheetHeader>
+            <SheetTitle>Order details</SheetTitle>
+            <SheetDescription>
+              Inspect checkout details and update lightweight fulfillment state.
+            </SheetDescription>
+          </SheetHeader>
+
+          {order ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1">
+              <div className="space-y-4 rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+                      Checkout
+                    </p>
+                    <p className="font-mono text-sm text-zinc-100">{order.checkoutId}</p>
+                  </div>
+                  <Badge
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[10px]",
+                      ORDER_STATUS_ACCENT[order.status]
+                    )}
+                  >
+                    {ORDER_STATUS_LABELS[order.status]}
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">
+                    Fulfillment
+                  </p>
+                  <Badge
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[10px]",
+                      ORDER_FULFILLMENT_STATUS_ACCENT[order.fulfillmentStatus]
+                    )}
+                  >
+                    {ORDER_FULFILLMENT_STATUS_LABELS[order.fulfillmentStatus]}
+                  </Badge>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <DetailField label="Order ID" value={order.id} mono />
+                  <DetailField
+                    label="Stripe session"
+                    value={order.stripeSessionId ?? "Not available"}
+                    mono
+                  />
+                  <DetailField
+                    label="Created"
+                    value={formatAbsoluteDateTime(order.createdAt)}
+                  />
+                  <DetailField
+                    label="Updated"
+                    value={formatAbsoluteDateTime(order.updatedAt)}
+                  />
+                  <DetailField label="Subtotal" value={order.amountLabel} />
+                  <DetailField label="Currency" value={order.currency.toUpperCase()} />
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-400">
+                  Purchased items
+                </p>
+                {lineItems.length > 0 ? (
+                  <div className="space-y-2">
+                    {lineItems.map((item) => (
+                      <div
+                        key={`${item.id}-${item.title}`}
+                        className="rounded-xl border border-zinc-900/80 bg-zinc-900/40 p-3"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-zinc-100">
+                              {item.title || "Product item"}
+                            </p>
+                            <p className="font-mono text-[11px] text-zinc-500">{item.id}</p>
+                          </div>
+                          <Badge className="bg-zinc-800 text-zinc-200">
+                            Qty {item.quantity}
+                          </Badge>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-zinc-400">
+                          <span>
+                            Unit {formatCurrency(item.unitPrice, order.currency)}
+                          </span>
+                          <span>
+                            Line total {formatCurrency(item.lineTotal, order.currency)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-zinc-400">No line items were stored for this checkout.</p>
+                )}
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-400">
+                  Fulfillment
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {PRODUCT_ORDER_FULFILLMENT_STATUSES.map((status) => (
+                    <Button
+                      key={status}
+                      type="button"
+                      size="sm"
+                      variant={order.fulfillmentStatus === status ? "secondary" : "ghost"}
+                      className={cn(
+                        "rounded-full border px-3 text-[11px]",
+                        order.fulfillmentStatus === status
+                          ? ORDER_FULFILLMENT_STATUS_ACCENT[status]
+                          : "border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                      )}
+                      onClick={() => onFulfillmentChange(order.id, status)}
+                      disabled={isUpdatingFulfillment || order.fulfillmentStatus === status}
+                    >
+                      {ORDER_FULFILLMENT_STATUS_LABELS[status]}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-zinc-500">
+                  Keep checkout/payment state separate. This controls fulfillment only.
+                </p>
+                {order.fulfillmentStatus === "shipped" ? (
+                  <div className="space-y-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-300/80">
+                      Shipping metadata
+                    </p>
+                    {order.shipping ? (
+                      <p className="text-xs text-zinc-300">
+                        {order.shipping.carrier ? `${order.shipping.carrier} · ` : ""}
+                        {order.shipping.trackingNumber
+                          ? order.shipping.trackingNumber
+                          : "No tracking number"}
+                        {order.shipping.shippedAt
+                          ? ` · ${formatAbsoluteDateTime(order.shipping.shippedAt)}`
+                          : ""}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-zinc-400">
+                        Add a carrier, tracking number, or shipped timestamp.
+                      </p>
+                    )}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="order-shipping-carrier"
+                          className="text-[10px] uppercase tracking-[0.28em] text-zinc-500"
+                        >
+                          Carrier
+                        </Label>
+                        <Input
+                          id="order-shipping-carrier"
+                          value={carrier}
+                          onChange={(event) => setCarrier(event.target.value)}
+                          placeholder="UPS"
+                          className="border-zinc-800 bg-zinc-900/40 text-sm text-zinc-100 placeholder:text-zinc-500"
+                          disabled={isUpdatingFulfillment}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="order-shipping-tracking"
+                          className="text-[10px] uppercase tracking-[0.28em] text-zinc-500"
+                        >
+                          Tracking number
+                        </Label>
+                        <Input
+                          id="order-shipping-tracking"
+                          value={trackingNumber}
+                          onChange={(event) => setTrackingNumber(event.target.value)}
+                          placeholder="1Z..."
+                          className="border-zinc-800 bg-zinc-900/40 text-sm text-zinc-100 placeholder:text-zinc-500"
+                          disabled={isUpdatingFulfillment}
+                        />
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label
+                          htmlFor="order-shipping-shipped-at"
+                          className="text-[10px] uppercase tracking-[0.28em] text-zinc-500"
+                        >
+                          Shipped at
+                        </Label>
+                        <Input
+                          id="order-shipping-shipped-at"
+                          type="datetime-local"
+                          value={shippedAtInput}
+                          onChange={(event) => setShippedAtInput(event.target.value)}
+                          className="border-zinc-800 bg-zinc-900/40 text-sm text-zinc-100 placeholder:text-zinc-500"
+                          disabled={isUpdatingFulfillment}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="rounded-full bg-zinc-100 px-4 text-zinc-900 hover:bg-zinc-200"
+                        onClick={() =>
+                          onShippingSave(order.id, {
+                            trackingNumber: trackingNumber.trim() || null,
+                            carrier: carrier.trim() || null,
+                            shippedAt: shippedAtInput ? new Date(shippedAtInput).toISOString() : null,
+                          })
+                        }
+                        disabled={isUpdatingFulfillment}
+                      >
+                        Save shipping
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+                {isUpdatingFulfillment ? (
+                  <p className="text-xs text-zinc-400">Saving order update…</p>
+                ) : null}
+                {fulfillmentError ? (
+                  <p className="text-xs text-rose-300">{fulfillmentError}</p>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4 text-sm text-zinc-400">
+              Select an order to inspect details.
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function DetailField({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-900/70 bg-zinc-900/30 p-3">
+      <p className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">{label}</p>
+      <p className={cn("mt-1 text-sm text-zinc-100", mono && "font-mono text-[12px]")}>{value}</p>
+    </div>
+  )
+}
+
 type PublishRowProps = {
   result: PublishResult
 }
@@ -3731,4 +5820,30 @@ function formatRelativeTime(iso: string) {
   }
   const days = Math.floor(diff / day)
   return `${days} day${days === 1 ? "" : "s"} ago`
+}
+
+function formatAbsoluteDateTime(iso: string) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown"
+  }
+
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
+}
+
+function toDateTimeLocalInput(iso: string | null) {
+  if (!iso) return ""
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) {
+    return ""
+  }
+
+  const localTime = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return localTime.toISOString().slice(0, 16)
 }

@@ -311,6 +311,7 @@ export interface ProfileOffer {
   price_cents?: number | null;
   currency?: string | null;
   media_url?: string | null;
+  metadata?: Record<string, unknown> | null;
   cta_label?: string | null;
   cta_url?: string | null;
   inventory_status?: string | null;

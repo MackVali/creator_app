@@ -20,6 +20,7 @@ import {
   Moon,
   Pencil,
   RefreshCw,
+  ShoppingBag,
   Shield,
   ShieldCheck,
 } from "lucide-react";
@@ -331,6 +332,12 @@ export default function SettingsPage() {
           title="Security & access"
           description="Control where your account is connected and how you sign in."
         >
+          <SettingsActionRow
+            icon={ShoppingBag}
+            title="Order history"
+            description="Review product purchases tied to your signed-in buyer account."
+            onClick={() => router.push("/settings/orders")}
+          />
           <SettingsActionRow
             icon={Link2}
             title="Linked accounts"
