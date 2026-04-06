@@ -4,14 +4,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
-  Profile,
-  SocialLink,
   ContentCard,
+  LinkedAccount,
+  Profile,
   ProfileModule,
   ProfileModuleLinkCards,
-  LinkedAccount,
+  ProfileOffer,
+  SocialLink,
 } from "@/lib/types";
-import { getProfileByHandle, getProfileLinks } from "@/lib/db";
+import {
+  getProfileByHandle,
+  getProfileLinks,
+  getProfileServiceOffers,
+} from "@/lib/db";
 import { getLinkedAccounts } from "@/lib/db/linked-accounts";
 import { getSocialLinks } from "@/lib/db/profile-management";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -23,9 +28,241 @@ import ProfileModules from "@/components/profile/modules/ProfileModules";
 import { ContentCardsSection } from "@/components/profile/ContentCardsSection";
 import { buildProfileModules } from "@/components/profile/modules/buildProfileModules";
 import { SourceListing } from "@/types/source";
+import type { ProductCheckoutResponse } from "@/types/checkout";
 import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
 import ProductCarousel from "@/components/profile/ProductCarousel";
+import ServiceOfferSection from "@/components/profile/ServiceOfferSection";
+import ProfileDetailSheet, {
+  ProfileDetailSheetItem,
+} from "@/components/profile/ProfileDetailSheet";
+import {
+  ProductKind,
+  resolveListingImage,
+  resolveProductKind,
+  resolveQuantityBehavior,
+} from "@/components/profile/detailSheetUtils";
 
+type ProductCartItem = {
+  id: string;
+  title: string;
+  price: number | null;
+  currency: string;
+  image_url: string | null;
+  quantity: number;
+  productKind: ProductKind | null;
+};
+
+type CartSummaryPanelProps = {
+  items: ProductCartItem[];
+  itemCount: number;
+  subtotal: number;
+  onContinue?: () => void;
+};
+
+const formatCurrencyValue = (value: number, currencyCode?: string) => {
+  const resolvedCurrency = typeof currencyCode === "string" && currencyCode.length > 0 ? currencyCode : "USD";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: resolvedCurrency,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch (error) {
+    console.error("Invalid currency code", resolvedCurrency, error);
+    return `${resolvedCurrency} ${value.toFixed(2)}`;
+  }
+};
+
+function CartSummaryPanel({ items, itemCount, subtotal, onContinue }: CartSummaryPanelProps) {
+  const previewItems = items.slice(0, 2);
+  const moreCount = Math.max(0, items.length - previewItems.length);
+  const currencyHint = items.find((item) => typeof item.currency === "string" && item.currency.length > 0)?.currency;
+  const pricingAvailable = items.some((item) => typeof item.price === "number");
+
+  const formatItemTitle = (title: string) => {
+    if (title.length <= 18) return title;
+    return `${title.slice(0, 18).trim()}…`;
+  };
+
+  return (
+    <section className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur transition hover:border-white/20">
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.45em] text-white/50">Cart</p>
+          <p className="text-sm font-semibold text-white">
+            {itemCount} item{itemCount === 1 ? "" : "s"} in cart
+          </p>
+        </div>
+        <div className="text-right md:text-right">
+          <p className="text-lg font-semibold text-white">{pricingAvailable ? formatCurrencyValue(subtotal, currencyHint) : "Price pending"}</p>
+          <p className="text-[11px] uppercase tracking-[0.4em] text-white/50">Subtotal</p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-3 text-[11px] font-semibold leading-tight text-white/70">
+        {previewItems.map((item) => (
+          <span
+            key={item.id}
+            className="inline-flex items-center gap-3 rounded-2xl border border-white/15 bg-white/5 px-3 py-1.5"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 text-[0.55rem] uppercase text-white/80">
+              {item.title.charAt(0)}
+            </span>
+            <span className="flex flex-col">
+              <span className="max-w-[120px] truncate text-white">{formatItemTitle(item.title)}</span>
+              <span className="text-[10px] text-white/60">Qty {item.quantity}</span>
+            </span>
+        </span>
+      ))}
+        {moreCount > 0 && (
+          <span className="inline-flex items-center gap-2 rounded-2xl border border-dashed border-white/20 bg-white/5 px-3 py-1.5 text-white/60">
+            +{moreCount} more item{moreCount === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
+      {onContinue ? (
+        <div className="mt-4 flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={onContinue}
+            className="inline-flex w-full items-center justify-center rounded-2xl border border-white/30 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/60 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          >
+            Continue to purchase
+          </button>
+          <p className="text-[11px] text-white/60">
+            Review what’s in your cart before landing on checkout.
+          </p>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+type CheckoutState = {
+  status: "idle" | "loading" | "success" | "error";
+  response: ProductCheckoutResponse | null;
+  error: string | null;
+};
+
+const createIdleCheckoutState = (): CheckoutState => ({
+  status: "idle",
+  response: null,
+  error: null,
+});
+
+type CheckoutHandoffPanelProps = {
+  items: ProductCartItem[];
+  subtotal: number;
+  onClose: () => void;
+  onCheckoutInitiate: () => void;
+  isSubmitting: boolean;
+  errorMessage: string | null;
+  checkoutResponse: ProductCheckoutResponse | null;
+};
+
+function CheckoutHandoffPanel({
+  items,
+  subtotal,
+  onClose,
+  onCheckoutInitiate,
+  isSubmitting,
+  errorMessage,
+  checkoutResponse,
+}: CheckoutHandoffPanelProps) {
+  const currencyHint = items.find((item) => typeof item.currency === "string" && item.currency.length > 0)
+    ?.currency;
+  const pricingAvailable = items.some((item) => typeof item.price === "number");
+  const paymentReady = Boolean(checkoutResponse?.payment?.checkoutUrl);
+
+  return (
+    <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/60 to-slate-950/40 p-5 shadow-[0_20px_40px_rgba(15,23,42,0.6)]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.45em] text-white/50">Purchase review</p>
+          <h2 className="mt-1 text-xl font-semibold text-white">Confirm your selections</h2>
+          <p className="mt-1 text-sm text-white/60">
+            {paymentReady
+              ? "Stripe Checkout session ready—redirecting you to the hosted payment experience."
+              : "A lightweight preview before the real checkout wiring lands. Services remain outside this flow."}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full border border-white/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-white/60 transition hover:border-white/40 hover:text-white"
+        >
+          Close
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-3 text-sm text-white">
+        {items.map((item) => {
+          const lineTotal =
+            typeof item.price === "number" ? item.price * Math.max(1, item.quantity) : null;
+          return (
+            <div
+              key={`\${item.id}-\${item.quantity}-\${lineTotal ?? "pending"}`}
+              className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+            >
+              <div className="flex flex-col">
+                <span className="font-semibold text-white">{item.title}</span>
+                <span className="text-[11px] text-white/60">Qty {item.quantity}</span>
+              </div>
+              <span className="text-[12px] font-semibold text-white">
+                {lineTotal !== null ? formatCurrencyValue(lineTotal, currencyHint) : "Price pending"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-4 text-sm">
+        <span className="text-white/60">Subtotal</span>
+        <span className="font-semibold text-white">
+          {pricingAvailable ? formatCurrencyValue(subtotal, currencyHint) : "Price pending"}
+        </span>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-3">
+        <p className="text-[12px] text-white/60">
+          {paymentReady
+            ? "Stripe Checkout is ready; you will continue on the Stripe-hosted page."
+            : "Real payment integration is the next phase; this review keeps the buyer path feeling alive while backend wiring is finalized."}
+        </p>
+        {errorMessage ? (
+          <p className="text-sm text-rose-300">{errorMessage}</p>
+        ) : null}
+        {checkoutResponse ? (
+          <div className="rounded-2xl border border-white/20 bg-slate-900/60 px-4 py-3 text-sm text-white/80">
+            <p className="text-[11px] uppercase tracking-[0.4em] text-white/50">Checkout prepared</p>
+            <p className="font-semibold text-white">ID {checkoutResponse.checkoutId}</p>
+            <p className="text-[12px] text-white/70">
+              Total {formatCurrencyValue(checkoutResponse.totalAmount, checkoutResponse.currency)}
+            </p>
+            <p className="text-[11px] text-white/60">
+              Stripe session {checkoutResponse.payment.sessionId} ({checkoutResponse.payment.status})
+            </p>
+          </div>
+        ) : null}
+        <button
+          type="button"
+          onClick={onCheckoutInitiate}
+          disabled={isSubmitting || paymentReady}
+          className={`inline-flex w-full items-center justify-center rounded-2xl border border-white/20 px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] transition focus-visible:outline-none ${
+            isSubmitting || paymentReady
+              ? "bg-white/10 text-white/60"
+              : "bg-white/10 text-white hover:border-white/60 hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          }`}
+        >
+          {isSubmitting
+            ? "Preparing checkout..."
+            : paymentReady
+              ? "Checkout prepared"
+              : "Start checkout"}
+        </button>
+      </div>
+    </section>
+  );
+}
 type RelationshipStatus =
   | "self"
   | "friends"
@@ -47,6 +284,13 @@ export default function ProfileByHandlePage() {
   const [sourceProducts, setSourceProducts] = useState<SourceListing[]>([]);
   const [sourceProductsLoading, setSourceProductsLoading] = useState(false);
   const [sourceProductsError, setSourceProductsError] = useState<string | null>(null);
+  const [serviceOffers, setServiceOffers] = useState<ProfileOffer[]>([]);
+  const [serviceOffersLoading, setServiceOffersLoading] = useState(false);
+  const [serviceOffersError, setServiceOffersError] = useState<string | null>(null);
+  const [cartItems, setCartItems] = useState<ProductCartItem[]>([]);
+  const [isCheckoutReviewActive, setIsCheckoutReviewActive] = useState(false);
+  const [checkoutState, setCheckoutState] = useState<CheckoutState>(() => createIdleCheckoutState());
+  const resetCheckoutState = useCallback(() => setCheckoutState(createIdleCheckoutState()), []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [relationshipStatus, setRelationshipStatus] = useState<RelationshipStatus | null>(null);
@@ -55,6 +299,140 @@ export default function ProfileByHandlePage() {
   const [incomingRequestId, setIncomingRequestId] = useState<string | null>(null);
   const [respondingRequest, setRespondingRequest] = useState(false);
   const [relationshipCounts, setRelationshipCounts] = useState<RelationshipViewCounts | null>(null);
+  const [detailSheetItem, setDetailSheetItem] = useState<ProfileDetailSheetItem | null>(null);
+
+  const openProductSheet = useCallback((product: SourceListing) => {
+    setDetailSheetItem({ type: "product", data: product });
+  }, []);
+
+  const openServiceSheet = useCallback((service: ProfileOffer) => {
+    setDetailSheetItem({ type: "service", data: service });
+  }, []);
+
+  const closeDetailSheet = useCallback(() => {
+    setDetailSheetItem(null);
+  }, []);
+
+  const handleStartCheckoutReview = useCallback(() => {
+    if (cartItems.length === 0) {
+      return;
+    }
+    resetCheckoutState();
+    setIsCheckoutReviewActive(true);
+  }, [cartItems.length, resetCheckoutState]);
+
+  const handleCloseCheckoutReview = useCallback(() => {
+    setIsCheckoutReviewActive(false);
+    resetCheckoutState();
+  }, [resetCheckoutState]);
+
+  const handleInitiateCheckout = useCallback(async () => {
+    if (cartItems.length === 0 || !profile?.username) {
+      return;
+    }
+
+    const requestItems = cartItems
+      .map((item) => ({
+        id: item.id,
+        quantity: Math.max(1, Math.floor(item.quantity)),
+      }))
+      .filter((item) => item.id && item.quantity > 0);
+
+    if (requestItems.length === 0) {
+      setCheckoutState({
+        status: "error",
+        response: null,
+        error: "Cart contains no valid items.",
+      });
+      return;
+    }
+
+    setCheckoutState({ status: "loading", response: null, error: null });
+
+    try {
+      const response = await fetch(
+        `/api/profile/${encodeURIComponent(profile.username)}/checkout/products`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ items: requestItems }),
+        },
+      );
+
+      const payload = (await response.json().catch(() => null)) as
+        | ProductCheckoutResponse
+        | { error?: string }
+        | null;
+
+      if (!response.ok || !payload || typeof payload !== "object") {
+        const serverMessage =
+          payload && typeof payload.error === "string"
+            ? payload.error
+            : "Unable to start checkout.";
+        setCheckoutState({
+          status: "error",
+          response: null,
+          error: serverMessage,
+        });
+        return;
+      }
+
+      if (typeof (payload as ProductCheckoutResponse).checkoutId !== "string") {
+        setCheckoutState({
+          status: "error",
+          response: null,
+          error: "Unexpected checkout response.",
+        });
+        return;
+      }
+
+      const checkoutPayload = payload as ProductCheckoutResponse;
+      const checkoutUrl = checkoutPayload.payment?.checkoutUrl;
+      if (!checkoutUrl) {
+        setCheckoutState({
+          status: "error",
+          response: null,
+          error: "Checkout session missing redirect URL.",
+        });
+        return;
+      }
+
+      setCheckoutState({
+        status: "success",
+        response: checkoutPayload,
+        error: null,
+      });
+
+      if (typeof window !== "undefined") {
+        window.location.assign(checkoutUrl);
+      }
+      return;
+    } catch (error) {
+      console.error("Failed to start checkout", error);
+      setCheckoutState({
+        status: "error",
+        response: null,
+        error: error instanceof Error ? error.message : "Unable to start checkout.",
+      });
+    }
+  }, [cartItems, profile?.username]);
+
+  useEffect(() => {
+    if (cartItems.length === 0 && isCheckoutReviewActive) {
+      setIsCheckoutReviewActive(false);
+    }
+
+    if (cartItems.length === 0 && checkoutState.status !== "idle") {
+      resetCheckoutState();
+    }
+  }, [
+    cartItems.length,
+    checkoutState.status,
+    isCheckoutReviewActive,
+    resetCheckoutState,
+  ]);
 
   const rawHandleParam = params.handle;
   const normalizedHandle = useMemo(() => {
@@ -242,6 +620,43 @@ export default function ProfileByHandlePage() {
   }, [profile?.username]);
 
   useEffect(() => {
+    if (!profile?.user_id) {
+      setServiceOffers([]);
+      setServiceOffersError(null);
+      setServiceOffersLoading(false);
+      return;
+    }
+
+    let isActive = true;
+
+    setServiceOffersLoading(true);
+    setServiceOffersError(null);
+
+    (async () => {
+      try {
+        const offers = await getProfileServiceOffers(profile.user_id);
+        if (!isActive) return;
+        setServiceOffers(offers);
+      } catch (error) {
+        if (!isActive) return;
+        console.error("Failed to load service offers:", error);
+        setServiceOffers([]);
+        setServiceOffersError(
+          error instanceof Error ? error.message : "Unable to load services.",
+        );
+      } finally {
+        if (isActive) {
+          setServiceOffersLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, [profile?.user_id]);
+
+  useEffect(() => {
     async function loadProfileData() {
       if (!normalizedHandle) {
         router.push("/dashboard");
@@ -342,6 +757,61 @@ export default function ProfileByHandlePage() {
       controller.abort();
     };
   }, [profile?.username]);
+
+  const handleAddProductToCart = useCallback((product: SourceListing) => {
+    const metadata = product.metadata ?? null;
+    const productKind = resolveProductKind(metadata);
+    const quantityBehavior = resolveQuantityBehavior(metadata);
+    const isDigitalProduct = productKind === "digital";
+    const allowsMultipleUnits =
+      !isDigitalProduct &&
+      (quantityBehavior === "per_unit" || quantityBehavior === "always_available");
+    const fallbackImage = resolveListingImage(product);
+
+    let message = "Added to cart";
+    setCartItems((prev) => {
+      const existingIndex = prev.findIndex((item) => item.id === product.id);
+      if (existingIndex !== -1) {
+        const existing = prev[existingIndex];
+        if (allowsMultipleUnits) {
+          const updated = [...prev];
+          updated[existingIndex] = { ...existing, quantity: existing.quantity + 1 };
+          return updated;
+        }
+        message = "Already in cart (quantity locked to 1)";
+        return prev;
+      }
+
+      const nextItem: ProductCartItem = {
+        id: product.id,
+        title: product.title,
+        price: product.price,
+        currency: product.currency,
+        image_url: fallbackImage,
+        quantity: 1,
+        productKind,
+      };
+
+      return [...prev, nextItem];
+    });
+
+    return message;
+  }, []);
+
+  const cartItemCount = useMemo(
+    () => cartItems.reduce((sum, item) => sum + item.quantity, 0),
+    [cartItems],
+  );
+
+  const cartSubtotal = useMemo(
+    () =>
+      cartItems.reduce(
+        (sum, item) =>
+          sum + item.quantity * (typeof item.price === "number" ? item.price : 0),
+        0,
+      ),
+    [cartItems],
+  );
 
   // Handle share functionality
   const handleShare = async () => {
@@ -688,14 +1158,43 @@ export default function ProfileByHandlePage() {
         />
 
         <div className="mx-auto mt-6 w-full max-w-5xl px-4 pb-20 space-y-12 bg-black">
+          {cartItems.length > 0 && (
+            <>
+              <CartSummaryPanel
+                items={cartItems}
+                itemCount={cartItemCount}
+                subtotal={cartSubtotal}
+                onContinue={handleStartCheckoutReview}
+              />
+              {isCheckoutReviewActive && (
+                <CheckoutHandoffPanel
+                  items={cartItems}
+                  subtotal={cartSubtotal}
+                  onClose={handleCloseCheckoutReview}
+                  onCheckoutInitiate={handleInitiateCheckout}
+                  isSubmitting={checkoutState.status === "loading"}
+                  errorMessage={checkoutState.status === "error" ? checkoutState.error : null}
+                  checkoutResponse={checkoutState.response}
+                />
+              )}
+            </>
+          )}
           {linkCardsModule ? (
             <ContentCardsSection module={linkCardsModule} />
           ) : null}
+
+          <ServiceOfferSection
+            services={serviceOffers}
+            loading={serviceOffersLoading}
+            error={serviceOffersError}
+            onSelectService={openServiceSheet}
+          />
 
           <ProductCarousel
             products={sourceProducts}
             loading={sourceProductsLoading}
             error={sourceProductsError}
+            onSelectProduct={openProductSheet}
           />
 
           {otherModules.length > 0 ? (
@@ -704,6 +1203,12 @@ export default function ProfileByHandlePage() {
             </div>
           ) : null}
         </div>
+        <ProfileDetailSheet
+          item={detailSheetItem}
+          onClose={closeDetailSheet}
+          cartCount={cartItemCount}
+          onProductAddToCart={handleAddProductToCart}
+        />
       </main>
     </div>
   );

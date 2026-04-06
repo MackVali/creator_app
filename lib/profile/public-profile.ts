@@ -16,6 +16,12 @@ import {
   ProfileThemeSettings,
   PublicProfileReadModel,
 } from "../types";
+import {
+  LISTING_FIELDS,
+  serializeListing,
+  type ListingRow,
+} from "@/lib/source/listings/shared";
+import { mapSourceListingToProfileOffer } from "./source-listings";
 import type { Database } from "../../types/supabase";
 
 type PublicSupabaseClient = SupabaseClient<Database, "public", Database["public"]>;
@@ -115,25 +121,31 @@ async function resolveCtas(
   return (data ?? []) as ProfileCTAButton[];
 }
 
-async function resolveOffers(
+async function resolveServiceOffers(
   client: PublicSupabaseClient,
-  profileId: string | number,
+  userId: string,
 ): Promise<ProfileOffer[]> {
   const { data, error } = await client
-    .from("profile_offers")
-    .select("*")
-    .eq("profile_id", profileId)
-    .eq("is_active", true)
-    .order("position", { ascending: true })
-    .order("created_at", { ascending: true })
-    .limit(60);
+    .from("source_listings")
+    .select(LISTING_FIELDS)
+    .eq("user_id", userId)
+    .eq("type", "service")
+    .eq("status", "published")
+    .order("updated_at", { ascending: false })
+    .limit(24);
 
   if (error) {
-    console.error("Failed to load profile offers", { profileId, error });
+    console.error("Failed to load service listings", { userId, error });
     return [];
   }
 
-  return (data ?? []) as ProfileOffer[];
+  const listings = (data ?? []).map((row) =>
+    serializeListing(row as ListingRow),
+  );
+
+  return listings.map((listing, index) =>
+    mapSourceListingToProfileOffer(listing, userId, index),
+  );
 }
 
 async function resolveTestimonials(
@@ -220,11 +232,12 @@ async function fetchPublicProfile(handle: string): Promise<PublicProfileReadMode
 
   const profile = data as Profile;
   const profileId = profile.id ?? profile.user_id;
+  const profileUserId = profile.user_id;
 
   const [theme, ctas, offers, testimonials, businessInfo, availability] = await Promise.all([
     resolveThemeSettings(client, profileId),
     resolveCtas(client, profileId),
-    resolveOffers(client, profileId),
+    resolveServiceOffers(client, profileUserId),
     resolveTestimonials(client, profileId),
     resolveBusinessInfo(client, profileId),
     resolveAvailability(client, profileId),

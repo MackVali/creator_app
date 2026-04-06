@@ -1,41 +1,24 @@
 "use client"
 
+import type { KeyboardEvent } from "react"
 import { SourceListing } from "@/types/source"
-
-const IMAGE_FIELDS = [
-  "cover",
-  "coverImage",
-  "image",
-  "imageUrl",
-  "image_url",
-  "heroImage",
-  "hero",
-  "thumbnail",
-  "thumbnailUrl",
-] as const
-
-const DESTINATION_FIELDS = [
-  "destination",
-  "destinationUrl",
-  "destination_url",
-  "href",
-  "link",
-  "url",
-  "productUrl",
-  "checkoutUrl",
-  "purchaseUrl",
-  "externalUrl",
-] as const
+import { formatListingCurrency, resolveListingImage } from "./detailSheetUtils"
 
 type ProductCarouselProps = {
   error?: string | null
   loading: boolean
   products: SourceListing[]
+  onSelectProduct?: (product: SourceListing) => void
 }
 
 const skeletonCount = 3
 
-export default function ProductCarousel({ products, loading, error }: ProductCarouselProps) {
+export default function ProductCarousel({
+  products,
+  loading,
+  error,
+  onSelectProduct,
+}: ProductCarouselProps) {
   const hasProducts = products.length > 0
   const showSection = loading || Boolean(error) || hasProducts
 
@@ -78,7 +61,11 @@ export default function ProductCarousel({ products, loading, error }: ProductCar
             ))
           : hasProducts
             ? products.map((product) => (
-                <ProductCard key={product.id} product={product} />
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onSelect={onSelectProduct}
+                />
               ))
             : (
               <div className="snap-center min-w-[220px] rounded-2xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-white/70">
@@ -95,16 +82,34 @@ export default function ProductCarousel({ products, loading, error }: ProductCar
 
 type ProductCardProps = {
   product: SourceListing
+  onSelect?: (product: SourceListing) => void
 }
 
-function ProductCard({ product }: ProductCardProps) {
-  const destination = resolveDestination(product)
-  const image = resolveImage(product)
+function ProductCard({ product, onSelect }: ProductCardProps) {
+  const image = resolveListingImage(product)
   const priceLabel =
-    product.price !== null ? formatCurrency(product.price, product.currency) : null
+    product.price !== null ? formatListingCurrency(product.price, product.currency) : null
 
-  const content = (
-    <div className="snap-center min-w-[220px] flex-shrink-0 flex-col justify-between rounded-2xl border border-white/10 bg-gradient-to-b from-slate-900/80 to-slate-950/80 p-3 text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-[0_20px_45px_rgba(0,0,0,0.65)]">
+  const handleSelect = () => {
+    onSelect?.(product)
+  }
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      handleSelect()
+    }
+  }
+
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      aria-label={`Open details for ${product.title}`}
+      onClick={handleSelect}
+      onKeyDown={handleKeyDown}
+      className="snap-center min-w-[220px] flex-shrink-0 rounded-2xl border border-white/10 bg-gradient-to-b from-slate-900/80 to-slate-950/80 p-3 text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-[0_20px_45px_rgba(0,0,0,0.65)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+    >
       <div className="relative mb-3 h-32 overflow-hidden rounded-xl bg-gradient-to-b from-slate-800 to-slate-900">
         {image ? (
           <div
@@ -121,11 +126,9 @@ function ProductCard({ product }: ProductCardProps) {
 
       <div className="flex flex-1 flex-col justify-between gap-1 text-sm">
         <p className="font-semibold leading-tight">{product.title}</p>
-        {product.description && (
-          <p className="text-xs text-white/60">
-            {product.description}
-          </p>
-        )}
+        {product.description ? (
+          <p className="text-xs text-white/60">{product.description}</p>
+        ) : null}
       </div>
 
       <div className="mt-3 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-white/70">
@@ -138,72 +141,6 @@ function ProductCard({ product }: ProductCardProps) {
           {product.status === "published" ? "Live" : "Draft"}
         </span>
       </div>
-    </div>
+    </article>
   )
-
-  if (!destination) {
-    return content
-  }
-
-  return (
-    <a
-      href={destination}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="snap-center"
-    >
-      {content}
-    </a>
-  )
-}
-
-function resolveImage(product: SourceListing) {
-  const metadata = product.metadata
-  if (!metadata) return null
-
-  for (const field of IMAGE_FIELDS) {
-    const value = metadata[field]
-    if (typeof value === "string" && value.trim()) {
-      return value.trim()
-    }
-  }
-
-  const media = Array.isArray(metadata.media) ? metadata.media : []
-  for (const entry of media) {
-    if (!entry || typeof entry !== "object") continue
-    const url = typeof entry.url === "string" ? entry.url.trim() : ""
-    if (!url) continue
-    const type = typeof entry.type === "string" ? entry.type.toLowerCase() : ""
-    if (!type || type === "image" || type === "photo" || type === "cover") {
-      return url
-    }
-  }
-
-  return null
-}
-
-function resolveDestination(product: SourceListing) {
-  const metadata = product.metadata
-  if (!metadata) return null
-
-  for (const field of DESTINATION_FIELDS) {
-    const value = metadata[field]
-    if (typeof value === "string" && value.trim()) {
-      return value.trim()
-    }
-  }
-
-  return null
-}
-
-function formatCurrency(value: number, currency: string) {
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: 2,
-    }).format(value)
-  } catch {
-    return `${currency} ${value.toFixed(2)}`
-  }
 }
