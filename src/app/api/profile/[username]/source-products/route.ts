@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server"
 
-import { createAdminClient } from "@/lib/supabase/admin"
 import { createSupabaseServerClient } from "@/lib/supabase-server"
 import {
-  LISTING_FIELDS,
-  serializeListing,
   type ListingRow,
 } from "@/app/api/source/listings/shared"
+import type { SourceListing } from "@/types/source"
+
+const PUBLIC_PRODUCT_FIELDS =
+  "id, type, title, description, price, currency, status, metadata, published_at, created_at, updated_at"
 
 export async function GET(
   _: Request,
@@ -20,24 +21,25 @@ export async function GET(
     )
   }
 
-  const supabase = createAdminClient()
+  const supabase = await createSupabaseServerClient()
   if (!supabase) {
-    console.warn("[profile/source-products] admin client unavailable")
+    console.warn("[profile/source-products] server client unavailable")
     return NextResponse.json(
       { listings: [] },
-      { status: 503 },
+      { status: 200 },
     )
   }
 
-  const serverSupabase = await createSupabaseServerClient()
-  const { data: viewerAuth } = serverSupabase
-    ? await serverSupabase.auth.getUser()
-    : { data: { user: null } }
+  const { data: profile, error: lookupError } = await supabase
+    .from("profiles")
+    .select("user_id")
+    .ilike("username", username)
+    .maybeSingle()
 
-  const { data: userId, error: lookupError } = await supabase.rpc(
-    "get_profile_user_id",
-    { p_username: username },
-  )
+  const userId =
+    profile && typeof profile.user_id === "string" && profile.user_id.trim()
+      ? profile.user_id
+      : null
 
   if (lookupError || !userId) {
     console.error(
@@ -50,18 +52,13 @@ export async function GET(
     )
   }
 
-  const viewerUserId = viewerAuth?.user?.id ?? null
-  const statusFilter =
-    viewerUserId && viewerUserId === userId
-      ? ["published", "draft", "queued"]
-      : ["published"]
-
   const { data, error } = await supabase
     .from("source_listings")
-    .select(LISTING_FIELDS)
+    .select(PUBLIC_PRODUCT_FIELDS)
     .eq("user_id", userId)
     .eq("type", "product")
-    .in("status", statusFilter)
+    .eq("status", "published")
+    .not("price", "is", null)
     .order("updated_at", { ascending: false })
     .limit(12)
 
@@ -73,8 +70,23 @@ export async function GET(
     )
   }
 
-  const listings = (data ?? [])
-    .map((row) => serializeListing(row as ListingRow))
+  const listings: SourceListing[] = (data ?? []).map((row) => {
+    const listing = row as Omit<ListingRow, "user_id" | "publish_results">
+    return {
+      id: listing.id,
+      type: listing.type as SourceListing["type"],
+      title: listing.title,
+      description: listing.description,
+      price: listing.price,
+      currency: listing.currency,
+      status: "published",
+      metadata: listing.metadata ?? null,
+      publish_results: null,
+      published_at: listing.published_at,
+      created_at: listing.created_at,
+      updated_at: listing.updated_at,
+    }
+  })
 
   return NextResponse.json({ listings })
 }
