@@ -1493,6 +1493,7 @@ export default function Source() {
   const [serviceDetailImageUploadError, setServiceDetailImageUploadError] = useState<string | null>(null)
   const [isServiceDetailImageUploading, setIsServiceDetailImageUploading] = useState(false)
   const [serviceDetailImageDirty, setServiceDetailImageDirty] = useState(false)
+  const [serviceDetailStatus, setServiceDetailStatus] = useState<SourceListing["status"]>("draft")
   const serviceDetailImageInputRef = useRef<HTMLInputElement | null>(null)
   const productDetailListingIdRef = useRef<string | null>(null)
   const serviceDetailListingIdRef = useRef<string | null>(null)
@@ -2218,6 +2219,7 @@ export default function Source() {
       setServiceDetailError(null)
       resetServiceDetailImageState()
       serviceDetailListingIdRef.current = null
+      setServiceDetailStatus("draft")
       return
     }
 
@@ -2261,6 +2263,7 @@ export default function Source() {
       deliverables: deliverablesValue,
       requirements: requirementsValue,
     })
+    setServiceDetailStatus(currentServiceDetailListing.status)
 
     const coverImage =
       currentServiceDetailListing.metadata &&
@@ -2581,6 +2584,7 @@ export default function Source() {
         type: "service",
         form: serviceDetailForm,
         metadataUpdates: serviceDetailMetadataUpdates,
+        status: serviceDetailStatus,
       },
       {
         onSuccess: () => {
@@ -4253,6 +4257,8 @@ export default function Source() {
         onImageRemove={removeServiceDetailImageSelection}
         imageUploadError={serviceDetailImageUploadError}
         isImageUploading={isServiceDetailImageUploading}
+        availabilityStatus={serviceDetailStatus}
+        onAvailabilityChange={setServiceDetailStatus}
       />
       <SourceOrderDetailSheet
         order={currentOrderDetail}
@@ -4366,8 +4372,8 @@ function SourceProductSheet({
               </div>
             )}
           </div>
-          <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
-            <div className="space-y-3 -mx-6">
+          <div className="flex flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden px-6 py-6">
+            <div className="space-y-3">
               <input
                 ref={imageInputRef}
                 type="file"
@@ -4508,6 +4514,7 @@ function SourceProductSheet({
                     onAvailabilityChange(value as SourceListing["status"])
                   }
                   placeholder="Draft"
+                  disablePortal
                 >
                   <SelectContent>
                     {productAvailabilityStatuses.map((status) => (
@@ -4618,6 +4625,8 @@ type SourceServiceSheetProps = {
   onImageRemove(): void
   imageUploadError: string | null
   isImageUploading: boolean
+  availabilityStatus: SourceListing["status"]
+  onAvailabilityChange(value: SourceListing["status"]): void
 }
 
 function SourceServiceSheet({
@@ -4636,6 +4645,8 @@ function SourceServiceSheet({
   onImageRemove,
   imageUploadError,
   isImageUploading,
+  availabilityStatus,
+  onAvailabilityChange,
 }: SourceServiceSheetProps) {
   if (!listing) return null
 
@@ -4692,8 +4703,8 @@ function SourceServiceSheet({
               </div>
             )}
           </div>
-          <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
-            <div className="space-y-3 -mx-6">
+          <div className="flex flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden px-6 py-6">
+            <div className="space-y-3">
               <input
                 ref={imageInputRef}
                 type="file"
@@ -4804,6 +4815,29 @@ function SourceServiceSheet({
                   />
                 </FieldStack>
               </div>
+
+              <FieldStack
+                label="Availability"
+                htmlFor="service-detail-status"
+                description="Switch between draft and live states using Source’s listing status."
+              >
+                <Select
+                  value={availabilityStatus}
+                  onValueChange={(value) =>
+                    onAvailabilityChange(value as SourceListing["status"])
+                  }
+                  placeholder="Draft"
+                  disablePortal
+                >
+                  <SelectContent>
+                    {productAvailabilityStatuses.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {availabilityLabels[status]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldStack>
 
               <FieldStack
                 label="Service mode"

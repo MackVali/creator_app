@@ -38,7 +38,7 @@ export default function RelationshipViewBar({
             type="button"
             onClick={() => onChange?.(view)}
             className={clsx(
-              "flex w-full flex-col items-center gap-1 rounded-[12px] px-3 py-2 text-sm font-semibold transition duration-200",
+              "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-[12px] px-3 py-2 text-sm font-semibold transition duration-200",
               isActive
                 ? "bg-white/10 text-white"
                 : "text-white/70 hover:bg-white/5 hover:text-white",
