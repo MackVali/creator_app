@@ -31,7 +31,7 @@ import { SourceListing } from "@/types/source";
 import { useAppCart } from "@/components/cart/AppCartProvider";
 import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
 import ProductCarousel from "@/components/profile/ProductCarousel";
-import ServiceOfferSection from "@/components/profile/ServiceOfferSection";
+import ServiceCarousel from "@/components/profile/ServiceCarousel";
 import ProfileDetailSheet, {
   ProfileDetailSheetItem,
 } from "@/components/profile/ProfileDetailSheet";
@@ -703,7 +703,7 @@ export default function ProfileByHandlePage() {
             <ContentCardsSection module={linkCardsModule} />
           ) : null}
 
-          <ServiceOfferSection
+          <ServiceCarousel
             services={serviceOffers}
             loading={serviceOffersLoading}
             error={serviceOffersError}
