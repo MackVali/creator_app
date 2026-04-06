@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { User, LogIn, Settings, LogOut } from "lucide-react";
+import { User, LogIn, Settings, LogOut, Inbox } from "lucide-react";
 import { signOut } from "@/lib/auth";
 import { getProfileByUserId } from "@/lib/db";
 
@@ -68,6 +68,10 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
     if (userId) {
       router.push("/profile/edit");
     }
+  };
+
+  const handleInboxClick = () => {
+    router.push("/inbox");
   };
 
   const handleSignInClick = () => {
@@ -164,6 +168,15 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
                   <Settings className="h-4 w-4" />
                 </span>
                 Edit profile
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={handleInboxClick}
+                className="group mt-1 flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-white/70 transition-colors group-hover:bg-white/15 group-hover:text-white">
+                  <Inbox className="h-4 w-4" />
+                </span>
+                Inbox
               </DropdownMenuItem>
             </div>
 

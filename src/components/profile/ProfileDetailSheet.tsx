@@ -44,6 +44,47 @@ const SheetRow = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
+const DetailHeader = ({
+  badgeLabel,
+  onClose,
+}: {
+  badgeLabel: string;
+  onClose: () => void;
+}) => (
+  <div className="flex items-center justify-between px-6 pt-5 pb-2">
+    <span className="text-[10px] font-semibold uppercase tracking-[0.6em] text-white/60">
+      {badgeLabel}
+    </span>
+    <button
+      type="button"
+      onClick={onClose}
+      aria-label={`Close ${badgeLabel} details`}
+      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.45em] text-white/70 transition hover:border-white/40 hover:text-white"
+    >
+      Close
+    </button>
+  </div>
+);
+
+const DetailMedia = ({
+  image,
+  title,
+}: {
+  image: string | null;
+  title: string;
+}) => (
+  <div className="relative h-full w-full overflow-hidden rounded-[24px] border border-white/10 bg-white/5 shadow-[inset_0_0_40px_rgba(0,0,0,0.45)]">
+    {image ? (
+      <img src={image} alt={title} className="h-full w-full object-cover" loading="lazy" />
+    ) : (
+      <div className="flex h-full items-center justify-center text-xs uppercase tracking-[0.45em] text-white/40">
+        No cover
+      </div>
+    )}
+    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+  </div>
+);
+
 const SERVICE_MODE_NOTES: Record<ServiceMode, string> = {
   bookable: "Reserve a confirmed slot and a calendar invitation once the creator approves your booking.",
   flat_rate: "A packaged service with the deliverables below and a fixed turnaround window.",
@@ -244,161 +285,80 @@ export default function ProfileDetailSheet({
           <span className="block h-1.5 w-12 rounded-full bg-white/30" />
         </div>
 
-        {isProduct ? (
-          <div className="absolute inset-x-6 top-5 z-20 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={`Close ${badgeLabel} details`}
-              className="rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.45em] text-white/80 transition hover:border-white hover:text-white"
-            >
-              Close
-            </button>
-          </div>
-        ) : (
-          <div className="relative flex items-center justify-between px-6 pt-5">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.6em] text-white/60">
-              {badgeLabel}
-            </span>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-xs font-semibold uppercase tracking-[0.45em] text-white/60 transition hover:text-white"
-            >
-              Close
-            </button>
-          </div>
-        )}
+        <DetailHeader badgeLabel={badgeLabel} onClose={onClose} />
 
-        <div
-          className={`min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] ${isProduct ? "px-0" : "px-6 pt-4 pb-6"}`}
-        >
-          {isProduct ? (
-            <>
-              <div className="relative isolate w-full">
-                <div className="relative h-[min(60vh,460px)] overflow-hidden rounded-t-[32px]">
-                  {image ? (
-                    <img
-                      src={image}
-                      alt={title}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center bg-white/5 text-xs uppercase tracking-[0.45em] text-white/40">
-                      No cover
-                    </div>
-                  )}
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-                </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-3 pb-6 [-webkit-overflow-scrolling:touch]">
+          <div className="space-y-5">
+            <div className="mx-auto w-full max-w-[520px]">
+              <div className="relative aspect-[3/2]">
+                <DetailMedia image={image} title={title} />
               </div>
-              <div className="px-6 pb-6 pt-6">
-                <div className="space-y-6">
-                  <div className="space-y-1">
-                    <p className="text-3xl font-semibold leading-tight text-white sm:text-[2.8rem]">
-                      {title}
-                    </p>
-                    <p className="text-2xl font-semibold text-amber-300">{priceLabel}</p>
-                    {description ? (
-                      <p className="text-sm leading-relaxed text-white/70">{description}</p>
-                    ) : null}
-                  </div>
+            </div>
 
-                  {showFulfillmentBlock ? (
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
-                            Fulfillment
-                          </p>
-                          <p className="text-sm font-semibold text-white/90">
-                            {productKindLabel ?? "Physical fulfillment"}
-                          </p>
-                        </div>
-                        {productKindLabel ? (
-                          <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
-                            {productKindLabel}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="mt-4 space-y-3">
-                        {productFulfillmentRows.map((row) => (
-                          <SheetRow key={row.label} label={row.label} value={row.value} />
-                        ))}
-                      </div>
-                      {allowsMultipleUnits ? (
-                        <p className="mt-3 text-xs uppercase tracking-[0.45em] text-amber-200/80">
-                          Multiple units supported—quantity picker arriving with the cart
-                          experience.
+            <div className="space-y-1.5">
+              <p className="text-2xl font-semibold leading-tight text-white sm:text-[2.4rem]">
+                {title}
+              </p>
+              <p className="text-xl font-semibold text-amber-300 sm:text-2xl">{priceLabel}</p>
+              {description ? (
+                <p className="text-sm leading-relaxed text-white/70">{description}</p>
+              ) : null}
+            </div>
+
+            {isProduct ? (
+              <>
+                {showFulfillmentBlock ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                          Fulfillment
                         </p>
+                        <p className="text-sm font-semibold text-white/90">
+                          {productKindLabel ?? "Physical fulfillment"}
+                        </p>
+                      </div>
+                      {productKindLabel ? (
+                        <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
+                          {productKindLabel}
+                        </span>
                       ) : null}
                     </div>
-                  ) : null}
-
-                  {isDigitalProduct ? (
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
-                            Delivery
-                          </p>
-                          <p className="text-sm font-semibold text-white/90">Digital product</p>
-                        </div>
-                        <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
-                          {productKindLabel ?? "Digital"}
-                        </span>
-                      </div>
-                      <p className="mt-3 text-sm leading-relaxed text-white/70">
-                        Instant deliverables are sent straight to your inbox once checkout is
-                        complete.
+                    <div className="mt-4 space-y-3">
+                      {productFulfillmentRows.map((row) => (
+                        <SheetRow key={row.label} label={row.label} value={row.value} />
+                      ))}
+                    </div>
+                    {allowsMultipleUnits ? (
+                      <p className="mt-3 text-xs uppercase tracking-[0.45em] text-amber-200/80">
+                        Multiple units supported—quantity picker arriving with the cart
+                        experience.
                       </p>
-                    </div>
-                  ) : null}
-
-                  {detailRows.length > 0 ? (
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
-                      <div className="flex flex-col gap-3">
-                        {detailRows.map((row) => (
-                          <SheetRow key={row.label} label={row.label} value={row.value} />
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="space-y-6">
-              {!isProduct && (
-                <div className="relative">
-                  {image ? (
-                    <div className="relative overflow-hidden rounded-[28px] border border-white/5 bg-white/5 shadow-[inset_0_0_45px_rgba(0,0,0,0.35)]">
-                      <img
-                        src={image}
-                        alt={title}
-                        className="h-56 w-full object-cover"
-                        loading="lazy"
-                      />
-                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                    </div>
-                  ) : (
-                    <div className="flex h-56 items-center justify-center rounded-[28px] border border-white/10 bg-white/5 text-xs uppercase tracking-[0.45em] text-white/40">
-                      No cover
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="space-y-1">
-                <p className="text-3xl font-semibold leading-tight text-white sm:text-[2.8rem]">
-                  {title}
-                </p>
-                <p className="text-2xl font-semibold text-amber-300">{priceLabel}</p>
-                {description ? (
-                  <p className="text-sm leading-relaxed text-white/70">{description}</p>
+                    ) : null}
+                  </div>
                 ) : null}
-              </div>
 
+                {isDigitalProduct ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-[0.4em] text-white/60">
+                          Delivery
+                        </p>
+                        <p className="text-sm font-semibold text-white/90">Digital product</p>
+                      </div>
+                      <span className="rounded-full border border-white/20 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-white/60">
+                        {productKindLabel ?? "Digital"}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm leading-relaxed text-white/70">
+                      Instant deliverables are sent straight to your inbox once checkout is
+                      complete.
+                    </p>
+                  </div>
+                ) : null}
+              </>
+            ) : (
               <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -440,30 +400,31 @@ export default function ProfileDetailSheet({
                   </div>
                 ) : null}
               </div>
-              {detailRows.length > 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
-                  <div className="flex flex-col gap-3">
-                    {detailRows.map((row) => (
-                      <SheetRow key={row.label} label={row.label} value={row.value} />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+            )}
 
-              {!isProduct && serviceTags.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {serviceTags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-full border border-white/20 px-3 py-1 text-[12px] uppercase tracking-[0.4em] text-white/70"
-                    >
-                      {tag}
-                    </span>
+            {detailRows.length > 0 ? (
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 shadow-[inset_0_0_20px_rgba(255,255,255,0.08)]">
+                <div className="flex flex-col gap-3">
+                  {detailRows.map((row) => (
+                    <SheetRow key={row.label} label={row.label} value={row.value} />
                   ))}
                 </div>
-              ) : null}
-            </div>
-          )}
+              </div>
+            ) : null}
+
+            {!isProduct && serviceTags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {serviceTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full border border-white/20 px-3 py-1 text-[12px] uppercase tracking-[0.4em] text-white/70"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="flex-shrink-0 border-t border-white/5 bg-gradient-to-t from-neutral-900/90 via-neutral-950/70 to-transparent px-6 py-5">
