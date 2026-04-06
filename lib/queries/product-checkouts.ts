@@ -190,7 +190,7 @@ function mapBuyerOrderRow(row: ProductCheckoutReceiptRow): BuyerProductCheckoutO
 type ReceiptLookupArgs = {
   checkoutId: string;
   sessionId: string;
-  sellerHandle: string;
+  sellerHandle?: string;
 };
 
 export async function getProductCheckoutReceipt({
@@ -203,15 +203,19 @@ export async function getProductCheckoutReceipt({
     return null;
   }
 
-  const { data, error } = await supabase
+  const query = supabase
     .from("product_checkouts")
     .select(
       "checkout_id, seller_handle, currency, total_amount, items, status, fulfillment_status, tracking_number, carrier, shipped_at, created_at, updated_at",
     )
     .eq("checkout_id", checkoutId)
-    .eq("stripe_session_id", sessionId)
-    .eq("seller_handle", sellerHandle)
-    .maybeSingle();
+    .eq("stripe_session_id", sessionId);
+
+  if (sellerHandle?.trim()) {
+    query.eq("seller_handle", sellerHandle.trim());
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) {
     console.error("Failed to load product checkout receipt", error);

@@ -24,6 +24,7 @@ import {
   useState,
   type ChangeEvent,
   type MouseEvent,
+  type ReactNode,
 } from "react";
 
 import { Profile } from "@/lib/types";
@@ -71,6 +72,7 @@ interface HeroHeaderProps {
   socials?: Record<string, string | undefined>;
   onShare?: () => void;
   onBack?: () => void;
+  topRightSlot?: ReactNode;
   isOwner?: boolean;
   onAvatarChange?: (file: File) => Promise<void> | void;
   isAvatarUploading?: boolean;
@@ -82,6 +84,7 @@ export default function HeroHeader({
   socials,
   onShare,
   onBack,
+  topRightSlot,
   isOwner = false,
   onAvatarChange,
   isAvatarUploading = false,
@@ -265,9 +268,16 @@ export default function HeroHeader({
               <div className="pointer-events-auto absolute left-4 top-1/2 z-20 -translate-y-1/2 sm:left-6">
                 <SocialPillsRow socials={socials || {}} layout="vertical" />
               </div>
+              {topRightSlot ? (
+                <div className="pointer-events-auto absolute right-4 top-4 z-20 sm:right-6 sm:top-6">
+                  {topRightSlot}
+                </div>
+              ) : null}
               {locationDisplay ? (
                 <div
-                  className="pointer-events-none absolute right-4 top-4 z-20 flex items-center gap-2 rounded-full border border-white/20 bg-black/50 px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.25em] text-white/80 shadow-[0_12px_40px_rgba(0,0,0,0.6)] sm:right-6 sm:top-6"
+                  className={`pointer-events-none absolute right-4 z-20 flex items-center gap-2 rounded-full border border-white/20 bg-black/50 px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.25em] text-white/80 shadow-[0_12px_40px_rgba(0,0,0,0.6)] sm:right-6 ${
+                    topRightSlot ? "top-16 sm:top-[4.35rem]" : "top-4 sm:top-6"
+                  }`}
                   aria-label={`Located in ${locationDisplay}`}
                 >
                   <MapPin className="h-3 w-3 text-white/70" aria-hidden="true" />
