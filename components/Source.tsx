@@ -4461,6 +4461,7 @@ function SourceProductSheet({
                   id="product-detail-kind"
                   value={formState.productKind}
                   onValueChange={(value) => onFieldChange("productKind", value)}
+                  disablePortal
                 >
                   <SelectContent>
                     {PRODUCT_KIND_OPTIONS.map((option) => (
@@ -4562,6 +4563,7 @@ function SourceProductSheet({
                         onValueChange={(value) =>
                           onFieldChange("quantityBehavior", value)
                         }
+                        disablePortal
                       >
                         <SelectContent>
                           {QUANTITY_BEHAVIOR_OPTIONS.map((option) => (
@@ -4848,6 +4850,7 @@ function SourceServiceSheet({
                   id="service-detail-mode"
                   value={formState.serviceMode}
                   onValueChange={(value) => onFieldChange("serviceMode", value)}
+                  disablePortal
                 >
                   <SelectContent>
                     {SERVICE_MODE_OPTIONS.map((option) => (
