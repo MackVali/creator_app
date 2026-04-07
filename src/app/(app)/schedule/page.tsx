@@ -2502,12 +2502,12 @@ export default function SchedulePage() {
   const [windows, setWindows_REAL] = useState<RepoWindow[]>([]);
   const [overlayWindows, setOverlayWindows] =
     useState<OverlayWindowRecord[]>([]);
-  const [manualPlacementCandidate, setManualPlacementCandidate] =
-    useState<ManualPlacementCandidate | null>(null);
-  const [manualPlacementPreviewTime, setManualPlacementPreviewTime] =
-    useState<Date | null>(null);
-  const [manualPlacementGhost, setManualPlacementGhost] =
-    useState<ManualPlacementDragGhost | null>(null);
+  const [manualPlacementSession, setManualPlacementSession] = useState<{
+    candidate: ManualPlacementCandidate;
+    pointerId: number | null;
+    ghost: ManualPlacementDragGhost;
+    previewTime: Date | null;
+  } | null>(null);
   const manualPlacementPointerIdRef = useRef<number | null>(null);
   const renderDayStart = useMemo(
     () => getRenderDayStart(currentDate, effectiveTimeZone ?? "UTC"),
@@ -3280,8 +3280,8 @@ export default function SchedulePage() {
             .catch(() => ({ error: "Unknown error" }));
           throw new Error(message?.error ?? "Failed to update schedule");
         }
-        setManualPlacementCandidate(null);
-        setManualPlacementPreviewTime(null);
+        setManualPlacementSession(null);
+        manualPlacementPointerIdRef.current = null;
         toast.success("Event placed", "Manual placement committed.");
         await refreshScheduleData();
       } catch (error) {
@@ -3292,7 +3292,7 @@ export default function SchedulePage() {
         );
       }
     },
-    [snapToFiveMinuteGrid, toast, refreshScheduleData]
+    [refreshScheduleData, snapToFiveMinuteGrid, toast]
   );
 
   useEffect(() => {
@@ -3333,21 +3333,25 @@ export default function SchedulePage() {
       const pointerId =
         typeof pointer?.pointerId === "number" ? pointer.pointerId : null;
       manualPlacementPointerIdRef.current = pointerId;
-      setManualPlacementGhost({
-        x: initialX,
-        y: initialY,
-        label: result.name ?? "Manual placement",
-        mode: "pickup",
-        pointerId,
-      });
 
-      setManualPlacementCandidate({
+      const candidate: ManualPlacementCandidate = {
         instanceId: result.scheduleInstanceId,
         durationMinutes: safeDuration,
         title: result.name ?? null,
-      });
+      };
       const snappedPreview = snapToFiveMinuteGrid(nextStart);
-      setManualPlacementPreviewTime(snappedPreview);
+      setManualPlacementSession({
+        candidate,
+        pointerId,
+        ghost: {
+          x: initialX,
+          y: initialY,
+          label: result.name ?? "Manual placement",
+          mode: "pickup",
+          pointerId,
+        },
+        previewTime: snappedPreview,
+      });
       setSkipNextDayAnimation(true);
       updateCurrentDate(snappedPreview, { animate: false });
       navigate("day");
@@ -6277,37 +6281,17 @@ export default function SchedulePage() {
   }, [clearLongPressTimer]);
 
   useEffect(() => {
-    if (!manualPlacementCandidate) return;
+    if (!manualPlacementSession) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setManualPlacementCandidate(null);
-        setManualPlacementPreviewTime(null);
+        setManualPlacementSession(null);
+        manualPlacementPointerIdRef.current = null;
+        stopAutoScroll();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [manualPlacementCandidate]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!manualPlacementCandidate) {
-      setManualPlacementGhost(null);
-      manualPlacementPointerIdRef.current = null;
-      return;
-    }
-    setManualPlacementGhost((prev) => {
-      if (prev) {
-        return { ...prev, mode: "placing" };
-      }
-      return {
-        x: window.innerWidth / 2,
-        y: window.innerHeight / 2,
-        label: manualPlacementCandidate.title ?? "Manual placement",
-        mode: "placing",
-        pointerId: manualPlacementPointerIdRef.current,
-      };
-    });
-  }, [manualPlacementCandidate]);
+  }, [manualPlacementSession, stopAutoScroll]);
 
   const lastPointerClientYRef = useRef<number | null>(null);
   const autoScrollFrameRef = useRef<number | null>(null);
@@ -6376,9 +6360,14 @@ export default function SchedulePage() {
     (clientY: number) => {
       lastPointerClientYRef.current = clientY;
       const next = resolveManualPlacementTime(clientY);
-      if (next) {
-        setManualPlacementPreviewTime(next);
-      }
+      setManualPlacementSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              previewTime: next ?? prev.previewTime,
+            }
+          : prev
+      );
 
       const viewportHeight =
         window.visualViewport?.height ?? window.innerHeight ?? 0;
@@ -6413,9 +6402,14 @@ export default function SchedulePage() {
         const lastY = lastPointerClientYRef.current;
         if (lastY !== null) {
           const refreshed = resolveManualPlacementTime(lastY);
-          if (refreshed) {
-            setManualPlacementPreviewTime(refreshed);
-          }
+          setManualPlacementSession((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  previewTime: refreshed ?? prev.previewTime,
+                }
+              : prev
+          );
         }
         autoScrollFrameRef.current = requestAnimationFrame(step);
       };
@@ -6432,78 +6426,65 @@ export default function SchedulePage() {
   );
 
   useEffect(() => {
-    if (!manualPlacementGhost) return;
+    if (!manualPlacementSession) return;
     const handlePointerMove = (event: PointerEvent) => {
       const pointerId = manualPlacementPointerIdRef.current;
       if (pointerId !== null && event.pointerId !== pointerId) return;
-      setManualPlacementGhost((prev) =>
-        prev
-          ? {
-              ...prev,
-              x: event.clientX,
-              y: event.clientY,
-            }
-          : prev
-      );
-      updatePreviewAndScrollIntent(event.clientY);
+      const clientY = event.clientY;
+      setManualPlacementSession((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          ghost: {
+            ...prev.ghost,
+            x: event.clientX,
+            y: event.clientY,
+            mode: "placing",
+          },
+        };
+      });
+      updatePreviewAndScrollIntent(clientY);
     };
 
-    const handlePointerCancel = () => stopAutoScroll();
+    const handlePointerUp = (event: PointerEvent) => {
+      const pointerId = manualPlacementPointerIdRef.current;
+      if (pointerId !== null && event.pointerId !== pointerId) return;
+      const next = resolveManualPlacementTime(event.clientY);
+      const preview =
+        next ??
+        (manualPlacementSession.previewTime
+          ? snapToFiveMinuteGrid(manualPlacementSession.previewTime)
+          : null);
+      if (preview) {
+        void commitManualPlacement(manualPlacementSession.candidate, preview);
+      }
+      setManualPlacementSession(null);
+      manualPlacementPointerIdRef.current = null;
+      stopAutoScroll();
+    };
+
+    const handlePointerCancel = () => {
+      setManualPlacementSession(null);
+      manualPlacementPointerIdRef.current = null;
+      stopAutoScroll();
+    };
 
     window.addEventListener("pointermove", handlePointerMove, {
       passive: true,
     });
+    window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerCancel);
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
-    };
-  }, [manualPlacementGhost, stopAutoScroll, updatePreviewAndScrollIntent]);
-
-  useEffect(() => {
-    if (!manualPlacementCandidate || view !== "day") return;
-    const timelineEl = dayTimelineContainerRef.current?.querySelector(
-      ".timeline-content"
-    ) as HTMLElement | null;
-    if (!timelineEl) return;
-
-    const handlePointerMove = (event: PointerEvent) => {
-      updatePreviewAndScrollIntent(event.clientY);
-    };
-
-    const handlePointerLeave = () => {
-      setManualPlacementPreviewTime(null);
-      stopAutoScroll();
-    };
-
-    const handlePointerUp = (event: PointerEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest?.("[data-schedule-instance-id]")) return;
-      const next = resolveManualPlacementTime(event.clientY);
-      if (!next) return;
-      setManualPlacementPreviewTime(next);
-      void commitManualPlacement(manualPlacementCandidate, next);
-      stopAutoScroll();
-    };
-
-    timelineEl.addEventListener("pointermove", handlePointerMove, {
-      passive: true,
-    });
-    timelineEl.addEventListener("pointerleave", handlePointerLeave);
-    timelineEl.addEventListener("pointerup", handlePointerUp);
-
-    return () => {
-      timelineEl.removeEventListener("pointermove", handlePointerMove);
-      timelineEl.removeEventListener("pointerleave", handlePointerLeave);
-      timelineEl.removeEventListener("pointerup", handlePointerUp);
     };
   }, [
     commitManualPlacement,
-    manualPlacementCandidate,
+    manualPlacementSession,
     resolveManualPlacementTime,
     stopAutoScroll,
     updatePreviewAndScrollIntent,
-    view,
   ]);
 
   const renderDayTimeline = useCallback(
@@ -6735,11 +6716,12 @@ export default function SchedulePage() {
       });
 
       const manualPreviewSegment = (() => {
-        if (!manualPlacementCandidate || !manualPlacementPreviewTime) return null;
-        const previewStart = snapToFiveMinuteGrid(manualPlacementPreviewTime);
+        const session = manualPlacementSession;
+        if (!session?.previewTime) return null;
+        const previewStart = snapToFiveMinuteGrid(session.previewTime);
         const previewEnd = new Date(
           previewStart.getTime() +
-            manualPlacementCandidate.durationMinutes * 60_000
+            session.candidate.durationMinutes * 60_000
         );
         const clipped = clipSegmentToDay(
           previewStart,
@@ -6960,7 +6942,7 @@ export default function SchedulePage() {
                 <div className="flex items-center gap-2 px-3 py-2 text-[11px] font-semibold text-emerald-900">
                   <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.18)]" />
                   <span className="line-clamp-2">
-                    {manualPlacementCandidate?.title ?? "Manual placement"}
+                    {manualPlacementSession?.candidate.title ?? "Manual placement"}
                   </span>
                   <span className="ml-auto text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-800">
                     {Math.round(manualPreviewSegment.durationMin)}m
@@ -8588,25 +8570,25 @@ export default function SchedulePage() {
   }, [focusInstanceId, dayTimelineModel?.dayViewDateKey]);
 
   const manualPlacementGhostPortal =
-    manualPlacementGhost && typeof document !== "undefined"
+    manualPlacementSession?.ghost && typeof document !== "undefined"
       ? createPortal(
           <div className="pointer-events-none fixed inset-0 z-[2147483646]">
             <div
               className={clsx(
                 "-translate-x-1/2 -translate-y-1/2 absolute transition-transform duration-150 ease-out",
-                manualPlacementGhost.mode === "placing"
+                manualPlacementSession.ghost.mode === "placing"
                   ? "scale-100"
                   : "scale-[0.97]"
               )}
               style={{
-                left: manualPlacementGhost.x,
-                top: manualPlacementGhost.y,
+                left: manualPlacementSession.ghost.x,
+                top: manualPlacementSession.ghost.y,
               }}
             >
               <div
                 className={clsx(
                   "min-w-[180px] max-w-[260px] rounded-2xl border px-4 py-3 text-sm font-semibold shadow-[0_18px_42px_rgba(0,0,0,0.28)] backdrop-blur-[2px]",
-                  manualPlacementGhost.mode === "placing"
+                  manualPlacementSession.ghost.mode === "placing"
                     ? "border-emerald-200/80 bg-emerald-50/95 text-emerald-900 shadow-[0_18px_42px_rgba(16,185,129,0.32)]"
                     : "border-white/15 bg-black/80 text-white"
                 )}
@@ -8615,13 +8597,13 @@ export default function SchedulePage() {
                   <span
                     className={clsx(
                       "inline-flex h-2 w-2 rounded-full",
-                      manualPlacementGhost.mode === "placing"
+                      manualPlacementSession.ghost.mode === "placing"
                         ? "bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.18)]"
                         : "bg-white/80 shadow-[0_0_0_6px_rgba(255,255,255,0.22)]"
                     )}
                   />
                   <span className="line-clamp-2 leading-tight">
-                    {manualPlacementGhost.label}
+                    {manualPlacementSession.ghost.label}
                   </span>
                 </div>
               </div>
