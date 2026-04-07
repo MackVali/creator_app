@@ -6280,6 +6280,18 @@ export default function SchedulePage() {
     };
   }, [clearLongPressTimer]);
 
+  const lastPointerClientYRef = useRef<number | null>(null);
+  const autoScrollFrameRef = useRef<number | null>(null);
+  const autoScrollDirectionRef = useRef<"up" | "down" | null>(null);
+
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    }
+    autoScrollDirectionRef.current = null;
+  }, []);
+
   useEffect(() => {
     if (!manualPlacementSession) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -6292,18 +6304,6 @@ export default function SchedulePage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [manualPlacementSession, stopAutoScroll]);
-
-  const lastPointerClientYRef = useRef<number | null>(null);
-  const autoScrollFrameRef = useRef<number | null>(null);
-  const autoScrollDirectionRef = useRef<"up" | "down" | null>(null);
-
-  const stopAutoScroll = useCallback(() => {
-    if (autoScrollFrameRef.current !== null) {
-      cancelAnimationFrame(autoScrollFrameRef.current);
-      autoScrollFrameRef.current = null;
-    }
-    autoScrollDirectionRef.current = null;
-  }, []);
 
   useEffect(() => {
     return () => stopAutoScroll();
