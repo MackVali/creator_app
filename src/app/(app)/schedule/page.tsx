@@ -6463,7 +6463,9 @@ export default function SchedulePage() {
       stopAutoScroll();
     };
 
-    const handlePointerCancel = () => {
+    const handlePointerCancel = (event: PointerEvent) => {
+      const pointerId = manualPlacementPointerIdRef.current;
+      if (pointerId !== null && event.pointerId !== pointerId) return;
       setManualPlacementSession(null);
       manualPlacementPointerIdRef.current = null;
       stopAutoScroll();
@@ -6736,6 +6738,16 @@ export default function SchedulePage() {
         if (!Number.isFinite(durationMin) || durationMin <= 0) return null;
         return { startMin, durationMin };
       })();
+      const manualPreviewHeightPx =
+        manualPreviewSegment && Number.isFinite(modelPxPerMin)
+          ? manualPreviewSegment.durationMin * modelPxPerMin
+          : 0;
+      const manualPreviewShadow =
+        manualPreviewHeightPx > 0 &&
+        manualPreviewHeightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX
+          ? TIMELINE_COMPACT_CARD_SHADOW
+          : "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+      const manualPreviewOutline = "1px solid rgba(10, 10, 12, 0.85)";
 
       return (
         <div
@@ -6925,7 +6937,7 @@ export default function SchedulePage() {
             </div>
             {manualPreviewSegment ? (
               <div
-                className="pointer-events-none absolute overflow-hidden rounded-[var(--radius-lg)] border border-emerald-200/80 bg-emerald-50/95 shadow-[0_16px_36px_rgba(16,185,129,0.32)] backdrop-blur-[2px] transition-colors"
+                className="pointer-events-none absolute overflow-hidden habit-card habit-card--scheduled habit-card--type-default rounded-[var(--schedule-instance-radius)] border border-black/70 text-white backdrop-blur-[2px] transition-colors"
                 style={{
                   ...TIMELINE_CARD_BOUNDS,
                   top: toTimelinePosition(
@@ -6936,15 +6948,18 @@ export default function SchedulePage() {
                   ),
                   height: toTimelinePosition(manualPreviewSegment.durationMin),
                   zIndex: manualPreviewLayerZIndex,
+                  boxShadow: manualPreviewShadow,
+                  outline: manualPreviewOutline,
+                  outlineOffset: "-1px",
                 }}
                 aria-hidden="true"
               >
-                <div className="flex items-center gap-2 px-3 py-2 text-[11px] font-semibold text-emerald-900">
-                  <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.18)]" />
+                <div className="flex items-center gap-2 px-3 py-2 text-[11px] font-semibold leading-tight">
+                  <span className="inline-flex h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_0_6px_rgba(52,211,153,0.26)]" />
                   <span className="line-clamp-2">
                     {manualPlacementSession?.candidate.title ?? "Manual placement"}
                   </span>
-                  <span className="ml-auto text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-800">
+                  <span className="ml-auto text-[10px] font-bold uppercase tracking-[0.12em] text-white/70">
                     {Math.round(manualPreviewSegment.durationMin)}m
                   </span>
                 </div>
@@ -8569,6 +8584,7 @@ export default function SchedulePage() {
     return () => cancelAnimationFrame(raf);
   }, [focusInstanceId, dayTimelineModel?.dayViewDateKey]);
 
+  const manualGhostShadow = TIMELINE_COMPACT_CARD_SHADOW;
   const manualPlacementGhostPortal =
     manualPlacementSession?.ghost && typeof document !== "undefined"
       ? createPortal(
@@ -8587,19 +8603,26 @@ export default function SchedulePage() {
             >
               <div
                 className={clsx(
-                  "min-w-[180px] max-w-[260px] rounded-2xl border px-4 py-3 text-sm font-semibold shadow-[0_18px_42px_rgba(0,0,0,0.28)] backdrop-blur-[2px]",
+                  "habit-card habit-card--scheduled habit-card--type-default rounded-[var(--schedule-instance-radius)] border border-black/70 px-4 py-3 text-sm font-semibold text-white backdrop-blur-[2px]",
                   manualPlacementSession.ghost.mode === "placing"
-                    ? "border-emerald-200/80 bg-emerald-50/95 text-emerald-900 shadow-[0_18px_42px_rgba(16,185,129,0.32)]"
-                    : "border-white/15 bg-black/80 text-white"
+                    ? "opacity-100"
+                    : "opacity-90"
                 )}
+                style={{
+                  boxShadow: manualGhostShadow,
+                  outline: "1px solid rgba(10, 10, 12, 0.85)",
+                  outlineOffset: "-1px",
+                  minWidth: 180,
+                  maxWidth: 260,
+                }}
               >
                 <div className="flex items-center gap-2">
                   <span
                     className={clsx(
-                      "inline-flex h-2 w-2 rounded-full",
+                      "inline-flex h-2 w-2 rounded-full shadow-[0_0_0_6px_rgba(52,211,153,0.26)]",
                       manualPlacementSession.ghost.mode === "placing"
-                        ? "bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.18)]"
-                        : "bg-white/80 shadow-[0_0_0_6px_rgba(255,255,255,0.22)]"
+                        ? "bg-emerald-300"
+                        : "bg-white/70"
                     )}
                   />
                   <span className="line-clamp-2 leading-tight">
