@@ -9162,6 +9162,16 @@ function FabNexus({
   onManualPlaceResult,
 }: FabNexusProps) {
   const [showControls, setShowControls] = useState(false);
+  const dragStateRef = useRef<{
+    id: string;
+    pointerId: number | null;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+    result: FabSearchResult;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+  const DRAG_THRESHOLD_PX = 6;
   const hasResults = results.length > 0;
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (!hasMore || isLoadingMore) return;
@@ -9375,8 +9385,6 @@ function FabNexus({
               const isCompletedProject =
                 result.type === "PROJECT" && result.isCompleted;
               const isDisabled = isCompletedProject;
-              const manualPlaceDisabled =
-                isCompletedProject || !result.scheduleInstanceId;
               const statusText = getStatusText(result);
               const goalLabel =
                 result.type === "PROJECT" && result.goalName
@@ -9395,14 +9403,106 @@ function FabNexus({
                 "text-[7px] md:text-[9px] uppercase tracking-[0.18em] text-white/70";
               const statusLabelClass =
                 "text-[7px] md:text-[8px] uppercase tracking-[0.14em] text-white/60 break-words leading-tight";
+
+              const beginDrag = (
+                event: React.PointerEvent,
+                res: FabSearchResult,
+              ) => {
+                if (!onManualPlaceResult) return;
+                if (!res.scheduleInstanceId) return;
+                onManualPlaceResult(res);
+                suppressClickRef.current = true;
+              };
+
+              const handlePointerDown = (event: React.PointerEvent) => {
+                if (isDisabled) return;
+                if (event.pointerType === "mouse" && event.button !== 0) return;
+                dragStateRef.current = {
+                  id: result.id,
+                  pointerId: event.pointerId,
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  dragging: false,
+                  result,
+                };
+                (event.currentTarget as HTMLElement).setPointerCapture?.(
+                  event.pointerId,
+                );
+              };
+
+              const handlePointerMove = (event: React.PointerEvent) => {
+                const state = dragStateRef.current;
+                if (!state || state.id !== result.id) return;
+                if (
+                  state.pointerId !== null &&
+                  event.pointerId !== state.pointerId
+                )
+                  return;
+                if (state.dragging) {
+                  event.preventDefault();
+                  return;
+                }
+                const dx = event.clientX - state.startX;
+                const dy = event.clientY - state.startY;
+                const dist = Math.hypot(dx, dy);
+                if (dist > DRAG_THRESHOLD_PX) {
+                  state.dragging = true;
+                  beginDrag(event, state.result);
+                  event.preventDefault();
+                }
+              };
+
+              const handlePointerUp = (event: React.PointerEvent) => {
+                const state = dragStateRef.current;
+                if (!state || state.id !== result.id) return;
+                if (
+                  state.pointerId !== null &&
+                  event.pointerId !== state.pointerId
+                )
+                  return;
+                const wasDragging = state.dragging;
+                dragStateRef.current = null;
+                (event.currentTarget as HTMLElement).releasePointerCapture?.(
+                  event.pointerId,
+                );
+                if (wasDragging) {
+                  event.preventDefault();
+                  return;
+                }
+                if (suppressClickRef.current) {
+                  suppressClickRef.current = false;
+                  return;
+                }
+                if (!isDisabled) {
+                  onSelectResult(result);
+                }
+              };
+
+              const handlePointerCancel = () => {
+                dragStateRef.current = null;
+              };
+
+              const handleClick = (event: React.MouseEvent) => {
+                if (suppressClickRef.current) {
+                  suppressClickRef.current = false;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  return;
+                }
+                if (!isDisabled) {
+                  onSelectResult(result);
+                }
+              };
+
               return (
                 <button
                   key={`${result.type}-${result.id}`}
                   type="button"
-                  onClick={() => {
-                    if (isDisabled) return;
-                    onSelectResult(result);
-                  }}
+                  onClick={handleClick}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerCancel}
                   disabled={isDisabled}
                   aria-disabled={isDisabled}
                   className={cardClassName}
@@ -9435,23 +9535,6 @@ function FabNexus({
                     <div className="flex w-full">
                       <span className={statusLabelClass}>{statusText}</span>
                     </div>
-                    {onManualPlaceResult ? (
-                      <div className="flex w-full justify-end">
-                        <button
-                          type="button"
-                          className="rounded-md border border-emerald-400/60 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-100 transition hover:border-emerald-300 hover:text-emerald-50 disabled:border-white/10 disabled:text-white/30"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            if (manualPlaceDisabled) return;
-                            onManualPlaceResult(result);
-                          }}
-                          disabled={manualPlaceDisabled}
-                        >
-                          Place on timeline
-                        </button>
-                      </div>
-                    ) : null}
                   </div>
                 </button>
               );
