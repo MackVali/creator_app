@@ -6480,15 +6480,50 @@ export default function SchedulePage() {
       stopAutoScroll();
     };
 
+    const handleTouchMove = (event: TouchEvent) => {
+      const pointerId = manualPlacementPointerIdRef.current;
+      const touches = Array.from(event.touches);
+      const touch =
+        (pointerId !== null
+          ? touches.find((item) => item.identifier === pointerId)
+          : null) ?? (touches.length === 1 ? touches[0] : null);
+      if (!touch) return;
+
+      // iOS Safari can otherwise hand the gesture over to page scrolling and
+      // cancel the pointer stream as soon as the drag crosses the timeline.
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+
+      setManualPlacementSession((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          ghost: {
+            ...prev.ghost,
+            x: touch.clientX,
+            y: touch.clientY,
+            mode: "placing",
+          },
+        };
+      });
+      lastPointerClientYRef.current = touch.clientY;
+      updatePreviewAndScrollIntent(touch.clientY);
+    };
+
     window.addEventListener("pointermove", handlePointerMove, {
       passive: true,
     });
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerCancel);
+    window.addEventListener("touchmove", handleTouchMove, {
+      passive: false,
+    });
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
+      window.removeEventListener("touchmove", handleTouchMove);
     };
   }, [
     commitManualPlacement,
@@ -8685,13 +8720,19 @@ export default function SchedulePage() {
           <div
             className="relative bg-[var(--surface)]"
             ref={swipeContainerRef}
-            style={{ touchAction: TIMELINE_TOUCH_ACTION }}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={() => {
-              void handleTouchEnd();
+            style={{
+              touchAction: manualPlacementSession ? "none" : TIMELINE_TOUCH_ACTION,
             }}
-            onTouchCancel={handleTouchCancel}
+            onTouchStart={manualPlacementSession ? undefined : handleTouchStart}
+            onTouchMove={manualPlacementSession ? undefined : handleTouchMove}
+            onTouchEnd={
+              manualPlacementSession
+                ? undefined
+                : () => {
+                    void handleTouchEnd();
+                  }
+            }
+            onTouchCancel={manualPlacementSession ? undefined : handleTouchCancel}
           >
             <AnimatePresence mode="wait" initial={false}>
               {view === "day" && (
