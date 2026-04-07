@@ -6256,6 +6256,22 @@ export default function SchedulePage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [manualPlacementCandidate]);
 
+  const lastPointerClientYRef = useRef<number | null>(null);
+  const autoScrollFrameRef = useRef<number | null>(null);
+  const autoScrollDirectionRef = useRef<"up" | "down" | null>(null);
+
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    }
+    autoScrollDirectionRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    return () => stopAutoScroll();
+  }, [stopAutoScroll]);
+
   const baseTimelineHeight = useMemo(
     () =>
       dayTimelineModel
@@ -6303,6 +6319,65 @@ export default function SchedulePage() {
     [dayTimelineModel, pxPerMin, renderDayStart]
   );
 
+  const updatePreviewAndScrollIntent = useCallback(
+    (clientY: number) => {
+      lastPointerClientYRef.current = clientY;
+      const next = resolveManualPlacementTime(clientY);
+      if (next) {
+        setManualPlacementPreviewTime(next);
+      }
+
+      const viewportHeight =
+        window.visualViewport?.height ?? window.innerHeight ?? 0;
+      if (!(viewportHeight > 0)) {
+        stopAutoScroll();
+        return;
+      }
+      const activationZone = 96;
+      const topDistance = clientY;
+      const bottomDistance = viewportHeight - clientY;
+      const withinTop = topDistance >= 0 && topDistance <= activationZone;
+      const withinBottom =
+        bottomDistance >= 0 && bottomDistance <= activationZone;
+
+      if (!withinTop && !withinBottom) {
+        stopAutoScroll();
+        return;
+      }
+
+      const direction = withinTop ? "up" : "down";
+      const distance = withinTop ? topDistance : bottomDistance;
+      const intensity = 1 - Math.min(Math.max(distance / activationZone, 0), 1);
+      const minSpeed = 80; // px/sec
+      const maxSpeed = 320; // px/sec
+      const speed = minSpeed + (maxSpeed - minSpeed) * intensity;
+
+      const step = () => {
+        const frameMs = 16;
+        const delta = (speed * frameMs) / 1000;
+        const sign = direction === "up" ? -1 : 1;
+        window.scrollBy({ top: sign * delta, behavior: "auto" });
+        const lastY = lastPointerClientYRef.current;
+        if (lastY !== null) {
+          const refreshed = resolveManualPlacementTime(lastY);
+          if (refreshed) {
+            setManualPlacementPreviewTime(refreshed);
+          }
+        }
+        autoScrollFrameRef.current = requestAnimationFrame(step);
+      };
+
+      if (autoScrollDirectionRef.current !== direction) {
+        stopAutoScroll();
+      }
+      autoScrollDirectionRef.current = direction;
+      if (autoScrollFrameRef.current === null) {
+        autoScrollFrameRef.current = requestAnimationFrame(step);
+      }
+    },
+    [resolveManualPlacementTime, stopAutoScroll]
+  );
+
   useEffect(() => {
     if (!manualPlacementCandidate || view !== "day") return;
     const timelineEl = dayTimelineContainerRef.current?.querySelector(
@@ -6311,14 +6386,12 @@ export default function SchedulePage() {
     if (!timelineEl) return;
 
     const handlePointerMove = (event: PointerEvent) => {
-      const next = resolveManualPlacementTime(event.clientY);
-      if (next) {
-        setManualPlacementPreviewTime(next);
-      }
+      updatePreviewAndScrollIntent(event.clientY);
     };
 
     const handlePointerLeave = () => {
       setManualPlacementPreviewTime(null);
+      stopAutoScroll();
     };
 
     const handlePointerUp = (event: PointerEvent) => {
@@ -6328,6 +6401,7 @@ export default function SchedulePage() {
       if (!next) return;
       setManualPlacementPreviewTime(next);
       void commitManualPlacement(manualPlacementCandidate, next);
+      stopAutoScroll();
     };
 
     timelineEl.addEventListener("pointermove", handlePointerMove, {
@@ -6345,6 +6419,8 @@ export default function SchedulePage() {
     commitManualPlacement,
     manualPlacementCandidate,
     resolveManualPlacementTime,
+    stopAutoScroll,
+    updatePreviewAndScrollIntent,
     view,
   ]);
 
