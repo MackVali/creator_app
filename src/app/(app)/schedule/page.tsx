@@ -6752,6 +6752,8 @@ export default function SchedulePage() {
           ? TIMELINE_COMPACT_CARD_SHADOW
           : "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
       const manualPreviewOutline = "1px solid rgba(10, 10, 12, 0.85)";
+      const shouldRenderManualPreview =
+        manualPreviewSegment && !manualPlacementSession;
 
       return (
         <div
@@ -6939,7 +6941,7 @@ export default function SchedulePage() {
                 );
               })}
             </div>
-            {manualPreviewSegment ? (
+            {shouldRenderManualPreview ? (
               <div
                 className="pointer-events-none absolute overflow-hidden habit-card habit-card--scheduled habit-card--type-default rounded-[var(--schedule-instance-radius)] border border-black/70 text-white backdrop-blur-[2px] transition-colors"
                 style={{
@@ -8607,7 +8609,7 @@ export default function SchedulePage() {
             >
               <div
                 className={clsx(
-                  "habit-card habit-card--scheduled habit-card--type-default rounded-[var(--schedule-instance-radius)] border border-black/70 px-4 py-3 text-sm font-semibold text-white backdrop-blur-[2px]",
+                  "habit-card habit-card--scheduled habit-card--type-default rounded-[var(--schedule-instance-radius)] border text-white backdrop-blur select-none shadow-[0_18px_38px_rgba(8,12,32,0.52)] px-3 py-2 flex items-center gap-3",
                   manualPlacementSession.ghost.mode === "placing"
                     ? "opacity-100"
                     : "opacity-90"
@@ -8616,23 +8618,23 @@ export default function SchedulePage() {
                   boxShadow: manualGhostShadow,
                   outline: "1px solid rgba(10, 10, 12, 0.85)",
                   outlineOffset: "-1px",
-                  minWidth: 180,
-                  maxWidth: 260,
+                  minWidth: 200,
+                  maxWidth: 320,
+                  background:
+                    "linear-gradient(135deg, rgba(46,46,52,0.94) 0%, rgba(58,58,66,0.92) 45%, rgba(82,82,92,0.88) 100%)",
                 }}
               >
-                <div className="flex items-center gap-2">
-                  <span
-                    className={clsx(
-                      "inline-flex h-2 w-2 rounded-full shadow-[0_0_0_6px_rgba(52,211,153,0.26)]",
-                      manualPlacementSession.ghost.mode === "placing"
-                        ? "bg-emerald-300"
-                        : "bg-white/70"
-                    )}
-                  />
-                  <span className="line-clamp-2 leading-tight">
-                    {manualPlacementSession.ghost.label}
-                  </span>
-                </div>
+                <span
+                  className={clsx(
+                    "inline-flex h-2 w-2 rounded-full shadow-[0_0_0_6px_rgba(52,211,153,0.26)]",
+                    manualPlacementSession.ghost.mode === "placing"
+                      ? "bg-emerald-300"
+                      : "bg-white/70"
+                  )}
+                />
+                <span className="line-clamp-2 text-sm font-semibold leading-tight">
+                  {manualPlacementSession.ghost.label}
+                </span>
               </div>
             </div>
           </div>,
