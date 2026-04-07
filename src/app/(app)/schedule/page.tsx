@@ -2513,6 +2513,15 @@ export default function SchedulePage() {
     () => getRenderDayStart(currentDate, effectiveTimeZone ?? "UTC"),
     [currentDate, effectiveTimeZone]
   );
+  const renderDayEnd = useMemo(
+    () =>
+      addDaysInTimeZone(
+        renderDayStart,
+        1,
+        effectiveTimeZone ?? "UTC"
+      ),
+    [renderDayStart, effectiveTimeZone]
+  );
   const goalMetaById = useMemo(() => {
     const monumentEmojiById = new Map<string, string | null>();
     for (const monument of monuments ?? []) {
@@ -8590,38 +8599,116 @@ export default function SchedulePage() {
     return () => cancelAnimationFrame(raf);
   }, [focusInstanceId, dayTimelineModel?.dayViewDateKey]);
 
-  const manualGhostShadow = TIMELINE_COMPACT_CARD_SHADOW;
+  const timelinePosition = useCallback(
+    (minutes: number) => `calc(var(--timeline-minute-unit) * ${minutes})`,
+    []
+  );
+
+  const manualGhostHost =
+    manualPlacementSession?.ghost && typeof document !== "undefined"
+      ? (dayTimelineContainerRef.current?.querySelector(
+          ".timeline-content"
+        ) as HTMLElement | null)
+      : null;
+
+  const manualGhostLayout = useMemo(() => {
+    if (!manualPlacementSession || !dayTimelineModel) return null;
+    if (!manualGhostHost) return null;
+    const previewTime = manualPlacementSession.previewTime;
+    if (!previewTime) return null;
+    const previewStart = snapToFiveMinuteGrid(previewTime);
+    const previewEnd = new Date(
+      previewStart.getTime() +
+        manualPlacementSession.candidate.durationMinutes * 60_000
+    );
+    const clipped = clipSegmentToDay(
+      previewStart,
+      previewEnd,
+      renderDayStart,
+      renderDayEnd
+    );
+    if (!clipped) return null;
+    const startMin = getDayMinuteOffset(clipped.segStart, renderDayStart);
+    const durationMin =
+      (clipped.segEnd.getTime() - clipped.segStart.getTime()) / 60000;
+    if (!Number.isFinite(durationMin) || durationMin <= 0) return null;
+    const startOffset = Math.max(
+      0,
+      startMin - (dayTimelineModel.startHour ?? 0) * 60
+    );
+    const heightPx = durationMin * pxPerMin;
+    const useCompactShadow =
+      Number.isFinite(heightPx) &&
+      heightPx > 0 &&
+      heightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
+    const shadow = useCompactShadow
+      ? TIMELINE_COMPACT_CARD_SHADOW
+      : "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+    return {
+      top: timelinePosition(startOffset),
+      height: timelinePosition(durationMin),
+      shadow,
+    };
+  }, [
+    dayTimelineModel,
+    manualPlacementSession,
+    pxPerMin,
+    renderDayEnd,
+    renderDayStart,
+    snapToFiveMinuteGrid,
+    timelinePosition,
+    manualGhostHost,
+  ]);
+
   const manualPlacementGhostPortal =
     manualPlacementSession?.ghost && typeof document !== "undefined"
       ? createPortal(
-          <div className="pointer-events-none fixed inset-0 z-[2147483646]">
+          <div
+            className={clsx(
+              "pointer-events-none inset-0 z-[2147483646]",
+              manualGhostHost ? "absolute" : "fixed"
+            )}
+          >
             <div
               className={clsx(
-                "-translate-x-1/2 -translate-y-1/2 absolute transition-transform duration-150 ease-out",
+                "absolute transition-transform duration-150 ease-out",
                 manualPlacementSession.ghost.mode === "placing"
                   ? "scale-100"
                   : "scale-[0.97]"
               )}
-              style={{
-                left: manualPlacementSession.ghost.x,
-                top: manualPlacementSession.ghost.y,
-              }}
+              style={
+                manualGhostLayout
+                  ? {
+                      ...TIMELINE_CARD_BOUNDS,
+                      top: manualGhostLayout.top,
+                      height: manualGhostLayout.height,
+                    }
+                  : {
+                      left: manualPlacementSession.ghost.x,
+                      top: manualPlacementSession.ghost.y,
+                      transform: "translate(-50%, -50%)",
+                    }
+              }
             >
               <div
                 className={clsx(
-                  "habit-card habit-card--scheduled habit-card--type-default rounded-[var(--schedule-instance-radius)] border text-white backdrop-blur select-none shadow-[0_18px_38px_rgba(8,12,32,0.52)] px-3 py-2 flex items-center gap-3",
+                  "habit-card habit-card--scheduled habit-card--type-default rounded-[var(--schedule-instance-radius)] border text-white backdrop-blur-[2px] select-none px-3 py-2 flex items-center gap-3",
                   manualPlacementSession.ghost.mode === "placing"
                     ? "opacity-100"
-                    : "opacity-90"
+                    : "opacity-90",
+                  manualGhostLayout ? "shadow-none" : "shadow-[0_18px_38px_rgba(8,12,32,0.52)]"
                 )}
                 style={{
-                  boxShadow: manualGhostShadow,
+                  boxShadow: manualGhostLayout
+                    ? manualGhostLayout.shadow
+                    : TIMELINE_COMPACT_CARD_SHADOW,
                   outline: "1px solid rgba(10, 10, 12, 0.85)",
                   outlineOffset: "-1px",
-                  minWidth: 200,
-                  maxWidth: 320,
                   background:
                     "linear-gradient(135deg, rgba(46,46,52,0.94) 0%, rgba(58,58,66,0.92) 45%, rgba(82,82,92,0.88) 100%)",
+                  height: manualGhostLayout ? "100%" : undefined,
+                  minHeight: manualGhostLayout ? undefined : 56,
+                  alignItems: "center",
                 }}
               >
                 <span
@@ -8635,10 +8722,15 @@ export default function SchedulePage() {
                 <span className="line-clamp-2 text-sm font-semibold leading-tight">
                   {manualPlacementSession.ghost.label}
                 </span>
+                {manualPlacementSession.candidate?.durationMinutes ? (
+                  <span className="ml-auto text-[10px] font-bold uppercase tracking-[0.12em] text-white/70">
+                    {Math.round(manualPlacementSession.candidate.durationMinutes)}m
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>,
-          document.body
+          manualGhostHost ?? document.body
         )
       : null;
 
