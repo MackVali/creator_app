@@ -177,6 +177,13 @@ type FabSearchResult = {
   updated_at?: string | null;
   goalMonumentId?: string | null;
 };
+
+type DragPointerInfo = {
+  clientX: number;
+  clientY: number;
+  pointerId?: number | null;
+  pointerType?: string | null;
+};
 type OverlaySortMode =
   | "recent"
   | "alphabetical"
@@ -5306,6 +5313,7 @@ export function Fab({
       onLoadMore={handleLoadMoreResults}
       onSelectResult={handleOpenReschedule}
       inputRef={nexusInputRef}
+      onManualPlaceResult={handleManualPlacement}
     />
   );
 
@@ -5728,6 +5736,47 @@ export function Fab({
     }
     setRescheduleDate(formatDateInput(baseDate));
     setRescheduleTime(formatTimeInput(baseDate));
+  };
+
+  const handleManualPlacement = (
+    result: FabSearchResult,
+    pointer?: DragPointerInfo,
+  ) => {
+    if (result.type === "PROJECT" && result.isCompleted) return;
+    if (!result.scheduleInstanceId) {
+      toast.error(
+        "Manual placement unavailable",
+        "This item has no scheduled instance to move yet.",
+      );
+      return;
+    }
+
+    const safeDuration =
+      typeof result.durationMinutes === "number" &&
+      Number.isFinite(result.durationMinutes) &&
+      result.durationMinutes > 0
+        ? result.durationMinutes
+        : 60;
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("schedule:manual-placement-requested", {
+          detail: {
+            result: { ...result, durationMinutes: safeDuration },
+            source: "fab-nexus",
+            pointer,
+          },
+        }),
+      );
+    }
+
+    setIsOpen(false);
+    setExpanded(false);
+    setSelected(null);
+    setAiOpen(false);
+    setOverlayOpen(false);
+    setOverlayPickerOpen(false);
+    setRescheduleTarget(null);
   };
 
   const handleMenuWheel = (event: React.WheelEvent<HTMLDivElement>) => {
@@ -9096,6 +9145,10 @@ type FabNexusProps = {
   availableSkills?: Skill[];
   showToolbar?: boolean;
   inputRef?: RefObject<HTMLInputElement | null>;
+  onManualPlaceResult?: (
+    result: FabSearchResult,
+    pointer?: DragPointerInfo,
+  ) => void;
 };
 
 function FabNexus({
@@ -9120,8 +9173,19 @@ function FabNexus({
   availableSkills,
   showToolbar = false,
   inputRef,
+  onManualPlaceResult,
 }: FabNexusProps) {
   const [showControls, setShowControls] = useState(false);
+  const dragStateRef = useRef<{
+    id: string;
+    pointerId: number | null;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+    result: FabSearchResult;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+  const DRAG_THRESHOLD_PX = 6;
   const hasResults = results.length > 0;
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (!hasMore || isLoadingMore) return;
@@ -9353,14 +9417,114 @@ function FabNexus({
                 "text-[7px] md:text-[9px] uppercase tracking-[0.18em] text-white/70";
               const statusLabelClass =
                 "text-[7px] md:text-[8px] uppercase tracking-[0.14em] text-white/60 break-words leading-tight";
+
+              const beginDrag = (
+                event: React.PointerEvent,
+                res: FabSearchResult,
+              ) => {
+                if (!onManualPlaceResult) return;
+                if (!res.scheduleInstanceId) return;
+                (event.currentTarget as HTMLElement)?.releasePointerCapture?.(
+                  event.pointerId,
+                );
+                onManualPlaceResult(res, {
+                  clientX: event.clientX,
+                  clientY: event.clientY,
+                  pointerId: event.pointerId ?? null,
+                  pointerType: (event as any)?.pointerType ?? null,
+                });
+                suppressClickRef.current = true;
+              };
+
+              const handlePointerDown = (event: React.PointerEvent) => {
+                if (isDisabled) return;
+                if (event.pointerType === "mouse" && event.button !== 0) return;
+                dragStateRef.current = {
+                  id: result.id,
+                  pointerId: event.pointerId,
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  dragging: false,
+                  result,
+                };
+                (event.currentTarget as HTMLElement).setPointerCapture?.(
+                  event.pointerId,
+                );
+              };
+
+              const handlePointerMove = (event: React.PointerEvent) => {
+                const state = dragStateRef.current;
+                if (!state || state.id !== result.id) return;
+                if (
+                  state.pointerId !== null &&
+                  event.pointerId !== state.pointerId
+                )
+                  return;
+                if (state.dragging) {
+                  event.preventDefault();
+                  return;
+                }
+                const dx = event.clientX - state.startX;
+                const dy = event.clientY - state.startY;
+                const dist = Math.hypot(dx, dy);
+                if (dist > DRAG_THRESHOLD_PX) {
+                  state.dragging = true;
+                  beginDrag(event, state.result);
+                  event.preventDefault();
+                }
+              };
+
+              const handlePointerUp = (event: React.PointerEvent) => {
+                const state = dragStateRef.current;
+                if (!state || state.id !== result.id) return;
+                if (
+                  state.pointerId !== null &&
+                  event.pointerId !== state.pointerId
+                )
+                  return;
+                const wasDragging = state.dragging;
+                dragStateRef.current = null;
+                (event.currentTarget as HTMLElement).releasePointerCapture?.(
+                  event.pointerId,
+                );
+                if (wasDragging) {
+                  event.preventDefault();
+                  return;
+                }
+                if (suppressClickRef.current) {
+                  suppressClickRef.current = false;
+                  return;
+                }
+                if (!isDisabled) {
+                  onSelectResult(result);
+                }
+              };
+
+              const handlePointerCancel = () => {
+                dragStateRef.current = null;
+              };
+
+              const handleClick = (event: React.MouseEvent) => {
+                if (suppressClickRef.current) {
+                  suppressClickRef.current = false;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  return;
+                }
+                if (!isDisabled) {
+                  onSelectResult(result);
+                }
+              };
+
               return (
                 <button
                   key={`${result.type}-${result.id}`}
                   type="button"
-                  onClick={() => {
-                    if (isDisabled) return;
-                    onSelectResult(result);
-                  }}
+                  onClick={handleClick}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerCancel}
                   disabled={isDisabled}
                   aria-disabled={isDisabled}
                   className={cardClassName}
