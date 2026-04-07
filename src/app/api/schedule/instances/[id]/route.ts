@@ -2,14 +2,36 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import {
+  fetchInstancesForRange,
+  type ScheduleInstance,
+} from "@/lib/scheduler/instanceRepo";
+import { fetchHabitsForSchedule } from "@/lib/scheduler/habits";
+import {
+  fetchAllProjectsMap,
+  fetchGoalsForUser,
+  fetchProjectSkillsForProjects,
+  fetchWindowsForDate,
+} from "@/lib/scheduler/repo";
+import {
+  addDaysInTimeZone,
+  formatDateKeyInTimeZone,
+} from "@/lib/scheduler/timezone";
+import {
+  LOCAL_RESCHEDULE_CANCEL_REASON,
+  type LocalRescheduleCleanupSourceContext,
+  resolveLocalizedRescheduleScope,
+  resolveLocalizedRescheduleCleanup,
+} from "@/lib/scheduler/localRescheduleCleanup";
 
 type RouteContext = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
 type Supabase = SupabaseClient<Database>;
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
+  const { id } = await context.params;
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
     return NextResponse.json({ error: "Supabase client unavailable" }, { status: 500 });
@@ -39,7 +61,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const { data: instance, error: fetchError } = await supabase
     .from("schedule_instances")
     .select("id, user_id, start_utc, end_utc, duration_min")
-    .eq("id", context.params.id)
+    .eq("id", id)
     .maybeSingle();
 
   if (fetchError) {
@@ -50,6 +72,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (!instance || instance.user_id !== user.id) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
+
+  const timeZone =
+    (await resolveProfileTimeZone(supabase, user.id)) ??
+    extractUserTimeZone(user) ??
+    "UTC";
 
   const durationMinutes =
     typeof instance.duration_min === "number" && Number.isFinite(instance.duration_min)
@@ -67,13 +94,41 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   const { error: updateError } = await supabase
     .from("schedule_instances")
-    .update({ start_utc: nextStartIso, end_utc: nextEndIso, locked: true })
+    .update({
+      start_utc: nextStartIso,
+      end_utc: nextEndIso,
+      locked: true,
+      ...(skipConflictResolution
+        ? {}
+        : {
+            // Explicit reschedules are the only path that should shed the old
+            // slot bindings before localized cleanup revalidates the move.
+            window_id: null,
+            day_type_time_block_id: null,
+            time_block_id: null,
+          }),
+    })
     .eq("id", instance.id)
     .eq("user_id", user.id);
 
   if (updateError) {
-    console.error("Reschedule update error", updateError);
-    return NextResponse.json({ error: "Unable to update schedule" }, { status: 500 });
+    // Temporary debugging instrumentation for manual placement failures.
+    console.error("Reschedule update error", {
+      message: updateError.message,
+      details: updateError.details,
+      hint: updateError.hint,
+      code: updateError.code,
+    });
+    return NextResponse.json(
+      {
+        error: "Unable to update schedule",
+        message: updateError.message,
+        details: updateError.details,
+        hint: updateError.hint,
+        code: updateError.code,
+      },
+      { status: 500 }
+    );
   }
 
   if (!skipConflictResolution) {
@@ -82,25 +137,62 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       pivotId: instance.id,
       pivotStart: nextStartIso,
       pivotEnd: nextEndIso,
+      timeZone,
     });
   }
 
   return NextResponse.json({ success: true, startUtc: nextStartIso });
 }
 
-function getUtcDayBounds(dateIso: string) {
-  const date = new Date(dateIso);
-  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  return { start: start.toISOString(), end: end.toISOString() };
+async function resolveProfileTimeZone(
+  client: Supabase,
+  userId: string
+) {
+  try {
+    const { data, error } = await client
+      .from("profiles")
+      .select("timezone")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) {
+      return null;
+    }
+    const timezone =
+      typeof data?.timezone === "string" ? data.timezone.trim() : "";
+    return timezone || null;
+  } catch {
+    return null;
+  }
+}
+
+function extractUserTimeZone(user: {
+  user_metadata?: {
+    timezone?: unknown;
+    timeZone?: unknown;
+    tz?: unknown;
+  } | null;
+}) {
+  const metadata = user.user_metadata;
+  const candidates = [metadata?.timezone, metadata?.timeZone, metadata?.tz];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const trimmed = candidate.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
 }
 
 async function resolveConflictsAfterUpdate(
   supabase: Supabase,
-  params: { userId: string; pivotId: string; pivotStart: string; pivotEnd: string }
+  params: {
+    userId: string;
+    pivotId: string;
+    pivotStart: string;
+    pivotEnd: string;
+    timeZone: string;
+  }
 ) {
-  const { userId, pivotId, pivotStart, pivotEnd } = params;
-  const pivotStartMs = Date.parse(pivotStart);
+  const { userId, pivotId, pivotStart, pivotEnd, timeZone } = params;
   const pivotEndMs = Date.parse(pivotEnd);
 
   const { data: futureRows, error: futureError } = await supabase
@@ -163,7 +255,7 @@ async function resolveConflictsAfterUpdate(
         : Math.max(originalEndMs - originalStartMs, 30 * 60_000);
 
     const targetStartMs = Math.max(originalStartMs, lastEndMs);
-    let targetEndMs = targetStartMs + durationMs;
+    const targetEndMs = targetStartMs + durationMs;
 
     if (targetStartMs !== originalStartMs || targetEndMs !== originalEndMs) {
       updates.push({
@@ -183,6 +275,176 @@ async function resolveConflictsAfterUpdate(
       .eq("user_id", userId);
     if (updateError) {
       console.error("Failed to shift overlapping schedule instance", updateError);
+    }
+  }
+
+  await cleanupLocalizedRescheduleScope(supabase, {
+    userId,
+    pivotId,
+    pivotStart,
+    pivotEnd,
+    timeZone,
+  });
+}
+
+async function cleanupLocalizedRescheduleScope(
+  supabase: Supabase,
+  params: {
+    userId: string;
+    pivotId: string;
+    pivotStart: string;
+    pivotEnd: string;
+    timeZone: string;
+  }
+) {
+  const scope = resolveLocalizedRescheduleScope({
+    pivotStart: params.pivotStart,
+    pivotEnd: params.pivotEnd,
+    timeZone: params.timeZone,
+  });
+  if (!scope) {
+    return;
+  }
+  const { scopeStart, scopeEnd } = scope;
+
+  const { data: localRows, error: localError } = await fetchInstancesForRange(
+    params.userId,
+    scopeStart.toISOString(),
+    scopeEnd.toISOString(),
+    supabase,
+    { suppressQueryLog: true }
+  );
+
+  if (localError) {
+    console.error("Failed to load localized cleanup scope", localError);
+    return;
+  }
+
+  const [habits, projectsMap, goals] = await Promise.all([
+    fetchHabitsForSchedule(params.userId, supabase),
+    fetchAllProjectsMap(supabase),
+    fetchGoalsForUser(params.userId, supabase),
+  ]);
+
+  const projectIds = Object.keys(projectsMap);
+  const projectSkillIds =
+    projectIds.length > 0
+      ? await fetchProjectSkillsForProjects(projectIds, supabase)
+      : {};
+  const goalMonumentIdById = new Map(
+    goals.map((goal) => [goal.id, goal.monumentId ?? null])
+  );
+
+  const habitContextById = new Map<string, LocalRescheduleCleanupSourceContext>();
+  for (const habit of habits) {
+    habitContextById.set(habit.id, {
+      habitType: habit.habitType,
+      skillId: habit.skillId ?? null,
+      monumentId: habit.skillMonumentId ?? null,
+      skillMonumentId: habit.skillMonumentId ?? null,
+    });
+  }
+
+  const projectContextById = new Map<string, LocalRescheduleCleanupSourceContext>();
+  for (const [projectId, project] of Object.entries(projectsMap)) {
+    projectContextById.set(projectId, {
+      skillIds: projectSkillIds[projectId] ?? null,
+      monumentId:
+        (project.goal_id && goalMonumentIdById.get(project.goal_id)) ?? null,
+    });
+  }
+
+  const taskIds = Array.from(
+    new Set(
+      (localRows ?? [])
+        .filter(
+          (row): row is ScheduleInstance =>
+            Boolean(row) &&
+            Boolean(row.id) &&
+            row.status === "scheduled" &&
+            row.source_type === "TASK" &&
+            typeof row.source_id === "string" &&
+            row.source_id.trim().length > 0
+        )
+        .map((row) => row.source_id as string)
+    )
+  );
+  const taskContextById = new Map<string, LocalRescheduleCleanupSourceContext>();
+  if (taskIds.length > 0) {
+    const { data: taskRows, error: taskError } = await supabase
+      .from("tasks")
+      .select("id, skill_id, skills(monument_id)")
+      .in("id", taskIds);
+    if (taskError) {
+      console.error("Failed to load task cleanup context", taskError);
+    } else {
+      for (const row of (taskRows ?? []) as Array<{
+        id: string;
+        skill_id?: string | null;
+        skills?: { monument_id?: string | null } | null;
+      }>) {
+        taskContextById.set(row.id, {
+          skillId: row.skill_id ?? null,
+          skillMonumentId: row.skills?.monument_id ?? null,
+        });
+      }
+    }
+  }
+
+  const dayWindows = new Map<string, Awaited<ReturnType<typeof fetchWindowsForDate>>>();
+  for (let day = scopeStart; day.getTime() < scopeEnd.getTime(); day = addDaysInTimeZone(day, 1, params.timeZone)) {
+    const key = formatDateKeyInTimeZone(day, params.timeZone);
+    const windows = await fetchWindowsForDate(
+      day,
+      supabase,
+      params.timeZone,
+      { useDayTypes: true }
+    );
+    dayWindows.set(key, windows);
+  }
+
+  const cleanup = resolveLocalizedRescheduleCleanup({
+    instances: ((localRows ?? []) as ScheduleInstance[]).filter(
+      (row): row is ScheduleInstance =>
+        Boolean(row) &&
+        Boolean(row.id) &&
+        row.status === "scheduled"
+    ),
+    windowsByDayKey: dayWindows,
+    timeZone: params.timeZone,
+    protectedInstanceId: params.pivotId,
+    resolveSourceContext(instance) {
+      const sourceId = instance.source_id ?? "";
+      if (!sourceId) return null;
+      if (instance.source_type === "HABIT") {
+        return habitContextById.get(sourceId) ?? null;
+      }
+      if (instance.source_type === "PROJECT") {
+        return projectContextById.get(sourceId) ?? null;
+      }
+      if (instance.source_type === "TASK") {
+        return taskContextById.get(sourceId) ?? null;
+      }
+      return null;
+    },
+  });
+
+  if (cleanup.loserIds.length === 0) return;
+
+  for (const loserId of cleanup.loserIds) {
+    const { error } = await supabase
+      .from("schedule_instances")
+      .update({
+        status: "canceled",
+        canceled_reason: LOCAL_RESCHEDULE_CANCEL_REASON,
+      })
+      .eq("id", loserId)
+      .eq("user_id", params.userId);
+    if (error) {
+      console.error("Failed to cancel stale localized schedule instance", {
+        loserId,
+        error,
+      });
     }
   }
 }

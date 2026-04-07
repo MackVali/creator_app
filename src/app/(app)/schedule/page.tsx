@@ -3392,10 +3392,21 @@ export default function SchedulePage() {
           }
         );
         if (!response.ok) {
-          const message = await response
+          // Temporary debugging instrumentation for manual placement failures.
+          const errorPayload = await response
             .json()
             .catch(() => ({ error: "Unknown error" }));
-          throw new Error(message?.error ?? "Failed to update schedule");
+          console.error("Manual placement update failed", {
+            responseStatus: response.status,
+            errorPayload,
+          });
+          throw new Error(
+            errorPayload?.message ??
+              errorPayload?.details ??
+              errorPayload?.hint ??
+              errorPayload?.error ??
+              "Failed to update schedule"
+          );
         }
         setManualPlacementSession(null);
         manualPlacementPointerIdRef.current = null;
@@ -3405,7 +3416,7 @@ export default function SchedulePage() {
         console.error("Manual placement failed", error);
         toast.error(
           "Manual placement failed",
-          "Please try again or pick another time."
+          error instanceof Error ? error.message : "Please try again or pick another time."
         );
       }
     },
