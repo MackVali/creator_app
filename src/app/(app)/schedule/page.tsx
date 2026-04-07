@@ -6676,15 +6676,19 @@ export default function SchedulePage() {
         ? "pointer-events-none select-none"
         : "";
 
+      const timelineTouchAction = manualPlacementSession
+        ? "none"
+        : TIMELINE_TOUCH_ACTION;
+
       const containerStyle: CSSProperties = options?.fullBleed
         ? {
             ...TIMELINE_CSS_VARIABLES,
             ...TIMELINE_FULL_BLEED_STYLE,
-            touchAction: TIMELINE_TOUCH_ACTION,
+            touchAction: timelineTouchAction,
           }
         : {
             ...TIMELINE_CSS_VARIABLES,
-            touchAction: TIMELINE_TOUCH_ACTION,
+            touchAction: timelineTouchAction,
           };
 
       const { habitLayouts, projectLayouts } =
