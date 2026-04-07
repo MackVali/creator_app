@@ -22,11 +22,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const payload = (await request.json().catch(() => null)) as { startUtc?: string } | null;
+  const payload = (await request.json().catch(() => null)) as
+    | { startUtc?: string; skipConflictResolution?: boolean }
+    | null;
   const startUtc = payload?.startUtc;
   if (!startUtc || typeof startUtc !== "string") {
     return NextResponse.json({ error: "Missing startUtc" }, { status: 400 });
   }
+  const skipConflictResolution = payload?.skipConflictResolution === true;
 
   const parsedStart = new Date(startUtc);
   if (Number.isNaN(parsedStart.getTime())) {
@@ -73,12 +76,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Unable to update schedule" }, { status: 500 });
   }
 
-  await resolveConflictsAfterUpdate(supabase, {
-    userId: user.id,
-    pivotId: instance.id,
-    pivotStart: nextStartIso,
-    pivotEnd: nextEndIso,
-  });
+  if (!skipConflictResolution) {
+    await resolveConflictsAfterUpdate(supabase, {
+      userId: user.id,
+      pivotId: instance.id,
+      pivotStart: nextStartIso,
+      pivotEnd: nextEndIso,
+    });
+  }
 
   return NextResponse.json({ success: true, startUtc: nextStartIso });
 }

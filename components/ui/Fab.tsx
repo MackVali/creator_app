@@ -5306,6 +5306,7 @@ export function Fab({
       onLoadMore={handleLoadMoreResults}
       onSelectResult={handleOpenReschedule}
       inputRef={nexusInputRef}
+      onManualPlaceResult={handleManualPlacement}
     />
   );
 
@@ -5728,6 +5729,43 @@ export function Fab({
     }
     setRescheduleDate(formatDateInput(baseDate));
     setRescheduleTime(formatTimeInput(baseDate));
+  };
+
+  const handleManualPlacement = (result: FabSearchResult) => {
+    if (result.type === "PROJECT" && result.isCompleted) return;
+    if (!result.scheduleInstanceId) {
+      toast.error(
+        "Manual placement unavailable",
+        "This item has no scheduled instance to move yet.",
+      );
+      return;
+    }
+
+    const safeDuration =
+      typeof result.durationMinutes === "number" &&
+      Number.isFinite(result.durationMinutes) &&
+      result.durationMinutes > 0
+        ? result.durationMinutes
+        : 60;
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("schedule:manual-placement-requested", {
+          detail: {
+            result: { ...result, durationMinutes: safeDuration },
+            source: "fab-nexus",
+          },
+        }),
+      );
+    }
+
+    setIsOpen(false);
+    setExpanded(false);
+    setSelected(null);
+    setAiOpen(false);
+    setOverlayOpen(false);
+    setOverlayPickerOpen(false);
+    setRescheduleTarget(null);
   };
 
   const handleMenuWheel = (event: React.WheelEvent<HTMLDivElement>) => {
@@ -9096,6 +9134,7 @@ type FabNexusProps = {
   availableSkills?: Skill[];
   showToolbar?: boolean;
   inputRef?: RefObject<HTMLInputElement | null>;
+  onManualPlaceResult?: (result: FabSearchResult) => void;
 };
 
 function FabNexus({
@@ -9120,6 +9159,7 @@ function FabNexus({
   availableSkills,
   showToolbar = false,
   inputRef,
+  onManualPlaceResult,
 }: FabNexusProps) {
   const [showControls, setShowControls] = useState(false);
   const hasResults = results.length > 0;
@@ -9335,6 +9375,8 @@ function FabNexus({
               const isCompletedProject =
                 result.type === "PROJECT" && result.isCompleted;
               const isDisabled = isCompletedProject;
+              const manualPlaceDisabled =
+                isCompletedProject || !result.scheduleInstanceId;
               const statusText = getStatusText(result);
               const goalLabel =
                 result.type === "PROJECT" && result.goalName
@@ -9393,6 +9435,23 @@ function FabNexus({
                     <div className="flex w-full">
                       <span className={statusLabelClass}>{statusText}</span>
                     </div>
+                    {onManualPlaceResult ? (
+                      <div className="flex w-full justify-end">
+                        <button
+                          type="button"
+                          className="rounded-md border border-emerald-400/60 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-100 transition hover:border-emerald-300 hover:text-emerald-50 disabled:border-white/10 disabled:text-white/30"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (manualPlaceDisabled) return;
+                            onManualPlaceResult(result);
+                          }}
+                          disabled={manualPlaceDisabled}
+                        >
+                          Place on timeline
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 </button>
               );

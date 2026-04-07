@@ -153,6 +153,7 @@ import {
   type HabitCompletionStatus,
   resolveHabitCompletionStatus,
 } from "./habitCompletion";
+import { useToastHelpers } from "@/components/ui/toast";
 
 function safeDateTimeFormat(
   locale: string | undefined,
@@ -209,6 +210,12 @@ const TIMELINE_CSS_VARIABLES: CSSProperties = {
   "--timeline-grid-right": TIMELINE_GRID_RIGHT_FALLBACK,
   "--timeline-card-left": TIMELINE_CARD_LEFT_FALLBACK,
   "--timeline-card-right": TIMELINE_CARD_RIGHT_FALLBACK,
+};
+
+type ManualPlacementCandidate = {
+  instanceId: string;
+  durationMinutes: number;
+  title?: string | null;
 };
 
 const TIMELINE_FULL_BLEED_STYLE: CSSProperties = {
@@ -2344,6 +2351,7 @@ export default function SchedulePage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { localTimeZone, profile, loading: profileLoading } = useProfile();
+  const toast = useToastHelpers();
   const ENABLE_BACKGROUND_SCHEDULER = false;
 
   // 1. browser timezone detection
@@ -2485,6 +2493,14 @@ export default function SchedulePage() {
   const [windows, setWindows_REAL] = useState<RepoWindow[]>([]);
   const [overlayWindows, setOverlayWindows] =
     useState<OverlayWindowRecord[]>([]);
+  const [manualPlacementCandidate, setManualPlacementCandidate] =
+    useState<ManualPlacementCandidate | null>(null);
+  const [manualPlacementPreviewTime, setManualPlacementPreviewTime] =
+    useState<Date | null>(null);
+  const renderDayStart = useMemo(
+    () => getRenderDayStart(currentDate, effectiveTimeZone ?? "UTC"),
+    [currentDate, effectiveTimeZone]
+  );
   const goalMetaById = useMemo(() => {
     const monumentEmojiById = new Map<string, string | null>();
     for (const monument of monuments ?? []) {
@@ -3220,6 +3236,56 @@ export default function SchedulePage() {
   const refreshScheduleData = useCallback(async () => {
     await loadInstancesRef.current();
   }, []);
+
+  useEffect(() => {
+    const handleManualPlacementRequest = (event: Event) => {
+      const detail = (event as CustomEvent<any>)?.detail;
+      const result = detail?.result;
+      if (!result || !result.scheduleInstanceId) {
+        toast.error(
+          "Manual placement unavailable",
+          "No schedulable instance was provided."
+        );
+        return;
+      }
+      const safeDuration =
+        typeof result.durationMinutes === "number" &&
+        Number.isFinite(result.durationMinutes) &&
+        result.durationMinutes > 0
+          ? result.durationMinutes
+          : 60;
+
+      const nextStart = (() => {
+        if (result.nextScheduledAt) {
+          const parsed = new Date(result.nextScheduledAt);
+          if (!Number.isNaN(parsed.getTime())) return parsed;
+        }
+        return new Date();
+      })();
+
+      setManualPlacementCandidate({
+        instanceId: result.scheduleInstanceId,
+        durationMinutes: safeDuration,
+        title: result.name ?? null,
+      });
+      const snappedPreview = snapToFiveMinuteGrid(nextStart);
+      setManualPlacementPreviewTime(snappedPreview);
+      setSkipNextDayAnimation(true);
+      updateCurrentDate(snappedPreview, { animate: false });
+      navigate("day");
+    };
+
+    window.addEventListener(
+      "schedule:manual-placement-requested",
+      handleManualPlacementRequest as EventListener
+    );
+    return () => {
+      window.removeEventListener(
+        "schedule:manual-placement-requested",
+        handleManualPlacementRequest as EventListener
+      );
+    };
+  }, [navigate, snapToFiveMinuteGrid, toast, updateCurrentDate]);
   const scheduleDatasetRef = useRef<ScheduleEventDataset | null>(null);
   const PRIMARY_WRITE_WINDOW_DAYS = 28;
   const FULL_WRITE_WINDOW_DAYS = MAX_SCHEDULER_WRITE_DAYS;
@@ -5285,6 +5351,25 @@ export default function SchedulePage() {
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null);
   const swipeContainerRef = useRef<HTMLDivElement | null>(null);
 
+  const resolveManualPlacementTime = useCallback(
+    (clientY: number) => {
+      if (!dayTimelineModel) return null;
+      const container = dayTimelineContainerRef.current;
+      const timelineEl = container?.querySelector(
+        ".timeline-content"
+      ) as HTMLElement | null;
+      if (!timelineEl) return null;
+      const rect = timelineEl.getBoundingClientRect();
+      const offsetY = clientY - rect.top;
+      if (!Number.isFinite(offsetY)) return null;
+      const minutesFromStart =
+        offsetY / pxPerMin + (dayTimelineModel.startHour ?? 0) * 60;
+      const clampedMinutes = Math.min(Math.max(minutesFromStart, 0), 24 * 60);
+      return new Date(renderDayStart.getTime() + clampedMinutes * 60_000);
+    },
+    [dayTimelineModel, pxPerMin, renderDayStart]
+  );
+
   const isTouchFromFabOverlay = (event: React.TouchEvent) => {
     const target = event.target as HTMLElement | null;
     if (
@@ -5624,6 +5709,51 @@ export default function SchedulePage() {
   const handleTouchCancel = () => {
     void handleTouchEnd();
   };
+
+  useEffect(() => {
+    if (!manualPlacementCandidate || view !== "day") return;
+    const timelineEl = dayTimelineContainerRef.current?.querySelector(
+      ".timeline-content"
+    ) as HTMLElement | null;
+    if (!timelineEl) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const next = resolveManualPlacementTime(event.clientY);
+      if (next) {
+        setManualPlacementPreviewTime(next);
+      }
+    };
+
+    const handlePointerLeave = () => {
+      setManualPlacementPreviewTime(null);
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.("[data-schedule-instance-id]")) return;
+      const next = resolveManualPlacementTime(event.clientY);
+      if (!next) return;
+      setManualPlacementPreviewTime(next);
+      void commitManualPlacement(manualPlacementCandidate, next);
+    };
+
+    timelineEl.addEventListener("pointermove", handlePointerMove, {
+      passive: true,
+    });
+    timelineEl.addEventListener("pointerleave", handlePointerLeave);
+    timelineEl.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      timelineEl.removeEventListener("pointermove", handlePointerMove);
+      timelineEl.removeEventListener("pointerleave", handlePointerLeave);
+      timelineEl.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [
+    commitManualPlacement,
+    manualPlacementCandidate,
+    resolveManualPlacementTime,
+    view,
+  ]);
 
   const handleJumpToDateSelect = (date: Date) => {
     setIsJumpToDateOpen(false);
@@ -6132,6 +6262,18 @@ export default function SchedulePage() {
     };
   }, [clearLongPressTimer]);
 
+  useEffect(() => {
+    if (!manualPlacementCandidate) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setManualPlacementCandidate(null);
+        setManualPlacementPreviewTime(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [manualPlacementCandidate]);
+
   const baseTimelineHeight = useMemo(
     () =>
       dayTimelineModel
@@ -6159,6 +6301,52 @@ export default function SchedulePage() {
     }
     return lastTimelineChromeHeightRef.current;
   }, [measuredTimelineContainerHeight, baseTimelineHeight]);
+
+  const snapToFiveMinuteGrid = useCallback((date: Date) => {
+    const intervalMs = 5 * 60 * 1000;
+    const timestamp = date.getTime();
+    const snapped = Math.round(timestamp / intervalMs) * intervalMs;
+    return new Date(snapped);
+  }, []);
+
+  const commitManualPlacement = useCallback(
+    async (candidate: ManualPlacementCandidate, previewStart: Date) => {
+      const snappedStart = snapToFiveMinuteGrid(previewStart);
+      const startUtc = snappedStart.toISOString();
+      try {
+        const response = await fetch(
+          `/api/schedule/instances/${candidate.instanceId}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              startUtc,
+              skipConflictResolution: true,
+            }),
+          }
+        );
+        if (!response.ok) {
+          const message = await response
+            .json()
+            .catch(() => ({ error: "Unknown error" }));
+          throw new Error(message?.error ?? "Failed to update schedule");
+        }
+        setManualPlacementCandidate(null);
+        setManualPlacementPreviewTime(null);
+        toast.success("Event placed", "Manual placement committed.");
+        await refreshScheduleData();
+      } catch (error) {
+        console.error("Manual placement failed", error);
+        toast.error(
+          "Manual placement failed",
+          "Please try again or pick another time."
+        );
+      }
+    },
+    [snapToFiveMinuteGrid, toast, refreshScheduleData]
+  );
 
   const renderDayTimeline = useCallback(
     (model: DayTimelineModel | null, options?: DayTimelineRenderOptions) => {
@@ -6275,6 +6463,10 @@ export default function SchedulePage() {
         0,
         TIMELINE_STACK_BASE_Z_INDEX - 5
       );
+      const manualPreviewLayerZIndex = Math.max(
+        overlayLayerZIndex + 1,
+        TIMELINE_STACK_BASE_Z_INDEX + 2
+      );
       const scheduledCardsByInstanceId = new Map<string, ProjectTaskCard[]>();
       for (const projectInstance of dayProjectInstances) {
         const projectTasks =
@@ -6383,6 +6575,27 @@ export default function SchedulePage() {
           }
         }
       });
+
+      const manualPreviewSegment = (() => {
+        if (!manualPlacementCandidate || !manualPlacementPreviewTime) return null;
+        const previewStart = snapToFiveMinuteGrid(manualPlacementPreviewTime);
+        const previewEnd = new Date(
+          previewStart.getTime() +
+            manualPlacementCandidate.durationMinutes * 60_000
+        );
+        const clipped = clipSegmentToDay(
+          previewStart,
+          previewEnd,
+          renderDayStart,
+          renderDayEnd
+        );
+        if (!clipped) return null;
+        const startMin = getDayMinuteOffset(clipped.segStart, renderDayStart);
+        const durationMin =
+          (clipped.segEnd.getTime() - clipped.segStart.getTime()) / 60000;
+        if (!Number.isFinite(durationMin) || durationMin <= 0) return null;
+        return { startMin, durationMin };
+      })();
 
       return (
         <div
@@ -6570,6 +6783,27 @@ export default function SchedulePage() {
                 );
               })}
             </div>
+            {manualPreviewSegment ? (
+              <div
+                className="pointer-events-none absolute rounded-[var(--radius-lg)] border border-dashed border-emerald-200/70 bg-emerald-400/15 shadow-[0_12px_24px_rgba(16,185,129,0.25)]"
+                style={{
+                  ...TIMELINE_CARD_BOUNDS,
+                  top: toTimelinePosition(
+                    Math.max(
+                      0,
+                      manualPreviewSegment.startMin - modelStartHour * 60
+                    )
+                  ),
+                  height: toTimelinePosition(manualPreviewSegment.durationMin),
+                  zIndex: manualPreviewLayerZIndex,
+                }}
+                aria-hidden="true"
+              >
+                <div className="px-3 py-2 text-[11px] font-semibold text-emerald-100/90">
+                  {manualPlacementCandidate?.title ?? "Manual placement"}
+                </div>
+              </div>
+            ) : null}
             {dayHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end))
                 return null;

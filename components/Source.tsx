@@ -47,7 +47,6 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from "./ui/sheet"
 import { Textarea } from "./ui/textarea"
 import { PostModal } from "./ui/PostModal"
@@ -1498,6 +1497,7 @@ export default function Source() {
   const [serviceDetailImageDirty, setServiceDetailImageDirty] = useState(false)
   const [serviceDetailStatus, setServiceDetailStatus] = useState<SourceListing["status"]>("draft")
   const serviceDetailImageInputRef = useRef<HTMLInputElement | null>(null)
+  const productImageInputRef = useRef<HTMLInputElement | null>(null)
   const productDetailListingIdRef = useRef<string | null>(null)
   const serviceDetailListingIdRef = useRef<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
@@ -2415,6 +2415,7 @@ export default function Source() {
 
   const handleProductSheetOpenChange = (next: boolean) => {
     if (next) {
+      setSelectedProductId(null)
       setProductSheetForm(defaultProductSheetForm)
       setProductSheetError(null)
       resetProductImageState()
@@ -2428,6 +2429,7 @@ export default function Source() {
 
   const handleServiceSheetOpenChange = (next: boolean) => {
     if (next) {
+      setSelectedServiceId(null)
       setServiceSheetForm(defaultServiceSheetForm)
       setServiceSheetError(null)
       resetServiceImageState()
@@ -2684,6 +2686,7 @@ export default function Source() {
       setSelectedProductId(null)
       return
     }
+    setIsProductSheetOpen(false)
     setProductDetailError(null)
     setSelectedProductId(listing.id)
   }
@@ -2693,6 +2696,7 @@ export default function Source() {
       setSelectedServiceId(null)
       return
     }
+    setIsServiceSheetOpen(false)
     setServiceDetailError(null)
     setSelectedServiceId(listing.id)
   }
@@ -3028,13 +3032,6 @@ export default function Source() {
 
   const serviceSheetBusy =
     isServiceImageUploading || (isServiceSheetSubmitting && createListing.isPending)
-  const serviceSheetMode = serviceSheetForm.serviceMode
-  const serviceSheetIsBookable = serviceSheetMode === "bookable"
-  const serviceSheetIsFlatRate = serviceSheetMode === "flat_rate"
-  const serviceSheetIsCustomQuote = serviceSheetMode === "custom_quote"
-  const serviceSheetPriceDescription = serviceSheetIsCustomQuote
-    ? "Optional starting price—use this if you prefer inquiry-based discussions."
-    : undefined
 
   const overviewTiles: OverviewTile[] = [
     { key: "products", title: "Products", meta: "0 active" },
@@ -3896,324 +3893,15 @@ export default function Source() {
         {selectedOverviewSection === "services" && (
           <section className="space-y-2">
             <div className="flex justify-end">
-              <Sheet open={isServiceSheetOpen} onOpenChange={handleServiceSheetOpenChange}>
-                <SheetTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="gap-2 rounded-full border border-zinc-900/70 bg-zinc-950/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-zinc-700 hover:bg-zinc-900"
-                  >
-                    <Plus className="size-4" />
-                    Add service
-                  </Button>
-                </SheetTrigger>
-                <SheetContent
-                  side="right"
-                  className="bg-zinc-950 text-zinc-100 border-l border-zinc-900/70 sm:max-w-md"
-                >
-                  <form
-                    className="flex h-full flex-col gap-6 px-4 pb-4 pt-3"
-                    onSubmit={handleServiceSheetSubmit}
-                  >
-                    <SheetHeader>
-                      <SheetTitle>Create service</SheetTitle>
-                      <SheetDescription>
-                        Publish a service once and push it to every connected integration instantly.
-                      </SheetDescription>
-                    </SheetHeader>
-                    {serviceSheetError && (
-                      <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                        {serviceSheetError}
-                      </div>
-                    )}
-                    <div className="flex flex-1 flex-col gap-4">
-                      <FieldStack label="Title" htmlFor="service-title">
-                        <Input
-                          id="service-title"
-                          value={serviceSheetForm.title}
-                          onChange={(event) =>
-                            setServiceSheetForm((prev) => ({
-                              ...prev,
-                              title: event.target.value,
-                            }))
-                          }
-                          placeholder="Consulting call"
-                          required
-                          className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
-                        />
-                      </FieldStack>
-
-                      <FieldStack label="Description" htmlFor="service-description">
-                        <Textarea
-                          id="service-description"
-                          value={serviceSheetForm.description}
-                          onChange={(event) =>
-                            setServiceSheetForm((prev) => ({
-                              ...prev,
-                              description: event.target.value,
-                            }))
-                          }
-                          placeholder="Describe what the service includes"
-                          rows={4}
-                          className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
-                        />
-                      </FieldStack>
-
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <FieldStack
-                          label="Price"
-                          htmlFor="service-price"
-                          description={serviceSheetPriceDescription}
-                        >
-                          <Input
-                            id="service-price"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={serviceSheetForm.price}
-                            onChange={(event) =>
-                              setServiceSheetForm((prev) => ({
-                                ...prev,
-                                price: event.target.value,
-                              }))
-                            }
-                            placeholder="49.99"
-                            className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
-                          />
-                        </FieldStack>
-                        <FieldStack label="Currency" htmlFor="service-currency">
-                          <Input
-                            id="service-currency"
-                            value={serviceSheetForm.currency}
-                            onChange={(event) =>
-                              setServiceSheetForm((prev) => ({
-                                ...prev,
-                                currency: event.target.value.toUpperCase(),
-                              }))
-                            }
-                            placeholder="USD"
-                            maxLength={3}
-                            className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
-                          />
-                        </FieldStack>
-                      </div>
-
-                      <FieldStack
-                        label="Service mode"
-                        htmlFor="service-mode"
-                        description="Choose how Source should treat this offering when routing requests."
-                      >
-                        <Select
-                          id="service-mode"
-                          value={serviceSheetForm.serviceMode}
-                          onValueChange={(value) =>
-                            setServiceSheetForm((prev) => ({
-                              ...prev,
-                              serviceMode: value as ServiceMode,
-                            }))
-                          }
-                        >
-                          <SelectContent>
-                            {SERVICE_MODE_OPTIONS.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </FieldStack>
-
-                      {serviceSheetIsBookable && (
-                        <FieldStack
-                          label="Duration (minutes)"
-                          htmlFor="service-duration"
-                          description="This field controls how long a booking window should last."
-                        >
-                          <Input
-                            id="service-duration"
-                            type="number"
-                            min="1"
-                            value={serviceSheetForm.durationMinutes}
-                            onChange={(event) =>
-                              setServiceSheetForm((prev) => ({
-                                ...prev,
-                                durationMinutes: event.target.value,
-                              }))
-                            }
-                            placeholder="30"
-                            className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
-                          />
-                        </FieldStack>
-                      )}
-
-                      {(serviceSheetIsFlatRate || serviceSheetIsCustomQuote) && (
-                        <div className="space-y-4 border-t border-zinc-900/70 pt-4">
-                          <FormSubheading
-                            title={
-                              serviceSheetIsFlatRate
-                                ? "Flat rate fulfillment"
-                                : "Custom quote expectations"
-                            }
-                            description={
-                              serviceSheetIsFlatRate
-                                ? "Outline turnaround, deliverables, and buyer requirements for fixed offerings."
-                                : "Share expected turnaround and requirements so Source can prompt thoughtful inquiries."
-                            }
-                          />
-                          <FieldStack
-                            label="Turnaround"
-                            htmlFor="service-turnaround"
-                            description={
-                              serviceSheetIsFlatRate
-                                ? "Estimated lead time once the buyer commits."
-                                : "How long it usually takes to respond to an inquiry."
-                            }
-                          >
-                            <Input
-                              id="service-turnaround"
-                              type="text"
-                              value={serviceSheetForm.turnaround}
-                              onChange={(event) =>
-                                setServiceSheetForm((prev) => ({
-                                  ...prev,
-                                  turnaround: event.target.value,
-                                }))
-                              }
-                              placeholder="2 business days"
-                              className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
-                            />
-                          </FieldStack>
-                          {serviceSheetIsFlatRate && (
-                            <FieldStack
-                              label="Deliverables"
-                              htmlFor="service-deliverables"
-                              description="What the buyer receives for this flat-rate offering."
-                            >
-                              <Textarea
-                                id="service-deliverables"
-                                value={serviceSheetForm.deliverables}
-                                onChange={(event) =>
-                                  setServiceSheetForm((prev) => ({
-                                    ...prev,
-                                    deliverables: event.target.value,
-                                  }))
-                                }
-                                rows={3}
-                                placeholder="Detailed scope of work"
-                                className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
-                              />
-                            </FieldStack>
-                          )}
-                          <FieldStack
-                            label="Requirements"
-                            htmlFor="service-requirements"
-                            description="List anything the buyer should prepare before requesting this service."
-                          >
-                            <Textarea
-                              id="service-requirements"
-                              value={serviceSheetForm.requirements}
-                              onChange={(event) =>
-                                setServiceSheetForm((prev) => ({
-                                  ...prev,
-                                  requirements: event.target.value,
-                                }))
-                              }
-                              rows={3}
-                              placeholder="Supply access to files or references"
-                              className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
-                            />
-                          </FieldStack>
-                        </div>
-                      )}
-
-                      <FieldStack
-                        label="Cover image"
-                        htmlFor="service-cover-image"
-                        description="Optional image displayed in the Services grid."
-                      >
-                        <input
-                          ref={serviceImageInputRef}
-                          id="service-cover-image"
-                          type="file"
-                          accept="image/*"
-                          className="sr-only"
-                          onChange={handleServiceImageChange}
-                        />
-                        <div className="space-y-3">
-                          <div className="h-32 w-full overflow-hidden rounded-2xl border border-zinc-800/70 bg-zinc-900/60">
-                            {serviceImagePreview || serviceImageUrl ? (
-                              <img
-                                src={serviceImagePreview || serviceImageUrl}
-                                alt="Service cover preview"
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-[11px] uppercase tracking-[0.3em] text-zinc-500">
-                                No image selected
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3">
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => serviceImageInputRef.current?.click()}
-                              disabled={isServiceImageUploading}
-                            >
-                              {serviceImagePreview || serviceImageUrl
-                                ? "Replace cover image"
-                                : "Upload cover image"}
-                            </Button>
-                            {(serviceImagePreview || serviceImageUrl) && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={resetServiceImageState}
-                                disabled={isServiceImageUploading}
-                              >
-                                Remove image
-                              </Button>
-                            )}
-                            {isServiceImageUploading && (
-                              <span className="text-xs text-zinc-400">
-                                Uploading image…
-                              </span>
-                            )}
-                          </div>
-                          {serviceImageUploadError && (
-                            <p className="text-xs text-red-400">{serviceImageUploadError}</p>
-                          )}
-                        </div>
-                      </FieldStack>
-                    </div>
-
-                    <SheetFooter className="px-0 pt-0">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => handleServiceSheetOpenChange(false)}
-                          disabled={isServiceSheetSubmitting}
-                        >
-                          Cancel
-                        </Button>
-                        <Button type="submit" disabled={serviceSheetBusy}>
-                          {isServiceSheetSubmitting ? (
-                            <span className="flex items-center gap-2">
-                              <Loader2 className="size-4 animate-spin" />
-                              Creating service
-                            </span>
-                          ) : (
-                            "Publish service"
-                          )}
-                        </Button>
-                      </div>
-                    </SheetFooter>
-                  </form>
-                </SheetContent>
-              </Sheet>
+              <Button
+                type="button"
+                variant="ghost"
+                className="gap-2 rounded-full border border-zinc-900/70 bg-zinc-950/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-zinc-700 hover:bg-zinc-900"
+                onClick={() => handleServiceSheetOpenChange(true)}
+              >
+                <Plus className="size-4" />
+                Add service
+              </Button>
             </div>
             <div className="grid grid-cols-3 gap-3">
               {serviceListings.map((listing) => {
@@ -4529,6 +4217,30 @@ export default function Source() {
         </div>
       ) : null}
       <SourceProductSheet
+        mode="create"
+        listing={null}
+        formState={productSheetForm}
+        onFieldChange={(field, value) =>
+          setProductSheetForm((prev) => ({ ...prev, [field]: value }))
+        }
+        onSubmit={handleProductSheetSubmit}
+        isOpen={isProductSheetOpen}
+        onOpenChange={handleProductSheetOpenChange}
+        error={productSheetError}
+        isBusy={productSheetBusy}
+        imagePreview={productImagePreview}
+        imageUrl={productImageUrl}
+        imageInputRef={productImageInputRef}
+        onImageChange={handleProductImageChange}
+        onImageRemove={resetProductImageState}
+        imageUploadError={productImageUploadError}
+        isImageUploading={isProductImageUploading}
+        availabilityStatus="draft"
+        onAvailabilityChange={() => null}
+        showAvailability={false}
+      />
+      <SourceProductSheet
+        mode="edit"
         listing={currentProductDetailListing}
         formState={productDetailForm}
         onFieldChange={handleProductDetailFieldChange}
@@ -4548,6 +4260,30 @@ export default function Source() {
         onAvailabilityChange={setProductDetailStatus}
       />
       <SourceServiceSheet
+        mode="create"
+        listing={null}
+        formState={serviceSheetForm}
+        onFieldChange={(field, value) =>
+          setServiceSheetForm((prev) => ({ ...prev, [field]: value }))
+        }
+        onSubmit={handleServiceSheetSubmit}
+        isOpen={isServiceSheetOpen}
+        onOpenChange={handleServiceSheetOpenChange}
+        error={serviceSheetError}
+        isBusy={serviceSheetBusy}
+        imagePreview={serviceImagePreview}
+        imageUrl={serviceImageUrl}
+        imageInputRef={serviceImageInputRef}
+        onImageChange={handleServiceImageChange}
+        onImageRemove={resetServiceImageState}
+        imageUploadError={serviceImageUploadError}
+        isImageUploading={isServiceImageUploading}
+        availabilityStatus="draft"
+        onAvailabilityChange={() => null}
+        showAvailability={false}
+      />
+      <SourceServiceSheet
+        mode="edit"
         listing={currentServiceDetailListing}
         formState={serviceDetailForm}
         onFieldChange={handleServiceDetailFieldChange}
@@ -4590,7 +4326,10 @@ export default function Source() {
   )
 }
 
+type SheetMode = "create" | "edit"
+
 type SourceProductSheetProps = {
+  mode: SheetMode
   listing: SourceListing | null
   formState: ProductSheetFormState
   onFieldChange(field: keyof ProductSheetFormState, value: string): void
@@ -4608,9 +4347,11 @@ type SourceProductSheetProps = {
   isImageUploading: boolean
   availabilityStatus: SourceListing["status"]
   onAvailabilityChange(value: SourceListing["status"]): void
+  showAvailability?: boolean
 }
 
 function SourceProductSheet({
+  mode,
   listing,
   formState,
   onFieldChange,
@@ -4628,13 +4369,41 @@ function SourceProductSheet({
   isImageUploading,
   availabilityStatus,
   onAvailabilityChange,
+  showAvailability,
 }: SourceProductSheetProps) {
-  if (!listing) return null
+  if (mode === "edit" && !listing) return null
+
+  const isCreate = mode === "create"
+  const listingType = listing?.type ?? "product"
+  const trimmedTitle = formState.title.trim()
+  const title = isCreate
+    ? trimmedTitle || `New ${listingTypeLabels[listingType].toLowerCase()}`
+    : listing?.title ?? ""
 
   const priceLabel =
-    listing.price !== null ? formatCurrency(listing.price, listing.currency) : "Price TBD"
+    isCreate
+      ? (() => {
+          const trimmedPrice = formState.price.trim()
+          const price = trimmedPrice ? Number.parseFloat(trimmedPrice) : null
+          if (trimmedPrice && Number.isNaN(price)) return "Price TBD"
+          return price !== null
+            ? formatCurrency(price, formState.currency.trim() || "USD")
+            : "Price TBD"
+        })()
+      : listing?.price !== null
+        ? formatCurrency(listing.price, listing.currency)
+        : "Price TBD"
   const coverImagePreview = imagePreview || imageUrl
   const isPhysicalProduct = formState.productKind === "physical"
+  const statusValue: SourceListing["status"] = isCreate ? "draft" : listing?.status ?? "draft"
+  const updatedLabel = isCreate
+    ? "Not published yet"
+    : listing
+      ? `Updated ${formatRelativeTime(listing.updated_at)}`
+      : null
+  const shouldShowAvailability = showAvailability ?? !isCreate
+  const productSubmitLabel = isCreate ? "Publish product" : "Save changes"
+  const productSubmitBusyLabel = isCreate ? "Creating product" : "Saving changes"
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
@@ -4656,21 +4425,21 @@ function SourceProductSheet({
                 Close
               </Button>
               <div className="rounded-full border border-zinc-800 px-2 py-0.5 text-[10px] uppercase tracking-[0.3em] text-zinc-500">
-                {listingTypeLabels[listing.type]}
+                {listingTypeLabels[listingType]}
               </div>
             </div>
-            <p className="mt-2 text-xl font-semibold leading-tight text-zinc-100">{listing.title}</p>
+            <p className="mt-2 text-xl font-semibold leading-tight text-zinc-100">{title}</p>
             <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-400">
               <Badge
                 className={cn(
                   "rounded-full border px-2 py-0.5 text-[10px]",
-                  statusAccent[listing.status]
+                  statusAccent[statusValue]
                 )}
               >
-                {listingStatuses[listing.status]}
+                {listingStatuses[statusValue]}
               </Badge>
               <span>{priceLabel}</span>
-              <span>Updated {formatRelativeTime(listing.updated_at)}</span>
+              {updatedLabel && <span>{updatedLabel}</span>}
             </div>
             {error && (
               <div className="mt-2 rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
@@ -4692,7 +4461,7 @@ function SourceProductSheet({
                   {coverImagePreview ? (
                     <img
                       src={coverImagePreview}
-                      alt={`${listing.title} cover`}
+                      alt={`${title} cover`}
                       className="h-full w-full object-cover"
                     />
                   ) : (
@@ -4809,28 +4578,34 @@ function SourceProductSheet({
                 </FieldStack>
               </div>
 
-              <FieldStack
-                label="Availability"
-                htmlFor="product-detail-status"
-                description="Switch between draft and live states using Source’s listing status."
-              >
-                <Select
-                  value={availabilityStatus}
-                  onValueChange={(value) =>
-                    onAvailabilityChange(value as SourceListing["status"])
-                  }
-                  placeholder="Draft"
-                  disablePortal
+                <FieldStack
+                  label="Availability"
+                  htmlFor="product-detail-status"
+                  description="Switch between draft and live states using Source’s listing status."
                 >
-                  <SelectContent>
-                    {productAvailabilityStatuses.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {availabilityLabels[status]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FieldStack>
+                {shouldShowAvailability ? (
+                  <Select
+                    value={availabilityStatus}
+                    onValueChange={(value) =>
+                      onAvailabilityChange(value as SourceListing["status"])
+                    }
+                    placeholder="Draft"
+                    disablePortal
+                  >
+                    <SelectContent>
+                      {productAvailabilityStatuses.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {availabilityLabels[status]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="rounded-xl border border-zinc-900/70 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-400">
+                    Draft status is set after creation.
+                  </div>
+                )}
+                </FieldStack>
               {isPhysicalProduct && (
                 <div className="space-y-4 border-t border-zinc-900/70 pt-4">
                   <FormSubheading
@@ -4901,10 +4676,10 @@ function SourceProductSheet({
                 {isBusy ? (
                   <span className="flex items-center gap-2">
                     <Loader2 className="size-4 animate-spin" />
-                    Saving changes
+                    {productSubmitBusyLabel}
                   </span>
                 ) : (
-                  "Save changes"
+                  productSubmitLabel
                 )}
               </Button>
             </div>
@@ -4916,6 +4691,7 @@ function SourceProductSheet({
 }
 
 type SourceServiceSheetProps = {
+  mode: SheetMode
   listing: SourceListing | null
   formState: ServiceSheetFormState
   onFieldChange(field: keyof ServiceSheetFormState, value: string): void
@@ -4933,9 +4709,11 @@ type SourceServiceSheetProps = {
   isImageUploading: boolean
   availabilityStatus: SourceListing["status"]
   onAvailabilityChange(value: SourceListing["status"]): void
+  showAvailability?: boolean
 }
 
 function SourceServiceSheet({
+  mode,
   listing,
   formState,
   onFieldChange,
@@ -4953,11 +4731,30 @@ function SourceServiceSheet({
   isImageUploading,
   availabilityStatus,
   onAvailabilityChange,
+  showAvailability,
 }: SourceServiceSheetProps) {
-  if (!listing) return null
+  if (mode === "edit" && !listing) return null
+
+  const isCreate = mode === "create"
+  const listingType = listing?.type ?? "service"
+  const trimmedTitle = formState.title.trim()
+  const title = isCreate
+    ? trimmedTitle || `New ${listingTypeLabels[listingType].toLowerCase()}`
+    : listing?.title ?? ""
 
   const priceLabel =
-    listing.price !== null ? formatCurrency(listing.price, listing.currency) : "Price TBD"
+    isCreate
+      ? (() => {
+          const trimmedPrice = formState.price.trim()
+          const price = trimmedPrice ? Number.parseFloat(trimmedPrice) : null
+          if (trimmedPrice && Number.isNaN(price)) return "Price TBD"
+          return price !== null
+            ? formatCurrency(price, formState.currency.trim() || "USD")
+            : "Price TBD"
+        })()
+      : listing?.price !== null
+        ? formatCurrency(listing.price, listing.currency)
+        : "Price TBD"
   const coverImagePreview = imagePreview || imageUrl
   const serviceDetailMode = formState.serviceMode
   const serviceDetailIsBookable = serviceDetailMode === "bookable"
@@ -4966,6 +4763,15 @@ function SourceServiceSheet({
   const serviceDetailPriceDescription = serviceDetailIsCustomQuote
     ? "Optional starting price—use this when inquiries kick off the conversation."
     : undefined
+  const statusValue: SourceListing["status"] = isCreate ? "draft" : listing?.status ?? "draft"
+  const updatedLabel = isCreate
+    ? "Not published yet"
+    : listing
+      ? `Updated ${formatRelativeTime(listing.updated_at)}`
+      : null
+  const shouldShowAvailability = showAvailability ?? !isCreate
+  const serviceSubmitLabel = isCreate ? "Publish service" : "Save changes"
+  const serviceSubmitBusyLabel = isCreate ? "Creating service" : "Saving changes"
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
@@ -4987,21 +4793,21 @@ function SourceServiceSheet({
                 Close
               </Button>
               <div className="rounded-full border border-zinc-800 px-2 py-0.5 text-[10px] uppercase tracking-[0.3em] text-zinc-500">
-                {listingTypeLabels[listing.type]}
+                {listingTypeLabels[listingType]}
               </div>
             </div>
-            <p className="mt-2 text-xl font-semibold leading-tight text-zinc-100">{listing.title}</p>
+            <p className="mt-2 text-xl font-semibold leading-tight text-zinc-100">{title}</p>
             <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-400">
               <Badge
                 className={cn(
                   "rounded-full border px-2 py-0.5 text-[10px]",
-                  statusAccent[listing.status]
+                  statusAccent[statusValue]
                 )}
               >
-                {listingStatuses[listing.status]}
+                {listingStatuses[statusValue]}
               </Badge>
               <span>{priceLabel}</span>
-              <span>Updated {formatRelativeTime(listing.updated_at)}</span>
+              {updatedLabel && <span>{updatedLabel}</span>}
             </div>
             {error && (
               <div className="mt-2 rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
@@ -5023,7 +4829,7 @@ function SourceServiceSheet({
                   {coverImagePreview ? (
                     <img
                       src={coverImagePreview}
-                      alt={`${listing.title} cover`}
+                      alt={`${title} cover`}
                       className="h-full w-full object-cover"
                     />
                   ) : (
@@ -5122,28 +4928,34 @@ function SourceServiceSheet({
                 </FieldStack>
               </div>
 
-              <FieldStack
-                label="Availability"
-                htmlFor="service-detail-status"
-                description="Switch between draft and live states using Source’s listing status."
-              >
-                <Select
-                  value={availabilityStatus}
-                  onValueChange={(value) =>
-                    onAvailabilityChange(value as SourceListing["status"])
-                  }
-                  placeholder="Draft"
-                  disablePortal
+                <FieldStack
+                  label="Availability"
+                  htmlFor="service-detail-status"
+                  description="Switch between draft and live states using Source’s listing status."
                 >
-                  <SelectContent>
-                    {productAvailabilityStatuses.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {availabilityLabels[status]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FieldStack>
+                {shouldShowAvailability ? (
+                  <Select
+                    value={availabilityStatus}
+                    onValueChange={(value) =>
+                      onAvailabilityChange(value as SourceListing["status"])
+                    }
+                    placeholder="Draft"
+                    disablePortal
+                  >
+                    <SelectContent>
+                      {productAvailabilityStatuses.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {availabilityLabels[status]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="rounded-xl border border-zinc-900/70 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-400">
+                    Draft status is set after creation.
+                  </div>
+                )}
+                </FieldStack>
 
               <FieldStack
                 label="Service mode"
@@ -5276,10 +5088,10 @@ function SourceServiceSheet({
                 {isBusy ? (
                   <span className="flex items-center gap-2">
                     <Loader2 className="size-4 animate-spin" />
-                    Saving changes
+                    {serviceSubmitBusyLabel}
                   </span>
                 ) : (
-                  "Save changes"
+                  serviceSubmitLabel
                 )}
               </Button>
             </div>
