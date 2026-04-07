@@ -27,6 +27,7 @@ import {
   useMotionValue,
   useReducedMotion,
 } from "framer-motion";
+import { createPortal } from "react-dom";
 import type { AnimationPlaybackControls } from "framer-motion";
 import clsx from "clsx";
 import { Lock } from "lucide-react";
@@ -216,6 +217,14 @@ type ManualPlacementCandidate = {
   instanceId: string;
   durationMinutes: number;
   title?: string | null;
+};
+
+type ManualPlacementDragGhost = {
+  x: number;
+  y: number;
+  label: string;
+  mode: "pickup" | "placing";
+  pointerId: number | null;
 };
 
 const TIMELINE_FULL_BLEED_STYLE: CSSProperties = {
@@ -2497,6 +2506,9 @@ export default function SchedulePage() {
     useState<ManualPlacementCandidate | null>(null);
   const [manualPlacementPreviewTime, setManualPlacementPreviewTime] =
     useState<Date | null>(null);
+  const [manualPlacementGhost, setManualPlacementGhost] =
+    useState<ManualPlacementDragGhost | null>(null);
+  const manualPlacementPointerIdRef = useRef<number | null>(null);
   const renderDayStart = useMemo(
     () => getRenderDayStart(currentDate, effectiveTimeZone ?? "UTC"),
     [currentDate, effectiveTimeZone]
@@ -3308,6 +3320,26 @@ export default function SchedulePage() {
         }
         return new Date();
       })();
+
+      const pointer = detail?.pointer;
+      const initialX =
+        typeof pointer?.clientX === "number"
+          ? pointer.clientX
+          : window.innerWidth / 2;
+      const initialY =
+        typeof pointer?.clientY === "number"
+          ? pointer.clientY
+          : window.innerHeight / 2;
+      const pointerId =
+        typeof pointer?.pointerId === "number" ? pointer.pointerId : null;
+      manualPlacementPointerIdRef.current = pointerId;
+      setManualPlacementGhost({
+        x: initialX,
+        y: initialY,
+        label: result.name ?? "Manual placement",
+        mode: "pickup",
+        pointerId,
+      });
 
       setManualPlacementCandidate({
         instanceId: result.scheduleInstanceId,
@@ -6256,6 +6288,27 @@ export default function SchedulePage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [manualPlacementCandidate]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!manualPlacementCandidate) {
+      setManualPlacementGhost(null);
+      manualPlacementPointerIdRef.current = null;
+      return;
+    }
+    setManualPlacementGhost((prev) => {
+      if (prev) {
+        return { ...prev, mode: "placing" };
+      }
+      return {
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+        label: manualPlacementCandidate.title ?? "Manual placement",
+        mode: "placing",
+        pointerId: manualPlacementPointerIdRef.current,
+      };
+    });
+  }, [manualPlacementCandidate]);
+
   const lastPointerClientYRef = useRef<number | null>(null);
   const autoScrollFrameRef = useRef<number | null>(null);
   const autoScrollDirectionRef = useRef<"up" | "down" | null>(null);
@@ -6377,6 +6430,35 @@ export default function SchedulePage() {
     },
     [resolveManualPlacementTime, stopAutoScroll]
   );
+
+  useEffect(() => {
+    if (!manualPlacementGhost) return;
+    const handlePointerMove = (event: PointerEvent) => {
+      const pointerId = manualPlacementPointerIdRef.current;
+      if (pointerId !== null && event.pointerId !== pointerId) return;
+      setManualPlacementGhost((prev) =>
+        prev
+          ? {
+              ...prev,
+              x: event.clientX,
+              y: event.clientY,
+            }
+          : prev
+      );
+      updatePreviewAndScrollIntent(event.clientY);
+    };
+
+    const handlePointerCancel = () => stopAutoScroll();
+
+    window.addEventListener("pointermove", handlePointerMove, {
+      passive: true,
+    });
+    window.addEventListener("pointercancel", handlePointerCancel);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+    };
+  }, [manualPlacementGhost, stopAutoScroll, updatePreviewAndScrollIntent]);
 
   useEffect(() => {
     if (!manualPlacementCandidate || view !== "day") return;
@@ -6861,7 +6943,7 @@ export default function SchedulePage() {
             </div>
             {manualPreviewSegment ? (
               <div
-                className="pointer-events-none absolute rounded-[var(--radius-lg)] border border-dashed border-emerald-200/70 bg-emerald-400/15 shadow-[0_12px_24px_rgba(16,185,129,0.25)]"
+                className="pointer-events-none absolute overflow-hidden rounded-[var(--radius-lg)] border border-emerald-200/80 bg-emerald-50/95 shadow-[0_16px_36px_rgba(16,185,129,0.32)] backdrop-blur-[2px] transition-colors"
                 style={{
                   ...TIMELINE_CARD_BOUNDS,
                   top: toTimelinePosition(
@@ -6875,8 +6957,14 @@ export default function SchedulePage() {
                 }}
                 aria-hidden="true"
               >
-                <div className="px-3 py-2 text-[11px] font-semibold text-emerald-100/90">
-                  {manualPlacementCandidate?.title ?? "Manual placement"}
+                <div className="flex items-center gap-2 px-3 py-2 text-[11px] font-semibold text-emerald-900">
+                  <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.18)]" />
+                  <span className="line-clamp-2">
+                    {manualPlacementCandidate?.title ?? "Manual placement"}
+                  </span>
+                  <span className="ml-auto text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-800">
+                    {Math.round(manualPreviewSegment.durationMin)}m
+                  </span>
                 </div>
               </div>
             ) : null}
@@ -8499,6 +8587,50 @@ export default function SchedulePage() {
     return () => cancelAnimationFrame(raf);
   }, [focusInstanceId, dayTimelineModel?.dayViewDateKey]);
 
+  const manualPlacementGhostPortal =
+    manualPlacementGhost && typeof document !== "undefined"
+      ? createPortal(
+          <div className="pointer-events-none fixed inset-0 z-[2147483646]">
+            <div
+              className={clsx(
+                "-translate-x-1/2 -translate-y-1/2 absolute transition-transform duration-150 ease-out",
+                manualPlacementGhost.mode === "placing"
+                  ? "scale-100"
+                  : "scale-[0.97]"
+              )}
+              style={{
+                left: manualPlacementGhost.x,
+                top: manualPlacementGhost.y,
+              }}
+            >
+              <div
+                className={clsx(
+                  "min-w-[180px] max-w-[260px] rounded-2xl border px-4 py-3 text-sm font-semibold shadow-[0_18px_42px_rgba(0,0,0,0.28)] backdrop-blur-[2px]",
+                  manualPlacementGhost.mode === "placing"
+                    ? "border-emerald-200/80 bg-emerald-50/95 text-emerald-900 shadow-[0_18px_42px_rgba(16,185,129,0.32)]"
+                    : "border-white/15 bg-black/80 text-white"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={clsx(
+                      "inline-flex h-2 w-2 rounded-full",
+                      manualPlacementGhost.mode === "placing"
+                        ? "bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.18)]"
+                        : "bg-white/80 shadow-[0_0_0_6px_rgba(255,255,255,0.22)]"
+                    )}
+                  />
+                  <span className="line-clamp-2 leading-tight">
+                    {manualPlacementGhost.label}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   if (!dayTimelineModel) {
     return (
       <div className="flex h-full w-full items-center justify-center text-white/60">
@@ -8509,6 +8641,7 @@ export default function SchedulePage() {
 
   return (
     <LayoutGroup id="schedule-shared-layout">
+      {manualPlacementGhostPortal}
       <ProtectedRoute>
         <ScheduleTopBar
           year={year}

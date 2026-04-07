@@ -177,6 +177,13 @@ type FabSearchResult = {
   updated_at?: string | null;
   goalMonumentId?: string | null;
 };
+
+type DragPointerInfo = {
+  clientX: number;
+  clientY: number;
+  pointerId?: number | null;
+  pointerType?: string | null;
+};
 type OverlaySortMode =
   | "recent"
   | "alphabetical"
@@ -5731,7 +5738,10 @@ export function Fab({
     setRescheduleTime(formatTimeInput(baseDate));
   };
 
-  const handleManualPlacement = (result: FabSearchResult) => {
+  const handleManualPlacement = (
+    result: FabSearchResult,
+    pointer?: DragPointerInfo,
+  ) => {
     if (result.type === "PROJECT" && result.isCompleted) return;
     if (!result.scheduleInstanceId) {
       toast.error(
@@ -5754,6 +5764,7 @@ export function Fab({
           detail: {
             result: { ...result, durationMinutes: safeDuration },
             source: "fab-nexus",
+            pointer,
           },
         }),
       );
@@ -9134,7 +9145,10 @@ type FabNexusProps = {
   availableSkills?: Skill[];
   showToolbar?: boolean;
   inputRef?: RefObject<HTMLInputElement | null>;
-  onManualPlaceResult?: (result: FabSearchResult) => void;
+  onManualPlaceResult?: (
+    result: FabSearchResult,
+    pointer?: DragPointerInfo,
+  ) => void;
 };
 
 function FabNexus({
@@ -9410,7 +9424,15 @@ function FabNexus({
               ) => {
                 if (!onManualPlaceResult) return;
                 if (!res.scheduleInstanceId) return;
-                onManualPlaceResult(res);
+                (event.currentTarget as HTMLElement)?.releasePointerCapture?.(
+                  event.pointerId,
+                );
+                onManualPlaceResult(res, {
+                  clientX: event.clientX,
+                  clientY: event.clientY,
+                  pointerId: event.pointerId ?? null,
+                  pointerType: (event as any)?.pointerType ?? null,
+                });
                 suppressClickRef.current = true;
               };
 
