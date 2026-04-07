@@ -6613,10 +6613,6 @@ export default function SchedulePage() {
         0,
         TIMELINE_STACK_BASE_Z_INDEX - 5
       );
-      const manualPreviewLayerZIndex = Math.max(
-        overlayLayerZIndex + 1,
-        TIMELINE_STACK_BASE_Z_INDEX + 2
-      );
       const scheduledCardsByInstanceId = new Map<string, ProjectTaskCard[]>();
       for (const projectInstance of dayProjectInstances) {
         const projectTasks =
@@ -6729,40 +6725,6 @@ export default function SchedulePage() {
           }
         }
       });
-
-      const manualPreviewSegment = (() => {
-        const session = manualPlacementSession;
-        if (!session?.previewTime) return null;
-        const previewStart = snapToFiveMinuteGrid(session.previewTime);
-        const previewEnd = new Date(
-          previewStart.getTime() +
-            session.candidate.durationMinutes * 60_000
-        );
-        const clipped = clipSegmentToDay(
-          previewStart,
-          previewEnd,
-          renderDayStart,
-          renderDayEnd
-        );
-        if (!clipped) return null;
-        const startMin = getDayMinuteOffset(clipped.segStart, renderDayStart);
-        const durationMin =
-          (clipped.segEnd.getTime() - clipped.segStart.getTime()) / 60000;
-        if (!Number.isFinite(durationMin) || durationMin <= 0) return null;
-        return { startMin, durationMin };
-      })();
-      const manualPreviewHeightPx =
-        manualPreviewSegment && Number.isFinite(modelPxPerMin)
-          ? manualPreviewSegment.durationMin * modelPxPerMin
-          : 0;
-      const manualPreviewShadow =
-        manualPreviewHeightPx > 0 &&
-        manualPreviewHeightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX
-          ? TIMELINE_COMPACT_CARD_SHADOW
-          : "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
-      const manualPreviewOutline = "1px solid rgba(10, 10, 12, 0.85)";
-      const shouldRenderManualPreview =
-        manualPreviewSegment && !manualPlacementSession;
 
       return (
         <div
@@ -6950,36 +6912,6 @@ export default function SchedulePage() {
                 );
               })}
             </div>
-            {shouldRenderManualPreview ? (
-              <div
-                className="pointer-events-none absolute overflow-hidden habit-card habit-card--scheduled habit-card--type-default rounded-[var(--schedule-instance-radius)] border border-black/70 text-white backdrop-blur-[2px] transition-colors"
-                style={{
-                  ...TIMELINE_CARD_BOUNDS,
-                  top: toTimelinePosition(
-                    Math.max(
-                      0,
-                      manualPreviewSegment.startMin - modelStartHour * 60
-                    )
-                  ),
-                  height: toTimelinePosition(manualPreviewSegment.durationMin),
-                  zIndex: manualPreviewLayerZIndex,
-                  boxShadow: manualPreviewShadow,
-                  outline: manualPreviewOutline,
-                  outlineOffset: "-1px",
-                }}
-                aria-hidden="true"
-              >
-                <div className="flex items-center gap-2 px-3 py-2 text-[11px] font-semibold leading-tight">
-                  <span className="inline-flex h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_0_6px_rgba(52,211,153,0.26)]" />
-                  <span className="line-clamp-2">
-                    {manualPlacementSession?.candidate.title ?? "Manual placement"}
-                  </span>
-                  <span className="ml-auto text-[10px] font-bold uppercase tracking-[0.12em] text-white/70">
-                    {Math.round(manualPreviewSegment.durationMin)}m
-                  </span>
-                </div>
-              </div>
-            ) : null}
             {dayHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end))
                 return null;
@@ -8599,21 +8531,8 @@ export default function SchedulePage() {
     return () => cancelAnimationFrame(raf);
   }, [focusInstanceId, dayTimelineModel?.dayViewDateKey]);
 
-  const timelinePosition = useCallback(
-    (minutes: number) => `calc(var(--timeline-minute-unit) * ${minutes})`,
-    []
-  );
-
-  const manualGhostHost =
-    manualPlacementSession?.ghost && typeof document !== "undefined"
-      ? (dayTimelineContainerRef.current?.querySelector(
-          ".timeline-content"
-        ) as HTMLElement | null)
-      : null;
-
   const manualGhostLayout = useMemo(() => {
     if (!manualPlacementSession || !dayTimelineModel) return null;
-    if (!manualGhostHost) return null;
     const previewTime = manualPlacementSession.previewTime;
     if (!previewTime) return null;
     const previewStart = snapToFiveMinuteGrid(previewTime);
@@ -8632,11 +8551,12 @@ export default function SchedulePage() {
     const durationMin =
       (clipped.segEnd.getTime() - clipped.segStart.getTime()) / 60000;
     if (!Number.isFinite(durationMin) || durationMin <= 0) return null;
-    const startOffset = Math.max(
-      0,
-      startMin - (dayTimelineModel.startHour ?? 0) * 60
-    );
+    const startOffset = Math.max(0, startMin - (dayTimelineModel.startHour ?? 0) * 60);
     const heightPx = durationMin * pxPerMin;
+    const timelineContent = dayTimelineContainerRef.current?.querySelector(
+      ".timeline-content"
+    ) as HTMLElement | null;
+    const timelineRect = timelineContent?.getBoundingClientRect() ?? null;
     const useCompactShadow =
       Number.isFinite(heightPx) &&
       heightPx > 0 &&
@@ -8645,8 +8565,10 @@ export default function SchedulePage() {
       ? TIMELINE_COMPACT_CARD_SHADOW
       : "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
     return {
-      top: timelinePosition(startOffset),
-      height: timelinePosition(durationMin),
+      top: timelineRect
+        ? timelineRect.top + startOffset * pxPerMin
+        : manualPlacementSession.ghost.y,
+      height: heightPx,
       shadow,
     };
   }, [
@@ -8656,8 +8578,6 @@ export default function SchedulePage() {
     renderDayEnd,
     renderDayStart,
     snapToFiveMinuteGrid,
-    timelinePosition,
-    manualGhostHost,
   ]);
 
   const manualPlacementGhostPortal =
@@ -8665,9 +8585,9 @@ export default function SchedulePage() {
       ? createPortal(
           <div
             className={clsx(
-              "pointer-events-none inset-0 z-[2147483646]",
-              manualGhostHost ? "absolute" : "fixed"
+              "pointer-events-none fixed inset-0 z-[2147483646]"
             )}
+            style={TIMELINE_CSS_VARIABLES}
           >
             <div
               className={clsx(
@@ -8680,8 +8600,8 @@ export default function SchedulePage() {
                 manualGhostLayout
                   ? {
                       ...TIMELINE_CARD_BOUNDS,
-                      top: manualGhostLayout.top,
-                      height: manualGhostLayout.height,
+                      top: `${manualGhostLayout.top}px`,
+                      height: `${manualGhostLayout.height}px`,
                     }
                   : {
                       left: manualPlacementSession.ghost.x,
@@ -8730,7 +8650,7 @@ export default function SchedulePage() {
               </div>
             </div>
           </div>,
-          manualGhostHost ?? document.body
+          document.body
         )
       : null;
 
