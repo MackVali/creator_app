@@ -217,6 +217,12 @@ type ManualPlacementCandidate = {
   instanceId: string;
   durationMinutes: number;
   title?: string | null;
+  sourceType?: "PROJECT" | "HABIT" | null;
+  energy?: string | null;
+  goalName?: string | null;
+  habitType?: string | null;
+  currentStreakDays?: number | null;
+  globalRank?: number | null;
 };
 
 type ManualPlacementDragGhost = {
@@ -416,6 +422,108 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
     >
       {children}
     </motion.div>
+  );
+}
+
+function ManualPlacementProjectCard({
+  title,
+  goalName,
+  energyLevel,
+  skillIcon,
+  rankDisplay,
+  wrapTitle,
+}: {
+  title: string;
+  goalName?: string | null;
+  energyLevel: FlameLevel;
+  skillIcon?: string | null;
+  rankDisplay?: string | null;
+  wrapTitle: boolean;
+}) {
+  const projectTitleInnerClass =
+    wrapTitle
+      ? "min-w-0 leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
+      : "min-w-0 leading-tight truncate";
+  return (
+    <>
+      {goalName ? (
+        <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
+          <span className="truncate text-[9px] font-semibold text-white/80">
+            {goalName}
+          </span>
+        </div>
+      ) : null}
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <div className="min-w-0 space-y-1">
+          <motion.span className="block text-sm font-medium">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className={projectTitleInnerClass}>{title}</span>
+              {rankDisplay ? (
+                <span className="text-xs font-normal text-white/70">
+                  {rankDisplay}
+                </span>
+              ) : null}
+            </span>
+          </motion.span>
+        </div>
+      </div>
+      <SkillEnergyBadge
+        energyLevel={energyLevel}
+        skillIcon={skillIcon}
+        className="flex flex-shrink-0 items-center gap-2"
+        iconClassName="text-lg leading-none"
+        flameClassName="flex-shrink-0"
+      />
+    </>
+  );
+}
+
+function ManualPlacementHabitCard({
+  title,
+  practiceContextLabel,
+  streakDays,
+  wrapTitle,
+}: {
+  title: string;
+  practiceContextLabel?: string | null;
+  streakDays?: number | null;
+  wrapTitle: boolean;
+}) {
+  const safeStreakDays = Math.max(0, Math.round(streakDays ?? 0));
+  const showHabitStreakBadge = safeStreakDays >= 2;
+  const streakLabel = `${safeStreakDays}x`;
+  const titleClass = wrapTitle
+    ? "pr-8 text-sm font-medium leading-snug line-clamp-2 sm:line-clamp-1 sm:truncate"
+    : "truncate pr-8 text-sm font-medium leading-snug";
+  return (
+    <>
+      {practiceContextLabel ? (
+        <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
+          <span className="truncate text-[9px] font-semibold text-white/80">
+            {practiceContextLabel}
+          </span>
+        </div>
+      ) : null}
+      <motion.span className={titleClass}>{title}</motion.span>
+      {showHabitStreakBadge ? (
+        <span
+          className="pointer-events-none absolute right-3 top-2 flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-[2px] text-xs font-semibold leading-tight text-amber-100"
+        >
+          <FlameEmber
+            level={
+              safeStreakDays >= 7
+                ? "HIGH"
+                : safeStreakDays >= 4
+                  ? "MEDIUM"
+                  : "LOW"
+            }
+            size="xs"
+            className="drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
+          />
+          <span className="tracking-normal">{streakLabel}</span>
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -3347,6 +3455,26 @@ export default function SchedulePage() {
         instanceId: result.scheduleInstanceId,
         durationMinutes: safeDuration,
         title: result.name ?? null,
+        sourceType:
+          result.type === "PROJECT" || result.type === "HABIT"
+            ? result.type
+            : null,
+        energy:
+          typeof result.energy === "string" ? result.energy : null,
+        goalName:
+          typeof result.goalName === "string" ? result.goalName : null,
+        habitType:
+          typeof result.habitType === "string" ? result.habitType : null,
+        currentStreakDays:
+          typeof result.currentStreakDays === "number" &&
+          Number.isFinite(result.currentStreakDays)
+            ? result.currentStreakDays
+            : null,
+        globalRank:
+          typeof result.global_rank === "number" &&
+          Number.isFinite(result.global_rank)
+            ? result.global_rank
+            : null,
       };
       const snappedPreview = snapToFiveMinuteGrid(nextStart);
       setManualPlacementSession({
@@ -8645,44 +8773,131 @@ export default function SchedulePage() {
                     }
               }
             >
-              <div
-                className={clsx(
-                  "habit-card habit-card--scheduled habit-card--type-default rounded-[var(--schedule-instance-radius)] border text-white backdrop-blur-[2px] select-none px-3 py-2 flex items-center gap-3",
-                  manualPlacementSession.ghost.mode === "placing"
-                    ? "opacity-100"
-                    : "opacity-90",
-                  manualGhostLayout ? "shadow-none" : "shadow-[0_18px_38px_rgba(8,12,32,0.52)]"
-                )}
-                style={{
-                  boxShadow: manualGhostLayout
-                    ? manualGhostLayout.shadow
-                    : TIMELINE_COMPACT_CARD_SHADOW,
-                  outline: "1px solid rgba(10, 10, 12, 0.85)",
-                  outlineOffset: "-1px",
-                  background:
-                    "linear-gradient(135deg, rgba(46,46,52,0.94) 0%, rgba(58,58,66,0.92) 45%, rgba(82,82,92,0.88) 100%)",
-                  height: manualGhostLayout ? "100%" : undefined,
-                  minHeight: manualGhostLayout ? undefined : 56,
-                  alignItems: "center",
-                }}
-              >
-                <span
-                  className={clsx(
-                    "inline-flex h-2 w-2 rounded-full shadow-[0_0_0_6px_rgba(52,211,153,0.26)]",
-                    manualPlacementSession.ghost.mode === "placing"
-                      ? "bg-emerald-300"
-                      : "bg-white/70"
-                  )}
-                />
-                <span className="line-clamp-2 text-sm font-semibold leading-tight">
-                  {manualPlacementSession.ghost.label}
-                </span>
-                {manualPlacementSession.candidate?.durationMinutes ? (
-                  <span className="ml-auto text-[10px] font-bold uppercase tracking-[0.12em] text-white/70">
-                    {Math.round(manualPlacementSession.candidate.durationMinutes)}m
-                  </span>
-                ) : null}
-              </div>
+              {(() => {
+                const candidate = manualPlacementSession.candidate;
+                const title = candidate.title ?? manualPlacementSession.ghost.label;
+                const wrapTitle = candidate.durationMinutes >= 30;
+                const energyLevel =
+                  resolveEnergyLevel(candidate.energy) ?? "NO";
+                const isHabitGhost =
+                  candidate.sourceType === "HABIT" ||
+                  Boolean(candidate.habitType);
+
+                if (isHabitGhost) {
+                const rawHabitType = candidate.habitType ?? "HABIT";
+                const normalizedHabitType =
+                    rawHabitType === "ASYNC" ? "SYNC" : rawHabitType;
+                  const ghostHeight = manualGhostLayout?.height ?? 0;
+                  let habitBorderClass = "border-black/70";
+                  let habitTypeClass = "habit-card--type-default";
+                  if (normalizedHabitType === "MEMO") {
+                    habitTypeClass = "habit-card--type-memo";
+                    habitBorderClass = "border-purple-300/55";
+                  } else if (normalizedHabitType === "CHORE") {
+                    habitTypeClass = "habit-card--type-chore";
+                    habitBorderClass = "border-rose-200/45";
+                  } else if (normalizedHabitType === "RELAXER") {
+                    habitTypeClass = "habit-card--type-relaxer";
+                    habitBorderClass = "border-emerald-200/60";
+                  } else if (normalizedHabitType === "PRACTICE") {
+                    habitTypeClass = "habit-card--type-practice";
+                    habitBorderClass = "border-slate-500/50";
+                  } else if (normalizedHabitType === "SYNC") {
+                    habitTypeClass = "habit-card--type-sync";
+                    habitBorderClass = "border-amber-200/45";
+                  }
+                  const useCompactShadow =
+                    Number.isFinite(ghostHeight) &&
+                    ghostHeight > 0 &&
+                    ghostHeight <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
+                  const habitCardShadow = useCompactShadow
+                    ? TIMELINE_COMPACT_CARD_SHADOW
+                    : "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+                  const habitCornerClass = getTimelineCardCornerClass("full");
+                  const habitPaddingClass = "py-2";
+                  return (
+                    <div
+                    className={clsx(
+                      "habit-card relative flex h-full w-full items-center justify-between gap-3 border px-3 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
+                      habitCornerClass,
+                      habitPaddingClass,
+                      habitBorderClass,
+                      habitTypeClass,
+                      manualPlacementSession.ghost.mode === "placing"
+                        ? "opacity-100"
+                        : "opacity-90"
+                    )}
+                      style={{
+                        boxShadow: habitCardShadow,
+                        outline: "1px solid rgba(10, 10, 12, 0.85)",
+                        outlineOffset: "-1px",
+                        background:
+                          "linear-gradient(135deg, rgba(46,46,52,0.94) 0%, rgba(58,58,66,0.92) 45%, rgba(82,82,92,0.88) 100%)",
+                        height: manualGhostLayout ? "100%" : undefined,
+                        minHeight: manualGhostLayout ? undefined : 56,
+                        alignItems: "center",
+                      }}
+                    >
+                      <ManualPlacementHabitCard
+                        title={title}
+                        streakDays={candidate.currentStreakDays}
+                        wrapTitle={wrapTitle}
+                      />
+                    </div>
+                  );
+                }
+
+                const goalName =
+                  candidate.goalName && candidate.goalName.trim().length > 0
+                    ? candidate.goalName
+                    : null;
+                const rankDisplay =
+                  typeof candidate.globalRank === "number" &&
+                  Number.isFinite(candidate.globalRank) &&
+                  candidate.globalRank > 0
+                    ? `#${candidate.globalRank}`
+                    : null;
+                const ghostHeight = manualGhostLayout?.height ?? 0;
+                const useCompactShadow =
+                  Number.isFinite(ghostHeight) &&
+                  ghostHeight > 0 &&
+                  ghostHeight <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
+                const sharedCardShadow = useCompactShadow
+                  ? TIMELINE_COMPACT_CARD_SHADOW
+                  : "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+                const projectCornerClass = getTimelineCardCornerClass("full");
+                const collapsedCardPaddingClass = goalName ? "pt-4 pb-2" : "py-2";
+                return (
+                  <div
+                    className={clsx(
+                      "relative flex h-full w-full items-center justify-between gap-3 border px-3 text-white backdrop-blur-sm transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none",
+                      projectCornerClass,
+                      collapsedCardPaddingClass,
+                      "border-black/70",
+                      manualPlacementSession.ghost.mode === "placing"
+                        ? "opacity-100"
+                        : "opacity-90"
+                    )}
+                    style={{
+                      boxShadow: sharedCardShadow,
+                      outline: "1px solid rgba(10, 10, 12, 0.85)",
+                      outlineOffset: "-1px",
+                      background:
+                        "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)",
+                      height: manualGhostLayout ? "100%" : undefined,
+                      minHeight: manualGhostLayout ? undefined : 56,
+                    }}
+                  >
+                    <ManualPlacementProjectCard
+                      title={title}
+                      goalName={goalName}
+                      energyLevel={energyLevel}
+                      rankDisplay={rankDisplay}
+                      wrapTitle={wrapTitle}
+                    />
+                  </div>
+                );
+              })()}
             </div>
           </div>,
           document.body
