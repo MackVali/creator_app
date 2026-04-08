@@ -151,13 +151,14 @@ export function ScheduleSearchSheet({
               <button
                 key={item.instance.id}
                 type="button"
+                draggable={false}
                 onClick={() =>
                   onSelectResult({
                     instanceId: item.instance.id,
                     date: item.start,
                   })
                 }
-                className="group flex w-full items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-white transition hover:border-white/20 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+                className="group flex w-full select-none items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-white transition hover:border-white/20 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -234,4 +235,3 @@ function formatDate(date: Date) {
     return date.toLocaleDateString();
   }
 }
-

@@ -17,6 +17,7 @@ import {
   addDaysInTimeZone,
   formatDateKeyInTimeZone,
 } from "@/lib/scheduler/timezone";
+import { persistManualPlacementCascade } from "@/lib/scheduler/manualPlacementCascade";
 import {
   LOCAL_RESCHEDULE_CANCEL_REASON,
   type LocalRescheduleCleanupSourceContext,
@@ -29,6 +30,10 @@ type RouteContext = {
 };
 
 type Supabase = SupabaseClient<Database>;
+type PatchRequestPayload = {
+  startUtc?: string;
+  skipConflictResolution?: boolean;
+};
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
@@ -44,9 +49,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const payload = (await request.json().catch(() => null)) as
-    | { startUtc?: string; skipConflictResolution?: boolean }
-    | null;
+  const payload = (await request.json().catch(() => null)) as PatchRequestPayload | null;
   const startUtc = payload?.startUtc;
   if (!startUtc || typeof startUtc !== "string") {
     return NextResponse.json({ error: "Missing startUtc" }, { status: 400 });
@@ -131,6 +134,27 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     );
   }
 
+  const displacedProjectWarnings: Array<{
+    instanceId: string;
+    projectId: string;
+    error: string;
+  }> = [];
+
+  if (skipConflictResolution) {
+    const cascadeResult = await persistManualPlacementCascade({
+      userId: user.id,
+      pivotId: instance.id,
+      pivotStart: nextStartIso,
+      pivotEnd: nextEndIso,
+      timeZone,
+      client: supabase,
+    });
+
+    for (const warning of cascadeResult.warnings) {
+      displacedProjectWarnings.push(warning);
+    }
+  }
+
   if (!skipConflictResolution) {
     await resolveConflictsAfterUpdate(supabase, {
       userId: user.id,
@@ -141,7 +165,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     });
   }
 
-  return NextResponse.json({ success: true, startUtc: nextStartIso });
+  return NextResponse.json({
+    success: true,
+    startUtc: nextStartIso,
+    ...(displacedProjectWarnings.length > 0
+      ? { displacedProjectWarnings }
+      : {}),
+  });
 }
 
 async function resolveProfileTimeZone(
