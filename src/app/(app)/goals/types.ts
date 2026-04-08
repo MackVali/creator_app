@@ -12,6 +12,7 @@ export interface Project {
   name: string;
   status: "Todo" | "In-Progress" | "Done" | "Active";
   progress: number; // 0-100
+  completedAt?: string | null;
   dueDate?: string;
   energy: "No" | "Low" | "Medium" | "High" | "Ultra" | "Extreme";
   emoji?: string | null;

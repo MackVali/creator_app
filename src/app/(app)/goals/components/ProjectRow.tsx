@@ -40,6 +40,8 @@ const projectStageToStatus = (stage: string): Project["status"] => {
       return "In-Progress";
   }
 };
+const hasCompletedAt = (completedAt?: string | null): boolean =>
+  typeof completedAt === "string" && completedAt.trim().length > 0;
 
 export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps) {
   const hasTasks = project.tasks.length > 0;
@@ -63,8 +65,9 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
   const lastTapTimeRef = useRef(0);
 
   useEffect(() => {
-    setLocalStatus(project.status);
-  }, [project.status]);
+    const isCompletedFromTimestamp = hasCompletedAt(project.completedAt);
+    setLocalStatus(isCompletedFromTimestamp ? "Done" : project.status);
+  }, [project.completedAt, project.status]);
 
   useEffect(() => {
     if (project.stage) {
@@ -145,7 +148,11 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
 
     setLocalStatus(nextStatus);
     setLocalStage(nextStage);
-    onUpdated?.(project.id, { status: nextStatus, stage: nextStage });
+    onUpdated?.(project.id, {
+      status: nextStatus,
+      stage: nextStage,
+      completedAt,
+    });
     if (shouldComplete) {
       void recordProjectCompletion(
         {
