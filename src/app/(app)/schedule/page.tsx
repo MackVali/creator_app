@@ -4881,13 +4881,6 @@ export default function SchedulePage() {
       logOverlayStage(3, {
         locked: isLockedInstance,
       });
-      if (isLockedInstance && !isOverlayBacked) {
-        logOverlayStage(4, { reason: "locked block" });
-        console.log(
-          `[SKIP] reason=locked instanceId=${instanceId} overlay=${instance?.overlay_window_id ?? "none"}`
-        );
-        return;
-      }
       const previousStatus = instance?.status ?? null;
       const pending = pendingInstanceStatuses.has(instanceId);
       logOverlayStage(4, { isPending: pending });
@@ -7810,11 +7803,9 @@ export default function SchedulePage() {
                   pendingStatus ?? instance.status ?? "scheduled";
                 const isDraggedInstance =
                   manualPlacementSession?.candidate.instanceId === instance.id;
-                const isOverlayBacked = Boolean(instance.overlay_window_id);
                 const canToggle =
-                  (effectiveStatus === "completed" ||
-                    effectiveStatus === "scheduled") &&
-                  (!instance.locked || isOverlayBacked);
+                  effectiveStatus === "completed" ||
+                  effectiveStatus === "scheduled";
                 const isCompleted = effectiveStatus === "completed";
                 const projectLongPressActive =
                   longPressBounceId === instance.id;
@@ -8268,21 +8259,11 @@ export default function SchedulePage() {
                                       instanceStatusById[instanceId] ??
                                       "scheduled")
                                     : null;
-                                const scheduledInstance = instanceId
-                                  ? instancesById.get(instanceId) ?? null
-                                  : null;
-                                const scheduledIsLocked =
-                                  scheduledInstance?.locked === true;
-                                const scheduledIsOverlayBacked = Boolean(
-                                  scheduledInstance?.overlay_window_id
-                                );
                                 const scheduledCanToggle =
                                   kind === "scheduled" &&
                                   !!instanceId &&
                                   (status === "completed" ||
-                                    status === "scheduled") &&
-                                  (!scheduledIsLocked ||
-                                    scheduledIsOverlayBacked);
+                                    status === "scheduled");
                                 const scheduledCompleted =
                                   status === "completed";
                                 const canToggle = isFallbackCard
@@ -8565,10 +8546,8 @@ export default function SchedulePage() {
                   const isPending = pendingStatus !== undefined;
                   const status =
                     pendingStatus ?? instance.status ?? "scheduled";
-                  const isOverlayBacked = Boolean(instance.overlay_window_id);
                   const canToggle =
-                    (status === "completed" || status === "scheduled") &&
-                    (!instance.locked || isOverlayBacked);
+                    status === "completed" || status === "scheduled";
                   const isCompleted = status === "completed";
                   const standaloneHeightPx = Math.max(
                     durationMinutes * modelPxPerMin,
