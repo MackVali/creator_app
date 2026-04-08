@@ -40,6 +40,7 @@ import {
   FAB_SELECT_SEARCH_INPUT_CLASS,
   FAB_SECTION_CARD_CLASS,
   FAB_SECTION_HEADING_TEXT_CLASS,
+  FAB_SECTION_HELP_TEXT_SMALL_CLASS,
 } from "@/components/ui/fab-form-classes";
 import {
   type ScheduleInstance,

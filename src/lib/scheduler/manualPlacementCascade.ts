@@ -505,7 +505,7 @@ async function persistDisplacedProjectInstance(params: {
     .update({
       start_utc: params.startUtc.toISOString(),
       end_utc: params.endUtc.toISOString(),
-      locked: true,
+      locked: false,
     })
     .eq("id", params.instanceId)
     .eq("user_id", params.userId);
