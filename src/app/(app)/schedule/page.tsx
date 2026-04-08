@@ -233,6 +233,20 @@ type ManualPlacementDragGhost = {
   pointerId: number | null;
 };
 
+type ManualPlacementPreviewDisplacedInstance = {
+  instanceId: string;
+  start: Date;
+  end: Date;
+  overflow?: boolean;
+  invalidIfCommitted?: boolean;
+};
+
+type ManualPlacementPushPreviewResult = {
+  draggedStart: Date;
+  draggedEnd: Date;
+  displaced: ManualPlacementPreviewDisplacedInstance[];
+};
+
 const TIMELINE_FULL_BLEED_STYLE: CSSProperties = {
   width: "100vw",
   marginLeft: "calc(50% - 50vw)",
@@ -807,6 +821,49 @@ type TaskInstanceInfo = {
 
 type ProjectItem = ReturnType<typeof buildProjectItems>[number];
 type ProjectInstance = ReturnType<typeof computeProjectInstances>[number];
+
+function computeManualPlacementPushPreview(
+  candidate: ManualPlacementCandidate,
+  draggedStart: Date,
+  dayProjectInstances: ProjectInstance[]
+): ManualPlacementPushPreviewResult {
+  // Preview-only displacement; real schedule data is untouched.
+  const draggedEnd = new Date(
+    draggedStart.getTime() + candidate.durationMinutes * 60_000
+  );
+  const displaced: ManualPlacementPreviewDisplacedInstance[] = [];
+  let blockingEnd = draggedEnd.getTime();
+  const sortedProjectInstances = [...dayProjectInstances].sort(
+    (a, b) => a.start.getTime() - b.start.getTime()
+  );
+
+  for (const projectInstance of sortedProjectInstances) {
+    if (projectInstance.instance.id === candidate.instanceId) continue;
+
+    const originalStart = projectInstance.start.getTime();
+    const originalEnd = projectInstance.end.getTime();
+    if (originalEnd <= draggedStart.getTime()) continue;
+    if (originalStart >= blockingEnd) continue;
+
+    const previewStart = new Date(blockingEnd);
+    const previewEnd = new Date(
+      previewStart.getTime() + (originalEnd - originalStart)
+    );
+    displaced.push({
+      instanceId: projectInstance.instance.id,
+      start: previewStart,
+      end: previewEnd,
+    });
+    blockingEnd = previewEnd.getTime();
+  }
+
+  return {
+    draggedStart,
+    draggedEnd,
+    displaced,
+  };
+}
+
 type DayTimelineModel = {
   date: Date;
   isViewingToday: boolean;
@@ -2615,8 +2672,27 @@ export default function SchedulePage() {
     pointerId: number | null;
     ghost: ManualPlacementDragGhost;
     previewTime: Date | null;
+    pushPreview: ManualPlacementPushPreviewResult | null;
   } | null>(null);
+  const manualPlacementSessionRef = useRef<typeof manualPlacementSession>(null);
   const manualPlacementPointerIdRef = useRef<number | null>(null);
+  const updateManualPlacementSession = useCallback(
+    (
+      updater: (
+        prev: typeof manualPlacementSession
+      ) => typeof manualPlacementSession
+    ) => {
+      setManualPlacementSession((prev) => {
+        const next = updater(prev);
+        manualPlacementSessionRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
+  useEffect(() => {
+    manualPlacementSessionRef.current = manualPlacementSession;
+  }, [manualPlacementSession]);
   const renderDayStart = useMemo(
     () => getRenderDayStart(currentDate, effectiveTimeZone ?? "UTC"),
     [currentDate, effectiveTimeZone]
@@ -3408,9 +3484,26 @@ export default function SchedulePage() {
               "Failed to update schedule"
           );
         }
+        const successPayload = (await response.json().catch(() => null)) as
+          | {
+              success?: boolean;
+              startUtc?: string;
+              displacedProjectWarnings?: Array<unknown>;
+            }
+          | null;
         setManualPlacementSession(null);
+        manualPlacementSessionRef.current = null;
         manualPlacementPointerIdRef.current = null;
         toast.success("Event placed", "Manual placement committed.");
+        if (
+          Array.isArray(successPayload?.displacedProjectWarnings) &&
+          successPayload.displacedProjectWarnings.length > 0
+        ) {
+          toast.warning(
+            "Some projects could not be re-placed",
+            "One or more displaced projects could not be legally re-placed."
+          );
+        }
         await refreshScheduleData();
       } catch (error) {
         console.error("Manual placement failed", error);
@@ -3488,7 +3581,7 @@ export default function SchedulePage() {
             : null,
       };
       const snappedPreview = snapToFiveMinuteGrid(nextStart);
-      setManualPlacementSession({
+      const session = {
         candidate,
         pointerId,
         ghost: {
@@ -3499,9 +3592,15 @@ export default function SchedulePage() {
           pointerId,
         },
         previewTime: snappedPreview,
-      });
+        pushPreview: computeManualPlacementPushPreview(
+          candidate,
+          snappedPreview,
+          currentDayProjectInstancesRef.current
+        ),
+      };
+      setManualPlacementSession(session);
+      manualPlacementSessionRef.current = session;
       setSkipNextDayAnimation(true);
-      updateCurrentDate(snappedPreview, { animate: false });
       navigate("day");
     };
 
@@ -3515,7 +3614,7 @@ export default function SchedulePage() {
         handleManualPlacementRequest as EventListener
       );
     };
-  }, [navigate, snapToFiveMinuteGrid, toast, updateCurrentDate]);
+  }, [navigate, snapToFiveMinuteGrid, toast]);
   const scheduleDatasetRef = useRef<ScheduleEventDataset | null>(null);
   const PRIMARY_WRITE_WINDOW_DAYS = 28;
   const FULL_WRITE_WINDOW_DAYS = MAX_SCHEDULER_WRITE_DAYS;
@@ -6422,6 +6521,32 @@ export default function SchedulePage() {
     canonicalTodayDateKey,
   ]);
 
+  const currentDayProjectInstances = useMemo(() => {
+    if (!dayTimelineModel) return [];
+    return dayTimelineModel.projectInstances
+      .map((projectInstance) => {
+        const clipped = clipSegmentToDay(
+          projectInstance.start,
+          projectInstance.end,
+          renderDayStart,
+          renderDayEnd
+        );
+        if (!clipped) return null;
+        return {
+          ...projectInstance,
+          start: clipped.segStart,
+          end: clipped.segEnd,
+        };
+      })
+      .filter((instance): instance is ProjectInstance => instance !== null);
+  }, [dayTimelineModel, renderDayStart, renderDayEnd]);
+
+  const currentDayProjectInstancesRef = useRef<ProjectInstance[]>([]);
+
+  useEffect(() => {
+    currentDayProjectInstancesRef.current = currentDayProjectInstances;
+  }, [currentDayProjectInstances]);
+
   useEffect(() => {
     return () => {
       clearLongPressTimer();
@@ -6445,6 +6570,7 @@ export default function SchedulePage() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setManualPlacementSession(null);
+        manualPlacementSessionRef.current = null;
         manualPlacementPointerIdRef.current = null;
         stopAutoScroll();
       }
@@ -6508,11 +6634,19 @@ export default function SchedulePage() {
     (clientY: number) => {
       lastPointerClientYRef.current = clientY;
       const next = resolveManualPlacementTime(clientY);
-      setManualPlacementSession((prev) =>
+      const preview = next ? snapToFiveMinuteGrid(next) : null;
+      updateManualPlacementSession((prev) =>
         prev
           ? {
               ...prev,
-              previewTime: next ?? prev.previewTime,
+              previewTime: preview ?? prev.previewTime,
+              pushPreview: preview
+                ? computeManualPlacementPushPreview(
+                    prev.candidate,
+                    preview,
+                    currentDayProjectInstances
+                  )
+                : null,
             }
           : prev
       );
@@ -6550,11 +6684,19 @@ export default function SchedulePage() {
         const lastY = lastPointerClientYRef.current;
         if (lastY !== null) {
           const refreshed = resolveManualPlacementTime(lastY);
-          setManualPlacementSession((prev) =>
+          const preview = refreshed ? snapToFiveMinuteGrid(refreshed) : null;
+          updateManualPlacementSession((prev) =>
             prev
               ? {
                   ...prev,
-                  previewTime: refreshed ?? prev.previewTime,
+                  previewTime: preview ?? prev.previewTime,
+                  pushPreview: preview
+                    ? computeManualPlacementPushPreview(
+                        prev.candidate,
+                        preview,
+                        currentDayProjectInstances
+                      )
+                    : null,
                 }
               : prev
           );
@@ -6570,7 +6712,13 @@ export default function SchedulePage() {
         autoScrollFrameRef.current = requestAnimationFrame(step);
       }
     },
-    [resolveManualPlacementTime, stopAutoScroll]
+    [
+      resolveManualPlacementTime,
+      snapToFiveMinuteGrid,
+      stopAutoScroll,
+      currentDayProjectInstances,
+      updateManualPlacementSession,
+    ]
   );
 
   useEffect(() => {
@@ -6579,7 +6727,7 @@ export default function SchedulePage() {
       const pointerId = manualPlacementPointerIdRef.current;
       if (pointerId !== null && event.pointerId !== pointerId) return;
       const clientY = event.clientY;
-      setManualPlacementSession((prev) => {
+      updateManualPlacementSession((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
@@ -6597,16 +6745,19 @@ export default function SchedulePage() {
     const handlePointerUp = (event: PointerEvent) => {
       const pointerId = manualPlacementPointerIdRef.current;
       if (pointerId !== null && event.pointerId !== pointerId) return;
+      const session = manualPlacementSessionRef.current;
+      if (!session) return;
       const next = resolveManualPlacementTime(event.clientY);
       const preview =
         next ??
-        (manualPlacementSession.previewTime
-          ? snapToFiveMinuteGrid(manualPlacementSession.previewTime)
+        (session.previewTime
+          ? snapToFiveMinuteGrid(session.previewTime)
           : null);
       if (preview) {
-        void commitManualPlacement(manualPlacementSession.candidate, preview);
+        void commitManualPlacement(session.candidate, preview);
       }
       setManualPlacementSession(null);
+      manualPlacementSessionRef.current = null;
       manualPlacementPointerIdRef.current = null;
       stopAutoScroll();
     };
@@ -6615,6 +6766,7 @@ export default function SchedulePage() {
       const pointerId = manualPlacementPointerIdRef.current;
       if (pointerId !== null && event.pointerId !== pointerId) return;
       setManualPlacementSession(null);
+      manualPlacementSessionRef.current = null;
       manualPlacementPointerIdRef.current = null;
       stopAutoScroll();
     };
@@ -6634,7 +6786,7 @@ export default function SchedulePage() {
         event.preventDefault();
       }
 
-      setManualPlacementSession((prev) => {
+      updateManualPlacementSession((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
@@ -6668,8 +6820,10 @@ export default function SchedulePage() {
     commitManualPlacement,
     manualPlacementSession,
     resolveManualPlacementTime,
+    snapToFiveMinuteGrid,
     stopAutoScroll,
     updatePreviewAndScrollIntent,
+    updateManualPlacementSession,
   ]);
 
   const renderDayTimeline = useCallback(
@@ -7526,12 +7680,17 @@ export default function SchedulePage() {
             {dayProjectInstances.map(
               ({ instance, project, start, end, assignedWindow }, index) => {
                 if (!isValidDate(start) || !isValidDate(end)) return null;
+                const displacedPreview = manualPlacementSession?.pushPreview?.displaced.find(
+                  (entry) => entry.instanceId === instance.id
+                );
+                const visualStart = displacedPreview?.start ?? start;
+                const visualEnd = displacedPreview?.end ?? end;
                 const projectId = project.id;
-                const startMin = getDayMinuteOffset(start, renderDayStart);
+                const startMin = getDayMinuteOffset(visualStart, renderDayStart);
                 const startOffsetMinutes = startMin;
                 const durationMinutes = Math.max(
                   0,
-                  (end.getTime() - start.getTime()) / 60000
+                  (visualEnd.getTime() - visualStart.getTime()) / 60000
                 );
                 const shouldWrapProjectTitle = Number(durationMinutes) >= 30;
 
@@ -7649,6 +7808,8 @@ export default function SchedulePage() {
                 const isPending = pendingStatus !== undefined;
                 const effectiveStatus =
                   pendingStatus ?? instance.status ?? "scheduled";
+                const isDraggedInstance =
+                  manualPlacementSession?.candidate.instanceId === instance.id;
                 const isOverlayBacked = Boolean(instance.overlay_window_id);
                 const canToggle =
                   (effectiveStatus === "completed" ||
@@ -7703,6 +7864,10 @@ export default function SchedulePage() {
                     ? "1px solid rgba(16, 185, 129, 0.55)"
                     : sharedCardStyle.outline,
                   background: projectBackground,
+                  opacity: displacedPreview ? 0.92 : undefined,
+                  outlineOffset: displacedPreview
+                    ? "-2px"
+                    : sharedCardStyle.outlineOffset,
                 };
                 const projectBorderClass = isCompleted
                   ? "border-emerald-400/60"
@@ -7716,6 +7881,7 @@ export default function SchedulePage() {
                 const projectTitleInnerClass = shouldWrapProjectTitle
                   ? "min-w-0 leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
                   : "min-w-0 leading-tight truncate";
+                if (isDraggedInstance) return null;
                 return (
                   <motion.div
                     key={instance.id}
