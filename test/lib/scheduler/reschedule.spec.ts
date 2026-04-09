@@ -4486,6 +4486,87 @@ describe("scheduleBacklog", () => {
     expect(scheduledProjectIds.has("proj-2")).toBe(true);
   });
 
+  it("does not reuse a project instance that was canceled during the same full reschedule", async () => {
+    const { client: supabase, canceledIds, updateCalls } =
+      createSupabaseMock();
+    const canceledProjectInstance = createInstanceRecord({
+      id: "inst-canceled",
+      source_id: "proj-1",
+      status: "scheduled",
+      start_utc: "2024-01-02T09:00:00Z",
+      end_utc: "2024-01-02T10:00:00Z",
+      window_id: "win-existing",
+      weight_snapshot: 1,
+    });
+
+    fetchInstancesForRangeSpy.mockResolvedValue({
+      data: [canceledProjectInstance],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    } satisfies InstancesResponse);
+
+    fetchWindowsForDateSpy.mockResolvedValue([
+      makeWindow({
+        id: "win-1",
+        label: "Later window",
+        energy: "LOW",
+        start_local: "15:00",
+        end_local: "16:00",
+        days: [2],
+      }),
+    ]);
+
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-1": {
+        id: "proj-1",
+        name: "Existing",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+    });
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-1": {
+        id: "proj-1",
+        name: "Existing",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+    });
+
+    const placements: Array<{
+      projectId: string;
+      reuseInstanceId: string | null | undefined;
+    }> = [];
+    const placeSpy = vi.spyOn(placement, "placeItemInWindows");
+    placeSpy.mockImplementation(async (params) => {
+      placements.push({
+        projectId: params.item.id,
+        reuseInstanceId: params.reuseInstanceId,
+      });
+      return await realPlaceItemInWindows(params);
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, supabase);
+
+    expect(result.failures).toHaveLength(0);
+    expect(canceledIds).toContain("inst-canceled");
+    expect(
+      updateCalls.filter((call) => call.id === "inst-canceled")
+    ).toHaveLength(1);
+    const proj1Placement = placements.find((entry) => entry.projectId === "proj-1");
+    expect(proj1Placement).toBeDefined();
+    expect(proj1Placement?.reuseInstanceId).toBeUndefined();
+    expect(result.timeline.find((entry) => entry.projectId === "proj-1")?.decision).toBe(
+      "new"
+    );
+  });
+
   it("reuses existing instances when fallback enqueues a project", async () => {
     const { client: supabase, update: updateMock } = createSupabaseMock();
     const existing = {

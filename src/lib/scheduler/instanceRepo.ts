@@ -314,7 +314,7 @@ export async function updateInstanceStatus(
     .update(payload)
     .eq("id", id)
     .select(
-      "id, user_id, source_type, status, completed_at, start_utc, end_utc, duration_min"
+      "id, user_id, source_type, source_id, status, completed_at, start_utc, end_utc, duration_min"
     )
     .maybeSingle();
 

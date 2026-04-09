@@ -94,8 +94,62 @@ const normalizeStage = (stage?: string | null, status?: Project["status"]) => {
   return projectStatusToStage(status ?? "In-Progress");
 };
 
+const collectProjectSkillIds = (project: Project) => {
+  const rawSkillIds = Array.isArray(project.skillIds) ? project.skillIds : [];
+  return Array.from(
+    new Set(
+      rawSkillIds
+        .filter((skillId): skillId is string => typeof skillId === "string")
+        .map((skillId) => skillId.trim())
+        .filter((skillId) => skillId.length > 0)
+    )
+  );
+};
+
 const GOAL_CODE_COLUMN_TOKENS = ["priority_code", "energy_code"];
 const PG_COLUMN_MISSING_CODE = "42703";
+
+const PROJECT_PRIORITY_STRENGTH: Record<string, number> = {
+  "ULTRA-CRITICAL": 5,
+  CRITICAL: 4,
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1,
+  NO: 0,
+};
+
+const PROJECT_STAGE_STRENGTH: Record<string, number> = {
+  RESEARCH: 5,
+  TEST: 4,
+  REFINE: 3,
+  BUILD: 2,
+  RELEASE: 1,
+};
+
+function normalizeFiniteRank(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function getPriorityStrength(value?: string | null): number {
+  if (typeof value !== "string") return 0;
+  const normalized = value.trim().toUpperCase();
+  return PROJECT_PRIORITY_STRENGTH[normalized] ?? 0;
+}
+
+function getStageStrength(value?: string | null): number {
+  if (typeof value !== "string") return 0;
+  const normalized = value.trim().toUpperCase();
+  return PROJECT_STAGE_STRENGTH[normalized] ?? 0;
+}
 
 export function isGoalCodeColumnMissingError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -162,6 +216,7 @@ async function syncProjectsAndTasks(
         throw new LimitReachedError(limitCode, error);
       }
       console.error("Error inserting projects:", error);
+      throw error;
     }
   }
 
@@ -183,6 +238,7 @@ async function syncProjectsAndTasks(
           .eq("id", project.id);
         if (error) {
           console.error("Error updating project:", error);
+          throw error;
         }
       })
     );
@@ -191,6 +247,51 @@ async function syncProjectsAndTasks(
   await Promise.all(
     projects.map(async (project) => {
       const projectId = project.id;
+      const projectSkillIds = collectProjectSkillIds(project);
+      const projectWasNew = project.isNew;
+      const { error: deleteSkillError } = await supabase
+        .from("project_skills")
+        .delete()
+        .eq("project_id", projectId);
+      if (deleteSkillError) {
+        console.error("Error deleting project skills:", deleteSkillError);
+      } else if (projectSkillIds.length > 0) {
+        const { error: insertSkillError } = await supabase
+          .from("project_skills")
+          .insert(
+            projectSkillIds.map((skillId) => ({
+              project_id: projectId,
+              skill_id: skillId,
+            }))
+          );
+        if (insertSkillError) {
+          console.error("Error inserting project skills:", {
+            projectId,
+            projectSkillIds,
+            projectWasNew,
+            error: insertSkillError,
+            message:
+              typeof insertSkillError === "object" &&
+              insertSkillError !== null &&
+              "message" in insertSkillError
+                ? (insertSkillError as { message?: unknown }).message
+                : undefined,
+            details:
+              typeof insertSkillError === "object" &&
+              insertSkillError !== null &&
+              "details" in insertSkillError
+                ? (insertSkillError as { details?: unknown }).details
+                : undefined,
+            code:
+              typeof insertSkillError === "object" &&
+              insertSkillError !== null &&
+              "code" in insertSkillError
+                ? (insertSkillError as { code?: unknown }).code
+                : undefined,
+          });
+        }
+      }
+
       const projectTasks = (project.tasks ?? []).filter(
         (task) => task.name.trim().length > 0
       );
@@ -238,6 +339,87 @@ async function syncProjectsAndTasks(
       }
     })
   );
+}
+
+async function persistProjectGlobalRanks(
+  supabase: SupabaseClient,
+  userId: string
+) {
+  const [{ data: goalRows, error: goalError }, { data: projectRows, error: projectError }] =
+    await Promise.all([
+      supabase.from("goals").select("id, global_rank").eq("user_id", userId),
+      supabase
+        .from("projects")
+        .select("id, goal_id, priority, stage")
+        .eq("user_id", userId)
+        .is("completed_at", null),
+    ]);
+
+  if (goalError) {
+    throw goalError;
+  }
+  if (projectError) {
+    throw projectError;
+  }
+
+  const goalRankById = new Map<string, number>();
+  for (const goal of goalRows ?? []) {
+    if (!goal?.id) continue;
+    const goalRank = normalizeFiniteRank(goal.global_rank);
+    if (goalRank !== null) {
+      goalRankById.set(goal.id, goalRank);
+    }
+  }
+
+  const projectRankRecords: Array<{
+    id: string;
+    goalGlobalRank: number | null;
+    priorityStrength: number;
+    stageStrength: number;
+  }> = [];
+
+  for (const project of projectRows ?? []) {
+    if (!project?.id) continue;
+
+    const goalGlobalRank =
+      project.goal_id && goalRankById.has(project.goal_id)
+        ? goalRankById.get(project.goal_id) ?? null
+        : null;
+
+    projectRankRecords.push({
+      id: project.id,
+      goalGlobalRank,
+      priorityStrength: getPriorityStrength(project.priority),
+      stageStrength: getStageStrength(project.stage),
+    });
+  }
+
+  projectRankRecords.sort((a, b) => {
+    const aGoalRank = a.goalGlobalRank ?? Number.POSITIVE_INFINITY;
+    const bGoalRank = b.goalGlobalRank ?? Number.POSITIVE_INFINITY;
+    if (aGoalRank !== bGoalRank) {
+      return aGoalRank - bGoalRank;
+    }
+    if (a.stageStrength !== b.stageStrength) {
+      return b.stageStrength - a.stageStrength;
+    }
+    if (a.priorityStrength !== b.priorityStrength) {
+      return b.priorityStrength - a.priorityStrength;
+    }
+    return a.id.localeCompare(b.id);
+  });
+
+  for (let index = 0; index < projectRankRecords.length; index += 1) {
+    const { id } = projectRankRecords[index];
+    const rank = index + 1;
+    const { error } = await supabase
+      .from("projects")
+      .update({ global_rank: rank })
+      .eq("id", id);
+    if (error) {
+      throw error;
+    }
+  }
 }
 
 interface PersistGoalOptions {
@@ -340,10 +522,6 @@ export async function persistGoalUpdate({
     throw rankError;
   }
 
-  if (!context) {
-    return;
-  }
-
   let ownerId = userId;
   if (!ownerId) {
     const { data, error: authError } = await supabase.auth.getUser();
@@ -357,6 +535,9 @@ export async function persistGoalUpdate({
   }
 
   if (ownerId) {
-    await syncProjectsAndTasks(supabase, ownerId, goal.id, context);
+    if (context) {
+      await syncProjectsAndTasks(supabase, ownerId, goal.id, context);
+    }
+    await persistProjectGlobalRanks(supabase, ownerId);
   }
 }

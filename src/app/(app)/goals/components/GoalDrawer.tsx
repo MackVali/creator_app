@@ -1234,7 +1234,7 @@ export function GoalDrawer({
                             <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
                               <details
                                 className="group"
-                                defaultOpen={Boolean(projectDueDateValue)}
+                                open={Boolean(projectDueDateValue)}
                               >
                                 <summary className="flex cursor-pointer items-center justify-between text-sm font-semibold text-white">
                                   <span>Advanced options</span>

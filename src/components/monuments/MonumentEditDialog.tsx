@@ -6,7 +6,10 @@ import { Check, ChevronDown, X } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
@@ -486,51 +489,46 @@ export function MonumentEditForm({ monumentId, onSaved }: MonumentEditFormProps)
               </DropdownMenuItem>
             ) : (
               groupedAvailableSkills.map((group, index) => (
-                <div
+                <DropdownMenuGroup
                   key={group.id}
-                  className={cn(
-                    "space-y-2 border-t border-white/5 px-3 pb-2 pt-3 text-sm text-white",
-                    index === 0 ? "border-t-0 pt-0" : "",
-                  )}
                 >
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/50">
+                  {index > 0 ? <DropdownMenuSeparator className="bg-white/5" /> : null}
+                  <DropdownMenuLabel className="px-3 pt-3 pb-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/50">
                     {group.label}
-                  </p>
-                  <div className="flex flex-col gap-1">
-                    {group.skills.map((skill) => (
-                      <DropdownMenuItem
-                        key={skill.id}
-                        onSelect={(event) => {
-                          event.preventDefault();
-                          toggleSkill(skill.id);
-                        }}
-                        className="gap-3 text-sm text-white"
-                      >
-                        {skills.includes(skill.id) ? (
-                          <span className="flex size-5 items-center justify-center text-white">
-                            <Check className="size-4" />
-                          </span>
-                        ) : skill.monument_id && skill.monument_id !== monumentId ? (
-                          <span
-                            className="inline-flex size-5 items-center justify-center text-base leading-none"
-                            title={`Assigned to ${
-                              monumentSkillLookup.get(skill.monument_id)?.title ?? "another monument"
-                            }`}
-                            aria-label={`Assigned to ${
-                              monumentSkillLookup.get(skill.monument_id)?.title ?? "another monument"
-                            }`}
-                          >
-                            {monumentSkillLookup.get(skill.monument_id)?.emoji ?? "🏛️"}
-                          </span>
-                        ) : (
-                          <span className="size-5" aria-hidden="true" />
-                        )}
-                        <span className="text-base">{skill.icon ?? "•"}</span>
-                        <span>{skill.name}</span>
-                      </DropdownMenuItem>
-                    ))}
-                  </div>
-                </div>
+                  </DropdownMenuLabel>
+                  {group.skills.map((skill) => (
+                    <DropdownMenuItem
+                      key={skill.id}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        toggleSkill(skill.id);
+                      }}
+                      className="gap-3 text-sm text-white"
+                    >
+                      {skills.includes(skill.id) ? (
+                        <span className="flex size-5 items-center justify-center text-white">
+                          <Check className="size-4" />
+                        </span>
+                      ) : skill.monument_id && skill.monument_id !== monumentId ? (
+                        <span
+                          className="inline-flex size-5 items-center justify-center text-base leading-none"
+                          title={`Assigned to ${
+                            monumentSkillLookup.get(skill.monument_id)?.title ?? "another monument"
+                          }`}
+                          aria-label={`Assigned to ${
+                            monumentSkillLookup.get(skill.monument_id)?.title ?? "another monument"
+                          }`}
+                        >
+                          {monumentSkillLookup.get(skill.monument_id)?.emoji ?? "🏛️"}
+                        </span>
+                      ) : (
+                        <span className="size-5" aria-hidden="true" />
+                      )}
+                      <span className="text-base">{skill.icon ?? "•"}</span>
+                      <span>{skill.name}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
               ))
             )}
           </DropdownMenuContent>

@@ -1849,7 +1849,7 @@ export async function scheduleBacklog(
     supabase: Client
   ) {
     // Hierarchical project ranking: parent goal global rank first, then
-    // project priority strength, then stage strength (project ID as tie-breaker).
+    // project stage strength, then project priority strength (project ID as tie-breaker).
     const goalById = new Map<string, any>();
     for (const goal of goals) {
       if (goal && goal.id) {
@@ -1889,8 +1889,8 @@ export async function scheduleBacklog(
       const goalGlobalRank = deriveGoalGlobalRank(goal);
       const priorityStrength = project.priority
         ? getPriorityIndex(project.priority)
-        : 3;
-      const stageStrength = project.stage ? getStageIndex(project.stage) : 3;
+        : 0;
+      const stageStrength = project.stage ? getStageIndex(project.stage) : 0;
 
       projectRankRecords.push({
         id: projectId,
@@ -1904,11 +1904,11 @@ export async function scheduleBacklog(
       const aGoalRank = a.goalGlobalRank ?? Number.POSITIVE_INFINITY;
       const bGoalRank = b.goalGlobalRank ?? Number.POSITIVE_INFINITY;
       if (aGoalRank !== bGoalRank) return aGoalRank - bGoalRank;
-      if (a.priorityStrength !== b.priorityStrength) {
-        return b.priorityStrength - a.priorityStrength;
-      }
       if (a.stageStrength !== b.stageStrength) {
         return b.stageStrength - a.stageStrength;
+      }
+      if (a.priorityStrength !== b.priorityStrength) {
+        return b.priorityStrength - a.priorityStrength;
       }
       return a.id.localeCompare(b.id);
     });
@@ -1937,18 +1937,18 @@ export async function scheduleBacklog(
       LOW: 2,
       NO: 1,
     };
-    return priorityMap[priority.toUpperCase()] || 3;
+    return priorityMap[priority.toUpperCase()] || 0;
   }
 
   function getStageIndex(stage: string): number {
     const stageMap: Record<string, number> = {
-      RESEARCH: 6,
-      TEST: 5,
-      REFINE: 4,
-      BUILD: 3,
-      RELEASE: 2,
+      RESEARCH: 5,
+      TEST: 4,
+      REFINE: 3,
+      BUILD: 2,
+      RELEASE: 1,
     };
-    return stageMap[stage.toUpperCase()] || 3;
+    return stageMap[stage.toUpperCase()] || 0;
   }
 
   const projectItems = buildProjectItems(
@@ -2234,6 +2234,27 @@ export async function scheduleBacklog(
     }
   }
 
+  const dayInstancesByOffset = new Map<number, ScheduleInstance[]>();
+
+  const getDayInstances = (offset: number) => {
+    let existing = dayInstancesByOffset.get(offset);
+    if (!existing) {
+      existing = [];
+      dayInstancesByOffset.set(offset, existing);
+    }
+    return existing;
+  };
+
+  const removeInstanceFromBuckets = (id: string | null | undefined) => {
+    if (!id) return;
+    for (const bucket of dayInstancesByOffset.values()) {
+      const index = bucket.findIndex((inst) => inst.id === id);
+      if (index >= 0) {
+        bucket.splice(index, 1);
+      }
+    }
+  };
+
   const allProjectIds = new Set(projectQueue.map((p) => p.id));
   const finalQueueProjectIds = new Set(queuedProjectIds);
   const lookaheadDays = Math.min(
@@ -2430,7 +2451,56 @@ export async function scheduleBacklog(
     const nonLockedProjectIds = keptNonLockedProjects
       .map((inst) => inst.id)
       .filter(Boolean) as string[];
+    const canceledProjectIds = new Set<string>();
+    const canceledInstanceIds = new Set<string>();
+    for (const inst of keptNonLockedProjects) {
+      if (inst.source_id) {
+        canceledProjectIds.add(inst.source_id);
+      }
+      if (inst.id) {
+        canceledInstanceIds.add(inst.id);
+      }
+    }
     await cancelInstancesAsRescheduleRebuild(supabase, nonLockedProjectIds);
+    // These projects were just canceled for this rebuild, so their prior instance
+    // IDs must not remain eligible for reuse in the same reschedule run.
+    for (const inst of keptNonLockedProjects) {
+      const projectId = inst.source_id ?? "";
+      if (projectId) {
+        reuseInstanceByProject.delete(projectId);
+      }
+      if (inst.id) {
+        removeInstanceFromBuckets(inst.id);
+      }
+    }
+    if (canceledProjectIds.size > 0) {
+      for (const item of queue) {
+        if (!canceledProjectIds.has(item.id)) continue;
+        item.instanceId = undefined;
+      }
+    }
+    if (canceledInstanceIds.size > 0) {
+      for (const [cacheKey, blockers] of blockerCache) {
+        const filteredBlockers = blockers.filter(
+          (inst) => !inst?.id || !canceledInstanceIds.has(inst.id)
+        );
+        if (filteredBlockers.length === blockers.length) continue;
+        if (filteredBlockers.length === 0) {
+          blockerCache.delete(cacheKey);
+        } else {
+          blockerCache.set(cacheKey, filteredBlockers);
+        }
+      }
+    }
+  }
+
+  // These instances were canceled mid-run; keep their stale in-memory copies from
+  // being re-seeded into same-run blocker state.
+  const canceledNonLockedProjectInstanceIds = new Set<string>();
+  for (const inst of keptNonLockedProjects) {
+    if (inst.id) {
+      canceledNonLockedProjectInstanceIds.add(inst.id);
+    }
   }
 
   const keptInstancesByProject = new Map<string, ScheduleInstance>();
@@ -2462,26 +2532,6 @@ export async function scheduleBacklog(
     }
   }
 
-  const dayInstancesByOffset = new Map<number, ScheduleInstance[]>();
-
-  const getDayInstances = (offset: number) => {
-    let existing = dayInstancesByOffset.get(offset);
-    if (!existing) {
-      existing = [];
-      dayInstancesByOffset.set(offset, existing);
-    }
-    return existing;
-  };
-
-  const removeInstanceFromBuckets = (id: string | null | undefined) => {
-    if (!id) return;
-    for (const bucket of dayInstancesByOffset.values()) {
-      const index = bucket.findIndex((inst) => inst.id === id);
-      if (index >= 0) {
-        bucket.splice(index, 1);
-      }
-    }
-  };
   if (pendingOverlapRemovalIds.size > 0) {
     for (const id of pendingOverlapRemovalIds) {
       removeInstanceFromBuckets(id);
@@ -2785,6 +2835,7 @@ export async function scheduleBacklog(
   const completedProjectIds = new Set<string>();
 
   for (const inst of dedupe.allInstances) {
+    if (canceledNonLockedProjectInstanceIds.has(inst.id)) continue;
     if (invalidatedInstanceIds.has(inst.id)) continue;
     if (
       inst?.source_type === "PROJECT" &&
@@ -3750,6 +3801,7 @@ export async function scheduleBacklog(
         skillMonumentId: null,
         monumentIds: projectGoalMonumentId ? [projectGoalMonumentId] : null,
         isProject: true,
+        allowEmptyProjectCandidates: true,
       };
       if (passesTimeBlockConstraints(constraintItem, targetWindow)) {
         validatedLockedProjects.push(instance);
@@ -4036,6 +4088,7 @@ export async function scheduleBacklog(
           skillIds: getProjectSkillIds(item.id),
           monumentId: projectGoalMonumentId,
           monumentIds: projectGoalMonumentIds,
+          allowEmptyProjectCandidates: Boolean(item.instanceId),
         },
         timeZone,
         {
@@ -8745,6 +8798,7 @@ type ConstraintAwareItem = {
   skillMonumentId?: string | null;
   monumentIds?: string[] | null;
   isProject?: boolean;
+  allowEmptyProjectCandidates?: boolean;
 };
 
 type FetchCompatibleWindowsResult = {
