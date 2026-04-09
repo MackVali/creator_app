@@ -674,11 +674,11 @@ async function rebuildPriorityStack(
     if (aGoalRank !== bGoalRank) {
       return aGoalRank - bGoalRank;
     }
-    if (a.priorityStrength !== b.priorityStrength) {
-      return b.priorityStrength - a.priorityStrength;
-    }
     if (a.stageStrength !== b.stageStrength) {
       return b.stageStrength - a.stageStrength;
+    }
+    if (a.priorityStrength !== b.priorityStrength) {
+      return b.priorityStrength - a.priorityStrength;
     }
     return a.id.localeCompare(b.id);
   });
