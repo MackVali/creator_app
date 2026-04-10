@@ -627,6 +627,203 @@ describe("scheduleBacklog", () => {
     expect(canceledIds).toContain("inst-light");
   });
 
+  it("rebuilds project ordering instead of preserving an older non-roadmap slot", async () => {
+    instances = [
+      createInstanceRecord({
+        id: "inst-non-roadmap",
+        source_id: "proj-non-roadmap",
+        start_utc: "2024-01-02T09:00:00Z",
+        end_utc: "2024-01-02T10:00:00Z",
+        window_id: "win-shared",
+        weight_snapshot: 10,
+      }),
+      createInstanceRecord({
+        id: "inst-roadmap",
+        source_id: "proj-roadmap",
+        start_utc: "2024-01-02T10:00:00Z",
+        end_utc: "2024-01-02T11:00:00Z",
+        window_id: "win-shared",
+        weight_snapshot: 80,
+      }),
+    ];
+
+    const backlogResponse: BacklogResponse = {
+      data: [
+        createInstanceRecord({
+          id: "inst-backlog-non-roadmap",
+          source_id: "proj-non-roadmap",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "LOW",
+        }),
+        createInstanceRecord({
+          id: "inst-backlog-roadmap",
+          source_id: "proj-roadmap",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "LOW",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+    (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+      backlogResponse
+    );
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-non-roadmap": {
+        id: "proj-non-roadmap",
+        name: "Non Roadmap Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+      "proj-roadmap": {
+        id: "proj-roadmap",
+        name: "Roadmap Project",
+        priority: "HIGH",
+        stage: "RESEARCH",
+        energy: "LOW",
+        duration_min: 60,
+        goal_id: "goal-roadmap",
+      },
+    });
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-non-roadmap": {
+        id: "proj-non-roadmap",
+        name: "Non Roadmap Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+      "proj-roadmap": {
+        id: "proj-roadmap",
+        name: "Roadmap Project",
+        priority: "HIGH",
+        stage: "RESEARCH",
+        energy: "LOW",
+        duration_min: 60,
+        goal_id: "goal-roadmap",
+      },
+    });
+    (repo.fetchGoalsForUser as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "goal-roadmap",
+        name: "Roadmap Goal",
+        weight: 0,
+        global_rank: 1,
+      },
+    ]);
+    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue(
+      {}
+    );
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      makeWindow({
+        id: "win-shared",
+        label: "Shared Window",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [2],
+      }),
+    ]);
+    vi.spyOn(repo, "fetchWindowsSnapshot").mockResolvedValue([
+      makeWindow({
+        id: "win-shared",
+        label: "Shared Window",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [2],
+      }),
+    ]);
+
+    const placements: Array<{
+      projectId: string;
+      reuseInstanceId: string | null | undefined;
+      startUTC: string;
+    }> = [];
+    let nextSequentialHour = 9;
+    const historicalStartByReuseId = new Map<string, string>([
+      ["inst-non-roadmap", "2024-01-02T09:00:00Z"],
+      ["inst-roadmap", "2024-01-02T10:00:00Z"],
+    ]);
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async (params) => {
+        const reuseInstanceId = params.reuseInstanceId;
+        const startUTC = reuseInstanceId
+          ? historicalStartByReuseId.get(reuseInstanceId) ??
+            `2024-01-02T${String(nextSequentialHour).padStart(2, "0")}:00:00Z`
+          : `2024-01-02T${String(nextSequentialHour).padStart(2, "0")}:00:00Z`;
+        if (!reuseInstanceId) {
+          nextSequentialHour += 1;
+        }
+        const startIso = new Date(startUTC).toISOString();
+        const start = new Date(startIso);
+        const end = new Date(start.getTime() + params.item.duration_min * 60000);
+        placements.push({
+          projectId: params.item.id,
+          reuseInstanceId,
+          startUTC: startIso,
+        });
+        return {
+          data: createInstanceRecord({
+            id: `inst-${params.item.id}-rebuild`,
+            source_id: params.item.id,
+            source_type: "PROJECT",
+            status: "scheduled",
+            start_utc: startIso,
+            end_utc: end.toISOString(),
+            duration_min: params.item.duration_min,
+            window_id: "win-shared",
+            energy_resolved: "LOW",
+          }),
+          error: null,
+          count: null,
+          status: 200,
+          statusText: "OK",
+        } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      }
+    );
+
+    const { client: supabase, canceledIds } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, supabase, {
+      writeThroughDays: 1,
+    });
+
+    expect(placements.map((entry) => entry.projectId)).toEqual([
+      "proj-roadmap",
+      "proj-non-roadmap",
+    ]);
+    expect(canceledIds).toContain("inst-non-roadmap");
+    expect(placements.every((entry) => entry.reuseInstanceId == null)).toBe(
+      true
+    );
+    expect(
+      result.timeline
+        .filter((entry) => entry.type === "PROJECT")
+        .map((entry) => ({
+          projectId: entry.projectId,
+          startUtc: entry.instance.start_utc,
+        }))
+    ).toEqual([
+      {
+        projectId: "proj-roadmap",
+        startUtc: "2024-01-02T09:00:00.000Z",
+      },
+      {
+        projectId: "proj-non-roadmap",
+        startUtc: "2024-01-02T10:00:00.000Z",
+      },
+    ]);
+  });
+
   it("schedules skill-restricted day-type windows for unlabeled projects", async () => {
     const { client: supabase } = createSupabaseMock();
     const testBaseDate = schedNow("2024-01-02T12:00:00Z");
@@ -5872,6 +6069,105 @@ describe("scheduleBacklog", () => {
     expect(callOrder[0]).toBe("proj-high-rank"); // global_rank 1 first
     expect(callOrder[1]).toBe("proj-low-rank"); // global_rank 10 second
     // proj-null-rank should be last (null ranks go last)
+  });
+
+  it("keeps roadmap-backed critical projects ahead of equal non-roadmap critical projects when goal ranks are fetched canonically", async () => {
+    instances = [];
+
+    vi.mocked(repo.fetchGoalsForUser).mockRestore();
+
+    const goalRows = [
+      {
+        id: "goal-roadmap",
+        name: "Roadmap Goal",
+        global_rank: 1,
+        roadmap_id: "roadmap-1",
+        priority_rank: 1,
+        monument_id: null,
+        emoji: null,
+      },
+    ];
+    const goalsResult = {
+      data: goalRows,
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+    const goalsQuery = {
+      eq: vi.fn(async () => goalsResult),
+    };
+    const goalsFrom = {
+      select: vi.fn(() => goalsQuery),
+    };
+
+    const { client: mockClient } = createSupabaseMock();
+    const baseFrom = mockClient.from;
+    mockClient.from = ((table: string) => {
+      if (table === "goals") {
+        return goalsFrom;
+      }
+      return baseFrom(table);
+    }) as typeof mockClient.from;
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-a-ad-hoc-critical": {
+        id: "proj-a-ad-hoc-critical",
+        name: "Ad Hoc Critical",
+        priority: "CRITICAL",
+        stage: "BUILD",
+        energy: "LOW",
+        duration_min: 60,
+        globalRank: null,
+      },
+      "proj-b-roadmap-critical": {
+        id: "proj-b-roadmap-critical",
+        name: "Roadmap Critical",
+        priority: "CRITICAL",
+        stage: "BUILD",
+        energy: "LOW",
+        duration_min: 60,
+        goal_id: "goal-roadmap",
+        globalRank: null,
+      },
+    });
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-a-ad-hoc-critical": {
+        id: "proj-a-ad-hoc-critical",
+        name: "Ad Hoc Critical",
+        priority: "CRITICAL",
+        stage: "BUILD",
+        energy: "LOW",
+        duration_min: 60,
+        globalRank: null,
+      },
+      "proj-b-roadmap-critical": {
+        id: "proj-b-roadmap-critical",
+        name: "Roadmap Critical",
+        priority: "CRITICAL",
+        stage: "BUILD",
+        energy: "LOW",
+        duration_min: 60,
+        goal_id: "goal-roadmap",
+        globalRank: null,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-1",
+        label: "Morning",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+      },
+    ]);
+
+    await scheduleBacklog(userId, baseDate, mockClient);
+
+    expect(attemptedProjectIds[0]).toBe("proj-b-roadmap-critical");
+    expect(attemptedProjectIds[1]).toBe("proj-a-ad-hoc-critical");
   });
 
   it("rejects higher-ranked projects when they conflict with existing projects", async () => {

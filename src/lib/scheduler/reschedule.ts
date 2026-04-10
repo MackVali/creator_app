@@ -10,8 +10,19 @@ import {
   markProjectMissed,
   type ScheduleInstance,
 } from "./instanceRepo";
-import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from "./projects";
+import {
+  buildProjectItems,
+  DEFAULT_PROJECT_DURATION_MIN,
+} from "./projects";
 import type { ProjectLite } from "./weight";
+import {
+  pickProjectOverlapLoser,
+  type CanonicalGoalRecord,
+  type CanonicalProjectRecord,
+  getPriorityIndex,
+  getStageIndex,
+  normalizeGoalGlobalRank,
+} from "./projectOrdering";
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -1840,41 +1851,22 @@ export async function scheduleBacklog(
   }, {});
 
   // Recalculate global ranks before processing (they may be stale)
-  await recalculateGlobalRanks(userId, projectsMap, goals, supabase);
+  const goalsById = new Map<string, CanonicalGoalRecord>();
+  for (const goal of goals) {
+    if (goal && goal.id) {
+      goalsById.set(goal.id, goal);
+    }
+  }
+
+  await recalculateGlobalRanks(userId, projectsMap, supabase);
 
   async function recalculateGlobalRanks(
     userId: string,
-    projectsMap: Record<string, any>,
-    goals: any[],
+    projectsMap: Record<string, CanonicalProjectRecord>,
     supabase: Client
   ) {
     // Hierarchical project ranking: parent goal global rank first, then
     // project stage strength, then project priority strength (project ID as tie-breaker).
-    const goalById = new Map<string, any>();
-    for (const goal of goals) {
-      if (goal && goal.id) {
-        goalById.set(goal.id, goal);
-      }
-    }
-
-    const normalizeGoalRank = (value: unknown): number | null => {
-      if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-        return value;
-      }
-      if (typeof value === "string") {
-        const parsed = Number(value);
-        if (Number.isFinite(parsed) && parsed > 0) {
-          return parsed;
-        }
-      }
-      return null;
-    };
-
-    const deriveGoalGlobalRank = (goal: any): number | null => {
-      if (!goal) return null;
-      return normalizeGoalRank(goal.global_rank ?? goal.globalRank);
-    };
-
     const projectRankRecords: Array<{
       id: string;
       goalGlobalRank: number | null;
@@ -1883,10 +1875,12 @@ export async function scheduleBacklog(
     }> = [];
 
     for (const [projectId, project] of Object.entries(projectsMap)) {
-      const goal = project.goal_id ? goalById.get(project.goal_id) : null;
+      const goal = project.goal_id ? goalsById.get(project.goal_id) : null;
       if (!goal) continue;
 
-      const goalGlobalRank = deriveGoalGlobalRank(goal);
+      const goalGlobalRank = normalizeGoalGlobalRank(
+        goal.global_rank ?? goal.globalRank
+      );
       const priorityStrength = project.priority
         ? getPriorityIndex(project.priority)
         : 0;
@@ -1926,29 +1920,6 @@ export async function scheduleBacklog(
         projectsMap[projectId].globalRank = rank;
       }
     }
-  }
-
-  function getPriorityIndex(priority: string): number {
-    const priorityMap: Record<string, number> = {
-      "ULTRA-CRITICAL": 6,
-      CRITICAL: 5,
-      HIGH: 4,
-      MEDIUM: 3,
-      LOW: 2,
-      NO: 1,
-    };
-    return priorityMap[priority.toUpperCase()] || 0;
-  }
-
-  function getStageIndex(stage: string): number {
-    const stageMap: Record<string, number> = {
-      RESEARCH: 5,
-      TEST: 4,
-      REFINE: 3,
-      BUILD: 2,
-      RELEASE: 1,
-    };
-    return stageMap[stage.toUpperCase()] || 0;
   }
 
   const projectItems = buildProjectItems(
@@ -2570,16 +2541,6 @@ export async function scheduleBacklog(
     );
   };
 
-  const projectWeightForInstance = (instance: ScheduleInstance): number => {
-    if (typeof instance?.weight_snapshot === "number") {
-      return instance.weight_snapshot;
-    }
-    const projectId = instance?.source_id ?? "";
-    if (!projectId) return 0;
-    const def = projectItemMap[projectId];
-    return typeof def?.weight === "number" ? def.weight : 0;
-  };
-
   const collectProjectOverlapConflicts = (
     instances: ScheduleInstance[],
     habitOverlapMap: Map<string, boolean>
@@ -2635,17 +2596,12 @@ export async function scheduleBacklog(
         } else if (!lastIsProject && currentIsProject) {
           removal = current;
         } else if (lastIsProject && currentIsProject) {
-          const lastWeight = projectWeightForInstance(last);
-          const currentWeight = projectWeightForInstance(current);
-          if (lastWeight < currentWeight) {
-            removal = last;
-          } else if (currentWeight < lastWeight) {
-            removal = current;
-          } else {
-            const lastStart = new Date(last.start_utc ?? "").getTime();
-            const currentStart = new Date(current.start_utc ?? "").getTime();
-            removal = currentStart < lastStart ? last : current;
-          }
+          removal = pickProjectOverlapLoser(
+            last,
+            current,
+            projectItemMap,
+            goalsById
+          );
         }
       }
       if (
@@ -4243,7 +4199,6 @@ export async function scheduleBacklog(
         date: currentDay, // Use the current day we're searching
         timeZone,
         client: supabase,
-        reuseInstanceId: item.instanceId,
         ignoreProjectIds: new Set([item.id]),
         notBefore: dayOffset === 0 ? baseDate : undefined, // Only apply notBefore on first day
         existingInstances: projectBlockingInstances,
@@ -5439,6 +5394,11 @@ async function dedupeScheduledProjects(
         keepers.set(projectId, inst);
       }
     } else {
+      if (withinWriteThrough) {
+        // PROJECT rebuild should clear these rows, not keep one around for reuse.
+        extras.push(inst);
+        continue;
+      }
       const existing = reusableCandidates.get(projectId);
       if (!existing) {
         reusableCandidates.set(projectId, inst);
