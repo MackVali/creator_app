@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronDown, Plus, X } from "lucide-react";
 import { listRoadmaps, createRoadmap } from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -293,7 +293,7 @@ export function GoalDrawer({
     "initialGoal:",
     initialGoal?.id
   );
-  const formId = "goal-editor-form";
+  const formId = `goal-editor-form-${useId()}`;
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("");
   const [hasCustomEmoji, setHasCustomEmoji] = useState(false);
