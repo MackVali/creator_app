@@ -1896,12 +1896,12 @@ export default function NewDayTypePage() {
 
   return (
     <ProtectedRoute>
-      <main className="min-h-screen bg-black text-white">
+      <main className="min-h-screen bg-[#050507] text-white">
         <div className="mx-auto max-w-4xl space-y-6 px-3 py-6 sm:px-4 sm:py-8">
           <div className="flex items-center justify-between">
             <Link
               href="/schedule"
-              className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/75 transition hover:border-white/25 hover:bg-white/10"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-gradient-to-b from-white/16 to-white/6 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_6px_14px_rgba(0,0,0,0.35)] transition hover:border-white/30 hover:from-white/20 hover:to-white/10 hover:text-white"
             >
               ← Back to schedule
             </Link>
@@ -1917,7 +1917,7 @@ export default function NewDayTypePage() {
 
           <section className="space-y-3">
             {isCreatingDayType ? (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-[0_16px_32px_rgba(0,0,0,0.28)] sm:p-4">
+              <div className="rounded-2xl border border-white/12 bg-gradient-to-b from-[#15161a] to-[#0e0f12] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_44px_rgba(0,0,0,0.45)] sm:p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2 sm:flex-1">
                   <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
@@ -1952,7 +1952,7 @@ export default function NewDayTypePage() {
                         setSchedulerMode("REGULAR");
                       }
                     }}
-                  className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
+                  className="rounded-full border border-white/20 bg-gradient-to-b from-white/16 to-white/7 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_18px_rgba(0,0,0,0.35)] transition hover:border-white/35 hover:from-white/22 hover:to-white/10"
                 >
                   Close creation
                 </button>
@@ -2060,7 +2060,7 @@ export default function NewDayTypePage() {
                   </div>
                   <div className="flex flex-col items-end gap-3">
                     <div className="w-full max-w-[260px] sm:w-[260px]">
-                      <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/60">
+                      <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/65">
                         <span>Scheduler mode</span>
                         <span className="text-[9px] text-white/40">per day type</span>
                       </div>
@@ -2069,10 +2069,10 @@ export default function NewDayTypePage() {
                         onValueChange={(next) => setSchedulerMode(normalizeSchedulerMode(next))}
                         disabled={!isCreatingDayType}
                       >
-                        <SelectTrigger className="mt-1 h-9 w-full rounded-xl border border-white/15 bg-black/50 px-2.5 text-left text-xs font-semibold text-white/85 hover:border-white/25 focus:ring-0 sm:h-11 sm:px-3 sm:text-sm">
+                        <SelectTrigger className="mt-1 h-9 w-full rounded-xl border border-white/15 bg-gradient-to-b from-[#1a1b20] to-[#111217] px-2.5 text-left text-xs font-semibold text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_8px_18px_rgba(0,0,0,0.28)] hover:border-white/30 focus:ring-0 sm:h-11 sm:px-3 sm:text-sm">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="border-white/10 bg-[#0F0F15]/95 text-white shadow-[0_18px_48px_rgba(0,0,0,0.45)] p-0">
+                        <SelectContent className="border-white/15 bg-[#0f1014]/98 p-0 text-white shadow-[0_20px_50px_rgba(0,0,0,0.58)]">
                           {SCHEDULER_MODE_OPTIONS.map((option) => (
                             <SelectItem
                               key={option.value}
@@ -2098,10 +2098,10 @@ export default function NewDayTypePage() {
                       disabled={!isCreatingDayType || !canSaveDayType || saving}
                       data-tour="day-type-save"
                       className={cn(
-                        "w-full max-w-[220px] rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/90 transition sm:w-auto sm:px-4 sm:py-2 sm:text-sm",
+                        "w-full max-w-[220px] rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_10px_24px_rgba(0,0,0,0.4)] transition sm:w-auto sm:px-4 sm:py-2 sm:text-sm",
                         isCreatingDayType
-                          ? "bg-white/15 hover:border-white/25 hover:bg-white/20"
-                          : "bg-white/10 opacity-60",
+                          ? "bg-gradient-to-b from-white/20 to-white/10 hover:border-white/35 hover:from-white/28 hover:to-white/14"
+                          : "bg-gradient-to-b from-white/12 to-white/5 opacity-60",
                         "disabled:opacity-50"
                       )}
                     >
@@ -2114,7 +2114,7 @@ export default function NewDayTypePage() {
               </div>
               </div>
             ) : (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 shadow-[0_12px_24px_rgba(0,0,0,0.22)] sm:px-4 sm:py-3">
+              <div className="rounded-2xl border border-white/12 bg-gradient-to-b from-[#14161b] to-[#0f1014] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_16px_34px_rgba(0,0,0,0.4)] sm:px-4 sm:py-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                     DAY TYPE
@@ -2123,7 +2123,7 @@ export default function NewDayTypePage() {
                     type="button"
                     onClick={startCreateDayType}
                     data-tour="day-type-create"
-                    className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
+                    className="rounded-full border border-white/20 bg-gradient-to-b from-white/16 to-white/7 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_8px_18px_rgba(0,0,0,0.35)] transition hover:border-white/35 hover:from-white/22 hover:to-white/11"
                   >
                     Create day type
                   </button>
@@ -2132,7 +2132,7 @@ export default function NewDayTypePage() {
             )}
 
             {dayTypes.length > 0 ? (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.24)] sm:px-4 sm:py-3">
+              <div className="rounded-2xl border border-white/12 bg-gradient-to-b from-[#14161b] to-[#0f1014] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_16px_34px_rgba(0,0,0,0.42)] sm:px-4 sm:py-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="text-[11px] uppercase tracking-[0.16em] text-white/60">
                     Created day types
@@ -2195,8 +2195,8 @@ export default function NewDayTypePage() {
                         className={cn(
                           "flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs transition sm:px-3 sm:py-1.5 sm:text-sm",
                           active
-                            ? "border-white/40 bg-white/15 text-white shadow-[0_10px_24px_rgba(0,0,0,0.3)]"
-                            : "border-white/12 bg-white/[0.04] text-white/80 hover:border-white/20 hover:bg-white/10"
+                            ? "border-white/35 bg-gradient-to-b from-white/20 to-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_10px_24px_rgba(0,0,0,0.35)]"
+                            : "border-white/12 bg-gradient-to-b from-white/10 to-white/4 text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_8px_18px_rgba(0,0,0,0.26)] hover:border-white/24 hover:from-white/14 hover:to-white/6"
                         )}
                       >
                         <span className="max-w-[12rem] truncate text-left">{dt.name}</span>
@@ -2242,7 +2242,7 @@ export default function NewDayTypePage() {
                       type="button"
                       onClick={startCreateBlock}
                       data-tour="day-type-add-block"
-                      className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80 transition hover:border-white/20 hover:bg-white/10 sm:px-3 sm:py-1.5 sm:text-xs"
+                      className="rounded-full border border-white/18 bg-gradient-to-b from-white/14 to-white/6 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_18px_rgba(0,0,0,0.35)] transition hover:border-white/30 hover:from-white/20 hover:to-white/9 sm:px-3 sm:py-1.5 sm:text-xs"
                     >
                   Create time block
                 </button>
@@ -2250,13 +2250,13 @@ export default function NewDayTypePage() {
             </div>
 
             {error ? (
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
+              <div className="rounded-2xl border border-white/12 bg-gradient-to-b from-white/10 to-white/5 px-4 py-3 text-sm text-white/75 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_24px_rgba(0,0,0,0.35)]">
                 {error}
               </div>
             ) : null}
 
             {!hasBlocks ? (
-              <div className="rounded-2xl border border-white/10 bg-[var(--surface-elevated)]/70 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.35)] sm:p-6">
+              <div className="rounded-2xl border border-white/12 bg-gradient-to-b from-[#17191f] to-[#101116] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_40px_rgba(0,0,0,0.45)] sm:p-6">
                 <div className="space-y-2 text-center">
                   <h3 className="text-base font-semibold text-white sm:text-lg">No time blocks yet</h3>
                   <p className="text-xs text-white/60 sm:text-sm">
@@ -2267,7 +2267,7 @@ export default function NewDayTypePage() {
                     type="button"
                     onClick={startCreateBlock}
                     data-tour="day-type-add-block"
-                    className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90 transition hover:border-white/20 hover:bg-white/15 sm:px-4 sm:py-2 sm:text-sm"
+                    className="rounded-full border border-white/18 bg-gradient-to-b from-white/16 to-white/7 px-3 py-1.5 text-xs font-semibold text-white/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_10px_24px_rgba(0,0,0,0.38)] transition hover:border-white/30 hover:from-white/22 hover:to-white/10 sm:px-4 sm:py-2 sm:text-sm"
                   >
                     Create time block
                     </button>
@@ -2277,7 +2277,7 @@ export default function NewDayTypePage() {
             ) : null}
 
             {showCreateForm ? (
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-black/50 p-3.5 shadow-[0_20px_48px_rgba(0,0,0,0.35)] backdrop-blur sm:p-5">
+              <div className="rounded-2xl border border-white/12 bg-gradient-to-b from-[#171920] to-[#101218] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_20px_48px_rgba(0,0,0,0.48)] sm:p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="space-y-1">
                     <div className="text-[11px] uppercase tracking-[0.16em] text-white/50">
@@ -2293,7 +2293,7 @@ export default function NewDayTypePage() {
                     <button
                       type="button"
                       onClick={resetBlockForm}
-                      className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/70 transition hover:border-white/20 hover:bg-white/5 sm:px-4 sm:py-2 sm:text-sm"
+                      className="rounded-full border border-white/16 bg-gradient-to-b from-white/10 to-white/4 px-3 py-1.5 text-xs font-semibold text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_8px_18px_rgba(0,0,0,0.3)] transition hover:border-white/28 hover:from-white/14 hover:to-white/6 sm:px-4 sm:py-2 sm:text-sm"
                     >
                       Cancel
                     </button>
@@ -2302,7 +2302,7 @@ export default function NewDayTypePage() {
                       onClick={handleSubmitBlock}
                       disabled={savingBlock}
                     data-tour="selected-time-block-save"
-                      className="rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-white/30 hover:bg-white/20 disabled:opacity-60 sm:px-4 sm:py-2 sm:text-sm"
+                      className="rounded-full border border-white/20 bg-gradient-to-b from-white/20 to-white/10 px-3 py-1.5 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_10px_24px_rgba(0,0,0,0.4)] transition hover:border-white/35 hover:from-white/26 hover:to-white/14 disabled:opacity-60 sm:px-4 sm:py-2 sm:text-sm"
                     >
                       {savingBlock
                         ? isEditingBlock
@@ -2391,9 +2391,9 @@ export default function NewDayTypePage() {
                       key={block.id}
                       data-tour={tourHighlightBlock ? "selected-time-block" : undefined}
                       className={cn(
-                        "flex w-full flex-col gap-3 rounded-2xl border px-4 py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.28)] transition",
-                        "border-white/10 bg-white/[0.04] hover:border-white/20 hover:bg-white/10",
-                        selected && "border-white/30 bg-white/10"
+                        "flex w-full flex-col gap-3 rounded-2xl border px-4 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_32px_rgba(0,0,0,0.35)] transition",
+                        "border-white/12 bg-gradient-to-b from-[#151820] to-[#0f1117] hover:border-white/24",
+                        selected && "border-white/30 bg-gradient-to-b from-white/16 to-white/8"
                       )}
                     >
                       <div className="flex w-full items-center gap-2">
@@ -2506,7 +2506,7 @@ export default function NewDayTypePage() {
                       </div>
                       {constraintsTarget?.id === block.id ? (
                         <div
-                          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 shadow-[0_10px_28px_rgba(0,0,0,0.3)]"
+                          className="rounded-2xl border border-white/12 bg-gradient-to-b from-[#1a1c23] to-[#111319] px-4 py-3 text-sm text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_12px_28px_rgba(0,0,0,0.38)]"
                           data-tour={isConstraintsTargetBlock ? "selected-time-block-constraints-panel" : undefined}
                         >
                           <div className="flex items-start justify-between gap-3">
@@ -2947,7 +2947,7 @@ export default function NewDayTypePage() {
                               onClick={() => {
                                 setConstraintsTarget(null);
                               }}
-                              className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:border-white/25 hover:bg-white/15"
+                              className="rounded-full border border-white/20 bg-gradient-to-b from-white/16 to-white/7 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_18px_rgba(0,0,0,0.32)] transition hover:border-white/32 hover:from-white/22 hover:to-white/10"
                             >
                               Close
                             </button>
