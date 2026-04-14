@@ -1896,7 +1896,7 @@ export default function NewDayTypePage() {
 
   return (
     <ProtectedRoute>
-      <main className="min-h-screen bg-black text-white">
+      <main className="min-h-screen bg-gradient-to-b from-[#06080f] via-[#090d18] to-[#06080f] text-white">
         <div className="mx-auto max-w-4xl space-y-6 px-3 py-6 sm:px-4 sm:py-8">
           <div className="flex items-center justify-between">
             <Link
@@ -1917,7 +1917,7 @@ export default function NewDayTypePage() {
 
           <section className="space-y-3">
             {isCreatingDayType ? (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-[0_16px_32px_rgba(0,0,0,0.28)] sm:p-4">
+              <div className="rounded-2xl border border-slate-300/15 bg-gradient-to-br from-slate-900/65 via-slate-900/40 to-slate-950/70 p-3 shadow-[0_20px_44px_rgba(2,6,23,0.45)] backdrop-blur-sm sm:p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2 sm:flex-1">
                   <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
@@ -1952,7 +1952,7 @@ export default function NewDayTypePage() {
                         setSchedulerMode("REGULAR");
                       }
                     }}
-                  className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
+                  className="rounded-full border border-slate-200/20 bg-slate-200/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-100/90 transition hover:border-slate-200/35 hover:bg-slate-200/15"
                 >
                   Close creation
                 </button>
@@ -2060,7 +2060,7 @@ export default function NewDayTypePage() {
                   </div>
                   <div className="flex flex-col items-end gap-3">
                     <div className="w-full max-w-[260px] sm:w-[260px]">
-                      <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/60">
+                      <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-slate-200/65">
                         <span>Scheduler mode</span>
                         <span className="text-[9px] text-white/40">per day type</span>
                       </div>
@@ -2069,10 +2069,10 @@ export default function NewDayTypePage() {
                         onValueChange={(next) => setSchedulerMode(normalizeSchedulerMode(next))}
                         disabled={!isCreatingDayType}
                       >
-                        <SelectTrigger className="mt-1 h-9 w-full rounded-xl border border-white/15 bg-black/50 px-2.5 text-left text-xs font-semibold text-white/85 hover:border-white/25 focus:ring-0 sm:h-11 sm:px-3 sm:text-sm">
+                        <SelectTrigger className="mt-1 h-9 w-full rounded-xl border border-slate-300/20 bg-slate-950/70 px-2.5 text-left text-xs font-semibold text-slate-100/90 hover:border-slate-200/35 focus:ring-0 sm:h-11 sm:px-3 sm:text-sm">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="border-white/10 bg-[#0F0F15]/95 text-white shadow-[0_18px_48px_rgba(0,0,0,0.45)] p-0">
+                        <SelectContent className="border-slate-300/15 bg-[#0b1020]/95 p-0 text-white shadow-[0_18px_48px_rgba(2,6,23,0.55)]">
                           {SCHEDULER_MODE_OPTIONS.map((option) => (
                             <SelectItem
                               key={option.value}
@@ -2098,10 +2098,10 @@ export default function NewDayTypePage() {
                       disabled={!isCreatingDayType || !canSaveDayType || saving}
                       data-tour="day-type-save"
                       className={cn(
-                        "w-full max-w-[220px] rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/90 transition sm:w-auto sm:px-4 sm:py-2 sm:text-sm",
+                        "w-full max-w-[220px] rounded-full border border-slate-200/20 px-3 py-1.5 text-xs font-semibold text-slate-100/90 transition sm:w-auto sm:px-4 sm:py-2 sm:text-sm",
                         isCreatingDayType
-                          ? "bg-white/15 hover:border-white/25 hover:bg-white/20"
-                          : "bg-white/10 opacity-60",
+                          ? "bg-violet-300/20 hover:border-violet-200/45 hover:bg-violet-300/30"
+                          : "bg-slate-200/10 opacity-60",
                         "disabled:opacity-50"
                       )}
                     >
@@ -2114,7 +2114,7 @@ export default function NewDayTypePage() {
               </div>
               </div>
             ) : (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 shadow-[0_12px_24px_rgba(0,0,0,0.22)] sm:px-4 sm:py-3">
+              <div className="rounded-2xl border border-slate-300/15 bg-slate-900/45 px-3 py-2.5 shadow-[0_14px_30px_rgba(2,6,23,0.35)] sm:px-4 sm:py-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                     DAY TYPE
@@ -2123,7 +2123,7 @@ export default function NewDayTypePage() {
                     type="button"
                     onClick={startCreateDayType}
                     data-tour="day-type-create"
-                    className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/25 hover:bg-white/15"
+                    className="rounded-full border border-slate-200/20 bg-slate-200/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-100/90 transition hover:border-slate-200/35 hover:bg-slate-200/15"
                   >
                     Create day type
                   </button>
@@ -2132,7 +2132,7 @@ export default function NewDayTypePage() {
             )}
 
             {dayTypes.length > 0 ? (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.24)] sm:px-4 sm:py-3">
+              <div className="rounded-2xl border border-slate-300/15 bg-slate-900/45 px-3 py-2.5 shadow-[0_14px_30px_rgba(2,6,23,0.36)] sm:px-4 sm:py-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="text-[11px] uppercase tracking-[0.16em] text-white/60">
                     Created day types
