@@ -6,10 +6,10 @@ const PrivacyPage = () => (
   <div className="max-w-3xl mx-auto px-4 py-10 space-y-8">
     <div className="flex flex-wrap items-center justify-between gap-4">
       <Link
-        href="/settings"
+        href="/"
         className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-medium text-[var(--muted)] transition hover:border-white/40 hover:bg-white/5"
       >
-        &larr; Back to settings
+        &larr; Back to home
       </Link>
       <p className="text-sm text-muted-foreground">Last updated: {lastUpdated}</p>
     </div>
