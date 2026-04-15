@@ -2,11 +2,18 @@ import { getSupabaseBrowser } from "./supabase";
 import { getCurrentUserId } from "./auth";
 import { PostgrestError } from "@supabase/supabase-js";
 import {
+  ContentCard,
   Profile,
   ProfileFormData,
+  ProfileOffer,
   ProfileUpdateResult,
-  ContentCard,
 } from "./types";
+import {
+  LISTING_FIELDS,
+  serializeListing,
+  type ListingRow,
+} from "@/lib/source/listings/shared";
+import { mapSourceListingToProfileOffer } from "@/lib/profile/source-listings";
 
 // Helper function to get the current user's ID
 export async function getUserId() {
@@ -521,5 +528,37 @@ export async function getProfileLinks(userId: string): Promise<ContentCard[]> {
   } catch (error) {
     console.error("Error in getProfileLinks:", error);
     return [];
+  }
+}
+
+export async function getProfileServiceOffers(userId: string): Promise<ProfileOffer[]> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from("source_listings")
+      .select(LISTING_FIELDS)
+      .eq("user_id", userId)
+      .eq("type", "service")
+      .eq("status", "published")
+      .order("updated_at", { ascending: false })
+      .limit(24);
+
+    if (error) {
+      console.error("Error fetching service listings:", error);
+      throw new Error(error.message || "Failed to load service listings.");
+    }
+
+    const listings = (data ?? []).map((row) =>
+      serializeListing(row as ListingRow),
+    );
+
+    return listings.map((listing, index) =>
+      mapSourceListingToProfileOffer(listing, userId, index),
+    );
+  } catch (error) {
+    console.error("Error in getProfileServiceOffers:", error);
+    throw error instanceof Error ? error : new Error("Failed to load service listings.");
   }
 }

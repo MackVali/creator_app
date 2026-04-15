@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   BookOpen,
   ChevronLeft,
+  ExternalLink,
   Share2,
   ShieldCheck,
   Sparkles,
@@ -20,12 +21,18 @@ import {
   useCallback,
   useId,
   useRef,
+  useState,
   type ChangeEvent,
   type MouseEvent,
+  type ReactNode,
 } from "react";
 
 import { Profile } from "@/lib/types";
 
+import RelationshipViewBar, {
+  RelationshipView,
+  RelationshipViewCounts,
+} from "@/components/friends/RelationshipViewBar";
 import SocialPillsRow from "./SocialPillsRow";
 
 const QUICK_ACTION_ICON_MAP: Record<string, LucideIcon> = {
@@ -65,9 +72,11 @@ interface HeroHeaderProps {
   socials?: Record<string, string | undefined>;
   onShare?: () => void;
   onBack?: () => void;
+  topRightSlot?: ReactNode;
   isOwner?: boolean;
   onAvatarChange?: (file: File) => Promise<void> | void;
   isAvatarUploading?: boolean;
+  relationshipCounts?: RelationshipViewCounts;
 }
 
 export default function HeroHeader({
@@ -75,11 +84,14 @@ export default function HeroHeader({
   socials,
   onShare,
   onBack,
+  topRightSlot,
   isOwner = false,
   onAvatarChange,
   isAvatarUploading = false,
+  relationshipCounts,
 }: HeroHeaderProps) {
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [relationshipView, setRelationshipView] = useState<RelationshipView>("friends");
 
   const getInitials = (name: string | null, username: string) => {
     if (name) {
@@ -132,6 +144,7 @@ export default function HeroHeader({
     }));
   const hasPartnerBadges = partnerBadges.length > 0;
   const hasQuickActions = quickActions.length > 0;
+  const hasRelationshipExtras = pronouns || hasPartnerBadges || hasQuickActions;
   const tooltipIdBase = useId();
   const avatarButtonClass =
     "absolute inset-0 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black transition duration-200 disabled:cursor-not-allowed disabled:opacity-70";
@@ -171,7 +184,7 @@ export default function HeroHeader({
 
   return (
     <section className="w-full bg-black text-white mt-0">
-      <div className="mx-auto flex max-w-6xl flex-col gap-10 px-5 pb-10 pt-0 sm:px-8 sm:pb-12 sm:pt-0">
+      <div className="mx-auto flex max-w-6xl flex-col gap-0 px-5 pb-6 pt-0 sm:px-8 sm:pb-8 sm:pt-0">
         <div className="relative w-full max-w-6xl">
           <div className="relative w-full overflow-hidden rounded-[32px] border border-white/10 bg-black/40 shadow-[0_25px_60px_rgba(2,6,23,0.55)]">
             <div className={`relative ${heroHeightClasses}`}>
@@ -255,25 +268,49 @@ export default function HeroHeader({
               <div className="pointer-events-auto absolute left-4 top-1/2 z-20 -translate-y-1/2 sm:left-6">
                 <SocialPillsRow socials={socials || {}} layout="vertical" />
               </div>
-              <div className="absolute inset-x-0 bottom-0 z-10 flex w-full flex-col items-center gap-3 px-6 pb-6 text-center text-white pointer-events-none sm:px-8">
+              {topRightSlot ? (
+                <div className="pointer-events-auto absolute right-4 top-4 z-20 sm:right-6 sm:top-6">
+                  {topRightSlot}
+                </div>
+              ) : null}
+              {locationDisplay ? (
+                <div
+                  className={`pointer-events-none absolute right-4 z-20 flex items-center gap-2 rounded-full border border-white/20 bg-black/50 px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.25em] text-white/80 shadow-[0_12px_40px_rgba(0,0,0,0.6)] sm:right-6 ${
+                    topRightSlot ? "top-16 sm:top-[4.35rem]" : "top-4 sm:top-6"
+                  }`}
+                  aria-label={`Located in ${locationDisplay}`}
+                >
+                  <MapPin className="h-3 w-3 text-white/70" aria-hidden="true" />
+                  <span className="leading-none text-[0.65rem] tracking-[0.3em] text-white/80">{locationDisplay}</span>
+                </div>
+              ) : null}
+              <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center sm:top-5">
+                <span className="inline-flex items-center rounded-full bg-black/65 px-3 py-1 text-xs font-semibold text-white/85 shadow-[0_12px_40px_rgba(0,0,0,0.6)]">
+                  @{profile.username}
+                </span>
+              </div>
+              <div className="absolute inset-x-0 bottom-0 z-10 flex w-full flex-col items-center gap-2 px-6 pb-6 text-center text-white pointer-events-none sm:px-8">
                 <h1 className="text-3xl font-semibold sm:text-4xl md:text-5xl">{displayName}</h1>
-                <p className="text-sm font-medium text-white/80">@{profile.username}</p>
+                <p className="max-w-3xl text-sm font-semibold leading-relaxed tracking-tight text-white sm:text-base">
+                  {tagline}
+                </p>
               </div>
             </div>
           </div>
         </div>
 
 
-        <div className="flex flex-col gap-8">
-          <section className="space-y-6 rounded-[32px] border border-white/10 bg-white/5 px-6 py-8 text-center text-white/90 shadow-[0_20px_50px_rgba(2,6,23,0.55)] sm:px-8">
-            <div className="space-y-3">
-              <p className="text-base leading-relaxed text-white/90">{tagline}</p>
-              {joinedDate ? (
-                <p className="text-sm font-semibold uppercase tracking-[0.3em] text-white/50">
-                  Joined {joinedDate}
-                </p>
-              ) : null}
-            </div>
+        <div className="flex flex-col gap-1">
+          <div className="px-6 sm:px-8">
+            <RelationshipViewBar
+              value={relationshipView}
+              onChange={setRelationshipView}
+              counts={relationshipCounts}
+              className="mx-auto w-full max-w-[420px]"
+            />
+          </div>
+          {hasRelationshipExtras ? (
+            <section className="flex flex-col space-y-1 px-6 py-3 text-center text-white sm:px-8">
 
             <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-white/70">
               {pronouns ? (
@@ -284,30 +321,7 @@ export default function HeroHeader({
                   {pronouns}
                 </span>
               ) : null}
-              {locationDisplay ? (
-                <span
-                  className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-3 py-1 text-xs font-medium text-white/70"
-                  aria-label={`Located in ${locationDisplay}`}
-                >
-                  <MapPin className="h-4 w-4 text-white/70" aria-hidden="true" />
-                  <span>{locationDisplay}</span>
-                </span>
-              ) : null}
             </div>
-
-            {bioSegments.length ? (
-              <div className="flex flex-wrap justify-center gap-2">
-                {bioSegments.slice(0, 4).map((segment) => (
-                  <span
-                    key={segment}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[0.65rem] uppercase tracking-[0.25em] text-white/70"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-white/45" aria-hidden="true" />
-                    {segment}
-                  </span>
-                ))}
-              </div>
-            ) : null}
 
             {hasPartnerBadges ? (
               <ul role="list" className="flex flex-wrap justify-center gap-2">
@@ -373,17 +387,9 @@ export default function HeroHeader({
                 })}
               </ul>
             ) : null}
-          </section>
+            </section>
+          ) : null}
 
-          <section className="rounded-[28px] border border-white/12 bg-gradient-to-br from-white/5 via-white/2 to-transparent px-6 py-8 shadow-[0_30px_60px_-25px_rgba(2,6,23,0.7)] sm:px-7 sm:py-9">
-            <div className="rounded-3xl border border-white/10 bg-black/50 px-5 py-5 text-sm leading-relaxed text-white/85 sm:px-6">
-              <p className="text-[0.925rem] leading-relaxed text-white/85 sm:text-sm">
-                {profile.bio
-                  ? profile.bio
-                  : "Add a longer story in your bio to help visitors understand your craft, mission, and offerings."}
-              </p>
-            </div>
-          </section>
         </div>
       </div>
     </section>

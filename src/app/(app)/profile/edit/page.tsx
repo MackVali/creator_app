@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Save, User, Calendar, MapPin, FileText, Camera } from "lucide-react";
 import Link from "next/link";
+import ContentCardManager from "@/components/profile/ContentCardManager";
 import SocialPillsRow from "@/components/profile/SocialPillsRow";
 
 const LINKED_ACCOUNT_ORDER: SupportedPlatform[] = [
@@ -761,63 +762,6 @@ export default function ProfileEditPage() {
             </div>
           </div>
         </div>
-        {hasLinkedAccounts ? (
-          <div className="mx-auto w-full max-w-5xl px-4 pb-10">
-            <div className="border-b border-white/10 pb-4">
-              <div className="space-y-1 max-w-2xl">
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
-                  Linked accounts
-                </p>
-                <p className="text-sm text-zinc-400">
-                  Your audience sees these profiles on your page.
-                </p>
-              </div>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {activeLinkedAccounts.map((account) => {
-                const platformKey = (account.platform ?? "").toLowerCase();
-                const definition = getSocialIconDefinition(platformKey);
-                const Icon = definition.icon;
-                let subtext = account.username ? `@${account.username}` : undefined;
-                if (!subtext && account.url) {
-                  try {
-                    subtext = new URL(account.url).hostname;
-                  } catch {
-                    subtext = account.url;
-                  }
-                }
-
-                if (!account.url) {
-                  return null;
-                }
-
-                return (
-                  <a
-                    key={`${platformKey}-${account.url}`}
-                    href={account.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 transition hover:border-white/30"
-                  >
-                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-black/40 text-white">
-                      <Icon className="h-5 w-5" aria-hidden="true" />
-                    </span>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-white">
-                        {definition.label}
-                      </span>
-                      {subtext ? (
-                        <span className="text-xs uppercase tracking-[0.35em] text-white/50">
-                          {subtext}
-                        </span>
-                      ) : null}
-                    </div>
-                  </a>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
       </section>
       <Dialog.Root
         open={isAvatarEditorOpen}
@@ -1089,6 +1033,70 @@ export default function ProfileEditPage() {
           </CardContent>
         </Card>
       </main>
+
+      {hasLinkedAccounts ? (
+        <div className="mx-auto w-full max-w-5xl px-4 pb-10">
+          <div className="border-b border-white/10 pb-4">
+            <div className="space-y-1 max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
+                Linked accounts
+              </p>
+              <p className="text-sm text-zinc-400">
+                Your audience sees these profiles on your page.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {activeLinkedAccounts.map((account) => {
+              const platformKey = (account.platform ?? "").toLowerCase();
+              const definition = getSocialIconDefinition(platformKey);
+              const Icon = definition.icon;
+              let subtext = account.username ? `@${account.username}` : undefined;
+              if (!subtext && account.url) {
+                try {
+                  subtext = new URL(account.url).hostname;
+                } catch {
+                  subtext = account.url;
+                }
+              }
+
+              if (!account.url) {
+                return null;
+              }
+
+              return (
+                <a
+                  key={`${platformKey}-${account.url}`}
+                  href={account.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 transition hover:border-white/30"
+                >
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-black/40 text-white">
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold text-white">
+                      {definition.label}
+                    </span>
+                    {subtext ? (
+                      <span className="text-xs uppercase tracking-[0.35em] text-white/50">
+                        {subtext}
+                      </span>
+                    ) : null}
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {user?.id ? (
+        <section className="mx-auto w-full max-w-6xl px-4 py-12">
+          <ContentCardManager userId={user.id} onCardsChange={refreshProfile} />
+        </section>
+      ) : null}
 
       {inlineSelectedPlatform ? (
         <div className="fixed inset-0 z-60 flex items-center justify-center px-4">

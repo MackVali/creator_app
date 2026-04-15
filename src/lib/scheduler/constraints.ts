@@ -6,6 +6,7 @@ export type ConstraintItem = {
   skillMonumentId?: string | null;
   monumentIds?: string[] | null;
   isProject?: boolean;
+  allowEmptyProjectCandidates?: boolean;
 };
 
 export type WindowConstraint = {
@@ -107,15 +108,18 @@ export function passesTimeBlockConstraints(
     if (extras) {
       for (const val of extras) skillCandidates.add(val);
     }
-    if (skillCandidates.size === 0) return false;
-    let hasMatch = false;
-    for (const candidate of skillCandidates) {
-      if (allowed.has(candidate)) {
-        hasMatch = true;
-        break;
+    if (skillCandidates.size === 0) {
+      if (!item.isProject || !item.allowEmptyProjectCandidates) return false;
+    } else {
+      let hasMatch = false;
+      for (const candidate of skillCandidates) {
+        if (allowed.has(candidate)) {
+          hasMatch = true;
+          break;
+        }
       }
+      if (!hasMatch) return false;
     }
-    if (!hasMatch) return false;
   }
 
   // Monument dimension
@@ -135,15 +139,18 @@ export function passesTimeBlockConstraints(
     if (extra) {
       for (const val of extra) monumentCandidates.add(val);
     }
-    if (monumentCandidates.size === 0) return false;
-    let hasMatch = false;
-    for (const candidate of monumentCandidates) {
-      if (allowed.has(candidate)) {
-        hasMatch = true;
-        break;
+    if (monumentCandidates.size === 0) {
+      if (!item.isProject || !item.allowEmptyProjectCandidates) return false;
+    } else {
+      let hasMatch = false;
+      for (const candidate of monumentCandidates) {
+        if (allowed.has(candidate)) {
+          hasMatch = true;
+          break;
+        }
       }
+      if (!hasMatch) return false;
     }
-    if (!hasMatch) return false;
   }
 
   return true;

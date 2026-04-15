@@ -15,15 +15,22 @@ import type {
   SuggestedFriend,
 } from '@/types/friends';
 import FriendsList from '@/components/friends/FriendsList';
+import {
+  RELATIONSHIP_VIEWS,
+  RelationshipView,
+} from '@/components/friends/RelationshipViewBar';
 import SearchFriends from '@/components/friends/SearchFriends';
 import RequestsInvites from '@/components/friends/RequestsInvites';
-import { Select, SelectContent, SelectItem } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
+import { ChevronDown } from 'lucide-react';
 
 export default function FriendsPage() {
   const [tab, setTab] = useState<'friends' | 'search' | 'requests'>('friends');
-  const [friendsView, setFriendsView] = useState<'friends' | 'following' | 'followers'>('friends');
-  const [sort, setSort] =
-    useState<'default' | 'alphabetical' | 'online'>('default');
+  const [friendsView, setFriendsView] = useState<RelationshipView>('friends');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -196,8 +203,8 @@ export default function FriendsPage() {
     }
   }, []);
 
-  const handleRequestResolved = useCallback(() => {
-    void Promise.all([
+  const handleRequestResolved = useCallback(async () => {
+    await Promise.all([
       refreshFriends(),
       refreshRequests(),
       refreshSearch(),
@@ -220,31 +227,10 @@ export default function FriendsPage() {
     if (!friends.length) {
       return [] as Friend[];
     }
-    if (sort === 'alphabetical') {
-      return [...friends].sort((a, b) =>
-        (a.displayName || a.username).localeCompare(
-          b.displayName || b.username
-        )
-      );
-    }
-
-    if (sort === 'online') {
-      return [...friends].sort((a, b) => {
-        const aOnline = a.isOnline ? 1 : 0;
-        const bOnline = b.isOnline ? 1 : 0;
-
-        if (aOnline !== bOnline) {
-          return bOnline - aOnline;
-        }
-
-        return (a.displayName || a.username).localeCompare(
-          b.displayName || b.username
-        );
-      });
-    }
-
-    return [...friends];
-  }, [friends, sort]);
+    return [...friends].sort((a, b) =>
+      (a.displayName || a.username).localeCompare(b.displayName || b.username)
+    );
+  }, [friends]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
@@ -274,96 +260,99 @@ export default function FriendsPage() {
     targetRef.current?.focus();
   };
 
+  const getRelationshipLabel = (view: RelationshipView) =>
+    view === 'friends'
+      ? 'Friends'
+      : view === 'following'
+        ? 'Following'
+        : 'Followers';
+
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-4 pb-10 pt-6">
-      <section className="space-y-4 rounded-3xl border border-white/10 bg-black/70 p-5 shadow-2xl shadow-black/40">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-semibold text-white">Friends</h1>
-            <p className="text-sm text-white/70">
-              A single place to view your circle and pending invites.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-white/60 md:text-sm">
-            <span className="uppercase tracking-[0.3em] text-white/50">Sort</span>
+      <div className="space-y-3">
+        <h1 className="sr-only">Connect</h1>
+        <div
+          role="tablist"
+          aria-label="Connect options"
+          className="grid grid-cols-3 gap-2 rounded-full border border-white/10 bg-black/40 p-1 shadow-xl shadow-black/40"
+        >
+          <div className="flex flex-col gap-2">
             <Select
-              value={sort}
-              onValueChange={(value) =>
-                setSort(value as 'default' | 'alphabetical' | 'online')
+              value={friendsView}
+              onValueChange={(value) => {
+                const relationship = value as RelationshipView;
+                setFriendsView(relationship);
+                setTab('friends');
+              }}
+              className="w-full"
+              triggerClassName={`flex h-12 items-center justify-between rounded-full px-4 py-2 text-sm font-semibold transition ${
+                tab === 'friends'
+                  ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
+                  : 'bg-black/40 text-white/60 hover:bg-white/10 hover:text-white'
+              }`}
+              contentWrapperClassName="border border-white/10 bg-black/95 text-sm text-white min-w-[200px]"
+              hideChevron
+              trigger={
+                <div className="flex w-full items-center justify-between gap-2">
+                  <span>{getRelationshipLabel(friendsView)}</span>
+                  <ChevronDown className="h-4 w-4 text-white/60" />
+                </div>
               }
-              className="w-36"
-              triggerClassName="h-9 rounded-full border border-white/10 bg-white/[0.08] px-3 text-left text-xs text-white/80 hover:bg-white/10"
-              contentWrapperClassName="bg-slate-900/95"
             >
-              <SelectContent className="text-xs text-white/80">
-                <SelectItem value="default">Default</SelectItem>
-                <SelectItem value="alphabetical">Alphabetical</SelectItem>
-                <SelectItem value="online">Online first</SelectItem>
+              <SelectContent className="mt-1 min-w-[200px] rounded-2xl border border-white/10 bg-black p-2 shadow-xl shadow-black/70">
+                {RELATIONSHIP_VIEWS.map((view) => (
+                  <SelectItem
+                    key={view}
+                    value={view}
+                    className={`rounded-xl px-3 py-2 text-sm font-semibold uppercase tracking-[0.2em] transition ${
+                      friendsView === view
+                        ? 'bg-white text-black/90'
+                        : 'text-white/70 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    {getRelationshipLabel(view)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
+          <button
+            ref={searchTabRef}
+            id="search-tab"
+            role="tab"
+            onClick={() => setTab('search')}
+            onKeyDown={handleKeyDown}
+            type="button"
+            aria-selected={tab === 'search'}
+            aria-controls="search-panel"
+            tabIndex={tab === 'search' ? 0 : -1}
+            className={`h-12 rounded-full px-4 py-2 text-center text-sm font-semibold transition ${
+              tab === 'search'
+                ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
+                : 'text-white/60 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            Search
+          </button>
+          <button
+            ref={requestsTabRef}
+            id="requests-tab"
+            role="tab"
+            onClick={() => setTab('requests')}
+            onKeyDown={handleKeyDown}
+            type="button"
+            aria-selected={tab === 'requests'}
+            aria-controls="requests-panel"
+            tabIndex={tab === 'requests' ? 0 : -1}
+            className={`h-12 rounded-full px-4 py-2 text-center text-sm font-semibold transition ${
+              tab === 'requests'
+                ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
+                : 'text-white/60 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            Requests
+          </button>
         </div>
-      </section>
-
-      <div
-        role="tablist"
-        aria-label="Friend options"
-        className="flex flex-col gap-2 rounded-full border border-white/10 bg-black/40 p-1 shadow-xl shadow-black/40 md:flex-row"
-      >
-        <button
-          ref={friendsTabRef}
-          id="friends-tab"
-          role="tab"
-          onClick={() => setTab('friends')}
-          onKeyDown={handleKeyDown}
-          type="button"
-          aria-selected={tab === 'friends'}
-          aria-controls="friends-panel"
-          tabIndex={tab === 'friends' ? 0 : -1}
-          className={`flex-1 rounded-full px-4 py-2 text-center text-sm font-semibold transition ${
-            tab === 'friends'
-              ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
-              : 'text-white/60 hover:bg-white/10 hover:text-white'
-          }`}
-        >
-          Friends
-        </button>
-        <button
-          ref={searchTabRef}
-          id="search-tab"
-          role="tab"
-          onClick={() => setTab('search')}
-          onKeyDown={handleKeyDown}
-          type="button"
-          aria-selected={tab === 'search'}
-          aria-controls="search-panel"
-          tabIndex={tab === 'search' ? 0 : -1}
-          className={`flex-1 rounded-full px-4 py-2 text-center text-sm font-semibold transition ${
-            tab === 'search'
-              ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
-              : 'text-white/60 hover:bg-white/10 hover:text-white'
-          }`}
-        >
-          Search
-        </button>
-        <button
-          ref={requestsTabRef}
-          id="requests-tab"
-          role="tab"
-          onClick={() => setTab('requests')}
-          onKeyDown={handleKeyDown}
-          type="button"
-          aria-selected={tab === 'requests'}
-          aria-controls="requests-panel"
-          tabIndex={tab === 'requests' ? 0 : -1}
-          className={`flex-1 rounded-full px-4 py-2 text-center text-sm font-semibold transition ${
-            tab === 'requests'
-              ? 'bg-gradient-to-br from-black/90 via-neutral-900/80 to-neutral-800/60 text-white shadow-inner shadow-black/60'
-              : 'text-white/60 hover:bg-white/10 hover:text-white'
-          }`}
-        >
-          Requests
-        </button>
       </div>
 
       <section
@@ -372,31 +361,6 @@ export default function FriendsPage() {
         aria-labelledby="friends-tab"
         hidden={tab !== 'friends'}
       >
-        <div className="mb-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 shadow-inner shadow-black/40">
-          <span className="px-2 text-[11px] uppercase tracking-[0.18em] text-white/40">
-            View
-          </span>
-          <div className="inline-flex rounded-full bg-black/50 p-1 ring-1 ring-white/10">
-            {(['friends', 'following', 'followers'] as const).map((view) => (
-              <button
-                key={view}
-                type="button"
-                onClick={() => setFriendsView(view)}
-                className={`min-w-[88px] rounded-full px-3 py-1 text-sm font-medium transition ${
-                  friendsView === view
-                    ? 'bg-white/90 text-black shadow-md shadow-black/30'
-                    : 'text-white/70 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                {view === 'friends'
-                  ? 'Friends'
-                  : view === 'following'
-                    ? 'Following'
-                    : 'Followers'}
-              </button>
-            ))}
-          </div>
-        </div>
 
         {isLoading ? (
           <div className="rounded-2xl bg-slate-900/50 p-6 text-center text-sm text-white/60 ring-1 ring-white/10">

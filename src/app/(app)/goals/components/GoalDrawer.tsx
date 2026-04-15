@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronDown, Plus, X } from "lucide-react";
 import { listRoadmaps, createRoadmap } from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -293,7 +293,7 @@ export function GoalDrawer({
     "initialGoal:",
     initialGoal?.id
   );
-  const formId = "goal-editor-form";
+  const formId = useId();
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("");
   const [hasCustomEmoji, setHasCustomEmoji] = useState(false);
@@ -1234,7 +1234,7 @@ export function GoalDrawer({
                             <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
                               <details
                                 className="group"
-                                defaultOpen={Boolean(projectDueDateValue)}
+                                open={Boolean(projectDueDateValue)}
                               >
                                 <summary className="flex cursor-pointer items-center justify-between text-sm font-semibold text-white">
                                   <span>Advanced options</span>

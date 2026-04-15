@@ -1219,6 +1219,12 @@ export type GoalSummary = {
   weight: number;
   monumentId: string | null;
   emoji: string | null;
+  global_rank?: number | null;
+  globalRank?: number | null;
+  roadmap_id?: string | null;
+  roadmapId?: string | null;
+  priority_rank?: number | null;
+  priorityRank?: number | null;
 };
 
 export async function fetchGoalsForUser(
@@ -1230,22 +1236,39 @@ export async function fetchGoalsForUser(
     id: string;
     name?: string | null;
     global_rank?: number | null;
+    roadmap_id?: string | null;
+    priority_rank?: number | null;
     monument_id?: string | null;
     emoji?: string | null;
   };
+  const normalizeFiniteNumber = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return null;
+  };
   const { data, error } = await supabase
     .from("goals")
-    .select("id, name, global_rank, monument_id, emoji")
+    .select("id, name, global_rank, roadmap_id, priority_rank, monument_id, emoji")
     .eq("user_id", userId);
 
   if (error) throw error;
 
   return ((data ?? []) as GoalRecord[]).map((goal) => {
-    const globalRank = goal.global_rank;
+    const globalRank = normalizeFiniteNumber(goal.global_rank);
+    const priorityRank = normalizeFiniteNumber(goal.priority_rank);
+    const roadmapId =
+      typeof goal.roadmap_id === "string" && goal.roadmap_id.length > 0
+        ? goal.roadmap_id
+        : goal.roadmap_id ?? null;
     const weight =
-      typeof globalRank === "number" &&
-      Number.isFinite(globalRank) &&
-      globalRank > 0
+      typeof globalRank === "number" && globalRank > 0
         ? 100000 - globalRank
         : 0;
     // Temporary compatibility bridge from global_rank to legacy weight.
@@ -1255,6 +1278,12 @@ export async function fetchGoalsForUser(
       weight,
       monumentId: goal.monument_id ?? null,
       emoji: goal.emoji ?? null,
+      global_rank: globalRank,
+      globalRank,
+      roadmap_id: roadmapId,
+      roadmapId,
+      priority_rank: priorityRank,
+      priorityRank,
     };
   });
 }

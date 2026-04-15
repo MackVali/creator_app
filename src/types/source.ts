@@ -1,3 +1,5 @@
+import type { ProductCheckoutLineItem, ProductCheckoutStatus } from "./checkout"
+
 export type SourceIntegration = {
   id: string
   provider: string
@@ -54,4 +56,37 @@ export type IntegrationsResponse = {
 
 export type ListingsResponse = {
   listings: SourceListing[]
+}
+
+export type ProductOrder = {
+  id: string
+  checkoutId: string
+  currency: string
+  totalAmount: number
+  items: ProductCheckoutLineItem[]
+  stripeSessionId: string | null
+  status: ProductCheckoutStatus
+  fulfillmentStatus: ProductOrderFulfillmentStatus
+  shipping: ProductOrderShipping | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type ProductOrderShipping = {
+  trackingNumber: string | null
+  carrier: string | null
+  shippedAt: string | null
+}
+
+export const PRODUCT_ORDER_FULFILLMENT_STATUSES = [
+  "unfulfilled",
+  "packed",
+  "shipped",
+] as const
+
+export type ProductOrderFulfillmentStatus =
+  (typeof PRODUCT_ORDER_FULFILLMENT_STATUSES)[number]
+
+export type OrdersResponse = {
+  orders: ProductOrder[]
 }

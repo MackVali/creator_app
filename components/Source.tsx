@@ -1,6 +1,17 @@
 "use client"
 
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import {
+  type ChangeEvent,
+  type FormEvent,
+  type PointerEvent,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import {
   useMutation,
   useQuery,
@@ -16,6 +27,7 @@ import {
   Lock,
   Music4,
   Plug,
+  Plus,
   RefreshCcw,
   Send,
   UploadCloud,
@@ -28,17 +40,34 @@ import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Select, SelectContent, SelectItem } from "./ui/select"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "./ui/sheet"
 import { Textarea } from "./ui/textarea"
 import { PostModal } from "./ui/PostModal"
 
+import {
+  PRODUCT_ORDER_FULFILLMENT_STATUSES,
+} from "@/types/source"
 import type {
   IntegrationsResponse,
   ListingsResponse,
+  OrdersResponse,
   PublishResult,
+  ProductOrderFulfillmentStatus,
   SourceIntegration,
   SourceListing,
 } from "@/types/source"
 import { cn } from "@/lib/utils"
+import { getSupabaseBrowser } from "@/lib/supabase"
+import { uploadAvatar } from "@/lib/storage"
+import { useEntitlement } from "@/components/entitlement/EntitlementProvider"
+import type { ProductCheckoutLineItem, ProductCheckoutStatus } from "@/types/checkout"
 
 const httpMethods = ["POST", "PUT", "PATCH"] as const
 const authModes = ["none", "bearer", "basic", "api_key", "oauth2"] as const
@@ -60,6 +89,123 @@ const listingTypeLabels: Record<SourceListing["type"], string> = {
   product: "Product",
   service: "Service",
   post: "Post",
+}
+
+const productAvailabilityStatuses: SourceListing["status"][] = [
+  "draft",
+  "queued",
+  "published",
+  "needs_attention",
+]
+
+const availabilityLabels: Record<SourceListing["status"], string> = {
+  draft: "Draft",
+  queued: "Queued for publish",
+  published: "Available / Live",
+  needs_attention: "Needs attention",
+}
+
+const ORDER_STATUS_LABELS: Record<ProductCheckoutStatus, string> = {
+  pending: "Pending",
+  completed: "Completed",
+  canceled: "Canceled",
+  failed: "Failed",
+}
+
+const ORDER_STATUS_ACCENT: Record<ProductCheckoutStatus, string> = {
+  pending: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+  completed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+  canceled: "border-rose-500/30 bg-rose-500/10 text-rose-200",
+  failed: "border-zinc-500/30 bg-zinc-500/10 text-zinc-200",
+}
+
+const ORDER_FULFILLMENT_STATUS_LABELS: Record<ProductOrderFulfillmentStatus, string> = {
+  unfulfilled: "Unfulfilled",
+  packed: "Packed",
+  shipped: "Shipped",
+}
+
+const ORDER_FULFILLMENT_STATUS_ACCENT: Record<ProductOrderFulfillmentStatus, string> = {
+  unfulfilled: "border-zinc-500/30 bg-zinc-500/10 text-zinc-200",
+  packed: "border-indigo-500/30 bg-indigo-500/10 text-indigo-200",
+  shipped: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+}
+
+const PRODUCT_KIND_OPTIONS = [
+  { value: "physical", label: "Physical product" },
+  { value: "digital", label: "Digital product" },
+] as const
+
+type ProductKind = (typeof PRODUCT_KIND_OPTIONS)[number]["value"]
+const DEFAULT_PRODUCT_KIND: ProductKind = PRODUCT_KIND_OPTIONS[0].value
+
+const SERVICE_MODE_OPTIONS = [
+  { value: "bookable", label: "Bookable" },
+  { value: "flat_rate", label: "Flat rate" },
+  { value: "custom_quote", label: "Custom quote" },
+] as const
+
+type ServiceMode = (typeof SERVICE_MODE_OPTIONS)[number]["value"]
+const DEFAULT_SERVICE_MODE: ServiceMode = SERVICE_MODE_OPTIONS[0].value
+
+const QUANTITY_BEHAVIOR_OPTIONS = [
+  { value: "per_unit", label: "Track stock per unit" },
+  { value: "per_order", label: "Reserve the listing per order" },
+  { value: "always_available", label: "Always available" },
+] as const
+
+type QuantityBehavior = (typeof QUANTITY_BEHAVIOR_OPTIONS)[number]["value"]
+const DEFAULT_QUANTITY_BEHAVIOR: QuantityBehavior = QUANTITY_BEHAVIOR_OPTIONS[0].value
+
+const resolveProductKind = (metadata: Record<string, unknown> | null): ProductKind => {
+  const rawValue = metadata?.["product_kind"]
+  if (typeof rawValue === "string") {
+    if (PRODUCT_KIND_OPTIONS.some((option) => option.value === rawValue)) {
+      return rawValue as ProductKind
+    }
+  }
+  return DEFAULT_PRODUCT_KIND
+}
+
+const resolveServiceMode = (metadata: Record<string, unknown> | null): ServiceMode => {
+  const rawValue = metadata?.["service_mode"]
+  if (typeof rawValue === "string") {
+    if (SERVICE_MODE_OPTIONS.some((option) => option.value === rawValue)) {
+      return rawValue as ServiceMode
+    }
+  }
+  return DEFAULT_SERVICE_MODE
+}
+
+const resolveMetadataString = (
+  metadata: Record<string, unknown> | null,
+  key: string
+): string => {
+  const value = metadata?.[key]
+  return typeof value === "string" ? value : ""
+}
+
+const resolveMetadataNumber = (
+  metadata: Record<string, unknown> | null,
+  key: string
+): number | null => {
+  const value = metadata?.[key]
+  if (typeof value === "number") return value
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+  return null
+}
+
+const resolveQuantityBehavior = (
+  metadata: Record<string, unknown> | null
+): QuantityBehavior => {
+  const rawValue = resolveMetadataString(metadata, "quantity_behavior")
+  if (QUANTITY_BEHAVIOR_OPTIONS.some((option) => option.value === rawValue)) {
+    return rawValue as QuantityBehavior
+  }
+  return DEFAULT_QUANTITY_BEHAVIOR
 }
 
 const POST_MEDIA_TYPES = ["text", "image", "video", "link"] as const
@@ -146,6 +292,58 @@ const defaultListingForm: ListingFormState = {
   metadata: "",
 }
 
+type ProductSheetFormState = {
+  title: string
+  description: string
+  price: string
+  currency: string
+  inventory: string
+  productKind: ProductKind
+  quantityBehavior: QuantityBehavior
+}
+
+const defaultProductSheetForm: ProductSheetFormState = {
+  title: "",
+  description: "",
+  price: "",
+  currency: "USD",
+  inventory: "",
+  productKind: DEFAULT_PRODUCT_KIND,
+  quantityBehavior: DEFAULT_QUANTITY_BEHAVIOR,
+}
+
+type ServiceSheetFormState = {
+  title: string
+  description: string
+  price: string
+  currency: string
+  durationMinutes: string
+  serviceMode: ServiceMode
+  turnaround: string
+  deliverables: string
+  requirements: string
+}
+
+const defaultServiceSheetForm: ServiceSheetFormState = {
+  title: "",
+  description: "",
+  price: "",
+  currency: "USD",
+  durationMinutes: "",
+  serviceMode: DEFAULT_SERVICE_MODE,
+  turnaround: "",
+  deliverables: "",
+  requirements: "",
+}
+
+type ListingUpdatePayload = {
+  listing: SourceListing
+  type: SourceListing["type"]
+  form: ProductSheetFormState | ServiceSheetFormState
+  metadataUpdates?: Record<string, unknown | null>
+  status?: SourceListing["status"]
+}
+
 type IntegrationPresetField = {
   id: string
   label: string
@@ -170,6 +368,14 @@ type IntegrationPreset = {
   oauthRequired?: boolean
   prerequisites?: IntegrationPresetPrerequisite[]
   build(inputs: Record<string, string>): Partial<IntegrationFormState>
+}
+
+type OverviewSectionKey = "products" | "services" | "media" | "orders" | "inquiries"
+
+type OverviewTile = {
+  key: OverviewSectionKey
+  title: string
+  meta: string
 }
 
 const integrationPresets: IntegrationPreset[] = [
@@ -1243,6 +1449,58 @@ export default function Source() {
   const [listingForm, setListingForm] = useState(defaultListingForm)
   const [integrationError, setIntegrationError] = useState<string | null>(null)
   const [listingError, setListingError] = useState<string | null>(null)
+  const [isProductSheetOpen, setIsProductSheetOpen] = useState(false)
+  const [productSheetForm, setProductSheetForm] = useState<ProductSheetFormState>(
+    defaultProductSheetForm
+  )
+  const [productSheetError, setProductSheetError] = useState<string | null>(null)
+  const [isProductSheetSubmitting, setIsProductSheetSubmitting] = useState(false)
+  const [productImageUrl, setProductImageUrl] = useState<string | null>(null)
+  const [productImagePreview, setProductImagePreview] = useState<string | null>(null)
+  const [productImageUploadError, setProductImageUploadError] = useState<string | null>(
+    null
+  )
+  const [isProductImageUploading, setIsProductImageUploading] = useState(false)
+  const [isServiceSheetOpen, setIsServiceSheetOpen] = useState(false)
+  const [serviceSheetForm, setServiceSheetForm] = useState<ServiceSheetFormState>(
+    defaultServiceSheetForm
+  )
+  const [serviceSheetError, setServiceSheetError] = useState<string | null>(null)
+  const [isServiceSheetSubmitting, setIsServiceSheetSubmitting] = useState(false)
+  const [serviceImageUrl, setServiceImageUrl] = useState<string | null>(null)
+  const [serviceImagePreview, setServiceImagePreview] = useState<string | null>(null)
+  const [serviceImageUploadError, setServiceImageUploadError] = useState<string | null>(
+    null
+  )
+  const [isServiceImageUploading, setIsServiceImageUploading] = useState(false)
+  const [productDetailForm, setProductDetailForm] = useState<ProductSheetFormState>(
+    defaultProductSheetForm
+  )
+  const [productDetailError, setProductDetailError] = useState<string | null>(null)
+  const [isProductDetailSubmitting, setIsProductDetailSubmitting] = useState(false)
+  const [productDetailImagePreview, setProductDetailImagePreview] = useState<string | null>(null)
+  const [productDetailImageUrl, setProductDetailImageUrl] = useState<string | null>(null)
+  const [productDetailImageUploadError, setProductDetailImageUploadError] = useState<string | null>(null)
+  const [isProductDetailImageUploading, setIsProductDetailImageUploading] = useState(false)
+  const [productDetailImageDirty, setProductDetailImageDirty] = useState(false)
+  const [productDetailStatus, setProductDetailStatus] = useState<SourceListing["status"]>("draft")
+  const productDetailImageInputRef = useRef<HTMLInputElement | null>(null)
+  const [serviceDetailForm, setServiceDetailForm] = useState<ServiceSheetFormState>(
+    defaultServiceSheetForm
+  )
+  const [serviceDetailError, setServiceDetailError] = useState<string | null>(null)
+  const [isServiceDetailSubmitting, setIsServiceDetailSubmitting] = useState(false)
+  const [serviceDetailImagePreview, setServiceDetailImagePreview] = useState<string | null>(null)
+  const [serviceDetailImageUrl, setServiceDetailImageUrl] = useState<string | null>(null)
+  const [serviceDetailImageUploadError, setServiceDetailImageUploadError] = useState<string | null>(null)
+  const [isServiceDetailImageUploading, setIsServiceDetailImageUploading] = useState(false)
+  const [serviceDetailImageDirty, setServiceDetailImageDirty] = useState(false)
+  const [serviceDetailStatus, setServiceDetailStatus] = useState<SourceListing["status"]>("draft")
+  const serviceDetailImageInputRef = useRef<HTMLInputElement | null>(null)
+  const productImageInputRef = useRef<HTMLInputElement | null>(null)
+  const productDetailListingIdRef = useRef<string | null>(null)
+  const serviceDetailListingIdRef = useRef<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
   const [presetInputs, setPresetInputs] = useState<Record<string, string>>({})
   const [presetNotice, setPresetNotice] = useState<string | null>(null)
@@ -1251,7 +1509,60 @@ export default function Source() {
   const [showIntegrationAdvanced, setShowIntegrationAdvanced] = useState(false)
   const [isPostModalOpen, setIsPostModalOpen] = useState(false)
   const oauthWindowRef = useRef<Window | null>(null)
+  const serviceImageInputRef = useRef<HTMLInputElement | null>(null)
   const oauthCompletionRef = useRef(false)
+  const [selectedOverviewSection, setSelectedOverviewSection] =
+    useState<OverviewSectionKey>("products")
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null)
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+  const { tier } = useEntitlement()
+  const isAdmin = tier === "ADMIN"
+  const [isCropOpen, setIsCropOpen] = useState(false)
+  const [cropTarget, setCropTarget] = useState<
+    "product" | "product_detail" | "service" | "service_detail" | null
+  >(null)
+  const [cropFile, setCropFile] = useState<File | null>(null)
+  const [cropSourceUrl, setCropSourceUrl] = useState<string | null>(null)
+  const [cropZoom, setCropZoom] = useState(1)
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 })
+  const [cropImageSize, setCropImageSize] = useState<{ width: number; height: number } | null>(
+    null
+  )
+  const [cropFrameSize, setCropFrameSize] = useState(0)
+  const [isCropSaving, setIsCropSaving] = useState(false)
+  const cropFrameRef = useRef<HTMLDivElement | null>(null)
+  const cropDragState = useRef<{
+    pointerId: number | null
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+  }>({ pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 })
+
+  const cropBaseScale = useMemo(() => {
+    if (!cropImageSize || !cropFrameSize) return 1
+    return Math.max(
+      cropFrameSize / cropImageSize.width,
+      cropFrameSize / cropImageSize.height
+    )
+  }, [cropImageSize, cropFrameSize])
+  const cropScale = cropBaseScale * cropZoom
+  const clampCropOffset = useCallback(
+    (next: { x: number; y: number }) => {
+      if (!cropImageSize || !cropFrameSize) return next
+      const displayWidth = cropImageSize.width * cropScale
+      const displayHeight = cropImageSize.height * cropScale
+      const maxX = Math.max(0, (displayWidth - cropFrameSize) / 2)
+      const maxY = Math.max(0, (displayHeight - cropFrameSize) / 2)
+      return {
+        x: Math.min(maxX, Math.max(-maxX, next.x)),
+        y: Math.min(maxY, Math.max(-maxY, next.y)),
+      }
+    },
+    [cropImageSize, cropFrameSize, cropScale]
+  )
+
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -1308,6 +1619,154 @@ export default function Source() {
 
     return () => window.clearInterval(watcher)
   }, [connectingIntegrationId, oauthCompletionRef, queryClient])
+
+  useEffect(() => {
+    if (!isCropOpen) return
+    const frame = cropFrameRef.current
+    if (!frame) return
+    const updateSize = () => {
+      setCropFrameSize(frame.getBoundingClientRect().width)
+    }
+    updateSize()
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(frame)
+    return () => observer.disconnect()
+  }, [isCropOpen])
+
+  useEffect(() => {
+    if (!cropSourceUrl) return
+    let canceled = false
+    const img = new Image()
+    img.onload = () => {
+      if (canceled) return
+      setCropImageSize({ width: img.naturalWidth, height: img.naturalHeight })
+      setCropZoom(1)
+      setCropOffset({ x: 0, y: 0 })
+    }
+    img.src = cropSourceUrl
+    return () => {
+      canceled = true
+    }
+  }, [cropSourceUrl])
+
+  useEffect(() => {
+    setCropOffset((prev) => clampCropOffset(prev))
+  }, [clampCropOffset])
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowser()
+    if (!supabase) return
+
+    let isActive = true
+    supabase.auth.getUser().then(({ data }) => {
+      if (!isActive) return
+      setUserId(data.user?.id ?? null)
+    })
+
+    return () => {
+      isActive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (selectedOverviewSection !== "products" && selectedProductId) {
+      setSelectedProductId(null)
+    }
+  }, [selectedOverviewSection, selectedProductId])
+
+  useEffect(() => {
+    if (selectedOverviewSection !== "services" && selectedServiceId) {
+      setSelectedServiceId(null)
+    }
+  }, [selectedOverviewSection, selectedServiceId])
+
+  useEffect(() => {
+    if (selectedOverviewSection !== "orders" && selectedOrderId) {
+      setSelectedOrderId(null)
+    }
+  }, [selectedOverviewSection, selectedOrderId])
+
+  const clearProductImagePreview = () => {
+    setProductImagePreview((previous) => {
+      if (previous && typeof window !== "undefined") {
+        URL.revokeObjectURL(previous)
+      }
+      return null
+    })
+  }
+
+  const resetProductImageState = () => {
+    clearProductImagePreview()
+    setProductImageUrl(null)
+    setProductImageUploadError(null)
+    setIsProductImageUploading(false)
+  }
+
+  const clearServiceImagePreview = () => {
+    setServiceImagePreview((previous) => {
+      if (previous && typeof window !== "undefined") {
+        URL.revokeObjectURL(previous)
+      }
+      return null
+    })
+  }
+
+  const resetServiceImageState = () => {
+    clearServiceImagePreview()
+    setServiceImageUrl(null)
+    setServiceImageUploadError(null)
+    setIsServiceImageUploading(false)
+  }
+
+  const clearProductDetailImagePreview = () => {
+    setProductDetailImagePreview((previous) => {
+      if (previous && typeof window !== "undefined") {
+        URL.revokeObjectURL(previous)
+      }
+      return null
+    })
+  }
+
+  const resetProductDetailImageState = () => {
+    clearProductDetailImagePreview()
+    setProductDetailImageUrl(null)
+    setProductDetailImageUploadError(null)
+    setIsProductDetailImageUploading(false)
+    setProductDetailImageDirty(false)
+  }
+
+  const removeProductDetailImageSelection = () => {
+    clearProductDetailImagePreview()
+    setProductDetailImageUrl(null)
+    setProductDetailImageUploadError(null)
+    setProductDetailImageDirty(true)
+    setIsProductDetailImageUploading(false)
+  }
+
+  const clearServiceDetailImagePreview = () => {
+    setServiceDetailImagePreview((previous) => {
+      if (previous && typeof window !== "undefined") {
+        URL.revokeObjectURL(previous)
+      }
+      return null
+    })
+  }
+
+  const resetServiceDetailImageState = () => {
+    clearServiceDetailImagePreview()
+    setServiceDetailImageUrl(null)
+    setServiceDetailImageUploadError(null)
+    setIsServiceDetailImageUploading(false)
+    setServiceDetailImageDirty(false)
+  }
+
+  const removeServiceDetailImageSelection = () => {
+    clearServiceDetailImagePreview()
+    setServiceDetailImageUrl(null)
+    setServiceDetailImageUploadError(null)
+    setServiceDetailImageDirty(true)
+    setIsServiceDetailImageUploading(false)
+  }
 
   const beginOAuthConnection = async (integration: SourceIntegration) => {
     if (integration.auth_mode !== "oauth2") return
@@ -1455,6 +1914,54 @@ export default function Source() {
       }
 
       return (json ?? { listings: [] }) as ListingsResponse
+    },
+  })
+
+  const ordersQuery = useQuery<OrdersResponse, Error>({
+    queryKey: ["source", "orders"],
+    queryFn: async () => {
+      const res = await fetch("/api/source/orders")
+      const json = (await res.json().catch(() => null)) as OrdersResponse | ApiError | null
+
+      if (!res.ok) {
+        throw new Error((json as ApiError | null)?.error ?? "Unable to load orders")
+      }
+
+      return (json ?? { orders: [] }) as OrdersResponse
+    },
+  })
+
+  const updateOrderFulfillment = useMutation({
+    mutationFn: async ({
+      orderId,
+      fulfillmentStatus,
+      shipping,
+    }: {
+      orderId: string
+      fulfillmentStatus?: ProductOrderFulfillmentStatus
+      shipping?: {
+        trackingNumber: string | null
+        carrier: string | null
+        shippedAt: string | null
+      } | null
+    }) => {
+      const res = await fetch("/api/source/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, fulfillmentStatus, shipping }),
+      })
+      const json = (await res.json().catch(() => null)) as
+        | { order?: unknown; error?: string }
+        | null
+
+      if (!res.ok) {
+        throw new Error(json?.error ?? "Unable to update order")
+      }
+
+      return true
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["source", "orders"] })
     },
   })
 
@@ -1643,8 +2150,259 @@ export default function Source() {
     onError: (err: Error) => setListingError(err.message),
   })
 
+  const updateListing = useMutation({
+    mutationFn: async ({
+      listing,
+      form,
+      type,
+      metadataUpdates,
+      status,
+    }: ListingUpdatePayload) => {
+      if (!userId) {
+        throw new Error("Sign in to manage your listings.")
+      }
+
+      const supabase = getSupabaseBrowser()
+      if (!supabase) {
+        throw new Error("Unable to update this listing.")
+      }
+
+      const trimmedTitle = form.title.trim()
+      if (!trimmedTitle) {
+        throw new Error("A title is required.")
+      }
+
+      const trimmedPrice = form.price.trim()
+      const price = trimmedPrice ? Number.parseFloat(trimmedPrice) : null
+      if (trimmedPrice && Number.isNaN(price)) {
+        throw new Error("Price must be a number.")
+      }
+      if (price !== null && price < 0) {
+        throw new Error("Price cannot be negative.")
+      }
+
+      if (status && !productAvailabilityStatuses.includes(status)) {
+        throw new Error("Invalid availability selection.")
+      }
+
+      const nextMetadata: Record<string, unknown> = {
+        ...((listing.metadata ?? {}) as Record<string, unknown>),
+      }
+
+      if (type === "service") {
+        const durationValue = (form as ServiceSheetFormState).durationMinutes.trim()
+        if (durationValue) {
+          const duration = Number.parseInt(durationValue, 10)
+          if (Number.isNaN(duration) || duration <= 0) {
+            throw new Error("Duration must be a positive number of minutes.")
+          }
+          nextMetadata.duration_minutes = duration
+        } else {
+          delete nextMetadata.duration_minutes
+        }
+      }
+
+      if (metadataUpdates) {
+        for (const [key, value] of Object.entries(metadataUpdates)) {
+          if (value === undefined || value === null) {
+            delete nextMetadata[key]
+          } else {
+            nextMetadata[key] = value
+          }
+        }
+      }
+
+      const formattedCurrency = form.currency.trim() ? form.currency.trim().toUpperCase() : "USD"
+      const nextStatus = status ?? listing.status
+      const { error } = await supabase
+        .from("source_listings")
+        .update({
+          title: trimmedTitle,
+          description: form.description.trim() || null,
+          price,
+          currency: formattedCurrency,
+          metadata: Object.keys(nextMetadata).length ? nextMetadata : null,
+          status: nextStatus,
+        })
+        .match({ id: listing.id, user_id: userId })
+
+      if (error) {
+        throw new Error(error.message || "Unable to update this listing.")
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["source", "listings"] })
+    },
+  })
+
   const integrations = integrationsQuery.data?.integrations ?? []
   const listings = listingsQuery.data?.listings ?? []
+  const productListings = listings.filter((listing) => listing.type === "product")
+  const serviceListings = listings.filter((listing) => listing.type === "service")
+  const currentProductDetailListing = selectedProductId
+    ? productListings.find((listing) => listing.id === selectedProductId) ?? null
+    : null
+  const currentServiceDetailListing = selectedServiceId
+    ? serviceListings.find((listing) => listing.id === selectedServiceId) ?? null
+    : null
+  useEffect(() => {
+    if (!selectedProductId) {
+      setProductDetailForm(defaultProductSheetForm)
+      setProductDetailError(null)
+      resetProductDetailImageState()
+      productDetailListingIdRef.current = null
+      setProductDetailStatus("draft")
+      return
+    }
+
+    if (!currentProductDetailListing) {
+      return
+    }
+
+    if (currentProductDetailListing.id === productDetailListingIdRef.current) {
+      return
+    }
+
+    const inventoryValue = resolveMetadataNumber(currentProductDetailListing.metadata, "inventory")
+    setProductDetailForm((prev) => ({
+      ...prev,
+      title: currentProductDetailListing.title,
+      description: currentProductDetailListing.description ?? "",
+      price:
+        currentProductDetailListing.price !== null
+          ? String(currentProductDetailListing.price)
+          : "",
+      currency: currentProductDetailListing.currency ?? "USD",
+      productKind: resolveProductKind(currentProductDetailListing.metadata),
+      inventory: inventoryValue !== null ? String(inventoryValue) : "",
+      quantityBehavior: resolveQuantityBehavior(currentProductDetailListing.metadata),
+    }))
+    setProductDetailStatus(currentProductDetailListing.status)
+
+    const coverImage =
+      currentProductDetailListing.metadata &&
+      typeof currentProductDetailListing.metadata["coverImage"] === "string"
+        ? currentProductDetailListing.metadata["coverImage"]
+        : null
+
+    setProductDetailImageUrl(coverImage)
+    setProductDetailImageUploadError(null)
+    setIsProductDetailImageUploading(false)
+    setProductDetailImageDirty(false)
+    clearProductDetailImagePreview()
+
+    productDetailListingIdRef.current = currentProductDetailListing.id
+  }, [selectedProductId, currentProductDetailListing])
+  useEffect(() => {
+    if (!selectedServiceId) {
+      setServiceDetailForm(defaultServiceSheetForm)
+      setServiceDetailError(null)
+      resetServiceDetailImageState()
+      serviceDetailListingIdRef.current = null
+      setServiceDetailStatus("draft")
+      return
+    }
+
+    if (!currentServiceDetailListing) {
+      return
+    }
+
+    if (currentServiceDetailListing.id === serviceDetailListingIdRef.current) {
+      return
+    }
+
+    const durationValue =
+      currentServiceDetailListing.metadata &&
+      typeof currentServiceDetailListing.metadata["duration_minutes"] === "number"
+        ? String(currentServiceDetailListing.metadata["duration_minutes"])
+        : ""
+    const turnaroundValue = resolveMetadataString(
+      currentServiceDetailListing.metadata,
+      "service_turnaround"
+    )
+    const deliverablesValue = resolveMetadataString(
+      currentServiceDetailListing.metadata,
+      "service_deliverables"
+    )
+    const requirementsValue = resolveMetadataString(
+      currentServiceDetailListing.metadata,
+      "service_requirements"
+    )
+
+    setServiceDetailForm({
+      title: currentServiceDetailListing.title,
+      description: currentServiceDetailListing.description ?? "",
+      price:
+        currentServiceDetailListing.price !== null
+          ? String(currentServiceDetailListing.price)
+          : "",
+      currency: currentServiceDetailListing.currency ?? "USD",
+      durationMinutes: durationValue,
+      serviceMode: resolveServiceMode(currentServiceDetailListing.metadata),
+      turnaround: turnaroundValue,
+      deliverables: deliverablesValue,
+      requirements: requirementsValue,
+    })
+    setServiceDetailStatus(currentServiceDetailListing.status)
+
+    const coverImage =
+      currentServiceDetailListing.metadata &&
+      typeof currentServiceDetailListing.metadata["coverImage"] === "string"
+        ? currentServiceDetailListing.metadata["coverImage"]
+        : null
+
+    setServiceDetailImageUrl(coverImage)
+    setServiceDetailImageUploadError(null)
+    setIsServiceDetailImageUploading(false)
+    setServiceDetailImageDirty(false)
+    clearServiceDetailImagePreview()
+
+    serviceDetailListingIdRef.current = currentServiceDetailListing.id
+  }, [selectedServiceId, currentServiceDetailListing])
+  const orders = ordersQuery.data?.orders ?? []
+  const orderRows: OrderRowData[] = orders.map((order) => {
+    const summaryItems = order.items
+      .slice(0, 2)
+      .map((item) => `${item.title} × ${item.quantity}`)
+      .filter(Boolean)
+    let summary = summaryItems.join(" · ")
+    const extraItemCount = order.items.length - summaryItems.length
+    if (!summary) {
+      summary = "Unknown items"
+    } else if (extraItemCount > 0) {
+      summary = `${summary} +${extraItemCount} more`
+    }
+
+    const amountLabel = formatCurrency(order.totalAmount, order.currency)
+    const dateLabel = new Date(order.createdAt).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })
+    const relativeTime = formatRelativeTime(order.createdAt)
+
+    return {
+      id: order.id,
+      checkoutId: order.checkoutId,
+      currency: order.currency,
+      totalAmount: order.totalAmount,
+      items: order.items,
+      amountLabel,
+      summary,
+      status: order.status,
+      fulfillmentStatus: order.fulfillmentStatus,
+      shipping: order.shipping,
+      dateLabel,
+      relativeTime,
+      stripeSessionId: order.stripeSessionId,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    }
+  })
+  const currentOrderDetail = selectedOrderId
+    ? orderRows.find((order) => order.id === selectedOrderId) ?? null
+    : null
 
   const activeIntegrationCount = integrations.filter(
     (integration) =>
@@ -1655,33 +2413,693 @@ export default function Source() {
   const integrationAdvancedForced = integrationForm.authMode === "oauth2"
   const integrationAdvancedVisible = integrationAdvancedForced || showIntegrationAdvanced
 
-  const scrollToIntegrationForm = () => {
-    if (typeof document === "undefined") return
-    const el = document.getElementById("integration-form")
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" })
+  const handleProductSheetOpenChange = (next: boolean) => {
+    if (next) {
+      setSelectedProductId(null)
+      setProductSheetForm(defaultProductSheetForm)
+      setProductSheetError(null)
+      resetProductImageState()
+    } else {
+      setIsProductSheetSubmitting(false)
+      resetProductImageState()
+      setProductSheetError(null)
+    }
+    setIsProductSheetOpen(next)
+  }
+
+  const handleServiceSheetOpenChange = (next: boolean) => {
+    if (next) {
+      setSelectedServiceId(null)
+      setServiceSheetForm(defaultServiceSheetForm)
+      setServiceSheetError(null)
+      resetServiceImageState()
+    } else {
+      setIsServiceSheetSubmitting(false)
+      resetServiceImageState()
+      setServiceSheetError(null)
+    }
+    setIsServiceSheetOpen(next)
+  }
+
+  const handleProductSheetSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setProductSheetError(null)
+
+    const metadataFields: Record<string, string> = {
+      product_kind: productSheetForm.productKind,
+      quantity_behavior: productSheetForm.quantityBehavior,
+    }
+    if (productImageUrl) {
+      metadataFields.coverImage = productImageUrl
+    }
+
+    setIsProductSheetSubmitting(true)
+
+    createListing.mutate(
+      {
+        type: "product",
+        title: productSheetForm.title,
+        description: productSheetForm.description,
+        price: productSheetForm.price,
+        currency: productSheetForm.currency,
+        inventory: productSheetForm.inventory,
+        durationMinutes: "",
+        metadata: Object.keys(metadataFields).length
+          ? JSON.stringify(metadataFields)
+          : "",
+      },
+      {
+        onSuccess: () => {
+          setIsProductSheetSubmitting(false)
+          handleProductSheetOpenChange(false)
+        },
+        onError: (err) => {
+          setProductSheetError(err.message)
+          setIsProductSheetSubmitting(false)
+        },
+      }
+    )
+  }
+
+  const handleServiceSheetSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setServiceSheetError(null)
+
+    const metadataFields: Record<string, string> = {
+      service_mode: serviceSheetForm.serviceMode,
+    }
+    if (serviceImageUrl) {
+      metadataFields.coverImage = serviceImageUrl
+    }
+    const turnaroundValue = serviceSheetForm.turnaround.trim()
+    if (turnaroundValue) {
+      metadataFields.service_turnaround = turnaroundValue
+    }
+    const deliverablesValue = serviceSheetForm.deliverables.trim()
+    if (deliverablesValue) {
+      metadataFields.service_deliverables = deliverablesValue
+    }
+    const requirementsValue = serviceSheetForm.requirements.trim()
+    if (requirementsValue) {
+      metadataFields.service_requirements = requirementsValue
+    }
+
+    setIsServiceSheetSubmitting(true)
+
+    createListing.mutate(
+      {
+        type: "service",
+        title: serviceSheetForm.title,
+        description: serviceSheetForm.description,
+        price: serviceSheetForm.price,
+        currency: serviceSheetForm.currency,
+        inventory: "",
+        durationMinutes: serviceSheetForm.durationMinutes,
+        metadata: Object.keys(metadataFields).length
+          ? JSON.stringify(metadataFields)
+          : "",
+      },
+      {
+        onSuccess: () => {
+          setIsServiceSheetSubmitting(false)
+          handleServiceSheetOpenChange(false)
+        },
+        onError: (err) => {
+          setServiceSheetError(err.message)
+          setIsServiceSheetSubmitting(false)
+        },
+      }
+    )
+  }
+
+  const handleProductDetailSheetOpenChange = (next: boolean) => {
+    if (!next) {
+      setSelectedProductId(null)
+      setProductDetailError(null)
+      setIsProductDetailSubmitting(false)
     }
   }
 
+  const handleProductDetailFieldChange = (
+    field: keyof ProductSheetFormState,
+    value: string
+  ) => {
+    setProductDetailForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleProductDetailSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedProductId) return
+
+    const listing = productListings.find((item) => item.id === selectedProductId)
+    if (!listing) {
+      setProductDetailError("Unable to locate the selected product.")
+      return
+    }
+
+    setProductDetailError(null)
+    setIsProductDetailSubmitting(true)
+
+    const productDetailMetadataUpdates: Record<string, unknown | null> = {
+      product_kind: productDetailForm.productKind,
+    }
+    if (productDetailImageDirty) {
+      productDetailMetadataUpdates.coverImage = productDetailImageUrl
+    }
+
+    if (productDetailForm.productKind === "physical") {
+      const inventoryRaw = productDetailForm.inventory.trim()
+      if (inventoryRaw) {
+        const count = Number.parseInt(inventoryRaw, 10)
+        if (Number.isNaN(count) || count < 0) {
+          setProductDetailError("Inventory must be a non-negative integer.")
+          setIsProductDetailSubmitting(false)
+          return
+        }
+        productDetailMetadataUpdates.inventory = count
+      } else {
+        productDetailMetadataUpdates.inventory = null
+      }
+      productDetailMetadataUpdates.quantity_behavior = productDetailForm.quantityBehavior
+    } else {
+      productDetailMetadataUpdates.inventory = null
+      productDetailMetadataUpdates.quantity_behavior = null
+    }
+
+    updateListing.mutate(
+      {
+        listing,
+        type: "product",
+        form: productDetailForm,
+        metadataUpdates: productDetailMetadataUpdates,
+        status: productDetailStatus,
+      },
+      {
+        onSuccess: () => {
+          setIsProductDetailSubmitting(false)
+          setSelectedProductId(null)
+        },
+        onError: (err) => {
+          setProductDetailError(err.message)
+          setIsProductDetailSubmitting(false)
+        },
+      }
+    )
+  }
+
+  const handleServiceDetailSheetOpenChange = (next: boolean) => {
+    if (!next) {
+      setSelectedServiceId(null)
+      setServiceDetailError(null)
+      setIsServiceDetailSubmitting(false)
+    }
+  }
+
+  const handleServiceDetailFieldChange = (
+    field: keyof ServiceSheetFormState,
+    value: string
+  ) => {
+    setServiceDetailForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleServiceDetailSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedServiceId) return
+
+    const listing = serviceListings.find((item) => item.id === selectedServiceId)
+    if (!listing) {
+      setServiceDetailError("Unable to locate the selected service.")
+      return
+    }
+
+    setServiceDetailError(null)
+    setIsServiceDetailSubmitting(true)
+
+    const serviceDetailMetadataUpdates: Record<string, unknown | null> = {
+      service_mode: serviceDetailForm.serviceMode,
+    }
+    if (serviceDetailImageDirty) {
+      serviceDetailMetadataUpdates.coverImage = serviceDetailImageUrl
+    }
+    const turnaroundValue = serviceDetailForm.turnaround.trim()
+    if (turnaroundValue) {
+      serviceDetailMetadataUpdates.service_turnaround = turnaroundValue
+    } else {
+      serviceDetailMetadataUpdates.service_turnaround = null
+    }
+    const deliverablesValue = serviceDetailForm.deliverables.trim()
+    if (deliverablesValue) {
+      serviceDetailMetadataUpdates.service_deliverables = deliverablesValue
+    } else {
+      serviceDetailMetadataUpdates.service_deliverables = null
+    }
+    const requirementsValue = serviceDetailForm.requirements.trim()
+    if (requirementsValue) {
+      serviceDetailMetadataUpdates.service_requirements = requirementsValue
+    } else {
+      serviceDetailMetadataUpdates.service_requirements = null
+    }
+
+    updateListing.mutate(
+      {
+        listing,
+        type: "service",
+        form: serviceDetailForm,
+        metadataUpdates: serviceDetailMetadataUpdates,
+        status: serviceDetailStatus,
+      },
+      {
+        onSuccess: () => {
+          setIsServiceDetailSubmitting(false)
+          setSelectedServiceId(null)
+        },
+        onError: (err) => {
+          setServiceDetailError(err.message)
+          setIsServiceDetailSubmitting(false)
+        },
+      }
+    )
+  }
+
+  const handleProductCardClick = (listing: SourceListing) => {
+    if (selectedProductId === listing.id) {
+      setSelectedProductId(null)
+      return
+    }
+    setIsProductSheetOpen(false)
+    setProductDetailError(null)
+    setSelectedProductId(listing.id)
+  }
+
+  const handleServiceCardClick = (listing: SourceListing) => {
+    if (selectedServiceId === listing.id) {
+      setSelectedServiceId(null)
+      return
+    }
+    setIsServiceSheetOpen(false)
+    setServiceDetailError(null)
+    setSelectedServiceId(listing.id)
+  }
+
+  const handleOrderRowClick = (order: OrderRowData) => {
+    setSelectedOrderId(order.id)
+  }
+
+  const handleOrderDetailOpenChange = (next: boolean) => {
+    if (!next) {
+      setSelectedOrderId(null)
+    }
+  }
+
+  const handleOrderFulfillmentChange = (
+    orderId: string,
+    fulfillmentStatus: ProductOrderFulfillmentStatus
+  ) => {
+    updateOrderFulfillment.mutate({ orderId, fulfillmentStatus })
+  }
+
+  const handleOrderShippingSave = (
+    orderId: string,
+    shipping: {
+      trackingNumber: string | null
+      carrier: string | null
+      shippedAt: string | null
+    }
+  ) => {
+    updateOrderFulfillment.mutate({ orderId, shipping })
+  }
+
+  const setListingImageError = (
+    target: "product" | "product_detail" | "service" | "service_detail",
+    message: string | null
+  ) => {
+    switch (target) {
+      case "product":
+        setProductImageUploadError(message)
+        break
+      case "product_detail":
+        setProductDetailImageUploadError(message)
+        break
+      case "service":
+        setServiceImageUploadError(message)
+        break
+      case "service_detail":
+        setServiceDetailImageUploadError(message)
+        break
+    }
+  }
+
+  const setListingImageUploading = (
+    target: "product" | "product_detail" | "service" | "service_detail",
+    value: boolean
+  ) => {
+    switch (target) {
+      case "product":
+        setIsProductImageUploading(value)
+        break
+      case "product_detail":
+        setIsProductDetailImageUploading(value)
+        break
+      case "service":
+        setIsServiceImageUploading(value)
+        break
+      case "service_detail":
+        setIsServiceDetailImageUploading(value)
+        break
+    }
+  }
+
+  const setListingImageUrl = (
+    target: "product" | "product_detail" | "service" | "service_detail",
+    value: string | null
+  ) => {
+    switch (target) {
+      case "product":
+        setProductImageUrl(value)
+        break
+      case "product_detail":
+        setProductDetailImageUrl(value)
+        break
+      case "service":
+        setServiceImageUrl(value)
+        break
+      case "service_detail":
+        setServiceDetailImageUrl(value)
+        break
+    }
+  }
+
+  const replaceListingPreview = (
+    target: "product" | "product_detail" | "service" | "service_detail",
+    value: string | null
+  ) => {
+    const revoke = (url: string | null) => {
+      if (url && typeof window !== "undefined") {
+        URL.revokeObjectURL(url)
+      }
+    }
+    switch (target) {
+      case "product":
+        revoke(productImagePreview)
+        setProductImagePreview(value)
+        break
+      case "product_detail":
+        revoke(productDetailImagePreview)
+        setProductDetailImagePreview(value)
+        break
+      case "service":
+        revoke(serviceImagePreview)
+        setServiceImagePreview(value)
+        break
+      case "service_detail":
+        revoke(serviceDetailImagePreview)
+        setServiceDetailImagePreview(value)
+        break
+    }
+  }
+
+  const markListingImageDirty = (
+    target: "product" | "product_detail" | "service" | "service_detail"
+  ) => {
+    if (target === "product_detail") {
+      setProductDetailImageDirty(true)
+    }
+    if (target === "service_detail") {
+      setServiceDetailImageDirty(true)
+    }
+  }
+
+  const beginListingImageCrop = (
+    target: "product" | "product_detail" | "service" | "service_detail",
+    file: File
+  ) => {
+    if (!userId) {
+      const message =
+        target === "service" || target === "service_detail"
+          ? "Sign in to upload service images."
+          : "Sign in to upload product images."
+      setListingImageError(target, message)
+      return
+    }
+
+    if (cropSourceUrl && typeof window !== "undefined") {
+      URL.revokeObjectURL(cropSourceUrl)
+    }
+
+    const previewUrl = typeof window !== "undefined" ? URL.createObjectURL(file) : null
+    if (!previewUrl) return
+    setCropTarget(target)
+    setCropFile(file)
+    setCropSourceUrl(previewUrl)
+    setIsCropOpen(true)
+    setIsCropSaving(false)
+    setCropZoom(1)
+    setCropOffset({ x: 0, y: 0 })
+  }
+
+  const uploadListingImage = async (payload: {
+    target: "product" | "product_detail" | "service" | "service_detail"
+    file: File
+    previewUrl: string
+  }) => {
+    setListingImageError(payload.target, null)
+    setListingImageUrl(payload.target, null)
+    replaceListingPreview(payload.target, payload.previewUrl)
+    setListingImageUploading(payload.target, true)
+    markListingImageDirty(payload.target)
+
+    const uploadResult = await uploadAvatar(payload.file, userId ?? "")
+    setListingImageUploading(payload.target, false)
+
+    if (!uploadResult.success || !uploadResult.url) {
+      setListingImageError(payload.target, uploadResult.error || "Failed to upload image.")
+      return
+    }
+
+    setListingImageError(payload.target, null)
+    setListingImageUrl(payload.target, uploadResult.url)
+  }
+
+  const handleCropCancel = () => {
+    setIsCropOpen(false)
+    setIsCropSaving(false)
+    setCropTarget(null)
+    setCropFile(null)
+    setCropImageSize(null)
+    setCropOffset({ x: 0, y: 0 })
+    setCropZoom(1)
+    if (cropSourceUrl && typeof window !== "undefined") {
+      URL.revokeObjectURL(cropSourceUrl)
+    }
+    setCropSourceUrl(null)
+  }
+
+  const handleCropConfirm = async () => {
+    if (!cropTarget || !cropFile || !cropSourceUrl || !cropImageSize || !cropFrameSize) {
+      return
+    }
+
+    setIsCropSaving(true)
+    try {
+      const image = new Image()
+      image.src = cropSourceUrl
+      await image.decode()
+
+      const displayWidth = cropImageSize.width * cropScale
+      const displayHeight = cropImageSize.height * cropScale
+      const imageLeft = (cropFrameSize - displayWidth) / 2 + cropOffset.x
+      const imageTop = (cropFrameSize - displayHeight) / 2 + cropOffset.y
+      const cropX = (0 - imageLeft) / cropScale
+      const cropY = (0 - imageTop) / cropScale
+      const cropSize = cropFrameSize / cropScale
+
+      const outputSize = 1024
+      const canvas = document.createElement("canvas")
+      canvas.width = outputSize
+      canvas.height = outputSize
+      const ctx = canvas.getContext("2d")
+      if (!ctx) {
+        setIsCropSaving(false)
+        return
+      }
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = "high"
+      ctx.drawImage(
+        image,
+        cropX,
+        cropY,
+        cropSize,
+        cropSize,
+        0,
+        0,
+        outputSize,
+        outputSize
+      )
+
+      const outputType = cropFile.type === "image/png" ? "image/png" : "image/jpeg"
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, outputType, 0.92)
+      )
+
+      if (!blob) {
+        setIsCropSaving(false)
+        return
+      }
+
+      const baseName = cropFile.name.replace(/\.[^/.]+$/, "") || "listing"
+      const extension = outputType === "image/png" ? "png" : "jpg"
+      const croppedFile = new File([blob], `${baseName}-square.${extension}`, {
+        type: outputType,
+      })
+      const previewUrl = URL.createObjectURL(blob)
+      await uploadListingImage({ target: cropTarget, file: croppedFile, previewUrl })
+      handleCropCancel()
+    } catch (error) {
+      setIsCropSaving(false)
+    }
+  }
+
+  const handleCropPointerDown = (event: PointerEvent<HTMLImageElement>) => {
+    if (!cropImageSize) return
+    event.preventDefault()
+    const target = event.currentTarget
+    target.setPointerCapture(event.pointerId)
+    cropDragState.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: cropOffset.x,
+      originY: cropOffset.y,
+    }
+  }
+
+  const handleCropPointerMove = (event: PointerEvent<HTMLImageElement>) => {
+    if (cropDragState.current.pointerId !== event.pointerId) return
+    const deltaX = event.clientX - cropDragState.current.startX
+    const deltaY = event.clientY - cropDragState.current.startY
+    setCropOffset(
+      clampCropOffset({
+        x: cropDragState.current.originX + deltaX,
+        y: cropDragState.current.originY + deltaY,
+      })
+    )
+  }
+
+  const handleCropPointerUp = (event: PointerEvent<HTMLImageElement>) => {
+    if (cropDragState.current.pointerId !== event.pointerId) return
+    cropDragState.current.pointerId = null
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch (error) {
+      // no-op
+    }
+  }
+
+  const handleProductImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    input.value = ""
+    beginListingImageCrop("product", file)
+  }
+
+  const handleProductDetailImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    input.value = ""
+    beginListingImageCrop("product_detail", file)
+  }
+
+  const handleServiceImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    input.value = ""
+    beginListingImageCrop("service", file)
+  }
+
+  const handleServiceDetailImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    input.value = ""
+    beginListingImageCrop("service_detail", file)
+  }
+
+  const productSheetBusy =
+    isProductImageUploading || (isProductSheetSubmitting && createListing.isPending)
+
+  const serviceSheetBusy =
+    isServiceImageUploading || (isServiceSheetSubmitting && createListing.isPending)
+
+  const overviewTiles: OverviewTile[] = [
+    { key: "products", title: "Products", meta: "0 active" },
+    { key: "services", title: "Services", meta: "Coming soon" },
+    { key: "media", title: "Media", meta: "0 assets" },
+    { key: "orders", title: "Orders", meta: "Awaiting sync" },
+    { key: "inquiries", title: "Inquiries", meta: "Muted alerts" },
+  ]
+  const isCropReady = Boolean(cropSourceUrl && cropImageSize && cropFrameSize)
+  const cropImageTransform = isCropReady
+    ? `translate(-50%, -50%) translate(${cropOffset.x}px, ${cropOffset.y}px) scale(${cropScale})`
+    : "translate(-50%, -50%)"
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <>
+      <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-900/60 bg-zinc-950/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-zinc-400">
-                Source
-              </p>
-              <h1 className="mt-1 text-3xl font-semibold text-white">
-                Connect your storefronts
-              </h1>
-              <p className="mt-3 max-w-3xl text-sm text-zinc-300">
-                Link every website you sell on and publish listings once. Source
-                will send the payload to each integration with the structure and
-                headers you provide.
-              </p>
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6">
+          <div className="flex flex-col gap-6">
+            <div className="flex items-center justify-between gap-2">
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-[0.3em] text-zinc-400">Source</p>
+              </div>
+              <Badge className="h-fit gap-2 bg-zinc-500/20 text-zinc-200">
+                <Plug className="size-3" /> Paid upgrade
+              </Badge>
             </div>
-            <div className="flex flex-col gap-2 self-start md:flex-row md:items-center md:gap-3">
+            <div className="rounded-[28px] border border-zinc-800/70 bg-zinc-900/60 p-1 shadow-[0_20px_45px_rgba(0,0,0,0.8)]">
+              <div className="grid min-w-full grid-cols-[repeat(5,minmax(0,1fr))] gap-2 text-xs sm:gap-3 sm:text-sm">
+                {overviewTiles.map((tile) => {
+                  const isActive = selectedOverviewSection === tile.key
+                  return (
+                    <button
+                      key={tile.key}
+                      type="button"
+                      onClick={() => setSelectedOverviewSection(tile.key)}
+                      aria-pressed={isActive}
+                      className={cn(
+                        "flex flex-col items-center justify-center gap-1 rounded-2xl border px-3 py-4 text-center text-xs text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60 sm:px-4 sm:py-5 sm:text-sm",
+                        "border-transparent bg-zinc-950/60",
+                        isActive &&
+                          "border-zinc-600 bg-zinc-900/80 text-white shadow-[inset_0_2px_6px_rgba(255,255,255,0.08),0_14px_35px_rgba(0,0,0,0.75)]"
+                      )}
+                    >
+                    <div className="flex h-6 min-h-[1.5rem] items-center justify-center">
+                      <p className="text-sm font-semibold leading-tight text-white sm:text-base whitespace-nowrap">
+                        {tile.title}
+                      </p>
+                    </div>
+                    <div className="flex h-4 min-h-[1rem] items-center justify-center">
+                      <p className="text-[9px] text-zinc-500 sm:text-xs truncate">
+                        {tile.meta}
+                      </p>
+                    </div>
+                  </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 pb-10 pt-6">
+        {selectedOverviewSection === "media" && (
+          isAdmin ? (
+            <>
+            <div className="flex justify-end pb-1">
               <Button
                 type="button"
                 className="gap-2 bg-zinc-500 text-white hover:bg-zinc-400"
@@ -1689,77 +3107,721 @@ export default function Source() {
               >
                 <Send className="size-4" /> Post everywhere
               </Button>
-              <Badge className="h-fit gap-2 bg-zinc-500/20 text-zinc-200">
-                <Plug className="size-3" /> Paid upgrade
-              </Badge>
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
-            <div className="flex items-center gap-2">
-              <Plug className="size-4 text-zinc-300" />
-              <span>
-                {integrationsQuery.isLoading
-                  ? "Loading connections..."
-                  : `${activeIntegrationCount} active connection${
-                      activeIntegrationCount === 1 ? "" : "s"
-                    }`}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <UploadCloud className="size-4 text-zinc-300" />
-              <span>
-                {listingsQuery.isLoading
-                  ? "Loading listings..."
-                  : `${listings.length} recent listing${
-                      listings.length === 1 ? "" : "s"
-                    }`}
-              </span>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10">
-        <section className="overflow-hidden rounded-2xl border border-zinc-900/60 bg-zinc-950/70 shadow-lg shadow-zinc-950/40">
-          <div className="flex flex-col gap-3 border-b border-zinc-900/60 px-6 py-5 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-white">How Source syncs your listings</h2>
-              <p className="text-sm text-zinc-300">
-                Follow these steps to connect storefronts and publish everywhere in minutes.
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="self-start md:self-auto"
-              onClick={scrollToIntegrationForm}
+            <section
+              id="media-section"
+              className="overflow-hidden rounded-2xl border border-zinc-900/60 bg-zinc-950/70 shadow-lg shadow-zinc-950/40"
             >
-              Start connecting
-            </Button>
-          </div>
-          <div className="grid gap-4 px-6 py-6 sm:grid-cols-2 lg:grid-cols-3">
-            {setupSteps.map((step) => {
-              const Icon = step.icon
-              return (
-                <div
-                  key={step.id}
-                  className="flex gap-3 rounded-xl border border-zinc-900/60 bg-zinc-950/60 p-4"
-                >
-                  <div className="rounded-lg bg-zinc-900/60 p-2">
-                    <Icon className="size-4 text-zinc-300" />
-                  </div>
-                  <div className="space-y-1 text-sm">
-                    <p className="font-medium text-white">{step.title}</p>
-                    <p className="text-xs text-zinc-400">{step.description}</p>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
+                      <div className="flex flex-col gap-3 border-b border-zinc-900/60 px-6 py-5 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <h2 className="text-lg font-semibold text-white">How Source syncs your listings</h2>
+                          <p className="text-sm text-zinc-300">
+                            Follow these steps to connect storefronts and publish everywhere in minutes.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="self-start md:self-auto"
+                          onClick={() => setSelectedOverviewSection("services")}
+                        >
+                          Start connecting
+                        </Button>
+                      </div>
+                      <div className="grid gap-4 px-6 py-6 sm:grid-cols-2 lg:grid-cols-3">
+                        {setupSteps.map((step) => {
+                          const Icon = step.icon
+                          return (
+                            <div
+                              key={step.id}
+                              className="flex gap-3 rounded-xl border border-zinc-900/60 bg-zinc-950/60 p-4"
+                            >
+                              <div className="rounded-lg bg-zinc-900/60 p-2">
+                                <Icon className="size-4 text-zinc-300" />
+                              </div>
+                              <div className="space-y-1 text-sm">
+                                <p className="font-medium text-white">{step.title}</p>
+                                <p className="text-xs text-zinc-400">{step.description}</p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      </section>
+            <section className="grid gap-6 lg:grid-cols-2">
+                          <form
+                            id="integration-form"
+                            className="rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-6 shadow-xl shadow-zinc-950/40"
+                            onSubmit={(event) => {
+                              event.preventDefault()
+                              setIntegrationError(null)
+            
+                              try {
+                                createIntegration.mutate(integrationForm)
+                              } catch (err) {
+                                if (err instanceof Error) setIntegrationError(err.message)
+                              }
+                            }}
+                          >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className="text-lg font-semibold text-white">
+                              Add integration
+                            </h3>
+                            <p className="mt-1 text-xs text-zinc-400">
+                              Provide the destination endpoint and any authentication so
+                              Source can call it when you publish a listing.
+                            </p>
+                          </div>
+                        </div>
+            
+                        <div className="mt-5 space-y-6 rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-white">Connector library</p>
+                            <p className="text-xs text-zinc-400">
+                              Prefill this form for Shopify, Instagram, TikTok, LinkedIn, Wix,
+                              WooCommerce, or trigger automation hooks that fan listings out to
+                              Depop, Facebook Marketplace, Craigslist, and more.
+                            </p>
+                          </div>
+            
+                          {availableSocialConnectors.length > 0 && (
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {availableSocialConnectors.map((option) => {
+                                const Icon = option.icon
+                                const isActive = selectedPresetId === option.id
+                                return (
+                                  <button
+                                    key={option.id}
+                                    type="button"
+                                    onClick={() => handlePresetChange(option.id)}
+                                    className={cn(
+                                      "group relative overflow-hidden rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-4 text-left transition-all hover:border-zinc-800/80 hover:bg-zinc-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
+                                      isActive && "border-zinc-400/70 bg-zinc-500/10 shadow-lg shadow-zinc-500/20"
+                                    )}
+                                  >
+                                    <span
+                                      className={cn(
+                                        "pointer-events-none absolute inset-0 -z-10 opacity-30 blur-2xl transition-opacity",
+                                        "bg-gradient-to-br",
+                                        option.gradient,
+                                        isActive ? "opacity-60" : "group-hover:opacity-45"
+                                      )}
+                                    />
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex items-center gap-3">
+                                        <div className="flex size-10 items-center justify-center rounded-xl bg-white/10 text-white shadow-inner shadow-white/10">
+                                          <Icon className="size-5" />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <p className="flex items-center gap-2 text-sm font-semibold text-white">
+                                            {option.label}
+                                            {isActive && (
+                                              <span className="rounded-full bg-zinc-500/20 px-2 py-0.5 text-[10px] font-medium text-zinc-100">
+                                                Selected
+                                              </span>
+                                            )}
+                                          </p>
+                                          <p className="text-xs text-zinc-200/90">{option.description}</p>
+                                        </div>
+                                      </div>
+                                      {option.oauth && (
+                                        <Badge className="h-fit rounded-full bg-zinc-900/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-100/80">
+                                          OAuth
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+            
+                          <div className="space-y-3 rounded-xl border border-zinc-900/60 bg-zinc-950/70 p-4">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium text-white">Browse everything</p>
+                                <p className="text-xs text-zinc-400">
+                                  Prefer a different storefront? Pick any preset or return to manual setup.
+                                </p>
+                              </div>
+                              {selectedPresetId && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="gap-2 text-zinc-200 hover:text-white"
+                                  onClick={() => handlePresetChange("manual")}
+                                >
+                                  Reset to manual
+                                </Button>
+                              )}
+                            </div>
+                            <Select
+                              value={selectedPresetId ?? "manual"}
+                              onValueChange={handlePresetChange}
+                              placeholder="Manual setup"
+                            >
+                              <SelectContent>
+                                <SelectItem value="manual">Manual setup</SelectItem>
+                                {integrationPresets.map((preset) => (
+                                  <SelectItem key={preset.id} value={preset.id}>
+                                    {preset.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+            
+                          {selectedPreset && (
+                            <div className="space-y-4 rounded-xl border border-zinc-900/60 bg-zinc-950/70 p-4">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-xs text-zinc-200/90">{selectedPreset.description}</p>
+                                {selectedPreset.docsUrl && (
+                                  <a
+                                    href={selectedPreset.docsUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-xs font-medium text-zinc-300 hover:text-zinc-200"
+                                  >
+                                    View docs
+                                  </a>
+                                )}
+                              </div>
+            
+                              {selectedPreset.oauthRequired && (
+                                <div className="flex items-start gap-3 rounded-lg border border-zinc-500/30 bg-zinc-500/10 p-3 text-xs text-zinc-100">
+                                  <Lock className="mt-0.5 size-3" />
+                                  <span>
+                                    This connector uses OAuth. Save the integration, then click
+                                    <span className="font-semibold"> Connect</span> to authorize before posting.
+                                  </span>
+                                </div>
+                              )}
+            
+                              {selectedPreset.prerequisites && selectedPreset.prerequisites.length > 0 && (
+                                <div className="space-y-3 rounded-lg border border-zinc-800/80 bg-zinc-900/50 p-3">
+                                  <p className="text-xs font-semibold text-zinc-200">Setup checklist</p>
+                                  <ul className="space-y-2">
+                                    {selectedPreset.prerequisites.map((item) => (
+                                      <li key={item.id} className="flex gap-3 text-xs text-zinc-300">
+                                        <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-zinc-400" />
+                                        <span className="space-y-1">
+                                          {item.href ? (
+                                            <a
+                                              href={item.href}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="inline-flex items-center gap-1 font-medium text-zinc-300 hover:text-zinc-200"
+                                            >
+                                              {item.label}
+                                              <ExternalLink className="size-3" />
+                                            </a>
+                                          ) : (
+                                            <span className="font-medium text-zinc-200">{item.label}</span>
+                                          )}
+                                          {item.description && (
+                                            <p className="text-zinc-400">{item.description}</p>
+                                          )}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+            
+                              <div className="grid gap-3 md:grid-cols-2">
+                                {selectedPreset.fields.map((field) => (
+                                  <div key={field.id} className="space-y-2">
+                                    <Label htmlFor={`preset-${field.id}`}>{field.label}</Label>
+                                    <Input
+                                      id={`preset-${field.id}`}
+                                      type={
+                                        field.type === "password"
+                                          ? "password"
+                                          : field.type === "url"
+                                          ? "url"
+                                          : "text"
+                                      }
+                                      value={presetInputs[field.id] ?? ""}
+                                      onChange={(event) =>
+                                        setPresetInputs((prev) => ({
+                                          ...prev,
+                                          [field.id]: event.target.value,
+                                        }))
+                                      }
+                                      placeholder={field.placeholder}
+                                    />
+                                    {field.help && <p className="text-xs text-zinc-500">{field.help}</p>}
+                                  </div>
+                                ))}
+                              </div>
+            
+                              <div className="flex flex-wrap items-center gap-3 text-xs">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={handlePresetApply}
+                                  disabled={!selectedPreset}
+                                >
+                                  Apply details
+                                </Button>
+                                {presetError ? (
+                                  <span className="text-zinc-300">{presetError}</span>
+                                ) : presetNotice ? (
+                                  <span className="text-zinc-300">{presetNotice}</span>
+                                ) : (
+                                  <span className="text-zinc-400">
+                                    Fill in the required details, then apply to load the integration fields automatically.
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+            
+                        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                          <div className="space-y-5">
+                            <FormSubheading
+                              title="Connection basics"
+                              description="Tell Source where to send your listings and what to call the integration."
+                            />
+                            <div className="grid gap-4">
+                              <FieldStack label="Platform" htmlFor="provider">
+                                <Input
+                                  id="provider"
+                                  value={integrationForm.provider}
+                                  onChange={(event) =>
+                                    setIntegrationForm((prev) => ({
+                                      ...prev,
+                                      provider: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="Shopify, Wix, Depop, Custom"
+                                  required
+                                />
+                              </FieldStack>
+            
+                              <FieldStack label="Display name" htmlFor="displayName">
+                                <Input
+                                  id="displayName"
+                                  value={integrationForm.displayName}
+                                  onChange={(event) =>
+                                    setIntegrationForm((prev) => ({
+                                      ...prev,
+                                      displayName: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="Shown in your integration list"
+                                />
+                              </FieldStack>
+            
+                              <FieldStack label="Website URL" htmlFor="connectionUrl">
+                                <Input
+                                  id="connectionUrl"
+                                  value={integrationForm.connectionUrl}
+                                  onChange={(event) =>
+                                    setIntegrationForm((prev) => ({
+                                      ...prev,
+                                      connectionUrl: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="https://yourstore.com"
+                                  type="url"
+                                  required
+                                />
+                              </FieldStack>
+            
+                              <FieldStack label="Publish endpoint" htmlFor="publishUrl">
+                                <Input
+                                  id="publishUrl"
+                                  value={integrationForm.publishUrl}
+                                  onChange={(event) =>
+                                    setIntegrationForm((prev) => ({
+                                      ...prev,
+                                      publishUrl: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="https://api.marketplace.com/v1/listings"
+                                  type="url"
+                                  required
+                                />
+                              </FieldStack>
+                            </div>
+            
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <FieldStack label="HTTP method" htmlFor="publishMethod">
+                                <Select
+                                  value={integrationForm.publishMethod}
+                                  onValueChange={(value) =>
+                                    setIntegrationForm((prev) => ({
+                                      ...prev,
+                                      publishMethod: value as IntegrationFormState["publishMethod"],
+                                    }))
+                                  }
+                                >
+                                  <SelectContent>
+                                    {httpMethods.map((method) => (
+                                      <SelectItem key={method} value={method}>
+                                        {method}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </FieldStack>
+            
+                              <FieldStack label="Status" htmlFor="status">
+                                <Select
+                                  value={integrationForm.status}
+                                  onValueChange={(value) =>
+                                    setIntegrationForm((prev) => ({
+                                      ...prev,
+                                      status: value as IntegrationFormState["status"],
+                                    }))
+                                  }
+                                >
+                                  <SelectContent>
+                                    <SelectItem value="active">Active</SelectItem>
+                                    <SelectItem value="disabled">Disabled</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </FieldStack>
+                            </div>
+                          </div>
+            
+                          <div className="space-y-5">
+                            <FormSubheading
+                              title="Authentication"
+                              description="Choose how Source authenticates when publishing to this channel."
+                            />
+                            <div className="grid gap-4">
+                              <FieldStack label="Authentication" htmlFor="authMode">
+                                <Select
+                                  value={integrationForm.authMode}
+                                  onValueChange={(value) => {
+                                    const nextMode = value as IntegrationFormState["authMode"]
+                                    setIntegrationForm((prev) => {
+                                      if (nextMode === "oauth2") {
+                                        return {
+                                          ...prev,
+                                          authMode: nextMode,
+                                          authToken: "",
+                                        }
+                                      }
+            
+                                      return {
+                                        ...prev,
+                                        authMode: nextMode,
+                                        authToken: nextMode === "none" ? "" : prev.authToken,
+                                        oauthAuthorizeUrl: "",
+                                        oauthTokenUrl: "",
+                                        oauthScopes: "",
+                                        oauthClientId: "",
+                                        oauthClientSecret: "",
+                                        oauthMetadata: "",
+                                      }
+                                    })
+            
+                                    if (nextMode === "oauth2") {
+                                      setShowIntegrationAdvanced(true)
+                                    }
+                                  }}
+                                >
+                                  <SelectContent>
+                                    {authModes.map((mode) => (
+                                      <SelectItem key={mode} value={mode}>
+                                        {mode === "api_key"
+                                          ? "API key header"
+                                          : mode === "none"
+                                          ? "No auth"
+                                          : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
+                                  <p className="text-xs text-zinc-400">
+                                    Stored securely in your Supabase project. Bearer tokens add
+                                    an Authorization header automatically. API keys let you
+                                    choose the header name (for example
+                                    <code className="mx-1 rounded bg-zinc-800 px-1">
+                                      X-Shopify-Access-Token
+                                    </code>
+                                    ). Basic auth expects username:password.
+                                  </p>
+                                )}
+                                {integrationForm.authMode === "oauth2" && (
+                                  <p className="text-xs text-zinc-400">
+                                    After saving, Source opens the provider&apos;s consent screen so you can
+                                    authorize access and capture tokens securely.
+                                  </p>
+                                )}
+                              </FieldStack>
+            
+                              {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
+                                <FieldStack label="Credentials" htmlFor="authToken">
+                                  <Input
+                                    id="authToken"
+                                    value={integrationForm.authToken}
+                                    onChange={(event) =>
+                                      setIntegrationForm((prev) => ({
+                                        ...prev,
+                                        authToken: event.target.value,
+                                      }))
+                                    }
+                                    placeholder={
+                                      integrationForm.authMode === "basic"
+                                        ? "username:password"
+                                        : "Secret value"
+                                    }
+                                    required
+                                  />
+                                </FieldStack>
+                              )}
+            
+                              {integrationForm.authMode === "api_key" && (
+                                <FieldStack
+                                  label="API key header"
+                                  htmlFor="authHeader"
+                                  description="Choose the header name to send your key with (for example X-Shopify-Access-Token)."
+                                >
+                                  <Input
+                                    id="authHeader"
+                                    value={integrationForm.authHeader}
+                                    onChange={(event) =>
+                                      setIntegrationForm((prev) => ({
+                                        ...prev,
+                                        authHeader: event.target.value,
+                                      }))
+                                    }
+                                    placeholder="X-API-Key"
+                                    required
+                                  />
+                                </FieldStack>
+                              )}
+            
+                              {integrationForm.authMode === "oauth2" && (
+                                <div className="grid gap-4">
+                                  <FieldStack
+                                    label="Authorization URL"
+                                    htmlFor="oauth-authorize"
+                                    description="Where Source sends users to approve access."
+                                  >
+                                    <Input
+                                      id="oauth-authorize"
+                                      value={integrationForm.oauthAuthorizeUrl}
+                                      onChange={(event) =>
+                                        setIntegrationForm((prev) => ({
+                                          ...prev,
+                                          oauthAuthorizeUrl: event.target.value,
+                                        }))
+                                      }
+                                      placeholder="https://provider.com/oauth/authorize"
+                                      type="url"
+                                      required
+                                    />
+                                  </FieldStack>
+            
+                                  <FieldStack
+                                    label="Token URL"
+                                    htmlFor="oauth-token"
+                                    description="Source exchanges the authorization code for tokens at this URL."
+                                  >
+                                    <Input
+                                      id="oauth-token"
+                                      value={integrationForm.oauthTokenUrl}
+                                      onChange={(event) =>
+                                        setIntegrationForm((prev) => ({
+                                          ...prev,
+                                          oauthTokenUrl: event.target.value,
+                                        }))
+                                      }
+                                      placeholder="https://provider.com/oauth/token"
+                                      type="url"
+                                      required
+                                    />
+                                  </FieldStack>
+            
+                                  <FieldStack
+                                    label="Client ID"
+                                    htmlFor="oauth-client-id"
+                                    description="Registered OAuth client identifier."
+                                  >
+                                    <Input
+                                      id="oauth-client-id"
+                                      value={integrationForm.oauthClientId}
+                                      onChange={(event) =>
+                                        setIntegrationForm((prev) => ({
+                                          ...prev,
+                                          oauthClientId: event.target.value,
+                                        }))
+                                      }
+                                      placeholder="client-id-123"
+                                      required
+                                    />
+                                  </FieldStack>
+            
+                                  <FieldStack
+                                    label="Client secret"
+                                    htmlFor="oauth-client-secret"
+                                    description="Stored securely and used during token refresh."
+                                  >
+                                    <Input
+                                      id="oauth-client-secret"
+                                      value={integrationForm.oauthClientSecret}
+                                      onChange={(event) =>
+                                        setIntegrationForm((prev) => ({
+                                          ...prev,
+                                          oauthClientSecret: event.target.value,
+                                        }))
+                                      }
+                                      placeholder="Optional"
+                                      type="password"
+                                    />
+                                  </FieldStack>
+            
+                                  <FieldStack
+                                    label="Scopes"
+                                    htmlFor="oauth-scopes"
+                                    description="Space separated list of scopes requested during authorization."
+                                  >
+                                    <Input
+                                      id="oauth-scopes"
+                                      value={integrationForm.oauthScopes}
+                                      onChange={(event) =>
+                                        setIntegrationForm((prev) => ({
+                                          ...prev,
+                                          oauthScopes: event.target.value,
+                                        }))
+                                      }
+                                      placeholder="inventory.write listings.read"
+                                    />
+                                  </FieldStack>
+            
+                                  <FieldStack
+                                    label="OAuth metadata (JSON)"
+                                    htmlFor="oauth-metadata"
+                                    description="Optional JSON persisted with the integration for custom providers."
+                                  >
+                                    <Textarea
+                                      id="oauth-metadata"
+                                      value={integrationForm.oauthMetadata}
+                                      onChange={(event) =>
+                                        setIntegrationForm((prev) => ({
+                                          ...prev,
+                                          oauthMetadata: event.target.value,
+                                        }))
+                                      }
+                                      rows={3}
+                                      placeholder='{"audience": "marketplace"}'
+                                    />
+                                  </FieldStack>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+            
+                        <div className="mt-8 space-y-4 rounded-2xl border border-zinc-900/70 bg-zinc-950/50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                Advanced options
+                              </p>
+                              <p className="text-xs text-zinc-400">
+                                Control custom headers and the JSON body Source sends to your integration.
+                              </p>
+                            </div>
+                            {!integrationAdvancedForced && (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setShowIntegrationAdvanced((prev) => !prev)}
+                              >
+                                {integrationAdvancedVisible ? "Hide advanced" : "Show advanced"}
+                              </Button>
+                            )}
+                          </div>
+            
+                          {integrationAdvancedVisible && (
+                            <div className="grid gap-4 lg:grid-cols-2">
+                              <FieldStack
+                                label="Custom headers (JSON)"
+                                htmlFor="headers"
+                                description="Use key/value pairs for any additional headers you want on publish requests."
+                              >
+                                <Textarea
+                                  id="headers"
+                                  value={integrationForm.headers}
+                                  onChange={(event) =>
+                                    setIntegrationForm((prev) => ({
+                                      ...prev,
+                                      headers: event.target.value,
+                                    }))
+                                  }
+                                  placeholder='{"X-Shop-Domain": "{{integration.connectionUrl}}"}'
+                                  rows={integrationAdvancedForced ? 4 : 3}
+                                />
+                              </FieldStack>
+            
+                              <FieldStack
+                                label="Payload template (JSON)"
+                                htmlFor="payloadTemplate"
+                                description="Optional structure for the request body. Use {{listing.title}} style tokens to reference listing data."
+                              >
+                                <Textarea
+                                  id="payloadTemplate"
+                                  value={integrationForm.payloadTemplate}
+                                  onChange={(event) =>
+                                    setIntegrationForm((prev) => ({
+                                      ...prev,
+                                      payloadTemplate: event.target.value,
+                                    }))
+                                  }
+                                  placeholder='{"name": "{{listing.title}}", "price": "{{listing.price}}"}'
+                                  rows={integrationAdvancedForced ? 6 : 5}
+                                />
+                              </FieldStack>
+                            </div>
+                          )}
+                        </div>
+            
+                        <div className="mt-6 flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => {
+                              setIntegrationForm(defaultIntegrationForm)
+                              setIntegrationError(null)
+                              setSelectedPresetId(null)
+                              setPresetInputs({})
+                              setPresetNotice(null)
+                              setPresetError(null)
+                              setShowIntegrationAdvanced(false)
+                            }}
+                          >
+                            Reset
+                          </Button>
+                          <Button type="submit" disabled={createIntegration.isPending}>
+                            {createIntegration.isPending ? "Saving..." : "Save integration"}
+                          </Button>
+                        </div>
+                      </form>
+                    </section>
+            </>
+          ) : (
+            <section className="rounded-2xl border border-zinc-900/60 bg-zinc-950/70 px-6 py-16 text-center shadow-lg shadow-zinc-950/40">
+              <p className="text-xs uppercase tracking-[0.4em] text-zinc-500">Media</p>
+              <p className="mt-4 text-3xl font-semibold text-white">Coming soon</p>
+            </section>
+          )
+        )}
 
-        <section className="space-y-4">
+        {selectedOverviewSection === "inquiries" && (
+          <section id="connected-websites" className="space-y-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-xl font-semibold text-white">
@@ -1825,954 +3887,1221 @@ export default function Source() {
               />
             ))}
           </div>
-        </section>
+          </section>
+        )}
 
-        <section className="grid gap-6 lg:grid-cols-2">
-          <form
-            id="integration-form"
-            className="rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-6 shadow-xl shadow-zinc-950/40"
-            onSubmit={(event) => {
-              event.preventDefault()
-              setIntegrationError(null)
-
-              try {
-                createIntegration.mutate(integrationForm)
-              } catch (err) {
-                if (err instanceof Error) setIntegrationError(err.message)
-              }
-            }}
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-white">
-                  Add integration
-                </h3>
-                <p className="mt-1 text-xs text-zinc-400">
-                  Provide the destination endpoint and any authentication so
-                  Source can call it when you publish a listing.
-                </p>
-              </div>
+        {selectedOverviewSection === "services" && (
+          <section className="space-y-2">
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                className="gap-2 rounded-full border border-zinc-900/70 bg-zinc-950/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-zinc-700 hover:bg-zinc-900"
+                onClick={() => handleServiceSheetOpenChange(true)}
+              >
+                <Plus className="size-4" />
+                Add service
+              </Button>
             </div>
-
-            <div className="mt-5 space-y-6 rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-white">Connector library</p>
-                <p className="text-xs text-zinc-400">
-                  Prefill this form for Shopify, Instagram, TikTok, LinkedIn, Wix,
-                  WooCommerce, or trigger automation hooks that fan listings out to
-                  Depop, Facebook Marketplace, Craigslist, and more.
-                </p>
-              </div>
-
-              {availableSocialConnectors.length > 0 && (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {availableSocialConnectors.map((option) => {
-                    const Icon = option.icon
-                    const isActive = selectedPresetId === option.id
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => handlePresetChange(option.id)}
+            <div className="grid grid-cols-3 gap-3">
+              {serviceListings.map((listing) => {
+                const coverImage =
+                  listing.metadata && typeof listing.metadata["coverImage"] === "string"
+                    ? listing.metadata["coverImage"]
+                    : null
+                const priceLabel =
+                  listing.price !== null
+                    ? formatCurrency(listing.price, listing.currency)
+                    : "Price TBD"
+                const durationMinutes =
+                  listing.metadata && typeof listing.metadata["duration_minutes"] === "number"
+                    ? listing.metadata["duration_minutes"]
+                    : null
+                const isSelected = selectedServiceId === listing.id
+                return (
+                <button
+                  key={listing.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => handleServiceCardClick(listing)}
+                    className={cn(
+                      "flex h-full flex-col overflow-hidden rounded-2xl border bg-zinc-950/60 text-left text-[11px] text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70",
+                      isSelected
+                        ? "border-zinc-500/70 bg-zinc-900/70"
+                        : "border-zinc-900/70 hover:border-zinc-700"
+                    )}
+                  >
+                    <div className="relative h-20 w-full overflow-hidden bg-zinc-900">
+                      {coverImage ? (
+                        <img
+                          src={coverImage}
+                          alt={listing.title}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-800 text-zinc-500">
+                          <span className="text-[10px] uppercase tracking-[0.3em]">
+                            No image
+                          </span>
+                        </div>
+                      )}
+                      <Badge
                         className={cn(
-                          "group relative overflow-hidden rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-4 text-left transition-all hover:border-zinc-800/80 hover:bg-zinc-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
-                          isActive && "border-zinc-400/70 bg-zinc-500/10 shadow-lg shadow-zinc-500/20"
+                          "absolute top-2 right-2 rounded-full bg-black/70 px-2 py-0.5 text-[9px] uppercase tracking-[0.3em]",
+                          statusAccent[listing.status]
                         )}
                       >
-                        <span
-                          className={cn(
-                            "pointer-events-none absolute inset-0 -z-10 opacity-30 blur-2xl transition-opacity",
-                            "bg-gradient-to-br",
-                            option.gradient,
-                            isActive ? "opacity-60" : "group-hover:opacity-45"
-                          )}
-                        />
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex size-10 items-center justify-center rounded-xl bg-white/10 text-white shadow-inner shadow-white/10">
-                              <Icon className="size-5" />
-                            </div>
-                            <div className="space-y-1">
-                              <p className="flex items-center gap-2 text-sm font-semibold text-white">
-                                {option.label}
-                                {isActive && (
-                                  <span className="rounded-full bg-zinc-500/20 px-2 py-0.5 text-[10px] font-medium text-zinc-100">
-                                    Selected
-                                  </span>
-                                )}
-                              </p>
-                              <p className="text-xs text-zinc-200/90">{option.description}</p>
-                            </div>
-                          </div>
-                          {option.oauth && (
-                            <Badge className="h-fit rounded-full bg-zinc-900/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-100/80">
-                              OAuth
-                            </Badge>
-                          )}
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
+                        {listingStatuses[listing.status]}
+                      </Badge>
+                    </div>
+                    <div className="flex flex-grow flex-col gap-1 px-3 py-3">
+                      <p className="text-[11px] font-semibold text-white line-clamp-2">
+                        {listing.title}
+                      </p>
+                      <p className="text-[10px] text-zinc-400">{priceLabel}</p>
+                      {durationMinutes !== null && (
+                        <span className="text-[9px] uppercase tracking-[0.3em] text-zinc-500">
+                          {durationMinutes} min service
+                        </span>
+                      )}
+                      <p className="mt-auto text-[8px] uppercase tracking-[0.3em] text-zinc-500">
+                        Updated {formatRelativeTime(listing.updated_at)}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+        )}
 
-              <div className="space-y-3 rounded-xl border border-zinc-900/60 bg-zinc-950/70 p-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-white">Browse everything</p>
-                    <p className="text-xs text-zinc-400">
-                      Prefer a different storefront? Pick any preset or return to manual setup.
+        {selectedOverviewSection === "products" && (
+        <section className="space-y-2">
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              className="gap-2 rounded-full border border-zinc-900/70 bg-zinc-950/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-zinc-700 hover:bg-zinc-900"
+              onClick={() => handleProductSheetOpenChange(true)}
+            >
+              <Plus className="size-4" />
+              Add product
+            </Button>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {productListings.map((listing) => {
+              const coverImage =
+                listing.metadata && typeof listing.metadata["coverImage"] === "string"
+                  ? listing.metadata["coverImage"]
+                  : null
+              const priceLabel =
+                listing.price !== null
+                  ? formatCurrency(listing.price, listing.currency)
+                  : "Price TBD"
+              const isSelected = selectedProductId === listing.id
+              return (
+                <button
+                  key={listing.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => handleProductCardClick(listing)}
+                  className={cn(
+                    "flex h-full flex-col overflow-hidden rounded-2xl border bg-zinc-950/60 text-left text-[11px] text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70",
+                    isSelected
+                      ? "border-zinc-500/70 bg-zinc-900/70"
+                      : "border-zinc-900/70 hover:border-zinc-700"
+                  )}
+                >
+                  <div className="relative h-20 w-full overflow-hidden bg-zinc-900">
+                    {coverImage ? (
+                      <img
+                        src={coverImage}
+                        alt={listing.title}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-800 text-zinc-500">
+                        <span className="text-[10px] uppercase tracking-[0.3em]">
+                          No image
+                        </span>
+                      </div>
+                    )}
+                    <Badge
+                      className={cn(
+                        "absolute top-2 right-2 rounded-full bg-black/70 px-2 py-0.5 text-[9px] uppercase tracking-[0.3em]",
+                        statusAccent[listing.status]
+                      )}
+                    >
+                      {listingStatuses[listing.status]}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-grow flex-col gap-1 px-3 py-3">
+                    <p className="text-[11px] font-semibold text-white line-clamp-2">
+                      {listing.title}
+                    </p>
+                    <p className="text-[10px] text-zinc-400">{priceLabel}</p>
+                    <p className="text-[9px] uppercase tracking-[0.3em] text-zinc-500">
+                      Status · {availabilityLabels[listing.status]}
+                    </p>
+                    <p className="mt-auto text-[8px] uppercase tracking-[0.3em] text-zinc-500">
+                      Updated {formatRelativeTime(listing.updated_at)}
                     </p>
                   </div>
-                  {selectedPresetId && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="gap-2 text-zinc-200 hover:text-white"
-                      onClick={() => handlePresetChange("manual")}
-                    >
-                      Reset to manual
-                    </Button>
-                  )}
-                </div>
-                <Select
-                  value={selectedPresetId ?? "manual"}
-                  onValueChange={handlePresetChange}
-                  placeholder="Manual setup"
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
+        {selectedOverviewSection === "orders" && (
+        <section id="orders-section" className="space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-[0.4em] text-zinc-500">Orders</p>
+              <h2 className="text-2xl font-semibold text-white">Received orders</h2>
+              <p className="text-sm text-zinc-400">
+                A lightweight inbox of product checkouts handled through Stripe.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 text-right text-xs text-zinc-400">
+              <div className="space-y-0.5">
+                <p className="text-sm font-semibold text-white">{orderRows.length}</p>
+                <p className="uppercase tracking-[0.4em] text-zinc-500">orders</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  queryClient.invalidateQueries({
+                    queryKey: ["source", "orders"],
+                  })
+                }
+                disabled={ordersQuery.isFetching}
+              >
+                <RefreshCcw className="size-4" />
+                Refresh
+              </Button>
+            </div>
+          </div>
+
+          {ordersQuery.error && (
+            <div className="rounded-md border border-zinc-500/40 bg-zinc-950/40 p-3 text-sm text-zinc-200">
+              {ordersQuery.error.message}
+            </div>
+          )}
+
+          <div className="space-y-3 rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4">
+            {ordersQuery.isLoading &&
+              Array.from({ length: 3 }).map((_, idx) => (
+                <div
+                  key={`orders-skeleton-${idx}`}
+                  className="animate-pulse rounded-2xl border border-zinc-900/70 bg-zinc-950/70 p-4"
                 >
-                  <SelectContent>
-                    <SelectItem value="manual">Manual setup</SelectItem>
-                    {integrationPresets.map((preset) => (
-                      <SelectItem key={preset.id} value={preset.id}>
-                        {preset.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {selectedPreset && (
-                <div className="space-y-4 rounded-xl border border-zinc-900/60 bg-zinc-950/70 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs text-zinc-200/90">{selectedPreset.description}</p>
-                    {selectedPreset.docsUrl && (
-                      <a
-                        href={selectedPreset.docsUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs font-medium text-zinc-300 hover:text-zinc-200"
-                      >
-                        View docs
-                      </a>
-                    )}
-                  </div>
-
-                  {selectedPreset.oauthRequired && (
-                    <div className="flex items-start gap-3 rounded-lg border border-zinc-500/30 bg-zinc-500/10 p-3 text-xs text-zinc-100">
-                      <Lock className="mt-0.5 size-3" />
-                      <span>
-                        This connector uses OAuth. Save the integration, then click
-                        <span className="font-semibold"> Connect</span> to authorize before posting.
-                      </span>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="space-y-2">
+                      <div className="h-3 w-32 rounded-full bg-zinc-900" />
+                      <div className="h-2 w-24 rounded-full bg-zinc-900" />
                     </div>
-                  )}
-
-                  {selectedPreset.prerequisites && selectedPreset.prerequisites.length > 0 && (
-                    <div className="space-y-3 rounded-lg border border-zinc-800/80 bg-zinc-900/50 p-3">
-                      <p className="text-xs font-semibold text-zinc-200">Setup checklist</p>
-                      <ul className="space-y-2">
-                        {selectedPreset.prerequisites.map((item) => (
-                          <li key={item.id} className="flex gap-3 text-xs text-zinc-300">
-                            <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-zinc-400" />
-                            <span className="space-y-1">
-                              {item.href ? (
-                                <a
-                                  href={item.href}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1 font-medium text-zinc-300 hover:text-zinc-200"
-                                >
-                                  {item.label}
-                                  <ExternalLink className="size-3" />
-                                </a>
-                              ) : (
-                                <span className="font-medium text-zinc-200">{item.label}</span>
-                              )}
-                              {item.description && (
-                                <p className="text-zinc-400">{item.description}</p>
-                              )}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
+                    <div className="space-y-2 text-right">
+                      <div className="h-3 w-16 rounded-full bg-zinc-900" />
+                      <div className="h-2 w-12 rounded-full bg-zinc-900" />
                     </div>
-                  )}
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {selectedPreset.fields.map((field) => (
-                      <div key={field.id} className="space-y-2">
-                        <Label htmlFor={`preset-${field.id}`}>{field.label}</Label>
-                        <Input
-                          id={`preset-${field.id}`}
-                          type={
-                            field.type === "password"
-                              ? "password"
-                              : field.type === "url"
-                              ? "url"
-                              : "text"
-                          }
-                          value={presetInputs[field.id] ?? ""}
-                          onChange={(event) =>
-                            setPresetInputs((prev) => ({
-                              ...prev,
-                              [field.id]: event.target.value,
-                            }))
-                          }
-                          placeholder={field.placeholder}
-                        />
-                        {field.help && <p className="text-xs text-zinc-500">{field.help}</p>}
-                      </div>
-                    ))}
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-3 text-xs">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={handlePresetApply}
-                      disabled={!selectedPreset}
-                    >
-                      Apply details
-                    </Button>
-                    {presetError ? (
-                      <span className="text-zinc-300">{presetError}</span>
-                    ) : presetNotice ? (
-                      <span className="text-zinc-300">{presetNotice}</span>
-                    ) : (
-                      <span className="text-zinc-400">
-                        Fill in the required details, then apply to load the integration fields automatically.
-                      </span>
-                    )}
+                  <div className="mt-3 flex items-center justify-between gap-4 text-xs text-zinc-500">
+                    <div className="h-2 w-20 rounded-full bg-zinc-900" />
+                    <div className="h-2 w-24 rounded-full bg-zinc-900" />
                   </div>
                 </div>
-              )}
+              ))}
+
+            {!ordersQuery.isLoading && orderRows.length === 0 && (
+              <div className="space-y-2 rounded-xl border border-dashed border-zinc-900/70 bg-zinc-950/60 p-6 text-sm text-zinc-400">
+                <p className="text-base font-semibold text-white">No orders yet</p>
+                <p>
+                  Product checkouts processed through Stripe will appear here so you can monitor fulfillment readiness.
+                </p>
+                <p className="text-xs text-zinc-500">
+                  Publish a product and complete a buyer checkout to see the first order record.
+                </p>
+              </div>
+            )}
+
+            {!ordersQuery.isLoading && orderRows.length > 0 && (
+              <div className="space-y-3">
+                {orderRows.map((order) => (
+                  <OrderRowCard
+                    key={order.id}
+                    order={order}
+                    isActive={currentOrderDetail?.id === order.id}
+                    onOpen={() => handleOrderRowClick(order)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+      </main>
+      {isCropOpen && cropSourceUrl ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-6">
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={handleCropCancel}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-[28px] border border-white/10 bg-zinc-950/95 p-5 shadow-[0_30px_80px_rgba(0,0,0,0.7)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.4em] text-zinc-400">Square crop</p>
+                <p className="text-sm font-semibold text-white">Fit your listing image</p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleCropCancel}
+                className="text-zinc-400 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
 
-            <div className="mt-6 grid gap-6 lg:grid-cols-2">
-              <div className="space-y-5">
-                <FormSubheading
-                  title="Connection basics"
-                  description="Tell Source where to send your listings and what to call the integration."
-                />
-                <div className="grid gap-4">
-                  <FieldStack label="Platform" htmlFor="provider">
-                    <Input
-                      id="provider"
-                      value={integrationForm.provider}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          provider: event.target.value,
-                        }))
-                      }
-                      placeholder="Shopify, Wix, Depop, Custom"
-                      required
-                    />
-                  </FieldStack>
+            <div
+              ref={cropFrameRef}
+              className="relative mt-4 aspect-square w-full overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/70"
+            >
+              <img
+                src={cropSourceUrl}
+                alt="Crop preview"
+                className="absolute left-1/2 top-1/2 max-w-none select-none touch-none"
+                style={{ transform: cropImageTransform }}
+                onPointerDown={handleCropPointerDown}
+                onPointerMove={handleCropPointerMove}
+                onPointerUp={handleCropPointerUp}
+                onPointerCancel={handleCropPointerUp}
+                draggable={false}
+              />
+              <div className="pointer-events-none absolute inset-0 ring-1 ring-white/10" />
+            </div>
 
-                  <FieldStack label="Display name" htmlFor="displayName">
-                    <Input
-                      id="displayName"
-                      value={integrationForm.displayName}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          displayName: event.target.value,
-                        }))
-                      }
-                      placeholder="Shown in your integration list"
-                    />
-                  </FieldStack>
+            <div className="mt-4 flex items-center gap-3">
+              <span className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+                Zoom
+              </span>
+              <input
+                type="range"
+                min={1}
+                max={3}
+                step={0.01}
+                value={cropZoom}
+                onChange={(event) => setCropZoom(Number(event.target.value))}
+                className="h-1 w-full cursor-pointer appearance-none rounded-full bg-zinc-800/80"
+              />
+            </div>
 
-                  <FieldStack label="Website URL" htmlFor="connectionUrl">
-                    <Input
-                      id="connectionUrl"
-                      value={integrationForm.connectionUrl}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          connectionUrl: event.target.value,
-                        }))
-                      }
-                      placeholder="https://yourstore.com"
-                      type="url"
-                      required
-                    />
-                  </FieldStack>
+            <div className="mt-5 flex items-center justify-between gap-3">
+              <Button type="button" variant="ghost" onClick={handleCropCancel}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={handleCropConfirm} disabled={!isCropReady || isCropSaving}>
+                {isCropSaving ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin" />
+                    Saving square
+                  </span>
+                ) : (
+                  "Save square"
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <SourceProductSheet
+        mode="create"
+        listing={null}
+        formState={productSheetForm}
+        onFieldChange={(field, value) =>
+          setProductSheetForm((prev) => ({ ...prev, [field]: value }))
+        }
+        onSubmit={handleProductSheetSubmit}
+        isOpen={isProductSheetOpen}
+        onOpenChange={handleProductSheetOpenChange}
+        error={productSheetError}
+        isBusy={productSheetBusy}
+        imagePreview={productImagePreview}
+        imageUrl={productImageUrl}
+        imageInputRef={productImageInputRef}
+        onImageChange={handleProductImageChange}
+        onImageRemove={resetProductImageState}
+        imageUploadError={productImageUploadError}
+        isImageUploading={isProductImageUploading}
+        availabilityStatus="draft"
+        onAvailabilityChange={() => null}
+        showAvailability={false}
+      />
+      <SourceProductSheet
+        mode="edit"
+        listing={currentProductDetailListing}
+        formState={productDetailForm}
+        onFieldChange={handleProductDetailFieldChange}
+        onSubmit={handleProductDetailSubmit}
+        isOpen={Boolean(selectedProductId)}
+        onOpenChange={handleProductDetailSheetOpenChange}
+        error={productDetailError}
+        isBusy={isProductDetailSubmitting || updateListing.isPending}
+        imagePreview={productDetailImagePreview}
+        imageUrl={productDetailImageUrl}
+        imageInputRef={productDetailImageInputRef}
+        onImageChange={handleProductDetailImageChange}
+        onImageRemove={removeProductDetailImageSelection}
+        imageUploadError={productDetailImageUploadError}
+        isImageUploading={isProductDetailImageUploading}
+        availabilityStatus={productDetailStatus}
+        onAvailabilityChange={setProductDetailStatus}
+      />
+      <SourceServiceSheet
+        mode="create"
+        listing={null}
+        formState={serviceSheetForm}
+        onFieldChange={(field, value) =>
+          setServiceSheetForm((prev) => ({ ...prev, [field]: value }))
+        }
+        onSubmit={handleServiceSheetSubmit}
+        isOpen={isServiceSheetOpen}
+        onOpenChange={handleServiceSheetOpenChange}
+        error={serviceSheetError}
+        isBusy={serviceSheetBusy}
+        imagePreview={serviceImagePreview}
+        imageUrl={serviceImageUrl}
+        imageInputRef={serviceImageInputRef}
+        onImageChange={handleServiceImageChange}
+        onImageRemove={resetServiceImageState}
+        imageUploadError={serviceImageUploadError}
+        isImageUploading={isServiceImageUploading}
+        availabilityStatus="draft"
+        onAvailabilityChange={() => null}
+        showAvailability={false}
+      />
+      <SourceServiceSheet
+        mode="edit"
+        listing={currentServiceDetailListing}
+        formState={serviceDetailForm}
+        onFieldChange={handleServiceDetailFieldChange}
+        onSubmit={handleServiceDetailSubmit}
+        isOpen={Boolean(selectedServiceId)}
+        onOpenChange={handleServiceDetailSheetOpenChange}
+        error={serviceDetailError}
+        isBusy={isServiceDetailSubmitting || updateListing.isPending}
+        imagePreview={serviceDetailImagePreview}
+        imageUrl={serviceDetailImageUrl}
+        imageInputRef={serviceDetailImageInputRef}
+        onImageChange={handleServiceDetailImageChange}
+        onImageRemove={removeServiceDetailImageSelection}
+        imageUploadError={serviceDetailImageUploadError}
+        isImageUploading={isServiceDetailImageUploading}
+        availabilityStatus={serviceDetailStatus}
+        onAvailabilityChange={setServiceDetailStatus}
+      />
+      <SourceOrderDetailSheet
+        order={currentOrderDetail}
+        isOpen={Boolean(currentOrderDetail)}
+        onOpenChange={handleOrderDetailOpenChange}
+        onFulfillmentChange={handleOrderFulfillmentChange}
+        onShippingSave={handleOrderShippingSave}
+        isUpdatingFulfillment={updateOrderFulfillment.isPending}
+        fulfillmentError={
+          updateOrderFulfillment.error instanceof Error
+            ? updateOrderFulfillment.error.message
+            : null
+        }
+      />
+      <PostModal isOpen={isPostModalOpen} onClose={() => setIsPostModalOpen(false)} />
+    </div>
+      <style jsx global>{`
+        .no-default-close [data-slot='sheet-close'] {
+          display: none;
+        }
+      `}</style>
+    </>
+  )
+}
 
-                  <FieldStack label="Publish endpoint" htmlFor="publishUrl">
-                    <Input
-                      id="publishUrl"
-                      value={integrationForm.publishUrl}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          publishUrl: event.target.value,
-                        }))
-                      }
-                      placeholder="https://api.marketplace.com/v1/listings"
-                      type="url"
-                      required
-                    />
-                  </FieldStack>
-                </div>
+type SheetMode = "create" | "edit"
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FieldStack label="HTTP method" htmlFor="publishMethod">
-                    <Select
-                      value={integrationForm.publishMethod}
-                      onValueChange={(value) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          publishMethod: value as IntegrationFormState["publishMethod"],
-                        }))
-                      }
-                    >
-                      <SelectContent>
-                        {httpMethods.map((method) => (
-                          <SelectItem key={method} value={method}>
-                            {method}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FieldStack>
+type SourceProductSheetProps = {
+  mode: SheetMode
+  listing: SourceListing | null
+  formState: ProductSheetFormState
+  onFieldChange(field: keyof ProductSheetFormState, value: string): void
+  onSubmit(event: FormEvent<HTMLFormElement>): void
+  isOpen: boolean
+  onOpenChange(next: boolean): void
+  error: string | null
+  isBusy: boolean
+  imagePreview: string | null
+  imageUrl: string | null
+  imageInputRef: RefObject<HTMLInputElement>
+  onImageChange(event: ChangeEvent<HTMLInputElement>): void
+  onImageRemove(): void
+  imageUploadError: string | null
+  isImageUploading: boolean
+  availabilityStatus: SourceListing["status"]
+  onAvailabilityChange(value: SourceListing["status"]): void
+  showAvailability?: boolean
+}
 
-                  <FieldStack label="Status" htmlFor="status">
-                    <Select
-                      value={integrationForm.status}
-                      onValueChange={(value) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          status: value as IntegrationFormState["status"],
-                        }))
-                      }
-                    >
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="disabled">Disabled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FieldStack>
-                </div>
+function SourceProductSheet({
+  mode,
+  listing,
+  formState,
+  onFieldChange,
+  onSubmit,
+  isOpen,
+  onOpenChange,
+  error,
+  isBusy,
+  imagePreview,
+  imageUrl,
+  imageInputRef,
+  onImageChange,
+  onImageRemove,
+  imageUploadError,
+  isImageUploading,
+  availabilityStatus,
+  onAvailabilityChange,
+  showAvailability,
+}: SourceProductSheetProps) {
+  if (mode === "edit" && !listing) return null
+
+  const isCreate = mode === "create"
+  const listingType = listing?.type ?? "product"
+  const trimmedTitle = formState.title.trim()
+  const title = isCreate
+    ? trimmedTitle || `New ${listingTypeLabels[listingType].toLowerCase()}`
+    : listing?.title ?? ""
+
+  const priceLabel =
+    isCreate
+      ? (() => {
+          const trimmedPrice = formState.price.trim()
+          const price = trimmedPrice ? Number.parseFloat(trimmedPrice) : null
+          if (trimmedPrice && Number.isNaN(price)) return "Price TBD"
+          return price !== null
+            ? formatCurrency(price, formState.currency.trim() || "USD")
+            : "Price TBD"
+        })()
+      : listing?.price !== null
+        ? formatCurrency(listing.price, listing.currency)
+        : "Price TBD"
+  const coverImagePreview = imagePreview || imageUrl
+  const isPhysicalProduct = formState.productKind === "physical"
+  const statusValue: SourceListing["status"] = isCreate ? "draft" : listing?.status ?? "draft"
+  const updatedLabel = isCreate
+    ? "Not published yet"
+    : listing
+      ? `Updated ${formatRelativeTime(listing.updated_at)}`
+      : null
+  const shouldShowAvailability = showAvailability ?? !isCreate
+  const productSubmitLabel = isCreate ? "Publish product" : "Save changes"
+  const productSubmitBusyLabel = isCreate ? "Creating product" : "Saving changes"
+
+  return (
+    <Sheet open={isOpen} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="no-default-close inset-0 w-full max-w-none rounded-none border-none bg-zinc-950 text-zinc-100 gap-0"
+      >
+        <form className="flex h-full flex-col" onSubmit={onSubmit}>
+          <div className="border-b border-zinc-900/70 px-5 py-3">
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                disabled={isBusy}
+              >
+                <X className="h-4 w-4" />
+                Close
+              </Button>
+              <div className="rounded-full border border-zinc-800 px-2 py-0.5 text-[10px] uppercase tracking-[0.3em] text-zinc-500">
+                {listingTypeLabels[listingType]}
               </div>
-
-              <div className="space-y-5">
-                <FormSubheading
-                  title="Authentication"
-                  description="Choose how Source authenticates when publishing to this channel."
-                />
-                <div className="grid gap-4">
-                  <FieldStack label="Authentication" htmlFor="authMode">
-                    <Select
-                      value={integrationForm.authMode}
-                      onValueChange={(value) => {
-                        const nextMode = value as IntegrationFormState["authMode"]
-                        setIntegrationForm((prev) => {
-                          if (nextMode === "oauth2") {
-                            return {
-                              ...prev,
-                              authMode: nextMode,
-                              authToken: "",
-                            }
-                          }
-
-                          return {
-                            ...prev,
-                            authMode: nextMode,
-                            authToken: nextMode === "none" ? "" : prev.authToken,
-                            oauthAuthorizeUrl: "",
-                            oauthTokenUrl: "",
-                            oauthScopes: "",
-                            oauthClientId: "",
-                            oauthClientSecret: "",
-                            oauthMetadata: "",
-                          }
-                        })
-
-                        if (nextMode === "oauth2") {
-                          setShowIntegrationAdvanced(true)
-                        }
-                      }}
-                    >
-                      <SelectContent>
-                        {authModes.map((mode) => (
-                          <SelectItem key={mode} value={mode}>
-                            {mode === "api_key"
-                              ? "API key header"
-                              : mode === "none"
-                              ? "No auth"
-                              : mode.charAt(0).toUpperCase() + mode.slice(1)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
-                      <p className="text-xs text-zinc-400">
-                        Stored securely in your Supabase project. Bearer tokens add
-                        an Authorization header automatically. API keys let you
-                        choose the header name (for example
-                        <code className="mx-1 rounded bg-zinc-800 px-1">
-                          X-Shopify-Access-Token
-                        </code>
-                        ). Basic auth expects username:password.
-                      </p>
-                    )}
-                    {integrationForm.authMode === "oauth2" && (
-                      <p className="text-xs text-zinc-400">
-                        After saving, Source opens the provider&apos;s consent screen so you can
-                        authorize access and capture tokens securely.
-                      </p>
-                    )}
-                  </FieldStack>
-
-                  {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
-                    <FieldStack label="Credentials" htmlFor="authToken">
-                      <Input
-                        id="authToken"
-                        value={integrationForm.authToken}
-                        onChange={(event) =>
-                          setIntegrationForm((prev) => ({
-                            ...prev,
-                            authToken: event.target.value,
-                          }))
-                        }
-                        placeholder={
-                          integrationForm.authMode === "basic"
-                            ? "username:password"
-                            : "Secret value"
-                        }
-                        required
-                      />
-                    </FieldStack>
-                  )}
-
-                  {integrationForm.authMode === "api_key" && (
-                    <FieldStack
-                      label="API key header"
-                      htmlFor="authHeader"
-                      description="Choose the header name to send your key with (for example X-Shopify-Access-Token)."
-                    >
-                      <Input
-                        id="authHeader"
-                        value={integrationForm.authHeader}
-                        onChange={(event) =>
-                          setIntegrationForm((prev) => ({
-                            ...prev,
-                            authHeader: event.target.value,
-                          }))
-                        }
-                        placeholder="X-API-Key"
-                        required
-                      />
-                    </FieldStack>
-                  )}
-
-                  {integrationForm.authMode === "oauth2" && (
-                    <div className="grid gap-4">
-                      <FieldStack
-                        label="Authorization URL"
-                        htmlFor="oauth-authorize"
-                        description="Where Source sends users to approve access."
-                      >
-                        <Input
-                          id="oauth-authorize"
-                          value={integrationForm.oauthAuthorizeUrl}
-                          onChange={(event) =>
-                            setIntegrationForm((prev) => ({
-                              ...prev,
-                              oauthAuthorizeUrl: event.target.value,
-                            }))
-                          }
-                          placeholder="https://provider.com/oauth/authorize"
-                          type="url"
-                          required
-                        />
-                      </FieldStack>
-
-                      <FieldStack
-                        label="Token URL"
-                        htmlFor="oauth-token"
-                        description="Source exchanges the authorization code for tokens at this URL."
-                      >
-                        <Input
-                          id="oauth-token"
-                          value={integrationForm.oauthTokenUrl}
-                          onChange={(event) =>
-                            setIntegrationForm((prev) => ({
-                              ...prev,
-                              oauthTokenUrl: event.target.value,
-                            }))
-                          }
-                          placeholder="https://provider.com/oauth/token"
-                          type="url"
-                          required
-                        />
-                      </FieldStack>
-
-                      <FieldStack
-                        label="Client ID"
-                        htmlFor="oauth-client-id"
-                        description="Registered OAuth client identifier."
-                      >
-                        <Input
-                          id="oauth-client-id"
-                          value={integrationForm.oauthClientId}
-                          onChange={(event) =>
-                            setIntegrationForm((prev) => ({
-                              ...prev,
-                              oauthClientId: event.target.value,
-                            }))
-                          }
-                          placeholder="client-id-123"
-                          required
-                        />
-                      </FieldStack>
-
-                      <FieldStack
-                        label="Client secret"
-                        htmlFor="oauth-client-secret"
-                        description="Stored securely and used during token refresh."
-                      >
-                        <Input
-                          id="oauth-client-secret"
-                          value={integrationForm.oauthClientSecret}
-                          onChange={(event) =>
-                            setIntegrationForm((prev) => ({
-                              ...prev,
-                              oauthClientSecret: event.target.value,
-                            }))
-                          }
-                          placeholder="Optional"
-                          type="password"
-                        />
-                      </FieldStack>
-
-                      <FieldStack
-                        label="Scopes"
-                        htmlFor="oauth-scopes"
-                        description="Space separated list of scopes requested during authorization."
-                      >
-                        <Input
-                          id="oauth-scopes"
-                          value={integrationForm.oauthScopes}
-                          onChange={(event) =>
-                            setIntegrationForm((prev) => ({
-                              ...prev,
-                              oauthScopes: event.target.value,
-                            }))
-                          }
-                          placeholder="inventory.write listings.read"
-                        />
-                      </FieldStack>
-
-                      <FieldStack
-                        label="OAuth metadata (JSON)"
-                        htmlFor="oauth-metadata"
-                        description="Optional JSON persisted with the integration for custom providers."
-                      >
-                        <Textarea
-                          id="oauth-metadata"
-                          value={integrationForm.oauthMetadata}
-                          onChange={(event) =>
-                            setIntegrationForm((prev) => ({
-                              ...prev,
-                              oauthMetadata: event.target.value,
-                            }))
-                          }
-                          rows={3}
-                          placeholder='{"audience": "marketplace"}'
-                        />
-                      </FieldStack>
+            </div>
+            <p className="mt-2 text-xl font-semibold leading-tight text-zinc-100">{title}</p>
+            <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-400">
+              <Badge
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px]",
+                  statusAccent[statusValue]
+                )}
+              >
+                {listingStatuses[statusValue]}
+              </Badge>
+              <span>{priceLabel}</span>
+              {updatedLabel && <span>{updatedLabel}</span>}
+            </div>
+            {error && (
+              <div className="mt-2 rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                {error}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden px-6 py-6">
+            <div className="space-y-3">
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={onImageChange}
+              />
+              <div className="space-y-3">
+                <div className="relative h-56 w-full overflow-hidden rounded-[2rem] border border-zinc-900/70 bg-zinc-900/60">
+                  {coverImagePreview ? (
+                    <img
+                      src={coverImagePreview}
+                      alt={`${title} cover`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+                      No image selected
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
-
-            <div className="mt-8 space-y-4 rounded-2xl border border-zinc-900/70 bg-zinc-950/50 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                    Advanced options
-                  </p>
-                  <p className="text-xs text-zinc-400">
-                    Control custom headers and the JSON body Source sends to your integration.
-                  </p>
-                </div>
-                {!integrationAdvancedForced && (
+                <div className="flex flex-wrap items-center gap-3">
                   <Button
                     type="button"
                     variant="secondary"
                     size="sm"
-                    onClick={() => setShowIntegrationAdvanced((prev) => !prev)}
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={isImageUploading}
                   >
-                    {integrationAdvancedVisible ? "Hide advanced" : "Show advanced"}
+                    {coverImagePreview ? "Replace cover image" : "Upload cover image"}
                   </Button>
+                  {coverImagePreview && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={onImageRemove}
+                      disabled={isImageUploading}
+                    >
+                      Remove image
+                    </Button>
+                  )}
+                  {isImageUploading && (
+                    <span className="text-xs text-zinc-400">Uploading image…</span>
+                  )}
+                </div>
+                {imageUploadError && (
+                  <p className="text-xs text-red-400">{imageUploadError}</p>
                 )}
               </div>
+            </div>
+            <div className="space-y-4">
+              <FieldStack label="Title" htmlFor="product-detail-title">
+                <Input
+                  id="product-detail-title"
+                  value={formState.title}
+                  onChange={(event) => onFieldChange("title", event.target.value)}
+                  placeholder="Product title"
+                  required
+                  disabled={isBusy}
+                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                />
+              </FieldStack>
 
-              {integrationAdvancedVisible && (
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <FieldStack
-                    label="Custom headers (JSON)"
-                    htmlFor="headers"
-                    description="Use key/value pairs for any additional headers you want on publish requests."
+              <FieldStack label="Description" htmlFor="product-detail-description">
+                <Textarea
+                  id="product-detail-description"
+                  value={formState.description}
+                  onChange={(event) =>
+                    onFieldChange("description", event.target.value)
+                  }
+                  rows={4}
+                  placeholder="Describe what this product does"
+                  disabled={isBusy}
+                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                />
+              </FieldStack>
+
+              <FieldStack
+                label="Product kind"
+                htmlFor="product-detail-kind"
+                description="Clarify whether this listing is a physical good or digital download."
+              >
+                <Select
+                  id="product-detail-kind"
+                  value={formState.productKind}
+                  onValueChange={(value) => onFieldChange("productKind", value)}
+                  disablePortal
+                >
+                  <SelectContent>
+                    {PRODUCT_KIND_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldStack>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FieldStack label="Price" htmlFor="product-detail-price">
+                  <Input
+                    id="product-detail-price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formState.price}
+                    onChange={(event) =>
+                      onFieldChange("price", event.target.value)
+                    }
+                    placeholder="49.99"
+                    disabled={isBusy}
+                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  />
+                </FieldStack>
+                <FieldStack label="Currency" htmlFor="product-detail-currency">
+                  <Input
+                    id="product-detail-currency"
+                    value={formState.currency}
+                    onChange={(event) =>
+                      onFieldChange("currency", event.target.value.toUpperCase())
+                    }
+                    placeholder="USD"
+                    maxLength={3}
+                    disabled={isBusy}
+                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  />
+                </FieldStack>
+              </div>
+
+                <FieldStack
+                  label="Availability"
+                  htmlFor="product-detail-status"
+                  description="Switch between draft and live states using Source’s listing status."
+                >
+                {shouldShowAvailability ? (
+                  <Select
+                    value={availabilityStatus}
+                    onValueChange={(value) =>
+                      onAvailabilityChange(value as SourceListing["status"])
+                    }
+                    placeholder="Draft"
+                    disablePortal
                   >
-                    <Textarea
-                      id="headers"
-                      value={integrationForm.headers}
+                    <SelectContent>
+                      {productAvailabilityStatuses.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {availabilityLabels[status]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="rounded-xl border border-zinc-900/70 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-400">
+                    Draft status is set after creation.
+                  </div>
+                )}
+                </FieldStack>
+              {isPhysicalProduct && (
+                <div className="space-y-4 border-t border-zinc-900/70 pt-4">
+                  <FormSubheading
+                    title="Fulfillment & inventory"
+                    description="Track stock and how Source should reserve this item before it ships."
+                  />
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FieldStack
+                      label="Inventory count"
+                      htmlFor="product-detail-inventory"
+                      description="Current stock level synced to connected storefronts."
+                    >
+                      <Input
+                        id="product-detail-inventory"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={formState.inventory}
+                        onChange={(event) =>
+                          onFieldChange("inventory", event.target.value)
+                        }
+                        placeholder="0"
+                        disabled={isBusy}
+                        className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                      />
+                    </FieldStack>
+                    <FieldStack
+                      label="Quantity behavior"
+                      htmlFor="product-detail-quantity-behavior"
+                      description="Choose how Source should hold units when publish requests arrive."
+                    >
+                      <Select
+                        id="product-detail-quantity-behavior"
+                        value={formState.quantityBehavior}
+                        onValueChange={(value) =>
+                          onFieldChange("quantityBehavior", value)
+                        }
+                        disablePortal
+                      >
+                        <SelectContent>
+                          {QUANTITY_BEHAVIOR_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FieldStack>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    Source assumes physical products ship. Keep inventory up to date so storefronts can reserve stock before purchase.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <SheetFooter className="border-t border-zinc-900/70 px-6 py-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onOpenChange(false)}
+                disabled={isBusy}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isBusy}>
+                {isBusy ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin" />
+                    {productSubmitBusyLabel}
+                  </span>
+                ) : (
+                  productSubmitLabel
+                )}
+              </Button>
+            </div>
+          </SheetFooter>
+        </form>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+type SourceServiceSheetProps = {
+  mode: SheetMode
+  listing: SourceListing | null
+  formState: ServiceSheetFormState
+  onFieldChange(field: keyof ServiceSheetFormState, value: string): void
+  onSubmit(event: FormEvent<HTMLFormElement>): void
+  isOpen: boolean
+  onOpenChange(next: boolean): void
+  error: string | null
+  isBusy: boolean
+  imagePreview: string | null
+  imageUrl: string | null
+  imageInputRef: RefObject<HTMLInputElement>
+  onImageChange(event: ChangeEvent<HTMLInputElement>): void
+  onImageRemove(): void
+  imageUploadError: string | null
+  isImageUploading: boolean
+  availabilityStatus: SourceListing["status"]
+  onAvailabilityChange(value: SourceListing["status"]): void
+  showAvailability?: boolean
+}
+
+function SourceServiceSheet({
+  mode,
+  listing,
+  formState,
+  onFieldChange,
+  onSubmit,
+  isOpen,
+  onOpenChange,
+  error,
+  isBusy,
+  imagePreview,
+  imageUrl,
+  imageInputRef,
+  onImageChange,
+  onImageRemove,
+  imageUploadError,
+  isImageUploading,
+  availabilityStatus,
+  onAvailabilityChange,
+  showAvailability,
+}: SourceServiceSheetProps) {
+  if (mode === "edit" && !listing) return null
+
+  const isCreate = mode === "create"
+  const listingType = listing?.type ?? "service"
+  const trimmedTitle = formState.title.trim()
+  const title = isCreate
+    ? trimmedTitle || `New ${listingTypeLabels[listingType].toLowerCase()}`
+    : listing?.title ?? ""
+
+  const priceLabel =
+    isCreate
+      ? (() => {
+          const trimmedPrice = formState.price.trim()
+          const price = trimmedPrice ? Number.parseFloat(trimmedPrice) : null
+          if (trimmedPrice && Number.isNaN(price)) return "Price TBD"
+          return price !== null
+            ? formatCurrency(price, formState.currency.trim() || "USD")
+            : "Price TBD"
+        })()
+      : listing?.price !== null
+        ? formatCurrency(listing.price, listing.currency)
+        : "Price TBD"
+  const coverImagePreview = imagePreview || imageUrl
+  const serviceDetailMode = formState.serviceMode
+  const serviceDetailIsBookable = serviceDetailMode === "bookable"
+  const serviceDetailIsFlatRate = serviceDetailMode === "flat_rate"
+  const serviceDetailIsCustomQuote = serviceDetailMode === "custom_quote"
+  const serviceDetailPriceDescription = serviceDetailIsCustomQuote
+    ? "Optional starting price—use this when inquiries kick off the conversation."
+    : undefined
+  const statusValue: SourceListing["status"] = isCreate ? "draft" : listing?.status ?? "draft"
+  const updatedLabel = isCreate
+    ? "Not published yet"
+    : listing
+      ? `Updated ${formatRelativeTime(listing.updated_at)}`
+      : null
+  const shouldShowAvailability = showAvailability ?? !isCreate
+  const serviceSubmitLabel = isCreate ? "Publish service" : "Save changes"
+  const serviceSubmitBusyLabel = isCreate ? "Creating service" : "Saving changes"
+
+  return (
+    <Sheet open={isOpen} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="no-default-close inset-0 w-full max-w-none rounded-none border-none bg-zinc-950 text-zinc-100 gap-0"
+      >
+        <form className="flex h-full flex-col" onSubmit={onSubmit}>
+          <div className="border-b border-zinc-900/70 px-5 py-3">
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                disabled={isBusy}
+              >
+                <X className="h-4 w-4" />
+                Close
+              </Button>
+              <div className="rounded-full border border-zinc-800 px-2 py-0.5 text-[10px] uppercase tracking-[0.3em] text-zinc-500">
+                {listingTypeLabels[listingType]}
+              </div>
+            </div>
+            <p className="mt-2 text-xl font-semibold leading-tight text-zinc-100">{title}</p>
+            <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-400">
+              <Badge
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px]",
+                  statusAccent[statusValue]
+                )}
+              >
+                {listingStatuses[statusValue]}
+              </Badge>
+              <span>{priceLabel}</span>
+              {updatedLabel && <span>{updatedLabel}</span>}
+            </div>
+            {error && (
+              <div className="mt-2 rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                {error}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden px-6 py-6">
+            <div className="space-y-3">
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={onImageChange}
+              />
+              <div className="space-y-3">
+                <div className="relative h-56 w-full overflow-hidden rounded-[2rem] border border-zinc-900/70 bg-zinc-900/60">
+                  {coverImagePreview ? (
+                    <img
+                      src={coverImagePreview}
+                      alt={`${title} cover`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+                      No image selected
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={isImageUploading}
+                  >
+                    {coverImagePreview ? "Replace cover image" : "Upload cover image"}
+                  </Button>
+                  {coverImagePreview && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={onImageRemove}
+                      disabled={isImageUploading}
+                    >
+                      Remove image
+                    </Button>
+                  )}
+                  {isImageUploading && (
+                    <span className="text-xs text-zinc-400">Uploading image…</span>
+                  )}
+                </div>
+                {imageUploadError && (
+                  <p className="text-xs text-red-400">{imageUploadError}</p>
+                )}
+              </div>
+            </div>
+            <div className="space-y-4">
+              <FieldStack label="Title" htmlFor="service-detail-title">
+                <Input
+                  id="service-detail-title"
+                  value={formState.title}
+                  onChange={(event) => onFieldChange("title", event.target.value)}
+                  placeholder="Service title"
+                  required
+                  disabled={isBusy}
+                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                />
+              </FieldStack>
+
+              <FieldStack label="Description" htmlFor="service-detail-description">
+                <Textarea
+                  id="service-detail-description"
+                  value={formState.description}
+                  onChange={(event) =>
+                    onFieldChange("description", event.target.value)
+                  }
+                  rows={4}
+                  placeholder="Describe what this service includes"
+                  disabled={isBusy}
+                  className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                />
+              </FieldStack>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FieldStack
+                  label="Price"
+                  htmlFor="service-detail-price"
+                  description={serviceDetailPriceDescription}
+                >
+                  <Input
+                    id="service-detail-price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formState.price}
+                    onChange={(event) => onFieldChange("price", event.target.value)}
+                    placeholder="49.99"
+                    disabled={isBusy}
+                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  />
+                </FieldStack>
+                <FieldStack label="Currency" htmlFor="service-detail-currency">
+                  <Input
+                    id="service-detail-currency"
+                    value={formState.currency}
+                    onChange={(event) =>
+                      onFieldChange("currency", event.target.value.toUpperCase())
+                    }
+                    placeholder="USD"
+                    maxLength={3}
+                    disabled={isBusy}
+                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  />
+                </FieldStack>
+              </div>
+
+                <FieldStack
+                  label="Availability"
+                  htmlFor="service-detail-status"
+                  description="Switch between draft and live states using Source’s listing status."
+                >
+                {shouldShowAvailability ? (
+                  <Select
+                    value={availabilityStatus}
+                    onValueChange={(value) =>
+                      onAvailabilityChange(value as SourceListing["status"])
+                    }
+                    placeholder="Draft"
+                    disablePortal
+                  >
+                    <SelectContent>
+                      {productAvailabilityStatuses.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {availabilityLabels[status]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="rounded-xl border border-zinc-900/70 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-400">
+                    Draft status is set after creation.
+                  </div>
+                )}
+                </FieldStack>
+
+              <FieldStack
+                label="Service mode"
+                htmlFor="service-detail-mode"
+                description="Controls how bookings or quotes should behave once this listing is live."
+              >
+                <Select
+                  id="service-detail-mode"
+                  value={formState.serviceMode}
+                  onValueChange={(value) => onFieldChange("serviceMode", value)}
+                  disablePortal
+                >
+                  <SelectContent>
+                    {SERVICE_MODE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldStack>
+
+              {serviceDetailIsBookable && (
+                <FieldStack
+                  label="Duration (minutes)"
+                  htmlFor="service-detail-duration"
+                  description="This duration drives the booking window and scheduler prompts."
+                >
+                  <Input
+                    id="service-detail-duration"
+                    type="number"
+                    min="1"
+                    value={formState.durationMinutes}
+                    onChange={(event) =>
+                      onFieldChange("durationMinutes", event.target.value)
+                    }
+                    placeholder="30"
+                    disabled={isBusy}
+                    className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                  />
+                </FieldStack>
+              )}
+
+              {(serviceDetailIsFlatRate || serviceDetailIsCustomQuote) && (
+                <div className="space-y-4 border-t border-zinc-900/70 pt-4">
+                  <FormSubheading
+                    title={
+                      serviceDetailIsFlatRate
+                        ? "Flat rate fulfillment"
+                        : "Custom quote expectations"
+                    }
+                    description={
+                      serviceDetailIsFlatRate
+                        ? "Detail the turnaround, deliverables, and requirements for fixed-priced services."
+                        : "Share inquiry expectations so Source can surface the right questions."
+                    }
+                  />
+                  <FieldStack
+                    label="Turnaround"
+                    htmlFor="service-detail-turnaround"
+                    description={
+                      serviceDetailIsFlatRate
+                        ? "Estimate how long fulfillment usually takes."
+                        : "How long it takes you to respond with a quote or availability."
+                    }
+                  >
+                    <Input
+                      id="service-detail-turnaround"
+                      type="text"
+                      value={formState.turnaround}
                       onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          headers: event.target.value,
-                        }))
+                        onFieldChange("turnaround", event.target.value)
                       }
-                      placeholder='{"X-Shop-Domain": "{{integration.connectionUrl}}"}'
-                      rows={integrationAdvancedForced ? 4 : 3}
+                      placeholder="2 business days"
+                      disabled={isBusy}
+                      className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
                     />
                   </FieldStack>
-
+                  {serviceDetailIsFlatRate && (
+                    <FieldStack
+                      label="Deliverables"
+                      htmlFor="service-detail-deliverables"
+                      description="List what the buyer receives for this flat-rate service."
+                    >
+                      <Textarea
+                        id="service-detail-deliverables"
+                        value={formState.deliverables}
+                        onChange={(event) =>
+                          onFieldChange("deliverables", event.target.value)
+                        }
+                        rows={3}
+                        placeholder="Done-for-you deliverables"
+                        disabled={isBusy}
+                        className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
+                      />
+                    </FieldStack>
+                  )}
                   <FieldStack
-                    label="Payload template (JSON)"
-                    htmlFor="payloadTemplate"
-                    description="Optional structure for the request body. Use {{listing.title}} style tokens to reference listing data."
+                    label="Requirements"
+                    htmlFor="service-detail-requirements"
+                    description="Share what buyers should submit before requesting this service."
                   >
                     <Textarea
-                      id="payloadTemplate"
-                      value={integrationForm.payloadTemplate}
+                      id="service-detail-requirements"
+                      value={formState.requirements}
                       onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          payloadTemplate: event.target.value,
-                        }))
+                        onFieldChange("requirements", event.target.value)
                       }
-                      placeholder='{"name": "{{listing.title}}", "price": "{{listing.price}}"}'
-                      rows={integrationAdvancedForced ? 6 : 5}
+                      rows={3}
+                      placeholder="Resources or files we need"
+                      disabled={isBusy}
+                      className="border-zinc-800/70 bg-zinc-900/60 text-zinc-100 focus-visible:border-zinc-500/70 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-[3px]"
                     />
                   </FieldStack>
                 </div>
               )}
             </div>
+          </div>
 
-            <div className="mt-6 flex justify-end gap-2">
+          <SheetFooter className="border-t border-zinc-900/70 px-6 py-5">
+            <div className="flex flex-wrap items-center gap-3">
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => {
-                  setIntegrationForm(defaultIntegrationForm)
-                  setIntegrationError(null)
-                  setSelectedPresetId(null)
-                  setPresetInputs({})
-                  setPresetNotice(null)
-                  setPresetError(null)
-                  setShowIntegrationAdvanced(false)
-                }}
+                onClick={() => onOpenChange(false)}
+                disabled={isBusy}
               >
-                Reset
+                Cancel
               </Button>
-              <Button type="submit" disabled={createIntegration.isPending}>
-                {createIntegration.isPending ? "Saving..." : "Save integration"}
-              </Button>
-            </div>
-          </form>
-
-          <form
-            className="rounded-2xl border border-zinc-900/60 bg-zinc-950/70 p-6 shadow-xl shadow-zinc-950/40"
-            onSubmit={(event) => {
-              event.preventDefault()
-              setListingError(null)
-
-              try {
-                createListing.mutate(listingForm)
-              } catch (err) {
-                if (err instanceof Error) setListingError(err.message)
-              }
-            }}
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-white">
-                  Publish listing
-                </h3>
-                <p className="mt-1 text-xs text-zinc-400">
-                  Listings publish to every active integration immediately when
-                  you choose “Publish now”.
-                </p>
-              </div>
-            </div>
-
-            {listingError && (
-              <div className="mt-4 rounded-md border border-zinc-500/40 bg-zinc-950/40 p-3 text-sm text-zinc-200">
-                {listingError}
-              </div>
-            )}
-
-
-            <div className="mt-5 space-y-6">
-              <div className="rounded-xl border border-zinc-900/60 bg-zinc-950/60 p-4 text-xs text-zinc-300">
-                {activeIntegrationCount > 0 ? (
-                  <span>
-                    Publishing now will post to
-                    {" "}
-                    <span className="font-semibold text-white">
-                      all {activeIntegrationCount} active connection{activeIntegrationCount === 1 ? "" : "s"}
-                    </span>
-                    . Check the delivery log below to confirm every marketplace accepts the payload.
+              <Button type="submit" disabled={isBusy}>
+                {isBusy ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin" />
+                    {serviceSubmitBusyLabel}
                   </span>
                 ) : (
-                  <span>
-                    Connect at least one integration above to start auto-posting listings everywhere you sell. We&apos;ll keep the draft ready until you finish connecting.
-                  </span>
+                  serviceSubmitLabel
                 )}
-              </div>
-
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                <div className="space-y-5">
-                  <FormSubheading
-                    title="Listing basics"
-                    description="Give shoppers the title and context they&apos;ll see across every channel."
-                  />
-                  <div className="grid gap-4">
-                    <FieldStack label="Type" htmlFor="listing-type">
-                      <Select
-                        value={listingForm.type}
-                        onValueChange={(value) =>
-                          setListingForm((prev) => ({
-                            ...prev,
-                            type: value as ListingFormState["type"],
-                          }))
-                        }
-                      >
-                        <SelectContent>
-                          <SelectItem value="product">Product</SelectItem>
-                          <SelectItem value="service">Service</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FieldStack>
-
-                    <FieldStack label="Title" htmlFor="listing-title">
-                      <Input
-                        id="listing-title"
-                        value={listingForm.title}
-                        onChange={(event) =>
-                          setListingForm((prev) => ({
-                            ...prev,
-                            title: event.target.value,
-                          }))
-                        }
-                        placeholder="Summer drop or design sprint"
-                        required
-                      />
-                    </FieldStack>
-
-                    <FieldStack label="Description" htmlFor="listing-description">
-                      <Textarea
-                        id="listing-description"
-                        value={listingForm.description}
-                        onChange={(event) =>
-                          setListingForm((prev) => ({
-                            ...prev,
-                            description: event.target.value,
-                          }))
-                        }
-                        placeholder="What customers receive when they purchase"
-                        rows={5}
-                      />
-                    </FieldStack>
-                  </div>
-                </div>
-
-                <div className="space-y-5">
-                  <FormSubheading
-                    title="Pricing & availability"
-                    description="These values merge into every integration payload the moment you publish."
-                  />
-                  <div className="grid gap-4">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <FieldStack label="Price" htmlFor="listing-price">
-                        <Input
-                          id="listing-price"
-                          type="number"
-                          inputMode="decimal"
-                          step="0.01"
-                          min="0"
-                          value={listingForm.price}
-                          onChange={(event) =>
-                            setListingForm((prev) => ({
-                              ...prev,
-                              price: event.target.value,
-                            }))
-                          }
-                          placeholder="99.00"
-                        />
-                      </FieldStack>
-
-                      <FieldStack label="Currency" htmlFor="listing-currency">
-                        <Input
-                          id="listing-currency"
-                          value={listingForm.currency}
-                          onChange={(event) =>
-                            setListingForm((prev) => ({
-                              ...prev,
-                              currency: event.target.value.toUpperCase(),
-                            }))
-                          }
-                          placeholder="USD"
-                          maxLength={3}
-                        />
-                      </FieldStack>
-                    </div>
-
-                    {listingForm.type === "product" && (
-                      <FieldStack label="Inventory" htmlFor="listing-inventory">
-                        <Input
-                          id="listing-inventory"
-                          type="number"
-                          inputMode="numeric"
-                          min="0"
-                          value={listingForm.inventory}
-                          onChange={(event) =>
-                            setListingForm((prev) => ({
-                              ...prev,
-                              inventory: event.target.value,
-                            }))
-                          }
-                          placeholder="50"
-                        />
-                      </FieldStack>
-                    )}
-
-                    {listingForm.type === "service" && (
-                      <FieldStack
-                        label="Duration (minutes)"
-                        htmlFor="listing-duration"
-                      >
-                        <Input
-                          id="listing-duration"
-                          type="number"
-                          inputMode="numeric"
-                          min="0"
-                          value={listingForm.durationMinutes}
-                          onChange={(event) =>
-                            setListingForm((prev) => ({
-                              ...prev,
-                              durationMinutes: event.target.value,
-                            }))
-                          }
-                          placeholder="60"
-                        />
-                      </FieldStack>
-                    )}
-
-                    <FieldStack
-                      label="Additional metadata (JSON)"
-                      htmlFor="listing-metadata"
-                      description="Merge extra fields into the payload you send to partners."
-                    >
-                      <Textarea
-                        id="listing-metadata"
-                        value={listingForm.metadata}
-                        onChange={(event) =>
-                          setListingForm((prev) => ({
-                            ...prev,
-                            metadata: event.target.value,
-                          }))
-                        }
-                        rows={4}
-                        placeholder='{"tags": ["summer", "drop"], "sku": "SKU-1001"}'
-                      />
-                    </FieldStack>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setListingForm(defaultListingForm)
-                  setListingError(null)
-                }}
-              >
-                Reset
-              </Button>
-              <Button type="submit" disabled={createListing.isPending}>
-                {createListing.isPending ? "Publishing..." : "Create listing"}
               </Button>
             </div>
-          </form>
-        </section>
-
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-white">
-                Recent listings
-              </h2>
-              <p className="text-sm text-zinc-300">
-                Track what was sent to each integration and surface payload
-                errors instantly.
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                queryClient.invalidateQueries({
-                  queryKey: ["source", "listings"],
-                })
-              }
-              disabled={listingsQuery.isFetching}
-            >
-              <RefreshCcw className="size-4" />
-              Refresh
-            </Button>
-          </div>
-
-          {listingsQuery.error && (
-            <div className="rounded-md border border-zinc-500/40 bg-zinc-950/40 p-3 text-sm text-zinc-200">
-              {listingsQuery.error.message}
-            </div>
-          )}
-
-          <div className="space-y-4">
-            {listingsQuery.isLoading &&
-              Array.from({ length: 3 }).map((_, idx) => (
-                <div
-                  key={`listing-skeleton-${idx}`}
-                  className="h-32 animate-pulse rounded-xl border border-zinc-900/80 bg-zinc-950/60"
-                />
-              ))}
-
-            {!listingsQuery.isLoading && listings.length === 0 && (
-              <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-6 text-sm text-zinc-300">
-                No listings yet. When you publish a product or service it will
-                appear here with delivery status per integration.
-              </div>
-            )}
-
-            {listings.map((listing) => (
-              <ListingCard key={listing.id} listing={listing} />
-            ))}
-          </div>
-        </section>
-      </main>
-      <PostModal isOpen={isPostModalOpen} onClose={() => setIsPostModalOpen(false)} />
-    </div>
+          </SheetFooter>
+        </form>
+      </SheetContent>
+    </Sheet>
   )
 }
 
@@ -2982,14 +5311,11 @@ type ListingCardProps = {
 
 function ListingCard({ listing }: ListingCardProps) {
   const status = listing.status
-  const publishResults = listing.publish_results ?? []
   const postMetadata = parsePostMetadata(listing.metadata)
   const isPost = listing.type === "post" || Boolean(postMetadata)
   const description = isPost
     ? postMetadata?.content?.trim() || "No message included."
     : listing.description || "No description"
-  const showGenericMetadata =
-    !postMetadata && listing.metadata && Object.keys(listing.metadata).length > 0
 
   return (
     <div className="rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-5">
@@ -3020,31 +5346,7 @@ function ListingCard({ listing }: ListingCardProps) {
 
       {postMetadata ? (
         <PostDetails metadata={postMetadata} />
-      ) : showGenericMetadata ? (
-        <div className="mt-4 space-y-1 rounded-lg border border-zinc-900/60 bg-zinc-950/80 p-3 text-xs text-zinc-300">
-          <p className="font-semibold text-zinc-200">Metadata</p>
-          <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-zinc-400">
-            {JSON.stringify(listing.metadata, null, 2)}
-          </pre>
-        </div>
       ) : null}
-
-      <div className="mt-4 space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-          Delivery log
-        </p>
-        {publishResults.length === 0 ? (
-          <p className="text-xs text-zinc-400">
-            Not sent to any integrations yet.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {publishResults.map((result, index) => (
-              <PublishRow key={`${result.integrationId}-${index}`} result={result} />
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   )
 }
@@ -3115,6 +5417,409 @@ function PostDetails({ metadata }: PostDetailsProps) {
           </p>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+type OrderRowData = {
+  id: string
+  checkoutId: string
+  currency: string
+  totalAmount: number
+  items: ProductCheckoutLineItem[]
+  summary: string
+  amountLabel: string
+  status: ProductCheckoutStatus
+  fulfillmentStatus: ProductOrderFulfillmentStatus
+  shipping: {
+    trackingNumber: string | null
+    carrier: string | null
+    shippedAt: string | null
+  } | null
+  dateLabel: string
+  relativeTime: string
+  stripeSessionId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+function OrderRowCard({
+  order,
+  onOpen,
+  isActive,
+}: {
+  order: OrderRowData
+  onOpen(): void
+  isActive: boolean
+}) {
+  const shortSessionId =
+    order.stripeSessionId && order.stripeSessionId.length > 8
+      ? `${order.stripeSessionId.slice(0, 8)}…`
+      : order.stripeSessionId
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-pressed={isActive}
+      className={cn(
+        "w-full rounded-2xl border bg-zinc-950/70 p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/70",
+        isActive
+          ? "border-zinc-500/70 bg-zinc-900/70"
+          : "border-zinc-900/70 hover:border-zinc-700"
+      )}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-2">
+          <p className="text-sm font-semibold text-white truncate">{order.summary}</p>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
+            <span className="font-mono text-[10px] text-zinc-300">{order.checkoutId}</span>
+            {shortSessionId ? (
+              <span className="uppercase tracking-[0.3em] text-zinc-500">
+                Session{" "}
+                <span className="font-mono text-[10px] text-zinc-400">{shortSessionId}</span>
+              </span>
+            ) : (
+              <span className="uppercase tracking-[0.3em] text-zinc-600">No session ID</span>
+            )}
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-semibold text-white">{order.amountLabel}</p>
+          <p className="text-[11px] text-zinc-500">{order.dateLabel}</p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-400">
+        <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-zinc-500">
+          <span>Payment</span>
+          <Badge
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-[10px]",
+              ORDER_STATUS_ACCENT[order.status]
+            )}
+          >
+            {ORDER_STATUS_LABELS[order.status]}
+          </Badge>
+          <span>Fulfillment</span>
+          <Badge
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-[10px]",
+              ORDER_FULFILLMENT_STATUS_ACCENT[order.fulfillmentStatus]
+            )}
+          >
+            {ORDER_FULFILLMENT_STATUS_LABELS[order.fulfillmentStatus]}
+          </Badge>
+        </div>
+        <p className="text-[11px] text-zinc-500">Received {order.relativeTime}</p>
+      </div>
+      {order.shipping ? (
+        <p className="mt-2 text-[11px] text-zinc-400">
+          {order.shipping.carrier ? `${order.shipping.carrier} · ` : ""}
+          {order.shipping.trackingNumber
+            ? `Tracking ${order.shipping.trackingNumber}`
+            : "Shipping metadata saved"}
+        </p>
+      ) : null}
+    </button>
+  )
+}
+
+type SourceOrderDetailSheetProps = {
+  order: OrderRowData | null
+  isOpen: boolean
+  onOpenChange(next: boolean): void
+  onFulfillmentChange(orderId: string, fulfillmentStatus: ProductOrderFulfillmentStatus): void
+  onShippingSave(
+    orderId: string,
+    shipping: {
+      trackingNumber: string | null
+      carrier: string | null
+      shippedAt: string | null
+    }
+  ): void
+  isUpdatingFulfillment: boolean
+  fulfillmentError: string | null
+}
+
+function SourceOrderDetailSheet({
+  order,
+  isOpen,
+  onOpenChange,
+  onFulfillmentChange,
+  onShippingSave,
+  isUpdatingFulfillment,
+  fulfillmentError,
+}: SourceOrderDetailSheetProps) {
+  const lineItems = order?.items ?? []
+  const [trackingNumber, setTrackingNumber] = useState("")
+  const [carrier, setCarrier] = useState("")
+  const [shippedAtInput, setShippedAtInput] = useState("")
+
+  useEffect(() => {
+    if (!order) {
+      setTrackingNumber("")
+      setCarrier("")
+      setShippedAtInput("")
+      return
+    }
+    setTrackingNumber(order.shipping?.trackingNumber ?? "")
+    setCarrier(order.shipping?.carrier ?? "")
+    setShippedAtInput(toDateTimeLocalInput(order.shipping?.shippedAt ?? null))
+  }, [order])
+
+  return (
+    <Sheet open={isOpen} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="bg-zinc-950 text-zinc-100 border-l border-zinc-900/70 sm:max-w-2xl"
+      >
+        <div className="flex h-full flex-col gap-6 px-4 pb-4 pt-3">
+          <SheetHeader>
+            <SheetTitle>Order details</SheetTitle>
+            <SheetDescription>
+              Inspect checkout details and update lightweight fulfillment state.
+            </SheetDescription>
+          </SheetHeader>
+
+          {order ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1">
+              <div className="space-y-4 rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+                      Checkout
+                    </p>
+                    <p className="font-mono text-sm text-zinc-100">{order.checkoutId}</p>
+                  </div>
+                  <Badge
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[10px]",
+                      ORDER_STATUS_ACCENT[order.status]
+                    )}
+                  >
+                    {ORDER_STATUS_LABELS[order.status]}
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">
+                    Fulfillment
+                  </p>
+                  <Badge
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[10px]",
+                      ORDER_FULFILLMENT_STATUS_ACCENT[order.fulfillmentStatus]
+                    )}
+                  >
+                    {ORDER_FULFILLMENT_STATUS_LABELS[order.fulfillmentStatus]}
+                  </Badge>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <DetailField label="Order ID" value={order.id} mono />
+                  <DetailField
+                    label="Stripe session"
+                    value={order.stripeSessionId ?? "Not available"}
+                    mono
+                  />
+                  <DetailField
+                    label="Created"
+                    value={formatAbsoluteDateTime(order.createdAt)}
+                  />
+                  <DetailField
+                    label="Updated"
+                    value={formatAbsoluteDateTime(order.updatedAt)}
+                  />
+                  <DetailField label="Subtotal" value={order.amountLabel} />
+                  <DetailField label="Currency" value={order.currency.toUpperCase()} />
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-400">
+                  Purchased items
+                </p>
+                {lineItems.length > 0 ? (
+                  <div className="space-y-2">
+                    {lineItems.map((item) => (
+                      <div
+                        key={`${item.id}-${item.title}`}
+                        className="rounded-xl border border-zinc-900/80 bg-zinc-900/40 p-3"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-zinc-100">
+                              {item.title || "Product item"}
+                            </p>
+                            <p className="font-mono text-[11px] text-zinc-500">{item.id}</p>
+                          </div>
+                          <Badge className="bg-zinc-800 text-zinc-200">
+                            Qty {item.quantity}
+                          </Badge>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-zinc-400">
+                          <span>
+                            Unit {formatCurrency(item.unitPrice, order.currency)}
+                          </span>
+                          <span>
+                            Line total {formatCurrency(item.lineTotal, order.currency)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-zinc-400">No line items were stored for this checkout.</p>
+                )}
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-400">
+                  Fulfillment
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {PRODUCT_ORDER_FULFILLMENT_STATUSES.map((status) => (
+                    <Button
+                      key={status}
+                      type="button"
+                      size="sm"
+                      variant={order.fulfillmentStatus === status ? "secondary" : "ghost"}
+                      className={cn(
+                        "rounded-full border px-3 text-[11px]",
+                        order.fulfillmentStatus === status
+                          ? ORDER_FULFILLMENT_STATUS_ACCENT[status]
+                          : "border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                      )}
+                      onClick={() => onFulfillmentChange(order.id, status)}
+                      disabled={isUpdatingFulfillment || order.fulfillmentStatus === status}
+                    >
+                      {ORDER_FULFILLMENT_STATUS_LABELS[status]}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-zinc-500">
+                  Keep checkout/payment state separate. This controls fulfillment only.
+                </p>
+                {order.fulfillmentStatus === "shipped" ? (
+                  <div className="space-y-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-300/80">
+                      Shipping metadata
+                    </p>
+                    {order.shipping ? (
+                      <p className="text-xs text-zinc-300">
+                        {order.shipping.carrier ? `${order.shipping.carrier} · ` : ""}
+                        {order.shipping.trackingNumber
+                          ? order.shipping.trackingNumber
+                          : "No tracking number"}
+                        {order.shipping.shippedAt
+                          ? ` · ${formatAbsoluteDateTime(order.shipping.shippedAt)}`
+                          : ""}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-zinc-400">
+                        Add a carrier, tracking number, or shipped timestamp.
+                      </p>
+                    )}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="order-shipping-carrier"
+                          className="text-[10px] uppercase tracking-[0.28em] text-zinc-500"
+                        >
+                          Carrier
+                        </Label>
+                        <Input
+                          id="order-shipping-carrier"
+                          value={carrier}
+                          onChange={(event) => setCarrier(event.target.value)}
+                          placeholder="UPS"
+                          className="border-zinc-800 bg-zinc-900/40 text-sm text-zinc-100 placeholder:text-zinc-500"
+                          disabled={isUpdatingFulfillment}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="order-shipping-tracking"
+                          className="text-[10px] uppercase tracking-[0.28em] text-zinc-500"
+                        >
+                          Tracking number
+                        </Label>
+                        <Input
+                          id="order-shipping-tracking"
+                          value={trackingNumber}
+                          onChange={(event) => setTrackingNumber(event.target.value)}
+                          placeholder="1Z..."
+                          className="border-zinc-800 bg-zinc-900/40 text-sm text-zinc-100 placeholder:text-zinc-500"
+                          disabled={isUpdatingFulfillment}
+                        />
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label
+                          htmlFor="order-shipping-shipped-at"
+                          className="text-[10px] uppercase tracking-[0.28em] text-zinc-500"
+                        >
+                          Shipped at
+                        </Label>
+                        <Input
+                          id="order-shipping-shipped-at"
+                          type="datetime-local"
+                          value={shippedAtInput}
+                          onChange={(event) => setShippedAtInput(event.target.value)}
+                          className="border-zinc-800 bg-zinc-900/40 text-sm text-zinc-100 placeholder:text-zinc-500"
+                          disabled={isUpdatingFulfillment}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="rounded-full bg-zinc-100 px-4 text-zinc-900 hover:bg-zinc-200"
+                        onClick={() =>
+                          onShippingSave(order.id, {
+                            trackingNumber: trackingNumber.trim() || null,
+                            carrier: carrier.trim() || null,
+                            shippedAt: shippedAtInput ? new Date(shippedAtInput).toISOString() : null,
+                          })
+                        }
+                        disabled={isUpdatingFulfillment}
+                      >
+                        Save shipping
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+                {isUpdatingFulfillment ? (
+                  <p className="text-xs text-zinc-400">Saving order update…</p>
+                ) : null}
+                {fulfillmentError ? (
+                  <p className="text-xs text-rose-300">{fulfillmentError}</p>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-zinc-900/70 bg-zinc-950/60 p-4 text-sm text-zinc-400">
+              Select an order to inspect details.
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function DetailField({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-900/70 bg-zinc-900/30 p-3">
+      <p className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">{label}</p>
+      <p className={cn("mt-1 text-sm text-zinc-100", mono && "font-mono text-[12px]")}>{value}</p>
     </div>
   )
 }
@@ -3270,4 +5975,30 @@ function formatRelativeTime(iso: string) {
   }
   const days = Math.floor(diff / day)
   return `${days} day${days === 1 ? "" : "s"} ago`
+}
+
+function formatAbsoluteDateTime(iso: string) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown"
+  }
+
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
+}
+
+function toDateTimeLocalInput(iso: string | null) {
+  if (!iso) return ""
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) {
+    return ""
+  }
+
+  const localTime = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return localTime.toISOString().slice(0, 16)
 }

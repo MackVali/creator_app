@@ -40,6 +40,7 @@ import {
   FAB_SELECT_SEARCH_INPUT_CLASS,
   FAB_SECTION_CARD_CLASS,
   FAB_SECTION_HEADING_TEXT_CLASS,
+  FAB_SECTION_HELP_TEXT_SMALL_CLASS,
 } from "@/components/ui/fab-form-classes";
 import {
   type ScheduleInstance,
@@ -117,6 +118,52 @@ const resolveEnergyValue = (
   return ENERGY.LIST.includes(normalized as (typeof ENERGY.LIST)[number])
     ? (normalized as (typeof ENERGY.LIST)[number])
     : "NO";
+};
+
+const priorityToDbValue = (value: string): string => {
+  switch (value) {
+    case "Ultra-Critical":
+      return "ULTRA-CRITICAL";
+    case "Critical":
+      return "CRITICAL";
+    default:
+      return value;
+  }
+};
+
+const PROJECT_SAVE_FALLBACK_ERROR =
+  "Unable to update this project right now.";
+
+const normalizeProjectSaveError = (err: unknown): string | null => {
+  if (typeof err === "string") {
+    const trimmed = err.trim();
+    return trimmed || null;
+  }
+
+  if (!err || typeof err !== "object") return null;
+
+  const record = err as {
+    message?: unknown;
+    details?: unknown;
+    hint?: unknown;
+    code?: unknown;
+  };
+
+  const parts: string[] = [];
+  if (typeof record.code === "string" && record.code.trim()) {
+    parts.push(`[${record.code.trim()}]`);
+  }
+  if (typeof record.message === "string" && record.message.trim()) {
+    parts.push(record.message.trim());
+  }
+  if (typeof record.details === "string" && record.details.trim()) {
+    parts.push(`Details: ${record.details.trim()}`);
+  }
+  if (typeof record.hint === "string" && record.hint.trim()) {
+    parts.push(`Hint: ${record.hint.trim()}`);
+  }
+
+  return parts.length > 0 ? parts.join(" ") : null;
 };
 
 const STAGE_OPTIONS = [
@@ -496,6 +543,7 @@ export function ProjectEditSheet({
     if (!supabase || !projectId || disableSubmit) return;
     setSaving(true);
     setError(null);
+    let failedStep: string | null = null;
 
     try {
       const {
@@ -515,7 +563,7 @@ export function ProjectEditSheet({
 
       const payload = {
         name: name.trim(),
-        priority,
+        priority: priorityToDbValue(priority),
         stage,
         energy,
         duration_min:
@@ -532,10 +580,12 @@ export function ProjectEditSheet({
         .eq("user_id", user.id);
 
       if (updateError) {
+        failedStep = "projects update";
         throw updateError;
       }
 
       if (selectedSkillId !== initialSkillId) {
+        failedStep = "project_skills delete";
         const { error: skillDeleteError } = await supabase
           .from("project_skills")
           .delete()
@@ -544,6 +594,7 @@ export function ProjectEditSheet({
           throw skillDeleteError;
         }
         if (selectedSkillId) {
+          failedStep = "project_skills insert";
           const { error: skillInsertError } = await supabase
             .from("project_skills")
             .insert({ project_id: projectId, skill_id: selectedSkillId });
@@ -559,11 +610,12 @@ export function ProjectEditSheet({
       }
       onClose();
     } catch (err) {
-      console.error("Failed to update project:", err);
+      console.error("Failed to update project:", {
+        step: failedStep ?? "unknown",
+        error: err,
+      });
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to update this project right now."
+        normalizeProjectSaveError(err) ?? PROJECT_SAVE_FALLBACK_ERROR
       );
     } finally {
       setSaving(false);

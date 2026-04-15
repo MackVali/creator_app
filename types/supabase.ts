@@ -776,6 +776,7 @@ export interface Database {
           category: string | null;
           position: number;
           is_active: boolean;
+          size: "small" | "medium";
           created_at: string;
           updated_at: string;
         };
@@ -789,6 +790,7 @@ export interface Database {
           category?: string | null;
           position?: number;
           is_active?: boolean;
+          size?: "small" | "medium";
           created_at?: string;
           updated_at?: string;
         };
@@ -802,6 +804,7 @@ export interface Database {
           category?: string | null;
           position?: number;
           is_active?: boolean;
+          size?: "small" | "medium";
           created_at?: string;
           updated_at?: string;
         };
@@ -1231,6 +1234,62 @@ export interface Database {
           total_dark_xp?: number;
           current_level?: number;
           prestige?: number;
+          updated_at?: string;
+        };
+      };
+      product_checkouts: {
+        Row: {
+          id: string;
+          checkout_id: string;
+          seller_user_id: string;
+          buyer_user_id: string | null;
+          seller_handle: string;
+          currency: string;
+          total_amount: number;
+          items: Json;
+          stripe_session_id: string;
+          status: "pending" | "completed" | "canceled" | "failed";
+          fulfillment_status: "unfulfilled" | "packed" | "shipped";
+          tracking_number: string | null;
+          carrier: string | null;
+          shipped_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          checkout_id: string;
+          seller_user_id: string;
+          buyer_user_id?: string | null;
+          seller_handle: string;
+          currency: string;
+          total_amount: number;
+          items: Json;
+          stripe_session_id: string;
+          status?: "pending" | "completed" | "canceled" | "failed";
+          fulfillment_status?: "unfulfilled" | "packed" | "shipped";
+          tracking_number?: string | null;
+          carrier?: string | null;
+          shipped_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          checkout_id?: string;
+          seller_user_id?: string;
+          buyer_user_id?: string | null;
+          seller_handle?: string;
+          currency?: string;
+          total_amount?: number;
+          items?: Json;
+          stripe_session_id?: string;
+          status?: "pending" | "completed" | "canceled" | "failed";
+          fulfillment_status?: "unfulfilled" | "packed" | "shipped";
+          tracking_number?: string | null;
+          carrier?: string | null;
+          shipped_at?: string | null;
+          created_at?: string;
           updated_at?: string;
         };
       };

@@ -235,12 +235,13 @@ export async function createContentCard(
       .insert({
         user_id: userId,
         title: cardData.title,
-        description: cardData.description,
+        description: cardData.description ?? null,
         url: cardData.url,
-        thumbnail_url: cardData.thumbnail ? null : null, // Will be set after upload
-        category: cardData.category,
+        thumbnail_url: cardData.thumbnail_url ?? null,
+        category: cardData.category ?? null,
         position: nextPosition,
-        is_active: true,
+        is_active: cardData.is_active ?? true,
+        size: cardData.size ?? "small",
       })
       .select()
       .single();
@@ -270,7 +271,20 @@ export async function updateContentCard(
   try {
     const { data, error } = await supabase
       .from("content_cards")
-      .update(cardData)
+      .update(
+        Object.fromEntries(
+          Object.entries({
+            title: cardData.title,
+            description: cardData.description,
+            url: cardData.url,
+            thumbnail_url: cardData.thumbnail_url,
+            category: cardData.category,
+            position: cardData.position,
+            is_active: cardData.is_active,
+            size: cardData.size,
+          }).filter(([, value]) => value !== undefined),
+        ),
+      )
       .eq("id", cardId)
       .eq("user_id", userId)
       .select()
