@@ -68,15 +68,8 @@ export default function TopNav() {
   }
 
   return (
-    <nav className="w-full flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] pb-2 bg-black/80 text-white border-b border-white/10 backdrop-blur">
-      <div className="flex items-center gap-3">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="h-11 w-11 p-2 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
-              aria-label="Open menu"
     <>
-      <nav className="w-full flex items-center justify-between px-4 py-2 bg-black/80 text-white border-b border-white/10 backdrop-blur">
+      <nav className="w-full flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] pb-2 bg-black/80 text-white border-b border-white/10 backdrop-blur">
         <div className="flex items-center gap-2.5">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
