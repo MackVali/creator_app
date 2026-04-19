@@ -34,11 +34,13 @@ function getSupabasePublicClient(): PublicSupabaseClient {
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !key) {
     throw new Error(
-      "Supabase environment variables are required to resolve public profile read models.",
+      "Supabase environment variables are required to resolve public profile read models. Set NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, with NEXT_PUBLIC_SUPABASE_ANON_KEY as a fallback if needed.",
     );
   }
 

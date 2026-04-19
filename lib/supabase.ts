@@ -18,6 +18,7 @@ function getEnv() {
     normalize(process.env.SUPABASE_URL) ||
     normalize(process.env.VITE_SUPABASE_URL);
   const key =
+    normalize(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ||
     normalize(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) ||
     normalize(process.env.SUPABASE_ANON_KEY) ||
     normalize(process.env.SUPABASE_PUBLIC_ANON_KEY) ||
@@ -28,6 +29,8 @@ function getEnv() {
       console.error("Missing Supabase environment variables:", {
         NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
         SUPABASE_URL: !!process.env.SUPABASE_URL,
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
+          !!process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
         NEXT_PUBLIC_SUPABASE_ANON_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
         SUPABASE_ANON_KEY: !!process.env.SUPABASE_ANON_KEY,
       });
