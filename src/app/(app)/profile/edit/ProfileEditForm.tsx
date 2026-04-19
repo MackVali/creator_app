@@ -90,7 +90,8 @@ export default function ProfileEditForm({
       try {
         const supabase = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+          process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
         );
 
         const { data, error } = await supabase
@@ -177,7 +178,8 @@ export default function ProfileEditForm({
     try {
       const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       );
 
       const fileExt = file.name.split(".").pop();
