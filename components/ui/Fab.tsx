@@ -1120,7 +1120,7 @@ function useOverhangLT(
 
       const rect = el.getBoundingClientRect();
 
-      const OVERHANG = 12; // vertical overhang only
+      const OVERHANG = 24; // let the controls hang halfway off the panel
       const BTN = 48;
       const GAP = 12;
       const GROUP_W = BTN * 2 + GAP;
@@ -1135,20 +1135,24 @@ function useOverhangLT(
         ) || 0;
 
       // Use visualViewport for mobile keyboard compatibility, fallback to window
+      const viewportOffsetLeft = window.visualViewport?.offsetLeft ?? 0;
+      const viewportOffsetTop = window.visualViewport?.offsetTop ?? 0;
       const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
       const viewportHeight =
         window.visualViewport?.height ?? window.innerHeight;
 
       // Align group's right edge to panel's right (no horizontal overhang).
       let left = Math.round(rect.right - GROUP_W - SHIFT_LEFT);
-      const minLeft = 8;
-      const maxLeft = viewportWidth - GROUP_W - 8;
+      const minLeft = viewportOffsetLeft + 8;
+      const maxLeft = viewportOffsetLeft + viewportWidth - GROUP_W - 8;
       left = Math.min(Math.max(left, minLeft), maxLeft);
 
       let top = Math.round(rect.bottom + OVERHANG - GROUP_H);
-      const maxTop = viewportHeight - safeBottom - GROUP_H - 8;
+      const minTop = viewportOffsetTop + 8;
+      const maxTop =
+        viewportOffsetTop + viewportHeight - safeBottom - GROUP_H - 8;
       top = Math.min(top, maxTop);
-      top = Math.max(top, 8);
+      top = Math.max(top, minTop);
 
       setPos({ left, top });
     };
@@ -1161,6 +1165,7 @@ function useOverhangLT(
     if (listenVisualViewport) {
       if (visualViewport) {
         visualViewport.addEventListener("resize", update);
+        visualViewport.addEventListener("scroll", update);
       } else {
         // Fallback for browsers without visualViewport support
         window.addEventListener("resize", update);
@@ -1173,6 +1178,7 @@ function useOverhangLT(
       if (listenVisualViewport) {
         if (visualViewport) {
           visualViewport.removeEventListener("resize", update);
+          visualViewport.removeEventListener("scroll", update);
         } else {
           window.removeEventListener("resize", update);
         }
@@ -2806,27 +2812,13 @@ export function Fab({
   const DRAG_THRESHOLD_PX = 80;
   const EDGE_SWIPE_ZONE_RATIO = 0.12;
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
-  const overhangPos = useOverhangLT(panelRef, [expanded, selected], {
-    listenVisualViewport: !expanded,
-  });
+  const overhangPos = useOverhangLT(panelRef, [expanded, selected]);
   const [stableViewportHeight, setStableViewportHeight] = useState<
     number | null
   >(null);
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
-  const [isTextInputFocused, setIsTextInputFocused] = useState(false);
-  const isKeyboardVisible = useMemo(() => {
-    if (!expanded) return false;
-    if (keyboardLift <= 12) return false;
-    if (stableViewportHeight && viewportHeight) {
-      const shrink = stableViewportHeight - viewportHeight;
-      return shrink > 80;
-    }
-    return keyboardLift > 24;
-  }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
-  const shouldHideOverhangButtons =
-    expanded && (isKeyboardVisible || isTextInputFocused);
 
   useEffect(() => {
     if (!expanded) return;
@@ -2900,41 +2892,6 @@ export function Fab({
       window.removeEventListener("orientationchange", updateLift);
     };
   }, [expanded, stableSafeBottom]);
-
-  useEffect(() => {
-    if (!expanded) {
-      setIsTextInputFocused(false);
-      return;
-    }
-    const isTextEntryElement = (el: Element | null) => {
-      if (!el) return false;
-      const tag = el.tagName.toLowerCase();
-      const editable = (el as HTMLElement).isContentEditable;
-      return (
-        editable ||
-        tag === "input" ||
-        tag === "textarea" ||
-        tag === "select" ||
-        el instanceof HTMLTextAreaElement ||
-        (el instanceof HTMLInputElement &&
-          el.type !== "button" &&
-          el.type !== "submit" &&
-          el.type !== "reset")
-      );
-    };
-    const handleFocusIn = (event: FocusEvent) => {
-      setIsTextInputFocused(isTextEntryElement(event.target as Element));
-    };
-    const handleFocusOut = () => {
-      setIsTextInputFocused(isTextEntryElement(document.activeElement));
-    };
-    document.addEventListener("focusin", handleFocusIn, true);
-    document.addEventListener("focusout", handleFocusOut, true);
-    return () => {
-      document.removeEventListener("focusin", handleFocusIn, true);
-      document.removeEventListener("focusout", handleFocusOut, true);
-    };
-  }, [expanded]);
 
   useEffect(() => {
     if (!expanded) {
@@ -7171,7 +7128,7 @@ export function Fab({
                 </motion.button>
               )}
             </div>
-            {expanded && !shouldHideOverhangButtons
+            {expanded
               ? createPortal(
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9, y: 6 }}
@@ -7192,11 +7149,7 @@ export function Fab({
                         : "calc(12px + env(safe-area-inset-bottom, 0px))",
                       zIndex: 2147483651,
                       transition:
-                        "top 0.18s ease, left 0.18s ease, right 0.18s ease, bottom 0.18s ease, transform 0.18s ease",
-                      transform:
-                        expanded && keyboardLift > 0
-                          ? `translateY(${-keyboardLift}px)`
-                          : undefined,
+                        "left 0.18s ease, top 0.18s ease, right 0.18s ease, bottom 0.18s ease",
                     }}
                   >
                     <Button
@@ -9404,7 +9357,10 @@ function FabNexus({
                 result.type === "PROJECT" && result.goalName
                   ? result.goalName.trim()
                   : null;
-              const energyLevel = normalizeFlameLevel(result.energy);
+              const hasProjectRank =
+                result.type === "PROJECT" &&
+                result.global_rank !== null &&
+                result.global_rank !== undefined;
               const cardClassName = cn(
                 "relative flex flex-col gap-1 rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
                 isCompletedProject
@@ -9541,11 +9497,26 @@ function FabNexus({
                           {result.name}
                         </span>
                         {result.type === "PROJECT" &&
-                          result.global_rank !== null &&
-                          result.global_rank !== undefined && (
-                            <span className="text-gray-600 font-bold text-xs leading-none">
-                              #{result.global_rank}
-                            </span>
+                          (hasProjectRank || goalLabel) && (
+                            <div
+                              className={cn(
+                                "min-w-0 items-center gap-x-2 text-[10px] leading-tight text-white/65",
+                                hasProjectRank
+                                  ? "grid grid-cols-[auto_minmax(0,1fr)]"
+                                  : "flex",
+                              )}
+                            >
+                              {hasProjectRank ? (
+                                <span className="font-semibold text-white/75">
+                                  #{result.global_rank}
+                                </span>
+                              ) : null}
+                              {goalLabel ? (
+                                <span className="truncate text-white/60">
+                                  {goalLabel}
+                                </span>
+                              ) : null}
+                            </div>
                           )}
                       </div>
                       <div className="flex items-start justify-end flex-shrink-0">
