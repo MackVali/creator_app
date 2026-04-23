@@ -180,7 +180,7 @@ const HABIT_COMPLETION_STORAGE_PREFIX = "schedule-habit-completions";
 const DAY_PEEK_SAFE_GAP_PX = 24;
 const MIN_PX_PER_MIN = 0.9;
 const MAX_PX_PER_MIN = 3.2;
-const DEFAULT_PX_PER_MIN = (MIN_PX_PER_MIN + MAX_PX_PER_MIN) / 2;
+const INITIAL_PX_PER_MIN = (MIN_PX_PER_MIN + MAX_PX_PER_MIN) / 2;
 const PX_PER_MIN_STOPS = [
   0.9, 1.1, 1.25, 1.4, 1.6, 1.8, 2, 2.2, 2.4, 2.6, 2.8, 3, 3.2,
 ] as const;
@@ -321,7 +321,9 @@ function computeDayTimelineHeightPx(
   const safeEnd = Number.isFinite(endHour) ? endHour : 24;
   const normalizedEnd = Math.max(safeStart, safeEnd);
   const durationMinutes = Math.max(0, (normalizedEnd - safeStart) * 60);
-  const safePxPerMin = Number.isFinite(pxPerMin) ? pxPerMin : MIN_PX_PER_MIN;
+  const safePxPerMin = Number.isFinite(pxPerMin)
+    ? pxPerMin
+    : INITIAL_PX_PER_MIN;
   return durationMinutes * safePxPerMin;
 }
 
@@ -346,7 +348,7 @@ const dayTimelineTransition = {
 };
 
 function clampPxPerMin(value: number) {
-  if (!Number.isFinite(value)) return MIN_PX_PER_MIN;
+  if (!Number.isFinite(value)) return INITIAL_PX_PER_MIN;
   return Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, value));
 }
 
@@ -3051,10 +3053,11 @@ export default function SchedulePage() {
     backlogTaskPreviousStageRef.current = new Map();
     scheduleDatasetRef.current = null;
   }, []);
-  const [pxPerMin, setPxPerMin] = useState<number>(DEFAULT_PX_PER_MIN);
+  const [pxPerMin, setPxPerMin] = useState<number>(INITIAL_PX_PER_MIN);
   const animatedPxPerMin = useMotionValue<number>(pxPerMin);
   const zoomAnimationRef = useRef<AnimationPlaybackControls | null>(null);
-  const basePxPerMinRef = useRef(pxPerMin);
+  const basePxPerMinRef = useRef(INITIAL_PX_PER_MIN);
+  const [zoomLayoutSyncEnabled, setZoomLayoutSyncEnabled] = useState(false);
   const pinchStateRef = useRef<{
     initialDistance: number;
     initialPxPerMin: number;
@@ -3067,6 +3070,19 @@ export default function SchedulePage() {
     zoomAnimationRef.current?.stop();
     zoomAnimationRef.current = null;
   }, []);
+
+  const commitZoomPxPerMin = useCallback(
+    (next: number, options?: { markAsUserSelected?: boolean }) => {
+      if (options?.markAsUserSelected) {
+        setZoomLayoutSyncEnabled(true);
+      }
+      setPxPerMin((prev) => {
+        const clamped = clampPxPerMin(next);
+        return Math.abs(prev - clamped) < 0.001 ? prev : clamped;
+      });
+    },
+    []
+  );
 
   const animateZoomTo = useCallback(
     (target: number) => {
@@ -3092,8 +3108,8 @@ export default function SchedulePage() {
 
   const commitPinchToSnap = useCallback(() => {
     const snapped = snapPxPerMin(animatedPxPerMin.get());
-    setPxPerMin((prev) => (Math.abs(prev - snapped) < 0.001 ? prev : snapped));
-  }, [animatedPxPerMin]);
+    commitZoomPxPerMin(snapped, { markAsUserSelected: true });
+  }, [animatedPxPerMin, commitZoomPxPerMin]);
 
   useEffect(() => {
     if (pinchActiveRef.current) return;
@@ -3105,10 +3121,6 @@ export default function SchedulePage() {
       stopZoomAnimation();
     };
   }, [stopZoomAnimation]);
-
-  useEffect(() => {
-    basePxPerMinRef.current = pxPerMin;
-  }, [pxPerMin]);
   const hasLoadedHabitCompletionState = useRef(false);
   const lastTimelineChromeHeightRef = useRef(0);
   const [memoNoteState, setMemoNoteState] = useState<MemoNoteDraftState | null>(
@@ -3659,21 +3671,19 @@ export default function SchedulePage() {
     return 2;
   }, []);
 
-  const applyDensity = useCallback(
-    (next: number) => {
-      setPxPerMin((prev) => {
-        const prevBase = basePxPerMinRef.current;
-        const prevZoom = prevBase > 0 ? prev / prevBase : 1;
-        basePxPerMinRef.current = next;
-        const nextValue = snapPxPerMin(next * prevZoom);
-        return Math.abs(prev - nextValue) < 0.001 ? prev : nextValue;
-      });
-    },
-    [basePxPerMinRef]
-  );
+  const applyDensity = useCallback((next: number) => {
+    setPxPerMin((prev) => {
+      const prevBase = basePxPerMinRef.current;
+      const prevZoom = prevBase > 0 ? prev / prevBase : 1;
+      basePxPerMinRef.current = next;
+      const nextValue = snapPxPerMin(next * prevZoom);
+      return Math.abs(prev - nextValue) < 0.001 ? prev : nextValue;
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!zoomLayoutSyncEnabled) return;
 
     const viewport = window.visualViewport;
 
@@ -3684,8 +3694,6 @@ export default function SchedulePage() {
       applyDensity(density);
     };
 
-    recompute();
-
     window.addEventListener("resize", recompute);
     window.addEventListener("orientationchange", recompute);
     viewport?.addEventListener("resize", recompute);
@@ -3695,7 +3703,7 @@ export default function SchedulePage() {
       window.removeEventListener("orientationchange", recompute);
       viewport?.removeEventListener("resize", recompute);
     };
-  }, [determineDensity, applyDensity]);
+  }, [determineDensity, applyDensity, zoomLayoutSyncEnabled]);
 
   const startHour = 0;
   const year = currentDate.getFullYear();
