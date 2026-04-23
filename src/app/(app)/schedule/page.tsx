@@ -3057,7 +3057,9 @@ export default function SchedulePage() {
   const animatedPxPerMin = useMotionValue<number>(pxPerMin);
   const zoomAnimationRef = useRef<AnimationPlaybackControls | null>(null);
   const basePxPerMinRef = useRef(INITIAL_PX_PER_MIN);
-  const [zoomLayoutSyncEnabled, setZoomLayoutSyncEnabled] = useState(false);
+  // Skip the first post-mount viewport/layout pass so the midpoint fallback
+  // remains visible on mobile until the page has settled.
+  const zoomLayoutSyncReadyRef = useRef(false);
   const pinchStateRef = useRef<{
     initialDistance: number;
     initialPxPerMin: number;
@@ -3072,16 +3074,26 @@ export default function SchedulePage() {
   }, []);
 
   const commitZoomPxPerMin = useCallback(
-    (next: number, options?: { markAsUserSelected?: boolean }) => {
+    (
+      next: number,
+      options?: {
+        markAsUserSelected?: boolean;
+        syncAnimated?: boolean;
+      }
+    ) => {
+      const clamped = clampPxPerMin(next);
       if (options?.markAsUserSelected) {
-        setZoomLayoutSyncEnabled(true);
+        zoomLayoutSyncReadyRef.current = true;
+      }
+      if (options?.syncAnimated) {
+        stopZoomAnimation();
+        animatedPxPerMin.set(clamped);
       }
       setPxPerMin((prev) => {
-        const clamped = clampPxPerMin(next);
         return Math.abs(prev - clamped) < 0.001 ? prev : clamped;
       });
     },
-    []
+    [animatedPxPerMin, stopZoomAnimation]
   );
 
   const animateZoomTo = useCallback(
@@ -3108,7 +3120,10 @@ export default function SchedulePage() {
 
   const commitPinchToSnap = useCallback(() => {
     const snapped = snapPxPerMin(animatedPxPerMin.get());
-    commitZoomPxPerMin(snapped, { markAsUserSelected: true });
+    commitZoomPxPerMin(snapped, {
+      markAsUserSelected: true,
+      syncAnimated: true,
+    });
   }, [animatedPxPerMin, commitZoomPxPerMin]);
 
   useEffect(() => {
@@ -3683,27 +3698,34 @@ export default function SchedulePage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!zoomLayoutSyncEnabled) return;
 
     const viewport = window.visualViewport;
 
     const recompute = () => {
+      if (!zoomLayoutSyncReadyRef.current) return;
+      if (pinchActiveRef.current) return;
       const viewportHeight =
         window.visualViewport?.height ?? window.innerHeight;
       const density = determineDensity(viewportHeight);
       applyDensity(density);
     };
 
+    const readyFrame = window.requestAnimationFrame(() => {
+      zoomLayoutSyncReadyRef.current = true;
+    });
+
     window.addEventListener("resize", recompute);
     window.addEventListener("orientationchange", recompute);
     viewport?.addEventListener("resize", recompute);
 
     return () => {
+      window.cancelAnimationFrame(readyFrame);
       window.removeEventListener("resize", recompute);
       window.removeEventListener("orientationchange", recompute);
       viewport?.removeEventListener("resize", recompute);
+      zoomLayoutSyncReadyRef.current = false;
     };
-  }, [determineDensity, applyDensity, zoomLayoutSyncEnabled]);
+  }, [determineDensity, applyDensity]);
 
   const startHour = 0;
   const year = currentDate.getFullYear();
@@ -5739,7 +5761,7 @@ export default function SchedulePage() {
               e.preventDefault();
               stopZoomAnimation();
               const currentZoom = clampPxPerMin(animatedPxPerMin.get());
-              animatedPxPerMin.set(currentZoom);
+              commitZoomPxPerMin(currentZoom, { syncAnimated: true });
               pinchStateRef.current = {
                 initialDistance: distance,
                 initialPxPerMin: currentZoom,
@@ -5841,7 +5863,10 @@ export default function SchedulePage() {
       e.preventDefault();
       const scale = distance / pinchState.initialDistance;
       const target = clampPxPerMin(pinchState.initialPxPerMin * scale);
-      animatedPxPerMin.set(target);
+      commitZoomPxPerMin(target, {
+        markAsUserSelected: true,
+        syncAnimated: true,
+      });
       if (typeof window !== "undefined") {
         const base = pinchState.initialPxPerMin;
         const baseHeight = pinchState.initialHeight;
