@@ -180,6 +180,7 @@ const HABIT_COMPLETION_STORAGE_PREFIX = "schedule-habit-completions";
 const DAY_PEEK_SAFE_GAP_PX = 24;
 const MIN_PX_PER_MIN = 0.9;
 const MAX_PX_PER_MIN = 3.2;
+const DEFAULT_PX_PER_MIN = (MIN_PX_PER_MIN + MAX_PX_PER_MIN) / 2;
 const PX_PER_MIN_STOPS = [
   0.9, 1.1, 1.25, 1.4, 1.6, 1.8, 2, 2.2, 2.4, 2.6, 2.8, 3, 3.2,
 ] as const;
@@ -3050,7 +3051,7 @@ export default function SchedulePage() {
     backlogTaskPreviousStageRef.current = new Map();
     scheduleDatasetRef.current = null;
   }, []);
-  const [pxPerMin, setPxPerMin] = useState<number>(snapPxPerMin(2));
+  const [pxPerMin, setPxPerMin] = useState<number>(DEFAULT_PX_PER_MIN);
   const animatedPxPerMin = useMotionValue<number>(pxPerMin);
   const zoomAnimationRef = useRef<AnimationPlaybackControls | null>(null);
   const basePxPerMinRef = useRef(pxPerMin);
