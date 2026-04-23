@@ -180,6 +180,7 @@ const HABIT_COMPLETION_STORAGE_PREFIX = "schedule-habit-completions";
 const DAY_PEEK_SAFE_GAP_PX = 24;
 const MIN_PX_PER_MIN = 0.9;
 const MAX_PX_PER_MIN = 3.2;
+const INITIAL_PX_PER_MIN = (MIN_PX_PER_MIN + MAX_PX_PER_MIN) / 2;
 const PX_PER_MIN_STOPS = [
   0.9, 1.1, 1.25, 1.4, 1.6, 1.8, 2, 2.2, 2.4, 2.6, 2.8, 3, 3.2,
 ] as const;
@@ -320,7 +321,9 @@ function computeDayTimelineHeightPx(
   const safeEnd = Number.isFinite(endHour) ? endHour : 24;
   const normalizedEnd = Math.max(safeStart, safeEnd);
   const durationMinutes = Math.max(0, (normalizedEnd - safeStart) * 60);
-  const safePxPerMin = Number.isFinite(pxPerMin) ? pxPerMin : MIN_PX_PER_MIN;
+  const safePxPerMin = Number.isFinite(pxPerMin)
+    ? pxPerMin
+    : INITIAL_PX_PER_MIN;
   return durationMinutes * safePxPerMin;
 }
 
@@ -345,7 +348,7 @@ const dayTimelineTransition = {
 };
 
 function clampPxPerMin(value: number) {
-  if (!Number.isFinite(value)) return MIN_PX_PER_MIN;
+  if (!Number.isFinite(value)) return INITIAL_PX_PER_MIN;
   return Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, value));
 }
 
@@ -3050,10 +3053,13 @@ export default function SchedulePage() {
     backlogTaskPreviousStageRef.current = new Map();
     scheduleDatasetRef.current = null;
   }, []);
-  const [pxPerMin, setPxPerMin] = useState<number>(snapPxPerMin(2));
+  const [pxPerMin, setPxPerMin] = useState<number>(INITIAL_PX_PER_MIN);
   const animatedPxPerMin = useMotionValue<number>(pxPerMin);
   const zoomAnimationRef = useRef<AnimationPlaybackControls | null>(null);
-  const basePxPerMinRef = useRef(pxPerMin);
+  const basePxPerMinRef = useRef(INITIAL_PX_PER_MIN);
+  // Skip the first post-mount viewport/layout pass so the midpoint fallback
+  // remains visible on mobile until the page has settled.
+  const zoomLayoutSyncReadyRef = useRef(false);
   const pinchStateRef = useRef<{
     initialDistance: number;
     initialPxPerMin: number;
@@ -3066,6 +3072,29 @@ export default function SchedulePage() {
     zoomAnimationRef.current?.stop();
     zoomAnimationRef.current = null;
   }, []);
+
+  const commitZoomPxPerMin = useCallback(
+    (
+      next: number,
+      options?: {
+        markAsUserSelected?: boolean;
+        syncAnimated?: boolean;
+      }
+    ) => {
+      const clamped = clampPxPerMin(next);
+      if (options?.markAsUserSelected) {
+        zoomLayoutSyncReadyRef.current = true;
+      }
+      if (options?.syncAnimated) {
+        stopZoomAnimation();
+        animatedPxPerMin.set(clamped);
+      }
+      setPxPerMin((prev) => {
+        return Math.abs(prev - clamped) < 0.001 ? prev : clamped;
+      });
+    },
+    [animatedPxPerMin, stopZoomAnimation]
+  );
 
   const animateZoomTo = useCallback(
     (target: number) => {
@@ -3091,8 +3120,11 @@ export default function SchedulePage() {
 
   const commitPinchToSnap = useCallback(() => {
     const snapped = snapPxPerMin(animatedPxPerMin.get());
-    setPxPerMin((prev) => (Math.abs(prev - snapped) < 0.001 ? prev : snapped));
-  }, [animatedPxPerMin]);
+    commitZoomPxPerMin(snapped, {
+      markAsUserSelected: true,
+      syncAnimated: true,
+    });
+  }, [animatedPxPerMin, commitZoomPxPerMin]);
 
   useEffect(() => {
     if (pinchActiveRef.current) return;
@@ -3104,10 +3136,6 @@ export default function SchedulePage() {
       stopZoomAnimation();
     };
   }, [stopZoomAnimation]);
-
-  useEffect(() => {
-    basePxPerMinRef.current = pxPerMin;
-  }, [pxPerMin]);
   const hasLoadedHabitCompletionState = useRef(false);
   const lastTimelineChromeHeightRef = useRef(0);
   const [memoNoteState, setMemoNoteState] = useState<MemoNoteDraftState | null>(
@@ -3658,18 +3686,15 @@ export default function SchedulePage() {
     return 2;
   }, []);
 
-  const applyDensity = useCallback(
-    (next: number) => {
-      setPxPerMin((prev) => {
-        const prevBase = basePxPerMinRef.current;
-        const prevZoom = prevBase > 0 ? prev / prevBase : 1;
-        basePxPerMinRef.current = next;
-        const nextValue = snapPxPerMin(next * prevZoom);
-        return Math.abs(prev - nextValue) < 0.001 ? prev : nextValue;
-      });
-    },
-    [basePxPerMinRef]
-  );
+  const applyDensity = useCallback((next: number) => {
+    setPxPerMin((prev) => {
+      const prevBase = basePxPerMinRef.current;
+      const prevZoom = prevBase > 0 ? prev / prevBase : 1;
+      basePxPerMinRef.current = next;
+      const nextValue = snapPxPerMin(next * prevZoom);
+      return Math.abs(prev - nextValue) < 0.001 ? prev : nextValue;
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -3677,22 +3702,28 @@ export default function SchedulePage() {
     const viewport = window.visualViewport;
 
     const recompute = () => {
+      if (!zoomLayoutSyncReadyRef.current) return;
+      if (pinchActiveRef.current) return;
       const viewportHeight =
         window.visualViewport?.height ?? window.innerHeight;
       const density = determineDensity(viewportHeight);
       applyDensity(density);
     };
 
-    recompute();
+    const readyFrame = window.requestAnimationFrame(() => {
+      zoomLayoutSyncReadyRef.current = true;
+    });
 
     window.addEventListener("resize", recompute);
     window.addEventListener("orientationchange", recompute);
     viewport?.addEventListener("resize", recompute);
 
     return () => {
+      window.cancelAnimationFrame(readyFrame);
       window.removeEventListener("resize", recompute);
       window.removeEventListener("orientationchange", recompute);
       viewport?.removeEventListener("resize", recompute);
+      zoomLayoutSyncReadyRef.current = false;
     };
   }, [determineDensity, applyDensity]);
 
@@ -5730,7 +5761,7 @@ export default function SchedulePage() {
               e.preventDefault();
               stopZoomAnimation();
               const currentZoom = clampPxPerMin(animatedPxPerMin.get());
-              animatedPxPerMin.set(currentZoom);
+              commitZoomPxPerMin(currentZoom, { syncAnimated: true });
               pinchStateRef.current = {
                 initialDistance: distance,
                 initialPxPerMin: currentZoom,
@@ -5832,7 +5863,10 @@ export default function SchedulePage() {
       e.preventDefault();
       const scale = distance / pinchState.initialDistance;
       const target = clampPxPerMin(pinchState.initialPxPerMin * scale);
-      animatedPxPerMin.set(target);
+      commitZoomPxPerMin(target, {
+        markAsUserSelected: true,
+        syncAnimated: true,
+      });
       if (typeof window !== "undefined") {
         const base = pinchState.initialPxPerMin;
         const baseHeight = pinchState.initialHeight;
