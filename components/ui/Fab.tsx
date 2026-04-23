@@ -7257,8 +7257,8 @@ export function Fab({
           background:
             "linear-gradient(145deg, #111827 0%, #0f172a 55%, #020617 100%)",
           boxShadow:
-            "0 25px 60px rgba(15, 23, 42, 0.85), 0 12px 32px rgba(15, 23, 42, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 0 20px rgba(255, 255, 255, 0.18)",
-          filter: "drop-shadow(0 12px 28px rgba(0, 0, 0, 0.55))",
+            "0 25px 60px rgba(15, 23, 42, 0.85), 0 12px 32px rgba(15, 23, 42, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.18)",
+          filter: "none",
         }}
       >
         {isOpen ? (
