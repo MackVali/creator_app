@@ -12,7 +12,6 @@ import {
 import { addMin } from "./placer";
 import {
   addDaysInTimeZone,
-  formatDateKeyInTimeZone,
   getDateTimeParts,
   makeZonedDate,
   setTimeInTimeZone,
@@ -506,7 +505,6 @@ function logPlacementFailure(params: {
   debugEnabled?: boolean;
 }) {
   if (params.debugEnabled) return;
-  if (params.item.sourceType !== "HABIT") return; // Suppress PROJECT failures
   log("debug", "[PLACEMENT_FAILURE]", {
     habit_id: params.item.id,
     habit_type: params.habitType,
@@ -1382,10 +1380,21 @@ export async function placeItemInWindows(
     }
   }
 
-  // Exact PROJECT-PROJECT overlap check using final timestamps
-  if (item.sourceType === "PROJECT") {
+  // Exact PROJECT-vs-blocking-instance overlap check using final timestamps
+  const itemIsProject =
+    item.sourceType === "PROJECT" || item.isProject === true;
+  if (itemIsProject) {
     const hasOverlap = existingInstances?.some((inst) => {
-      if (inst.source_type !== "PROJECT") return false;
+      if (!inst) return false;
+      if (inst.id === reuseInstanceId) return false;
+      if (ignoreProjectIds && inst.source_type === "PROJECT") {
+        const projectId = inst.source_id ?? "";
+        if (projectId && ignoreProjectIds.has(projectId)) {
+          return false;
+        }
+      }
+      if (inst.status !== "scheduled") return false;
+      if (!hasValidInstanceBounds(inst)) return false;
       const instStart = safeDate(inst.start_utc);
       const instEnd = safeDate(inst.end_utc);
       if (!instStart || !instEnd) return false;
@@ -1419,7 +1428,7 @@ export async function placeItemInWindows(
     if (dttbId !== null && dttbId !== undefined) {
       // Day-type window
       return {
-        legacyWindowId: null,
+        legacyWindowId: timeBlockId,
         dayTypeTimeBlockId: dttbId,
         timeBlockId: timeBlockId,
       };
@@ -1517,6 +1526,10 @@ async function persistPlacement(
     eventName,
     metadata,
   } = params;
+  const resolvedEnergy =
+    typeof item.energy === "string" && item.energy.trim().length > 0
+      ? item.energy
+      : "NO";
   const computedDurationMin = computeDurationMin(
     new Date(startUTC),
     new Date(endUTC)
@@ -1535,7 +1548,7 @@ async function persistPlacement(
         endUTC,
         durationMin: computedDurationMin,
         weightSnapshot: item.weight,
-        energyResolved: item.energy,
+        energyResolved: resolvedEnergy,
         eventName,
         practiceContextId: item.practiceContextId,
         metadata,
@@ -1556,7 +1569,7 @@ async function persistPlacement(
         endUTC,
         durationMin: computedDurationMin,
         weightSnapshot: item.weight,
-        energyResolved: item.energy,
+        energyResolved: resolvedEnergy,
         eventName,
         practiceContextId: item.practiceContextId,
         metadata,
