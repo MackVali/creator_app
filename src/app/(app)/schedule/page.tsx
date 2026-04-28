@@ -180,7 +180,7 @@ const HABIT_COMPLETION_STORAGE_PREFIX = "schedule-habit-completions";
 const DAY_PEEK_SAFE_GAP_PX = 24;
 const MIN_PX_PER_MIN = 0.9;
 const MAX_PX_PER_MIN = 3.2;
-const INITIAL_PX_PER_MIN = (MIN_PX_PER_MIN + MAX_PX_PER_MIN) / 2;
+const INITIAL_PX_PER_MIN = 2.6;
 const PX_PER_MIN_STOPS = [
   0.9, 1.1, 1.25, 1.4, 1.6, 1.8, 2, 2.2, 2.4, 2.6, 2.8, 3, 3.2,
 ] as const;
@@ -2402,6 +2402,7 @@ function parseSchedulerDebugPayload(
 ): Omit<SchedulerDebugState, "runAt"> | null {
   if (!payload || typeof payload !== "object") return null;
   const schedule = (payload as { schedule?: unknown }).schedule;
+  const debugSummary = (payload as { debugSummary?: unknown }).debugSummary;
   if (!schedule || typeof schedule !== "object") return null;
   const scheduleValue = schedule as {
     placed?: unknown;
@@ -2439,6 +2440,7 @@ function parseSchedulerDebugPayload(
     placedProjectIds,
     timeline: parseSchedulerTimeline(scheduleValue.timeline),
     error: scheduleValue.error ?? null,
+    debugSummary,
   };
 }
 
@@ -5562,6 +5564,7 @@ export default function SchedulePage() {
               .map((f) => f.itemId)
               .slice(0, 10),
             placedProjectIds: parsed.placedProjectIds?.slice(0, 10),
+            debugSummary: parsed.debugSummary,
           });
 
           setSchedulerDebug({

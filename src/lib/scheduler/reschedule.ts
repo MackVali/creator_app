@@ -4569,6 +4569,7 @@ export async function scheduleBacklog(
         timeZone,
         {
           availability: projectWindowAvailability,
+          cloneAvailabilityBeforeMutating: true,
           forceDayScopedAvailabilityKey: true,
           now: dayOffset === 0 ? baseDate : undefined, // Only apply "now" constraint on first day
           cache: projectDayWindowsCache,
@@ -4580,12 +4581,13 @@ export async function scheduleBacklog(
           trackFilterCounters: debugEnabled,
           // Don't use horizonEnd here - we're searching day by day
         }
-      );
-      const compatibleWindows = compatibleDayResult.windows;
-      placementDebugCollector?.recordDayScan(item.id, {
-        dayOffset,
-        blocksConsidered: preloadedDayWindowCount,
-        candidatesGenerated: compatibleWindows.length,
+        );
+        const compatibleWindows = compatibleDayResult.windows;
+        const compatibleFilterCounters = compatibleDayResult.filterCounters;
+        placementDebugCollector?.recordDayScan(item.id, {
+          dayOffset,
+          blocksConsidered: preloadedDayWindowCount,
+          candidatesGenerated: compatibleWindows.length,
         filterCounters: compatibleFilterCounters,
       });
       const windowGateTraceByBlockId = new Map<string, BlockGateSample>();
@@ -5120,12 +5122,17 @@ export async function scheduleBacklog(
     }
     const dayWindows = getWindowsForDay(day);
 
-    if (shouldScheduleHabits) {
+    if (shouldScheduleHabits && !isRescheduleRebuild) {
       await ensureHabitPlacementsForDay(
         offset,
         day,
         windowAvailability,
         reservedPlacements
+      );
+    } else if (shouldScheduleHabits) {
+      logSchedulerDebug(
+        "[SCHEDULER] Skipping post-project habit ensure during reschedule rebuild",
+        { offset, day: formatDateKeyInTimeZone(day, timeZone) }
       );
     } else {
       const hasHabitInstances = dayInstances.some(
@@ -9117,6 +9124,7 @@ export async function fetchCompatibleWindowsForItem(
   options?: {
     now?: Date;
     availability?: Map<string, WindowAvailabilityBounds>;
+    cloneAvailabilityBeforeMutating?: boolean;
     forceDayScopedAvailabilityKey?: boolean;
     cache?: Map<string, WindowLite[]>;
     locationContextId?: string | null;
@@ -9348,7 +9356,9 @@ export async function fetchCompatibleWindowsForItem(
   const durationMs = Math.max(0, item.duration_min) * 60000;
   const availability = options?.ignoreAvailability
     ? undefined
-    : options?.availability;
+    : options?.cloneAvailabilityBeforeMutating && options.availability
+      ? cloneAvailabilityMap(options.availability)
+      : options?.availability;
 
   const desiredLocationId =
     typeof options?.locationContextId === "string" &&

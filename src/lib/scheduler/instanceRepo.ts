@@ -150,7 +150,7 @@ export async function createInstance(
   }
   const supabase = await ensureClient(client);
   const isDayTypeScheduling = Boolean(input.dayTypeTimeBlockId);
-  const windowIdValue = isDayTypeScheduling ? null : input.windowId ?? null;
+  const windowIdValue = input.windowId ?? null;
   const dayTypeTimeBlockIdValue = isDayTypeScheduling
     ? input.dayTypeTimeBlockId ?? null
     : null;
@@ -227,7 +227,7 @@ export async function rescheduleInstance(
 ) {
   const supabase = await ensureClient(client);
   const isDayTypeScheduling = Boolean(input.dayTypeTimeBlockId);
-  const windowIdValue = isDayTypeScheduling ? null : input.windowId ?? null;
+  const windowIdValue = input.windowId ?? null;
   const dayTypeTimeBlockIdValue = isDayTypeScheduling
     ? input.dayTypeTimeBlockId ?? null
     : null;

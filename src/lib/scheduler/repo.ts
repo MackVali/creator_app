@@ -778,6 +778,11 @@ export async function getWindowsForDate_v2(
     monumentAllowMap.set(key, existing);
   }
 
+  const normalizeAllowAllFlag = (
+    flag: boolean | null | undefined,
+    whitelistSize: number
+  ): boolean => flag === true || (flag == null && whitelistSize === 0);
+
   const baseWindows = (
     (linkRows ?? []) as (DayTypeTimeBlockRow & {
       time_blocks?: TimeBlockRow | null;
@@ -801,10 +806,25 @@ export async function getWindowsForDate_v2(
       const locationLabel =
         row.location_context?.label ?? (locationValue ? locationValue : null);
 
-      const allowAllHabitTypes = row.allow_all_habit_types === true;
-      const allowAllSkills = row.allow_all_skills === true;
-      const allowAllMonuments = row.allow_all_monuments === true;
       const dttbId = (row as { id?: string | null }).id ?? null;
+      const habitWhitelist = dttbId ? habitAllowMap.get(dttbId) : undefined;
+      const skillWhitelist = dttbId ? skillAllowMap.get(dttbId) : undefined;
+      const monumentWhitelist = dttbId
+        ? monumentAllowMap.get(dttbId)
+        : undefined;
+
+      const allowAllHabitTypes = normalizeAllowAllFlag(
+        row.allow_all_habit_types,
+        habitWhitelist?.size ?? 0
+      );
+      const allowAllSkills = normalizeAllowAllFlag(
+        row.allow_all_skills,
+        skillWhitelist?.size ?? 0
+      );
+      const allowAllMonuments = normalizeAllowAllFlag(
+        row.allow_all_monuments,
+        monumentWhitelist?.size ?? 0
+      );
 
       return {
         dayTypeId: row.day_type_id ?? null,

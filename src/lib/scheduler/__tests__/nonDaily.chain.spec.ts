@@ -22,6 +22,10 @@ const createHabit = (
   energy: "NO",
   recurrence: "weekly",
   recurrenceDays: null,
+  recurrenceMode: "INTERVAL",
+  anchorType: null,
+  anchorValue: null,
+  anchorStartDate: null,
   skillId: null,
   skillMonumentId: null,
   goalId: null,
@@ -121,7 +125,40 @@ it("skips already scheduled day but continues chaining", () => {
     });
 
     const days = planned.map(toISODate);
-    expect(days).toEqual(["2024-01-10"]);
-    expect(new Set(days).size).toBe(days.length);
+  expect(days).toEqual(["2024-01-10"]);
+  expect(new Set(days).size).toBe(days.length);
+});
+
+it("evaluates daily interval habits on every day in the horizon", () => {
+  const habit = createHabit({
+    id: "habit-daily-interval",
+    recurrence: "daily",
+    recurrenceMode: "INTERVAL",
   });
+  const horizonStart = startOfDayInTimeZone(
+    new Date("2026-04-25T12:00:00Z"),
+    tz
+  );
+  const firstDue = startOfDayInTimeZone(
+    new Date("2026-04-27T12:00:00Z"),
+    tz
+  );
+  const horizonEnd = addDaysInTimeZone(horizonStart, 3, tz);
+
+  const planned = planNonDailyOccurrences({
+    habit,
+    userTz: tz,
+    horizonStartLocalDay: horizonStart,
+    horizonEndLocalDay: horizonEnd,
+    firstDueLocalDay: firstDue,
+    existingScheduledLocalDays: [],
+  });
+
+  expect(planned.map(toISODate)).toEqual([
+    "2026-04-25",
+    "2026-04-26",
+    "2026-04-27",
+    "2026-04-28",
+  ]);
+});
 });

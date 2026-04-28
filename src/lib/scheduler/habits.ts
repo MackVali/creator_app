@@ -229,7 +229,7 @@ export async function fetchHabitsForSchedule(
       : 0,
     habitType: normalizeHabitType(record.habit_type),
     windowId: record.window_id ?? null,
-    energy: record.energy ?? record.window?.energy ?? null,
+    energy: record.energy ?? null,
     recurrence: record.recurrence ?? null,
     recurrenceDays: record.recurrence_days ?? null,
     recurrenceMode: record.recurrence_mode ?? null,
