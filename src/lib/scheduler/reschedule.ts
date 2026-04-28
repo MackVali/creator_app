@@ -4198,7 +4198,6 @@ export async function scheduleBacklog(
   baseBlockers = [...keptLockedInstances];
 
   const dedupedProjectQueue = queue;
-  placementDebugCollector?.setQueuedCount(dedupedProjectQueue.length);
 
   for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
     const allowSchedulingToday = offset < effectiveDayLimit;
@@ -4337,15 +4336,20 @@ export async function scheduleBacklog(
     return true;
   });
   const projectPassLockedProjectCount = projectPassBaseBlockers.length;
-  const projectBlockingInstances: ScheduleInstance[] = [];
-  const projectBlockingInstanceIds = new Set<string>();
+  const projectPassState = {
+    queue: dedupedProjectQueue,
+    dayWindowsCache: projectDayWindowsCache,
+    blockingInstances: [] as ScheduleInstance[],
+    blockingInstanceIds: new Set<string>(),
+  };
+  placementDebugCollector?.setQueuedCount(projectPassState.queue.length);
   const addProjectBlocker = (inst: ScheduleInstance | null | undefined) => {
     if (!inst) return;
     const id = inst.id ?? null;
-    if (id && projectBlockingInstanceIds.has(id)) return;
-    projectBlockingInstances.push(inst);
+    if (id && projectPassState.blockingInstanceIds.has(id)) return;
+    projectPassState.blockingInstances.push(inst);
     if (id) {
-      projectBlockingInstanceIds.add(id);
+      projectPassState.blockingInstanceIds.add(id);
     }
   };
   for (const inst of baseBlockers) {
@@ -4361,7 +4365,7 @@ export async function scheduleBacklog(
   const projectAttemptCounts = new Map<string, number>();
   const projectAttemptLimit = 1;
 
-  for (const item of dedupedProjectQueue) {
+  for (const item of projectPassState.queue) {
     placementDebugCollector?.recordProjectQueued(item.id);
     if (!schedulerDebugSummary.probe.firstEligibleProjectId) {
       schedulerDebugSummary.probe.firstEligibleProjectId = item.id;
@@ -4445,7 +4449,7 @@ export async function scheduleBacklog(
     }
 
     // Instrumentation: Log projectBlockingInstances summary before placement
-    const blockingCounts = projectBlockingInstances.reduce(
+    const blockingCounts = projectPassState.blockingInstances.reduce(
       (acc, inst) => {
         acc.total += 1;
         acc.bySourceType[inst.source_type ?? "UNKNOWN"] =
@@ -4455,7 +4459,7 @@ export async function scheduleBacklog(
       { total: 0, bySourceType: {} as Record<string, number> }
     );
 
-    const habitInstances = projectBlockingInstances.filter(
+    const habitInstances = projectPassState.blockingInstances.filter(
       (inst) => inst.source_type === "HABIT"
     );
     const habitEntries = habitInstances.slice(0, 10).map((inst) => ({
@@ -4488,7 +4492,7 @@ export async function scheduleBacklog(
       });
     }
 
-    const projectBlockerDiagnostics = projectBlockingInstances.reduce(
+    const projectBlockerDiagnostics = projectPassState.blockingInstances.reduce(
       (acc, inst) => {
         const payload = inst as any;
         const dayTypeId =
@@ -4523,7 +4527,7 @@ export async function scheduleBacklog(
     );
     schedulerDebugSummary.projects.blockerStats = {
       ...projectBlockerDiagnostics,
-      blockers_total: projectBlockingInstances.length,
+      blockers_total: projectPassState.blockingInstances.length,
       blockers_legacy_window: projectPassLegacyWindowCount,
       blockers_kept_locked_projects: projectPassLockedProjectCount,
     };
@@ -4543,7 +4547,7 @@ export async function scheduleBacklog(
           : addDaysInTimeZone(baseStart, dayOffset, timeZone);
       const dayCacheKey = dateCacheKey(currentDay);
       if (debugEnabled) {
-        if (projectDayWindowsCache.has(dayCacheKey)) {
+        if (projectPassState.dayWindowsCache.has(dayCacheKey)) {
           schedulerDebugSummary.probe.dayWindowsCacheHits += 1;
         } else {
           schedulerDebugSummary.probe.dayWindowsCacheMisses += 1;
@@ -4572,7 +4576,7 @@ export async function scheduleBacklog(
           cloneAvailabilityBeforeMutating: true,
           forceDayScopedAvailabilityKey: true,
           now: dayOffset === 0 ? baseDate : undefined, // Only apply "now" constraint on first day
-          cache: projectDayWindowsCache,
+          cache: projectPassState.dayWindowsCache,
           restMode: isRestMode,
           userId,
           parity: parityOptions,
@@ -4722,7 +4726,7 @@ export async function scheduleBacklog(
         client: supabase,
         ignoreProjectIds: new Set([item.id]),
         notBefore: dayOffset === 0 ? baseDate : undefined, // Only apply notBefore on first day
-        existingInstances: projectBlockingInstances,
+        existingInstances: projectPassState.blockingInstances,
         habitTypeById,
         maxGapCache: dayMaxGapCache,
         blockerCache,
