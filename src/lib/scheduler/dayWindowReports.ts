@@ -208,6 +208,7 @@ export type SchedulerDebugState = {
   placedProjectIds: string[];
   timeline: SchedulerTimelineEntry[];
   error: unknown;
+  debugSummary?: unknown;
 };
 
 const DEFAULT_ENERGY_ID_LOOKUP: Record<string, (typeof ENERGY.LIST)[number]> =

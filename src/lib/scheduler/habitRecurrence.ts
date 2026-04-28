@@ -385,9 +385,7 @@ function evaluateAnchoredHabitDueOnDate(
     const resolvedRecurrenceDays = normalizeDayList(
       habit.recurrenceDays ?? null
     );
-    const resolvedWindowDays = normalizeDayList(
-      windowDays ?? habit.window?.days ?? null
-    );
+    const resolvedWindowDays = normalizeDayList(windowDays ?? null);
     const activeDayList =
       resolvedRecurrenceDays && resolvedRecurrenceDays.length > 0
         ? resolvedRecurrenceDays
@@ -491,9 +489,7 @@ export function evaluateHabitDueOnDate(
       const resolvedRecurrenceDays = normalizeDayList(
         habit.recurrenceDays ?? null
       );
-      const resolvedWindowDays = normalizeDayList(
-        windowDays ?? habit.window?.days ?? null
-      );
+      const resolvedWindowDays = normalizeDayList(windowDays ?? null);
       const activeDayList =
         resolvedRecurrenceDays && resolvedRecurrenceDays.length > 0
           ? resolvedRecurrenceDays
@@ -596,7 +592,9 @@ export function getHabitNextDue(params: {
 
   if (isDailyRecurrence(recurrence)) {
     const recurrenceDayList = normalizeDayList(habit.recurrenceDays ?? null);
-    const windowDayList = normalizeDayList(habit.window?.days ?? null);
+    const windowDayList = normalizeDayList(
+      habit.windowId ? null : habit.window?.days ?? null
+    );
     const activeDayList =
       recurrenceDayList && recurrenceDayList.length > 0
         ? recurrenceDayList

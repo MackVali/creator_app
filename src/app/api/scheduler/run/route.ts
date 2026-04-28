@@ -150,6 +150,15 @@ export async function POST(request: NextRequest) {
       debug: includeDebugSummary,
       parity: enableParity,
     });
+    if (includeDebugSummary) {
+      console.log("[SCHEDULER_HABIT_AUDIT_RESPONSE]", {
+        dueEvaluation: scheduleResult.debugSummary?.habitAudit?.dueEvaluation,
+        scheduling: scheduleResult.debugSummary?.habitAudit?.scheduling,
+        windowCompatibility:
+          scheduleResult.debugSummary?.habitAudit?.windowCompatibility,
+        samples: scheduleResult.debugSummary?.habitAudit?.samples,
+      });
+    }
   } catch (err) {
     const fatalPayload = buildSchedulerFatalPayload(err);
     console.error("SCHEDULER_FATAL", fatalPayload);
