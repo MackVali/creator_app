@@ -2975,16 +2975,18 @@ export async function scheduleBacklog(
     registerInstanceForOffsets(inst);
   }
   let baseBlockers: ScheduleInstance[] = [...keptLockedInstances];
-  const habitBlockingInstances: ScheduleInstance[] = [];
-  const habitBlockingInstanceIds = new Set<string>();
+  const habitPassState = {
+    blockingInstances: [] as ScheduleInstance[],
+    blockingInstanceIds: new Set<string>(),
+  };
   const addHabitBlocker = (inst: ScheduleInstance | null | undefined) => {
     if (!inst) return;
     if (!isBlockingInstance(inst)) return;
     const id = inst.id ?? null;
-    if (id && habitBlockingInstanceIds.has(id)) return;
-    habitBlockingInstances.push(inst);
+    if (id && habitPassState.blockingInstanceIds.has(id)) return;
+    habitPassState.blockingInstances.push(inst);
     if (id) {
-      habitBlockingInstanceIds.add(id);
+      habitPassState.blockingInstanceIds.add(id);
     }
   };
   for (const inst of keptLockedInstances) {
@@ -4101,8 +4103,8 @@ export async function scheduleBacklog(
   result.syncPairings = await scheduleSyncHabitsAcrossHorizon();
 
   logSchedulerDebug("[SCHEDULER_ORDER] HABIT_PASS_END", {
-    habitCount: habitBlockingInstances.length,
-    samples: habitBlockingInstances.slice(0, 5).map((inst) => ({
+    habitCount: habitPassState.blockingInstances.length,
+    samples: habitPassState.blockingInstances.slice(0, 5).map((inst) => ({
       id: inst.id,
       source_id: inst.source_id,
       start_utc: inst.start_utc,
@@ -4314,8 +4316,8 @@ export async function scheduleBacklog(
   logSchedulerDebug("[SCHEDULER_BLOCKERS] PROJECT_PASS_START", {
     lockedProjectCount: baseBlockers.filter((b) => b.source_type === "PROJECT")
       .length,
-    habitBlockingCount: habitBlockingInstances.length,
-    syncHabitCount: habitBlockingInstances.filter(
+    habitBlockingCount: habitPassState.blockingInstances.length,
+    syncHabitCount: habitPassState.blockingInstances.filter(
       (h) => habitTypeById.get(h.source_id ?? "") === "SYNC"
     ).length,
   });
@@ -4356,7 +4358,7 @@ export async function scheduleBacklog(
     if (!isScheduledTimedProjectBlocker(inst)) continue;
     addProjectBlocker(inst);
   }
-  for (const inst of habitBlockingInstances) {
+  for (const inst of habitPassState.blockingInstances) {
     if (!isScheduledTimedHabitBlocker(inst)) continue;
     addProjectBlocker(inst);
   }
@@ -6425,7 +6427,7 @@ async function reserveMandatoryHabitsForDay(params: {
           enforceNightSpan: daylightConstraint?.preference === "NIGHT",
           nightSunlight: nightSunlightBundle,
           requireLocationContextMatch:
-            attempt.enforceLocation || !hasExplicitLocationContext,
+            hasExplicitLocationContext && attempt.enforceLocation,
           hasExplicitLocationContext,
           preloadedWindows:
             attempt.daylight?.preference === "NIGHT"
@@ -6757,7 +6759,7 @@ async function reserveMandatoryHabitsForDay(params: {
             setAvailabilityBoundsForKey(
               availability,
               target.key,
-              startDate.getTime(),
+              startLimit,
               startDate.getTime()
             );
           }
@@ -6772,7 +6774,7 @@ async function reserveMandatoryHabitsForDay(params: {
               availability,
               target.key,
               endDate.getTime(),
-              endDate.getTime()
+              endLimit
             );
           }
         }
@@ -8120,7 +8122,7 @@ async function scheduleHabitsForDay(params: {
             enforceNightSpan: daylightConstraint?.preference === "NIGHT",
             nightSunlight: nightSunlightBundle,
             requireLocationContextMatch:
-              attempt.enforceLocation || !hasExplicitLocationContext,
+              hasExplicitLocationContext && attempt.enforceLocation,
             hasExplicitLocationContext,
             preloadedWindows:
               attempt.daylight?.preference === "NIGHT"
@@ -8310,13 +8312,9 @@ async function scheduleHabitsForDay(params: {
           }
         }
 
-        if (candidateStart >= endLimit) {
-          continue;
-        }
+        if (candidateStart >= endLimit) continue;
 
-        if (candidateStart > latestStartAllowed) {
-          continue;
-        }
+        if (candidateStart > latestStartAllowed) continue;
 
         let candidateEnd = candidateStart + scheduledDurationMs;
         let candidateClipped = false;
@@ -8334,9 +8332,7 @@ async function scheduleHabitsForDay(params: {
           candidateEnd = crossMidnightClamp.endMs;
           candidateClipped = true;
         }
-        if (candidateEnd <= candidateStart) {
-          continue;
-        }
+        if (candidateEnd <= candidateStart) continue;
 
         if (
           isSyncHabit &&
@@ -8382,9 +8378,7 @@ async function scheduleHabitsForDay(params: {
           candidateEnd = postSyncClamp.endMs;
           candidateClipped = true;
         }
-        if (candidateEnd <= candidateStart) {
-          continue;
-        }
+        if (candidateEnd <= candidateStart) continue;
 
         startCandidate = candidateStart;
         endCandidate = candidateEnd;
@@ -8437,9 +8431,7 @@ async function scheduleHabitsForDay(params: {
           }
         }
       }
-      if (overlapInspection.result) {
-        continue;
-      }
+      if (overlapInspection.result) continue;
 
       if (normalizedType === "PRACTICE") {
         const habitSkillContextId = habit.skillMonumentId ?? null;
@@ -8858,9 +8850,7 @@ async function scheduleHabitsForDay(params: {
     if (persistFailed) {
       continue;
     }
-    if (!placedInWindow) {
-      continue;
-    }
+    if (!placedInWindow) continue;
 
     if (isRepeatablePractice) {
       habitQueue.push(habit);
@@ -9381,9 +9371,7 @@ export async function fetchCompatibleWindowsForItem(
     options?.allowedWindowKinds && options.allowedWindowKinds.length > 0
       ? new Set(options.allowedWindowKinds)
       : null;
-  const shouldEnforceLocation =
-    options?.requireLocationContextMatch === true ||
-    options?.hasExplicitLocationContext === true;
+  const shouldEnforceLocation = options?.requireLocationContextMatch === true;
   const auditZeroStageCallback = options?.auditZeroStageCallback;
   const stageOrder = [
     "allowedWindowKinds",
@@ -9527,7 +9515,9 @@ export async function fetchCompatibleWindowsForItem(
     const windowHasLocation = Boolean(windowLocationId || windowLocationValue);
     const attemptHasLocation = Boolean(desiredLocationId || desiredLocationValue);
     const applyLocationGate =
-      shouldEnforceLocation || windowLocationId !== null;
+      shouldEnforceLocation ||
+      options?.hasExplicitLocationContext === true ||
+      attemptHasLocation;
 
     if (applyLocationGate) {
       if (stagePassCounts) stagePassCounts["location match"] += 1;
