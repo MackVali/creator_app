@@ -13,6 +13,63 @@ export interface Roadmap {
   goals: RoadmapGoal[];
 }
 
+export type RoadmapItemType = "CAMPAIGN" | "GOAL";
+
+export type CampaignSchedulingState =
+  | "ACTIVE"
+  | "PAUSED"
+  | "BACKLOG"
+  | "SOMEDAY"
+  | "ARCHIVED"
+  | "MANUAL_ONLY";
+
+export interface RoadmapCampaignGoal {
+  id: string;
+  name: string;
+  position: number;
+}
+
+export interface RoadmapCampaign {
+  id: string;
+  name: string;
+  description: string | null;
+  emoji: string | null;
+  scheduling_state: CampaignSchedulingState;
+  position: number | null;
+  primary_monument_id: string | null;
+  goals: RoadmapCampaignGoal[];
+}
+
+export interface RoadmapMixedItem {
+  id: string;
+  roadmap_id: string;
+  item_type: RoadmapItemType;
+  position: number;
+  campaign: RoadmapCampaign | null;
+  goal: RoadmapGoal | null;
+}
+
+export interface RoadmapWithItems extends Roadmap {
+  monument_id: string | null;
+  items: RoadmapMixedItem[];
+}
+
+export interface RoadmapItemRecord {
+  id: string;
+  user_id: string;
+  roadmap_id: string;
+  item_type: RoadmapItemType;
+  position: number;
+  campaign_id: string | null;
+  goal_id: string | null;
+}
+
+export interface CampaignGoalRecord {
+  campaign_id: string;
+  goal_id: string;
+  position: number;
+}
+
 export async function listRoadmaps(
   userId: string
 ): Promise<Roadmap[]> {
@@ -44,6 +101,264 @@ export async function listRoadmaps(
     emoji: row.emoji ?? null,
     goals: (row.goals ?? []) as RoadmapGoal[],
   }));
+}
+
+export async function listRoadmapsWithItems(
+  userId: string
+): Promise<RoadmapWithItems[]> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { data: roadmapRows, error: roadmapsError } = await supabase
+    .from("roadmaps")
+    .select("id, title, emoji, created_at, monument_id")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (roadmapsError) {
+    console.error("Error fetching roadmaps with items:", roadmapsError);
+    throw roadmapsError;
+  }
+
+  const roadmaps = (roadmapRows ?? []).map(row => ({
+    id: row.id,
+    title: row.title,
+    emoji: row.emoji ?? null,
+    monument_id: row.monument_id ?? null,
+  }));
+
+  if (roadmaps.length === 0) {
+    return [];
+  }
+
+  const roadmapIds = roadmaps.map(roadmap => roadmap.id);
+
+  const { data: legacyGoalRows, error: legacyGoalsError } = await supabase
+    .from("goals")
+    .select("id, name, roadmap_id, priority_rank")
+    .in("roadmap_id", roadmapIds)
+    .order("priority_rank", { ascending: true, nullsFirst: false });
+
+  if (legacyGoalsError) {
+    console.error("Error fetching legacy roadmap goals:", legacyGoalsError);
+    throw legacyGoalsError;
+  }
+
+  const { data: roadmapItemRows, error: roadmapItemsError } = await supabase
+    .from("roadmap_items")
+    .select("id, user_id, roadmap_id, item_type, position, campaign_id, goal_id")
+    .in("roadmap_id", roadmapIds)
+    .order("position", { ascending: true });
+
+  if (roadmapItemsError) {
+    console.error("Error fetching roadmap items:", roadmapItemsError);
+    throw roadmapItemsError;
+  }
+
+  const roadmapItems = roadmapItemRows ?? [];
+  const legacyGoals = [...(legacyGoalRows ?? [])].sort((a, b) => {
+    const aRank = a.priority_rank ?? Number.POSITIVE_INFINITY;
+    const bRank = b.priority_rank ?? Number.POSITIVE_INFINITY;
+    if (aRank !== bRank) {
+      return aRank - bRank;
+    }
+
+    return a.name.localeCompare(b.name);
+  });
+  const roadmapGoalIds = Array.from(
+    new Set(
+      roadmapItems
+        .map(item => item.goal_id)
+        .filter((goalId): goalId is string => Boolean(goalId))
+    )
+  );
+  const campaignIds = Array.from(
+    new Set(
+      roadmapItems
+        .map(item => item.campaign_id)
+        .filter((campaignId): campaignId is string => Boolean(campaignId))
+    )
+  );
+
+  const { data: roadmapGoalRows, error: roadmapGoalsError } =
+    roadmapGoalIds.length > 0
+      ? await supabase
+          .from("goals")
+          .select("id, name, roadmap_id")
+          .in("id", roadmapGoalIds)
+      : { data: [], error: null };
+
+  if (roadmapGoalsError) {
+    console.error("Error fetching roadmap item goals:", roadmapGoalsError);
+    throw roadmapGoalsError;
+  }
+
+  const { data: campaignRows, error: campaignsError } =
+    campaignIds.length > 0
+      ? await supabase
+          .from("campaigns")
+          .select(
+            "id, name, description, emoji, scheduling_state, position, primary_monument_id"
+          )
+          .in("id", campaignIds)
+      : { data: [], error: null };
+
+  if (campaignsError) {
+    console.error("Error fetching roadmap item campaigns:", campaignsError);
+    throw campaignsError;
+  }
+
+  const { data: campaignGoalRows, error: campaignGoalsError } =
+    campaignIds.length > 0
+      ? await supabase
+          .from("campaign_goals")
+          .select("campaign_id, goal_id, position")
+          .in("campaign_id", campaignIds)
+          .order("position", { ascending: true })
+      : { data: [], error: null };
+
+  if (campaignGoalsError) {
+    console.error("Error fetching campaign goals:", campaignGoalsError);
+    throw campaignGoalsError;
+  }
+
+  const campaignGoalIds = Array.from(
+    new Set(
+      (campaignGoalRows ?? [])
+        .map(campaignGoal => campaignGoal.goal_id)
+        .filter((goalId): goalId is string => Boolean(goalId))
+    )
+  );
+
+  const { data: campaignGoalGoalRows, error: campaignGoalGoalError } =
+    campaignGoalIds.length > 0
+      ? await supabase
+          .from("goals")
+          .select("id, name, roadmap_id")
+          .in("id", campaignGoalIds)
+      : { data: [], error: null };
+
+  if (campaignGoalGoalError) {
+    console.error("Error fetching campaign goal records:", campaignGoalGoalError);
+    throw campaignGoalGoalError;
+  }
+
+  const roadmapGoalsById = new Map<string, RoadmapGoal>(
+    (roadmapGoalRows ?? []).map(goal => [
+      goal.id,
+      {
+        id: goal.id,
+        name: goal.name,
+        roadmap_id: goal.roadmap_id ?? null,
+      },
+    ])
+  );
+
+  const campaignGoalsByGoalId = new Map<string, RoadmapGoal>(
+    (campaignGoalGoalRows ?? []).map(goal => [
+      goal.id,
+      {
+        id: goal.id,
+        name: goal.name,
+        roadmap_id: goal.roadmap_id ?? null,
+      },
+    ])
+  );
+
+  const campaignGoalsByCampaignId = new Map<string, RoadmapCampaignGoal[]>();
+  for (const campaignGoal of campaignGoalRows ?? []) {
+    const goal = campaignGoalsByGoalId.get(campaignGoal.goal_id);
+    if (!goal) {
+      continue;
+    }
+
+    const goals = campaignGoalsByCampaignId.get(campaignGoal.campaign_id) ?? [];
+    goals.push({
+      id: goal.id,
+      name: goal.name,
+      position: campaignGoal.position,
+    });
+    campaignGoalsByCampaignId.set(campaignGoal.campaign_id, goals);
+  }
+
+  const legacyGoalsByRoadmapId = new Map<
+    string,
+    Array<{ goal: RoadmapGoal; priority_rank: number | null }>
+  >();
+  for (const goal of legacyGoals) {
+    const roadmapGoals = legacyGoalsByRoadmapId.get(goal.roadmap_id) ?? [];
+    roadmapGoals.push({
+      goal: {
+        id: goal.id,
+        name: goal.name,
+        roadmap_id: goal.roadmap_id ?? null,
+      },
+      priority_rank: goal.priority_rank ?? null,
+    });
+    legacyGoalsByRoadmapId.set(goal.roadmap_id, roadmapGoals);
+  }
+
+  const campaignsById = new Map<string, RoadmapCampaign>(
+    (campaignRows ?? []).map(campaign => [
+      campaign.id,
+      {
+        id: campaign.id,
+        name: campaign.name,
+        description: campaign.description ?? null,
+        emoji: campaign.emoji ?? null,
+        scheduling_state: campaign.scheduling_state as CampaignSchedulingState,
+        position: campaign.position,
+        primary_monument_id: campaign.primary_monument_id ?? null,
+        goals: campaignGoalsByCampaignId.get(campaign.id) ?? [],
+      },
+    ])
+  );
+
+  const roadmapItemsByRoadmapId = new Map<string, RoadmapMixedItem[]>();
+  for (const item of roadmapItems) {
+    const items = roadmapItemsByRoadmapId.get(item.roadmap_id) ?? [];
+    items.push({
+      id: item.id,
+      roadmap_id: item.roadmap_id,
+      item_type: item.item_type as RoadmapItemType,
+      position: item.position,
+      campaign: item.campaign_id ? campaignsById.get(item.campaign_id) ?? null : null,
+      goal: item.goal_id ? roadmapGoalsById.get(item.goal_id) ?? null : null,
+    });
+    roadmapItemsByRoadmapId.set(item.roadmap_id, items);
+  }
+
+  return roadmaps.map(roadmap => {
+    const existingItems = roadmapItemsByRoadmapId.get(roadmap.id) ?? [];
+    const legacyRoadmapGoals = legacyGoalsByRoadmapId.get(roadmap.id) ?? [];
+    const items =
+      existingItems.length > 0
+        ? existingItems
+        : legacyRoadmapGoals.map(({ goal, priority_rank }, index) => {
+            return {
+              id: `legacy-goal-${goal.id}`,
+              roadmap_id: roadmap.id,
+              item_type: "GOAL" as const,
+              position: priority_rank ?? index + 1,
+              campaign: null,
+              goal,
+            };
+          });
+    const goalItems = items
+      .map(item => item.goal)
+      .filter((goal): goal is RoadmapGoal => Boolean(goal));
+
+    return {
+      id: roadmap.id,
+      title: roadmap.title,
+      emoji: roadmap.emoji,
+      monument_id: roadmap.monument_id,
+      goals: goalItems,
+      items,
+    };
+  });
 }
 
 export async function createRoadmap(
@@ -84,3 +399,261 @@ export async function createRoadmap(
   };
 }
 
+export async function createCampaign(
+  userId: string,
+  input: {
+    roadmapId?: string | null;
+    primaryMonumentId?: string | null;
+    name: string;
+    description?: string | null;
+    emoji?: string | null;
+    schedulingState?: CampaignSchedulingState;
+    position?: number | null;
+  }
+): Promise<RoadmapCampaign> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { data, error } = await supabase
+    .from("campaigns")
+    .insert({
+      user_id: userId,
+      roadmap_id: input.roadmapId ?? null,
+      primary_monument_id: input.primaryMonumentId ?? null,
+      name: input.name.trim(),
+      description: input.description?.trim() || null,
+      emoji: input.emoji?.trim() || null,
+      scheduling_state: input.schedulingState ?? "ACTIVE",
+      position: input.position ?? null,
+    })
+    .select(
+      "id, name, description, emoji, scheduling_state, position, primary_monument_id"
+    )
+    .single();
+
+  if (error) {
+    console.error("Error creating campaign:", error);
+    throw error;
+  }
+
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description ?? null,
+    emoji: data.emoji ?? null,
+    scheduling_state: data.scheduling_state as CampaignSchedulingState,
+    position: data.position ?? null,
+    primary_monument_id: data.primary_monument_id ?? null,
+    goals: [],
+  };
+}
+
+export async function addCampaignToRoadmap(
+  userId: string,
+  input: {
+    roadmapId: string;
+    campaignId: string;
+    position: number;
+  }
+): Promise<RoadmapItemRecord> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { data, error } = await supabase
+    .from("roadmap_items")
+    .insert({
+      user_id: userId,
+      roadmap_id: input.roadmapId,
+      item_type: "CAMPAIGN",
+      position: input.position,
+      campaign_id: input.campaignId,
+      goal_id: null,
+    })
+    .select("id, user_id, roadmap_id, item_type, position, campaign_id, goal_id")
+    .single();
+
+  if (error) {
+    console.error("Error adding campaign to roadmap:", error);
+    throw error;
+  }
+
+  return {
+    id: data.id,
+    user_id: data.user_id,
+    roadmap_id: data.roadmap_id,
+    item_type: data.item_type as RoadmapItemType,
+    position: data.position,
+    campaign_id: data.campaign_id ?? null,
+    goal_id: data.goal_id ?? null,
+  };
+}
+
+export async function addGoalToRoadmapItems(
+  userId: string,
+  input: {
+    roadmapId: string;
+    goalId: string;
+    position: number;
+  }
+): Promise<RoadmapItemRecord> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { data, error } = await supabase
+    .from("roadmap_items")
+    .insert({
+      user_id: userId,
+      roadmap_id: input.roadmapId,
+      item_type: "GOAL",
+      position: input.position,
+      campaign_id: null,
+      goal_id: input.goalId,
+    })
+    .select("id, user_id, roadmap_id, item_type, position, campaign_id, goal_id")
+    .single();
+
+  if (error) {
+    console.error("Error adding goal to roadmap items:", error);
+    throw error;
+  }
+
+  return {
+    id: data.id,
+    user_id: data.user_id,
+    roadmap_id: data.roadmap_id,
+    item_type: data.item_type as RoadmapItemType,
+    position: data.position,
+    campaign_id: data.campaign_id ?? null,
+    goal_id: data.goal_id ?? null,
+  };
+}
+
+export async function addGoalToCampaign(
+  userId: string,
+  input: {
+    campaignId: string;
+    goalId: string;
+    position: number;
+  }
+): Promise<CampaignGoalRecord> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { data, error } = await supabase
+    .from("campaign_goals")
+    .insert({
+      user_id: userId,
+      campaign_id: input.campaignId,
+      goal_id: input.goalId,
+      position: input.position,
+    })
+    .select("campaign_id, goal_id, position")
+    .single();
+
+  if (error) {
+    console.error("Error adding goal to campaign:", error);
+    throw error;
+  }
+
+  return {
+    campaign_id: data.campaign_id,
+    goal_id: data.goal_id,
+    position: data.position,
+  };
+}
+
+export async function saveRoadmapItemOrder(
+  roadmapId: string,
+  itemIds: string[]
+): Promise<void> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { error } = await supabase.rpc("save_roadmap_item_order", {
+    p_roadmap_id: roadmapId,
+    p_item_ids: itemIds,
+  });
+
+  if (error) {
+    console.error("Error saving roadmap item order:", error);
+    throw error;
+  }
+}
+
+export async function saveCampaignGoalOrder(
+  campaignId: string,
+  goalIds: string[]
+): Promise<void> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { error } = await supabase.rpc("save_campaign_goal_order", {
+    p_campaign_id: campaignId,
+    p_goal_ids: goalIds,
+  });
+
+  if (error) {
+    console.error("Error saving campaign goal order:", error);
+    throw error;
+  }
+}
+
+export async function updateCampaignSchedulingState(
+  userId: string,
+  campaignId: string,
+  schedulingState: CampaignSchedulingState
+): Promise<void> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { error } = await supabase
+    .from("campaigns")
+    .update({
+      scheduling_state: schedulingState,
+    })
+    .eq("id", campaignId)
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("Error updating campaign scheduling state:", error);
+    throw error;
+  }
+}
+
+export async function updateRoadmapMonument(
+  userId: string,
+  roadmapId: string,
+  monumentId: string | null
+): Promise<void> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { error } = await supabase
+    .from("roadmaps")
+    .update({
+      monument_id: monumentId,
+    })
+    .eq("id", roadmapId)
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("Error updating roadmap monument:", error);
+    throw error;
+  }
+}

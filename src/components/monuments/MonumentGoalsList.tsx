@@ -5,6 +5,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
+import MixedRoadmapCard from "@/app/(app)/goals/components/MixedRoadmapCard";
 import { RoadmapCard } from "@/app/(app)/goals/components/RoadmapCard";
 
 import {
@@ -24,7 +25,12 @@ import { getSkillsForUser } from "@/lib/queries/skills";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { persistGoalUpdate } from "@/lib/goals/persistGoalUpdate";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
-import { listRoadmaps, type Roadmap } from "@/lib/queries/roadmaps";
+import {
+  listRoadmaps,
+  listRoadmapsWithItems,
+  type Roadmap,
+  type RoadmapWithItems,
+} from "@/lib/queries/roadmaps";
 import { computeGoalWeight } from "@/lib/goals/weight";
 
 type GoalRowWithRelations = GoalRow & {
@@ -364,6 +370,9 @@ export function MonumentGoalsList({
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [roadmaps, setRoadmaps] = useState<Roadmap[]>([]);
+  const [monumentRoadmapsWithItems, setMonumentRoadmapsWithItems] = useState<
+    RoadmapWithItems[]
+  >([]);
   const [roadmapGoals, setRoadmapGoals] = useState<Map<string, Goal[]>>(
     new Map()
   );
@@ -442,9 +451,11 @@ export function MonumentGoalsList({
     const load = async () => {
       const supabase = getSupabaseBrowser();
       if (!supabase || !monumentId) {
+        setMonumentRoadmapsWithItems([]);
         setLoading(false);
         return;
       }
+      setMonumentRoadmapsWithItems([]);
       try {
         const {
           data: { user },
@@ -454,6 +465,17 @@ export function MonumentGoalsList({
           return;
         }
         setUserId(user.id);
+
+        const allRoadmapsWithItems = await listRoadmapsWithItems(user.id).catch(
+          (err) => {
+            console.error("Error fetching true monument roadmaps:", err);
+            return [];
+          }
+        );
+        const trueMonumentRoadmaps = allRoadmapsWithItems.filter(
+          (roadmap) => roadmap.monument_id === monumentId
+        );
+        setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
 
         const [rows, skills, userMonuments] = await Promise.all([
           fetchGoalsWithRelationsForMonument(monumentId, user.id),
@@ -1050,54 +1072,76 @@ export function MonumentGoalsList({
 
     // Render both roadmap cards first and then standalone goals in the same grid
     return (
-      <div className={GOAL_GRID_CLASS}>
-        {filteredRoadmaps.map(({ roadmap, goals: roadmapGoalsList, goalCount }) => {
-          return (
+      <div>
+        {monumentRoadmapsWithItems.length > 0 ? (
+          <div className="mb-5 space-y-3">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold text-white">True Roadmap</h3>
+              <p className="text-xs text-[#A7B0BD]">
+                Campaign order for this Monument. Legacy roadmap cards are still
+                shown below while this system is being upgraded.
+              </p>
+            </div>
+            {monumentRoadmapsWithItems.map((roadmap) => (
+              <MixedRoadmapCard
+                key={roadmap.id}
+                roadmap={roadmap}
+                variant="compact"
+              />
+            ))}
+          </div>
+        ) : null}
+
+        <div className={GOAL_GRID_CLASS}>
+          {filteredRoadmaps.map(({ roadmap, goals: roadmapGoalsList, goalCount }) => {
+            return (
+              <div
+                key={roadmap.id}
+                className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-0"
+              >
+                <RoadmapCard
+                  roadmap={roadmap}
+                  goalCount={goalCount}
+                  goals={roadmapGoalsList}
+                  variant="compact"
+                  onGoalEdit={handleRoadmapGoalEdit}
+                  monumentContext
+                />
+              </div>
+            );
+          })}
+
+          {filteredStandaloneGoals.map((goal) => (
             <div
-              key={roadmap.id}
+              key={goal.id}
               className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-0"
             >
-              <RoadmapCard
-                roadmap={roadmap}
-                goalCount={goalCount}
-                goals={roadmapGoalsList}
+              <GoalCard
+                goal={goal}
+                showWeight={false}
+                showCreatedAt={false}
+                showEmojiPrefix={false}
                 variant="compact"
-                onGoalEdit={handleRoadmapGoalEdit}
                 monumentContext
+                onEdit={() => handleGoalEdit(goal)}
+                onProjectUpdated={(projectId, updates) =>
+                  handleProjectUpdated(goal.id, projectId, updates)
+                }
+                onProjectDeleted={(projectId) =>
+                  handleProjectDeleted(goal.id, projectId)
+                }
+                open={openGoalId === goal.id}
+                onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
               />
             </div>
-          );
-        })}
-
-        {filteredStandaloneGoals.map((goal) => (
-          <div
-            key={goal.id}
-            className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-0"
-          >
-            <GoalCard
-              goal={goal}
-              showWeight={false}
-              showCreatedAt={false}
-              showEmojiPrefix={false}
-              variant="compact"
-              monumentContext
-              onEdit={() => handleGoalEdit(goal)}
-              onProjectUpdated={(projectId, updates) =>
-                handleProjectUpdated(goal.id, projectId, updates)
-              }
-              onProjectDeleted={(projectId) =>
-                handleProjectDeleted(goal.id, projectId)
-              }
-              open={openGoalId === goal.id}
-              onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
-            />
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     );
   }, [
     loading,
     goals,
+    monumentRoadmapsWithItems,
     roadmaps,
     roadmapGoals,
     goalSection,
