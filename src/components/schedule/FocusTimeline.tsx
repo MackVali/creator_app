@@ -10,16 +10,28 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Fab } from "@/components/ui/Fab";
+import { Fab, type FabEditTarget } from "@/components/ui/Fab";
 import { cn } from "@/lib/utils";
 import { DayTimeline } from "./DayTimeline";
 
 interface FocusTimelineProps {
   children?: ReactNode;
   hideFab?: boolean;
+  editTarget?: FabEditTarget | null;
+  onEditClose?: () => void;
 }
 
-export function FocusTimelineFab({ hidden = false }: { hidden?: boolean }) {
+export function FocusTimelineFab({
+  hidden = false,
+  editTarget = null,
+  onEditTargetConsumed,
+  onEditClose,
+}: {
+  hidden?: boolean;
+  editTarget?: FabEditTarget | null;
+  onEditTargetConsumed?: () => void;
+  onEditClose?: () => void;
+}) {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -36,12 +48,20 @@ export function FocusTimelineFab({ hidden = false }: { hidden?: boolean }) {
       className="fixed bottom-6 right-6 z-[2147483647] sm:bottom-8 sm:right-8"
       menuVariant="timeline"
       swipeUpToOpen={false}
+      editTarget={editTarget}
+      onEditTargetConsumed={onEditTargetConsumed}
+      onEditClose={onEditClose}
     />,
     document.body
   );
 }
 
-export function FocusTimeline({ children, hideFab = false }: FocusTimelineProps) {
+export function FocusTimeline({
+  children,
+  hideFab = false,
+  editTarget = null,
+  onEditClose,
+}: FocusTimelineProps) {
   const now = new Date();
   const startHour = now.getHours() + now.getMinutes() / 60;
   const endHour = startHour + 3;
@@ -63,7 +83,11 @@ export function FocusTimeline({ children, hideFab = false }: FocusTimelineProps)
       <DayTimeline startHour={startHour} endHour={endHour} date={now}>
         {enhancedChildren}
       </DayTimeline>
-      <FocusTimelineFab hidden={hideFab} />
+      <FocusTimelineFab
+        hidden={hideFab}
+        editTarget={editTarget}
+        onEditClose={onEditClose}
+      />
     </div>
   );
 }

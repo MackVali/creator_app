@@ -7,6 +7,7 @@ import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import MixedRoadmapCard from "@/app/(app)/goals/components/MixedRoadmapCard";
 import { RoadmapCard } from "@/app/(app)/goals/components/RoadmapCard";
+import type { ProjectCardMorphOrigin } from "@/app/(app)/goals/components/ProjectRow";
 
 import {
   GoalDrawer,
@@ -15,6 +16,7 @@ import {
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Fab, type FabEditTarget } from "@/components/ui/Fab";
 import {
   projectWeight,
   taskWeight,
@@ -360,6 +362,9 @@ export function MonumentGoalsList({
   );
   const [roadmapDrawerOpen, setRoadmapDrawerOpen] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
+    null
+  );
 
   useEffect(() => {
     setOpenGoalId(null);
@@ -932,6 +937,30 @@ export function MonumentGoalsList({
     [fetchGoalForEditing]
   );
 
+  const handleProjectEditOpen = useCallback(
+    (
+      target: FabEditTarget,
+      _projectId: string,
+      _goalId: string,
+      origin: ProjectCardMorphOrigin | null
+    ) => {
+      setFabEditTarget({
+        ...target,
+        originRect:
+          target.originRect ??
+          (origin
+            ? {
+                top: origin.y,
+                left: origin.x,
+                width: origin.width,
+                height: origin.height,
+              }
+            : null),
+      });
+    },
+    []
+  );
+
   const handleGoalUpdated = useCallback(
     async (updatedGoal: Goal, context: GoalUpdateContext) => {
       setGoals((prev) =>
@@ -1113,6 +1142,7 @@ export function MonumentGoalsList({
                       goals={roadmapGoalsList}
                       variant="compact"
                       onGoalEdit={handleRoadmapGoalEdit}
+                      onProjectEditOpen={handleProjectEditOpen}
                       monumentContext
                     />
                   </div>
@@ -1138,6 +1168,9 @@ export function MonumentGoalsList({
                     onProjectDeleted={(projectId) =>
                       handleProjectDeleted(goal.id, projectId)
                     }
+                    onProjectEditOpen={(target, project, origin) =>
+                      handleProjectEditOpen(target, project.id, goal.id, origin)
+                    }
                     open={openGoalId === goal.id}
                     onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
                   />
@@ -1158,6 +1191,7 @@ export function MonumentGoalsList({
     openGoalId,
     handleGoalEdit,
     handleGoalOpenChange,
+    handleProjectEditOpen,
     handleProjectUpdated,
     handleProjectDeleted,
     handleRoadmapGoalEdit,
@@ -1167,6 +1201,12 @@ export function MonumentGoalsList({
   return (
     <div className="monument-goals-list">
       {content}
+      <Fab
+        editTarget={fabEditTarget}
+        onEditClose={() => setFabEditTarget(null)}
+        hideLauncher
+        portalToBody
+      />
       <style jsx global>{`
         /* Prevent lift/overlap across browsers */
         .monument-goals-list .group {

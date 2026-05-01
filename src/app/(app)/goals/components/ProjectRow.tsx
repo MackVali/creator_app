@@ -28,7 +28,7 @@ interface ProjectRowProps {
 const MAX_VISIBLE_TASKS = 12;
 const LONG_PRESS_MS = 650;
 const DOUBLE_TAP_MS = 325;
-const SINGLE_TAP_DELAY_MS = 225;
+const SINGLE_TAP_DELAY_MS = 160;
 
 const projectStageToStatus = (stage: string): Project["status"] => {
   switch (stage) {
@@ -40,6 +40,47 @@ const projectStageToStatus = (stage: string): Project["status"] => {
       return "In-Progress";
   }
 };
+
+function buildProjectOrigin(
+  element: HTMLElement | null,
+  project: Project
+): ProjectCardMorphOrigin | null {
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  const computed = window.getComputedStyle(element);
+  const radius =
+    computed.borderRadius && computed.borderRadius.trim().length > 0
+      ? computed.borderRadius
+      : [
+          computed.borderTopLeftRadius,
+          computed.borderTopRightRadius,
+          computed.borderBottomRightRadius,
+          computed.borderBottomLeftRadius,
+        ]
+          .filter(Boolean)
+          .join(" ") || "0px";
+  const backgroundColor =
+    computed.backgroundColor &&
+    computed.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+    computed.backgroundColor.toLowerCase() !== "transparent"
+      ? computed.backgroundColor
+      : undefined;
+  const boxShadow =
+    computed.boxShadow && computed.boxShadow !== "none"
+      ? computed.boxShadow
+      : undefined;
+
+  return {
+    x: rect.left,
+    y: rect.top,
+    width: rect.width,
+    height: rect.height,
+    borderRadius: radius,
+    backgroundColor,
+    boxShadow,
+    emoji: project.emoji,
+  };
+}
 
 export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps) {
   const hasTasks = project.tasks.length > 0;
@@ -61,6 +102,7 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
   const skipClickRef = useRef(false);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapTimeRef = useRef(0);
+  const tapSequenceRef = useRef(0);
 
   useEffect(() => {
     setLocalStatus(project.status);
@@ -111,6 +153,17 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
       singleTapTimeoutRef.current = null;
     }
   }, []);
+
+  const openProjectEditor = useCallback(() => {
+    if (!onLongPress) {
+      toggle();
+      return;
+    }
+
+    const origin = buildProjectOrigin(originElementRef.current, project);
+    onLongPress(project, origin);
+    originElementRef.current = null;
+  }, [onLongPress, project, toggle]);
 
   const toggleCompletion = useCallback(async () => {
     if (completionPending) return;
@@ -165,7 +218,16 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
         "undo"
       );
     }
-  }, [completionPending, lastActiveStage, localStage, localStatus, onUpdated, project.id]);
+  }, [
+    completionPending,
+    lastActiveStage,
+    localStage,
+    localStatus,
+    onUpdated,
+    project.id,
+    project.skillIds,
+    project.tasks,
+  ]);
 
   const isCompleted = localStatus === "Done";
 
@@ -173,6 +235,7 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
     (event: React.PointerEvent<HTMLButtonElement>) => {
       if (!onLongPress || completionPending) return;
       originElementRef.current = event.currentTarget;
+      cancelSingleTap();
       if (event.pointerType === "mouse" && event.button !== 0) {
         return;
       }
@@ -184,48 +247,17 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
         longPressTriggeredRef.current = true;
         skipClickRef.current = true;
         triggerBounce();
-        let origin: ProjectCardMorphOrigin | null = null;
-        const element = originElementRef.current;
-        if (element) {
-          const rect = element.getBoundingClientRect();
-          const computed = window.getComputedStyle(element);
-          const radius =
-            computed.borderRadius && computed.borderRadius.trim().length > 0
-              ? computed.borderRadius
-              : [
-                  computed.borderTopLeftRadius,
-                  computed.borderTopRightRadius,
-                  computed.borderBottomRightRadius,
-                  computed.borderBottomLeftRadius,
-                ]
-                  .filter(Boolean)
-                  .join(" ") || "0px";
-          const backgroundColor =
-            computed.backgroundColor &&
-            computed.backgroundColor !== "rgba(0, 0, 0, 0)" &&
-            computed.backgroundColor.toLowerCase() !== "transparent"
-              ? computed.backgroundColor
-              : undefined;
-          const boxShadow =
-            computed.boxShadow && computed.boxShadow !== "none"
-              ? computed.boxShadow
-              : undefined;
-          origin = {
-            x: rect.left,
-            y: rect.top,
-            width: rect.width,
-            height: rect.height,
-            borderRadius: radius,
-            backgroundColor,
-            boxShadow,
-            emoji: project.emoji,
-          };
-        }
-        onLongPress(project, origin);
-        originElementRef.current = null;
+        openProjectEditor();
       }, LONG_PRESS_MS);
     },
-    [cancelPendingPress, completionPending, onLongPress, project, triggerBounce]
+    [
+      cancelPendingPress,
+      cancelSingleTap,
+      completionPending,
+      onLongPress,
+      openProjectEditor,
+      triggerBounce,
+    ]
   );
 
   const handlePointerEnd = useCallback(
@@ -243,6 +275,7 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
       const now = Date.now();
       if (now - lastTapTimeRef.current <= DOUBLE_TAP_MS) {
         lastTapTimeRef.current = 0;
+        tapSequenceRef.current += 1;
         cancelSingleTap();
         skipClickRef.current = true;
         event?.preventDefault();
@@ -251,6 +284,7 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
       }
 
       lastTapTimeRef.current = now;
+      tapSequenceRef.current += 1;
     },
     [cancelPendingPress, cancelSingleTap, completionPending, toggleCompletion]
   );
@@ -281,13 +315,19 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
         event.preventDefault();
         return;
       }
+      originElementRef.current = event.currentTarget;
       cancelSingleTap();
+      const tapSequence = tapSequenceRef.current;
       singleTapTimeoutRef.current = setTimeout(() => {
-        toggle();
+        if (tapSequenceRef.current !== tapSequence) {
+          singleTapTimeoutRef.current = null;
+          return;
+        }
+        openProjectEditor();
         singleTapTimeoutRef.current = null;
       }, SINGLE_TAP_DELAY_MS);
     },
-    [cancelSingleTap, completionPending, toggle]
+    [cancelSingleTap, completionPending, openProjectEditor]
   );
 
   const primaryTextClass = isCompleted ? "text-emerald-50" : "text-white";
