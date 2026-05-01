@@ -7,12 +7,12 @@ import {
   useMemo,
   useRef,
   useState,
-  useLayoutEffect,
   type MouseEvent,
 } from "react";
 import dynamic from "next/dynamic";
 import { ChevronDown, MoreHorizontal, Sparkles } from "lucide-react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { Goal, Project } from "../types";
 import type { ProjectCardMorphOrigin } from "./ProjectRow";
 import { normalizeGoalStatus } from "@/lib/goals/status";
@@ -114,6 +114,49 @@ function isProjectComplete(project: Project) {
   );
 }
 
+const shellSpringTransition = {
+  type: "spring",
+  stiffness: 580,
+  damping: 29,
+  mass: 0.7,
+} as const;
+
+const detailRevealVariant = {
+  hidden: { opacity: 0, scale: 0.985, y: 8 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    transition: shellSpringTransition,
+  },
+  exit: {
+    opacity: 0,
+    scale: 0.99,
+    y: 6,
+    transition: { duration: 0.12, ease: "easeOut" },
+  },
+} as const;
+
+const detailContentVariant = {
+  hidden: { opacity: 0, y: 8, scale: 0.985 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      delay: 0.04,
+      duration: 0.16,
+      ease: "easeOut",
+    },
+  },
+  exit: {
+    opacity: 0,
+    y: 4,
+    scale: 0.99,
+    transition: { duration: 0.12, ease: "easeOut" },
+  },
+} as const;
+
 function GoalCardImpl({
   goal,
   onEdit,
@@ -145,33 +188,7 @@ function GoalCardImpl({
   const [editingProjectOrigin, setEditingProjectOrigin] =
     useState<ProjectCardMorphOrigin | null>(null);
   const [addingProject, setAddingProject] = useState(false);
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const [overlayRect, setOverlayRect] = useState<DOMRect | null>(null);
-
-  const updateOverlayRect = useCallback(() => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    setOverlayRect(rect);
-  }, []);
-
-  useLayoutEffect(() => {
-    if (open) {
-      updateOverlayRect();
-    } else {
-      setOverlayRect(null);
-    }
-  }, [open, updateOverlayRect]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = () => updateOverlayRect();
-    window.addEventListener("resize", handler);
-    window.addEventListener("scroll", handler, true);
-    return () => {
-      window.removeEventListener("resize", handler);
-      window.removeEventListener("scroll", handler, true);
-    };
-  }, [open, updateOverlayRect]);
+  const prefersReducedMotion = useReducedMotion();
 
   const setOpen = useCallback(
     (value: boolean) => {
@@ -190,7 +207,6 @@ function GoalCardImpl({
     null
   );
   const projectLongPressTriggeredRef = useRef(false);
-  const [isHolding, setIsHolding] = useState(false);
   const cancelProjectLongPress = useCallback(() => {
     if (projectLongPressTimerRef.current) {
       clearTimeout(projectLongPressTimerRef.current);
@@ -207,7 +223,6 @@ function GoalCardImpl({
     if (!onProjectHoldComplete) return;
     cancelProjectLongPress();
     projectLongPressTriggeredRef.current = false;
-    setIsHolding(true);
     projectLongPressTimerRef.current = setTimeout(() => {
       projectLongPressTimerRef.current = null;
       projectLongPressTriggeredRef.current = true;
@@ -222,14 +237,12 @@ function GoalCardImpl({
         event.preventDefault();
         event.stopPropagation();
       }
-      setIsHolding(false);
     },
     [cancelProjectLongPress]
   );
   const handleProjectPointerCancel = useCallback(() => {
     cancelProjectLongPress();
     projectLongPressTriggeredRef.current = false;
-    setIsHolding(false);
   }, [cancelProjectLongPress]);
 
   const handleAddProject = useCallback(async () => {
@@ -306,8 +319,6 @@ function GoalCardImpl({
   const completedIconClass = isCompleted
     ? "bg-gradient-to-b from-[#0a5c3a] via-[#0a4f34] to-[#043022] border border-emerald-400/60 text-emerald-100 shadow-[inset_0_2px_0_rgba(255,255,255,0.08)]"
     : "bg-white/5 text-white";
-  const completionGradient =
-    "linear-gradient(135deg,rgba(6,78,59,0.96) 0%,rgba(4,120,87,0.94) 42%,rgba(16,185,129,0.9) 100%)";
   const progressBarStyle = {
     width: `${goal.progress}%`,
     height: "100%",
@@ -326,14 +337,30 @@ function GoalCardImpl({
     if (!goal.estimatedCompletionAt) return null;
     return new Date(goal.estimatedCompletionAt).toLocaleDateString();
   }, [goal.estimatedCompletionAt]);
+  const shellMotionProps = prefersReducedMotion
+    ? {}
+    : {
+        whileTap: { scale: 0.962, y: 2 },
+        transition: shellSpringTransition,
+      };
+  const detailMotionProps = prefersReducedMotion
+    ? {
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+        transition: { duration: 0.12 },
+      }
+    : {
+        variants: detailRevealVariant,
+        initial: "hidden" as const,
+        animate: "visible" as const,
+        exit: "exit" as const,
+      };
 
   // Compact tile for dense mobile grids
   if (variant === "compact") {
-    const energy = energyAccent[goal.energy];
-    const progressPct = Math.max(0, Math.min(100, Number(goal.progress ?? 0)));
-    const lightness = Math.round(88 - progressPct * 0.78); // 0% -> 88% (light gray), 100% -> ~10% (near black)
     const containerBase =
-      "group relative h-full rounded-2xl p-4 text-white goal-card";
+      "group relative h-full rounded-2xl p-3 sm:p-4 text-white goal-card";
     const containerClass = [
       containerBase,
       completedClass,
@@ -354,13 +381,12 @@ function GoalCardImpl({
       return (
         <>
           <div
-            ref={cardRef}
             className={containerClass}
             data-variant="compact"
             data-build-tag="gc-test-01"
           >
             <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
-              <button
+              <motion.button
                 type="button"
                 onClick={toggle}
                 aria-expanded={open}
@@ -370,6 +396,7 @@ function GoalCardImpl({
                 onPointerCancel={handleProjectPointerCancel}
                 onPointerLeave={handleProjectPointerCancel}
                 className="flex w-full items-center justify-between text-left text-sm select-none"
+                {...shellMotionProps}
               >
                 <div className="flex items-center gap-2">
                   <div className="flex h-7 w-7 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
@@ -395,24 +422,25 @@ function GoalCardImpl({
                     }`}
                   />
                 </div>
-              </button>
+              </motion.button>
 
-              {open && (
-                <CompactProjectsOverlay
-                  goal={goal}
-                  loading={loading}
-                  onClose={toggle}
-                  onProjectLongPress={handleProjectLongPress}
-                  onProjectUpdated={onProjectUpdated}
-                  anchorRect={overlayRect}
-                  projectDropdownMode={projectDropdownMode}
-                  goalId={goal.id}
-                  onAddProject={handleAddProject}
-                  addingProject={addingProject}
-                  onEdit={onEdit}
-                  onTaskToggleCompletion={onTaskToggleCompletion}
-                />
-              )}
+              <AnimatePresence initial={false}>
+                {open ? (
+                  <CompactProjectsOverlay
+                    goal={goal}
+                    loading={loading}
+                    onClose={toggle}
+                    onProjectLongPress={handleProjectLongPress}
+                    onProjectUpdated={onProjectUpdated}
+                    projectDropdownMode={projectDropdownMode}
+                    goalId={goal.id}
+                    onAddProject={handleAddProject}
+                    addingProject={addingProject}
+                    onEdit={onEdit}
+                    onTaskToggleCompletion={onTaskToggleCompletion}
+                  />
+                ) : null}
+              </AnimatePresence>
             </div>
           </div>
           <ProjectQuickEditDialog
@@ -432,13 +460,12 @@ function GoalCardImpl({
     return (
       <>
         <div
-          ref={cardRef}
           className={containerClass}
           data-variant="compact"
           data-build-tag="gc-test-01"
         >
           <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
-            <button
+            <motion.button
               type="button"
               onClick={toggle}
               aria-expanded={open}
@@ -448,6 +475,7 @@ function GoalCardImpl({
               onPointerCancel={handleProjectPointerCancel}
               onPointerLeave={handleProjectPointerCancel}
               className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center"
+              {...shellMotionProps}
             >
               <div
                 className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] ${completedIconClass}`}
@@ -477,24 +505,25 @@ function GoalCardImpl({
                   style={progressBarStyle}
                 />
               </div>
-            </button>
+            </motion.button>
 
-            {open && (
-              <CompactProjectsOverlay
-                goal={goal}
-                loading={loading}
-                onClose={toggle}
-                onProjectLongPress={handleProjectLongPress}
-                onProjectUpdated={onProjectUpdated}
-                anchorRect={overlayRect}
-                projectDropdownMode={projectDropdownMode}
-                goalId={goal.id}
-                onAddProject={handleAddProject}
-                addingProject={addingProject}
-                onEdit={onEdit}
-                onTaskToggleCompletion={onTaskToggleCompletion}
-              />
-            )}
+            <AnimatePresence initial={false}>
+              {open ? (
+                <CompactProjectsOverlay
+                  goal={goal}
+                  loading={loading}
+                  onClose={toggle}
+                  onProjectLongPress={handleProjectLongPress}
+                  onProjectUpdated={onProjectUpdated}
+                  projectDropdownMode={projectDropdownMode}
+                  goalId={goal.id}
+                  onAddProject={handleAddProject}
+                  addingProject={addingProject}
+                  onEdit={onEdit}
+                  onTaskToggleCompletion={onTaskToggleCompletion}
+                />
+              ) : null}
+            </AnimatePresence>
           </div>
         </div>
         <ProjectQuickEditDialog
@@ -512,18 +541,29 @@ function GoalCardImpl({
   }
 
   const defaultContainerClass = [
-    "group relative h-full rounded-xl goal-card p-3 text-white mb-3",
+    "group relative mb-2.5 h-full overflow-hidden rounded-xl goal-card p-2.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:mb-3 sm:p-3",
     completedClass,
   ]
     .filter(Boolean)
     .join(" ");
+  const shellStateClass = open
+    ? isCompleted
+      ? "border border-emerald-300/55 shadow-[0_24px_44px_-28px_rgba(16,185,129,0.48),inset_0_1px_0_rgba(255,255,255,0.07)]"
+      : "border border-white/16 bg-white/[0.04] shadow-[0_24px_44px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.06)]"
+    : isCompleted
+      ? "border border-emerald-400/28 shadow-[0_16px_28px_-24px_rgba(16,185,129,0.32),inset_0_1px_0_rgba(255,255,255,0.04)]"
+      : "border border-transparent shadow-[0_12px_24px_-24px_rgba(0,0,0,0.7)]";
 
   return (
     <>
-      <div className={defaultContainerClass}>
-        <div className="relative flex h-full flex-col gap-2">
+      <motion.div
+        layout={!prefersReducedMotion}
+        transition={prefersReducedMotion ? { duration: 0.12 } : shellSpringTransition}
+        className={`${defaultContainerClass} ${shellStateClass}`}
+      >
+        <div className="relative flex h-full flex-col gap-1.5 sm:gap-2">
           <div className="flex items-start justify-between gap-2">
-            <button
+            <motion.button
               onClick={toggle}
               aria-expanded={open}
               aria-controls={`goal-${goal.id}`}
@@ -531,34 +571,35 @@ function GoalCardImpl({
               onPointerUp={handleProjectPointerUp}
               onPointerCancel={handleProjectPointerCancel}
               onPointerLeave={handleProjectPointerCancel}
-              className="relative flex flex-1 flex-col gap-1.5 text-left overflow-hidden"
+              className="relative flex flex-1 flex-col gap-1 text-left overflow-hidden sm:gap-1.5"
+              {...shellMotionProps}
             >
               <div className="relative z-10 flex items-start gap-2">
                 <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 text-xl font-semibold ${completedIconClass}`}
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-lg font-semibold sm:h-10 sm:w-10 sm:rounded-2xl sm:text-xl ${completedIconClass}`}
                 >
                   {goal.emoji ?? goal.monumentEmoji ?? goal.title.slice(0, 2)}
                 </div>
                 <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-[0.18em]">
+                  <div className="flex flex-wrap items-center gap-1 text-[9px] uppercase tracking-[0.14em] sm:gap-1.5 sm:text-[10px] sm:tracking-[0.18em]">
                     <span className="flex items-center gap-1 rounded-full border border-white/10 px-1.5 py-0.5 text-white/80">
                       <FlameEmber
                         level={goal.energy.toUpperCase() as FlameLevel}
                         size="xs"
                       />
-                      <span className="text-[10px] uppercase tracking-[0.2em]">
+                      <span className="text-[9px] uppercase tracking-[0.14em] sm:text-[10px] sm:tracking-[0.2em]">
                         {goal.energy}
                       </span>
                     </span>
                     {showWeight ? (
-                      <span className="rounded-full border border-white/20 px-1.5 py-0.5 text-white/70 text-[10px]">
+                      <span className="rounded-full border border-white/20 px-1.5 py-0.5 text-[9px] text-white/70 sm:text-[10px]">
                         wt {goal.weight ?? 0}
                       </span>
                     ) : null}
                   </div>
                   <h3
                     id={`goal-${goal.id}-label`}
-                    className="mt-1 text-lg font-semibold"
+                    className="mt-0.5 text-[17px] font-semibold leading-tight sm:mt-1 sm:text-lg"
                   >
                     {showEmojiPrefix && (goal.emoji ?? goal.monumentEmoji) ? (
                       <span className="mr-2 inline" aria-hidden>
@@ -568,60 +609,60 @@ function GoalCardImpl({
                     {goal.title}
                   </h3>
                   {goal.why && (
-                    <p className="mt-0.5 text-sm text-white/65 line-clamp-2">
+                    <p className="mt-0.5 line-clamp-1 text-[13px] leading-4 text-white/65 sm:line-clamp-2 sm:text-sm sm:leading-5">
                       {goal.why}
                     </p>
                   )}
                 </div>
                 <ChevronDown
-                  className={`mt-1 h-5 w-5 text-white/60 ${
+                  className={`mt-0.5 h-4 w-4 text-white/60 sm:mt-1 sm:h-5 sm:w-5 ${
                     open ? "rotate-180" : ""
                   }`}
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-[10px] text-white/60">
+              <div className="flex flex-wrap items-center gap-1.5 text-[9px] text-white/60 sm:gap-2 sm:text-[10px]">
                 {!open && (
-                  <div className="flex items-center gap-2 rounded-full border border-white/10 px-2 py-0.5 text-[10px]">
+                  <div className="flex items-center gap-1.5 rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] sm:gap-2 sm:px-2 sm:text-[10px]">
                     <span
-                      className={`h-1.5 w-1.5 rounded-full ${energy.dot}`}
+                      className={`h-1 w-1 rounded-full sm:h-1.5 sm:w-1.5 ${energy.dot}`}
                       aria-hidden="true"
                     />
                     <span>{goal.projects.length} projects</span>
                   </div>
                 )}
                 {goal.dueDate && (
-                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px]">
+                  <span className="rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] sm:px-2 sm:text-[10px]">
                     Due {new Date(goal.dueDate).toLocaleDateString()}
                   </span>
                 )}
                 {etaDisplay && (
-                  <span className="relative flex items-center gap-2 rounded-full border border-fuchsia-400/40 bg-gradient-to-r from-fuchsia-500/15 via-rose-500/10 to-amber-500/15 px-2 py-0.5 text-white shadow-[0_6px_18px_rgba(236,72,153,0.35)]">
-                    <span className="flex items-center gap-1 rounded-full bg-white/10 px-1.25 py-0.5 text-[8px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                  <span className="relative flex items-center gap-1.5 rounded-full border border-fuchsia-400/40 bg-gradient-to-r from-fuchsia-500/15 via-rose-500/10 to-amber-500/15 px-1.5 py-0.5 text-white shadow-[0_6px_18px_rgba(236,72,153,0.35)] sm:gap-2 sm:px-2">
+                    <span className="flex items-center gap-1 rounded-full bg-white/10 px-1 py-0.5 text-[7px] font-semibold uppercase tracking-[0.22em] text-white/70 sm:px-1.25 sm:text-[8px] sm:tracking-[0.3em]">
                       <Sparkles
                         className="h-3 w-3 text-amber-100"
                         aria-hidden="true"
                       />
                       ETA
                     </span>
-                    <span className="text-sm font-semibold tracking-tight text-white">
+                    <span className="text-[13px] font-semibold tracking-tight text-white sm:text-sm">
                       {etaDisplay}
                     </span>
                   </span>
                 )}
                 {createdAt && showCreatedAt && (
-                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white/60">
+                  <span className="rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] text-white/60 sm:px-2 sm:text-[10px]">
                     Created {createdAt}
                   </span>
                 )}
               </div>
               {!open && (
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-white/50">
+                <div className="flex flex-col gap-0.5 sm:gap-1">
+                  <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-white/50 sm:text-[11px] sm:tracking-[0.25em]">
                     <span>Progress</span>
                     <span>{goal.progress}%</span>
                   </div>
                   <div
-                    className="h-[12px] overflow-hidden rounded-[999px] border border-[#0f1115] bg-[#1b1e24]"
+                    className="h-[10px] overflow-hidden rounded-[999px] border border-[#0f1115] bg-[#1b1e24] sm:h-[12px]"
                     style={{
                       boxShadow:
                         "inset 0 2px 3px rgba(0,0,0,0.6), 0 1px 2px rgba(255,255,255,0.08)",
@@ -642,18 +683,18 @@ function GoalCardImpl({
                       event.stopPropagation();
                       onBoost();
                     }}
-                    className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-gradient-to-r from-red-600 to-rose-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.25em] text-white shadow-[0_8px_20px_-10px_rgba(239,68,68,0.6)]"
+                    className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-gradient-to-r from-red-600 to-rose-500 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-white shadow-[0_8px_20px_-10px_rgba(239,68,68,0.6)] sm:px-2 sm:text-[10px] sm:tracking-[0.25em]"
                   >
                     Boost +250
                   </button>
                 </div>
               )}
-            </button>
+            </motion.button>
 
             <div className="relative">
               <button
                 aria-label="Goal actions"
-                className="rounded-full border border-white/10 bg-white/10 p-1.5 text-white/70 hover:bg-white/20"
+                className="rounded-full border border-white/10 bg-white/10 p-1 text-white/70 hover:bg-white/20 sm:p-1.5"
                 onClick={() => {
                   console.log("🎯 Three dots clicked, onEdit:", !!onEdit);
                   // Simple custom dropdown toggle
@@ -668,7 +709,7 @@ function GoalCardImpl({
                   }
                 }}
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </button>
               <div
                 id={`dropdown-${goal.id}`}
@@ -720,25 +761,37 @@ function GoalCardImpl({
             </div>
           </div>
 
-          {open && (
-            <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#030303] via-[#080808] to-[#1b1b1b] shadow-[0_35px_45px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.02)]">
-              <ProjectsDropdown
-                id={`goal-${goal.id}`}
-                goalTitle={goal.title}
-                projects={goal.projects}
-                loading={loading}
-                onProjectLongPress={handleProjectLongPress}
-                onProjectUpdated={onProjectUpdated}
-                goalId={goal.id}
-                projectTasksOnly={projectDropdownMode === "tasks-only"}
-                onAddProject={handleAddProject}
-                addingProject={addingProject}
-                onTaskToggleCompletion={onTaskToggleCompletion}
-              />
-            </div>
-          )}
+          <AnimatePresence initial={false}>
+            {open ? (
+              <motion.div
+                className="origin-top overflow-hidden rounded-[18px] border border-white/10 border-t-white/15 bg-gradient-to-b from-white/[0.035] via-white/[0.02] to-white/[0.015] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] sm:rounded-2xl"
+                {...detailMotionProps}
+              >
+                <motion.div
+                  variants={prefersReducedMotion ? undefined : detailContentVariant}
+                  initial={prefersReducedMotion ? false : "hidden"}
+                  animate={prefersReducedMotion ? undefined : "visible"}
+                  exit={prefersReducedMotion ? undefined : "exit"}
+                >
+                  <ProjectsDropdown
+                    id={`goal-${goal.id}`}
+                    goalTitle={goal.title}
+                    projects={goal.projects}
+                    loading={loading}
+                    onProjectLongPress={handleProjectLongPress}
+                    onProjectUpdated={onProjectUpdated}
+                    goalId={goal.id}
+                    projectTasksOnly={projectDropdownMode === "tasks-only"}
+                    onAddProject={handleAddProject}
+                    addingProject={addingProject}
+                    onTaskToggleCompletion={onTaskToggleCompletion}
+                  />
+                </motion.div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
-      </div>
+      </motion.div>
       <ProjectQuickEditDialog
         project={editingProject}
         goalId={goal.id}
@@ -757,7 +810,6 @@ type CompactProjectsOverlayProps = {
   goal: Goal;
   loading: boolean;
   onClose: () => void;
-  anchorRect: DOMRect | null;
   onProjectLongPress: (
     project: Project,
     origin: ProjectCardMorphOrigin | null
@@ -780,7 +832,6 @@ function CompactProjectsOverlay({
   goal,
   loading,
   onClose,
-  anchorRect,
   onProjectLongPress,
   onProjectUpdated,
   projectDropdownMode = "default",
@@ -791,6 +842,7 @@ function CompactProjectsOverlay({
   onTaskToggleCompletion,
 }: CompactProjectsOverlayProps) {
   const [mounted, setMounted] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
     setMounted(true);
@@ -813,9 +865,12 @@ function CompactProjectsOverlay({
   const headingId = `${regionId}-overlay-title`;
   const isMobile =
     typeof window !== "undefined" ? window.innerWidth < 640 : true;
-  const computedMaxWidth = anchorRect
-    ? Math.min(640, Math.max(anchorRect.width + 64, 300))
-    : undefined;
+  const computedMaxWidth =
+    typeof window !== "undefined"
+      ? Math.min(window.innerWidth - (isMobile ? 32 : 48), isMobile ? 384 : 576)
+      : isMobile
+        ? 384
+        : 576;
 
   const header = (
     <div className="flex items-center justify-between px-5 py-4">
@@ -885,53 +940,42 @@ function CompactProjectsOverlay({
   const basePanelClass =
     "overflow-hidden rounded-2xl border border-white/15 bg-black shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)]";
 
-  if (isMobile || !anchorRect) {
-    return createPortal(
-      <>
-        <button
-          type="button"
-          className="fixed inset-0 z-[60] bg-black/70"
-          aria-label="Close projects overlay"
-          onClick={onClose}
-        />
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-10">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={headingId}
-            className={`w-full max-w-sm ${basePanelClass}`}
-            style={
-              computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined
-            }
-          >
-            {header}
-            {listContent}
-          </div>
-        </div>
-      </>,
-      document.body
-    );
-  }
-
   return createPortal(
     <>
-      <button
+      <motion.button
         type="button"
-        className="fixed inset-0 z-[60] bg-black/50"
+        className={`fixed inset-0 z-[60] ${isMobile ? "bg-black/70" : "bg-black/50"}`}
         aria-label="Close projects overlay"
         onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.14 }}
       />
-      <div className="fixed inset-0 z-[70] flex items-center justify-center px-6 py-12">
-        <div
+      <div
+        className={`fixed inset-0 z-[70] flex items-center justify-center ${isMobile ? "px-4 py-10" : "px-6 py-12"}`}
+      >
+        <motion.div
           role="dialog"
           aria-modal="true"
           aria-labelledby={headingId}
-          className={`w-full max-w-xl ${basePanelClass}`}
+          className={`w-full ${isMobile ? "max-w-sm" : "max-w-xl"} ${basePanelClass}`}
           style={computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined}
+          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.985 }}
+          animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.99 }}
+          transition={{ duration: prefersReducedMotion ? 0.12 : 0.18, ease: "easeOut" }}
         >
-          {header}
-          {listContent}
-        </div>
+          <motion.div
+            variants={prefersReducedMotion ? undefined : detailContentVariant}
+            initial={prefersReducedMotion ? false : "hidden"}
+            animate={prefersReducedMotion ? undefined : "visible"}
+            exit={prefersReducedMotion ? undefined : "exit"}
+          >
+            {header}
+            {listContent}
+          </motion.div>
+        </motion.div>
       </div>
     </>,
     document.body

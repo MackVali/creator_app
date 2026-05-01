@@ -63,7 +63,7 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
   ] as const;
 
   return (
-    <main className="overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
+    <main className="overflow-x-hidden px-2.5 py-4 sm:px-6 sm:py-6 lg:px-8">
       <MonumentEditDialog
         open={editDialogOpen}
         monumentId={id}
@@ -74,7 +74,7 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
         }}
         onSaved={() => setEditDialogOpen(false)}
       />
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 overflow-x-hidden">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
         <Button
           asChild
           variant="ghost"
@@ -168,48 +168,25 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
             className={cn(
               containerShell,
               sectionBackground,
-              "p-5 sm:p-7",
+              "px-3 py-4 sm:p-7",
               "min-h-[260px]",
               "overflow-visible sm:overflow-hidden"
             )}
           >
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
-            <header className="relative flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
-                GOALS
-              </h2>
-              <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-1">
-                <button
-                  type="button"
-                  onClick={() => setGoalSection("active")}
-                  className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
-                    goalSection === "active"
-                      ? "bg-[#3B3F49] text-white"
-                      : "text-[#A7B0BD] hover:text-white"
-                  }`}
-                  aria-pressed={goalSection === "active"}
-                >
-                  Active
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGoalSection("completed")}
-                  className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
-                    goalSection === "completed"
-                      ? "bg-[#3B3F49] text-white"
-                      : "text-[#A7B0BD] hover:text-white"
-                  }`}
-                  aria-pressed={goalSection === "completed"}
-                >
-                  Completed
-                </button>
+            <header className="relative">
+              <div className="space-y-1">
+                <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
+                  Monument Roadmap
+                </h2>
               </div>
             </header>
-            <div className="relative mt-4 overflow-visible">
+            <div className="relative mt-3 overflow-visible sm:mt-4">
               <MonumentGoalsList
                 monumentId={id}
                 monumentEmoji={monument.emoji}
                 goalSection={goalSection}
+                onGoalSectionChange={setGoalSection}
               />
             </div>
           </section>
