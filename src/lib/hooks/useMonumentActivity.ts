@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { normalizeGoalStatus } from "@/lib/goals/status";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 type NoteRow = {
@@ -119,16 +120,7 @@ const DEFAULT_SUMMARY: MonumentActivitySummary = {
 };
 
 function isGoalCompleted(goal: GoalRow) {
-  const status = goal.status?.toLowerCase().trim();
-  if (status) {
-    if (status.includes("complete")) return true;
-    if (status === "done" || status.includes("done")) return true;
-  }
-  if (goal.active === false) {
-    // Treat inactive goals without a status as finished checkpoints
-    return true;
-  }
-  return false;
+  return normalizeGoalStatus(goal.status, goal.active) === "COMPLETED";
 }
 
 export interface MonumentActivityNote {

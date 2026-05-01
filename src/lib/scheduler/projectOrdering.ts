@@ -2,6 +2,7 @@ import type { ScheduleInstance } from "./instanceRepo";
 import type { ProjectItem } from "./projects";
 
 export type CanonicalGoalRecord = {
+  status?: "ACTIVE" | "PAUSED" | "COMPLETED" | null;
   global_rank?: number | null;
   globalRank?: number | null;
 };

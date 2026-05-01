@@ -35,6 +35,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import type { Goal } from "@/app/(app)/goals/types";
 import { computeGoalWeight } from "@/lib/goals/weight";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 import {
   formatEnumLabel,
   normalizePriority,
@@ -558,14 +559,18 @@ async function rebuildPriorityStack(
 
   const weightUpdates =
     (goalRows ?? []).map((goalRow) => {
+      const normalizedGoalStatus = normalizeGoalStatus(
+        goalRow.status,
+        goalRow.active,
+      );
       const canonicalGoal = {
         id: goalRow.id,
         title: goalRow.name ?? "Untitled goal",
         priority: "No",
         energy: "No",
         progress: 0,
-        status: "Active",
-        active: goalRow.active ?? true,
+        status: normalizedGoalStatus,
+        active: normalizedGoalStatus === "ACTIVE",
         createdAt:
           goalRow.created_at ?? new Date().toISOString(),
         updatedAt:

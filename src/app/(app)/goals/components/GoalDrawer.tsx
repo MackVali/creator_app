@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import type { LimitErrorCode } from "@/lib/goals/persistGoalUpdate";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 import {
   Select,
   SelectContent,
@@ -715,13 +716,17 @@ export function GoalDrawer({
     e.preventDefault();
     if (!canSubmit || deleteLoading) return;
 
-    const preservedStatus = initialGoal?.status ?? "Active";
-    const computedStatus = active
-      ? preservedStatus === "Inactive"
-        ? "Active"
-        : preservedStatus
-      : "Inactive";
-    const computedActive = computedStatus !== "Inactive";
+    const preservedStatus = normalizeGoalStatus(
+      initialGoal?.status,
+      initialGoal?.active,
+    );
+    const computedStatus =
+      preservedStatus === "COMPLETED"
+        ? "COMPLETED"
+        : active
+          ? "ACTIVE"
+          : "PAUSED";
+    const computedActive = computedStatus === "ACTIVE";
 
     const preparedProjects: Project[] = projectsState.map((project) => {
       const stage = project.stage ?? projectStatusToStage(project.status);

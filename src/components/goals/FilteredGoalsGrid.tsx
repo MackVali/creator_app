@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFilteredGoals } from "@/lib/hooks/useFilteredGoals";
+import {
+  normalizeGoalStatus,
+  type GoalStatus,
+} from "@/lib/goals/status";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 import { GoalFolderCard } from "@/components/goals/GoalFolderCard";
@@ -99,27 +103,6 @@ function projectStageToStatus(stage: string): Project["status"] {
   }
 }
 
-function goalStatusToStatus(status?: string | null): Goal["status"] {
-  switch (status) {
-    case "COMPLETED":
-    case "Completed":
-    case "DONE":
-      return "Completed";
-    case "INACTIVE":
-    case "Inactive":
-      return "Inactive";
-    case "OVERDUE":
-    case "Overdue":
-      return "Overdue";
-    case "ACTIVE":
-    case "Active":
-    case "IN_PROGRESS":
-    case "IN PROGRESS":
-    default:
-      return "Active";
-  }
-}
-
 export function FilteredGoalsGrid({
   entity,
   id,
@@ -127,7 +110,7 @@ export function FilteredGoalsGrid({
   displayMode = "default",
 }: FilteredGoalsGridProps) {
   const { goals, loading: goalsLoading, error } = useFilteredGoals({ entity, id, limit: 12 });
-  const [active, setActive] = useState("Active");
+  const [active, setActive] = useState<GoalStatus>("ACTIVE");
   const [goalFolders, setGoalFolders] = useState<Goal[]>([]);
   const [projLoading, setProjLoading] = useState(true);
   const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -135,19 +118,15 @@ export function FilteredGoalsGrid({
   const isMinimal = displayMode === "minimal";
 
   const matchesFilter = (goal: Goal) => {
-    const status = goal.status ?? (goal.active === false ? "Inactive" : "Active");
+    const status = normalizeGoalStatus(goal.status, goal.active);
 
     switch (active) {
-      case "Active":
-        return status === "Active" && goal.active !== false;
-      case "Blocked":
-        return (
-          status === "Inactive" ||
-          status === "Overdue" ||
-          goal.active === false
-        );
-      case "Completed":
-        return status === "Completed";
+      case "ACTIVE":
+        return status === "ACTIVE";
+      case "PAUSED":
+        return status === "PAUSED";
+      case "COMPLETED":
+        return status === "COMPLETED";
       default:
         return true;
     }
@@ -202,8 +181,8 @@ export function FilteredGoalsGrid({
       });
 
       const mapped: Goal[] = goals.map((g) => {
-        const status = goalStatusToStatus(g.status);
-        const isActive = g.active ?? status === "Active";
+        const status = normalizeGoalStatus(g.status, g.active);
+        const isActive = status === "ACTIVE";
         const prioritySource = g.priority_code ?? g.priority;
         const energySource = g.energy_code ?? g.energy;
         const priority = mapPriority(prioritySource);
@@ -262,10 +241,10 @@ export function FilteredGoalsGrid({
       ? "No goals linked to this skill yet."
       : "No goals linked to this monument yet.";
   const filterEmptyMessage =
-    active === "Active"
+    active === "ACTIVE"
       ? "No active goals right now."
-      : active === "Blocked"
-      ? "No blocked goals right now."
+      : active === "PAUSED"
+      ? "No paused goals right now."
       : "No completed goals yet.";
 
   if (isMinimal) {
@@ -337,15 +316,21 @@ export function FilteredGoalsGrid({
   return (
     <div>
       <div className="mb-3 flex gap-2">
-        {(["Active", "Blocked", "Completed"] as const).map((f) => (
+        {(
+          [
+            { value: "ACTIVE", label: "Active" },
+            { value: "PAUSED", label: "Paused" },
+            { value: "COMPLETED", label: "Completed" },
+          ] as const
+        ).map((f) => (
           <Badge
-            key={f}
-            variant={active === f ? "default" : "outline"}
+            key={f.value}
+            variant={active === f.value ? "default" : "outline"}
             className="px-3 py-1 cursor-pointer"
-            aria-label={`Show ${f} goals`}
-            onClick={() => setActive(f)}
+            aria-label={`Show ${f.label} goals`}
+            onClick={() => setActive(f.value)}
           >
-            {f}
+            {f.label}
           </Badge>
         ))}
       </div>

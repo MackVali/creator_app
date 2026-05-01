@@ -17,6 +17,7 @@ import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import { persistGoalUpdate } from "@/lib/goals/persistGoalUpdate";
 import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import { computeGoalWeight } from "@/lib/goals/weight";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 
 type GoalRowWithRelations = GoalRow & {
   due_date?: string | null;
@@ -94,27 +95,6 @@ function projectStageToStatus(stage: string): Project["status"] {
       return "Done";
     default:
       return "In-Progress";
-  }
-}
-
-function goalStatusToStatus(status?: string | null): Goal["status"] {
-  switch (status) {
-    case "COMPLETED":
-    case "Completed":
-    case "DONE":
-      return "Completed";
-    case "INACTIVE":
-    case "Inactive":
-      return "Inactive";
-    case "OVERDUE":
-    case "Overdue":
-      return "Overdue";
-    case "ACTIVE":
-    case "Active":
-    case "IN_PROGRESS":
-    case "IN PROGRESS":
-    default:
-      return "Active";
   }
 }
 
@@ -332,7 +312,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
         dueDate: data.due_date ?? goal.dueDate,
         why: data.why ?? goal.why,
         active: typeof data.active === "boolean" ? data.active : goal.active,
-        status: data.status ? goalStatusToStatus(data.status) : goal.status,
+        status: normalizeGoalStatus(data.status, data.active ?? goal.active),
       };
     } catch (err) {
       console.error("Failed to fetch goal for editing", err);
@@ -471,7 +451,10 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
                 projList.reduce((sum, project) => sum + project.progress, 0) / projList.length
               )
             : 0;
-        const status = g.status ? goalStatusToStatus(g.status) : progressValue >= 100 ? "Completed" : "Active";
+        const status = normalizeGoalStatus(
+          g.status,
+          typeof g.active === "boolean" ? g.active : progressValue < 100,
+        );
 
         const goalPrioritySource =
           g.priority_code ?? extractLookupName(g.priority);
@@ -490,7 +473,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
           energy: mapEnergy(goalEnergySource),
           progress: progressValue,
           status,
-          active: g.active ?? status === "Active",
+          active: status === "ACTIVE",
           createdAt: g.created_at,
           updatedAt: g.created_at,
           dueDate: g.due_date ?? undefined,

@@ -32,6 +32,7 @@ import {
   type RoadmapWithItems,
 } from "@/lib/queries/roadmaps";
 import { computeGoalWeight } from "@/lib/goals/weight";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 
 type GoalRowWithRelations = GoalRow & {
   due_date?: string | null;
@@ -138,27 +139,6 @@ function buildProjectFromUpdates(
     weight: updates.weight,
     isNew: updates.isNew,
   };
-}
-
-function goalStatusToStatus(status?: string | null): Goal["status"] {
-  switch (status) {
-    case "COMPLETED":
-    case "Completed":
-    case "DONE":
-      return "Completed";
-    case "INACTIVE":
-    case "Inactive":
-      return "Inactive";
-    case "OVERDUE":
-    case "Overdue":
-      return "Overdue";
-    case "ACTIVE":
-    case "Active":
-    case "IN_PROGRESS":
-    case "IN PROGRESS":
-    default:
-      return "Active";
-  }
 }
 
 const DAY_IN_MS = 86_400_000;
@@ -439,7 +419,7 @@ export function MonumentGoalsList({
         dueDate: data.due_date ?? goal.dueDate,
         why: data.why ?? goal.why,
         active: typeof data.active === "boolean" ? data.active : goal.active,
-        status: data.status ? goalStatusToStatus(data.status) : goal.status,
+        status: normalizeGoalStatus(data.status, data.active ?? goal.active),
       };
     } catch (err) {
       console.error("Failed to fetch goal for editing", err);
@@ -617,8 +597,8 @@ export function MonumentGoalsList({
                       )
                     : 0;
                 // Check if ALL projects are completed (progress = 100)
-                const normalizedStatus = goalStatusToStatus(g.status);
-                if (normalizedStatus === "Completed") {
+                const normalizedStatus = normalizeGoalStatus(g.status, g.active);
+                if (normalizedStatus === "COMPLETED") {
                   derivedProgress = 100;
                 }
                 const goalPrioritySource =
@@ -639,7 +619,7 @@ export function MonumentGoalsList({
                   energy: mapEnergy(goalEnergySource),
                   progress: derivedProgress,
                   status: normalizedStatus,
-                  active: g.active ?? normalizedStatus === "Active",
+                  active: normalizedStatus === "ACTIVE",
                   createdAt: g.created_at,
                   updatedAt: g.created_at,
                   dueDate: g.due_date ?? undefined,
@@ -784,8 +764,8 @@ export function MonumentGoalsList({
                     projList.length
                 )
               : 0;
-          const normalizedStatus = goalStatusToStatus(g.status);
-          if (normalizedStatus === "Completed") {
+          const normalizedStatus = normalizeGoalStatus(g.status, g.active);
+          if (normalizedStatus === "COMPLETED") {
             derivedProgress = 100;
           }
 
@@ -806,7 +786,7 @@ export function MonumentGoalsList({
             energy: mapEnergy(goalEnergySource),
             progress: derivedProgress,
             status: normalizedStatus,
-            active: g.active ?? normalizedStatus === "Active",
+            active: normalizedStatus === "ACTIVE",
             createdAt: g.created_at,
             updatedAt: g.created_at,
             dueDate: g.due_date ?? undefined,
@@ -1043,7 +1023,7 @@ export function MonumentGoalsList({
       roadmaps.flatMap((r) => (roadmapGoals.get(r.id) ?? []).map((g) => g.id))
     );
     const standaloneGoals = goals.filter((g) => !roadmapGoalIds.has(g.id));
-    const isCompletedGoal = (goal: Goal) => goal.status === "Completed";
+    const isCompletedGoal = (goal: Goal) => goal.status === "COMPLETED";
     const filterGoalBySection = (goal: Goal) =>
       goalSection === "completed" ? isCompletedGoal(goal) : !isCompletedGoal(goal);
     const filteredStandaloneGoals = standaloneGoals.filter(filterGoalBySection);

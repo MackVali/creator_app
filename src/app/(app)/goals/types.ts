@@ -36,7 +36,7 @@ export interface Goal {
   priority: "No" | "Low" | "Medium" | "High" | "Critical" | "Ultra-Critical";
   energy: "No" | "Low" | "Medium" | "High" | "Ultra" | "Extreme";
   progress: number; // 0-100
-  status: "Active" | "Completed" | "Overdue" | "Inactive";
+  status: "ACTIVE" | "PAUSED" | "COMPLETED";
   active: boolean;
   createdAt: string;
   updatedAt: string;

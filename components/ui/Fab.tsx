@@ -75,6 +75,10 @@ import { normalizeHabitType } from "@/lib/scheduler/habits";
 import { enforceHabitLimit } from "@/lib/habits/enforceHabitLimit";
 import { useProjectedGlobalRank } from "@/lib/hooks/useProjectedGlobalRank";
 import {
+  addGoalToCampaign,
+  type CampaignSchedulingState,
+} from "@/lib/queries/roadmaps";
+import {
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
 } from "@/components/habits/habit-form-fields";
@@ -203,6 +207,15 @@ type FabSearchCursor = {
   startUtc: string;
   sourceType: "PROJECT" | "HABIT";
   sourceId: string;
+};
+
+type GoalCampaignOption = {
+  id: string;
+  name: string;
+  emoji: string | null;
+  primary_monument_id: string | null;
+  scheduling_state: CampaignSchedulingState;
+  position: number | null;
 };
 
 const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
@@ -2317,6 +2330,9 @@ export function Fab({
   const [goalEnergy, setGoalEnergy] = useState("MEDIUM");
   const [goalWhy, setGoalWhy] = useState("");
   const [goalDue, setGoalDue] = useState<string | null>(null);
+  const [goalCampaignId, setGoalCampaignId] = useState<string | null>(null);
+  const [goalCampaigns, setGoalCampaigns] = useState<GoalCampaignOption[]>([]);
+  const [goalCampaignsLoading, setGoalCampaignsLoading] = useState(false);
   const [monuments, setMonuments] = useState<Monument[]>([]);
   const [monumentsLoading, setMonumentsLoading] = useState(false);
   const [taskName, setTaskName] = useState("");
@@ -3154,6 +3170,7 @@ export function Fab({
     setGoalEnergy("MEDIUM");
     setGoalWhy("");
     setGoalDue(null);
+    setGoalCampaignId(null);
 
     setTaskName("");
     setTaskStage("PRODUCE");
@@ -3809,7 +3826,12 @@ export function Fab({
             aria-label="Expanded placeholder"
           >
             <div
-              className="relative grid gap-4 p-4 pb-4 md:p-8 md:pb-6"
+              className={cn(
+                "relative grid p-4 pb-4",
+                selected === "HABIT"
+                  ? "gap-3 md:gap-3.5 md:p-6 md:pb-5"
+                  : "gap-4 md:p-8 md:pb-6",
+              )}
               style={{
                 paddingBottom: `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
                 scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
@@ -3817,7 +3839,7 @@ export function Fab({
             >
               {selected === "GOAL" && (
                 <>
-                  <div className="grid gap-2">
+                  <div className="grid gap-3">
                     <Select
                       value={goalMonumentId ?? ""}
                       onValueChange={setGoalMonumentId}
@@ -3862,8 +3884,8 @@ export function Fab({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                    <div className="grid gap-2 col-span-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
+                    <div className="grid gap-2">
                       <Label htmlFor="goal-name" className="sr-only">
                         Goal name
                       </Label>
@@ -3877,17 +3899,17 @@ export function Fab({
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
-                    <div className="grid gap-2 col-span-1">
+                    <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
                       <EnergyCycleButton
                         value={goalEnergy}
                         onChange={setGoalEnergy}
                         ariaLabel="Goal energy"
-                        className="h-12 w-full md:h-14"
+                        className="h-12 w-12 shrink-0 md:h-14 md:w-14"
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
                     <div className="grid gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         PRIORITY
@@ -3910,18 +3932,41 @@ export function Fab({
                     </div>
                     <div className="grid gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                        DUE
+                        CAMPAIGN
                       </Label>
-                      <input
-                        id="goal-due"
-                        type="datetime-local"
-                        className="h-12 md:h-14 w-full rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 focus:!border-blue-400/60 focus-visible:ring-0"
-                        value={goalDue ?? ""}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setGoalDue(value === "" ? null : value);
-                        }}
-                      />
+                      <Select
+                        value={goalCampaignId ?? ""}
+                        onValueChange={(value) =>
+                          setGoalCampaignId(value.trim().length > 0 ? value : null)
+                        }
+                        triggerClassName="h-12 md:h-14 rounded-md text-left text-sm"
+                        contentWrapperClassName="min-w-[260px] sm:min-w-[320px]"
+                        placeholder="No campaign"
+                      >
+                        <SelectContent>
+                          <SelectItem value="">No campaign</SelectItem>
+                          {goalCampaignsLoading ? (
+                            <SelectItem value="__loading" disabled>
+                              Loading campaigns…
+                            </SelectItem>
+                          ) : goalCampaignOptions.length > 0 ? (
+                            goalCampaignOptions.map((campaign) => (
+                              <SelectItem key={campaign.id} value={campaign.id}>
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="text-base">
+                                    {campaign.emoji ?? "🎯"}
+                                  </span>
+                                  <span className="truncate">{campaign.name}</span>
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="__empty" disabled>
+                              No campaigns yet
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   <div className="grid gap-2">
@@ -3941,7 +3986,7 @@ export function Fab({
 
               {selected === "PROJECT" && (
                 <>
-                  <div className="grid grid-cols-[2fr_1fr] gap-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 md:gap-4">
                     <div className="grid gap-2">
                       <Label className="sr-only">Goal</Label>
                       <Select
@@ -4193,8 +4238,8 @@ export function Fab({
                       )}
                     </div>
                   </div>
-                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                    <div className="grid gap-2 col-span-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
+                    <div className="grid min-w-0 gap-2">
                       <Label htmlFor="project-name" className="sr-only">
                         Project name
                       </Label>
@@ -4208,18 +4253,18 @@ export function Fab({
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
-                    <div className="grid gap-2 col-span-1">
+                    <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
                       <EnergyCycleButton
                         value={projectEnergy}
                         onChange={setProjectEnergy}
                         ariaLabel="Project energy"
-                        className="h-12 w-full md:h-14"
+                        className="h-12 w-12 shrink-0 md:h-14 md:w-14"
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
-                    <div className="grid gap-2">
+                  <div className="grid grid-cols-3 gap-2 md:gap-3">
+                    <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         PRIORITY
                       </Label>
@@ -4248,7 +4293,7 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid gap-2">
+                    <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         STAGE
                       </Label>
@@ -4267,13 +4312,16 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid gap-2 items-end">
+                    <div className="grid min-w-0 gap-2 items-end">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        DURATION
+                      </Label>
                       <div className="relative">
                         <button
                           type="button"
                           {...projectDurationTapHandlers}
                           ref={durationTriggerRef}
-                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation"
+                          className="flex h-12 w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.05] px-2 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation md:h-14"
                           aria-haspopup="dialog"
                           aria-expanded={showDurationPicker}
                           aria-controls="project-duration-picker"
@@ -4284,9 +4332,9 @@ export function Fab({
                             damping: 60,
                           }}
                         >
-                          <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
-                            <Clock className="h-6 w-6 text-white/80" />
-                            <span className="mt-1 text-[10px] font-semibold leading-none text-white/80">
+                          <span className="flex h-9 w-9 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
+                            <Clock className="h-4 w-4 text-white/80 md:h-5 md:w-5" />
+                            <span className="mt-0.5 text-[9px] font-semibold leading-none text-white/80 md:text-[10px]">
                               {normalizedProjectDuration || 30}m
                             </span>
                           </span>
@@ -4504,8 +4552,8 @@ export function Fab({
               )}
 
               {selected === "TASK" && (
-                <>
-                  <div className="grid gap-2">
+                <div className="grid gap-3 md:gap-3.5">
+                  <div className="grid gap-1.5">
                     <Select
                       value={taskProjectId ?? ""}
                       onValueChange={setTaskProjectId}
@@ -4676,8 +4724,8 @@ export function Fab({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                    <div className="grid gap-2 col-span-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
+                    <div className="grid min-w-0 gap-2">
                       <Label htmlFor="task-name" className="sr-only">
                         Task name
                       </Label>
@@ -4691,18 +4739,18 @@ export function Fab({
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
-                    <div className="grid gap-2 col-span-1">
+                    <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
                       <EnergyCycleButton
                         value={taskEnergy}
                         onChange={setTaskEnergy}
                         ariaLabel="Task energy"
-                        className="h-12 w-full md:h-14"
+                        className="h-12 w-12 shrink-0 md:h-14 md:w-14"
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
-                    <div className="grid gap-2">
+                  <div className="grid grid-cols-3 gap-2 md:gap-3">
+                    <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         PRIORITY
                       </Label>
@@ -4722,7 +4770,7 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid gap-2">
+                    <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         STAGE
                       </Label>
@@ -4741,7 +4789,7 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid gap-2">
+                    <div className="grid min-w-0 gap-2 items-end">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         DURATION
                       </Label>
@@ -4749,14 +4797,14 @@ export function Fab({
                         type="button"
                         {...taskDurationTapHandlers}
                         ref={taskDurationTriggerRef}
-                        className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation"
+                        className="flex h-12 w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.05] px-2 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation md:h-14"
                         aria-haspopup="dialog"
                         aria-expanded={showTaskDurationPicker}
                         aria-controls="task-duration-picker"
                       >
-                        <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
-                          <Clock className="h-6 w-6 text-white/80" />
-                          <span className="mt-1 text-[10px] font-semibold leading-none text-white/80">
+                        <span className="flex h-9 w-9 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
+                          <Clock className="h-4 w-4 text-white/80 md:h-5 md:w-5" />
+                          <span className="mt-0.5 text-[9px] font-semibold leading-none text-white/80 md:text-[10px]">
                             {taskDuration || 30}m
                           </span>
                         </span>
@@ -4802,8 +4850,8 @@ export function Fab({
                         document.body,
                       )
                     : null}
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <div className="grid gap-2">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div className="grid min-w-0 gap-2">
                       <Label>Skill</Label>
                       <Select
                         value={taskSkillId ?? ""}
@@ -4926,16 +4974,17 @@ export function Fab({
                         value={taskNotes}
                         onChange={(e) => setTaskNotes(e.target.value)}
                         placeholder="Context…"
-                        className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                        rows={3}
+                        className="min-h-[88px] rounded-md border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none md:min-h-[96px]"
                       />
                     </div>
                   </div>
-                </>
+                </div>
               )}
 
               {selected === "HABIT" && (
-                <>
-                  <div className="grid gap-2">
+                <div className="grid gap-3 md:gap-3.5">
+                  <div className="grid gap-1.5">
                     <Select
                       value={habitRoutineId ?? ""}
                       onValueChange={(value) => {
@@ -5002,7 +5051,7 @@ export function Fab({
                       </SelectContent>
                     </Select>
                     {isCreatingHabitRoutineInline && (
-                      <div className="grid gap-2">
+                      <div className="grid gap-1.5">
                         <Label htmlFor="habit-inline-routine-name">
                           Routine name
                         </Label>
@@ -5031,8 +5080,8 @@ export function Fab({
                       </div>
                     )}
                   </div>
-                  <div className="grid grid-cols-4 gap-4 md:grid-cols-[3fr_1fr]">
-                    <div className="grid gap-2 col-span-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
+                    <div className="grid min-w-0 gap-2">
                       <Label htmlFor="habit-name" className="sr-only">
                         Habit name
                       </Label>
@@ -5046,18 +5095,18 @@ export function Fab({
                         className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
-                    <div className="grid gap-2 col-span-1">
+                    <div className="grid gap-2">
                       <Label className="sr-only">Energy</Label>
                       <EnergyCycleButton
                         value={habitEnergy}
                         onChange={setHabitEnergy}
                         ariaLabel="Habit energy"
-                        className="h-12 w-full md:h-14"
+                        className="h-12 w-12 shrink-0 md:h-14 md:w-14"
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-[1.6fr_1.2fr_1fr] gap-4">
-                    <div className="grid gap-2">
+                  <div className="grid grid-cols-3 gap-2 md:gap-3">
+                    <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         TYPE
                       </Label>
@@ -5076,7 +5125,7 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid gap-2">
+                    <div className="grid min-w-0 gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         RECURRENCE
                       </Label>
@@ -5095,20 +5144,23 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid gap-2 items-end">
+                    <div className="grid min-w-0 gap-2 items-end">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                        DURATION
+                      </Label>
                       <div className="relative">
                         <button
                           type="button"
                           {...habitDurationTapHandlers}
                           ref={habitDurationTriggerRef}
-                          className="flex h-12 md:h-14 w-full items-center gap-3 rounded-md border border-white/10 bg-white/[0.05] px-3 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation"
+                          className="flex h-12 w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.05] px-2 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation md:h-14"
                           aria-haspopup="dialog"
                           aria-expanded={showHabitDurationPicker}
                           aria-controls="habit-duration-picker"
                         >
-                          <span className="flex h-12 w-12 flex-col items-center justify-center rounded-md bg-white/[0.08]">
-                            <Clock className="h-6 w-6 text-white/80" />
-                            <span className="mt-1 text-[10px] font-semibold leading-none text-white/80">
+                          <span className="flex h-9 w-9 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
+                            <Clock className="h-4 w-4 text-white/80 md:h-5 md:w-5" />
+                            <span className="mt-0.5 text-[9px] font-semibold leading-none text-white/80 md:text-[10px]">
                               {Number.parseInt(habitDuration || "15", 10)}m
                             </span>
                           </span>
@@ -5232,6 +5284,19 @@ export function Fab({
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="habit-why" className="text-zinc-500">
+                      WHY (optional)
+                    </Label>
+                    <Textarea
+                      id="habit-why"
+                      value={habitWhy}
+                      onChange={(event) => setHabitWhy(event.target.value)}
+                      placeholder="Add context…"
+                      rows={2}
+                      className="min-h-[68px] rounded-md border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+                    />
+                  </div>
 
                   {showHabitDurationPicker && habitDurationPosition
                     ? createPortal(
@@ -5269,7 +5334,7 @@ export function Fab({
                         document.body,
                       )
                     : null}
-                </>
+                </div>
               )}
             </div>
 
@@ -5970,6 +6035,87 @@ export function Fab({
   }, [selected]);
 
   useEffect(() => {
+    if (selected !== "GOAL") return;
+    let cancelled = false;
+    const loadGoalCampaigns = async () => {
+      try {
+        setGoalCampaignsLoading(true);
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+          if (!cancelled) {
+            setGoalCampaigns([]);
+            setGoalCampaignsLoading(false);
+          }
+          return;
+        }
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          if (!cancelled) {
+            setGoalCampaigns([]);
+            setGoalCampaignsLoading(false);
+          }
+          return;
+        }
+        const { data, error } = await supabase
+          .from("campaigns")
+          .select(
+            "id, name, emoji, primary_monument_id, scheduling_state, position",
+          )
+          .eq("user_id", user.id)
+          .order("position", { ascending: true, nullsFirst: false })
+          .order("name", { ascending: true });
+        if (error) {
+          throw error;
+        }
+        if (!cancelled) {
+          setGoalCampaigns((data ?? []) as GoalCampaignOption[]);
+        }
+      } catch (error) {
+        console.error("Failed to load goal campaigns", error);
+        if (!cancelled) {
+          setGoalCampaigns([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setGoalCampaignsLoading(false);
+        }
+      }
+    };
+    void loadGoalCampaigns();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
+
+  const goalCampaignOptions = useMemo(() => {
+    const campaigns = [...goalCampaigns];
+    campaigns.sort((a, b) => {
+      const aMatches = a.primary_monument_id === goalMonumentId;
+      const bMatches = b.primary_monument_id === goalMonumentId;
+      if (aMatches !== bMatches) {
+        return aMatches ? -1 : 1;
+      }
+      const aPosition = a.position ?? Number.MAX_SAFE_INTEGER;
+      const bPosition = b.position ?? Number.MAX_SAFE_INTEGER;
+      if (aPosition !== bPosition) {
+        return aPosition - bPosition;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    return campaigns;
+  }, [goalCampaigns, goalMonumentId]);
+
+  useEffect(() => {
+    setGoalCampaignId((current) =>
+      current && goalCampaigns.some((campaign) => campaign.id === current)
+        ? current
+        : null,
+    );
+  }, [goalCampaigns]);
+
+  useEffect(() => {
     const shouldLoadSkills =
       selected === "HABIT" ||
       selected === "PROJECT" ||
@@ -6663,16 +6809,40 @@ export function Fab({
         };
 
         if (selected === "GOAL") {
-          const { error } = await supabase.from("goals").insert({
-            user_id: user.id,
-            name: trimmedName,
-            priority: goalPriority,
-            energy: goalEnergy,
-            why: goalWhy?.trim() || null,
-            monument_id: goalMonumentId || null,
-            due_date: goalDue ?? null,
-          });
+          const { data: goalData, error } = await supabase
+            .from("goals")
+            .insert({
+              user_id: user.id,
+              name: trimmedName,
+              priority: goalPriority,
+              energy: goalEnergy,
+              why: goalWhy?.trim() || null,
+              monument_id: goalMonumentId || null,
+              due_date: goalDue ?? null,
+            })
+            .select("id")
+            .single();
           if (error) throwIfLimitError(error);
+          if (goalCampaignId && goalData?.id) {
+            const { data: campaignGoalRows, error: campaignGoalError } =
+              await supabase
+                .from("campaign_goals")
+                .select("position")
+                .eq("campaign_id", goalCampaignId)
+                .order("position", { ascending: false })
+                .limit(1);
+            if (campaignGoalError) throwIfLimitError(campaignGoalError);
+            const lastPosition = Number(campaignGoalRows?.[0]?.position ?? 0);
+            const nextPosition =
+              Number.isFinite(lastPosition) && lastPosition > 0
+                ? lastPosition + 1
+                : 1;
+            await addGoalToCampaign(user.id, {
+              campaignId: goalCampaignId,
+              goalId: goalData.id,
+              position: nextPosition,
+            });
+          }
         } else if (selected === "PROJECT") {
           const { data: projectData, error } = await supabase
             .from("projects")
@@ -6750,6 +6920,7 @@ export function Fab({
           const { error } = await supabase.from("habits").insert({
             user_id: user.id,
             name: trimmedName,
+            description: habitWhy?.trim() || null,
             type: habitType,
             habit_type: habitType,
             recurrence: habitRecurrence,
@@ -6809,6 +6980,7 @@ export function Fab({
     habitName,
     isCreatingHabitRoutineInline,
     isSavingFab,
+    goalCampaignId,
     goalDue,
     goalEnergy,
     goalMonumentId,
@@ -6988,10 +7160,31 @@ export function Fab({
     expanded && (viewportHeight || stableViewportHeight)
       ? (viewportHeight ?? stableViewportHeight)
       : null;
+  const isGoalCreationExpanded = expanded && selected === "GOAL";
+  const isProjectCreationExpanded = expanded && selected === "PROJECT";
+  const isTaskCreationExpanded = expanded && selected === "TASK";
+  const isHabitCreationExpanded = expanded && selected === "HABIT";
+  const isContentSizedCreationExpanded =
+    isGoalCreationExpanded ||
+    isProjectCreationExpanded ||
+    isTaskCreationExpanded ||
+    isHabitCreationExpanded;
+  const goalCreationMinHeight = 240;
+  const projectCreationMinHeight = 280;
+  const taskCreationMinHeight = 320;
+  const habitCreationMinHeight = 300;
   const minHeightExpanded = expanded
-    ? effectiveViewportHeight
-      ? Math.round(effectiveViewportHeight * 0.58)
-      : "58vh"
+    ? isGoalCreationExpanded
+      ? goalCreationMinHeight
+      : isProjectCreationExpanded
+        ? projectCreationMinHeight
+        : isTaskCreationExpanded
+          ? taskCreationMinHeight
+          : isHabitCreationExpanded
+            ? habitCreationMinHeight
+      : effectiveViewportHeight
+        ? Math.round(effectiveViewportHeight * 0.58)
+        : "58vh"
     : undefined;
   const maxHeightExpanded = expanded
     ? effectiveViewportHeight
@@ -7039,7 +7232,17 @@ export function Fab({
                 }}
                 className={cn(
                   "border rounded-lg shadow-2xl bg-[var(--surface-elevated)]",
-                  expanded ? "w-[92vw] max-w-[920px]" : "min-w-[200px]",
+                  expanded
+                    ? isGoalCreationExpanded
+                      ? "w-[calc(100vw-1.5rem)] max-w-[30rem]"
+                      : isProjectCreationExpanded
+                        ? "w-[calc(100vw-2rem)] max-w-[28rem]"
+                        : isTaskCreationExpanded
+                          ? "w-[calc(100vw-1.5rem)] max-w-[31rem]"
+                          : isHabitCreationExpanded
+                            ? "w-[calc(100vw-1.5rem)] max-w-[29rem]"
+                      : "w-[92vw] max-w-[920px]"
+                    : "min-w-[200px]",
                 )}
                 layout={!expanded}
                 onTouchStart={(event) => event.stopPropagation()}
@@ -7081,7 +7284,10 @@ export function Fab({
               >
                 <>
                   <motion.div
-                    className="relative h-full w-full"
+                    className={cn(
+                      "relative w-full",
+                      isContentSizedCreationExpanded ? "" : "h-full",
+                    )}
                     style={{
                       backgroundImage: isBlendingGradient
                         ? blendedBackgroundImage
@@ -7092,10 +7298,18 @@ export function Fab({
                     <div
                       ref={stageRef}
                       data-tour="fab-swipe"
-                      className="relative h-full w-full rounded-[inherit]"
+                      className={cn(
+                        "relative w-full rounded-[inherit]",
+                        isContentSizedCreationExpanded ? "" : "h-full",
+                      )}
                     >
                       <motion.div
-                        className="absolute inset-0 flex"
+                        className={cn(
+                          "flex",
+                          isContentSizedCreationExpanded
+                            ? "relative w-full"
+                            : "absolute inset-0",
+                        )}
                         drag="x"
                         dragListener={false}
                         dragControls={pageDragControls}
@@ -7115,7 +7329,12 @@ export function Fab({
                         dragPropagation
                       >
                         <motion.div
-                          className="absolute inset-0 z-10 flex"
+                          className={cn(
+                            "z-10 flex",
+                            isContentSizedCreationExpanded
+                              ? "relative w-full"
+                              : "absolute inset-0",
+                          )}
                           variants={pageVariants}
                           initial="open"
                           animate="open"

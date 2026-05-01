@@ -1789,7 +1789,7 @@ export async function scheduleBacklog(
 
   const tasks = await fetchReadyTasks(supabase);
   const allProjectsMap = await fetchAllProjectsMap(supabase);
-  const projectsMap = await fetchProjectsMap(supabase);
+  const fetchedProjectsMap = await fetchProjectsMap(supabase);
   await normalizeProjectInstances(userId, allProjectsMap, supabase);
   const goals = await fetchGoalsForUser(userId, supabase);
   const habits = await fetchHabitsForSchedule(userId, supabase);
@@ -1983,6 +1983,39 @@ export async function scheduleBacklog(
       goalsById.set(goal.id, goal);
     }
   }
+
+  const ineligibleProjectCountsByGoalStatus: Record<
+    "PAUSED" | "COMPLETED",
+    number
+  > = {
+    PAUSED: 0,
+    COMPLETED: 0,
+  };
+  const projectsMap: Record<string, CanonicalProjectRecord> = {};
+  for (const [projectId, project] of Object.entries(fetchedProjectsMap)) {
+    const goalId = project.goal_id ?? null;
+    if (!goalId) {
+      projectsMap[projectId] = project;
+      continue;
+    }
+
+    const goal = goalsById.get(goalId);
+    if (goal?.status && goal.status !== "ACTIVE") {
+      ineligibleProjectCountsByGoalStatus[goal.status] =
+        (ineligibleProjectCountsByGoalStatus[goal.status] ?? 0) + 1;
+      continue;
+    }
+
+    projectsMap[projectId] = project;
+  }
+
+  logSchedulerDebug("[AUTO_PROJECT_ELIGIBILITY]", {
+    eligibleProjectCount: Object.keys(projectsMap).length,
+    excludedProjectCount:
+      ineligibleProjectCountsByGoalStatus.PAUSED +
+      ineligibleProjectCountsByGoalStatus.COMPLETED,
+    excludedByGoalStatus: ineligibleProjectCountsByGoalStatus,
+  });
 
   await recalculateGlobalRanks(userId, projectsMap, supabase);
 

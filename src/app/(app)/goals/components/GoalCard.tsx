@@ -15,6 +15,7 @@ import { ChevronDown, MoreHorizontal, Sparkles } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { Goal, Project } from "../types";
 import type { ProjectCardMorphOrigin } from "./ProjectRow";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 // Lazy-load dropdown contents to reduce initial bundle and re-render cost
 const ProjectsDropdown = dynamic(
   () => import("./ProjectsDropdown").then((m) => m.ProjectsDropdown),
@@ -281,10 +282,11 @@ function GoalCardImpl({
   }, []);
 
   const energy = energyAccent[goal.energy];
+  const normalizedStatus = normalizeGoalStatus(goal.status, goal.active);
   const allProjectsCompleted =
     goal.projects.length > 0 && goal.projects.every(isProjectComplete);
   const isCompleted =
-    goal.status === "Completed" ||
+    normalizedStatus === "COMPLETED" ||
     (completeWhenProjectsDone && allProjectsCompleted);
   const resolvedCompletionTheme =
     completionTheme === "auto"
@@ -685,18 +687,22 @@ function GoalCardImpl({
                   >
                     Edit
                   </button>
-                  <button
-                    className="block w-full px-4 py-2 text-left text-sm text-white hover:bg-white/10"
-                    onClick={() => {
-                      console.log("🎯 Toggle active button clicked");
-                      document
-                        .getElementById(`dropdown-${goal.id}`)
-                        ?.classList.add("hidden");
-                      onToggleActive?.();
-                    }}
-                  >
-                    {goal.active ? "Mark Inactive" : "Mark Active"}
-                  </button>
+                  {normalizedStatus !== "COMPLETED" ? (
+                    <button
+                      className="block w-full px-4 py-2 text-left text-sm text-white hover:bg-white/10"
+                      onClick={() => {
+                        console.log("🎯 Toggle active button clicked");
+                        document
+                          .getElementById(`dropdown-${goal.id}`)
+                          ?.classList.add("hidden");
+                        onToggleActive?.();
+                      }}
+                    >
+                      {normalizedStatus === "ACTIVE"
+                        ? "Pause Goal"
+                        : "Resume Goal"}
+                    </button>
+                  ) : null}
                   <button
                     className="block w-full px-4 py-2 text-left text-sm text-rose-400 hover:bg-white/10"
                     onClick={() => {

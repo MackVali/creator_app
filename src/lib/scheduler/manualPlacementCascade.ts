@@ -23,6 +23,7 @@ import {
   addDaysInTimeZone,
   startOfDayInTimeZone,
 } from "./timezone";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 
 type Client = SupabaseClient<Database>;
 type PlacementResult = Awaited<ReturnType<typeof placeItemInWindows>>;
@@ -37,6 +38,12 @@ export type ManualPlacementCascadeWarning = {
 
 export type ManualPlacementCascadeResult = {
   warnings: ManualPlacementCascadeWarning[];
+  blockingError?: {
+    code: string;
+    message: string;
+    projectId?: string;
+    goalId?: string | null;
+  };
 };
 
 type ProjectPlacementContext = {
@@ -310,6 +317,98 @@ async function collectAffectedPlacementRegion(params: {
   return affected;
 }
 
+export async function enforceManualProjectGoalState(params: {
+  userId: string;
+  client: Client;
+  projectId: string;
+}): Promise<
+  | { ok: true; goalId: string | null }
+  | {
+      ok: false;
+      blockingError: NonNullable<ManualPlacementCascadeResult["blockingError"]>;
+    }
+> {
+  const { data: project, error: projectError } = await params.client
+    .from("projects")
+    .select("id, goal_id")
+    .eq("id", params.projectId)
+    .eq("user_id", params.userId)
+    .maybeSingle();
+
+  if (projectError) {
+    throw toError(projectError);
+  }
+
+  if (!project) {
+    return {
+      ok: false,
+      blockingError: {
+        code: "PROJECT_NOT_FOUND",
+        message: "Project not found for manual placement.",
+        projectId: params.projectId,
+        goalId: null,
+      },
+    };
+  }
+
+  const goalId = project.goal_id ?? null;
+  if (!goalId) {
+    return { ok: true, goalId: null };
+  }
+
+  const { data: goal, error: goalError } = await params.client
+    .from("goals")
+    .select("id, status, active")
+    .eq("id", goalId)
+    .eq("user_id", params.userId)
+    .maybeSingle();
+
+  if (goalError) {
+    throw toError(goalError);
+  }
+
+  if (!goal) {
+    return {
+      ok: false,
+      blockingError: {
+        code: "PROJECT_GOAL_NOT_FOUND",
+        message: "Project is linked to a missing parent goal.",
+        projectId: params.projectId,
+        goalId,
+      },
+    };
+  }
+
+  const goalStatus = normalizeGoalStatus(goal.status, goal.active);
+  if (goalStatus === "ACTIVE") {
+    return { ok: true, goalId };
+  }
+
+  if (goalStatus === "PAUSED") {
+    const { error: updateError } = await params.client
+      .from("goals")
+      .update({ status: "ACTIVE", active: true })
+      .eq("id", goalId)
+      .eq("user_id", params.userId);
+
+    if (updateError) {
+      throw toError(updateError);
+    }
+
+    return { ok: true, goalId };
+  }
+
+  return {
+    ok: false,
+    blockingError: {
+      code: "GOAL_COMPLETED_REOPEN_REQUIRED",
+      message: "Reopen the parent goal before manually scheduling this project.",
+      projectId: params.projectId,
+      goalId,
+    },
+  };
+}
+
 async function loadProjectPlacementContexts(
   client: Client,
   userId: string,
@@ -577,6 +676,22 @@ export async function persistManualPlacementCascade(params: {
     )
   );
   const pivotInstance = currentInstances.find((instance) => instance.id === params.pivotId);
+  if (
+    pivotInstance?.source_type === "PROJECT" &&
+    typeof pivotInstance.source_id === "string"
+  ) {
+    const goalStateResult = await enforceManualProjectGoalState({
+      userId: params.userId,
+      client: params.client,
+      projectId: pivotInstance.source_id,
+    });
+    if (!goalStateResult.ok) {
+      return {
+        warnings: [],
+        blockingError: goalStateResult.blockingError,
+      };
+    }
+  }
   if (pivotInstance?.source_type === "PROJECT" && typeof pivotInstance.source_id === "string") {
     projectIds.push(pivotInstance.source_id);
   }
