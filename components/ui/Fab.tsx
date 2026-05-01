@@ -27,13 +27,17 @@ import {
   type PanInfo,
 } from "framer-motion";
 import {
+  CircleDot,
   Check,
   Clock,
   Filter,
+  ListChecks,
   Loader2,
   Plus,
   Search,
+  Settings2,
   Sparkles,
+  Tags,
   Trash2,
   X,
 } from "lucide-react";
@@ -74,10 +78,12 @@ import type { CatRow } from "@/lib/types/cat";
 import { normalizeHabitType } from "@/lib/scheduler/habits";
 import { enforceHabitLimit } from "@/lib/habits/enforceHabitLimit";
 import { useProjectedGlobalRank } from "@/lib/hooks/useProjectedGlobalRank";
+import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
 import {
   addGoalToCampaign,
   type CampaignSchedulingState,
 } from "@/lib/queries/roadmaps";
+import { isValidUuid } from "@/lib/location-metadata";
 import {
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
@@ -155,6 +161,45 @@ interface FabProps extends HTMLAttributes<HTMLDivElement> {
   swipeUpToOpen?: boolean;
 }
 
+type CreationType = "GOAL" | "PROJECT" | "TASK" | "HABIT";
+type TagEntityType = CreationType;
+type CreationFormMode = "main" | "projects" | "tags" | "tasks" | "advanced";
+type CreationModeOption = {
+  id: CreationFormMode;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+type FabTag = {
+  id: string;
+  user_id: string;
+  name: string;
+  normalized_name: string;
+  color: string | null;
+};
+
+type DraftProjectChild = {
+  tempId: string;
+  name: string;
+  priority: string;
+  energy: string;
+  stage: string;
+  why: string;
+  durationMin: number | null;
+  dueDate: string | null;
+  skillIds: string[];
+};
+
+type DraftTaskChild = {
+  tempId: string;
+  name: string;
+  stage: string;
+  skillId: string | null;
+  dueDate: string | null;
+};
+
+type NestedDraftPanel = "goal-project" | "project-task" | null;
+
 type FabSearchResult = {
   id: string;
   name: string;
@@ -229,6 +274,24 @@ const FLAME_LEVELS: FlameLevel[] = [
   "EXTREME",
 ];
 
+const FAB_ADVANCED_LABEL_CLASS =
+  "text-[10px] font-semibold uppercase tracking-[0.24em] text-white/50";
+const FAB_ADVANCED_INPUT_CLASS =
+  "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white placeholder:text-white/35 focus:border-blue-400/60 focus-visible:ring-0";
+const FAB_ADVANCED_SELECT_TRIGGER_CLASS =
+  "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white";
+
+const HABIT_DAYLIGHT_ADVANCED_OPTIONS = [
+  { value: "ALL_DAY", label: "All day" },
+  { value: "DAY", label: "Daylight" },
+  { value: "NIGHT", label: "After dark" },
+] as const;
+
+const HABIT_WINDOW_EDGE_ADVANCED_OPTIONS = [
+  { value: "FRONT", label: "Front" },
+  { value: "BACK", label: "Back" },
+] as const;
+
 const LIMIT_MODAL_FEATURES = [
   "Unlimited goals, projects, and tasks with CREATOR PLUS.",
   "Creator Plus focus tools keep every milestone prioritized.",
@@ -274,6 +337,13 @@ const normalizeFlameLevel = (value?: string | null): FlameLevel => {
     : "MEDIUM";
 };
 
+const collapseWhitespace = (value: string) => value.trim().replace(/\s+/g, " ");
+
+const normalizeTagName = (value: string) =>
+  collapseWhitespace(value).toLowerCase();
+
+const sanitizeTagDisplayName = (value: string) => collapseWhitespace(value);
+
 const AUTO_SCOPE_CREATION_KEYWORDS = ["goal", "project", "task"];
 const AUTO_SCOPE_SCHEDULE_KEYWORDS = [
   "day type",
@@ -308,6 +378,30 @@ const QUICK_START_PROMPTS = [
   "Show my top priorities",
   "Plan my next 2 hours",
 ] as const;
+
+const CREATION_MODE_OPTIONS: Record<CreationType, CreationModeOption[]> = {
+  GOAL: [
+    { id: "main", label: "Main", icon: CircleDot },
+    { id: "projects", label: "Projects", icon: ListChecks },
+    { id: "tags", label: "Tags", icon: Tags },
+  ],
+  PROJECT: [
+    { id: "main", label: "Main", icon: CircleDot },
+    { id: "tasks", label: "Tasks", icon: ListChecks },
+    { id: "advanced", label: "Advanced", icon: Settings2 },
+  ],
+  TASK: [
+    { id: "main", label: "Main", icon: CircleDot },
+    { id: "advanced", label: "Advanced", icon: Settings2 },
+  ],
+  HABIT: [
+    { id: "main", label: "Main", icon: CircleDot },
+    { id: "advanced", label: "Advanced", icon: Settings2 },
+  ],
+};
+
+const getCreationModesForType = (type: CreationType | null) =>
+  type ? CREATION_MODE_OPTIONS[type] : [];
 
 const DRAFT_PROPOSAL_TYPES: AiIntent["type"][] = [
   "DRAFT_CREATE_GOAL",
@@ -352,6 +446,11 @@ const createThreadMessageId = () =>
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `msg-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+
+const createLocalDraftId = () =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `draft-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
 
 const buildInitialProposalFormValues = (
   draft?: Record<string, unknown>,
@@ -1120,7 +1219,14 @@ const isTourActive = () => Boolean((window as any).__CREATOR_TOUR_ACTIVE__);
 function useOverhangLT(
   ref: React.RefObject<HTMLElement>,
   deps: any[] = [],
-  opts?: { listenVisualViewport?: boolean; listenScroll?: boolean },
+  opts?: {
+    listenVisualViewport?: boolean;
+    listenScroll?: boolean;
+    groupWidth?: number;
+    groupHeight?: number;
+    overhang?: number;
+    align?: "left" | "right";
+  },
 ) {
   const [pos, setPos] = React.useState<{ left: number; top: number } | null>(
     null,
@@ -1133,11 +1239,11 @@ function useOverhangLT(
 
       const rect = el.getBoundingClientRect();
 
-      const OVERHANG = 12; // vertical overhang only
+      const OVERHANG = opts?.overhang ?? 12; // vertical overhang only
       const BTN = 48;
       const GAP = 12;
-      const GROUP_W = BTN * 2 + GAP;
-      const GROUP_H = BTN;
+      const GROUP_W = opts?.groupWidth ?? BTN * 2 + GAP;
+      const GROUP_H = opts?.groupHeight ?? BTN;
       const SHIFT_LEFT = 0; // keep right edge flush to panel
 
       const safeBottom =
@@ -1152,8 +1258,11 @@ function useOverhangLT(
       const viewportHeight =
         window.visualViewport?.height ?? window.innerHeight;
 
-      // Align group's right edge to panel's right (no horizontal overhang).
-      let left = Math.round(rect.right - GROUP_W - SHIFT_LEFT);
+      const align = opts?.align ?? "right";
+      let left =
+        align === "left"
+          ? Math.round(rect.left + SHIFT_LEFT)
+          : Math.round(rect.right - GROUP_W - SHIFT_LEFT);
       const minLeft = 8;
       const maxLeft = viewportWidth - GROUP_W - 8;
       left = Math.min(Math.max(left, minLeft), maxLeft);
@@ -1462,9 +1571,18 @@ export function Fab({
     }
   }, [aiThread]);
   const [expanded, setExpanded] = useState(false);
-  const [selected, setSelected] = useState<
-    "GOAL" | "PROJECT" | "TASK" | "HABIT" | null
-  >(null);
+  const [selected, setSelected] = useState<CreationType | null>(null);
+  const [activeCreationMode, setActiveCreationMode] =
+    useState<CreationFormMode>("main");
+  const [creationMainShellHeights, setCreationMainShellHeights] = useState<
+    Partial<Record<CreationType, number>>
+  >({});
+  const expandedCreationBodyRef = useRef<HTMLDivElement | null>(null);
+  const [availableTags, setAvailableTags] = useState<FabTag[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [tagInputValue, setTagInputValue] = useState("");
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [isCreatingTag, setIsCreatingTag] = useState(false);
   const initialOverlayStart = useMemo(
     () => roundToNearestMinutes(new Date(), 5),
     [],
@@ -1845,6 +1963,15 @@ export function Fab({
   const [showTaskProjectFilters, setShowTaskProjectFilters] = useState(false);
   const [taskProjects, setTaskProjects] = useState<Project[]>([]);
   const [taskProjectsLoading, setTaskProjectsLoading] = useState(false);
+  const tagsByNormalizedName = useMemo(() => {
+    const map = new Map<string, FabTag>();
+    availableTags.forEach((tag) => {
+      if (tag.normalized_name) {
+        map.set(tag.normalized_name, tag);
+      }
+    });
+    return map;
+  }, [availableTags]);
   const filteredGoals = useMemo(() => {
     const query = goalSearch.trim().toLowerCase();
     let list = goals;
@@ -2019,6 +2146,26 @@ export function Fab({
     left: number;
     width: number;
   } | null>(null);
+  const [showDraftProjectDurationPicker, setShowDraftProjectDurationPicker] =
+    useState(false);
+  const draftProjectDurationTriggerRef =
+    useRef<HTMLButtonElement | null>(null);
+  const draftProjectDurationPickerRef = useRef<HTMLDivElement | null>(null);
+  const [draftProjectDurationPosition, setDraftProjectDurationPosition] =
+    useState<{
+      top: number;
+      left: number;
+      width: number;
+    } | null>(null);
+  const [showDraftTaskDurationPicker, setShowDraftTaskDurationPicker] =
+    useState(false);
+  const draftTaskDurationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const draftTaskDurationPickerRef = useRef<HTMLDivElement | null>(null);
+  const [draftTaskDurationPosition, setDraftTaskDurationPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
   const [showHabitDurationPicker, setShowHabitDurationPicker] = useState(false);
   const habitDurationTriggerRef = useRef<HTMLButtonElement | null>(null);
   const habitDurationPickerRef = useRef<HTMLDivElement | null>(null);
@@ -2092,6 +2239,70 @@ export function Fab({
     if (left < margin) left = margin;
     setTaskDurationPosition({ top, left: left + window.scrollX, width });
   }, [showTaskDurationPicker]);
+  const updateDraftProjectDurationPosition = useCallback(() => {
+    if (!showDraftProjectDurationPicker) return;
+    const trigger = draftProjectDurationTriggerRef.current;
+    if (
+      !trigger ||
+      typeof window === "undefined" ||
+      typeof document === "undefined"
+    ) {
+      return;
+    }
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const estimatedHeight = 150;
+    const margin = 8;
+    const spaceBelow = viewportHeight - rect.bottom;
+    const placeBelow =
+      spaceBelow > estimatedHeight + margin || rect.top < estimatedHeight;
+    const top = placeBelow
+      ? rect.bottom + margin + window.scrollY
+      : Math.max(margin, rect.top - estimatedHeight) + window.scrollY;
+    const desiredWidth = Math.max(rect.width, 320);
+    const width = Math.min(desiredWidth, viewportWidth - margin * 2);
+    let left = rect.left;
+    if (left + width > viewportWidth - margin) {
+      left = viewportWidth - width - margin;
+    }
+    if (left < margin) left = margin;
+    setDraftProjectDurationPosition({
+      top,
+      left: left + window.scrollX,
+      width,
+    });
+  }, [showDraftProjectDurationPicker]);
+  const updateDraftTaskDurationPosition = useCallback(() => {
+    if (!showDraftTaskDurationPicker) return;
+    const trigger = draftTaskDurationTriggerRef.current;
+    if (
+      !trigger ||
+      typeof window === "undefined" ||
+      typeof document === "undefined"
+    ) {
+      return;
+    }
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const estimatedHeight = 150;
+    const margin = 8;
+    const spaceBelow = viewportHeight - rect.bottom;
+    const placeBelow =
+      spaceBelow > estimatedHeight + margin || rect.top < estimatedHeight;
+    const top = placeBelow
+      ? rect.bottom + margin + window.scrollY
+      : Math.max(margin, rect.top - estimatedHeight) + window.scrollY;
+    const desiredWidth = Math.max(rect.width, 320);
+    const width = Math.min(desiredWidth, viewportWidth - margin * 2);
+    let left = rect.left;
+    if (left + width > viewportWidth - margin) {
+      left = viewportWidth - width - margin;
+    }
+    if (left < margin) left = margin;
+    setDraftTaskDurationPosition({ top, left: left + window.scrollX, width });
+  }, [showDraftTaskDurationPicker]);
   useEffect(() => {
     if (!showDurationPicker) return;
     updateDurationPosition();
@@ -2161,6 +2372,75 @@ export function Fab({
       document.removeEventListener("touchstart", handleOutside);
     };
   }, [showTaskDurationPicker]);
+  useEffect(() => {
+    if (!showDraftProjectDurationPicker) return;
+    updateDraftProjectDurationPosition();
+    const handle = () => updateDraftProjectDurationPosition();
+    window.addEventListener("resize", handle);
+    window.addEventListener("scroll", handle, true);
+    return () => {
+      window.removeEventListener("resize", handle);
+      window.removeEventListener("scroll", handle, true);
+    };
+  }, [showDraftProjectDurationPicker, updateDraftProjectDurationPosition]);
+
+  useEffect(() => {
+    if (!showDraftProjectDurationPicker) return;
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (isTourActive()) return;
+      const target = event.target as Node | null;
+      if (
+        !target ||
+        fabRootRef.current?.contains(target) ||
+        draftProjectDurationPickerRef.current?.contains(target) ||
+        draftProjectDurationTriggerRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setShowDraftProjectDurationPicker(false);
+    };
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("touchstart", handleOutside, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("touchstart", handleOutside);
+    };
+  }, [showDraftProjectDurationPicker]);
+
+  useEffect(() => {
+    if (!showDraftTaskDurationPicker) return;
+    updateDraftTaskDurationPosition();
+    const handle = () => updateDraftTaskDurationPosition();
+    window.addEventListener("resize", handle);
+    window.addEventListener("scroll", handle, true);
+    return () => {
+      window.removeEventListener("resize", handle);
+      window.removeEventListener("scroll", handle, true);
+    };
+  }, [showDraftTaskDurationPicker, updateDraftTaskDurationPosition]);
+
+  useEffect(() => {
+    if (!showDraftTaskDurationPicker) return;
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (isTourActive()) return;
+      const target = event.target as Node | null;
+      if (
+        !target ||
+        fabRootRef.current?.contains(target) ||
+        draftTaskDurationPickerRef.current?.contains(target) ||
+        draftTaskDurationTriggerRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setShowDraftTaskDurationPicker(false);
+    };
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("touchstart", handleOutside, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("touchstart", handleOutside);
+    };
+  }, [showDraftTaskDurationPicker]);
   const toggleDurationPicker = () => {
     setShowDurationPicker((prev) => {
       const next = !prev;
@@ -2199,6 +2479,45 @@ export function Fab({
     const current = Number.parseInt(taskDuration || "30", 10);
     const next = Math.max(1, current + delta);
     setTaskDuration(next.toString());
+  };
+  const toggleDraftProjectDurationPicker = () => {
+    setShowDraftProjectDurationPicker((prev) => {
+      const next = !prev;
+      if (
+        next &&
+        (draftProjectDuration === "" || !Number.isFinite(draftProjectDuration))
+      ) {
+        setDraftProjectDuration(30);
+      }
+      requestAnimationFrame(() => updateDraftProjectDurationPosition());
+      return next;
+    });
+  };
+
+  const toggleDraftTaskDurationPicker = () => {
+    setShowDraftTaskDurationPicker((prev) => {
+      const next = !prev;
+      if (
+        next &&
+        (!draftTaskDuration ||
+          !Number.isFinite(Number.parseInt(draftTaskDuration, 10)))
+      ) {
+        setDraftTaskDuration("30");
+      }
+      requestAnimationFrame(() => updateDraftTaskDurationPosition());
+      return next;
+    });
+  };
+
+  const adjustDraftProjectDuration = (delta: number) => {
+    const next = Math.max(0, normalizedDraftProjectDuration + delta);
+    setDraftProjectDuration(next);
+  };
+
+  const adjustDraftTaskDuration = (delta: number) => {
+    const current = Number.parseInt(draftTaskDuration || "30", 10);
+    const next = Math.max(1, current + delta);
+    setDraftTaskDuration(next.toString());
   };
 
   const updateHabitDurationPosition = useCallback(() => {
@@ -2294,6 +2613,12 @@ export function Fab({
   const taskDurationTapHandlers = useTapHandler(() =>
     toggleTaskDurationPicker(),
   );
+  const draftProjectDurationTapHandlers = useTapHandler(() =>
+    toggleDraftProjectDurationPicker(),
+  );
+  const draftTaskDurationTapHandlers = useTapHandler(() =>
+    toggleDraftTaskDurationPicker(),
+  );
   const habitDurationTapHandlers = useTapHandler(() =>
     toggleHabitDurationPicker(),
   );
@@ -2303,11 +2628,23 @@ export function Fab({
   const taskDurationMinusTapHandlers = useTapHandler(() =>
     adjustTaskDuration(-5),
   );
+  const draftProjectDurationMinusTapHandlers = useTapHandler(() =>
+    adjustDraftProjectDuration(-5),
+  );
+  const draftTaskDurationMinusTapHandlers = useTapHandler(() =>
+    adjustDraftTaskDuration(-5),
+  );
   const projectDurationPlusTapHandlers = useTapHandler(() =>
     adjustProjectDuration(5),
   );
   const taskDurationPlusTapHandlers = useTapHandler(() =>
     adjustTaskDuration(5),
+  );
+  const draftProjectDurationPlusTapHandlers = useTapHandler(() =>
+    adjustDraftProjectDuration(5),
+  );
+  const draftTaskDurationPlusTapHandlers = useTapHandler(() =>
+    adjustDraftTaskDuration(5),
   );
   const habitDurationMinusTapHandlers = useTapHandler(() =>
     adjustHabitDuration(-5),
@@ -2317,6 +2654,7 @@ export function Fab({
   );
   const [projectSkillIds, setProjectSkillIds] = useState<string[]>([]);
   const [projectGoalId, setProjectGoalId] = useState<string | null>(null);
+  const [projectDue, setProjectDue] = useState("");
   const [showGoalFilters, setShowGoalFilters] = useState(false);
   const projectedRankState = useProjectedGlobalRank({
     goalId: projectGoalId,
@@ -2335,6 +2673,9 @@ export function Fab({
   const [goalCampaignsLoading, setGoalCampaignsLoading] = useState(false);
   const [monuments, setMonuments] = useState<Monument[]>([]);
   const [monumentsLoading, setMonumentsLoading] = useState(false);
+  const [goalDraftProjects, setGoalDraftProjects] = useState<
+    DraftProjectChild[]
+  >([]);
   const [taskName, setTaskName] = useState("");
   const [taskStage, setTaskStage] = useState("PRODUCE");
   const [taskDuration, setTaskDuration] = useState<string>("");
@@ -2343,6 +2684,10 @@ export function Fab({
   const [taskProjectId, setTaskProjectId] = useState<string | "">("");
   const [taskSkillId, setTaskSkillId] = useState<string | "">("");
   const [taskNotes, setTaskNotes] = useState("");
+  const [taskDue, setTaskDue] = useState("");
+  const [projectDraftTasks, setProjectDraftTasks] = useState<DraftTaskChild[]>(
+    [],
+  );
   const [habitName, setHabitName] = useState("");
   const [habitType, setHabitType] = useState(defaultHabitType);
   const [habitRecurrence, setHabitRecurrence] = useState(
@@ -2353,6 +2698,12 @@ export function Fab({
   const [habitGoalId, setHabitGoalId] = useState<string | "">("");
   const [habitSkillId, setHabitSkillId] = useState<string | "">("");
   const [habitWhy, setHabitWhy] = useState("");
+  const [habitLocationContextId, setHabitLocationContextId] = useState("");
+  const [habitDaylightPreference, setHabitDaylightPreference] =
+    useState("ALL_DAY");
+  const [habitWindowEdgePreference, setHabitWindowEdgePreference] =
+    useState("FRONT");
+  const [habitNextDueOverride, setHabitNextDueOverride] = useState("");
   const [habitRoutineId, setHabitRoutineId] = useState<string | "">("");
   const [habitRoutines, setHabitRoutines] = useState<
     { id: string; name: string; description?: string | null }[]
@@ -2363,6 +2714,33 @@ export function Fab({
   const [habitInlineRoutineName, setHabitInlineRoutineName] = useState("");
   const [habitInlineRoutineDescription, setHabitInlineRoutineDescription] =
     useState("");
+  const [nestedDraftPanel, setNestedDraftPanel] =
+    useState<NestedDraftPanel>(null);
+  const [draftProjectName, setDraftProjectName] = useState("");
+  const [draftProjectStage, setDraftProjectStage] = useState("RESEARCH");
+  const [draftProjectDuration, setDraftProjectDuration] = useState<
+    number | ""
+  >("");
+  const [draftProjectPriority, setDraftProjectPriority] =
+    useState("MEDIUM");
+  const [draftProjectEnergy, setDraftProjectEnergy] = useState("MEDIUM");
+  const [draftProjectWhy, setDraftProjectWhy] = useState("");
+  const [draftProjectSkillIds, setDraftProjectSkillIds] = useState<string[]>(
+    [],
+  );
+  const [draftProjectDue, setDraftProjectDue] = useState("");
+  const [draftTaskName, setDraftTaskName] = useState("");
+  const [draftTaskStage, setDraftTaskStage] = useState("PRODUCE");
+  const [draftTaskDuration, setDraftTaskDuration] = useState<string>("");
+  const normalizedDraftTaskDuration = Number.parseInt(
+    draftTaskDuration || "30",
+    10,
+  );
+  const [draftTaskPriority, setDraftTaskPriority] = useState("MEDIUM");
+  const [draftTaskEnergy, setDraftTaskEnergy] = useState("MEDIUM");
+  const [draftTaskSkillId, setDraftTaskSkillId] = useState<string | "">("");
+  const [draftTaskNotes, setDraftTaskNotes] = useState("");
+  const [draftTaskDue, setDraftTaskDue] = useState("");
   const findSkillById = useCallback(
     (id: string | null | undefined) =>
       id ? (skills.find((s) => s.id === id) ?? null) : null,
@@ -2384,6 +2762,104 @@ export function Fab({
         ?.value ?? "MEDIUM"
     );
   };
+
+  const normalizedDraftProjectDuration =
+    typeof draftProjectDuration === "number" &&
+    Number.isFinite(draftProjectDuration)
+      ? draftProjectDuration
+      : 0;
+  const isDraftProjectReady =
+    draftProjectName.trim().length > 0 && draftProjectSkillIds.length > 0;
+  const isDraftTaskReady =
+    draftTaskName.trim().length > 0 && Boolean(draftTaskSkillId);
+
+  const resetNestedProjectDraftForm = useCallback(() => {
+    setDraftProjectName("");
+    setDraftProjectStage("RESEARCH");
+    setDraftProjectDuration("");
+    setDraftProjectPriority("MEDIUM");
+    setDraftProjectEnergy("MEDIUM");
+    setDraftProjectWhy("");
+    setDraftProjectSkillIds([]);
+    setDraftProjectDue("");
+    setShowDraftProjectDurationPicker(false);
+    setDraftProjectDurationPosition(null);
+  }, []);
+
+  const resetNestedTaskDraftForm = useCallback(() => {
+    setDraftTaskName("");
+    setDraftTaskStage("PRODUCE");
+    setDraftTaskDuration("");
+    setDraftTaskPriority("MEDIUM");
+    setDraftTaskEnergy("MEDIUM");
+    setDraftTaskSkillId("");
+    setDraftTaskNotes("");
+    setDraftTaskDue("");
+    setShowDraftTaskDurationPicker(false);
+    setDraftTaskDurationPosition(null);
+  }, []);
+
+  const resetNestedDraftState = useCallback(() => {
+    setNestedDraftPanel(null);
+    setGoalDraftProjects([]);
+    setProjectDraftTasks([]);
+    resetNestedProjectDraftForm();
+    resetNestedTaskDraftForm();
+  }, [resetNestedProjectDraftForm, resetNestedTaskDraftForm]);
+
+  const handleAddGoalDraftProject = useCallback(() => {
+    const trimmedName = draftProjectName.trim();
+    if (!trimmedName || draftProjectSkillIds.length === 0) return;
+    setGoalDraftProjects((current) => [
+      ...current,
+      {
+        tempId: createLocalDraftId(),
+        name: trimmedName,
+        priority: draftProjectPriority,
+        energy: draftProjectEnergy,
+        stage: draftProjectStage,
+        why: draftProjectWhy.trim(),
+        durationMin: normalizedDraftProjectDuration || null,
+        dueDate: draftProjectDue || null,
+        skillIds: [...draftProjectSkillIds],
+      },
+    ]);
+    resetNestedProjectDraftForm();
+    setNestedDraftPanel(null);
+  }, [
+    draftProjectEnergy,
+    draftProjectDue,
+    draftProjectName,
+    draftProjectPriority,
+    draftProjectSkillIds,
+    draftProjectStage,
+    draftProjectWhy,
+    normalizedDraftProjectDuration,
+    resetNestedProjectDraftForm,
+  ]);
+
+  const handleAddProjectDraftTask = useCallback(() => {
+    const trimmedName = draftTaskName.trim();
+    if (!trimmedName || !draftTaskSkillId) return;
+    setProjectDraftTasks((current) => [
+      ...current,
+      {
+        tempId: createLocalDraftId(),
+        name: trimmedName,
+        stage: draftTaskStage,
+        skillId: draftTaskSkillId,
+        dueDate: draftTaskDue || null,
+      },
+    ]);
+    resetNestedTaskDraftForm();
+    setNestedDraftPanel(null);
+  }, [
+    draftTaskDue,
+    draftTaskName,
+    draftTaskSkillId,
+    draftTaskStage,
+    resetNestedTaskDraftForm,
+  ]);
 
   const renderGroupedSkillItems = useCallback(() => {
     const UNCATEGORIZED_SKILL_GROUP_ID = "__uncategorized_skill_group__";
@@ -2576,6 +3052,11 @@ export function Fab({
       </div>
     );
   }
+
+  const goalFilterMenuRef = useRef<HTMLDivElement | null>(null);
+  const skillFilterMenuRef = useRef<HTMLDivElement | null>(null);
+  const taskProjectFilterMenuRef = useRef<HTMLDivElement | null>(null);
+
   const [modalEventType, setModalEventType] = useState<
     "GOAL" | "PROJECT" | "TASK" | "HABIT" | null
   >(null);
@@ -2788,9 +3269,6 @@ export function Fab({
     overlaySortMode,
     searchResults,
   ]);
-  const goalFilterMenuRef = useRef<HTMLDivElement | null>(null);
-  const skillFilterMenuRef = useRef<HTMLDivElement | null>(null);
-  const taskProjectFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const [menuWidth, setMenuWidth] = useState<number | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageWidth, setStageWidth] = useState(0);
@@ -2799,6 +3277,49 @@ export function Fab({
   const prefersReducedMotion = useReducedMotion();
   const router = useRouter();
   const { isPlus } = useEntitlement();
+  const locationContextsResult = useLocationContexts();
+  const locationContextOptions = useMemo(() => {
+    if (Array.isArray(locationContextsResult)) {
+      return locationContextsResult;
+    }
+    if (
+      locationContextsResult &&
+      typeof locationContextsResult === "object" &&
+      "contexts" in locationContextsResult &&
+      Array.isArray(locationContextsResult.contexts)
+    ) {
+      return locationContextsResult.contexts;
+    }
+    if (
+      locationContextsResult &&
+      typeof locationContextsResult === "object" &&
+      "locationContexts" in locationContextsResult &&
+      Array.isArray(locationContextsResult.locationContexts)
+    ) {
+      return locationContextsResult.locationContexts;
+    }
+    return [];
+  }, [locationContextsResult]);
+  const locationContextsLoading =
+    !Array.isArray(locationContextsResult) &&
+    Boolean(locationContextsResult?.loading);
+  const locationContextsError =
+    !Array.isArray(locationContextsResult) &&
+    typeof locationContextsResult?.error === "string"
+      ? locationContextsResult.error
+      : null;
+  const validLocationContexts = useMemo(
+    () =>
+      locationContextOptions.filter(
+        (context): context is { id: string; label: string; value: string } =>
+          Boolean(context) &&
+          typeof context.id === "string" &&
+          isValidUuid(context.id) &&
+          typeof context.label === "string" &&
+          typeof context.value === "string",
+      ),
+    [locationContextOptions],
+  );
   const goToBilling = useCallback(() => {
     setActiveLimitCode(null);
     router.push("/settings/billing");
@@ -2825,6 +3346,20 @@ export function Fab({
   const overhangPos = useOverhangLT(panelRef, [expanded, selected], {
     listenVisualViewport: !expanded,
   });
+  const activeCreationModes = getCreationModesForType(selected);
+  const creationModeClusterWidth =
+    activeCreationModes.length > 0 ? activeCreationModes.length * 36 + (activeCreationModes.length - 1) * 6 : 0;
+  const creationModeOverhangPos = useOverhangLT(
+    panelRef,
+    [expanded, selected, activeCreationMode, creationModeClusterWidth],
+    {
+      listenVisualViewport: !expanded,
+      groupWidth: creationModeClusterWidth,
+      groupHeight: 34,
+      overhang: 8,
+      align: "left",
+    },
+  );
   const [stableViewportHeight, setStableViewportHeight] = useState<
     number | null
   >(null);
@@ -2843,6 +3378,86 @@ export function Fab({
   }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
   const shouldHideOverhangButtons =
     expanded && (isKeyboardVisible || isTextInputFocused);
+
+  useEffect(() => {
+    setActiveCreationMode("main");
+  }, [expanded, selected]);
+
+  const previousSelectedRef = useRef<CreationType | null>(null);
+  useEffect(() => {
+    const selectedChanged = previousSelectedRef.current !== selected;
+    if (!expanded || selectedChanged) {
+      setSelectedTagIds([]);
+      setTagInputValue("");
+      setIsCreatingTag(false);
+      setProjectDue("");
+      setTaskDue("");
+      setHabitLocationContextId("");
+      setHabitDaylightPreference("ALL_DAY");
+      setHabitWindowEdgePreference("FRONT");
+      setHabitNextDueOverride("");
+      resetNestedDraftState();
+    }
+    if (!expanded) {
+      setAvailableTags([]);
+      setTagsLoading(false);
+    }
+    previousSelectedRef.current = selected;
+  }, [expanded, resetNestedDraftState, selected]);
+
+  useEffect(() => {
+    if (!expanded || !selected) return;
+    let cancelled = false;
+    const loadTags = async () => {
+      try {
+        setTagsLoading(true);
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+          if (!cancelled) {
+            setAvailableTags([]);
+            setTagsLoading(false);
+          }
+          return;
+        }
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) {
+          if (!cancelled) {
+            setAvailableTags([]);
+            setTagsLoading(false);
+          }
+          return;
+        }
+        const { data, error } = await supabase
+          .from("tags" as any)
+          .select("id, user_id, name, normalized_name, color")
+          .eq("user_id", user.id)
+          .order("name", { ascending: true });
+        if (error) throw error;
+        if (!cancelled) {
+          setAvailableTags((data ?? []) as FabTag[]);
+        }
+      } catch (error) {
+        console.error("Failed to load tags", error);
+        if (!cancelled) {
+          setAvailableTags([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setTagsLoading(false);
+        }
+      }
+    };
+    void loadTags();
+    return () => {
+      cancelled = true;
+      setSelectedTagIds([]);
+      setTagInputValue("");
+    };
+  }, [expanded, selected]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -3163,6 +3778,7 @@ export function Fab({
     setProjectWhy("");
     setProjectSkillIds([]);
     setProjectGoalId(null);
+    setProjectDue("");
 
     setGoalName("");
     setGoalMonumentId("");
@@ -3180,6 +3796,7 @@ export function Fab({
     setTaskProjectId("");
     setTaskSkillId("");
     setTaskNotes("");
+    setTaskDue("");
 
     setHabitName("");
     setHabitType(defaultHabitType);
@@ -3189,13 +3806,20 @@ export function Fab({
     setHabitGoalId("");
     setHabitSkillId("");
     setHabitWhy("");
+    setHabitLocationContextId("");
+    setHabitDaylightPreference("ALL_DAY");
+    setHabitWindowEdgePreference("FRONT");
+    setHabitNextDueOverride("");
     setHabitRoutineId("");
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineDescription("");
 
+    setSelectedTagIds([]);
+    setTagInputValue("");
     setSaveError(null);
-  }, [defaultHabitRecurrence, defaultHabitType]);
+    resetNestedDraftState();
+  }, [defaultHabitRecurrence, defaultHabitType, resetNestedDraftState]);
 
   type MenuPalette = {
     base: [number, number, number];
@@ -3800,8 +4424,1089 @@ export function Fab({
     return -width + clamped;
   });
 
+  const toggleSelectedTagId = useCallback((tagId: string) => {
+    setSelectedTagIds((current) =>
+      current.includes(tagId)
+        ? current.filter((value) => value !== tagId)
+        : [...current, tagId],
+    );
+  }, []);
+
+  const handleCreateOrSelectTag = useCallback(async () => {
+    const normalizedName = normalizeTagName(tagInputValue);
+    if (!normalizedName || isCreatingTag) return;
+
+    const existingTag = tagsByNormalizedName.get(normalizedName);
+    if (existingTag) {
+      setSelectedTagIds((current) =>
+        current.includes(existingTag.id) ? current : [...current, existingTag.id],
+      );
+      setTagInputValue("");
+      return;
+    }
+
+    const displayName = sanitizeTagDisplayName(tagInputValue);
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      toast.error("Unable to add tag", "Supabase client not available.");
+      return;
+    }
+
+    setIsCreatingTag(true);
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) {
+        throw new Error("You need to be signed in to add tags.");
+      }
+
+      let resolvedTag: FabTag | null = null;
+      const { data, error } = await supabase
+        .from("tags" as any)
+        .insert({
+          user_id: user.id,
+          name: displayName,
+          normalized_name: normalizedName,
+        })
+        .select("id, user_id, name, normalized_name, color")
+        .single();
+
+      if (error) {
+        const { data: existingData, error: existingError } = await supabase
+          .from("tags" as any)
+          .select("id, user_id, name, normalized_name, color")
+          .eq("user_id", user.id)
+          .eq("normalized_name", normalizedName)
+          .maybeSingle();
+        if (existingError) throw existingError;
+        if (!existingData) throw error;
+        resolvedTag = existingData as FabTag;
+      } else {
+        resolvedTag = data as FabTag;
+      }
+
+      if (!resolvedTag?.id) {
+        throw new Error("Tag could not be created.");
+      }
+
+      setAvailableTags((current) => {
+        const next = current.some((tag) => tag.id === resolvedTag?.id)
+          ? current
+          : [...current, resolvedTag as FabTag];
+        return [...next].sort((a, b) => a.name.localeCompare(b.name));
+      });
+      setSelectedTagIds((current) =>
+        current.includes(resolvedTag.id) ? current : [...current, resolvedTag.id],
+      );
+      setTagInputValue("");
+    } catch (error) {
+      console.error("Failed to create tag", error);
+      toast.error("Unable to add tag", "Try again in a moment.");
+    } finally {
+      setIsCreatingTag(false);
+    }
+  }, [isCreatingTag, tagInputValue, tagsByNormalizedName, toast]);
+
+  const attachSelectedTagsToEntity = useCallback(
+    async ({
+      supabase,
+      userId,
+      entityType,
+      entityId,
+      tagIds,
+    }: {
+      supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>;
+      userId: string;
+      entityType: TagEntityType;
+      entityId: string;
+      tagIds: string[];
+    }) => {
+      if (!entityId || tagIds.length === 0) return;
+      const { error } = await supabase.from("event_tags" as any).insert(
+        tagIds.map((tagId) => ({
+          user_id: userId,
+          tag_id: tagId,
+          entity_type: entityType,
+          entity_id: entityId,
+        })),
+      );
+      if (error) throw error;
+    },
+    [],
+  );
+
+  const renderTagPickerPanel = ({
+    label,
+    footer,
+    density = "default",
+  }: {
+    label: string;
+    footer?: React.ReactNode;
+    density?: "default" | "compact";
+  }) => (
+    <div
+      className={cn(
+        "grid rounded-2xl border border-white/10 bg-white/[0.04] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5",
+        density === "compact" ? "gap-3 px-4 py-3.5" : "gap-4 px-4 py-4",
+        expanded && "min-h-full grid-rows-[auto_minmax(0,1fr)] content-start",
+      )}
+      style={secondaryCreationPanelStyle}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold leading-none text-white">
+          {label}
+        </h3>
+        {selectedTagIds.length > 0 ? (
+          <span className="rounded-full border border-white/10 bg-black/25 px-2 py-0.5 text-[10px] font-medium text-white/70">
+            {selectedTagIds.length} selected
+          </span>
+        ) : null}
+      </div>
+
+      <div
+        className={cn(
+          "grid min-h-0 content-start",
+          density === "compact" ? "gap-2.5" : "gap-3",
+          density === "compact"
+            ? footer
+              ? "grid-rows-[auto_auto_auto]"
+              : "grid-rows-[auto_auto]"
+            : footer
+              ? "grid-rows-[minmax(0,1fr)_auto_auto]"
+              : "grid-rows-[minmax(0,1fr)_auto]",
+        )}
+      >
+        <div
+          className={cn(
+            "min-h-0",
+            density === "compact" && "self-start",
+            density === "compact"
+              ? "max-h-[168px] overflow-y-auto overscroll-contain pr-1"
+              : availableTags.length > 10
+                ? "overflow-y-auto overscroll-contain pr-1"
+                : null,
+          )}
+        >
+          {tagsLoading ? (
+            <div
+              className={cn(
+                "grid place-items-center",
+                density === "compact" ? "min-h-[88px]" : "min-h-[140px]",
+              )}
+            >
+              <p className="text-sm text-white/55">Loading tags…</p>
+            </div>
+          ) : availableTags.length > 0 ? (
+            <div
+              className={cn(
+                "flex flex-wrap content-start",
+                density === "compact" ? "gap-2" : "gap-2.5",
+              )}
+            >
+              {availableTags.map((tag) => {
+                const isSelected = selectedTagIds.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleSelectedTagId(tag.id)}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-full border transition-colors",
+                      density === "compact"
+                        ? "min-h-8 px-3 py-1 text-[13px]"
+                        : "min-h-10 px-3.5 py-1.5 text-sm",
+                      isSelected
+                        ? "border-white/35 bg-white/16 text-white"
+                        : "border-white/10 bg-black/25 text-white/72 hover:border-white/20 hover:text-white",
+                    )}
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-white/40"
+                      style={tag.color ? { backgroundColor: tag.color } : undefined}
+                    />
+                    <span className="truncate">{tag.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "grid place-items-center rounded-2xl border border-dashed border-white/10 bg-black/15 px-4 text-center",
+                density === "compact" ? "min-h-[88px]" : "min-h-full",
+              )}
+            >
+              <p className="text-sm text-white/55">No tags yet.</p>
+            </div>
+          )}
+        </div>
+
+        <div className={cn("flex items-center gap-2", density === "compact" && "self-start")}>
+          <Input
+            value={tagInputValue}
+            onChange={(event) => setTagInputValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void handleCreateOrSelectTag();
+              }
+            }}
+            placeholder="New tag"
+            className={cn(
+              "border-white/10 bg-black/30 text-white placeholder:text-white/35",
+              density === "compact" ? "h-9 px-3 text-[13px]" : "h-10 px-3.5 text-sm",
+            )}
+          />
+          <button
+            type="button"
+            onClick={() => void handleCreateOrSelectTag()}
+            disabled={!normalizeTagName(tagInputValue) || isCreatingTag}
+            className={cn(
+              "inline-flex shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/10 font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-45",
+              density === "compact" ? "h-9 px-3.5 text-[13px]" : "h-10 px-4 text-sm",
+            )}
+          >
+            {isCreatingTag ? "Adding…" : "Add"}
+          </button>
+        </div>
+
+        {footer ? (
+          <div
+            className={cn(
+              "grid rounded-xl border border-white/8 bg-black/20",
+              density === "compact" ? "gap-2.5 px-3 py-2.5" : "gap-3 px-3.5 py-3",
+            )}
+          >
+            {footer}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  const renderGoalProjectsPanel = () => {
+    const goalProjectListShouldScroll = goalDraftProjects.length > 3;
+    const goalProjectCardClass = goalProjectListShouldScroll
+      ? "min-h-[74px]"
+      : "min-h-[88px] h-full";
+    const draftItems =
+      goalDraftProjects.length > 0
+        ? goalDraftProjects.map((project) => {
+            const skillLabel =
+              project.skillIds
+                .map((skillId) => findSkillById(skillId)?.name ?? null)
+                .filter(
+                  (value): value is string =>
+                    typeof value === "string" && value.trim().length > 0,
+                )
+                .join(", ") || "No skill";
+            return (
+              <div
+                key={project.tempId}
+                className={cn(
+                  "relative grid gap-1.5 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] px-3.5 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm",
+                  goalProjectCardClass,
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setGoalDraftProjects((current) =>
+                      current.filter((item) => item.tempId !== project.tempId),
+                    )
+                  }
+                  className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/65 transition hover:border-white/20 hover:text-white"
+                  aria-label="Remove draft project"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+                <div className="pr-6 text-xs font-semibold uppercase tracking-[0.08em] text-white">
+                  {project.name}
+                </div>
+                <div className="flex flex-wrap gap-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/55">
+                  <span>{project.stage}</span>
+                  <span>{project.priority}</span>
+                  <span>{project.energy}</span>
+                  {project.durationMin ? (
+                    <span>{project.durationMin}m</span>
+                  ) : null}
+                </div>
+                <div className="truncate text-[10px] text-white/58">
+                  {skillLabel}
+                </div>
+              </div>
+            );
+          })
+        : Array.from({ length: 3 }, (_, index) => (
+            <button
+              key={`goal-project-empty-${index}`}
+              type="button"
+              onClick={() => {
+                resetNestedProjectDraftForm();
+                setNestedDraftPanel("goal-project");
+              }}
+              className={cn(
+                "flex items-center justify-center rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm transition hover:border-white/18 hover:bg-white/[0.08]",
+                goalProjectCardClass,
+              )}
+              aria-label="Add draft project"
+            >
+              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/78">
+                <Plus className="h-4 w-4" />
+              </span>
+            </button>
+          ));
+
+    if (nestedDraftPanel === "goal-project") {
+      return (
+        <div
+          className={cn(
+            "grid gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5",
+            expanded && "min-h-full content-start",
+          )}
+          style={secondaryCreationPanelStyle}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                resetNestedProjectDraftForm();
+                setNestedDraftPanel(null);
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72 transition hover:border-white/20 hover:text-white"
+            >
+              <span>Back</span>
+            </button>
+            <h3 className="truncate text-sm font-semibold leading-none text-white">
+              Add Project
+            </h3>
+            <button
+              type="button"
+              onClick={handleAddGoalDraftProject}
+              disabled={!isDraftProjectReady}
+              className="inline-flex items-center rounded-full border border-white/12 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white transition disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Done
+            </button>
+          </div>
+          <div className="grid gap-3 md:gap-3.5">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
+              <div className="grid min-w-0 gap-2">
+                <Label htmlFor="nested-project-name" className="sr-only">
+                  Project name
+                </Label>
+                <Input
+                  id="nested-project-name"
+                  value={draftProjectName}
+                  onChange={(e) =>
+                    setDraftProjectName(e.target.value.toUpperCase())
+                  }
+                  placeholder="Name your PROJECT"
+                  className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0 md:h-14 md:text-xl"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label className="sr-only">Energy</Label>
+                <EnergyCycleButton
+                  value={draftProjectEnergy}
+                  onChange={setDraftProjectEnergy}
+                  ariaLabel="Draft project energy"
+                  className="h-12 w-12 shrink-0 md:h-14 md:w-14"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 md:gap-3">
+              <div className="grid min-w-0 gap-2">
+                <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                  PRIORITY
+                </Label>
+                <Select
+                  value={draftProjectPriority}
+                  onValueChange={setDraftProjectPriority}
+                  triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
+                  contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
+                  placeholder="Priority"
+                >
+                  <SelectContent>
+                    {PRIORITY_OPTIONS_LOCAL.map((o) => (
+                      <SelectItem key={o.value} value={o.value} label={o.label}>
+                        <div className="flex w-full items-center justify-between gap-3">
+                          <span>{o.label}</span>
+                          <span className="w-10 text-right text-red-400">
+                            {PRIORITY_ICON_MAP[o.value] ?? ""}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid min-w-0 gap-2">
+                <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                  STAGE
+                </Label>
+                <Select
+                  value={draftProjectStage}
+                  onValueChange={setDraftProjectStage}
+                  triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
+                  placeholder="Stage"
+                >
+                  <SelectContent>
+                    {PROJECT_STAGE_OPTIONS_LOCAL.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid min-w-0 items-end gap-2">
+                <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                  DURATION
+                </Label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    {...draftProjectDurationTapHandlers}
+                    ref={draftProjectDurationTriggerRef}
+                    className="flex h-12 w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.05] px-2 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation md:h-14"
+                    aria-haspopup="dialog"
+                    aria-expanded={showDraftProjectDurationPicker}
+                    aria-controls="draft-project-duration-picker"
+                  >
+                    <span className="flex h-9 w-9 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
+                      <Clock className="h-4 w-4 text-white/80 md:h-5 md:w-5" />
+                      <span className="mt-0.5 text-[9px] font-semibold leading-none text-white/80 md:text-[10px]">
+                        {normalizedDraftProjectDuration || 30}m
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            {showDraftProjectDurationPicker && draftProjectDurationPosition
+              ? createPortal(
+                  <div
+                    data-fab-overlay
+                    id="draft-project-duration-picker"
+                    ref={draftProjectDurationPickerRef}
+                    className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
+                    style={{
+                      position: "absolute",
+                      top: draftProjectDurationPosition.top,
+                      left: draftProjectDurationPosition.left,
+                      width: draftProjectDurationPosition.width,
+                      touchAction: "manipulation",
+                    }}
+                    onTouchStart={(event) => event.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        {...draftProjectDurationMinusTapHandlers}
+                        className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+                      >
+                        -
+                      </button>
+                      <div className="text-lg font-semibold text-white">
+                        {normalizedDraftProjectDuration || 30} min
+                      </div>
+                      <button
+                        type="button"
+                        {...draftProjectDurationPlusTapHandlers}
+                        className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>,
+                  document.body,
+                )
+              : null}
+            <div className="grid gap-2">
+              <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                SKILL
+              </Label>
+              <Select
+                value={draftProjectSkillIds[0] ?? ""}
+                onOpenChange={handleSkillDropdownOpenChange}
+                onValueChange={(value) => {
+                  setDraftProjectSkillIds(value ? [value] : []);
+                  const skill = findSkillById(value);
+                  setSkillSearch(skill?.name ?? "");
+                  setShowSkillFilters(false);
+                }}
+                placeholder="Link a skill"
+                triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                maxHeight={150}
+                openOnTriggerFocus
+                trigger={
+                  <SkillTrigger
+                    selectedId={draftProjectSkillIds[0] ?? null}
+                    onClearSelection={() => {
+                      setDraftProjectSkillIds([]);
+                      setSkillSearch("");
+                    }}
+                  />
+                }
+              >
+                <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                  {showSkillFilters ? (
+                    <div
+                      ref={skillFilterMenuRef}
+                      className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                    >
+                      <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                        <span className="text-sm font-semibold">
+                          Filter Skills
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowSkillFilters(false)}
+                          className="text-xs text-white/80 underline-offset-4 hover:underline"
+                        >
+                          Close
+                        </button>
+                      </div>
+                      <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-3">
+                            <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                              Filter
+                            </div>
+                            <div className="space-y-2">
+                              <select
+                                value={skillFilterMonumentId}
+                                onChange={(e) =>
+                                  setSkillFilterMonumentId(e.target.value)
+                                }
+                                className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                              >
+                                <option value="">
+                                  {skillFilterMonumentId
+                                    ? "Monument (clear)"
+                                    : "Monument (any)"}
+                                </option>
+                                {monuments.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    {(m.emoji ?? "✨") +
+                                      " " +
+                                      (m.title ?? "Monument")}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="space-y-3">
+                            <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                              Quick actions
+                            </div>
+                            <div className="grid grid-cols-1 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSkillSearch("")}
+                                className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                              >
+                                Reset search
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSkillFilterMonumentId("")}
+                                className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                              >
+                                Clear filters
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                  {skillsLoading ? (
+                    <SelectItem value="__loading" disabled>
+                      Loading skills…
+                    </SelectItem>
+                  ) : filteredSkills.length > 0 ? (
+                    renderGroupedSkillItems()
+                  ) : (
+                    <SelectItem value="__empty" disabled>
+                      No skills found
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="nested-project-why" className="text-zinc-500">
+                WHY (optional)
+              </Label>
+              <Textarea
+                id="nested-project-why"
+                value={draftProjectWhy}
+                onChange={(e) => setDraftProjectWhy(e.target.value)}
+                placeholder="Add context…"
+                className="border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className={cn(
+          "grid gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5",
+          expanded && "min-h-full grid-rows-[auto_minmax(0,1fr)] content-start",
+        )}
+        style={secondaryCreationPanelStyle}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="truncate text-sm font-semibold leading-none text-white">
+            Goal Projects
+          </h3>
+          <button
+            type="button"
+            onClick={() => {
+              resetNestedProjectDraftForm();
+              setNestedDraftPanel("goal-project");
+            }}
+            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72 transition hover:border-white/20 hover:text-white"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>Add</span>
+          </button>
+        </div>
+        <div
+          className={cn(
+            "pr-1",
+            expanded && !goalProjectListShouldScroll && "min-h-0",
+            goalProjectListShouldScroll &&
+              "max-h-[264px] overflow-y-auto overscroll-contain",
+          )}
+        >
+          <div
+            className={cn(
+              "grid gap-3",
+              !goalProjectListShouldScroll &&
+                "h-full grid-rows-[repeat(3,minmax(0,1fr))]",
+            )}
+          >
+            {draftItems}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderProjectTasksPanel = () => {
+    const projectTaskListShouldScroll = projectDraftTasks.length > 3;
+    const projectTaskCardClass = projectTaskListShouldScroll
+      ? "min-h-[72px]"
+      : "min-h-[84px] h-full";
+    const draftItems =
+      projectDraftTasks.length > 0
+        ? projectDraftTasks.map((task) => (
+            <div
+              key={task.tempId}
+              className={cn(
+                "relative grid gap-1.5 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] px-3.5 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm",
+                projectTaskCardClass,
+              )}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setProjectDraftTasks((current) =>
+                    current.filter((item) => item.tempId !== task.tempId),
+                  )
+                }
+                className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/65 transition hover:border-white/20 hover:text-white"
+                aria-label="Remove draft task"
+              >
+                <X className="h-3 w-3" />
+              </button>
+              <div className="pr-6 text-xs font-semibold uppercase tracking-[0.08em] text-white">
+                {task.name}
+              </div>
+              <div className="flex flex-wrap gap-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/55">
+                <span>{task.stage}</span>
+                {task.skillId ? (
+                  <span>{findSkillById(task.skillId)?.name ?? "Skill"}</span>
+                ) : null}
+              </div>
+            </div>
+          ))
+        : Array.from({ length: 3 }, (_, index) => (
+            <button
+              key={`project-task-empty-${index}`}
+              type="button"
+              onClick={() => {
+                resetNestedTaskDraftForm();
+                setNestedDraftPanel("project-task");
+              }}
+              className={cn(
+                "flex items-center justify-center rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm transition hover:border-white/18 hover:bg-white/[0.08]",
+                projectTaskCardClass,
+              )}
+              aria-label="Add draft task"
+            >
+              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/78">
+                <Plus className="h-4 w-4" />
+              </span>
+            </button>
+          ));
+
+    if (nestedDraftPanel === "project-task") {
+      return (
+        <div
+          className={cn(
+            "grid gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5",
+            expanded && "min-h-full content-start",
+          )}
+          style={secondaryCreationPanelStyle}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                resetNestedTaskDraftForm();
+                setNestedDraftPanel(null);
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72 transition hover:border-white/20 hover:text-white"
+            >
+              <span>Back</span>
+            </button>
+            <h3 className="truncate text-sm font-semibold leading-none text-white">
+              Add Task
+            </h3>
+            <button
+              type="button"
+              onClick={handleAddProjectDraftTask}
+              disabled={!isDraftTaskReady}
+              className="inline-flex items-center rounded-full border border-white/12 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white transition disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Done
+            </button>
+          </div>
+          <div className="grid gap-3 md:gap-3.5">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
+              <div className="grid min-w-0 gap-2">
+                <Label htmlFor="nested-task-name" className="sr-only">
+                  Task name
+                </Label>
+                <Input
+                  id="nested-task-name"
+                  value={draftTaskName}
+                  onChange={(e) => setDraftTaskName(e.target.value.toUpperCase())}
+                  placeholder="Name your TASK"
+                  className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0 md:h-14 md:text-xl"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label className="sr-only">Energy</Label>
+                <EnergyCycleButton
+                  value={draftTaskEnergy}
+                  onChange={setDraftTaskEnergy}
+                  ariaLabel="Draft task energy"
+                  className="h-12 w-12 shrink-0 md:h-14 md:w-14"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 md:gap-3">
+              <div className="grid min-w-0 gap-2">
+                <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                  PRIORITY
+                </Label>
+                <Select
+                  value={draftTaskPriority}
+                  onValueChange={setDraftTaskPriority}
+                  triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
+                  contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
+                  placeholder="Priority"
+                >
+                  <SelectContent>
+                    {PRIORITY_OPTIONS_LOCAL.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid min-w-0 gap-2">
+                <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                  STAGE
+                </Label>
+                <Select
+                  value={draftTaskStage}
+                  onValueChange={setDraftTaskStage}
+                  triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
+                  placeholder="Stage"
+                >
+                  <SelectContent>
+                    {TASK_STAGE_OPTIONS_LOCAL.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid min-w-0 items-end gap-2">
+                <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                  DURATION
+                </Label>
+                <button
+                  type="button"
+                  {...draftTaskDurationTapHandlers}
+                  ref={draftTaskDurationTriggerRef}
+                  className="flex h-12 w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.05] px-2 text-sm text-white/80 shadow-[0_0_0_1px_rgba(148,163,184,0.08)] transition hover:border-white/20 touch-manipulation md:h-14"
+                  aria-haspopup="dialog"
+                  aria-expanded={showDraftTaskDurationPicker}
+                  aria-controls="draft-task-duration-picker"
+                >
+                  <span className="flex h-9 w-9 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
+                    <Clock className="h-4 w-4 text-white/80 md:h-5 md:w-5" />
+                    <span className="mt-0.5 text-[9px] font-semibold leading-none text-white/80 md:text-[10px]">
+                      {Number.isFinite(normalizedDraftTaskDuration)
+                        ? normalizedDraftTaskDuration
+                        : 30}
+                      m
+                    </span>
+                  </span>
+                </button>
+              </div>
+            </div>
+            {showDraftTaskDurationPicker && draftTaskDurationPosition
+              ? createPortal(
+                  <div
+                    data-fab-overlay
+                    id="draft-task-duration-picker"
+                    ref={draftTaskDurationPickerRef}
+                    className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
+                    style={{
+                      position: "absolute",
+                      top: draftTaskDurationPosition.top,
+                      left: draftTaskDurationPosition.left,
+                      width: draftTaskDurationPosition.width,
+                      touchAction: "manipulation",
+                    }}
+                    onTouchStart={(event) => event.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        {...draftTaskDurationMinusTapHandlers}
+                        className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+                      >
+                        -
+                      </button>
+                      <div className="text-lg font-semibold text-white">
+                        {Number.isFinite(normalizedDraftTaskDuration)
+                          ? normalizedDraftTaskDuration
+                          : 30}{" "}
+                        min
+                      </div>
+                      <button
+                        type="button"
+                        {...draftTaskDurationPlusTapHandlers}
+                        className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>,
+                  document.body,
+                )
+              : null}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="grid min-w-0 gap-2">
+                <Label>Skill</Label>
+                <Select
+                  value={draftTaskSkillId ?? ""}
+                  onOpenChange={handleSkillDropdownOpenChange}
+                  onValueChange={(value) => {
+                    setDraftTaskSkillId(value);
+                    const skill = findSkillById(value);
+                    setSkillSearch(skill?.name ?? "");
+                    setShowSkillFilters(false);
+                  }}
+                  placeholder="Link a skill"
+                  triggerClassName="!h-12 md:!h-14 !border-none !bg-transparent !p-0 shadow-none focus-visible:ring-0"
+                  contentWrapperClassName="w-full max-h-[150px] overflow-y-auto overscroll-contain"
+                  maxHeight={150}
+                  openOnTriggerFocus
+                  trigger={
+                    <SkillTrigger
+                      selectedId={draftTaskSkillId || null}
+                      onClearSelection={() => {
+                        setDraftTaskSkillId("");
+                        setSkillSearch("");
+                      }}
+                    />
+                  }
+                >
+                  <SelectContent className="relative min-w-[220px] w-full max-h-none overflow-y-auto overscroll-contain">
+                    {showSkillFilters ? (
+                      <div
+                        ref={skillFilterMenuRef}
+                        className="absolute inset-0 z-30 flex flex-col bg-black/95 backdrop-blur-md"
+                      >
+                        <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+                          <span className="text-sm font-semibold">
+                            Filter Skills
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowSkillFilters(false)}
+                            className="text-xs text-white/80 underline-offset-4 hover:underline"
+                          >
+                            Close
+                          </button>
+                        </div>
+                        <div className="flex-1 overflow-auto px-3 py-3 text-sm text-white/85">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-3">
+                              <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                Filter
+                              </div>
+                              <div className="space-y-2">
+                                <select
+                                  value={skillFilterMonumentId}
+                                  onChange={(e) =>
+                                    setSkillFilterMonumentId(e.target.value)
+                                  }
+                                  className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2.5 text-sm text-white"
+                                >
+                                  <option value="">
+                                    {skillFilterMonumentId
+                                      ? "Monument (clear)"
+                                      : "Monument (any)"}
+                                  </option>
+                                  {monuments.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                      {(m.emoji ?? "✨") +
+                                        " " +
+                                        (m.title ?? "Monument")}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                            <div className="space-y-3">
+                              <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                Quick actions
+                              </div>
+                              <div className="grid grid-cols-1 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setSkillSearch("")}
+                                  className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                >
+                                  Reset search
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSkillFilterMonumentId("")}
+                                  className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
+                                >
+                                  Clear filters
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                    {skillsLoading ? (
+                      <SelectItem value="__loading" disabled>
+                        Loading skills…
+                      </SelectItem>
+                    ) : filteredSkills.length > 0 ? (
+                      renderGroupedSkillItems()
+                    ) : (
+                      <SelectItem value="__empty" disabled>
+                        No skills found
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2 md:col-span-2">
+                <Label htmlFor="nested-task-notes">Notes (optional)</Label>
+                <Textarea
+                  id="nested-task-notes"
+                  value={draftTaskNotes}
+                  onChange={(e) => setDraftTaskNotes(e.target.value)}
+                  placeholder="Context…"
+                  rows={3}
+                  className="min-h-[88px] rounded-md border border-white/10 bg-white/[0.05] focus:border-blue-400/60 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none md:min-h-[96px]"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className={cn(
+          "grid gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5",
+          expanded && "min-h-full grid-rows-[auto_minmax(0,1fr)] content-start",
+        )}
+        style={secondaryCreationPanelStyle}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="truncate text-sm font-semibold leading-none text-white">
+            Project Tasks
+          </h3>
+          <button
+            type="button"
+            onClick={() => {
+              resetNestedTaskDraftForm();
+              setNestedDraftPanel("project-task");
+            }}
+            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72 transition hover:border-white/20 hover:text-white"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>Add</span>
+          </button>
+        </div>
+        <div
+          className={cn(
+            "pr-1",
+            expanded && !projectTaskListShouldScroll && "min-h-0",
+            projectTaskListShouldScroll &&
+              "max-h-[252px] overflow-y-auto overscroll-contain",
+          )}
+        >
+          <div
+            className={cn(
+              "grid gap-3",
+              !projectTaskListShouldScroll &&
+                "h-full grid-rows-[repeat(3,minmax(0,1fr))]",
+            )}
+          >
+            {draftItems}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderPrimaryPage = () => (
-    <div className={cn("flex w-full flex-col", expanded ? "p-0" : "px-4 py-2")}>
+    <div
+      className={cn(
+        "flex w-full flex-col",
+        expanded ? "min-h-full p-0" : "px-4 py-2",
+      )}
+    >
       {!expanded &&
         primary.map((event) => (
           <motion.button
@@ -3826,8 +5531,10 @@ export function Fab({
             aria-label="Expanded placeholder"
           >
             <div
+              ref={expandedCreationBodyRef}
               className={cn(
                 "relative grid p-4 pb-4",
+                expanded && isContentSizedCreationExpanded && "content-start",
                 selected === "HABIT"
                   ? "gap-3 md:gap-3.5 md:p-6 md:pb-5"
                   : "gap-4 md:p-8 md:pb-6",
@@ -3837,7 +5544,7 @@ export function Fab({
                 scrollPaddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
               }}
             >
-              {selected === "GOAL" && (
+              {selected === "GOAL" && activeCreationMode === "main" && (
                 <>
                   <div className="grid gap-3">
                     <Select
@@ -3939,7 +5646,7 @@ export function Fab({
                         onValueChange={(value) =>
                           setGoalCampaignId(value.trim().length > 0 ? value : null)
                         }
-                        triggerClassName="h-12 md:h-14 rounded-md text-left text-sm"
+                        triggerClassName="h-12 rounded-md bg-black text-left text-sm md:h-14"
                         contentWrapperClassName="min-w-[260px] sm:min-w-[320px]"
                         placeholder="No campaign"
                       >
@@ -3984,7 +5691,7 @@ export function Fab({
                 </>
               )}
 
-              {selected === "PROJECT" && (
+              {selected === "PROJECT" && activeCreationMode === "main" && (
                 <>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 md:gap-4">
                     <div className="grid gap-2">
@@ -4240,17 +5947,17 @@ export function Fab({
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
                     <div className="grid min-w-0 gap-2">
-                      <Label htmlFor="project-name" className="sr-only">
+                      <Label htmlFor="main-project-name" className="sr-only">
                         Project name
                       </Label>
                       <Input
-                        id="project-name"
+                        id="main-project-name"
                         value={projectName}
                         onChange={(e) =>
                           setProjectName(e.target.value.toUpperCase())
                         }
                         placeholder="Name your PROJECT"
-                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0 md:h-14 md:text-xl"
                       />
                     </div>
                     <div className="grid gap-2">
@@ -4271,7 +5978,7 @@ export function Fab({
                       <Select
                         value={projectPriority}
                         onValueChange={setProjectPriority}
-                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
                         contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
                         placeholder="Priority"
                       >
@@ -4300,7 +6007,7 @@ export function Fab({
                       <Select
                         value={projectStage}
                         onValueChange={setProjectStage}
-                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
                         placeholder="Stage"
                       >
                         <SelectContent>
@@ -4312,7 +6019,7 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid min-w-0 gap-2 items-end">
+                    <div className="grid min-w-0 items-end gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         DURATION
                       </Label>
@@ -4325,12 +6032,6 @@ export function Fab({
                           aria-haspopup="dialog"
                           aria-expanded={showDurationPicker}
                           aria-controls="project-duration-picker"
-                          layout
-                          layoutTransition={{
-                            type: "spring",
-                            stiffness: 600,
-                            damping: 60,
-                          }}
                         >
                           <span className="flex h-9 w-9 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
                             <Clock className="h-4 w-4 text-white/80 md:h-5 md:w-5" />
@@ -4372,45 +6073,6 @@ export function Fab({
                             <button
                               type="button"
                               {...projectDurationPlusTapHandlers}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>,
-                        document.body,
-                      )
-                    : null}
-                  {showHabitDurationPicker && habitDurationPosition
-                    ? createPortal(
-                        <div
-                          data-fab-overlay
-                          id="habit-duration-picker"
-                          ref={habitDurationPickerRef}
-                          className="z-[2147483652] rounded-md border border-white/10 bg-black/90 p-3 shadow-xl backdrop-blur"
-                          style={{
-                            position: "absolute",
-                            top: habitDurationPosition.top,
-                            left: habitDurationPosition.left,
-                            width: habitDurationPosition.width,
-                            touchAction: "manipulation",
-                          }}
-                          onTouchStart={(event) => event.stopPropagation()}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <button
-                              type="button"
-                              {...habitDurationMinusTapHandlers}
-                              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
-                            >
-                              -
-                            </button>
-                            <div className="text-lg font-semibold text-white">
-                              {habitDuration || 15} min
-                            </div>
-                            <button
-                              type="button"
-                              {...habitDurationPlusTapHandlers}
                               className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-lg font-bold text-white hover:border-white/30 touch-manipulation"
                             >
                               +
@@ -4509,9 +6171,7 @@ export function Fab({
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() =>
-                                        setSkillFilterMonumentId("")
-                                      }
+                                      onClick={() => setSkillFilterMonumentId("")}
                                       className="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm transition hover:border-white/30"
                                     >
                                       Clear filters
@@ -4537,11 +6197,11 @@ export function Fab({
                     </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="project-why" className="text-zinc-500">
+                    <Label htmlFor="main-project-why" className="text-zinc-500">
                       WHY (optional)
                     </Label>
                     <Textarea
-                      id="project-why"
+                      id="main-project-why"
                       value={projectWhy}
                       onChange={(e) => setProjectWhy(e.target.value)}
                       placeholder="Add context…"
@@ -4551,7 +6211,7 @@ export function Fab({
                 </>
               )}
 
-              {selected === "TASK" && (
+              {selected === "TASK" && activeCreationMode === "main" && (
                 <div className="grid gap-3 md:gap-3.5">
                   <div className="grid gap-1.5">
                     <Select
@@ -4579,7 +6239,7 @@ export function Fab({
                       }
                     >
                       <SelectContent className="relative min-w-[220px]">
-                        <div className="sticky top-0 z-10 bg-black/80 p-2 backdrop-blur border-b border-white/5">
+                        <div className="sticky top-0 z-10 border-b border-white/5 bg-black/80 p-2 backdrop-blur">
                           <div className="relative flex items-center gap-2">
                             <Input
                               value={taskProjectSearch}
@@ -4587,7 +6247,7 @@ export function Fab({
                                 setTaskProjectSearch(e.target.value)
                               }
                               placeholder="Search projects…"
-                              className="h-9 text-sm border-white/10 bg-white/[0.05] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
+                              className="h-9 border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0"
                             />
                             <button
                               type="button"
@@ -4726,17 +6386,17 @@ export function Fab({
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
                     <div className="grid min-w-0 gap-2">
-                      <Label htmlFor="task-name" className="sr-only">
+                      <Label htmlFor="main-task-name" className="sr-only">
                         Task name
                       </Label>
                       <Input
-                        id="task-name"
+                        id="main-task-name"
                         value={taskName}
                         onChange={(e) =>
                           setTaskName(e.target.value.toUpperCase())
                         }
                         placeholder="Name your TASK"
-                        className="h-12 md:h-14 rounded-md !border-white/10 bg-white/[0.05] text-lg md:text-xl font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0"
+                        className="h-12 rounded-md !border-white/10 bg-white/[0.05] text-lg font-extrabold leading-tight placeholder:font-extrabold focus:!border-blue-400/60 focus-visible:ring-0 md:h-14 md:text-xl"
                       />
                     </div>
                     <div className="grid gap-2">
@@ -4757,7 +6417,7 @@ export function Fab({
                       <Select
                         value={taskPriority}
                         onValueChange={setTaskPriority}
-                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
                         contentWrapperClassName="min-w-[240px] sm:min-w-[280px]"
                         placeholder="Priority"
                       >
@@ -4777,7 +6437,7 @@ export function Fab({
                       <Select
                         value={taskStage}
                         onValueChange={setTaskStage}
-                        triggerClassName="h-12 md:h-14 rounded-md text-[11px] uppercase tracking-[0.12em]"
+                        triggerClassName="h-12 rounded-md text-[11px] uppercase tracking-[0.12em] md:h-14"
                         placeholder="Stage"
                       >
                         <SelectContent>
@@ -4789,7 +6449,7 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid min-w-0 gap-2 items-end">
+                    <div className="grid min-w-0 items-end gap-2">
                       <Label className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
                         DURATION
                       </Label>
@@ -4805,7 +6465,7 @@ export function Fab({
                         <span className="flex h-9 w-9 flex-col items-center justify-center rounded-md bg-white/[0.08] md:h-11 md:w-11">
                           <Clock className="h-4 w-4 text-white/80 md:h-5 md:w-5" />
                           <span className="mt-0.5 text-[9px] font-semibold leading-none text-white/80 md:text-[10px]">
-                            {taskDuration || 30}m
+                            {Number.parseInt(taskDuration || "30", 10) || 30}m
                           </span>
                         </span>
                       </button>
@@ -4836,7 +6496,7 @@ export function Fab({
                               -
                             </button>
                             <div className="text-lg font-semibold text-white">
-                              {Number.parseInt(taskDuration || "30", 10)} min
+                              {Number.parseInt(taskDuration || "30", 10) || 30} min
                             </div>
                             <button
                               type="button"
@@ -4869,7 +6529,7 @@ export function Fab({
                         openOnTriggerFocus
                         trigger={
                           <SkillTrigger
-                            selectedId={taskSkillId ?? null}
+                            selectedId={taskSkillId || null}
                             onClearSelection={() => {
                               setTaskSkillId("");
                               setSkillSearch("");
@@ -4968,9 +6628,9 @@ export function Fab({
                       </Select>
                     </div>
                     <div className="grid gap-2 md:col-span-2">
-                      <Label htmlFor="task-notes">Notes (optional)</Label>
+                      <Label htmlFor="main-task-notes">Notes (optional)</Label>
                       <Textarea
-                        id="task-notes"
+                        id="main-task-notes"
                         value={taskNotes}
                         onChange={(e) => setTaskNotes(e.target.value)}
                         placeholder="Context…"
@@ -4982,7 +6642,7 @@ export function Fab({
                 </div>
               )}
 
-              {selected === "HABIT" && (
+              {selected === "HABIT" && activeCreationMode === "main" && (
                 <div className="grid gap-3 md:gap-3.5">
                   <div className="grid gap-1.5">
                     <Select
@@ -5336,6 +6996,219 @@ export function Fab({
                     : null}
                 </div>
               )}
+
+              {selected === "GOAL" &&
+                activeCreationMode === "projects" &&
+                renderGoalProjectsPanel()}
+
+              {selected === "GOAL" && activeCreationMode === "tags" &&
+                renderTagPickerPanel({
+                  label: "Goal Tags",
+                  density: "compact",
+                })}
+
+              {selected === "PROJECT" &&
+                activeCreationMode === "tasks" &&
+                renderProjectTasksPanel()}
+
+              {selected === "PROJECT" && activeCreationMode === "advanced" &&
+                renderTagPickerPanel({
+                  label: "Project Advanced",
+                  density: "compact",
+                  footer: (
+                    <div className="grid gap-1.5">
+                      <Label
+                        htmlFor="project-advanced-due-date"
+                        className={FAB_ADVANCED_LABEL_CLASS}
+                      >
+                        Due date
+                      </Label>
+                      <Input
+                        id="project-advanced-due-date"
+                        type="date"
+                        value={projectDue}
+                        onChange={(event) => setProjectDue(event.target.value)}
+                        className={FAB_ADVANCED_INPUT_CLASS}
+                      />
+                    </div>
+                  ),
+                })}
+
+              {selected === "TASK" && activeCreationMode === "advanced" &&
+                renderTagPickerPanel({
+                  label: "Task Advanced",
+                  footer: (
+                    <div className="grid gap-1.5">
+                      <Label
+                        htmlFor="task-advanced-due-date"
+                        className={FAB_ADVANCED_LABEL_CLASS}
+                      >
+                        Due date
+                      </Label>
+                      <Input
+                        id="task-advanced-due-date"
+                        type="date"
+                        value={taskDue}
+                        onChange={(event) => setTaskDue(event.target.value)}
+                        className={FAB_ADVANCED_INPUT_CLASS}
+                      />
+                    </div>
+                  ),
+                })}
+
+              {selected === "HABIT" && activeCreationMode === "advanced" &&
+                renderTagPickerPanel({
+                  label: "Habit Advanced",
+                  footer: (
+                    <>
+                      <div className="grid gap-1.5">
+                        <Label
+                          htmlFor="habit-advanced-location-context"
+                          className={FAB_ADVANCED_LABEL_CLASS}
+                        >
+                          Location
+                        </Label>
+                        <Select
+                          value={
+                            habitLocationContextId ||
+                            (locationContextsLoading
+                              ? "__loading__"
+                              : validLocationContexts.length > 0
+                                ? "none"
+                                : "__unavailable__")
+                          }
+                          onValueChange={(value) =>
+                            setHabitLocationContextId(
+                              value === "none" ||
+                                value === "__loading__" ||
+                                value === "__unavailable__"
+                                ? ""
+                                : value,
+                            )
+                          }
+                          disabled={
+                            locationContextsLoading ||
+                            validLocationContexts.length === 0
+                          }
+                        >
+                          <SelectTrigger
+                            id="habit-advanced-location-context"
+                            className={FAB_ADVANCED_SELECT_TRIGGER_CLASS}
+                          >
+                            <SelectValue placeholder="Anywhere" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {locationContextsLoading ? (
+                              <SelectItem value="__loading__" disabled>
+                                Loading locations…
+                              </SelectItem>
+                            ) : validLocationContexts.length > 0 ? (
+                              <>
+                                <SelectItem value="none">Anywhere</SelectItem>
+                                {validLocationContexts.map((context) => (
+                                  <SelectItem
+                                    key={context.id}
+                                    value={context.id}
+                                  >
+                                    {context.label}
+                                  </SelectItem>
+                                ))}
+                              </>
+                            ) : (
+                              <SelectItem value="__unavailable__" disabled>
+                                Saved locations unavailable
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {locationContextsError ? (
+                          <p className="text-[10px] text-white/45">
+                            Using no location filter for now.
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="grid gap-1.5">
+                          <Label
+                            htmlFor="habit-advanced-daylight"
+                            className={FAB_ADVANCED_LABEL_CLASS}
+                          >
+                            Daylight
+                          </Label>
+                          <Select
+                            value={habitDaylightPreference}
+                            onValueChange={setHabitDaylightPreference}
+                          >
+                            <SelectTrigger
+                              id="habit-advanced-daylight"
+                              className={FAB_ADVANCED_SELECT_TRIGGER_CLASS}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {HABIT_DAYLIGHT_ADVANCED_OPTIONS.map((option) => (
+                                <SelectItem
+                                  key={option.value}
+                                  value={option.value}
+                                >
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid gap-1.5">
+                          <Label
+                            htmlFor="habit-advanced-window-edge"
+                            className={FAB_ADVANCED_LABEL_CLASS}
+                          >
+                            Window edge
+                          </Label>
+                          <Select
+                            value={habitWindowEdgePreference}
+                            onValueChange={setHabitWindowEdgePreference}
+                          >
+                            <SelectTrigger
+                              id="habit-advanced-window-edge"
+                              className={FAB_ADVANCED_SELECT_TRIGGER_CLASS}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {HABIT_WINDOW_EDGE_ADVANCED_OPTIONS.map(
+                                (option) => (
+                                  <SelectItem
+                                    key={option.value}
+                                    value={option.value}
+                                  >
+                                    {option.label}
+                                  </SelectItem>
+                                ),
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label
+                          htmlFor="habit-advanced-next-due-override"
+                          className={FAB_ADVANCED_LABEL_CLASS}
+                        >
+                          Next due
+                        </Label>
+                        <Input
+                          id="habit-advanced-next-due-override"
+                          type="datetime-local"
+                          value={habitNextDueOverride}
+                          onChange={(event) =>
+                            setHabitNextDueOverride(event.target.value)
+                          }
+                          className={FAB_ADVANCED_INPUT_CLASS}
+                        />
+                      </div>
+                    </>
+                  ),
+                })}
             </div>
 
             {saveError ? (
@@ -6697,6 +8570,7 @@ export function Fab({
     goalMonumentId,
     goalName,
     goalPriority,
+    habitEnergy,
     habitName,
     habitRecurrence,
     habitSkillId,
@@ -6714,6 +8588,7 @@ export function Fab({
   const handleFabSave = useCallback(async () => {
     if (fabSavePendingRef.current || isSavingFab || !selected) return;
     const createdType = selected;
+    const selectedTagIdsSnapshot = [...selectedTagIds];
     fabSavePendingRef.current = true;
     try {
       setSaveError(null);
@@ -6807,6 +8682,9 @@ export function Fab({
           }
           throw error;
         };
+        let createdEntityId: string | null = null;
+        let tagAttachmentFailed = false;
+        let childDraftFailureMessage: string | null = null;
 
         if (selected === "GOAL") {
           const { data: goalData, error } = await supabase
@@ -6823,6 +8701,7 @@ export function Fab({
             .select("id")
             .single();
           if (error) throwIfLimitError(error);
+          createdEntityId = goalData?.id ?? null;
           if (goalCampaignId && goalData?.id) {
             const { data: campaignGoalRows, error: campaignGoalError } =
               await supabase
@@ -6859,10 +8738,12 @@ export function Fab({
                 Number.isFinite(projectDuration)
                   ? projectDuration
                   : normalizedProjectDuration || null,
+              due_date: projectDue || null,
             })
             .select("id")
             .single();
           if (error) throwIfLimitError(error);
+          createdEntityId = projectData?.id ?? null;
           if (projectData?.id && projectSkillIds.length > 0) {
             const { error: projectSkillsError } = await supabase
               .from("project_skills")
@@ -6875,14 +8756,20 @@ export function Fab({
             if (projectSkillsError) throwIfLimitError(projectSkillsError);
           }
         } else if (selected === "TASK") {
-          const { error } = await supabase.from("tasks").insert({
-            user_id: user.id,
-            name: trimmedName,
-            project_id: taskProjectId || null,
-            stage: taskStage,
-            skill_id: taskSkillId || null,
-          });
+          const { data: taskData, error } = await supabase
+            .from("tasks")
+            .insert({
+              user_id: user.id,
+              name: trimmedName,
+              project_id: taskProjectId || null,
+              stage: taskStage,
+              skill_id: taskSkillId || null,
+              due_date: taskDue || null,
+            })
+            .select("id")
+            .single();
           if (error) throwIfLimitError(error);
+          createdEntityId = taskData?.id ?? null;
         } else if (selected === "HABIT") {
           try {
             await enforceHabitLimit({ supabase, userId: user.id });
@@ -6917,21 +8804,155 @@ export function Fab({
             if (routineError) throwIfLimitError(routineError);
             routineIdToUse = routineData?.id ?? null;
           }
-          const { error } = await supabase.from("habits").insert({
-            user_id: user.id,
-            name: trimmedName,
-            description: habitWhy?.trim() || null,
-            type: habitType,
-            habit_type: habitType,
-            recurrence: habitRecurrence,
-            duration_minutes: duration,
-            energy: habitEnergy,
-            skill_id: habitSkillId || null,
-            routine_id: routineIdToUse,
-            goal_id: habitGoalId || null,
-          });
+          const { data: habitData, error } = await supabase
+            .from("habits")
+            .insert({
+              user_id: user.id,
+              name: trimmedName,
+              description: habitWhy?.trim() || null,
+              type: habitType,
+              habit_type: habitType,
+              recurrence: habitRecurrence,
+              duration_minutes: duration,
+              energy: habitEnergy,
+              skill_id: habitSkillId || null,
+              routine_id: routineIdToUse,
+              goal_id: habitGoalId || null,
+              location_context_id: isValidUuid(habitLocationContextId)
+                ? habitLocationContextId
+                : null,
+              daylight_preference:
+                habitDaylightPreference === "ALL_DAY"
+                  ? null
+                  : habitDaylightPreference,
+              window_edge_preference:
+                habitWindowEdgePreference?.trim().toUpperCase() || "FRONT",
+              next_due_override: habitNextDueOverride
+                ? new Date(habitNextDueOverride).toISOString()
+                : null,
+            })
+            .select("id")
+            .single();
           if (error) throwIfLimitError(error);
+          createdEntityId = habitData?.id ?? null;
           await notifySchedulerOfChange();
+        }
+        if (createdEntityId && selectedTagIdsSnapshot.length > 0) {
+          try {
+            await attachSelectedTagsToEntity({
+              supabase,
+              userId: user.id,
+              entityType: createdType,
+              entityId: createdEntityId,
+              tagIds: selectedTagIdsSnapshot,
+            });
+          } catch (error) {
+            tagAttachmentFailed = true;
+            console.error("Failed to attach tags after create", error);
+          }
+        }
+        if (selected === "GOAL" && createdEntityId && goalDraftProjects.length > 0) {
+          const childErrors: string[] = [];
+          for (const draftProject of goalDraftProjects) {
+            try {
+              const { data: childProjectData, error: childProjectError } =
+                await supabase
+                  .from("projects")
+                  .insert({
+                    user_id: user.id,
+                    name: draftProject.name,
+                    goal_id: createdEntityId,
+                    priority: draftProject.priority,
+                    energy: draftProject.energy,
+                    stage: draftProject.stage,
+                    why: draftProject.why || null,
+                    duration_min: draftProject.durationMin,
+                    due_date: draftProject.dueDate || null,
+                  })
+                  .select("id")
+                  .single();
+              if (childProjectError) {
+                childErrors.push(childProjectError.message);
+                console.error(
+                  "Failed to insert draft project after goal create",
+                  childProjectError,
+                );
+                continue;
+              }
+              if (
+                childProjectData?.id &&
+                Array.isArray(draftProject.skillIds) &&
+                draftProject.skillIds.length > 0
+              ) {
+                const { error: childProjectSkillsError } = await supabase
+                  .from("project_skills")
+                  .insert(
+                    draftProject.skillIds.map((skillId) => ({
+                      project_id: childProjectData.id,
+                      skill_id: skillId,
+                    })),
+                  );
+                if (childProjectSkillsError) {
+                  childErrors.push(childProjectSkillsError.message);
+                  console.error(
+                    "Failed to attach draft project skills after goal create",
+                    childProjectSkillsError,
+                  );
+                }
+              }
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : "Unable to save draft project.";
+              childErrors.push(message);
+              console.error(
+                "Failed to persist nested project draft after goal create",
+                error,
+              );
+            }
+          }
+          if (childErrors.length > 0) {
+            childDraftFailureMessage =
+              childErrors[0] ?? "Some draft projects could not be saved.";
+          }
+        }
+        if (
+          selected === "PROJECT" &&
+          createdEntityId &&
+          projectDraftTasks.length > 0
+        ) {
+          const childErrors: string[] = [];
+          for (const draftTask of projectDraftTasks) {
+            try {
+              const { error: childTaskError } = await supabase.from("tasks")
+                .insert({
+                  user_id: user.id,
+                  name: draftTask.name,
+                  project_id: createdEntityId,
+                  stage: draftTask.stage,
+                  skill_id: draftTask.skillId || null,
+                  due_date: draftTask.dueDate || null,
+                });
+              if (childTaskError) {
+                childErrors.push(childTaskError.message);
+                console.error(
+                  "Failed to insert draft task after project create",
+                  childTaskError,
+                );
+              }
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : "Unable to save draft task.";
+              childErrors.push(message);
+              console.error(
+                "Failed to persist nested task draft after project create",
+                error,
+              );
+            }
+          }
+          if (childErrors.length > 0) {
+            childDraftFailureMessage =
+              childErrors[0] ?? "Some draft tasks could not be saved.";
+          }
         }
         resetFabFormState();
         setExpanded(false);
@@ -6948,6 +8969,15 @@ export function Fab({
                   ? "Habit"
                   : "Item";
         toast.success(`${successLabel} created`);
+        if (tagAttachmentFailed) {
+          toast.error(
+            "Tags not attached",
+            "The item was created, but selected tags could not be attached.",
+          );
+        }
+        if (childDraftFailureMessage) {
+          toast.error("Nested items not saved", childDraftFailureMessage);
+        }
       } catch (error: unknown) {
         console.error("Failed to save item", error);
         if (error instanceof LimitReachedError) {
@@ -6968,19 +8998,24 @@ export function Fab({
     }
   }, [
     habitDuration,
+    habitDaylightPreference,
     habitEnergy,
     habitGoalId,
     habitInlineRoutineDescription,
     habitInlineRoutineName,
+    habitLocationContextId,
     habitRecurrence,
     habitRoutineId,
     habitSkillId,
     habitType,
+    habitNextDueOverride,
+    habitWindowEdgePreference,
     habitWhy,
     habitName,
     isCreatingHabitRoutineInline,
     isSavingFab,
     goalCampaignId,
+    goalDraftProjects,
     goalDue,
     goalEnergy,
     goalMonumentId,
@@ -6990,6 +9025,7 @@ export function Fab({
     normalizedProjectDuration,
     notifySchedulerOfChange,
     projectDuration,
+    projectDue,
     projectEnergy,
     projectGoalId,
     projectName,
@@ -6997,11 +9033,15 @@ export function Fab({
     projectSkillIds,
     projectStage,
     projectWhy,
+    projectDraftTasks,
+    selectedTagIds,
     selected,
     taskName,
+    taskDue,
     taskProjectId,
     taskSkillId,
     taskStage,
+    attachSelectedTagsToEntity,
     resetFabFormState,
     toast,
   ]);
@@ -7173,15 +9213,57 @@ export function Fab({
   const projectCreationMinHeight = 280;
   const taskCreationMinHeight = 320;
   const habitCreationMinHeight = 300;
-  const minHeightExpanded = expanded
-    ? isGoalCreationExpanded
+  const selectedCreationTypeMinHeight =
+    selected === "GOAL"
       ? goalCreationMinHeight
-      : isProjectCreationExpanded
+      : selected === "PROJECT"
         ? projectCreationMinHeight
-        : isTaskCreationExpanded
+        : selected === "TASK"
           ? taskCreationMinHeight
-          : isHabitCreationExpanded
+          : selected === "HABIT"
             ? habitCreationMinHeight
+            : null;
+  useLayoutEffect(() => {
+    if (!expanded || !selected || activeCreationMode !== "main") return;
+    const node = expandedCreationBodyRef.current;
+    if (!node) return;
+
+    const updateHeight = () => {
+      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
+      if (!Number.isFinite(nextHeight) || nextHeight <= 0) return;
+      setCreationMainShellHeights((current) =>
+        current[selected] === nextHeight
+          ? current
+          : {
+              ...current,
+              [selected]: nextHeight,
+            },
+      );
+    };
+
+    updateHeight();
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      updateHeight();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [activeCreationMode, expanded, selected]);
+  const selectedCreationShellHeight =
+    selected && selectedCreationTypeMinHeight !== null
+      ? Math.max(
+          selectedCreationTypeMinHeight,
+          creationMainShellHeights[selected] ?? 0,
+        )
+      : null;
+  const secondaryCreationPanelMinHeight =
+    expanded && isContentSizedCreationExpanded && activeCreationMode !== "main"
+      ? selectedCreationShellHeight ?? selectedCreationTypeMinHeight
+      : undefined;
+  const minHeightExpanded = expanded
+    ? selectedCreationTypeMinHeight !== null
+      ? selectedCreationTypeMinHeight
       : effectiveViewportHeight
         ? Math.round(effectiveViewportHeight * 0.58)
         : "58vh"
@@ -7191,6 +9273,12 @@ export function Fab({
       ? Math.round(effectiveViewportHeight * 0.9 - 8 - stableSafeBottom)
       : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"
     : undefined;
+  const secondaryCreationPanelStyle =
+    secondaryCreationPanelMinHeight !== undefined
+      ? {
+          minHeight: secondaryCreationPanelMinHeight,
+        }
+      : undefined;
 
   return (
     <div
@@ -7390,6 +9478,63 @@ export function Fab({
                 </motion.button>
               )}
             </div>
+            {expanded &&
+            !shouldHideOverhangButtons &&
+            selected &&
+            activeCreationModes.length > 1 &&
+            creationModeOverhangPos
+              ? createPortal(
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.94, y: 4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: 3 }}
+                    transition={{
+                      type: "tween",
+                      duration: 0.18,
+                      ease: "easeOut",
+                    }}
+                    className="pointer-events-auto fixed"
+                    style={{
+                      left: creationModeOverhangPos.left,
+                      top: creationModeOverhangPos.top,
+                      width: creationModeClusterWidth,
+                      zIndex: 2147483651,
+                      transition:
+                        "top 0.18s ease, left 0.18s ease, transform 0.18s ease",
+                      transform:
+                        expanded && keyboardLift > 0
+                          ? `translateY(${-keyboardLift}px)`
+                          : undefined,
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {activeCreationModes.map((mode) => {
+                        const isActive = activeCreationMode === mode.id;
+                        const Icon = mode.icon;
+                        return (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            onClick={() => setActiveCreationMode(mode.id)}
+                            className={cn(
+                              "flex h-9 w-9 items-center justify-center rounded-lg border backdrop-blur-xl transition duration-150",
+                              isActive
+                                ? "border-white/18 bg-[linear-gradient(180deg,rgba(34,38,43,0.96),rgba(64,68,76,0.9))] text-white shadow-[0_10px_18px_rgba(0,0,0,0.28),inset_0_2px_4px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.08)] translate-y-[1px]"
+                                : "border-white/10 bg-[linear-gradient(180deg,rgba(104,110,120,0.34),rgba(54,58,66,0.3))] text-white/68 shadow-[0_10px_18px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.14)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(118,124,134,0.38),rgba(60,64,72,0.34))] hover:text-white/86",
+                            )}
+                            aria-pressed={isActive}
+                            aria-label={mode.label}
+                            title={mode.label}
+                          >
+                            <Icon className="h-4 w-4" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>,
+                  document.body,
+                )
+              : null}
             {expanded && !shouldHideOverhangButtons
               ? createPortal(
                   <motion.div

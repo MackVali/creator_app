@@ -1,12 +1,12 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, GripVertical } from "lucide-react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   DndContext,
   closestCenter,
-  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -15,11 +15,8 @@ import {
 import {
   arrayMove,
   SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import type { Roadmap } from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
@@ -31,13 +28,48 @@ import {
 import type { Goal } from "../types";
 import { GoalCard } from "./GoalCard";
 
-interface SortableGoalItemProps {
-  goal: Goal;
-  index: number;
-  isOpen?: boolean;
-  onToggle?: () => void;
-  onClick?: () => void;
-}
+const cardSpringTransition = {
+  type: "spring",
+  stiffness: 480,
+  damping: 36,
+  mass: 0.75,
+} as const;
+
+const revealMotion = {
+  hidden: { opacity: 0, scale: 0.985, y: 6 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    transition: cardSpringTransition,
+  },
+  exit: {
+    opacity: 0,
+    scale: 0.985,
+    y: 6,
+    transition: { duration: 0.14, ease: "easeOut" },
+  },
+} as const;
+
+const shellContentMotion = {
+  hidden: { opacity: 0, y: 4, scale: 0.99 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      delay: 0.04,
+      duration: 0.16,
+      ease: "easeOut",
+    },
+  },
+  exit: {
+    opacity: 0,
+    y: 4,
+    scale: 0.99,
+    transition: { duration: 0.12, ease: "easeOut" },
+  },
+} as const;
 
 function DraggableGoalCard({
   goal,
@@ -58,6 +90,7 @@ function DraggableGoalCard({
   onGoalDelete?: (goal: Goal) => void;
   monumentContext?: boolean;
 }) {
+  const prefersReducedMotion = useReducedMotion();
   const {
     attributes,
     listeners,
@@ -79,7 +112,6 @@ function DraggableGoalCard({
     (goal.emoji ?? goal.monumentEmoji)?.trim().length
       ? (goal.emoji ?? goal.monumentEmoji)!.trim()
       : goal.title.slice(0, 2).toUpperCase();
-
   const flameLevel = (goal.energyCode ? goal.energyCode : goal.energy ?? "No")
     .toString()
     .toUpperCase() as FlameLevel;
@@ -103,6 +135,12 @@ function DraggableGoalCard({
     isCompleted
       ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.18),transparent_60%)]"
       : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
+  const shellMotionProps = prefersReducedMotion
+    ? {}
+    : {
+        whileTap: { scale: 0.97, y: 1 },
+        transition: cardSpringTransition,
+      };
 
   return (
     <div
@@ -117,22 +155,22 @@ function DraggableGoalCard({
       {...attributes}
     >
       {/* Drag Handle */}
-      <div className="absolute left-1 top-2 z-10 flex items-center gap-1.5">
-        <span className="min-w-[2ch] select-none text-base font-black text-white/55">
+      <div className="absolute left-1 top-1.5 z-10 flex items-center gap-1 sm:top-2 sm:gap-1.5">
+        <span className="min-w-[2ch] select-none text-[13px] font-black text-white/55 sm:text-base">
           {index + 1}.
         </span>
         <button
           type="button"
-          className="flex h-[18px] w-[18px] items-center justify-center rounded-md transition-colors hover:bg-white/10 cursor-grab active:cursor-grabbing"
+          className="flex h-4 w-4 items-center justify-center rounded-md transition-colors hover:bg-white/10 cursor-grab active:cursor-grabbing sm:h-[18px] sm:w-[18px]"
           {...listeners}
           aria-label="Drag to reorder"
         >
-          <GripVertical className="w-3 h-3 text-white/60" />
+          <GripVertical className="h-2.5 w-2.5 text-white/60 sm:h-3 sm:w-3" />
         </button>
       </div>
 
       {/* Goal Card with inline expansion */}
-      <div className="ml-8">
+      <div className="ml-6 sm:ml-8">
         {isOpen ? (
           <GoalCard
             goal={goal}
@@ -152,16 +190,17 @@ function DraggableGoalCard({
             completionTheme="emerald"
           />
         ) : (
-          <button
+          <motion.button
             type="button"
             onClick={() => onOpenChange?.(true)}
-            className={`relative flex w-full items-start gap-2.5 rounded-[22px] px-3 py-2.5 text-left text-white transition-all hover:-translate-y-0.5 hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${cardSurfaceClass}`}
+            className={`relative flex w-full items-start gap-2 rounded-[20px] px-2.5 py-2 text-left text-white transition-all hover:-translate-y-0.5 hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:rounded-[22px] sm:px-3 sm:py-2.5 ${cardSurfaceClass}`}
+            {...shellMotionProps}
           >
             <div
               className={`pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
             />
             <div
-              className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] ${
+              className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] sm:h-8 sm:w-8 sm:text-[11px] ${
                 isCompleted
                   ? "border border-emerald-300/60 bg-emerald-950/40 text-emerald-50"
                   : "border border-white/10 bg-white/5"
@@ -169,8 +208,8 @@ function DraggableGoalCard({
             >
               {displayEmoji}
             </div>
-            <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-0.5 pr-1">
-              <p className="line-clamp-2 break-words text-[12px] font-semibold leading-[1rem] text-white sm:text-[13px]">
+            <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-0.5 pr-0.5 sm:pr-1">
+              <p className="line-clamp-1 break-words text-[11px] font-semibold leading-[0.95rem] text-white sm:line-clamp-2 sm:text-[13px] sm:leading-[1rem]">
                 {typeof (goal.emoji ?? goal.monumentEmoji) === "string" &&
                 (goal.emoji ?? goal.monumentEmoji)?.trim().length ? (
                   <span className="mr-2 inline" aria-hidden>
@@ -180,39 +219,39 @@ function DraggableGoalCard({
                 {goal.title}
               </p>
               <div
-                className={`flex flex-wrap items-center gap-1.5 text-[10px] ${
+                className={`flex flex-wrap items-center gap-1 text-[9px] sm:gap-1.5 sm:text-[10px] ${
                   isCompleted ? "text-emerald-50/80" : "text-white/60"
                 }`}
               >
                 <FlameEmber level={flameLevel} size="xs" />
-                <span className="uppercase tracking-[0.24em]">{goal.energy}</span>
+                <span className="uppercase tracking-[0.16em] sm:tracking-[0.24em]">{goal.energy}</span>
                 <span className="text-white/30">•</span>
-                <span className="uppercase tracking-[0.24em]">
+                <span className="uppercase tracking-[0.16em] sm:tracking-[0.24em]">
                   {goal.priority}
                 </span>
                 {goal.dueDate && (
                   <>
                     <span className="text-white/30">•</span>
-                    <span className="whitespace-nowrap text-[9px] text-white/60 normal-case">
+                    <span className="whitespace-nowrap text-[8px] text-white/60 normal-case sm:text-[9px]">
                       Due {new Date(goal.dueDate).toLocaleDateString()}
                     </span>
                   </>
                 )}
               </div>
             </div>
-            <div className="relative z-10 flex shrink-0 flex-col items-end gap-0.5 whitespace-nowrap pt-0.5 text-right text-[10px]">
-              <span className="text-[13px] font-semibold text-white">
+            <div className="relative z-10 flex shrink-0 flex-col items-end gap-0 whitespace-nowrap pt-0.5 text-right text-[9px] sm:gap-0.5 sm:text-[10px]">
+              <span className="text-[12px] font-semibold text-white sm:text-[13px]">
                 {Math.round(Math.min(100, goal.progress))}%
               </span>
               <span
-                className={`text-[10px] uppercase tracking-[0.24em] ${
+                className={`text-[9px] uppercase tracking-[0.16em] sm:text-[10px] sm:tracking-[0.24em] ${
                   isCompleted ? "text-emerald-50/80" : "text-white/70"
                 }`}
               >
                 {statusLabel}
               </span>
             </div>
-          </button>
+          </motion.button>
         )}
       </div>
     </div>
@@ -244,11 +283,10 @@ function RoadmapCardImpl({
   monumentContext = false,
   onRoadmapOrderSaved,
 }: RoadmapCardProps) {
-  const cardRef = useRef<HTMLDivElement | null>(null);
+  const prefersReducedMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [localGoals, setLocalGoals] = useState(goals);
-  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     // Sort goals by priority_rank if available, otherwise maintain original order
@@ -286,18 +324,6 @@ function RoadmapCardImpl({
     setOpen((prev) => !prev);
   }, []);
 
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
   const dragSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -312,7 +338,6 @@ function RoadmapCardImpl({
       const supabase = getSupabaseBrowser();
       if (!supabase) return;
 
-      setIsSaving(true);
       try {
         const orderedGoalIds = goalsToSave.map((goal) => goal.id);
         const { error } = await supabase.rpc("save_roadmap_goal_order", {
@@ -325,8 +350,6 @@ function RoadmapCardImpl({
         }
       } catch (error) {
         console.error("Failed to save priority ranks:", error);
-      } finally {
-        setIsSaving(false);
       }
     },
     [roadmap.id]
@@ -358,22 +381,42 @@ function RoadmapCardImpl({
   );
 
   const hasGoals = goals.length > 0;
+  const shellMotionProps = prefersReducedMotion
+    ? {}
+    : {
+        whileTap: { scale: 0.97, y: 1 },
+        transition: cardSpringTransition,
+      };
+  const revealProps = prefersReducedMotion
+    ? {
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+        transition: { duration: 0.12 },
+      }
+    : {
+        variants: revealMotion,
+        initial: "hidden" as const,
+        animate: "visible" as const,
+        exit: "exit" as const,
+      };
 
   if (variant === "compact") {
     const containerBase =
       "group relative h-full rounded-2xl border-2 border-yellow-400 shimmer-border p-3 text-white min-h-[96px]";
     const containerClass = `${containerBase} shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)] aspect-[5/6]`;
     return (
-      <div ref={cardRef} className={containerClass} data-variant="compact">
+      <div className={containerClass} data-variant="compact">
         <div className="pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_70%)] bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
         <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
-          <button
+          <motion.button
             type="button"
             onClick={() => {
               handleToggle();
               onClick?.();
             }}
             className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center"
+            {...shellMotionProps}
           >
             <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] bg-white/5 text-white">
               {roadmap.emoji ?? roadmap.title.slice(0, 2)}
@@ -388,64 +431,66 @@ function RoadmapCardImpl({
             <div className="mt-1 text-[7px] text-white/60">
               {goalCount} {goalCount === 1 ? "goal" : "goals"}
             </div>
-          </button>
+          </motion.button>
 
-          {open && hasGoals && (
-            <CompactGoalsOverlay
-              roadmap={roadmap}
-              goals={localGoals}
-              onClose={handleToggle}
-              anchorRect={null}
-              onGoalEdit={onGoalEdit}
-              onGoalToggleActive={onGoalToggleActive}
-              onGoalDelete={onGoalDelete}
-              monumentContext={monumentContext}
-              onGoalsReordered={async (reordered) => {
-                setLocalGoals(reordered);
-                await onRoadmapOrderSaved?.();
-              }}
-            />
-          )}
+          <AnimatePresence initial={false}>
+            {open && hasGoals ? (
+              <CompactGoalsOverlay
+                roadmap={roadmap}
+                goals={localGoals}
+                onClose={handleToggle}
+                onGoalEdit={onGoalEdit}
+                onGoalToggleActive={onGoalToggleActive}
+                onGoalDelete={onGoalDelete}
+                monumentContext={monumentContext}
+                onGoalsReordered={async (reordered) => {
+                  setLocalGoals(reordered);
+                  await onRoadmapOrderSaved?.();
+                }}
+              />
+            ) : null}
+          </AnimatePresence>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="group relative h-full rounded-[30px] border-2 border-amber-500 bg-white/[0.03] p-4 text-white transition hover:-translate-y-1 hover:border-amber-500/50">
-      <div className="relative flex h-full flex-col gap-4">
-        <div className="flex items-start justify-between gap-3">
-          <button
+    <div className="group relative h-full rounded-[24px] border-2 border-amber-500 bg-white/[0.03] p-2.5 text-white transition hover:-translate-y-1 hover:border-amber-500/50 sm:rounded-[30px] sm:p-4">
+      <div className="relative flex h-full flex-col gap-2.5 sm:gap-4">
+        <div className="flex items-start justify-between gap-2 sm:gap-3">
+          <motion.button
             onClick={() => {
               handleToggle();
               onClick?.();
             }}
-            className="relative flex flex-1 flex-col gap-2 overflow-hidden text-left"
+            className="relative flex flex-1 flex-col gap-1 overflow-hidden text-left sm:gap-2"
+            {...shellMotionProps}
           >
-            <div className="relative z-10 flex items-start gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 text-xl font-semibold bg-white/5 text-white">
+            <div className="relative z-10 flex items-start gap-2 sm:gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-lg font-semibold text-white sm:h-12 sm:w-12 sm:rounded-2xl sm:text-xl">
                 {roadmap.emoji ?? roadmap.title.slice(0, 2)}
               </div>
               <div className="flex-1">
-                <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em]">
-                  <span className="flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-white/80">
-                    <span className="text-[10px] uppercase tracking-[0.2em]">
-                      ROADMAP
+                <div className="flex flex-wrap items-center gap-1 text-[10px] uppercase tracking-[0.14em] sm:gap-2 sm:text-[11px] sm:tracking-[0.18em]">
+                  <span className="flex items-center gap-1 rounded-full border border-white/10 px-1.5 py-0.5 text-white/80 sm:px-2">
+                    <span className="text-[9px] uppercase tracking-[0.14em] sm:text-[10px] sm:tracking-[0.2em]">
+                      CAMPAIGN
                     </span>
                   </span>
                 </div>
-                <h3 className="mt-2 text-xl font-semibold">{roadmap.title}</h3>
+                <h3 className="mt-0.5 text-lg font-semibold leading-tight sm:mt-2 sm:text-xl">{roadmap.title}</h3>
               </div>
               <ChevronDown
-                className={`mt-1 h-5 w-5 text-white/60 transition-transform ${
+                className={`mt-0.5 h-4 w-4 text-white/60 transition-transform sm:mt-1 sm:h-5 sm:w-5 ${
                   open ? "rotate-180" : ""
                 }`}
               />
             </div>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
-              <div className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-white/60 sm:gap-3 sm:text-xs">
+              <div className="flex items-center gap-1.5 rounded-full border border-white/10 px-2 py-0.5 sm:gap-2 sm:px-3 sm:py-1">
                 <span
-                  className="h-1.5 w-1.5 rounded-full bg-white/60"
+                  className="h-1 w-1 rounded-full bg-white/60 sm:h-1.5 sm:w-1.5"
                   aria-hidden="true"
                 />
                 <span>
@@ -453,56 +498,62 @@ function RoadmapCardImpl({
                 </span>
               </div>
             </div>
-          </button>
+          </motion.button>
         </div>
 
-        {open && (
-          <div className="flex-1">
-            {hasGoals ? (
-              <DndContext
-                sensors={dragSensors}
-                collisionDetection={closestCenter}
-                onDragStart={(event) => {
-                  console.log("🎯 Drag started:", event.active.id);
-                }}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext items={localGoals.map((g) => g.id)}>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                    }}
-                  >
-                    {localGoals.map((goal, index) => (
-                      <DraggableGoalCard
-                        key={goal.id}
-                        goal={goal}
-                        index={index}
-                        isOpen={openGoalId === goal.id}
-                        onOpenChange={(isOpen) => {
-                          if (isOpen) {
-                            setOpenGoalId(goal.id);
-                          } else if (openGoalId === goal.id) {
-                            setOpenGoalId(null);
-                          }
-                        }}
-                        onGoalEdit={onGoalEdit}
-                        onGoalToggleActive={onGoalToggleActive}
-                        onGoalDelete={onGoalDelete}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-white/20 bg-white/[0.02] px-4 py-6 text-center text-sm text-white/60">
-                No goals yet
-              </div>
-            )}
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {open ? (
+            <motion.div
+              className="flex-1 origin-top rounded-[18px] border border-white/8 border-t-white/15 bg-white/[0.015] shadow-[0_20px_32px_-24px_rgba(0,0,0,0.8)] sm:rounded-[24px] sm:border-white/10 sm:border-t-white/20 sm:bg-white/[0.02]"
+              {...revealProps}
+            >
+              {hasGoals ? (
+                <DndContext
+                  sensors={dragSensors}
+                  collisionDetection={closestCenter}
+                  onDragStart={(event) => {
+                    console.log("🎯 Drag started:", event.active.id);
+                  }}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext items={localGoals.map((g) => g.id)}>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "4px",
+                      }}
+                    >
+                      {localGoals.map((goal, index) => (
+                        <div key={goal.id}>
+                          <DraggableGoalCard
+                            goal={goal}
+                            index={index}
+                            isOpen={openGoalId === goal.id}
+                            onOpenChange={(isOpen) => {
+                              if (isOpen) {
+                                setOpenGoalId(goal.id);
+                              } else if (openGoalId === goal.id) {
+                                setOpenGoalId(null);
+                              }
+                            }}
+                            onGoalEdit={onGoalEdit}
+                            onGoalToggleActive={onGoalToggleActive}
+                            onGoalDelete={onGoalDelete}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                <div className="rounded-[18px] border border-dashed border-white/20 bg-white/[0.02] px-2.5 py-4 text-center text-sm text-white/60 sm:rounded-2xl sm:px-4 sm:py-6">
+                  No goals yet
+                </div>
+              )}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -512,7 +563,6 @@ type CompactGoalsOverlayProps = {
   roadmap: Roadmap;
   goals: Goal[];
   onClose: () => void;
-  anchorRect: DOMRect | null;
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
@@ -524,7 +574,6 @@ function CompactGoalsOverlay({
   roadmap,
   goals,
   onClose,
-  anchorRect,
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
@@ -532,6 +581,7 @@ function CompactGoalsOverlay({
   onGoalsReordered,
 }: CompactGoalsOverlayProps) {
   const [mounted, setMounted] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
   const [localGoals, setLocalGoals] = useState(goals);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const selectedGoal = useMemo(
@@ -603,27 +653,30 @@ function CompactGoalsOverlay({
   const headingId = `${regionId}-overlay-title`;
   const isMobile =
     typeof window !== "undefined" ? window.innerWidth < 640 : true;
-  const computedMaxWidth = anchorRect
-    ? Math.min(640, Math.max(anchorRect.width + 64, 300))
-    : undefined;
+  const computedMaxWidth =
+    typeof window !== "undefined"
+      ? Math.min(window.innerWidth - (isMobile ? 16 : 48), isMobile ? window.innerWidth - 16 : 576)
+      : isMobile
+        ? 384
+        : 576;
 
   const emojiBadge = roadmap.emoji ?? roadmap.title.slice(0, 2);
   const goalsLabel = `${goals.length} ${goals.length === 1 ? "goal" : "goals"}`;
 
   const header = (
-    <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-3">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/15 bg-white/[0.08] text-lg font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.2)]">
+    <div className="flex items-start justify-between gap-2 border-b border-white/10 pb-2 sm:gap-4 sm:pb-3">
+      <div className="flex min-w-0 items-start gap-2 sm:gap-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/15 bg-white/[0.08] text-base font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.2)] sm:h-9 sm:w-9 sm:rounded-2xl sm:text-lg">
           {emojiBadge}
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex min-w-0 flex-col gap-0.5 sm:gap-1">
           <h4
             id={headingId}
-            className="text-base font-semibold leading-tight text-white"
+            className="text-[15px] font-semibold leading-tight text-white sm:text-base"
           >
             {roadmap.title}
           </h4>
-          <p className="text-[11px] text-white/60 uppercase tracking-[0.32em]">
+          <p className="text-[10px] uppercase tracking-[0.22em] text-white/60 sm:text-[11px] sm:tracking-[0.32em]">
             {goalsLabel}
           </p>
         </div>
@@ -631,7 +684,7 @@ function CompactGoalsOverlay({
       <button
         type="button"
         onClick={onClose}
-        className="self-start rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70 transition hover:border-white/30 hover:text-white"
+        className="self-start rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] text-white/70 transition hover:border-white/30 hover:text-white sm:px-3 sm:py-1 sm:text-[10px] sm:tracking-[0.2em]"
       >
         Close
       </button>
@@ -639,7 +692,7 @@ function CompactGoalsOverlay({
   );
 
   const listArea = (
-    <div className="mt-4 max-h-[60vh] overflow-y-auto pb-3 sm:max-h-[70vh]">
+    <div className="mt-2.5 max-h-[60vh] overflow-y-auto pb-1.5 sm:mt-4 sm:pb-3 sm:max-h-[70vh]">
       {selectedGoal ? (
         <GoalCard
           goal={selectedGoal}
@@ -692,7 +745,7 @@ function CompactGoalsOverlay({
           }}
         >
           <SortableContext items={localGoals.map((g) => g.id)}>
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5 sm:gap-3">
               {localGoals.map((goal, index) => (
                 <DraggableGoalCard
                   key={goal.id}
@@ -719,10 +772,9 @@ function CompactGoalsOverlay({
     </div>
   );
 
-  const panelPadding = "p-4 sm:p-5";
+  const panelPadding = "p-1.5 sm:p-5";
   const basePanelClass =
-    "relative overflow-hidden rounded-[30px] border border-white/15 bg-black/[0.68] shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9)] backdrop-blur-sm text-white/90";
-
+    "relative w-full max-w-full overflow-hidden rounded-[24px] border border-white/12 bg-black/[0.64] shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9)] backdrop-blur-sm text-white/90 sm:rounded-[30px] sm:border-white/15 sm:bg-black/[0.68]";
   const goalCardContent = selectedGoal ? (
     <GoalCard
       goal={selectedGoal}
@@ -740,54 +792,42 @@ function CompactGoalsOverlay({
     />
   ) : null;
 
-  if (isMobile || !anchorRect) {
-    return createPortal(
-      <>
-        <button
-          type="button"
-          className="fixed inset-0 z-[60] bg-black/70"
-          aria-label="Close goals overlay"
-          onClick={onClose}
-        />
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-10">
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={headingId}
-          className={`w-full max-w-sm ${basePanelClass} ${panelPadding}`}
-          style={
-            computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined
-          }
-        >
-          {header}
-          {listArea}
-        </div>
-        </div>
-        {goalCardContent}
-      </>,
-      document.body
-    );
-  }
-
   return createPortal(
     <>
-      <button
+      <motion.button
         type="button"
-        className="fixed inset-0 z-[60] bg-black/50"
+        className={`fixed inset-0 z-[60] ${isMobile ? "bg-black/70" : "bg-black/50"}`}
         aria-label="Close goals overlay"
         onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.14 }}
       />
-      <div className="fixed inset-0 z-[70] flex items-center justify-center px-6 py-12">
-        <div
+      <div
+        className={`fixed inset-0 z-[70] flex items-center justify-center ${isMobile ? "px-1.5 py-6" : "px-6 py-12"}`}
+      >
+        <motion.div
           role="dialog"
           aria-modal="true"
           aria-labelledby={headingId}
-          className={`w-full max-w-xl ${basePanelClass} ${panelPadding}`}
+          className={`w-full ${isMobile ? "max-w-full" : "max-w-xl"} ${basePanelClass} ${panelPadding}`}
           style={computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined}
+          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.985 }}
+          animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.99 }}
+          transition={{ duration: prefersReducedMotion ? 0.12 : 0.18, ease: "easeOut" }}
         >
-          {header}
-          {listArea}
-        </div>
+          <motion.div
+            variants={prefersReducedMotion ? undefined : shellContentMotion}
+            initial={prefersReducedMotion ? false : "hidden"}
+            animate={prefersReducedMotion ? undefined : "visible"}
+            exit={prefersReducedMotion ? undefined : "exit"}
+          >
+            {header}
+            {listArea}
+          </motion.div>
+        </motion.div>
       </div>
       {goalCardContent}
     </>,

@@ -34,6 +34,61 @@ interface MixedRoadmapCardProps {
   onClick?: () => void;
 }
 
+function getCampaignStateClasses(state?: string | null): {
+  shell: string;
+  badge: string;
+  countBadge: string;
+  title: string;
+  description: string;
+} {
+  switch (state?.toUpperCase()) {
+    case "ACTIVE":
+      return {
+        shell:
+          "border-white/10 bg-[linear-gradient(180deg,rgba(78,78,78,0.28)_0%,rgba(58,58,58,0.34)_14%,rgba(42,42,42,0.96)_48%,rgba(28,28,28,0.99)_100%)] shadow-[0_18px_44px_-26px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_24px_rgba(0,0,0,0.16)]",
+        badge:
+          "border-white/10 bg-white/[0.05] text-white/62",
+        countBadge:
+          "border-white/8 bg-black/28 text-white/56",
+        title: "text-white",
+        description: "text-white/48",
+      };
+    case "PAUSED":
+      return {
+        shell:
+          "border-white/8 bg-[linear-gradient(180deg,rgba(70,70,70,0.22)_0%,rgba(54,54,54,0.28)_16%,rgba(40,40,40,0.95)_50%,rgba(26,26,26,0.99)_100%)] opacity-90 shadow-[0_18px_44px_-26px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-18px_24px_rgba(0,0,0,0.14)]",
+        badge:
+          "border-amber-200/16 bg-amber-200/8 text-amber-50/80",
+        countBadge:
+          "border-white/8 bg-black/24 text-white/48",
+        title: "text-white/88",
+        description: "text-white/42",
+      };
+    case "COMPLETED":
+      return {
+        shell:
+          "border-white/8 bg-[linear-gradient(180deg,rgba(64,64,64,0.2)_0%,rgba(50,50,50,0.24)_16%,rgba(38,38,38,0.94)_50%,rgba(24,24,24,0.99)_100%)] shadow-[0_16px_36px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.02),inset_0_-16px_22px_rgba(0,0,0,0.12)]",
+        badge:
+          "border-white/10 bg-white/[0.04] text-white/58",
+        countBadge:
+          "border-white/8 bg-black/20 text-white/40",
+        title: "text-white/76",
+        description: "text-white/38",
+      };
+    default:
+      return {
+        shell:
+          "border-white/10 bg-[linear-gradient(180deg,rgba(78,78,78,0.28)_0%,rgba(58,58,58,0.34)_14%,rgba(42,42,42,0.96)_48%,rgba(28,28,28,0.99)_100%)] shadow-[0_18px_44px_-26px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_24px_rgba(0,0,0,0.16)]",
+        badge:
+          "border-white/10 bg-white/[0.05] text-white/62",
+        countBadge:
+          "border-white/8 bg-black/28 text-white/56",
+        title: "text-white",
+        description: "text-white/48",
+      };
+  }
+}
+
 function getInitials(value: string): string {
   const parts = value.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) {
@@ -121,12 +176,12 @@ function DragHandle({
   return (
     <button
       type="button"
-      className={`shrink-0 cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${className ?? "flex h-8 w-8 items-center justify-center rounded-xl border border-white/12 bg-black/30 text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-black/45 hover:text-white/85"}`}
+      className={`shrink-0 touch-manipulation cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${className ?? "flex h-6.5 w-6.5 items-center justify-center rounded-lg border border-white/12 bg-black/30 text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-black/45 hover:text-white/85 sm:h-8 sm:w-8 sm:rounded-xl"}`}
       aria-label={label}
       {...attributes}
       {...listeners}
     >
-      {children ?? <GripVertical className={gripClassName ?? "h-4 w-4"} />}
+      {children ?? <GripVertical className={gripClassName ?? "h-3.5 w-3.5 sm:h-4 sm:w-4"} />}
     </button>
   );
 }
@@ -148,10 +203,10 @@ function SortableCampaignGoalRow({
         transform: CSS.Transform.toString(transform),
         transition,
       }}
-      className={isDragging ? "z-20" : undefined}
+      className={isDragging ? "z-20 w-full" : "w-full"}
     >
       <div
-        className={`flex items-center gap-2 rounded-xl border border-white/8 bg-black/30 px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${
+        className={`flex w-full items-center gap-1 rounded-lg border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)] px-1.5 py-1.5 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)] sm:gap-2 sm:px-2.5 sm:py-2 ${
           isDragging ? "opacity-90 ring-1 ring-white/20" : ""
         }`}
       >
@@ -159,16 +214,16 @@ function SortableCampaignGoalRow({
           attributes={attributes}
           listeners={listeners}
           label={`Reorder goal ${goal.name}`}
-          className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-[11px] font-semibold text-white/78 shadow-[inset_0_-1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
+          className="flex h-6.5 w-6.5 items-center justify-center rounded-md border border-white/10 bg-[linear-gradient(180deg,rgba(92,92,92,0.18)_0%,rgba(54,54,54,0.28)_30%,rgba(32,32,32,0.84)_100%)] text-[9px] font-semibold text-white/78 shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)] transition hover:border-white/20 hover:bg-[linear-gradient(180deg,rgba(104,104,104,0.2)_0%,rgba(60,60,60,0.32)_30%,rgba(36,36,36,0.88)_100%)] hover:text-white sm:h-8 sm:w-8 sm:rounded-lg sm:text-[11px]"
         >
           <span aria-hidden>{getGoalIdentity(goal)}</span>
         </DragHandle>
         <div className="min-w-0 flex-1">
-          <p className={`truncate font-medium text-white/82 ${compact ? "text-[12px]" : "text-[13px]"}`}>
+          <p className={`truncate font-medium text-white/82 ${compact ? "text-[11px] sm:text-[12px]" : "text-[12px] sm:text-[13px]"}`}>
             {goal.name}
           </p>
         </div>
-        <div className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[9px] font-medium uppercase tracking-[0.18em] text-white/35">
+        <div className="rounded-full border border-white/8 bg-white/[0.03] px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.12em] text-white/35 sm:px-2 sm:py-1 sm:text-[9px] sm:tracking-[0.18em]">
           #{goal.position}
         </div>
       </div>
@@ -203,7 +258,7 @@ function CampaignGoalList({
         items={goals.map((goal) => goal.id)}
         strategy={verticalListSortingStrategy}
       >
-        <div className="space-y-2 pt-3">
+        <div className="w-full space-y-1.5 pt-1.5 sm:space-y-2 sm:pt-3">
           {goals.map((goal) => (
             <SortableCampaignGoalRow
               key={goal.id}
@@ -240,49 +295,67 @@ function MixedRoadmapItemContent({
     const campaignIdentity =
       item.campaign.emoji?.trim() || getInitials(item.campaign.name);
     const goals = sortByPosition(item.campaign.goals);
+    const campaignStateClasses = getCampaignStateClasses(
+      item.campaign.scheduling_state
+    );
 
     return (
-      <div className="min-w-0 flex-1 rounded-[24px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.06)_0%,rgba(10,10,10,0.96)_18%,rgba(0,0,0,0.98)_100%)] p-3.5 shadow-[0_18px_44px_-26px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.05)]">
-        <div className="flex items-start gap-2.5">
-          <DragHandle
-            attributes={topLevelHandle.attributes}
-            listeners={topLevelHandle.listeners}
-            label={`Reorder campaign ${item.campaign.name}`}
-            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/14 bg-white/[0.06] text-sm font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] transition hover:border-white/24 hover:bg-white/[0.1] hover:text-white"
-          >
-            <span aria-hidden>{campaignIdentity}</span>
-          </DragHandle>
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-white/60">
-                {item.campaign.scheduling_state}
-              </span>
-              <span className="rounded-full border border-white/8 bg-black/25 px-2 py-1 text-[10px] font-medium text-white/55">
-                {goals.length} goal{goals.length === 1 ? "" : "s"}
-              </span>
-            </div>
-            <div className="space-y-1">
-              <p className={`font-semibold text-white ${compact ? "text-sm" : "text-[15px]"}`}>
-                {item.campaign.name}
-              </p>
-              {item.campaign.description ? (
-                <p className="line-clamp-2 text-[13px] leading-5 text-white/48">
-                  {item.campaign.description}
-                </p>
-              ) : null}
-            </div>
-            {goals.length > 0 ? (
-              <div className="rounded-[18px] border border-white/8 bg-black/22 px-2.5 pb-2.5 pt-1.5">
-                <CampaignGoalList
-                  campaignId={item.campaign.id}
-                  goals={goals}
-                  compact={compact}
-                  sensors={sensors}
-                  onReorder={onCampaignGoalReorder}
-                />
+      <div
+        className={`relative min-w-0 flex-1 overflow-hidden rounded-[20px] border p-2.5 sm:rounded-[24px] sm:p-3.5 ${campaignStateClasses.shell}`}
+      >
+        <div className="pointer-events-none absolute inset-x-2.5 top-0 h-12 rounded-b-[24px] bg-[radial-gradient(85%_100%_at_50%_0%,rgba(255,255,255,0.08),rgba(255,255,255,0.02)_44%,transparent_78%)] sm:inset-x-3 sm:h-14 sm:rounded-b-[28px]" />
+        <div className="pointer-events-none absolute inset-x-3.5 bottom-2.5 h-7 rounded-full bg-[radial-gradient(60%_100%_at_50%_100%,rgba(0,0,0,0.18),transparent_76%)] blur-md sm:inset-x-4 sm:bottom-3 sm:h-8" />
+        <div className="space-y-2 sm:space-y-3">
+          <div className="flex items-start gap-1.5 sm:gap-2.5">
+            <DragHandle
+              attributes={topLevelHandle.attributes}
+              listeners={topLevelHandle.listeners}
+              label={`Reorder campaign ${item.campaign.name}`}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/14 bg-[linear-gradient(180deg,rgba(96,96,96,0.16)_0%,rgba(56,56,56,0.28)_28%,rgba(32,32,32,0.82)_100%)] text-[11px] font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.04)] transition hover:border-white/24 hover:bg-[linear-gradient(180deg,rgba(108,108,108,0.18)_0%,rgba(62,62,62,0.3)_28%,rgba(36,36,36,0.86)_100%)] hover:text-white sm:h-10 sm:w-10 sm:rounded-2xl sm:text-sm"
+            >
+              <span aria-hidden>{campaignIdentity}</span>
+            </DragHandle>
+            <div className="min-w-0 flex-1 space-y-1.5 sm:space-y-2">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <span
+                  className={`rounded-full border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] sm:px-2 sm:py-1 sm:text-[10px] sm:tracking-[0.18em] ${campaignStateClasses.badge}`}
+                >
+                  {item.campaign.scheduling_state}
+                </span>
+                <span
+                  className={`rounded-full border px-1.5 py-0.5 text-[9px] font-medium sm:px-2 sm:py-1 sm:text-[10px] ${campaignStateClasses.countBadge}`}
+                >
+                  {goals.length} goal{goals.length === 1 ? "" : "s"}
+                </span>
               </div>
-            ) : null}
+              <div className="space-y-0.5 sm:space-y-1">
+                <p
+                  className={`font-semibold leading-tight ${campaignStateClasses.title} ${compact ? "text-[13px] sm:text-sm" : "text-[14px] sm:text-[15px]"}`}
+                >
+                  {item.campaign.name}
+                </p>
+                {item.campaign.description ? (
+                  <p
+                    className={`line-clamp-1 text-[12px] leading-4 sm:line-clamp-2 sm:text-[13px] sm:leading-5 ${campaignStateClasses.description}`}
+                  >
+                    {item.campaign.description}
+                  </p>
+                ) : null}
+              </div>
+            </div>
           </div>
+          {goals.length > 0 ? (
+            <div className="relative overflow-hidden rounded-[16px] border border-white/10 bg-[#030407] px-1 pb-1.5 pt-1 sm:rounded-[18px] sm:px-2 sm:pb-2.5 sm:pt-1.5">
+              <div className="pointer-events-none absolute inset-y-3 left-1 w-px bg-white/10 sm:left-2 sm:inset-y-3.5" />
+              <CampaignGoalList
+                campaignId={item.campaign.id}
+                goals={goals}
+                compact={compact}
+                sensors={sensors}
+                onReorder={onCampaignGoalReorder}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     );
@@ -292,26 +365,28 @@ function MixedRoadmapItemContent({
     const goalIdentity = getGoalIdentity(item.goal);
 
     return (
-      <div className="min-w-0 flex-1 rounded-[22px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.04)_0%,rgba(10,10,10,0.96)_100%)] p-3.5 shadow-[0_14px_32px_-24px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.05)]">
-        <div className="flex items-start gap-2.5">
+      <div className="relative min-w-0 flex-1 overflow-hidden rounded-[20px] border border-white/10 bg-[linear-gradient(180deg,rgba(76,76,76,0.24)_0%,rgba(58,58,58,0.3)_14%,rgba(40,40,40,0.94)_54%,rgba(24,24,24,0.99)_100%)] p-2.5 shadow-[0_22px_40px_-28px_rgba(0,0,0,0.96),0_6px_12px_-10px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-18px_24px_rgba(0,0,0,0.16)] sm:rounded-[22px] sm:p-3.5">
+        <div className="pointer-events-none absolute inset-x-2.5 top-0 h-10 rounded-b-[20px] bg-[radial-gradient(80%_100%_at_50%_0%,rgba(255,255,255,0.08),rgba(255,255,255,0.02)_46%,transparent_78%)] sm:inset-x-3 sm:h-12 sm:rounded-b-[24px]" />
+        <div className="pointer-events-none absolute inset-x-4 bottom-2.5 h-6 rounded-full bg-[radial-gradient(55%_100%_at_50%_100%,rgba(0,0,0,0.2),transparent_76%)] blur-md sm:inset-x-5 sm:bottom-3 sm:h-7" />
+        <div className="flex items-start gap-1.5 sm:gap-2.5">
           <DragHandle
             attributes={topLevelHandle.attributes}
             listeners={topLevelHandle.listeners}
             label={`Reorder goal ${item.goal.name}`}
-            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/14 bg-white/[0.06] text-sm font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] transition hover:border-white/24 hover:bg-white/[0.1] hover:text-white"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/14 bg-[linear-gradient(180deg,rgba(94,94,94,0.16)_0%,rgba(56,56,56,0.28)_28%,rgba(32,32,32,0.82)_100%)] text-[11px] font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.04)] transition hover:border-white/24 hover:bg-[linear-gradient(180deg,rgba(106,106,106,0.18)_0%,rgba(62,62,62,0.3)_28%,rgba(36,36,36,0.86)_100%)] hover:text-white sm:h-10 sm:w-10 sm:rounded-2xl sm:text-sm"
           >
             <span aria-hidden>{goalIdentity}</span>
           </DragHandle>
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex rounded-full border border-white/12 bg-white/[0.05] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/82">
+          <div className="min-w-0 flex-1 space-y-1 sm:space-y-1.5">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <span className="inline-flex rounded-full border border-white/12 bg-white/[0.05] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/82 sm:px-2 sm:py-1 sm:text-[10px] sm:tracking-[0.2em]">
                 Goal
               </span>
-              <span className="rounded-full border border-white/8 bg-black/25 px-2 py-1 text-[10px] font-medium text-white/50">
+              <span className="rounded-full border border-white/8 bg-black/25 px-1.5 py-0.5 text-[9px] font-medium text-white/50 sm:px-2 sm:py-1 sm:text-[10px]">
                 Roadmap level
               </span>
             </div>
-            <p className={`font-semibold text-white ${compact ? "text-sm" : "text-[15px]"}`}>
+            <p className={`font-semibold leading-tight text-white ${compact ? "text-[13px] sm:text-sm" : "text-[14px] sm:text-[15px]"}`}>
               {item.goal.name}
             </p>
           </div>
@@ -350,7 +425,7 @@ function SortableMixedRoadmapItemRow({
       className={isDragging ? "z-10" : undefined}
     >
       <div
-        className={`rounded-[26px] border border-transparent p-1.5 transition-colors ${
+        className={`rounded-[22px] border border-transparent p-0.5 transition-colors sm:rounded-[26px] sm:p-1.5 ${
           isDragging ? "border-white/20 bg-white/[0.02]" : ""
         }`}
       >
@@ -498,36 +573,36 @@ function MixedRoadmapCardImpl({
   }
 
   return (
-    <div className="overflow-hidden rounded-[30px] border-2 border-white/14 bg-[#040404] shadow-[0_24px_60px_-28px_rgba(0,0,0,0.95),0_10px_20px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.05)]">
+    <div className="overflow-hidden rounded-[22px] border-2 border-white/14 bg-[#040404] shadow-[0_24px_60px_-28px_rgba(0,0,0,0.95),0_10px_20px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.05)]">
       <button
         type="button"
         onClick={() => {
           setIsOpen((open) => !open);
           onClick?.();
         }}
-        className={`flex w-full items-start justify-between gap-3 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${
-          isCompact ? "px-4 py-3" : "px-5 py-3.5"
+        className={`flex w-full items-start justify-between gap-2.5 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${
+          isCompact ? "px-3 py-2.5 sm:px-4 sm:py-3" : "px-4 py-3 sm:px-5 sm:py-3.5"
         }`}
         aria-expanded={isOpen}
       >
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/12 bg-zinc-700 text-lg text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.08)]">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/12 bg-zinc-700 text-base text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.08)] sm:h-11 sm:w-11 sm:rounded-2xl sm:text-lg">
               <span aria-hidden>{roadmap.emoji?.trim() || getInitials(roadmap.title)}</span>
             </div>
-            <div className="min-w-0 flex-1 space-y-1">
+            <div className="min-w-0 flex-1 space-y-0.5 sm:space-y-1">
               <p
                 className={`truncate font-semibold text-white ${
-                  isCompact ? "text-[15px]" : "text-[17px]"
+                  isCompact ? "text-[14px] sm:text-[15px]" : "text-[15px] sm:text-[17px]"
                 }`}
               >
                 {roadmap.title}
               </p>
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/55">
-                <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 font-medium">
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-white/55 sm:gap-2 sm:text-[11px]">
+                <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 font-medium sm:px-2.5 sm:py-1">
                   {campaignCount} campaign{campaignCount === 1 ? "" : "s"}
                 </span>
-                <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 font-medium">
+                <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 font-medium sm:px-2.5 sm:py-1">
                   {standaloneGoalCount} standalone goal
                   {standaloneGoalCount === 1 ? "" : "s"}
                 </span>
@@ -536,7 +611,7 @@ function MixedRoadmapCardImpl({
           </div>
         </div>
         <span
-          className={`mt-0.5 shrink-0 rounded-full border border-white/10 bg-white/[0.04] p-2 text-white/70 transition-transform ${
+          className={`mt-0.5 shrink-0 rounded-full border border-white/10 bg-white/[0.04] p-1.5 text-white/70 transition-transform sm:p-2 ${
             isOpen ? "rotate-180" : ""
           }`}
           aria-hidden
@@ -546,17 +621,17 @@ function MixedRoadmapCardImpl({
       </button>
 
       {isOpen ? (
-        <div className={`border-t border-white/10 ${isCompact ? "px-4 py-3" : "px-5 py-3.5"}`}>
-          <div className="mb-2 flex items-center justify-end">
+        <div className={`border-t border-white/10 ${isCompact ? "px-3 py-2.5 sm:px-4 sm:py-3" : "px-4 py-3 sm:px-5 sm:py-3.5"}`}>
+          <div className="mb-1.5 flex items-center justify-end sm:mb-2">
             {isSaving ? (
-              <p className="rounded-full border border-white/12 bg-white/[0.06] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-white/72">
+              <p className="rounded-full border border-white/12 bg-white/[0.06] px-2 py-0.5 text-[9px] font-medium uppercase tracking-[0.14em] text-white/72 sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]">
                 Saving...
               </p>
             ) : null}
           </div>
 
           {orderedItems.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/55">
+            <p className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-3 py-4 text-sm text-white/55 sm:px-4 sm:py-5">
               No roadmap items yet.
             </p>
           ) : (
@@ -569,7 +644,7 @@ function MixedRoadmapCardImpl({
                 items={orderedItems.map((item) => item.id)}
                 strategy={verticalListSortingStrategy}
               >
-                <div className="space-y-2.5">
+                <div className="space-y-2 sm:space-y-2.5">
                   {orderedItems.map((item) => (
                     <SortableMixedRoadmapItemRow
                       key={item.id}

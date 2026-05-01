@@ -141,16 +141,6 @@ function buildProjectFromUpdates(
   };
 }
 
-const DAY_IN_MS = 86_400_000;
-const GOAL_PRIORITY_WEIGHT: Record<string, number> = {
-  NO: 0,
-  LOW: 10,
-  MEDIUM: 200,
-  HIGH: 300,
-  CRITICAL: 500,
-  "ULTRA-CRITICAL": 1000,
-};
-
 const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
   NO: "NO",
   LOW: "LOW",
@@ -342,10 +332,12 @@ export function MonumentGoalsList({
   monumentId,
   monumentEmoji,
   goalSection = "active",
+  onGoalSectionChange,
 }: {
   monumentId: string;
   monumentEmoji?: string | null;
   goalSection?: "active" | "completed";
+  onGoalSectionChange?: (section: "active" | "completed") => void;
 }) {
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -1039,8 +1031,14 @@ export function MonumentGoalsList({
       })
       .filter((entry) => entry.goalCount > 0);
 
-    // If there are no roadmaps and no standalone goals, show empty state
-    if (filteredRoadmaps.length === 0 && filteredStandaloneGoals.length === 0) {
+    const hasTrueRoadmaps = monumentRoadmapsWithItems.length > 0;
+
+    // If there is no roadmap content and no standalone/library goals, show empty state
+    if (
+      !hasTrueRoadmaps &&
+      filteredRoadmaps.length === 0 &&
+      filteredStandaloneGoals.length === 0
+    ) {
       return (
         <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
           {goalSection === "completed"
@@ -1050,18 +1048,13 @@ export function MonumentGoalsList({
       );
     }
 
-    // Render both roadmap cards first and then standalone goals in the same grid
+    const hasLegacyLibrary =
+      filteredRoadmaps.length > 0 || filteredStandaloneGoals.length > 0;
+
     return (
-      <div>
-        {monumentRoadmapsWithItems.length > 0 ? (
-          <div className="mb-5 space-y-3">
-            <div className="space-y-1">
-              <h3 className="text-sm font-semibold text-white">True Roadmap</h3>
-              <p className="text-xs text-[#A7B0BD]">
-                Campaign order for this Monument. Legacy roadmap cards are still
-                shown below while this system is being upgraded.
-              </p>
-            </div>
+      <div className="space-y-5 sm:space-y-6">
+        {hasTrueRoadmaps ? (
+          <div className="space-y-3.5 sm:space-y-4">
             {monumentRoadmapsWithItems.map((roadmap) => (
               <MixedRoadmapCard
                 key={roadmap.id}
@@ -1072,50 +1065,87 @@ export function MonumentGoalsList({
           </div>
         ) : null}
 
-        <div className={GOAL_GRID_CLASS}>
-          {filteredRoadmaps.map(({ roadmap, goals: roadmapGoalsList, goalCount }) => {
-            return (
-              <div
-                key={roadmap.id}
-                className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-0"
-              >
-                <RoadmapCard
-                  roadmap={roadmap}
-                  goalCount={goalCount}
-                  goals={roadmapGoalsList}
-                  variant="compact"
-                  onGoalEdit={handleRoadmapGoalEdit}
-                  monumentContext
-                />
+        {hasLegacyLibrary ? (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
+                  Goal Library
+                </p>
               </div>
-            );
-          })}
-
-          {filteredStandaloneGoals.map((goal) => (
-            <div
-              key={goal.id}
-              className="goal-card-wrapper relative z-0 w-full overflow-visible min-w-0 mb-0"
-            >
-              <GoalCard
-                goal={goal}
-                showWeight={false}
-                showCreatedAt={false}
-                showEmojiPrefix={false}
-                variant="compact"
-                monumentContext
-                onEdit={() => handleGoalEdit(goal)}
-                onProjectUpdated={(projectId, updates) =>
-                  handleProjectUpdated(goal.id, projectId, updates)
-                }
-                onProjectDeleted={(projectId) =>
-                  handleProjectDeleted(goal.id, projectId)
-                }
-                open={openGoalId === goal.id}
-                onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
-              />
+              <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-1">
+                <button
+                  type="button"
+                  onClick={() => onGoalSectionChange?.("active")}
+                  className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
+                    goalSection === "active"
+                      ? "bg-[#3B3F49] text-white"
+                      : "text-[#A7B0BD] hover:text-white"
+                  }`}
+                  aria-pressed={goalSection === "active"}
+                >
+                  Active
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onGoalSectionChange?.("completed")}
+                  className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
+                    goalSection === "completed"
+                      ? "bg-[#3B3F49] text-white"
+                      : "text-[#A7B0BD] hover:text-white"
+                  }`}
+                  aria-pressed={goalSection === "completed"}
+                >
+                  Completed
+                </button>
+              </div>
             </div>
-          ))}
-        </div>
+            <div className={GOAL_GRID_CLASS}>
+              {filteredRoadmaps.map(({ roadmap, goals: roadmapGoalsList, goalCount }) => {
+                return (
+                  <div
+                    key={roadmap.id}
+                    className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
+                  >
+                    <RoadmapCard
+                      roadmap={roadmap}
+                      goalCount={goalCount}
+                      goals={roadmapGoalsList}
+                      variant="compact"
+                      onGoalEdit={handleRoadmapGoalEdit}
+                      monumentContext
+                    />
+                  </div>
+                );
+              })}
+
+              {filteredStandaloneGoals.map((goal) => (
+                <div
+                  key={goal.id}
+                  className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
+                >
+                  <GoalCard
+                    goal={goal}
+                    showWeight={false}
+                    showCreatedAt={false}
+                    showEmojiPrefix={false}
+                    variant="compact"
+                    monumentContext
+                    onEdit={() => handleGoalEdit(goal)}
+                    onProjectUpdated={(projectId, updates) =>
+                      handleProjectUpdated(goal.id, projectId, updates)
+                    }
+                    onProjectDeleted={(projectId) =>
+                      handleProjectDeleted(goal.id, projectId)
+                    }
+                    open={openGoalId === goal.id}
+                    onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
     );
   }, [
@@ -1131,6 +1161,7 @@ export function MonumentGoalsList({
     handleProjectUpdated,
     handleProjectDeleted,
     handleRoadmapGoalEdit,
+    onGoalSectionChange,
   ]);
 
   return (
