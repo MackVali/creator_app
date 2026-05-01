@@ -8,6 +8,8 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  type DragCancelEvent,
+  type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
@@ -176,7 +178,7 @@ function DragHandle({
   return (
     <button
       type="button"
-      className={`shrink-0 touch-manipulation cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${className ?? "flex h-6.5 w-6.5 items-center justify-center rounded-lg border border-white/12 bg-black/30 text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-black/45 hover:text-white/85 sm:h-8 sm:w-8 sm:rounded-xl"}`}
+      className={`shrink-0 cursor-grab touch-none select-none active:cursor-grabbing [-webkit-touch-callout:none] [-webkit-user-select:none] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${className ?? "flex h-6.5 w-6.5 items-center justify-center rounded-lg border border-white/12 bg-black/30 text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-black/45 hover:text-white/85 sm:h-8 sm:w-8 sm:rounded-xl"}`}
       aria-label={label}
       {...attributes}
       {...listeners}
@@ -189,9 +191,11 @@ function DragHandle({
 function SortableCampaignGoalRow({
   goal,
   compact,
+  isAnyDragging,
 }: {
   goal: RoadmapCampaignGoal;
   compact: boolean;
+  isAnyDragging: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: goal.id });
@@ -208,7 +212,7 @@ function SortableCampaignGoalRow({
       <div
         className={`flex w-full items-center gap-1 rounded-lg border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)] px-1.5 py-1.5 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)] sm:gap-2 sm:px-2.5 sm:py-2 ${
           isDragging ? "opacity-90 ring-1 ring-white/20" : ""
-        }`}
+        } ${isAnyDragging ? "select-none [-webkit-user-select:none]" : ""}`}
       >
         <DragHandle
           attributes={attributes}
@@ -237,12 +241,20 @@ function CampaignGoalList({
   compact,
   sensors,
   onReorder,
+  onDragStart,
+  onDragEnd,
+  onDragCancel,
+  isAnyDragging,
 }: {
   campaignId: string;
   goals: RoadmapCampaignGoal[];
   compact: boolean;
   sensors: ReturnType<typeof useSensors>;
   onReorder: (campaignId: string, event: DragEndEvent) => Promise<void>;
+  onDragStart: (event: DragStartEvent) => void;
+  onDragEnd: (event: DragEndEvent) => void;
+  onDragCancel: (event: DragCancelEvent) => void;
+  isAnyDragging: boolean;
 }) {
   if (goals.length === 0) {
     return null;
@@ -252,7 +264,12 @@ function CampaignGoalList({
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
-      onDragEnd={(event) => void onReorder(campaignId, event)}
+      onDragStart={onDragStart}
+      onDragEnd={(event) => {
+        onDragEnd(event);
+        void onReorder(campaignId, event);
+      }}
+      onDragCancel={onDragCancel}
     >
       <SortableContext
         items={goals.map((goal) => goal.id)}
@@ -264,6 +281,7 @@ function CampaignGoalList({
               key={goal.id}
               goal={goal}
               compact={compact}
+              isAnyDragging={isAnyDragging}
             />
           ))}
         </div>
@@ -278,6 +296,10 @@ function MixedRoadmapItemContent({
   sensors,
   onCampaignGoalReorder,
   topLevelHandle,
+  isAnyDragging,
+  onNestedDragStart,
+  onNestedDragEnd,
+  onNestedDragCancel,
 }: {
   item: RoadmapMixedItem;
   compact: boolean;
@@ -290,6 +312,10 @@ function MixedRoadmapItemContent({
     attributes: Record<string, unknown>;
     listeners: Record<string, unknown> | undefined;
   };
+  isAnyDragging: boolean;
+  onNestedDragStart: (event: DragStartEvent) => void;
+  onNestedDragEnd: (event: DragEndEvent) => void;
+  onNestedDragCancel: (event: DragCancelEvent) => void;
 }) {
   if (item.item_type === "CAMPAIGN" && item.campaign) {
     const campaignIdentity =
@@ -353,6 +379,10 @@ function MixedRoadmapItemContent({
                 compact={compact}
                 sensors={sensors}
                 onReorder={onCampaignGoalReorder}
+                onDragStart={onNestedDragStart}
+                onDragEnd={onNestedDragEnd}
+                onDragCancel={onNestedDragCancel}
+                isAnyDragging={isAnyDragging}
               />
             </div>
           ) : null}
@@ -403,6 +433,10 @@ function SortableMixedRoadmapItemRow({
   compact,
   sensors,
   onCampaignGoalReorder,
+  isAnyDragging,
+  onNestedDragStart,
+  onNestedDragEnd,
+  onNestedDragCancel,
 }: {
   item: RoadmapMixedItem;
   compact: boolean;
@@ -411,6 +445,10 @@ function SortableMixedRoadmapItemRow({
     campaignId: string,
     event: DragEndEvent
   ) => Promise<void>;
+  isAnyDragging: boolean;
+  onNestedDragStart: (event: DragStartEvent) => void;
+  onNestedDragEnd: (event: DragEndEvent) => void;
+  onNestedDragCancel: (event: DragCancelEvent) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
@@ -427,7 +465,7 @@ function SortableMixedRoadmapItemRow({
       <div
         className={`rounded-[22px] border border-transparent p-0.5 transition-colors sm:rounded-[26px] sm:p-1.5 ${
           isDragging ? "border-white/20 bg-white/[0.02]" : ""
-        }`}
+        } ${isAnyDragging ? "select-none [-webkit-user-select:none]" : ""}`}
       >
         <MixedRoadmapItemContent
           item={item}
@@ -435,10 +473,18 @@ function SortableMixedRoadmapItemRow({
           sensors={sensors}
           onCampaignGoalReorder={onCampaignGoalReorder}
           topLevelHandle={{ attributes, listeners }}
+          isAnyDragging={isAnyDragging}
+          onNestedDragStart={onNestedDragStart}
+          onNestedDragEnd={onNestedDragEnd}
+          onNestedDragCancel={onNestedDragCancel}
         />
       </div>
     </div>
   );
+}
+
+function preventTouchScrollWhileDragging(event: TouchEvent) {
+  event.preventDefault();
 }
 
 function MixedRoadmapCardImpl({
@@ -451,6 +497,7 @@ function MixedRoadmapCardImpl({
     buildOrderedItems(roadmap.items)
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [activeDragCount, setActiveDragCount] = useState(0);
 
   useEffect(() => {
     setOrderedItems(buildOrderedItems(roadmap.items));
@@ -466,6 +513,47 @@ function MixedRoadmapCardImpl({
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  useEffect(() => {
+    if (activeDragCount === 0) {
+      return;
+    }
+
+    const { body, documentElement } = document;
+    const previousBodyUserSelect = body.style.userSelect;
+    const previousBodyWebkitUserSelect = body.style.webkitUserSelect;
+    const previousBodyWebkitTouchCallout = body.style.webkitTouchCallout;
+    const previousDocumentOverscrollBehavior = documentElement.style.overscrollBehavior;
+
+    body.style.userSelect = "none";
+    body.style.webkitUserSelect = "none";
+    body.style.webkitTouchCallout = "none";
+    documentElement.style.overscrollBehavior = "none";
+
+    window.addEventListener("touchmove", preventTouchScrollWhileDragging, {
+      passive: false,
+    });
+
+    return () => {
+      body.style.userSelect = previousBodyUserSelect;
+      body.style.webkitUserSelect = previousBodyWebkitUserSelect;
+      body.style.webkitTouchCallout = previousBodyWebkitTouchCallout;
+      documentElement.style.overscrollBehavior = previousDocumentOverscrollBehavior;
+      window.removeEventListener("touchmove", preventTouchScrollWhileDragging);
+    };
+  }, [activeDragCount]);
+
+  function handleAnyDragStart() {
+    setActiveDragCount((count) => count + 1);
+  }
+
+  function handleAnyDragEnd() {
+    setActiveDragCount(0);
+  }
+
+  function handleAnyDragCancel() {
+    setActiveDragCount(0);
+  }
 
   const campaignCount = useMemo(
     () => orderedItems.filter((item) => item.item_type === "CAMPAIGN").length,
@@ -638,7 +726,12 @@ function MixedRoadmapCardImpl({
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
-              onDragEnd={(event) => void handleTopLevelDragEnd(event)}
+              onDragStart={handleAnyDragStart}
+              onDragEnd={(event) => {
+                handleAnyDragEnd(event);
+                void handleTopLevelDragEnd(event);
+              }}
+              onDragCancel={handleAnyDragCancel}
             >
               <SortableContext
                 items={orderedItems.map((item) => item.id)}
@@ -652,6 +745,10 @@ function MixedRoadmapCardImpl({
                       compact={isCompact}
                       sensors={sensors}
                       onCampaignGoalReorder={handleCampaignGoalDragEnd}
+                      isAnyDragging={activeDragCount > 0}
+                      onNestedDragStart={handleAnyDragStart}
+                      onNestedDragEnd={handleAnyDragEnd}
+                      onNestedDragCancel={handleAnyDragCancel}
                     />
                   ))}
                 </div>
