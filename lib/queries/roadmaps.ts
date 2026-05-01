@@ -3,6 +3,8 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 export interface RoadmapGoal {
   id: string;
   name: string;
+  emoji: string | null;
+  monumentEmoji: string | null;
   roadmap_id: string | null;
 }
 
@@ -18,14 +20,13 @@ export type RoadmapItemType = "CAMPAIGN" | "GOAL";
 export type CampaignSchedulingState =
   | "ACTIVE"
   | "PAUSED"
-  | "BACKLOG"
-  | "SOMEDAY"
-  | "ARCHIVED"
-  | "MANUAL_ONLY";
+  | "COMPLETED";
 
 export interface RoadmapCampaignGoal {
   id: string;
   name: string;
+  emoji: string | null;
+  monumentEmoji: string | null;
   position: number;
 }
 
@@ -70,6 +71,26 @@ export interface CampaignGoalRecord {
   position: number;
 }
 
+type RoadmapGoalRow = {
+  id: string;
+  name: string;
+  emoji?: string | null;
+  roadmap_id?: string | null;
+  monument?: {
+    emoji?: string | null;
+  } | null;
+};
+
+function normalizeRoadmapGoal(goal: RoadmapGoalRow): RoadmapGoal {
+  return {
+    id: goal.id,
+    name: goal.name,
+    emoji: goal.emoji ?? null,
+    monumentEmoji: goal.monument?.emoji ?? null,
+    roadmap_id: goal.roadmap_id ?? null,
+  };
+}
+
 export async function listRoadmaps(
   userId: string
 ): Promise<Roadmap[]> {
@@ -85,7 +106,7 @@ export async function listRoadmaps(
       title,
       emoji,
       created_at,
-      goals:goals(id, name, roadmap_id)
+      goals:goals(id, name, emoji, roadmap_id, monument:monuments(emoji))
     `)
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -99,7 +120,7 @@ export async function listRoadmaps(
     id: row.id,
     title: row.title,
     emoji: row.emoji ?? null,
-    goals: (row.goals ?? []) as RoadmapGoal[],
+    goals: (row.goals ?? []).map(goal => normalizeRoadmapGoal(goal as RoadmapGoalRow)),
   }));
 }
 
@@ -137,7 +158,7 @@ export async function listRoadmapsWithItems(
 
   const { data: legacyGoalRows, error: legacyGoalsError } = await supabase
     .from("goals")
-    .select("id, name, roadmap_id, priority_rank")
+    .select("id, name, emoji, roadmap_id, priority_rank, monument:monuments(emoji)")
     .in("roadmap_id", roadmapIds)
     .order("priority_rank", { ascending: true, nullsFirst: false });
 
@@ -186,7 +207,7 @@ export async function listRoadmapsWithItems(
     roadmapGoalIds.length > 0
       ? await supabase
           .from("goals")
-          .select("id, name, roadmap_id")
+          .select("id, name, emoji, roadmap_id, monument:monuments(emoji)")
           .in("id", roadmapGoalIds)
       : { data: [], error: null };
 
@@ -236,7 +257,7 @@ export async function listRoadmapsWithItems(
     campaignGoalIds.length > 0
       ? await supabase
           .from("goals")
-          .select("id, name, roadmap_id")
+          .select("id, name, emoji, roadmap_id, monument:monuments(emoji)")
           .in("id", campaignGoalIds)
       : { data: [], error: null };
 
@@ -249,9 +270,7 @@ export async function listRoadmapsWithItems(
     (roadmapGoalRows ?? []).map(goal => [
       goal.id,
       {
-        id: goal.id,
-        name: goal.name,
-        roadmap_id: goal.roadmap_id ?? null,
+        ...normalizeRoadmapGoal(goal as RoadmapGoalRow),
       },
     ])
   );
@@ -260,9 +279,7 @@ export async function listRoadmapsWithItems(
     (campaignGoalGoalRows ?? []).map(goal => [
       goal.id,
       {
-        id: goal.id,
-        name: goal.name,
-        roadmap_id: goal.roadmap_id ?? null,
+        ...normalizeRoadmapGoal(goal as RoadmapGoalRow),
       },
     ])
   );
@@ -278,6 +295,8 @@ export async function listRoadmapsWithItems(
     goals.push({
       id: goal.id,
       name: goal.name,
+      emoji: goal.emoji ?? null,
+      monumentEmoji: goal.monumentEmoji ?? null,
       position: campaignGoal.position,
     });
     campaignGoalsByCampaignId.set(campaignGoal.campaign_id, goals);
@@ -291,9 +310,7 @@ export async function listRoadmapsWithItems(
     const roadmapGoals = legacyGoalsByRoadmapId.get(goal.roadmap_id) ?? [];
     roadmapGoals.push({
       goal: {
-        id: goal.id,
-        name: goal.name,
-        roadmap_id: goal.roadmap_id ?? null,
+        ...normalizeRoadmapGoal(goal as RoadmapGoalRow),
       },
       priority_rank: goal.priority_rank ?? null,
     });
@@ -382,7 +399,7 @@ export async function createRoadmap(
       title,
       emoji,
       created_at,
-      goals:goals(id, name, roadmap_id)
+      goals:goals(id, name, emoji, roadmap_id, monument:monuments(emoji))
     `)
     .single();
 
@@ -395,7 +412,7 @@ export async function createRoadmap(
     id: data.id,
     title: data.title,
     emoji: data.emoji ?? null,
-    goals: (data.goals ?? []) as RoadmapGoal[],
+    goals: (data.goals ?? []).map(goal => normalizeRoadmapGoal(goal as RoadmapGoalRow)),
   };
 }
 

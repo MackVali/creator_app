@@ -23,6 +23,10 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Roadmap } from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
+import {
+  getGoalStatusLabel,
+  normalizeGoalStatus,
+} from "@/lib/goals/status";
 
 import type { Goal } from "../types";
 import { GoalCard } from "./GoalCard";
@@ -87,8 +91,11 @@ function DraggableGoalCard({
         project.stage === "RELEASE" ||
         Number(project.progress ?? 0) >= 100
     );
-  const isCompleted = goal.status === "Completed" || allProjectsCompleted;
-  const statusLabel = isCompleted ? "Completed" : goal.status;
+  const normalizedStatus = normalizeGoalStatus(goal.status, goal.active);
+  const isCompleted = normalizedStatus === "COMPLETED" || allProjectsCompleted;
+  const statusLabel = isCompleted
+    ? "Completed"
+    : getGoalStatusLabel(normalizedStatus);
   const cardSurfaceClass = isCompleted
     ? "border border-emerald-400/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] shadow-[0_18px_38px_-24px_rgba(4,47,39,0.8),inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 ring-emerald-300/50"
     : "ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]";

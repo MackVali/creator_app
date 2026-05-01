@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import type { GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
 import { ensureGoalRoadmapPriorityRank } from "@/lib/goals/roadmapPriority";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 
 export const LIMIT_ERROR_CODES = [
   "GOAL_LIMIT_REACHED",
@@ -44,13 +45,6 @@ export function getLimitCodeFromError(error: unknown): LimitErrorCode | null {
     LIMIT_ERROR_CODES.find((code) => message.includes(code)) ?? null
   );
 }
-
-const STATUS_TO_DB: Record<Goal["status"], string> = {
-  Active: "ACTIVE",
-  Completed: "COMPLETED",
-  Overdue: "OVERDUE",
-  Inactive: "INACTIVE",
-};
 
 const PRIORITY_TO_DB: Record<Goal["priority"], string> = {
   No: "NO",
@@ -460,7 +454,7 @@ export async function persistGoalUpdate({
   const sharedFields = {
     name: goal.title,
     active: goal.active,
-    status: STATUS_TO_DB[goal.status] ?? "ACTIVE",
+    status: normalizeGoalStatus(goal.status, goal.active),
     why: goal.why ?? null,
     monument_id: goal.monumentId || null,
     roadmap_id: goal.roadmapId || null,

@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   DndContext,
   closestCenter,
@@ -46,6 +46,24 @@ function getInitials(value: string): string {
     .join("");
 }
 
+function getGoalIdentity(goal: {
+  name: string;
+  emoji?: string | null;
+  monumentEmoji?: string | null;
+}): string {
+  const emoji = goal.emoji?.trim();
+  if (emoji) {
+    return emoji;
+  }
+
+  const monumentEmoji = goal.monumentEmoji?.trim();
+  if (monumentEmoji) {
+    return monumentEmoji;
+  }
+
+  return getInitials(goal.name);
+}
+
 function sortByPosition<T extends { position: number | null }>(items: T[]): T[] {
   return [...items].sort((a, b) => {
     const aPosition = a.position ?? Number.POSITIVE_INFINITY;
@@ -89,20 +107,26 @@ function DragHandle({
   attributes,
   listeners,
   label,
+  className,
+  children,
+  gripClassName,
 }: {
   attributes: Record<string, unknown>;
   listeners: Record<string, unknown> | undefined;
   label: string;
+  className?: string;
+  children?: ReactNode;
+  gripClassName?: string;
 }) {
   return (
     <button
       type="button"
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/55 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 cursor-grab active:cursor-grabbing"
+      className={`shrink-0 cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${className ?? "flex h-8 w-8 items-center justify-center rounded-xl border border-white/12 bg-black/30 text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-black/45 hover:text-white/85"}`}
       aria-label={label}
       {...attributes}
       {...listeners}
     >
-      <GripVertical className="h-4 w-4" />
+      {children ?? <GripVertical className={gripClassName ?? "h-4 w-4"} />}
     </button>
   );
 }
@@ -127,23 +151,26 @@ function SortableCampaignGoalRow({
       className={isDragging ? "z-20" : undefined}
     >
       <div
-        className={`flex items-center gap-3 rounded-2xl border border-white/8 bg-black/15 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${
-          isDragging ? "opacity-90 ring-1 ring-white/15" : ""
+        className={`flex items-center gap-2 rounded-xl border border-white/8 bg-black/30 px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${
+          isDragging ? "opacity-90 ring-1 ring-white/20" : ""
         }`}
       >
         <DragHandle
           attributes={attributes}
           listeners={listeners}
           label={`Reorder goal ${goal.name}`}
-        />
+          className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-[11px] font-semibold text-white/78 shadow-[inset_0_-1px_0_rgba(255,255,255,0.04)] transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
+        >
+          <span aria-hidden>{getGoalIdentity(goal)}</span>
+        </DragHandle>
         <div className="min-w-0 flex-1">
-          <p className={`truncate text-white/80 ${compact ? "text-[13px]" : "text-sm"}`}>
+          <p className={`truncate font-medium text-white/82 ${compact ? "text-[12px]" : "text-[13px]"}`}>
             {goal.name}
           </p>
         </div>
-        <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-white/35">
-          {goal.position}
-        </span>
+        <div className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[9px] font-medium uppercase tracking-[0.18em] text-white/35">
+          #{goal.position}
+        </div>
       </div>
     </div>
   );
@@ -176,7 +203,7 @@ function CampaignGoalList({
         items={goals.map((goal) => goal.id)}
         strategy={verticalListSortingStrategy}
       >
-        <div className="space-y-2 pt-2">
+        <div className="space-y-2 pt-3">
           {goals.map((goal) => (
             <SortableCampaignGoalRow
               key={goal.id}
@@ -195,6 +222,7 @@ function MixedRoadmapItemContent({
   compact,
   sensors,
   onCampaignGoalReorder,
+  topLevelHandle,
 }: {
   item: RoadmapMixedItem;
   compact: boolean;
@@ -203,6 +231,10 @@ function MixedRoadmapItemContent({
     campaignId: string,
     event: DragEndEvent
   ) => Promise<void>;
+  topLevelHandle: {
+    attributes: Record<string, unknown>;
+    listeners: Record<string, unknown> | undefined;
+  };
 }) {
   if (item.item_type === "CAMPAIGN" && item.campaign) {
     const campaignIdentity =
@@ -210,18 +242,23 @@ function MixedRoadmapItemContent({
     const goals = sortByPosition(item.campaign.goals);
 
     return (
-      <div className="min-w-0 flex-1 rounded-[26px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06)_0%,rgba(255,255,255,0.03)_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-        <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-sm font-semibold text-white">
+      <div className="min-w-0 flex-1 rounded-[24px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.06)_0%,rgba(10,10,10,0.96)_18%,rgba(0,0,0,0.98)_100%)] p-3.5 shadow-[0_18px_44px_-26px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.05)]">
+        <div className="flex items-start gap-2.5">
+          <DragHandle
+            attributes={topLevelHandle.attributes}
+            listeners={topLevelHandle.listeners}
+            label={`Reorder campaign ${item.campaign.name}`}
+            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/14 bg-white/[0.06] text-sm font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] transition hover:border-white/24 hover:bg-white/[0.1] hover:text-white"
+          >
             <span aria-hidden>{campaignIdentity}</span>
-          </div>
+          </DragHandle>
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-200">
-                Campaign
-              </span>
-              <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-white/65">
+              <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-white/60">
                 {item.campaign.scheduling_state}
+              </span>
+              <span className="rounded-full border border-white/8 bg-black/25 px-2 py-1 text-[10px] font-medium text-white/55">
+                {goals.length} goal{goals.length === 1 ? "" : "s"}
               </span>
             </div>
             <div className="space-y-1">
@@ -229,23 +266,22 @@ function MixedRoadmapItemContent({
                 {item.campaign.name}
               </p>
               {item.campaign.description ? (
-                <p className="line-clamp-2 text-sm text-white/50">
+                <p className="line-clamp-2 text-[13px] leading-5 text-white/48">
                   {item.campaign.description}
                 </p>
               ) : null}
             </div>
-            <div className="flex items-center gap-2 text-xs text-white/50">
-              <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">
-                {goals.length} goal{goals.length === 1 ? "" : "s"}
-              </span>
-            </div>
-            <CampaignGoalList
-              campaignId={item.campaign.id}
-              goals={goals}
-              compact={compact}
-              sensors={sensors}
-              onReorder={onCampaignGoalReorder}
-            />
+            {goals.length > 0 ? (
+              <div className="rounded-[18px] border border-white/8 bg-black/22 px-2.5 pb-2.5 pt-1.5">
+                <CampaignGoalList
+                  campaignId={item.campaign.id}
+                  goals={goals}
+                  compact={compact}
+                  sensors={sensors}
+                  onReorder={onCampaignGoalReorder}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -253,15 +289,32 @@ function MixedRoadmapItemContent({
   }
 
   if (item.item_type === "GOAL" && item.goal) {
+    const goalIdentity = getGoalIdentity(item.goal);
+
     return (
-      <div className="min-w-0 flex-1 rounded-[26px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06)_0%,rgba(255,255,255,0.03)_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-        <div className="space-y-2">
-          <span className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-emerald-200">
-            Goal
-          </span>
-          <p className={`font-semibold text-white ${compact ? "text-sm" : "text-[15px]"}`}>
-            {item.goal.name}
-          </p>
+      <div className="min-w-0 flex-1 rounded-[22px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.04)_0%,rgba(10,10,10,0.96)_100%)] p-3.5 shadow-[0_14px_32px_-24px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.05)]">
+        <div className="flex items-start gap-2.5">
+          <DragHandle
+            attributes={topLevelHandle.attributes}
+            listeners={topLevelHandle.listeners}
+            label={`Reorder goal ${item.goal.name}`}
+            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/14 bg-white/[0.06] text-sm font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] transition hover:border-white/24 hover:bg-white/[0.1] hover:text-white"
+          >
+            <span aria-hidden>{goalIdentity}</span>
+          </DragHandle>
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex rounded-full border border-white/12 bg-white/[0.05] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/82">
+                Goal
+              </span>
+              <span className="rounded-full border border-white/8 bg-black/25 px-2 py-1 text-[10px] font-medium text-white/50">
+                Roadmap level
+              </span>
+            </div>
+            <p className={`font-semibold text-white ${compact ? "text-sm" : "text-[15px]"}`}>
+              {item.goal.name}
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -296,19 +349,17 @@ function SortableMixedRoadmapItemRow({
       }}
       className={isDragging ? "z-10" : undefined}
     >
-      <div className="flex items-start gap-3">
-        <div className="pt-3">
-          <DragHandle
-            attributes={attributes}
-            listeners={listeners}
-            label={`Reorder ${item.item_type === "CAMPAIGN" ? "campaign" : "goal"}`}
-          />
-        </div>
+      <div
+        className={`rounded-[26px] border border-transparent p-1.5 transition-colors ${
+          isDragging ? "border-white/20 bg-white/[0.02]" : ""
+        }`}
+      >
         <MixedRoadmapItemContent
           item={item}
           compact={compact}
           sensors={sensors}
           onCampaignGoalReorder={onCampaignGoalReorder}
+          topLevelHandle={{ attributes, listeners }}
         />
       </div>
     </div>
@@ -447,41 +498,45 @@ function MixedRoadmapCardImpl({
   }
 
   return (
-    <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08)_0%,rgba(255,255,255,0.03)_100%)] shadow-[0_18px_48px_-28px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl">
+    <div className="overflow-hidden rounded-[30px] border-2 border-white/14 bg-[#040404] shadow-[0_24px_60px_-28px_rgba(0,0,0,0.95),0_10px_20px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.05)]">
       <button
         type="button"
         onClick={() => {
           setIsOpen((open) => !open);
           onClick?.();
         }}
-        className={`flex w-full items-start justify-between gap-4 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${
-          isCompact ? "px-4 py-3" : "px-5 py-4"
+        className={`flex w-full items-start justify-between gap-3 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${
+          isCompact ? "px-4 py-3" : "px-5 py-3.5"
         }`}
         aria-expanded={isOpen}
       >
-        <div className="min-w-0 space-y-2">
+        <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-lg shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/12 bg-zinc-700 text-lg text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.08)]">
               <span aria-hidden>{roadmap.emoji?.trim() || getInitials(roadmap.title)}</span>
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1 space-y-1">
               <p
                 className={`truncate font-semibold text-white ${
-                  isCompact ? "text-[15px]" : "text-base"
+                  isCompact ? "text-[15px]" : "text-[17px]"
                 }`}
               >
                 {roadmap.title}
               </p>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/55">
+                <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 font-medium">
+                  {campaignCount} campaign{campaignCount === 1 ? "" : "s"}
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 font-medium">
+                  {standaloneGoalCount} standalone goal
+                  {standaloneGoalCount === 1 ? "" : "s"}
+                </span>
+              </div>
             </div>
           </div>
-          <p className="text-xs uppercase tracking-[0.24em] text-white/55">
-            {campaignCount} campaign{campaignCount === 1 ? "" : "s"} {"  "}
-            {standaloneGoalCount} standalone goal
-            {standaloneGoalCount === 1 ? "" : "s"}
-          </p>
         </div>
         <span
-          className={`mt-1 shrink-0 rounded-full border border-white/10 bg-white/5 p-2 text-white/70 transition-transform ${
+          className={`mt-0.5 shrink-0 rounded-full border border-white/10 bg-white/[0.04] p-2 text-white/70 transition-transform ${
             isOpen ? "rotate-180" : ""
           }`}
           aria-hidden
@@ -491,10 +546,10 @@ function MixedRoadmapCardImpl({
       </button>
 
       {isOpen ? (
-        <div className={`border-t border-white/10 ${isCompact ? "px-4 py-3" : "px-5 py-4"}`}>
-          <div className="mb-3 flex min-h-5 items-center justify-end">
+        <div className={`border-t border-white/10 ${isCompact ? "px-4 py-3" : "px-5 py-3.5"}`}>
+          <div className="mb-2 flex items-center justify-end">
             {isSaving ? (
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-white/45">
+              <p className="rounded-full border border-white/12 bg-white/[0.06] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-white/72">
                 Saving...
               </p>
             ) : null}
@@ -514,7 +569,7 @@ function MixedRoadmapCardImpl({
                 items={orderedItems.map((item) => item.id)}
                 strategy={verticalListSortingStrategy}
               >
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   {orderedItems.map((item) => (
                     <SortableMixedRoadmapItemRow
                       key={item.id}

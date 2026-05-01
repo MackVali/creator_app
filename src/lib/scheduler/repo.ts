@@ -12,6 +12,10 @@ import {
 } from "./timezone";
 import { ENERGY, type Energy } from "./config";
 import type { TaskLite, ProjectLite } from "./weight";
+import {
+  normalizeGoalStatus,
+  type GoalStatus,
+} from "../goals/status";
 import { log } from "@/lib/utils/logGate";
 
 const PRIORITY_VALUES = [
@@ -1236,6 +1240,7 @@ export async function fetchProjectSkillsForProjects(
 export type GoalSummary = {
   id: string;
   name: string | null;
+  status: GoalStatus;
   weight: number;
   monumentId: string | null;
   emoji: string | null;
@@ -1255,6 +1260,8 @@ export async function fetchGoalsForUser(
   type GoalRecord = {
     id: string;
     name?: string | null;
+    status?: string | null;
+    active?: boolean | null;
     global_rank?: number | null;
     roadmap_id?: string | null;
     priority_rank?: number | null;
@@ -1275,12 +1282,15 @@ export async function fetchGoalsForUser(
   };
   const { data, error } = await supabase
     .from("goals")
-    .select("id, name, global_rank, roadmap_id, priority_rank, monument_id, emoji")
+    .select(
+      "id, name, status, active, global_rank, roadmap_id, priority_rank, monument_id, emoji"
+    )
     .eq("user_id", userId);
 
   if (error) throw error;
 
   return ((data ?? []) as GoalRecord[]).map((goal) => {
+    const status = normalizeGoalStatus(goal.status, goal.active);
     const globalRank = normalizeFiniteNumber(goal.global_rank);
     const priorityRank = normalizeFiniteNumber(goal.priority_rank);
     const roadmapId =
@@ -1295,6 +1305,7 @@ export async function fetchGoalsForUser(
     return {
       id: goal.id,
       name: goal.name ?? null,
+      status,
       weight,
       monumentId: goal.monument_id ?? null,
       emoji: goal.emoji ?? null,

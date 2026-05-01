@@ -17,7 +17,10 @@ import {
   addDaysInTimeZone,
   formatDateKeyInTimeZone,
 } from "@/lib/scheduler/timezone";
-import { persistManualPlacementCascade } from "@/lib/scheduler/manualPlacementCascade";
+import {
+  enforceManualProjectGoalState,
+  persistManualPlacementCascade,
+} from "@/lib/scheduler/manualPlacementCascade";
 import {
   LOCAL_RESCHEDULE_CANCEL_REASON,
   type LocalRescheduleCleanupSourceContext,
@@ -63,7 +66,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   const { data: instance, error: fetchError } = await supabase
     .from("schedule_instances")
-    .select("id, user_id, start_utc, end_utc, duration_min")
+    .select("id, user_id, start_utc, end_utc, duration_min, source_type, source_id")
     .eq("id", id)
     .maybeSingle();
 
@@ -94,6 +97,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const nextStartIso = parsedStart.toISOString();
   const nextEnd = new Date(parsedStart.getTime() + validDuration * 60_000);
   const nextEndIso = nextEnd.toISOString();
+
+  if (
+    instance.source_type === "PROJECT" &&
+    typeof instance.source_id === "string" &&
+    instance.source_id.trim().length > 0
+  ) {
+    const goalStateResult = await enforceManualProjectGoalState({
+      userId: user.id,
+      client: supabase,
+      projectId: instance.source_id,
+    });
+    if (!goalStateResult.ok) {
+      return NextResponse.json(goalStateResult.blockingError, { status: 409 });
+    }
+  }
 
   const { error: updateError } = await supabase
     .from("schedule_instances")
@@ -149,6 +167,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       timeZone,
       client: supabase,
     });
+
+    if (cascadeResult.blockingError) {
+      return NextResponse.json(cascadeResult.blockingError, { status: 409 });
+    }
 
     for (const warning of cascadeResult.warnings) {
       displacedProjectWarnings.push(warning);

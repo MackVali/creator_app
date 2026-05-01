@@ -28,6 +28,7 @@ import {
   type LimitErrorCode,
 } from "@/lib/goals/persistGoalUpdate";
 import { ensureGoalRoadmapPriorityRank } from "@/lib/goals/roadmapPriority";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
@@ -656,27 +657,6 @@ async function syncProjectsAndTasks(
   }
 }
 
-function goalStatusToStatus(status?: string | null): Goal["status"] {
-  switch (status) {
-    case "COMPLETED":
-    case "Completed":
-    case "DONE":
-      return "Completed";
-    case "INACTIVE":
-    case "Inactive":
-      return "Inactive";
-    case "OVERDUE":
-    case "Overdue":
-      return "Overdue";
-    case "ACTIVE":
-    case "Active":
-    case "IN_PROGRESS":
-    case "IN PROGRESS":
-    default:
-      return "Active";
-  }
-}
-
 export default function GoalsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -766,7 +746,7 @@ export default function GoalsPage() {
             goal.id === goalId
               ? {
                   ...goal,
-                  status: goalStatusToStatus(statusRow.status),
+                  status: normalizeGoalStatus(statusRow.status, goal.active),
                   updatedAt: statusRow.updatedAt ?? goal.updatedAt,
                 }
               : goal
@@ -1015,7 +995,7 @@ export default function GoalsPage() {
                     projList.length
                 )
               : 0;
-          const status = goalStatusToStatus(g.status);
+          const status = normalizeGoalStatus(g.status, g.active);
           const estimatedCompletionAt = projList.reduce<string | null>(
             (latest, project) => {
               const scheduledEnd =
@@ -1048,7 +1028,7 @@ export default function GoalsPage() {
             energy: mapEnergy(goalEnergyCode ?? null),
             progress,
             status,
-            active: g.active ?? status === "Active",
+            active: status === "ACTIVE",
             createdAt: g.created_at,
             updatedAt: g.created_at,
             dueDate: g.due_date ?? undefined,
@@ -1200,7 +1180,7 @@ export default function GoalsPage() {
                         projList.length
                     )
                   : 0;
-          const status = goalStatusToStatus(g.status);
+              const status = normalizeGoalStatus(g.status, g.active);
               const estimatedCompletionAt = projList.reduce<string | null>(
                 (latest, project) => {
                   const scheduledEnd =
@@ -1234,7 +1214,7 @@ export default function GoalsPage() {
                 energy: mapEnergy(goalEnergyCode ?? null),
                 progress,
                 status,
-                active: g.active ?? status === "Active",
+                active: status === "ACTIVE",
                 createdAt: g.created_at,
                 updatedAt: g.created_at,
                 dueDate: g.due_date ?? undefined,
@@ -1348,8 +1328,8 @@ export default function GoalsPage() {
       return { total: 0, active: 0, completed: 0, momentum: 0, xp: 0 };
     }
     const total = goals.length;
-    const active = goals.filter((g) => g.status === "Active").length;
-    const completed = goals.filter((g) => g.status === "Completed").length;
+    const active = goals.filter((g) => normalizeGoalStatus(g.status, g.active) === "ACTIVE").length;
+    const completed = goals.filter((g) => normalizeGoalStatus(g.status, g.active) === "COMPLETED").length;
     const momentum = Math.round(
       goals.reduce((sum, g) => sum + g.progress, 0) / total
     );
@@ -1433,14 +1413,7 @@ export default function GoalsPage() {
       // Insert the goal first
       const priorityDb = priorityToDbValue(_goal.priority);
       const energyDb = energyToDbValue(_goal.energy);
-      const statusDb =
-        _goal.status === "Completed"
-          ? "COMPLETED"
-          : _goal.status === "Overdue"
-          ? "OVERDUE"
-          : _goal.status === "Inactive"
-          ? "INACTIVE"
-          : "ACTIVE";
+      const statusDb = normalizeGoalStatus(_goal.status, _goal.active);
 
       const performInsert = (includeCodeColumns: boolean) => {
         const payload = {
@@ -1623,8 +1596,11 @@ export default function GoalsPage() {
   const handleToggleActive = async (goal: Goal) => {
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
-    const nextActive = !goal.active;
-    const status: Goal["status"] = nextActive ? "Active" : "Inactive";
+    const currentStatus = normalizeGoalStatus(goal.status, goal.active);
+    if (currentStatus === "COMPLETED") return;
+    const status: Goal["status"] =
+      currentStatus === "ACTIVE" ? "PAUSED" : "ACTIVE";
+    const nextActive = status === "ACTIVE";
     await supabase
       .from("goals")
       .update({ active: nextActive, status })
