@@ -177,6 +177,11 @@ type PeekState = {
 };
 
 const HABIT_COMPLETION_STORAGE_PREFIX = "schedule-habit-completions";
+const SCHEDULE_INSTANCE_NO_SELECT_STYLE: CSSProperties = {
+  userSelect: "none",
+  WebkitUserSelect: "none",
+  WebkitTouchCallout: "none",
+};
 const DAY_PEEK_SAFE_GAP_PX = 24;
 const MIN_PX_PER_MIN = 0.9;
 const MAX_PX_PER_MIN = 3.2;
@@ -4404,7 +4409,55 @@ export default function SchedulePage() {
       ? (editingSnapshot.habitId ?? null)
       : null;
 
-  const editingLayoutId = undefined;
+  const editingLayoutId = editingInstance?.id
+    ? getScheduleInstanceLayoutId(editingInstance.id)
+    : null;
+
+  const fabEditTarget = useMemo(() => {
+    const originRect = editingSnapshot?.originData
+      ? {
+          top: editingSnapshot.originData.y,
+          left: editingSnapshot.originData.x,
+          width: editingSnapshot.originData.width,
+          height: editingSnapshot.originData.height,
+        }
+      : null;
+
+    if (
+      editingSnapshot?.source_type === "PROJECT" &&
+      editingProjectId
+    ) {
+      return {
+        entityType: "PROJECT" as const,
+        entityId: editingProjectId,
+        instanceId: editingInstance?.id ?? null,
+        title: editingEventTitle ?? null,
+        layoutId: editingLayoutId,
+        originRect,
+      };
+    }
+
+    if (editingSnapshot?.source_type === "HABIT" && editingHabitId) {
+      return {
+        entityType: "HABIT" as const,
+        entityId: editingHabitId,
+        instanceId: editingInstance?.id ?? null,
+        title: editingEventTitle ?? null,
+        layoutId: editingLayoutId,
+        originRect,
+      };
+    }
+
+    return null;
+  }, [
+    editingEventTitle,
+    editingHabitId,
+    editingInstance?.id,
+    editingLayoutId,
+    editingProjectId,
+    editingSnapshot?.source_type,
+    editingSnapshot?.originData,
+  ]);
 
   const isProjectEditing =
     editingSnapshot?.source_type === "PROJECT" &&
@@ -7612,7 +7665,11 @@ export default function SchedulePage() {
                 return null;
               }
 
-              const layeredCardStyle = { ...cardStyle, zIndex: stackingZIndex };
+              const layeredCardStyle = {
+                ...cardStyle,
+                ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
+                zIndex: stackingZIndex,
+              };
 
               return (
                 <motion.div
@@ -8056,7 +8113,10 @@ export default function SchedulePage() {
                                 ? " cursor-pointer"
                                 : ""
                             }`}
-                            style={projectCardStyle}
+                            style={{
+                              ...projectCardStyle,
+                              ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
+                            }}
                             initial={
                               prefersReducedMotion
                                 ? false
@@ -9021,6 +9081,7 @@ export default function SchedulePage() {
                         : "opacity-90"
                     )}
                       style={{
+                        ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
                         boxShadow: habitCardShadow,
                         outline: "1px solid rgba(10, 10, 12, 0.85)",
                         outlineOffset: "-1px",
@@ -9072,6 +9133,7 @@ export default function SchedulePage() {
                         : "opacity-90"
                     )}
                     style={{
+                      ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
                       boxShadow: sharedCardShadow,
                       outline: "1px solid rgba(10, 10, 12, 0.85)",
                       outlineOffset: "-1px",
@@ -9193,12 +9255,20 @@ export default function SchedulePage() {
                       </motion.div>
                     </AnimatePresence>
                   )}
-                  <FocusTimelineFab hidden={isJumpToDateOpen} />
+                  <FocusTimelineFab
+                    hidden={isJumpToDateOpen}
+                    editTarget={fabEditTarget}
+                    onEditClose={handleCloseEditSheet}
+                  />
                 </ScheduleViewShell>
               )}
               {view === "focus" && (
                 <ScheduleViewShell key="focus">
-                  <FocusTimeline hideFab={isJumpToDateOpen} />
+                  <FocusTimeline
+                    hideFab={isJumpToDateOpen}
+                    editTarget={fabEditTarget}
+                    onEditClose={handleCloseEditSheet}
+                  />
                 </ScheduleViewShell>
               )}
             </AnimatePresence>
@@ -9248,21 +9318,25 @@ export default function SchedulePage() {
         isProjectEditing,
         isHabitEditing,
       })}
-      <ProjectEditSheet
-        open={isProjectEditing}
-        projectId={editingSnapshot?.projectId ?? null}
-        instance={editingInstance}
-        onClose={handleCloseEditSheet}
-        onInstanceDeleted={refreshScheduleData}
-      />
-      <HabitEditSheet
-        open={isHabitEditing}
-        habitId={editingSnapshot?.habitId ?? null}
-        instance={editingInstance}
-        onClose={handleCloseEditSheet}
-        onSaved={refreshScheduleData}
-        onInstanceDeleted={refreshScheduleData}
-      />
+      {!fabEditTarget ? (
+        <>
+          <ProjectEditSheet
+            open={isProjectEditing}
+            projectId={editingSnapshot?.projectId ?? null}
+            instance={editingInstance}
+            onClose={handleCloseEditSheet}
+            onInstanceDeleted={refreshScheduleData}
+          />
+          <HabitEditSheet
+            open={isHabitEditing}
+            habitId={editingSnapshot?.habitId ?? null}
+            instance={editingInstance}
+            onClose={handleCloseEditSheet}
+            onSaved={refreshScheduleData}
+            onInstanceDeleted={refreshScheduleData}
+          />
+        </>
+      ) : null}
     </LayoutGroup>
   );
 }

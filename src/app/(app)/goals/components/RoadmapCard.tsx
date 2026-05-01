@@ -19,6 +19,7 @@ import {
 import { useSortable } from "@dnd-kit/sortable";
 import type { Roadmap } from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import type { FabEditTarget } from "@/components/ui/Fab";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import {
   getGoalStatusLabel,
@@ -27,6 +28,7 @@ import {
 
 import type { Goal } from "../types";
 import { GoalCard } from "./GoalCard";
+import type { ProjectCardMorphOrigin } from "./ProjectRow";
 
 const cardSpringTransition = {
   type: "spring",
@@ -79,6 +81,7 @@ function DraggableGoalCard({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  onProjectEditOpen,
   monumentContext,
 }: {
   goal: Goal;
@@ -88,6 +91,12 @@ function DraggableGoalCard({
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  onProjectEditOpen?: (
+    target: FabEditTarget,
+    projectId: string,
+    goalId: string,
+    origin: ProjectCardMorphOrigin | null
+  ) => void;
   monumentContext?: boolean;
 }) {
   const prefersReducedMotion = useReducedMotion();
@@ -185,6 +194,12 @@ function DraggableGoalCard({
               onGoalToggleActive ? () => onGoalToggleActive(goal) : undefined
             }
             onDelete={onGoalDelete ? () => onGoalDelete(goal) : undefined}
+            onProjectEditOpen={
+              onProjectEditOpen
+                ? (target, project, origin) =>
+                    onProjectEditOpen(target, project.id, goal.id, origin)
+                : undefined
+            }
             monumentContext={monumentContext}
             completeWhenProjectsDone
             completionTheme="emerald"
@@ -268,6 +283,12 @@ interface RoadmapCardProps {
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
   onRoadmapOrderSaved?: () => void | Promise<void>;
+  onProjectEditOpen?: (
+    target: FabEditTarget,
+    projectId: string,
+    goalId: string,
+    origin: ProjectCardMorphOrigin | null
+  ) => void;
   monumentContext?: boolean;
 }
 
@@ -280,6 +301,7 @@ function RoadmapCardImpl({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  onProjectEditOpen,
   monumentContext = false,
   onRoadmapOrderSaved,
 }: RoadmapCardProps) {
@@ -442,6 +464,7 @@ function RoadmapCardImpl({
                 onGoalEdit={onGoalEdit}
                 onGoalToggleActive={onGoalToggleActive}
                 onGoalDelete={onGoalDelete}
+                onProjectEditOpen={onProjectEditOpen}
                 monumentContext={monumentContext}
                 onGoalsReordered={async (reordered) => {
                   setLocalGoals(reordered);
@@ -540,6 +563,7 @@ function RoadmapCardImpl({
                             onGoalEdit={onGoalEdit}
                             onGoalToggleActive={onGoalToggleActive}
                             onGoalDelete={onGoalDelete}
+                            onProjectEditOpen={onProjectEditOpen}
                           />
                         </div>
                       ))}
@@ -566,6 +590,12 @@ type CompactGoalsOverlayProps = {
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  onProjectEditOpen?: (
+    target: FabEditTarget,
+    projectId: string,
+    goalId: string,
+    origin: ProjectCardMorphOrigin | null
+  ) => void;
   monumentContext?: boolean;
   onGoalsReordered?: (goals: Goal[]) => void | Promise<void>;
 };
@@ -577,6 +607,7 @@ function CompactGoalsOverlay({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  onProjectEditOpen,
   monumentContext,
   onGoalsReordered,
 }: CompactGoalsOverlayProps) {
@@ -715,6 +746,12 @@ function CompactGoalsOverlay({
               ? () => onGoalDelete(selectedGoal)
               : undefined
           }
+          onProjectEditOpen={
+            onProjectEditOpen
+              ? (target, project, origin) =>
+                  onProjectEditOpen(target, project.id, selectedGoal.id, origin)
+              : undefined
+          }
           completeWhenProjectsDone
           completionTheme="emerald"
         />
@@ -762,6 +799,7 @@ function CompactGoalsOverlay({
                   onGoalEdit={onGoalEdit}
                   onGoalToggleActive={onGoalToggleActive}
                   onGoalDelete={onGoalDelete}
+                  onProjectEditOpen={onProjectEditOpen}
                   monumentContext={monumentContext}
                 />
               ))}
@@ -786,6 +824,12 @@ function CompactGoalsOverlay({
       onOpenChange={(isOpen) => {
         if (!isOpen) setOpenGoalId(null);
       }}
+      onProjectEditOpen={
+        onProjectEditOpen
+          ? (target, project, origin) =>
+              onProjectEditOpen(target, project.id, selectedGoal.id, origin)
+          : undefined
+      }
       monumentContext={monumentContext}
       completeWhenProjectsDone
       completionTheme="emerald"
@@ -843,6 +887,7 @@ export const RoadmapCard = memo(RoadmapCardImpl, (prev, next) => {
     prev.variant === next.variant &&
     prev.goals === next.goals &&
     prev.monumentContext === next.monumentContext &&
+    prev.onProjectEditOpen === next.onProjectEditOpen &&
     prev.onRoadmapOrderSaved === next.onRoadmapOrderSaved
   );
 });

@@ -15,6 +15,7 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { Goal, Project } from "../types";
 import type { ProjectCardMorphOrigin } from "./ProjectRow";
+import type { FabEditTarget } from "@/components/ui/Fab";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 // Lazy-load dropdown contents to reduce initial bundle and re-render cost
 const ProjectsDropdown = dynamic(
@@ -87,6 +88,11 @@ interface GoalCardProps {
   showEnergyInCompact?: boolean;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   onProjectDeleted?: (projectId: string) => void;
+  onProjectEditOpen?: (
+    target: FabEditTarget,
+    project: Project,
+    origin: ProjectCardMorphOrigin | null
+  ) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   projectDropdownMode?: "default" | "tasks-only";
@@ -171,6 +177,7 @@ function GoalCardImpl({
   monumentContext = false,
   onProjectUpdated,
   onProjectDeleted,
+  onProjectEditOpen,
   open: openProp,
   onOpenChange,
   projectDropdownMode = "default",
@@ -283,10 +290,30 @@ function GoalCardImpl({
 
   const handleProjectLongPress = useCallback(
     (project: Project, origin: ProjectCardMorphOrigin | null) => {
+      if (onProjectEditOpen) {
+        onProjectEditOpen(
+          {
+            entityType: "PROJECT",
+            entityId: project.id,
+            title: project.name,
+            originRect: origin
+              ? {
+                  top: origin.y,
+                  left: origin.x,
+                  width: origin.width,
+                  height: origin.height,
+                }
+              : null,
+          },
+          project,
+          origin
+        );
+        return;
+      }
       setEditingProjectOrigin(origin ?? null);
       setEditingProject(project);
     },
-    []
+    [onProjectEditOpen]
   );
 
   const closeProjectEditor = useCallback(() => {
@@ -443,16 +470,18 @@ function GoalCardImpl({
               </AnimatePresence>
             </div>
           </div>
-          <ProjectQuickEditDialog
-            project={editingProject}
-            goalId={goal.id}
-            origin={editingProjectOrigin}
-            onClose={closeProjectEditor}
-            onUpdated={(projectId, updates) =>
-              onProjectUpdated?.(projectId, updates)
-            }
-            onDeleted={(projectId) => onProjectDeleted?.(projectId)}
-          />
+          {!onProjectEditOpen ? (
+            <ProjectQuickEditDialog
+              project={editingProject}
+              goalId={goal.id}
+              origin={editingProjectOrigin}
+              onClose={closeProjectEditor}
+              onUpdated={(projectId, updates) =>
+                onProjectUpdated?.(projectId, updates)
+              }
+              onDeleted={(projectId) => onProjectDeleted?.(projectId)}
+            />
+          ) : null}
         </>
       );
     }
@@ -526,16 +555,18 @@ function GoalCardImpl({
             </AnimatePresence>
           </div>
         </div>
-        <ProjectQuickEditDialog
-          project={editingProject}
-          goalId={goal.id}
-          origin={editingProjectOrigin}
-          onClose={closeProjectEditor}
-          onUpdated={(projectId, updates) =>
-            onProjectUpdated?.(projectId, updates)
-          }
-          onDeleted={(projectId) => onProjectDeleted?.(projectId)}
-        />
+        {!onProjectEditOpen ? (
+          <ProjectQuickEditDialog
+            project={editingProject}
+            goalId={goal.id}
+            origin={editingProjectOrigin}
+            onClose={closeProjectEditor}
+            onUpdated={(projectId, updates) =>
+              onProjectUpdated?.(projectId, updates)
+            }
+            onDeleted={(projectId) => onProjectDeleted?.(projectId)}
+          />
+        ) : null}
       </>
     );
   }
@@ -792,16 +823,18 @@ function GoalCardImpl({
           </AnimatePresence>
         </div>
       </motion.div>
-      <ProjectQuickEditDialog
-        project={editingProject}
-        goalId={goal.id}
-        origin={editingProjectOrigin}
-        onClose={closeProjectEditor}
-        onUpdated={(projectId, updates) => {
-          onProjectUpdated?.(projectId, updates);
-        }}
-        onDeleted={(projectId) => onProjectDeleted?.(projectId)}
-      />
+      {!onProjectEditOpen ? (
+        <ProjectQuickEditDialog
+          project={editingProject}
+          goalId={goal.id}
+          origin={editingProjectOrigin}
+          onClose={closeProjectEditor}
+          onUpdated={(projectId, updates) => {
+            onProjectUpdated?.(projectId, updates);
+          }}
+          onDeleted={(projectId) => onProjectDeleted?.(projectId)}
+        />
+      ) : null}
     </>
   );
 }
