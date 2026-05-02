@@ -34,6 +34,8 @@ interface MixedRoadmapCardProps {
   roadmap: RoadmapWithItems;
   variant?: "default" | "compact";
   onClick?: () => void;
+  onGoalOpen?: (goalId: string) => void;
+  onReorderSaved?: () => void | Promise<void>;
 }
 
 function getCampaignStateClasses(state?: string | null): {
@@ -121,6 +123,32 @@ function getGoalIdentity(goal: {
   return getInitials(goal.name);
 }
 
+function isCompletedGoalStatus(status?: string | null): boolean {
+  return typeof status === "string" && status.trim().toUpperCase() === "COMPLETED";
+}
+
+const COMPLETED_ROADMAP_GOAL_SHADOW =
+  "shadow-[0_26px_52px_rgba(2,32,24,0.6),0_12px_28px_rgba(1,55,34,0.45),inset_0_1px_0_rgba(255,255,255,0.12)]";
+const COMPLETED_ROADMAP_GOAL_CLASS =
+  "border-[rgba(16,185,129,0.55)] bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] text-emerald-50 ring-1 ring-emerald-300/60 backdrop-blur";
+const ROADMAP_GOAL_HANDLE_CLASS =
+  "isolate overflow-visible border-white/14 bg-[linear-gradient(180deg,rgba(52,52,52,0.96)_0%,rgba(20,20,20,0.98)_32%,rgba(8,8,8,0.99)_100%)] text-white/88 shadow-[0_8px_18px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(0,0,0,0.18)] backdrop-blur-sm hover:border-white/22 hover:bg-[linear-gradient(180deg,rgba(66,66,66,0.98)_0%,rgba(26,26,26,0.99)_32%,rgba(10,10,10,1)_100%)] hover:text-white";
+const ROADMAP_GOAL_CARD_HANDLE_CLASS =
+  "isolate overflow-visible border-white/16 bg-[linear-gradient(180deg,rgba(56,56,56,0.96)_0%,rgba(22,22,22,0.98)_32%,rgba(8,8,8,0.99)_100%)] text-white shadow-[0_10px_22px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(0,0,0,0.2)] backdrop-blur-sm hover:border-white/24 hover:bg-[linear-gradient(180deg,rgba(70,70,70,0.98)_0%,rgba(28,28,28,0.99)_32%,rgba(10,10,10,1)_100%)] hover:text-white";
+const ROADMAP_GOAL_IDENTITY_CLASS =
+  "inline-flex items-center justify-center leading-none translate-y-[0.5px]";
+const COMPLETED_ROADMAP_GOAL_BADGE_CLASS =
+  "border-emerald-50/28 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]";
+const COMPLETED_ROADMAP_GOAL_META_CLASS =
+  "border-emerald-50/24 bg-emerald-950/14 text-emerald-50/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]";
+
+function isCompletedGoal(goal: {
+  status?: string | null;
+  allProjectsCompleted?: boolean;
+}): boolean {
+  return isCompletedGoalStatus(goal.status) || goal.allProjectsCompleted === true;
+}
+
 function sortByPosition<T extends { position: number | null }>(items: T[]): T[] {
   return [...items].sort((a, b) => {
     const aPosition = a.position ?? Number.POSITIVE_INFINITY;
@@ -192,13 +220,16 @@ function SortableCampaignGoalRow({
   goal,
   compact,
   isAnyDragging,
+  onGoalOpen,
 }: {
   goal: RoadmapCampaignGoal;
   compact: boolean;
   isAnyDragging: boolean;
+  onGoalOpen?: (goalId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: goal.id });
+  const isCompleted = isCompletedGoal(goal);
 
   return (
     <div
@@ -210,7 +241,11 @@ function SortableCampaignGoalRow({
       className={isDragging ? "z-20 w-full" : "w-full"}
     >
       <div
-        className={`flex w-full items-center gap-1 rounded-lg border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)] px-1.5 py-1.5 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)] sm:gap-2 sm:px-2.5 sm:py-2 ${
+        className={`flex w-full items-center gap-1 rounded-lg border px-1.5 py-1.5 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)] sm:gap-2 sm:px-2.5 sm:py-2 ${
+          isCompleted
+            ? `${COMPLETED_ROADMAP_GOAL_CLASS} ${COMPLETED_ROADMAP_GOAL_SHADOW}`
+            : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)]"
+        } ${
           isDragging ? "opacity-90 ring-1 ring-white/20" : ""
         } ${isAnyDragging ? "select-none [-webkit-user-select:none]" : ""}`}
       >
@@ -218,18 +253,34 @@ function SortableCampaignGoalRow({
           attributes={attributes}
           listeners={listeners}
           label={`Reorder goal ${goal.name}`}
-          className="flex h-6.5 w-6.5 items-center justify-center rounded-md border border-white/10 bg-[linear-gradient(180deg,rgba(92,92,92,0.18)_0%,rgba(54,54,54,0.28)_30%,rgba(32,32,32,0.84)_100%)] text-[9px] font-semibold text-white/78 shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)] transition hover:border-white/20 hover:bg-[linear-gradient(180deg,rgba(104,104,104,0.2)_0%,rgba(60,60,60,0.32)_30%,rgba(36,36,36,0.88)_100%)] hover:text-white sm:h-8 sm:w-8 sm:rounded-lg sm:text-[11px]"
+          className={`flex h-6.5 w-6.5 items-center justify-center rounded-md border text-[9px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)] transition sm:h-8 sm:w-8 sm:rounded-lg sm:text-[11px] ${ROADMAP_GOAL_HANDLE_CLASS}`}
         >
-          <span aria-hidden>{getGoalIdentity(goal)}</span>
+          <span aria-hidden className={ROADMAP_GOAL_IDENTITY_CLASS}>{getGoalIdentity(goal)}</span>
         </DragHandle>
-        <div className="min-w-0 flex-1">
-          <p className={`truncate font-medium text-white/82 ${compact ? "text-[11px] sm:text-[12px]" : "text-[12px] sm:text-[13px]"}`}>
+        <button
+          type="button"
+          onClick={() => onGoalOpen?.(goal.id)}
+          className="flex min-w-0 flex-1 items-center gap-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 sm:gap-2"
+        >
+          <p
+            className={`min-w-0 flex-1 truncate font-medium ${
+              isCompleted ? "text-emerald-50/92" : "text-white/82"
+            } ${
+              compact ? "text-[11px] sm:text-[12px]" : "text-[12px] sm:text-[13px]"
+            }`}
+          >
             {goal.name}
           </p>
-        </div>
-        <div className="rounded-full border border-white/8 bg-white/[0.03] px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.12em] text-white/35 sm:px-2 sm:py-1 sm:text-[9px] sm:tracking-[0.18em]">
-          #{goal.position}
-        </div>
+          <div
+            className={`rounded-full border px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.12em] sm:px-2 sm:py-1 sm:text-[9px] sm:tracking-[0.18em] ${
+              isCompleted
+                ? COMPLETED_ROADMAP_GOAL_META_CLASS
+                : "border-white/8 bg-white/[0.03] text-white/35"
+            }`}
+          >
+            #{goal.position}
+          </div>
+        </button>
       </div>
     </div>
   );
@@ -245,6 +296,7 @@ function CampaignGoalList({
   onDragEnd,
   onDragCancel,
   isAnyDragging,
+  onGoalOpen,
 }: {
   campaignId: string;
   goals: RoadmapCampaignGoal[];
@@ -255,6 +307,7 @@ function CampaignGoalList({
   onDragEnd: (event: DragEndEvent) => void;
   onDragCancel: (event: DragCancelEvent) => void;
   isAnyDragging: boolean;
+  onGoalOpen?: (goalId: string) => void;
 }) {
   if (goals.length === 0) {
     return null;
@@ -282,6 +335,7 @@ function CampaignGoalList({
               goal={goal}
               compact={compact}
               isAnyDragging={isAnyDragging}
+              onGoalOpen={onGoalOpen}
             />
           ))}
         </div>
@@ -300,6 +354,7 @@ function MixedRoadmapItemContent({
   onNestedDragStart,
   onNestedDragEnd,
   onNestedDragCancel,
+  onGoalOpen,
 }: {
   item: RoadmapMixedItem;
   compact: boolean;
@@ -316,6 +371,7 @@ function MixedRoadmapItemContent({
   onNestedDragStart: (event: DragStartEvent) => void;
   onNestedDragEnd: (event: DragEndEvent) => void;
   onNestedDragCancel: (event: DragCancelEvent) => void;
+  onGoalOpen?: (goalId: string) => void;
 }) {
   if (item.item_type === "CAMPAIGN" && item.campaign) {
     const campaignIdentity =
@@ -383,6 +439,7 @@ function MixedRoadmapItemContent({
                 onDragEnd={onNestedDragEnd}
                 onDragCancel={onNestedDragCancel}
                 isAnyDragging={isAnyDragging}
+                onGoalOpen={onGoalOpen}
               />
             </div>
           ) : null}
@@ -392,34 +449,62 @@ function MixedRoadmapItemContent({
   }
 
   if (item.item_type === "GOAL" && item.goal) {
-    const goalIdentity = getGoalIdentity(item.goal);
+    const goal = item.goal;
+    const goalIdentity = getGoalIdentity(goal);
+    const isCompleted = isCompletedGoal(goal);
 
     return (
-      <div className="relative min-w-0 flex-1 overflow-hidden rounded-[20px] border border-white/10 bg-[linear-gradient(180deg,rgba(76,76,76,0.24)_0%,rgba(58,58,58,0.3)_14%,rgba(40,40,40,0.94)_54%,rgba(24,24,24,0.99)_100%)] p-2.5 shadow-[0_22px_40px_-28px_rgba(0,0,0,0.96),0_6px_12px_-10px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-18px_24px_rgba(0,0,0,0.16)] sm:rounded-[22px] sm:p-3.5">
+      <div
+        className={`relative min-w-0 flex-1 overflow-hidden rounded-[20px] border p-2.5 sm:rounded-[22px] sm:p-3.5 ${
+          isCompleted
+            ? `${COMPLETED_ROADMAP_GOAL_CLASS} ${COMPLETED_ROADMAP_GOAL_SHADOW}`
+            : "border-white/10 bg-[linear-gradient(180deg,rgba(76,76,76,0.24)_0%,rgba(58,58,58,0.3)_14%,rgba(40,40,40,0.94)_54%,rgba(24,24,24,0.99)_100%)] shadow-[0_22px_40px_-28px_rgba(0,0,0,0.96),0_6px_12px_-10px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-18px_24px_rgba(0,0,0,0.16)]"
+        }`}
+      >
         <div className="pointer-events-none absolute inset-x-2.5 top-0 h-10 rounded-b-[20px] bg-[radial-gradient(80%_100%_at_50%_0%,rgba(255,255,255,0.08),rgba(255,255,255,0.02)_46%,transparent_78%)] sm:inset-x-3 sm:h-12 sm:rounded-b-[24px]" />
         <div className="pointer-events-none absolute inset-x-4 bottom-2.5 h-6 rounded-full bg-[radial-gradient(55%_100%_at_50%_100%,rgba(0,0,0,0.2),transparent_76%)] blur-md sm:inset-x-5 sm:bottom-3 sm:h-7" />
         <div className="flex items-start gap-1.5 sm:gap-2.5">
           <DragHandle
             attributes={topLevelHandle.attributes}
             listeners={topLevelHandle.listeners}
-            label={`Reorder goal ${item.goal.name}`}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/14 bg-[linear-gradient(180deg,rgba(94,94,94,0.16)_0%,rgba(56,56,56,0.28)_28%,rgba(32,32,32,0.82)_100%)] text-[11px] font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.04)] transition hover:border-white/24 hover:bg-[linear-gradient(180deg,rgba(106,106,106,0.18)_0%,rgba(62,62,62,0.3)_28%,rgba(36,36,36,0.86)_100%)] hover:text-white sm:h-10 sm:w-10 sm:rounded-2xl sm:text-sm"
+            label={`Reorder goal ${goal.name}`}
+            className={`flex h-7 w-7 items-center justify-center rounded-lg border text-[11px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.04)] transition sm:h-10 sm:w-10 sm:rounded-2xl sm:text-sm ${ROADMAP_GOAL_CARD_HANDLE_CLASS}`}
           >
-            <span aria-hidden>{goalIdentity}</span>
+            <span aria-hidden className={ROADMAP_GOAL_IDENTITY_CLASS}>{goalIdentity}</span>
           </DragHandle>
-          <div className="min-w-0 flex-1 space-y-1 sm:space-y-1.5">
+          <button
+            type="button"
+            onClick={() => onGoalOpen?.(goal.id)}
+            className="min-w-0 flex-1 space-y-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 sm:space-y-1.5"
+          >
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <span className="inline-flex rounded-full border border-white/12 bg-white/[0.05] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/82 sm:px-2 sm:py-1 sm:text-[10px] sm:tracking-[0.2em]">
+              <span
+                className={`inline-flex rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] sm:px-2 sm:py-1 sm:text-[10px] sm:tracking-[0.2em] ${
+                  isCompleted
+                    ? COMPLETED_ROADMAP_GOAL_BADGE_CLASS
+                    : "border-white/12 bg-white/[0.05] text-white/82"
+                }`}
+              >
                 Goal
               </span>
-              <span className="rounded-full border border-white/8 bg-black/25 px-1.5 py-0.5 text-[9px] font-medium text-white/50 sm:px-2 sm:py-1 sm:text-[10px]">
+              <span
+                className={`rounded-full border px-1.5 py-0.5 text-[9px] font-medium sm:px-2 sm:py-1 sm:text-[10px] ${
+                  isCompleted
+                    ? COMPLETED_ROADMAP_GOAL_META_CLASS
+                    : "border-white/8 bg-black/25 text-white/50"
+                }`}
+              >
                 Roadmap level
               </span>
             </div>
-            <p className={`font-semibold leading-tight text-white ${compact ? "text-[13px] sm:text-sm" : "text-[14px] sm:text-[15px]"}`}>
-              {item.goal.name}
+            <p
+              className={`font-semibold leading-tight ${
+                isCompleted ? "text-emerald-50" : "text-white"
+              } ${compact ? "text-[13px] sm:text-sm" : "text-[14px] sm:text-[15px]"}`}
+            >
+              {goal.name}
             </p>
-          </div>
+          </button>
         </div>
       </div>
     );
@@ -437,6 +522,7 @@ function SortableMixedRoadmapItemRow({
   onNestedDragStart,
   onNestedDragEnd,
   onNestedDragCancel,
+  onGoalOpen,
 }: {
   item: RoadmapMixedItem;
   compact: boolean;
@@ -449,6 +535,7 @@ function SortableMixedRoadmapItemRow({
   onNestedDragStart: (event: DragStartEvent) => void;
   onNestedDragEnd: (event: DragEndEvent) => void;
   onNestedDragCancel: (event: DragCancelEvent) => void;
+  onGoalOpen?: (goalId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
@@ -477,6 +564,7 @@ function SortableMixedRoadmapItemRow({
           onNestedDragStart={onNestedDragStart}
           onNestedDragEnd={onNestedDragEnd}
           onNestedDragCancel={onNestedDragCancel}
+          onGoalOpen={onGoalOpen}
         />
       </div>
     </div>
@@ -491,6 +579,8 @@ function MixedRoadmapCardImpl({
   roadmap,
   variant = "default",
   onClick,
+  onGoalOpen,
+  onReorderSaved,
 }: MixedRoadmapCardProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [orderedItems, setOrderedItems] = useState<RoadmapMixedItem[]>(() =>
@@ -593,6 +683,7 @@ function MixedRoadmapCardImpl({
         roadmap.id,
         reordered.map((item) => item.id)
       );
+      await onReorderSaved?.();
     } catch (error) {
       console.error("Error saving roadmap item order:", error);
       setOrderedItems(previousItems);
@@ -652,6 +743,7 @@ function MixedRoadmapCardImpl({
         campaignId,
         reorderedGoals.map((goal) => goal.id)
       );
+      await onReorderSaved?.();
     } catch (error) {
       console.error("Error saving campaign goal order:", error);
       setOrderedItems(previousItems);
@@ -749,6 +841,7 @@ function MixedRoadmapCardImpl({
                       onNestedDragStart={handleAnyDragStart}
                       onNestedDragEnd={handleAnyDragEnd}
                       onNestedDragCancel={handleAnyDragCancel}
+                      onGoalOpen={onGoalOpen}
                     />
                   ))}
                 </div>
