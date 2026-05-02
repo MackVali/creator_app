@@ -1268,6 +1268,22 @@ export async function fetchGoalsForUser(
     monument_id?: string | null;
     emoji?: string | null;
   };
+  type MonumentRoadmapRecord = {
+    id: string;
+    monument_id?: string | null;
+  };
+  type RoadmapItemRecord = {
+    roadmap_id: string;
+    item_type?: string | null;
+    campaign_id?: string | null;
+    goal_id?: string | null;
+    position?: number | null;
+  };
+  type CampaignGoalRecord = {
+    campaign_id: string;
+    goal_id?: string | null;
+    position?: number | null;
+  };
   const normalizeFiniteNumber = (value: unknown): number | null => {
     if (typeof value === "number" && Number.isFinite(value)) {
       return value;
@@ -1289,10 +1305,132 @@ export async function fetchGoalsForUser(
 
   if (error) throw error;
 
-  return ((data ?? []) as GoalRecord[]).map((goal) => {
+  const goals = (data ?? []) as GoalRecord[];
+  const { data: roadmapData, error: roadmapError } = await supabase
+    .from("roadmaps")
+    .select("id, monument_id")
+    .eq("user_id", userId)
+    .not("monument_id", "is", null);
+
+  if (roadmapError) throw roadmapError;
+
+  const monumentRoadmaps = (roadmapData ?? []) as MonumentRoadmapRecord[];
+  const roadmapIds = monumentRoadmaps
+    .map((roadmap) => roadmap.id)
+    .filter((roadmapId) => typeof roadmapId === "string" && roadmapId.length > 0);
+
+  const derivedPriorityRankByGoalId = new Map<string, number>();
+
+  if (roadmapIds.length > 0) {
+    const { data: roadmapItemData, error: roadmapItemError } = await supabase
+      .from("roadmap_items")
+      .select("roadmap_id, item_type, campaign_id, goal_id, position")
+      .in("roadmap_id", roadmapIds)
+      .order("position", { ascending: true });
+
+    if (roadmapItemError) throw roadmapItemError;
+
+    const roadmapItems = (roadmapItemData ?? []) as RoadmapItemRecord[];
+    const campaignIds = Array.from(
+      new Set(
+        roadmapItems
+          .map((item) =>
+            typeof item.campaign_id === "string" && item.campaign_id.length > 0
+              ? item.campaign_id
+              : null
+          )
+          .filter((campaignId): campaignId is string => campaignId !== null)
+      )
+    );
+
+    let campaignGoals: CampaignGoalRecord[] = [];
+    if (campaignIds.length > 0) {
+      const { data: campaignGoalData, error: campaignGoalError } = await supabase
+        .from("campaign_goals")
+        .select("campaign_id, goal_id, position")
+        .eq("user_id", userId)
+        .in("campaign_id", campaignIds)
+        .order("position", { ascending: true });
+
+      if (campaignGoalError) throw campaignGoalError;
+      campaignGoals = (campaignGoalData ?? []) as CampaignGoalRecord[];
+    }
+
+    const campaignGoalIdsByCampaignId = new Map<string, string[]>();
+    for (const campaignGoal of campaignGoals) {
+      const campaignId =
+        typeof campaignGoal.campaign_id === "string" &&
+        campaignGoal.campaign_id.length > 0
+          ? campaignGoal.campaign_id
+          : null;
+      const goalId =
+        typeof campaignGoal.goal_id === "string" && campaignGoal.goal_id.length > 0
+          ? campaignGoal.goal_id
+          : null;
+      if (!campaignId || !goalId) continue;
+      const existing = campaignGoalIdsByCampaignId.get(campaignId) ?? [];
+      existing.push(goalId);
+      campaignGoalIdsByCampaignId.set(campaignId, existing);
+    }
+
+    const roadmapItemsByRoadmapId = new Map<string, RoadmapItemRecord[]>();
+    for (const roadmapItem of roadmapItems) {
+      const roadmapId =
+        typeof roadmapItem.roadmap_id === "string" &&
+        roadmapItem.roadmap_id.length > 0
+          ? roadmapItem.roadmap_id
+          : null;
+      if (!roadmapId) continue;
+      const existing = roadmapItemsByRoadmapId.get(roadmapId) ?? [];
+      existing.push(roadmapItem);
+      roadmapItemsByRoadmapId.set(roadmapId, existing);
+    }
+
+    for (const roadmap of monumentRoadmaps) {
+      const roadmapId =
+        typeof roadmap.id === "string" && roadmap.id.length > 0 ? roadmap.id : null;
+      if (!roadmapId) continue;
+
+      const flattenedGoalIds: string[] = [];
+      for (const roadmapItem of roadmapItemsByRoadmapId.get(roadmapId) ?? []) {
+        const itemType = String(roadmapItem.item_type ?? "").trim().toUpperCase();
+        if (itemType === "GOAL") {
+          const goalId =
+            typeof roadmapItem.goal_id === "string" &&
+            roadmapItem.goal_id.length > 0
+              ? roadmapItem.goal_id
+              : null;
+          if (goalId) flattenedGoalIds.push(goalId);
+          continue;
+        }
+
+        if (itemType === "CAMPAIGN") {
+          const campaignId =
+            typeof roadmapItem.campaign_id === "string" &&
+            roadmapItem.campaign_id.length > 0
+              ? roadmapItem.campaign_id
+              : null;
+          if (!campaignId) continue;
+          flattenedGoalIds.push(
+            ...(campaignGoalIdsByCampaignId.get(campaignId) ?? [])
+          );
+        }
+      }
+
+      flattenedGoalIds.forEach((goalId, index) => {
+        if (!derivedPriorityRankByGoalId.has(goalId)) {
+          derivedPriorityRankByGoalId.set(goalId, index + 1);
+        }
+      });
+    }
+  }
+
+  return goals.map((goal) => {
     const status = normalizeGoalStatus(goal.status, goal.active);
     const globalRank = normalizeFiniteNumber(goal.global_rank);
-    const priorityRank = normalizeFiniteNumber(goal.priority_rank);
+    const legacyPriorityRank = normalizeFiniteNumber(goal.priority_rank);
+    const derivedPriorityRank = derivedPriorityRankByGoalId.get(goal.id) ?? null;
+    const priorityRank = derivedPriorityRank ?? legacyPriorityRank;
     const roadmapId =
       typeof goal.roadmap_id === "string" && goal.roadmap_id.length > 0
         ? goal.roadmap_id

@@ -67,6 +67,23 @@ type GoalRowWithRelations = GoalRow & {
   priority_rank?: number | null;
 };
 
+const GOAL_RELATIONS_BASE_SELECT =
+  "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank";
+const GOAL_RELATIONS_SELECT = `
+  ${GOAL_RELATIONS_BASE_SELECT},
+  projects (
+    id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
+    priority,
+    energy,
+    tasks (
+      id, project_id, stage, name, skill_id, priority
+    ),
+    project_skills (
+      skill_id
+    )
+  )
+`;
+
 function mapPriority(
   priority: { name?: string | null } | string | null | undefined
 ): Goal["priority"] {
@@ -262,37 +279,6 @@ async function fetchGoalsWithRelationsForMonument(
   const supabase = getSupabaseBrowser();
   if (!supabase) return [] as GoalRowWithRelations[];
 
-  const baseSelect =
-    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank";
-  const selectWithEnumColumns = `
-    ${baseSelect},
-    projects (
-      id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
-      priority,
-      energy,
-      tasks (
-        id, project_id, stage, name, skill_id, priority
-      ),
-      project_skills (
-        skill_id
-      )
-    )
-  `;
-  const selectWithLookupRelations = `
-    ${baseSelect},
-    projects (
-      id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
-      priority,
-      energy,
-      tasks (
-        id, project_id, stage, name, skill_id, priority
-      ),
-      project_skills (
-        skill_id
-      )
-    )
-  `;
-
   const runQuery = (select: string) =>
     supabase
       .from("goals")
@@ -302,10 +288,10 @@ async function fetchGoalsWithRelationsForMonument(
       .order("created_at", { ascending: false });
 
   const variants = [
-    { description: "enum column project fetch", select: selectWithEnumColumns },
+    { description: "enum column project fetch", select: GOAL_RELATIONS_SELECT },
     {
       description: "lookup relation project fetch",
-      select: selectWithLookupRelations,
+      select: GOAL_RELATIONS_SELECT,
     },
   ];
 
@@ -322,12 +308,57 @@ async function fetchGoalsWithRelationsForMonument(
 
   console.warn("Falling back to basic monument goal fetch");
 
-  const fallback = await runQuery(baseSelect);
+  const fallback = await runQuery(GOAL_RELATIONS_BASE_SELECT);
   if (fallback.error) {
     console.error("Error fetching monument goals:", fallback.error);
     return [];
   }
   return fallback.data ?? [];
+}
+
+async function fetchGoalWithRelationsById(goalId: string) {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return null;
+
+  const variants = [
+    { description: "enum column goal display fetch", select: GOAL_RELATIONS_SELECT },
+    {
+      description: "lookup relation goal display fetch",
+      select: GOAL_RELATIONS_SELECT,
+    },
+  ];
+
+  for (const variant of variants) {
+    const { data, error } = await supabase
+      .from("goals")
+      .select(variant.select)
+      .eq("id", goalId)
+      .single();
+
+    if (!error && data) {
+      return data as GoalRowWithRelations;
+    }
+
+    if (error) {
+      console.warn(
+        `Goal display fetch variant failed (${variant.description}):`,
+        error
+      );
+    }
+  }
+
+  const fallback = await supabase
+    .from("goals")
+    .select(GOAL_RELATIONS_BASE_SELECT)
+    .eq("id", goalId)
+    .single();
+
+  if (fallback.error) {
+    console.error("Error fetching goal for display:", fallback.error);
+    return null;
+  }
+
+  return (fallback.data as GoalRowWithRelations | null) ?? null;
 }
 
 export function MonumentGoalsList({
@@ -351,6 +382,7 @@ export function MonumentGoalsList({
     new Map()
   );
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [roadmapOpenGoal, setRoadmapOpenGoal] = useState<Goal | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [monuments, setMonuments] = useState<
     { id: string; title: string; emoji: string | null }[]
@@ -368,6 +400,7 @@ export function MonumentGoalsList({
 
   useEffect(() => {
     setOpenGoalId(null);
+    setRoadmapOpenGoal(null);
   }, [monumentId]);
 
   const decorate = useCallback((goal: Goal) => {
@@ -424,6 +457,240 @@ export function MonumentGoalsList({
     }
   }, []);
 
+  const mapGoalRowToDisplayGoal = useCallback(
+    (
+      goalRow: GoalRowWithRelations,
+      skillIconLookup: Map<string, string | null>,
+      fallback?: Partial<Goal>
+    ): Goal => {
+      const resolveSkillEmoji = (skillId?: string | null) => {
+        if (!skillId) return null;
+        return skillIconLookup.get(skillId ?? "") ?? null;
+      };
+
+      const goalSkills = new Set<string>(fallback?.skills ?? []);
+      const projList: Project[] = (goalRow.projects ?? []).map((project) => {
+        const normalizedTasks = (project.tasks ?? []).map((task) => {
+          const normalized = {
+            id: task.id,
+            name: task.name,
+            stage: task.stage,
+            skillId: task.skill_id ?? null,
+            priorityCode: task.priority ?? null,
+            isNew: false,
+          };
+          if (normalized.skillId) {
+            goalSkills.add(normalized.skillId);
+          }
+          return normalized;
+        });
+        const projectSkillIds: string[] = [];
+        (project.project_skills ?? []).forEach((record) => {
+          if (record?.skill_id) {
+            goalSkills.add(record.skill_id);
+            projectSkillIds.push(record.skill_id);
+          }
+        });
+        const total = normalizedTasks.length;
+        const done = normalizedTasks.filter((task) => task.stage === "PERFECT").length;
+        const isCompleted =
+          typeof project.completed_at === "string" &&
+          project.completed_at.length > 0;
+        const effectiveStage = isCompleted ? "RELEASE" : (project.stage ?? "BUILD");
+        let progress = total ? Math.round((done / total) * 100) : 0;
+        if (isCompleted || isProjectStageComplete(effectiveStage)) {
+          progress = 100;
+        }
+        const status = isCompleted
+          ? "Done"
+          : projectStageToStatus(effectiveStage);
+        const schedulerTasks: TaskLite[] = normalizedTasks.map(toSchedulerTask);
+        const relatedTaskWeightSum = schedulerTasks.reduce(
+          (sum, task) => sum + taskWeight(task),
+          0
+        );
+        const projectWeightValue = projectWeight(
+          toSchedulerProject({
+            id: project.id,
+            priorityCode: project.priority ?? undefined,
+            stage: effectiveStage,
+            dueDate: project.due_date ?? undefined,
+          }),
+          relatedTaskWeightSum
+        );
+        const normalizedTaskSkillIds = normalizedTasks
+          .map((task) => task.skillId)
+          .filter((value): value is string => Boolean(value));
+        const projectEmoji =
+          projectSkillIds
+            .map(resolveSkillEmoji)
+            .find((emoji): emoji is string => Boolean(emoji)) ??
+          normalizedTaskSkillIds
+            .map(resolveSkillEmoji)
+            .find((emoji): emoji is string => Boolean(emoji)) ??
+          null;
+        const rawEnergy = extractLookupName(project.energy);
+        const rawPriority = extractLookupName(project.priority);
+        const energyCode = normalizeEnergyCode(rawEnergy);
+        const priorityCode = normalizePriorityCode(rawPriority);
+
+        return {
+          id: project.id,
+          name: project.name,
+          status,
+          progress,
+          energy: mapEnergy(energyCode),
+          energyCode,
+          dueDate: project.due_date ?? undefined,
+          emoji: projectEmoji,
+          stage: effectiveStage,
+          priorityCode,
+          durationMinutes:
+            typeof project.duration_min === "number" &&
+            Number.isFinite(project.duration_min)
+              ? project.duration_min
+              : null,
+          skillIds: projectSkillIds,
+          weight: projectWeightValue,
+          isNew: false,
+          tasks: normalizedTasks,
+        };
+      });
+
+      let derivedProgress =
+        projList.length > 0
+          ? Math.round(
+              projList.reduce((sum, project) => sum + project.progress, 0) /
+                projList.length
+            )
+          : 0;
+      const normalizedStatus = normalizeGoalStatus(goalRow.status, goalRow.active);
+      if (normalizedStatus === "COMPLETED") {
+        derivedProgress = 100;
+      }
+
+      const goalPrioritySource =
+        goalRow.priority_code ?? extractLookupName(goalRow.priority);
+      const normalizedGoalPriorityCode = goalPrioritySource
+        ? goalPrioritySource.toUpperCase()
+        : null;
+      const goalEnergySource =
+        goalRow.energy_code ?? extractLookupName(goalRow.energy);
+      const normalizedGoalEnergyCode = goalEnergySource
+        ? goalEnergySource.toUpperCase()
+        : null;
+
+      return decorate({
+        id: goalRow.id,
+        title: goalRow.name,
+        emoji: goalRow.emoji ?? fallback?.emoji ?? undefined,
+        priority: mapPriority(goalPrioritySource),
+        energy: mapEnergy(goalEnergySource),
+        progress: derivedProgress,
+        status: normalizedStatus,
+        active: normalizedStatus === "ACTIVE",
+        createdAt: goalRow.created_at ?? fallback?.createdAt ?? "",
+        updatedAt: goalRow.created_at ?? fallback?.updatedAt ?? "",
+        dueDate: goalRow.due_date ?? fallback?.dueDate,
+        projects: projList,
+        monumentId: goalRow.monument_id ?? fallback?.monumentId ?? null,
+        monumentEmoji: fallback?.monumentEmoji ?? monumentEmoji ?? null,
+        roadmapId: goalRow.roadmap_id ?? fallback?.roadmapId ?? null,
+        priorityCode: normalizedGoalPriorityCode,
+        energyCode: normalizedGoalEnergyCode,
+        weightBoost: goalRow.weight_boost ?? fallback?.weightBoost ?? 0,
+        skills: Array.from(goalSkills),
+        priorityRank:
+          typeof goalRow.priority_rank === "number" &&
+          Number.isFinite(goalRow.priority_rank)
+            ? goalRow.priority_rank
+            : fallback?.priorityRank,
+        why: goalRow.why || fallback?.why,
+      });
+    },
+    [decorate, monumentEmoji]
+  );
+
+  const fetchGoalForDisplay = useCallback(
+    async (goalId: string, fallback?: Partial<Goal>): Promise<Goal | null> => {
+      const fallbackGoal = fallback
+        ? decorate({
+            id: fallback.id ?? goalId,
+            title: fallback.title ?? "Untitled goal",
+            emoji: fallback.emoji,
+            priority: fallback.priority ?? "Low",
+            energy: fallback.energy ?? "No",
+            progress: fallback.progress ?? 0,
+            status: fallback.status ?? "ACTIVE",
+            active: fallback.active ?? true,
+            createdAt: fallback.createdAt ?? "",
+            updatedAt: fallback.updatedAt ?? "",
+            dueDate: fallback.dueDate,
+            projects: fallback.projects ?? [],
+            monumentId: fallback.monumentId ?? monumentId,
+            monumentEmoji: fallback.monumentEmoji ?? monumentEmoji ?? null,
+            roadmapId: fallback.roadmapId ?? null,
+            priorityCode: fallback.priorityCode ?? "NO",
+            energyCode: fallback.energyCode ?? "NO",
+            skills: fallback.skills ?? [],
+            weightBoost: fallback.weightBoost ?? 0,
+            why: fallback.why,
+            priorityRank: fallback.priorityRank,
+          })
+        : null;
+
+      try {
+        const goalRow = await fetchGoalWithRelationsById(goalId);
+        if (!goalRow) {
+          return fallbackGoal;
+        }
+
+        let skillIconLookup = new Map<string, string | null>();
+        if (userId) {
+          const skills = await getSkillsForUser(userId).catch(() => []);
+          skillIconLookup = new Map(
+            skills.map((skill) => [skill.id, skill.icon ?? null])
+          );
+        }
+
+        return mapGoalRowToDisplayGoal(goalRow, skillIconLookup, fallback);
+      } catch (err) {
+        console.warn("Failed to fetch goal for roadmap display:", err);
+        return fallbackGoal;
+      }
+    },
+    [decorate, mapGoalRowToDisplayGoal, monumentEmoji, monumentId, userId]
+  );
+
+  const refreshTrueRoadmaps = useCallback(async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase || !monumentId) {
+      setMonumentRoadmapsWithItems([]);
+      return;
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setMonumentRoadmapsWithItems([]);
+      return;
+    }
+
+    setUserId(user.id);
+
+    const allRoadmapsWithItems = await listRoadmapsWithItems(user.id).catch(
+      (err) => {
+        console.error("Error fetching true monument roadmaps:", err);
+        return [];
+      }
+    );
+    const trueMonumentRoadmaps = allRoadmapsWithItems.filter(
+      (roadmap) => roadmap.monument_id === monumentId
+    );
+    setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
+  }, [monumentId]);
+
   useEffect(() => {
     const load = async () => {
       const supabase = getSupabaseBrowser();
@@ -442,17 +709,7 @@ export function MonumentGoalsList({
           return;
         }
         setUserId(user.id);
-
-        const allRoadmapsWithItems = await listRoadmapsWithItems(user.id).catch(
-          (err) => {
-            console.error("Error fetching true monument roadmaps:", err);
-            return [];
-          }
-        );
-        const trueMonumentRoadmaps = allRoadmapsWithItems.filter(
-          (roadmap) => roadmap.monument_id === monumentId
-        );
-        setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
+        await refreshTrueRoadmaps();
 
         const [rows, skills, userMonuments] = await Promise.all([
           fetchGoalsWithRelationsForMonument(monumentId, user.id),
@@ -464,10 +721,6 @@ export function MonumentGoalsList({
         const skillIconLookup = new Map(
           skills.map((skill) => [skill.id, skill.icon ?? null])
         );
-        const resolveSkillEmoji = (skillId?: string | null) => {
-          if (!skillId) return null;
-          return skillIconLookup.get(skillId ?? "") ?? null;
-        };
 
         // Check if any goals have a valid roadmap_id (non-null, non-undefined, non-empty string)
         const roadmapIds = new Set<string>();
@@ -492,150 +745,11 @@ export function MonumentGoalsList({
               const roadmapGoalsData = rows.filter(
                 (g) => g.roadmap_id === roadmap.id
               );
-              const roadmapGoalsList: Goal[] = roadmapGoalsData.map((g) => {
-                // Reuse the same transformation logic as below
-                const goalSkills = new Set<string>();
-                const projList: Project[] = (g.projects ?? []).map((p) => {
-                  const normalizedTasks = (p.tasks ?? []).map((task) => {
-                    const normalized = {
-                      id: task.id,
-                      name: task.name,
-                      stage: task.stage,
-                      skillId: task.skill_id ?? null,
-                      priorityCode: task.priority ?? null,
-                      isNew: false,
-                    };
-                    if (normalized.skillId) {
-                      goalSkills.add(normalized.skillId);
-                    }
-                    return normalized;
-                  });
-                  const projectSkillIds: string[] = [];
-                  (p.project_skills ?? []).forEach((record) => {
-                    if (record?.skill_id) {
-                      goalSkills.add(record.skill_id);
-                      projectSkillIds.push(record.skill_id);
-                    }
-                  });
-                  const total = normalizedTasks.length;
-                  const done = normalizedTasks.filter(
-                    (t) => t.stage === "PERFECT"
-                  ).length;
-                  const isCompleted =
-                    typeof p.completed_at === "string" &&
-                    p.completed_at.length > 0;
-                  const effectiveStage = isCompleted
-                    ? "RELEASE"
-                    : (p.stage ?? "BUILD");
-                  let progress = total ? Math.round((done / total) * 100) : 0;
-                  if (isCompleted || isProjectStageComplete(effectiveStage)) {
-                    progress = 100;
-                  }
-                  const status = isCompleted
-                    ? "Done"
-                    : projectStageToStatus(effectiveStage);
-                  const schedulerTasks: TaskLite[] =
-                    normalizedTasks.map(toSchedulerTask);
-                  const relatedTaskWeightSum = schedulerTasks.reduce(
-                    (sum, t) => sum + taskWeight(t),
-                    0
-                  );
-                  const projectWeightValue = projectWeight(
-                    toSchedulerProject({
-                      id: p.id,
-                      priorityCode: p.priority ?? undefined,
-                      stage: effectiveStage,
-                      dueDate: p.due_date ?? undefined,
-                    }),
-                    relatedTaskWeightSum
-                  );
-                  const normalizedTaskSkillIds = normalizedTasks
-                    .map((task) => task.skillId)
-                    .filter((value): value is string => Boolean(value));
-                  const projectEmoji =
-                    projectSkillIds
-                      .map(resolveSkillEmoji)
-                      .find((emoji): emoji is string => Boolean(emoji)) ??
-                    normalizedTaskSkillIds
-                      .map(resolveSkillEmoji)
-                      .find((emoji): emoji is string => Boolean(emoji)) ??
-                    null;
-                  const rawEnergy = extractLookupName(p.energy);
-                  const rawPriority = extractLookupName(p.priority);
-                  const energyCode = normalizeEnergyCode(rawEnergy);
-                  const priorityCode = normalizePriorityCode(rawPriority);
-                  return {
-                    id: p.id,
-                    name: p.name,
-                    status,
-                    progress,
-                    energy: mapEnergy(energyCode),
-                    energyCode,
-                    dueDate: p.due_date ?? undefined,
-                    emoji: projectEmoji,
-                    stage: effectiveStage,
-                    priorityCode,
-                    durationMinutes:
-                      typeof p.duration_min === "number" &&
-                      Number.isFinite(p.duration_min)
-                        ? p.duration_min
-                        : null,
-                    skillIds: projectSkillIds,
-                    weight: projectWeightValue,
-                    isNew: false,
-                    tasks: normalizedTasks,
-                  };
-                });
-                let derivedProgress =
-                  projList.length > 0
-                    ? Math.round(
-                        projList.reduce((sum, p) => sum + p.progress, 0) /
-                          projList.length
-                      )
-                    : 0;
-                // Check if ALL projects are completed (progress = 100)
-                const normalizedStatus = normalizeGoalStatus(g.status, g.active);
-                if (normalizedStatus === "COMPLETED") {
-                  derivedProgress = 100;
-                }
-                const goalPrioritySource =
-                  g.priority_code ?? extractLookupName(g.priority);
-                const normalizedGoalPriorityCode = goalPrioritySource
-                  ? goalPrioritySource.toUpperCase()
-                  : null;
-                const goalEnergySource =
-                  g.energy_code ?? extractLookupName(g.energy);
-                const normalizedGoalEnergyCode = goalEnergySource
-                  ? goalEnergySource.toUpperCase()
-                  : null;
-                const base: Goal = {
-                  id: g.id,
-                  title: g.name,
-                  emoji: g.emoji ?? undefined,
-                  priority: mapPriority(goalPrioritySource),
-                  energy: mapEnergy(goalEnergySource),
-                  progress: derivedProgress,
-                  status: normalizedStatus,
-                  active: normalizedStatus === "ACTIVE",
-                  createdAt: g.created_at,
-                  updatedAt: g.created_at,
-                  dueDate: g.due_date ?? undefined,
-                  projects: projList,
-                  monumentId: g.monument_id ?? null,
-                  roadmapId: g.roadmap_id ?? null,
-          priorityCode: normalizedGoalPriorityCode,
-          energyCode: normalizedGoalEnergyCode,
-          weightBoost: g.weight_boost ?? 0,
-          skills: Array.from(goalSkills),
-          priorityRank:
-            typeof g.priority_rank === "number" &&
-            Number.isFinite(g.priority_rank)
-              ? g.priority_rank
-              : undefined,
-          why: g.why || undefined,
-                };
-                return decorate(base);
-              });
+              const roadmapGoalsList: Goal[] = roadmapGoalsData.map((g) =>
+                mapGoalRowToDisplayGoal(g, skillIconLookup, {
+                  roadmapId: roadmap.id,
+                })
+              );
               roadmapGoalsMap.set(roadmap.id, roadmapGoalsList);
             }
             setRoadmapGoals(roadmapGoalsMap);
@@ -663,146 +777,9 @@ export function MonumentGoalsList({
               })
             : rows;
 
-        const mapped: Goal[] = goalsToMap.map((g) => {
-          const goalSkills = new Set<string>();
-          const projList: Project[] = (g.projects ?? []).map((p) => {
-            const normalizedTasks = (p.tasks ?? []).map((task) => {
-              const normalized = {
-                id: task.id,
-                name: task.name,
-                stage: task.stage,
-                skillId: task.skill_id ?? null,
-                priorityCode: task.priority ?? null,
-                isNew: false,
-              };
-              if (normalized.skillId) {
-                goalSkills.add(normalized.skillId);
-              }
-              return normalized;
-            });
-            const projectSkillIds: string[] = [];
-            (p.project_skills ?? []).forEach((record) => {
-              if (record?.skill_id) {
-                goalSkills.add(record.skill_id);
-                projectSkillIds.push(record.skill_id);
-              }
-            });
-            const total = normalizedTasks.length;
-            const done = normalizedTasks.filter(
-              (t) => t.stage === "PERFECT"
-            ).length;
-            const isCompleted =
-              typeof p.completed_at === "string" && p.completed_at.length > 0;
-            const effectiveStage = isCompleted ? "RELEASE" : (p.stage ?? "BUILD");
-            let progress = total ? Math.round((done / total) * 100) : 0;
-            if (isCompleted || isProjectStageComplete(effectiveStage)) {
-              progress = 100;
-            }
-            const status = isCompleted
-              ? "Done"
-              : projectStageToStatus(effectiveStage);
-            const schedulerTasks: TaskLite[] =
-              normalizedTasks.map(toSchedulerTask);
-            const relatedTaskWeightSum = schedulerTasks.reduce(
-              (sum, t) => sum + taskWeight(t),
-              0
-            );
-            const projectWeightValue = projectWeight(
-              toSchedulerProject({
-                id: p.id,
-                priorityCode: p.priority ?? undefined,
-                stage: effectiveStage,
-                dueDate: p.due_date ?? undefined,
-              }),
-              relatedTaskWeightSum
-            );
-            const normalizedTaskSkillIds = normalizedTasks
-              .map((task) => task.skillId)
-              .filter((value): value is string => Boolean(value));
-            const projectEmoji =
-              projectSkillIds
-                .map(resolveSkillEmoji)
-                .find((emoji): emoji is string => Boolean(emoji)) ??
-              normalizedTaskSkillIds
-                .map(resolveSkillEmoji)
-                .find((emoji): emoji is string => Boolean(emoji)) ??
-              null;
-            const rawEnergy = extractLookupName(p.energy);
-            const rawPriority = extractLookupName(p.priority);
-            const energyCode = normalizeEnergyCode(rawEnergy);
-            const priorityCode = normalizePriorityCode(rawPriority);
-            return {
-              id: p.id,
-              name: p.name,
-              status,
-              progress,
-              energy: mapEnergy(energyCode),
-              energyCode,
-              dueDate: p.due_date ?? undefined,
-              emoji: projectEmoji,
-              stage: effectiveStage,
-              priorityCode,
-              durationMinutes:
-                typeof p.duration_min === "number" &&
-                Number.isFinite(p.duration_min)
-                  ? p.duration_min
-                  : null,
-              skillIds: projectSkillIds,
-              weight: projectWeightValue,
-              isNew: false,
-              tasks: normalizedTasks,
-            };
-          });
-
-          let derivedProgress =
-            projList.length > 0
-              ? Math.round(
-                  projList.reduce((sum, p) => sum + p.progress, 0) /
-                    projList.length
-                )
-              : 0;
-          const normalizedStatus = normalizeGoalStatus(g.status, g.active);
-          if (normalizedStatus === "COMPLETED") {
-            derivedProgress = 100;
-          }
-
-          const goalPrioritySource =
-            g.priority_code ?? extractLookupName(g.priority);
-          const normalizedGoalPriorityCode = goalPrioritySource
-            ? goalPrioritySource.toUpperCase()
-            : null;
-          const goalEnergySource = g.energy_code ?? extractLookupName(g.energy);
-          const normalizedGoalEnergyCode = goalEnergySource
-            ? goalEnergySource.toUpperCase()
-            : null;
-          const base: Goal = {
-            id: g.id,
-            title: g.name,
-            emoji: g.emoji ?? undefined,
-            priority: mapPriority(goalPrioritySource),
-            energy: mapEnergy(goalEnergySource),
-            progress: derivedProgress,
-            status: normalizedStatus,
-            active: normalizedStatus === "ACTIVE",
-            createdAt: g.created_at,
-            updatedAt: g.created_at,
-            dueDate: g.due_date ?? undefined,
-            projects: projList,
-            monumentId: g.monument_id ?? null,
-            monumentEmoji: monumentEmoji ?? null,
-                  priorityCode: normalizedGoalPriorityCode,
-                  energyCode: normalizedGoalEnergyCode,
-                  weightBoost: g.weight_boost ?? 0,
-                  skills: Array.from(goalSkills),
-                  priorityRank:
-                    typeof g.priority_rank === "number" &&
-                    Number.isFinite(g.priority_rank)
-                      ? g.priority_rank
-                      : undefined,
-                  why: g.why || undefined,
-                };
-          return decorate(base);
-        });
+        const mapped: Goal[] = goalsToMap.map((g) =>
+          mapGoalRowToDisplayGoal(g, skillIconLookup)
+        );
 
         // Sort by weight desc, then recent updated, then title
         mapped.sort((a, b) => {
@@ -823,7 +800,14 @@ export function MonumentGoalsList({
       }
     };
     load();
-  }, [monumentId, monumentEmoji, decorate, refreshVersion]);
+  }, [
+    monumentId,
+    monumentEmoji,
+    decorate,
+    mapGoalRowToDisplayGoal,
+    refreshTrueRoadmaps,
+    refreshVersion,
+  ]);
 
   const refreshGoalStatus = useCallback(
     async (goalId: string) => {
@@ -937,6 +921,134 @@ export function MonumentGoalsList({
     [fetchGoalForEditing]
   );
 
+  const handleRoadmapGoalOpen = useCallback(
+    (goalId: string) => {
+      const existingGoal = goals.find((goal) => goal.id === goalId);
+      if (existingGoal) {
+        if (existingGoal.projects.length > 0) {
+          setRoadmapOpenGoal(existingGoal);
+          setOpenGoalId(existingGoal.id);
+          return;
+        }
+
+        void fetchGoalForDisplay(goalId, existingGoal).then((fullGoal) => {
+          if (!fullGoal) {
+            console.warn(
+              "Falling back to existing roadmap goal because display hydration failed:",
+              goalId
+            );
+            setRoadmapOpenGoal(existingGoal);
+            setOpenGoalId(existingGoal.id);
+            return;
+          }
+          setRoadmapOpenGoal(fullGoal);
+          setOpenGoalId(fullGoal.id);
+        });
+        return;
+      }
+
+      for (const roadmap of monumentRoadmapsWithItems) {
+        const standaloneRoadmapGoal = roadmap.items.find(
+          (item) => item.item_type === "GOAL" && item.goal?.id === goalId
+        )?.goal;
+
+        if (standaloneRoadmapGoal) {
+          const fallbackGoal = decorate({
+            id: standaloneRoadmapGoal.id,
+            title: standaloneRoadmapGoal.name,
+            emoji: standaloneRoadmapGoal.emoji ?? undefined,
+            priority: "Low",
+            energy: "No",
+            progress: 0,
+            status: "ACTIVE",
+            active: true,
+            createdAt: "",
+            updatedAt: "",
+            projects: [],
+            monumentId: roadmap.monument_id ?? monumentId,
+            monumentEmoji:
+              standaloneRoadmapGoal.monumentEmoji ?? monumentEmoji ?? null,
+            roadmapId: standaloneRoadmapGoal.roadmap_id ?? roadmap.id,
+            priorityCode: "NO",
+            energyCode: "NO",
+            weightBoost: 0,
+            skills: [],
+          });
+
+          void fetchGoalForDisplay(goalId, fallbackGoal).then((fullGoal) => {
+            if (!fullGoal) {
+              console.warn(
+                "Falling back to lightweight roadmap goal because display hydration failed:",
+                goalId
+              );
+              setRoadmapOpenGoal(fallbackGoal);
+              setOpenGoalId(fallbackGoal.id);
+              return;
+            }
+            setRoadmapOpenGoal(fullGoal);
+            setOpenGoalId(fullGoal.id);
+          });
+          return;
+        }
+
+        const campaignGoal = roadmap.items
+          .flatMap((item) => item.campaign?.goals ?? [])
+          .find((goal) => goal.id === goalId);
+
+        if (campaignGoal) {
+          const fallbackGoal = decorate({
+            id: campaignGoal.id,
+            title: campaignGoal.name,
+            emoji: campaignGoal.emoji ?? undefined,
+            priority: "Low",
+            energy: "No",
+            progress: 0,
+            status: "ACTIVE",
+            active: true,
+            createdAt: "",
+            updatedAt: "",
+            projects: [],
+            monumentId: roadmap.monument_id ?? monumentId,
+            monumentEmoji: campaignGoal.monumentEmoji ?? monumentEmoji ?? null,
+            roadmapId: roadmap.id,
+            priorityCode: "NO",
+            energyCode: "NO",
+            weightBoost: 0,
+            skills: [],
+          });
+
+          void fetchGoalForDisplay(goalId, fallbackGoal).then((fullGoal) => {
+            if (!fullGoal) {
+              console.warn(
+                "Falling back to lightweight campaign goal because display hydration failed:",
+                goalId
+              );
+              setRoadmapOpenGoal(fallbackGoal);
+              setOpenGoalId(fallbackGoal.id);
+              return;
+            }
+            setRoadmapOpenGoal(fullGoal);
+            setOpenGoalId(fullGoal.id);
+          });
+          return;
+        }
+      }
+
+      console.warn(
+        "Unable to open roadmap goal drawer because the goal was not found in local roadmap data:",
+        goalId
+      );
+    },
+    [
+      decorate,
+      fetchGoalForDisplay,
+      goals,
+      monumentEmoji,
+      monumentId,
+      monumentRoadmapsWithItems,
+    ]
+  );
+
   const handleProjectEditOpen = useCallback(
     (
       target: FabEditTarget,
@@ -1019,11 +1131,18 @@ export function MonumentGoalsList({
   );
 
   useEffect(() => {
-    if (!openGoalId) return;
-    if (!goals.some((goal) => goal.id === openGoalId)) {
-      setOpenGoalId(null);
+    if (!openGoalId) {
+      setRoadmapOpenGoal(null);
+      return;
     }
-  }, [goals, openGoalId]);
+    if (
+      !goals.some((goal) => goal.id === openGoalId) &&
+      roadmapOpenGoal?.id !== openGoalId
+    ) {
+      setOpenGoalId(null);
+      setRoadmapOpenGoal(null);
+    }
+  }, [goals, openGoalId, roadmapOpenGoal]);
 
   const content = useMemo(() => {
     if (loading) {
@@ -1089,8 +1208,42 @@ export function MonumentGoalsList({
                 key={roadmap.id}
                 roadmap={roadmap}
                 variant="compact"
+                onGoalOpen={handleRoadmapGoalOpen}
+                onReorderSaved={refreshTrueRoadmaps}
               />
             ))}
+            {roadmapOpenGoal && openGoalId === roadmapOpenGoal.id ? (
+              <div className="goal-card-wrapper">
+                <GoalCard
+                  goal={roadmapOpenGoal}
+                  showWeight={false}
+                  showCreatedAt={false}
+                  showEmojiPrefix={false}
+                  variant="compact"
+                  monumentContext
+                  onEdit={() => handleGoalEdit(roadmapOpenGoal)}
+                  onProjectUpdated={(projectId, updates) =>
+                    handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
+                  }
+                  onProjectDeleted={(projectId) =>
+                    handleProjectDeleted(roadmapOpenGoal.id, projectId)
+                  }
+                  onProjectEditOpen={(target, project, origin) =>
+                    handleProjectEditOpen(
+                      target,
+                      project.id,
+                      roadmapOpenGoal.id,
+                      origin
+                    )
+                  }
+                  open={openGoalId === roadmapOpenGoal.id}
+                  onOpenChange={(isOpen) => {
+                    handleGoalOpenChange(roadmapOpenGoal.id, isOpen);
+                    if (!isOpen) setRoadmapOpenGoal(null);
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -1187,14 +1340,17 @@ export function MonumentGoalsList({
     monumentRoadmapsWithItems,
     roadmaps,
     roadmapGoals,
+    roadmapOpenGoal,
     goalSection,
     openGoalId,
     handleGoalEdit,
     handleGoalOpenChange,
+    handleRoadmapGoalOpen,
     handleProjectEditOpen,
     handleProjectUpdated,
     handleProjectDeleted,
     handleRoadmapGoalEdit,
+    refreshTrueRoadmaps,
     onGoalSectionChange,
   ]);
 
