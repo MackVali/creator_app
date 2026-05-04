@@ -54,9 +54,8 @@ type GoalRowWithRelations = GoalRow & {
     due_date?: string | null;
     tasks?: {
       id: string;
-      project_id: string | null;
       stage: string;
-      name: string;
+      name?: string;
       skill_id: string | null;
       priority: string | null;
     }[];
@@ -76,7 +75,7 @@ const GOAL_RELATIONS_SELECT = `
     priority,
     energy,
     tasks (
-      id, project_id, stage, name, skill_id, priority
+      id, stage, skill_id, priority
     ),
     project_skills (
       skill_id
@@ -361,6 +360,22 @@ async function fetchGoalWithRelationsById(goalId: string) {
   return (fallback.data as GoalRowWithRelations | null) ?? null;
 }
 
+async function fetchTrueRoadmapsForMonument(
+  userId: string,
+  monumentId: string
+): Promise<RoadmapWithItems[]> {
+  const allRoadmapsWithItems = await listRoadmapsWithItems(userId).catch(
+    (err) => {
+      console.error("Error fetching true monument roadmaps:", err);
+      return [];
+    }
+  );
+
+  return allRoadmapsWithItems.filter(
+    (roadmap) => roadmap.monument_id === monumentId
+  );
+}
+
 export function MonumentGoalsList({
   monumentId,
   monumentEmoji,
@@ -473,7 +488,7 @@ export function MonumentGoalsList({
         const normalizedTasks = (project.tasks ?? []).map((task) => {
           const normalized = {
             id: task.id,
-            name: task.name,
+            name: task.name ?? "Untitled task",
             stage: task.stage,
             skillId: task.skill_id ?? null,
             priorityCode: task.priority ?? null,
@@ -678,15 +693,9 @@ export function MonumentGoalsList({
     }
 
     setUserId(user.id);
-
-    const allRoadmapsWithItems = await listRoadmapsWithItems(user.id).catch(
-      (err) => {
-        console.error("Error fetching true monument roadmaps:", err);
-        return [];
-      }
-    );
-    const trueMonumentRoadmaps = allRoadmapsWithItems.filter(
-      (roadmap) => roadmap.monument_id === monumentId
+    const trueMonumentRoadmaps = await fetchTrueRoadmapsForMonument(
+      user.id,
+      monumentId
     );
     setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
   }, [monumentId]);
@@ -709,13 +718,16 @@ export function MonumentGoalsList({
           return;
         }
         setUserId(user.id);
-        await refreshTrueRoadmaps();
 
-        const [rows, skills, userMonuments] = await Promise.all([
-          fetchGoalsWithRelationsForMonument(monumentId, user.id),
-          getSkillsForUser(user.id).catch(() => []),
-          getMonumentsForUser(user.id).catch(() => []),
-        ]);
+        const [rows, skills, userMonuments, trueMonumentRoadmaps] =
+          await Promise.all([
+            fetchGoalsWithRelationsForMonument(monumentId, user.id),
+            getSkillsForUser(user.id).catch(() => []),
+            getMonumentsForUser(user.id).catch(() => []),
+            fetchTrueRoadmapsForMonument(user.id, monumentId),
+          ]);
+
+        setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
 
         // Prepare skill emoji resolver before mapping any goals (used in both roadmap + standalone mappings)
         const skillIconLookup = new Map(
@@ -805,7 +817,6 @@ export function MonumentGoalsList({
     monumentEmoji,
     decorate,
     mapGoalRowToDisplayGoal,
-    refreshTrueRoadmaps,
     refreshVersion,
   ]);
 
