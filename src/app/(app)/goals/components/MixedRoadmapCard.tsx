@@ -23,6 +23,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, GripVertical } from "lucide-react";
 
 import {
+  createTopLevelGoalRoadmapItem,
   saveCampaignGoalOrder,
   saveRoadmapItemOrder,
   type RoadmapCampaignGoal,
@@ -186,6 +187,14 @@ function applyPositionsToGoals(goals: RoadmapCampaignGoal[]): RoadmapCampaignGoa
     ...goal,
     position: index + 1,
   }));
+}
+
+function isLegacyFallbackGoalItem(item: RoadmapMixedItem): boolean {
+  return (
+    item.item_type === "GOAL" &&
+    item.id.startsWith("legacy-goal-") &&
+    Boolean(item.goal?.id)
+  );
 }
 
 function DragHandle({
@@ -679,13 +688,48 @@ function MixedRoadmapCardImpl({
     setIsSaving(true);
 
     try {
-      await saveRoadmapItemOrder(
-        roadmap.id,
-        reordered.map((item) => item.id)
-      );
+      const realReordered = [...reordered];
+      const legacyItems = reordered.filter(isLegacyFallbackGoalItem);
+
+      if (legacyItems.length > 0) {
+        const createdItems = await Promise.all(
+          legacyItems.map((item) =>
+            createTopLevelGoalRoadmapItem({
+              roadmapId: roadmap.id,
+              goalId: item.goal!.id,
+              position: item.position,
+            })
+          )
+        );
+
+        const createdItemsByLegacyId = new Map(
+          createdItems.map((createdItem, index) => [
+            legacyItems[index].id,
+            createdItem,
+          ])
+        );
+
+        for (let index = 0; index < realReordered.length; index += 1) {
+          const createdItem = createdItemsByLegacyId.get(realReordered[index].id);
+          if (!createdItem) {
+            continue;
+          }
+
+          realReordered[index] = {
+            ...realReordered[index],
+            id: createdItem.id,
+            roadmap_id: createdItem.roadmap_id,
+            position: createdItem.position,
+          };
+        }
+
+        setOrderedItems(realReordered);
+      }
+
+      const attemptedItemIds = realReordered.map((item) => item.id);
+      await saveRoadmapItemOrder(roadmap.id, attemptedItemIds);
       await onReorderSaved?.();
-    } catch (error) {
-      console.error("Error saving roadmap item order:", error);
+    } catch {
       setOrderedItems(previousItems);
     } finally {
       setIsSaving(false);

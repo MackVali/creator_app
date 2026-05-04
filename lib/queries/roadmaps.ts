@@ -162,6 +162,29 @@ function isRoadmapGoalCompleted(goal: {
   );
 }
 
+async function requireCurrentUserId(): Promise<string> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error) {
+    console.error("Error fetching current user:", error);
+    throw error;
+  }
+
+  if (!user?.id) {
+    throw new Error("Authenticated user not available");
+  }
+
+  return user.id;
+}
+
 export async function listRoadmaps(
   userId: string
 ): Promise<Roadmap[]> {
@@ -665,6 +688,16 @@ export async function addGoalToRoadmapItems(
     campaign_id: data.campaign_id ?? null,
     goal_id: data.goal_id ?? null,
   };
+}
+
+export async function createTopLevelGoalRoadmapItem(input: {
+  roadmapId: string;
+  goalId: string;
+  position: number;
+}): Promise<RoadmapItemRecord> {
+  const userId = await requireCurrentUserId();
+
+  return addGoalToRoadmapItems(userId, input);
 }
 
 export async function addGoalToCampaign(
