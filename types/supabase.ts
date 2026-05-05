@@ -940,6 +940,71 @@ export interface Database {
           location_context_id?: string | null;
         };
       };
+      daily_schedule_analytics_observed_instances: {
+        Row: {
+          id: string;
+          user_id: string;
+          day_key: string;
+          timezone: string;
+          day_start_utc: string;
+          day_end_utc: string;
+          schedule_instance_id: string;
+          source_type: string;
+          source_id: string | null;
+          scheduled_start_utc: string | null;
+          scheduled_end_utc: string | null;
+          duration_min: number | null;
+          time_block_id: string | null;
+          day_type_time_block_id: string | null;
+          window_id: string | null;
+          observed_status: string | null;
+          first_observed_at: string;
+          last_observed_at: string;
+          observation_count: number;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          day_key: string;
+          timezone: string;
+          day_start_utc: string;
+          day_end_utc: string;
+          schedule_instance_id: string;
+          source_type: string;
+          source_id?: string | null;
+          scheduled_start_utc?: string | null;
+          scheduled_end_utc?: string | null;
+          duration_min?: number | null;
+          time_block_id?: string | null;
+          day_type_time_block_id?: string | null;
+          window_id?: string | null;
+          observed_status?: string | null;
+          first_observed_at?: string;
+          last_observed_at?: string;
+          observation_count?: number;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          day_key?: string;
+          timezone?: string;
+          day_start_utc?: string;
+          day_end_utc?: string;
+          schedule_instance_id?: string;
+          source_type?: string;
+          source_id?: string | null;
+          scheduled_start_utc?: string | null;
+          scheduled_end_utc?: string | null;
+          duration_min?: number | null;
+          time_block_id?: string | null;
+          day_type_time_block_id?: string | null;
+          window_id?: string | null;
+          observed_status?: string | null;
+          first_observed_at?: string;
+          last_observed_at?: string;
+          observation_count?: number;
+        };
+      };
       schedule_instances: {
         Row: {
           id: string;

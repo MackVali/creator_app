@@ -51,12 +51,12 @@ export function SummaryHeader({ onDrilldown }: SummaryHeaderProps) {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5 md:gap-4">
+      <div className="space-y-3 sm:space-y-4">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
             <div
               key={i}
-              className="h-32 animate-pulse rounded-2xl border border-zinc-800 bg-gradient-to-b from-zinc-950/80 to-black/60"
+              className="h-24 animate-pulse rounded-2xl border border-zinc-800 bg-zinc-950/80"
             />
           ))}
         </div>
@@ -73,10 +73,10 @@ export function SummaryHeader({ onDrilldown }: SummaryHeaderProps) {
   }
 
   return (
-    <div className="space-y-6" id="summary">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-white">Summary</h2>
-        <label className="flex items-center gap-2 text-sm text-zinc-400">
+    <div className="space-y-3 sm:space-y-4" id="summary">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-lg font-semibold text-white sm:text-xl">Summary</h2>
+        <label className="flex flex-wrap items-center gap-2 text-sm text-zinc-400">
           <input
             type="checkbox"
             checked={compare}
@@ -87,7 +87,7 @@ export function SummaryHeader({ onDrilldown }: SummaryHeaderProps) {
         </label>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5 md:gap-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-5">
         {summary.kpis.map((kpi) => (
           <KpiTile
             key={kpi.id}
@@ -98,7 +98,7 @@ export function SummaryHeader({ onDrilldown }: SummaryHeaderProps) {
       </div>
 
       {summary.insights.length > 0 && (
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-2">
           {summary.insights.slice(0, 3).map((insight) => (
             <InsightChip
               key={insight.id}

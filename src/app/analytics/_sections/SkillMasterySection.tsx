@@ -83,7 +83,7 @@ export function SkillMasterySection({
 
   const actions = (
     <button
-      className="inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-white transition-colors"
+      className="inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-white"
       onClick={() => setSkillsView(skillsView === "grid" ? "list" : "grid")}
     >
       {skillsView === "grid" ? "List" : "Grid"}
@@ -108,11 +108,11 @@ export function SkillMasterySection({
           onOpenDrilldown={handleOpenDrilldown}
         >
           {loading ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div
                   key={i}
-                  className="h-32 animate-pulse rounded-xl bg-zinc-800"
+                  className="h-28 animate-pulse rounded-xl bg-zinc-800"
                 />
               ))}
             </div>
@@ -131,7 +131,7 @@ export function SkillMasterySection({
             <>
               {isInView && (
                 <div
-                  className={`grid gap-4 max-h-[420px] overflow-y-auto ${
+                  className={`grid max-h-[420px] gap-3 overflow-y-auto ${
                     skillsView === "grid"
                       ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
                       : "grid-cols-1"
@@ -170,7 +170,7 @@ function SkillCard({ skill, view }: { skill: Skill; view: "grid" | "list" }) {
 
   return (
     <div
-      className={`group rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 transition hover:border-zinc-700 ${
+      className={`group rounded-xl border border-zinc-800 bg-zinc-950/70 p-3 transition hover:border-zinc-700 ${
         view === "grid"
           ? "flex flex-col items-center gap-3 text-center"
           : "flex items-center gap-4"
@@ -182,7 +182,7 @@ function SkillCard({ skill, view }: { skill: Skill; view: "grid" | "list" }) {
         size={size}
         progress={skill.progress}
         trackClassName="stroke-gray-700"
-        progressClassName="stroke-red-400"
+        progressClassName="stroke-zinc-300"
         label={`${skill.progress}%`}
       />
       <div className="flex-1 min-w-0">
@@ -206,7 +206,7 @@ function SkillCard({ skill, view }: { skill: Skill; view: "grid" | "list" }) {
           }`}
         >
           <div
-            className="h-full rounded-full bg-gradient-to-r from-red-500 to-pink-500"
+            className="h-full rounded-full bg-zinc-300"
             style={{ width: `${skill.progress}%` }}
           />
         </div>
@@ -272,13 +272,13 @@ function SkillDrilldownTable({ skills }: { skills: Skill[] }) {
       <div className="flex gap-2">
         <button
           onClick={() => handleSort("xp")}
-          className="px-3 py-1 text-xs bg-zinc-800 rounded"
+          className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-200"
         >
           Top Mover
         </button>
         <button
           onClick={() => handleSort("progress")}
-          className="px-3 py-1 text-xs bg-zinc-800 rounded"
+          className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-200"
         >
           Least Attention
         </button>
@@ -323,7 +323,7 @@ function SkillDrilldownTable({ skills }: { skills: Skill[] }) {
                 <td className="py-2 text-zinc-300">{skill.level}</td>
                 <td className="py-2 text-zinc-300">{skill.progress}%</td>
                 <td className="py-2 text-zinc-300">+{skill.xpGained}</td>
-                <td className="py-2 text-zinc-400">—</td>
+                <td className="py-2 text-zinc-400">N/A</td>
               </tr>
             ))}
           </tbody>

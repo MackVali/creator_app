@@ -23,7 +23,7 @@ export function MetricBadge({
 
   return (
     <div
-      className="flex items-center gap-3 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm"
+      className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-xs sm:gap-3 sm:px-3 sm:py-1.5 sm:text-sm"
       title={tooltip}
     >
       <span className="text-zinc-400">{label}:</span>
@@ -38,7 +38,7 @@ export function MetricBadge({
               : "text-zinc-400"
           }`}
         >
-          {delta > 0 ? "▲" : delta < 0 ? "▼" : "—"}
+          {delta > 0 ? "▲" : delta < 0 ? "▼" : "0"}
           {formatDelta(delta)}
         </span>
       )}
@@ -50,7 +50,7 @@ export function MetricBadge({
             height={24}
             strokeWidth={1.5}
             area={false}
-            className="text-red-400"
+            className="text-zinc-500"
           />
         </div>
       )}
