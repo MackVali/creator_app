@@ -70,7 +70,7 @@ export function DrilldownPanel({
       {/* Overlay */}
       <div
         id="drilldown-overlay"
-        className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
+        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
         aria-hidden="true"
       />
 
@@ -80,8 +80,9 @@ export function DrilldownPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="drilldown-title"
-        className="fixed right-0 top-0 z-50 h-full w-full max-w-md border-l border-zinc-800 bg-zinc-950 p-6 shadow-xl"
+        className="fixed inset-x-0 bottom-0 z-50 max-h-[78vh] w-full overflow-y-auto rounded-t-3xl border border-zinc-800 bg-zinc-950 p-4 shadow-xl md:top-0 md:right-0 md:left-auto md:h-full md:max-h-none md:max-w-md md:rounded-none md:rounded-l-2xl md:border-l md:border-t-0 md:p-6"
       >
+        <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-zinc-800 md:hidden" />
         <div className="flex items-center justify-between">
           <h3 id="drilldown-title" className="text-lg font-semibold text-white">
             {title}

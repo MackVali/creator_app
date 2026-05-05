@@ -1,19 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { PostgrestError, PostgrestResponse } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import { startOfDayInTimeZone } from "@/lib/scheduler/timezone";
+import { upsertObservedScheduleInstances } from "@/lib/analytics/observedScheduleInstances";
+import {
+  buildWindowsForDateFromDayTypeBlocks,
+  windowsForDateFromSnapshot,
+  type WindowLite,
+} from "@/lib/scheduler/repo";
+import {
+  getDateTimeParts,
+  makeZonedDate,
+  normalizeTimeZone,
+  startOfDayInTimeZone,
+  weekdayInTimeZone,
+} from "@/lib/scheduler/timezone";
 import { requirePlus } from "@/lib/entitlements/requirePlus";
+import type { Database } from "@/types/supabase";
 import type {
   AnalyticsActivityEvent,
+  AnalyticsHabitPerformance,
+  AnalyticsHabitRoutine,
   AnalyticsHabitSummary,
+  AnalyticsHabitStreakPoint,
+  AnalyticsHabitWeeklyReflection,
   AnalyticsKpi,
   AnalyticsKpiId,
   AnalyticsMonument,
+  AnalyticsOverviewDailyPoint,
+  AnalyticsOverviewEfficiencyDebug,
+  AnalyticsOverviewEfficiencyDebugDay,
+  AnalyticsOverviewEfficiencyDebugExcludedSource,
+  AnalyticsOverviewEfficiencyDebugSource,
   AnalyticsProject,
   AnalyticsRange,
   AnalyticsResponse,
+  AnalyticsScheduleSummary,
   AnalyticsSkill,
+  AnalyticsTimeBlockPerformance,
+  AnalyticsTodaySummary,
+  AnalyticsUnscheduledPressure,
   AnalyticsWindowsSummary,
   AnalyticsScheduleCompletion,
 } from "@/types/analytics";
@@ -21,10 +48,13 @@ import type {
 export const runtime = "nodejs";
 
 const RANGE_TO_DAYS: Record<AnalyticsRange, number> = {
+  "1d": 1,
   "7d": 7,
   "30d": 30,
   "90d": 90,
 };
+
+const PRODUCTIVITY_DAY_START_HOUR = 4;
 
 type RawTaskRow = {
   id: string;
@@ -137,8 +167,13 @@ type NormalizedHabitCompletionRow = {
 
 type RawScheduleInstanceRow = {
   id: string;
+  user_id?: string | null;
   source_id: string | null;
   source_type: string | null;
+  status?: string | null;
+  window_id?: string | null;
+  day_type_time_block_id?: string | null;
+  time_block_id?: string | null;
   start_utc: string | null;
   end_utc: string | null;
   duration_min: number | null;
@@ -146,20 +181,173 @@ type RawScheduleInstanceRow = {
   completed_at: string | null;
 };
 
+type RawObservedScheduleAnalyticsRow = Pick<
+  Database["public"]["Tables"]["daily_schedule_analytics_observed_instances"]["Row"],
+  | "id"
+  | "schedule_instance_id"
+  | "source_id"
+  | "source_type"
+  | "observed_status"
+  | "scheduled_start_utc"
+  | "scheduled_end_utc"
+  | "day_start_utc"
+  | "day_end_utc"
+  | "duration_min"
+  | "time_block_id"
+  | "day_type_time_block_id"
+  | "window_id"
+>;
+
 type NormalizedScheduleInstanceRow = {
   id: string;
   sourceId: string;
-  sourceType: ScheduleSourceType;
+  sourceType: ScheduleSummaryType;
+  scheduleSourceType: ScheduleSourceType | null;
+  status: ScheduleInstanceStatus | null;
+  windowId: string | null;
+  dayTypeTimeBlockId: string | null;
+  timeBlockId: string | null;
   startUtc: string;
   endUtc: string;
   durationMinutes: number;
   energy: string | null;
-  completedAt: string;
+  completedAt: string | null;
+};
+
+type NormalizedObservedScheduleAnalyticsRow = {
+  id: string;
+  sourceId: string;
+  sourceType: ScheduleSummaryType;
+  status: "scheduled" | "completed" | null;
+  dayStartUtc: string | null;
+  windowId: string | null;
+  dayTypeTimeBlockId: string | null;
+  timeBlockId: string | null;
+  startUtc: string;
+  endUtc: string;
+  durationMinutes: number;
+};
+
+type TimeBlockLabelRow = {
+  id: string;
+  label?: string | null;
+  start_local?: string | null;
+  end_local?: string | null;
+};
+
+type WindowLabelRow = {
+  id: string;
+  label?: string | null;
+};
+
+type RawOverviewWindowRow = {
+  id: string;
+  created_at: string | null;
+  label?: string | null;
+  start_local?: string | null;
+  end_local?: string | null;
+  days?: number[] | null;
+  energy?: string | null;
+  window_kind?: string | null;
+  day_type_time_block_id?: string | null;
+};
+
+type RawDayTypeAssignmentRow = {
+  date_key?: string | null;
+  day_type_id?: string | null;
+};
+
+type RawDayTypeRow = {
+  id: string;
+  name?: string | null;
+  days?: number[] | null;
+  is_default?: boolean | null;
+  created_at?: string | null;
+  is_temporary?: boolean | null;
+  temporary_date_key?: string | null;
+  temporary_expires_at?: string | null;
+};
+
+type RawDayTypeTimeBlockSnapshotRow = {
+  id: string;
+  day_type_id?: string | null;
+  energy?: string | null;
+  block_type?: string | null;
+  time_block_id?: string | null;
+  time_blocks?: {
+    id?: string | null;
+    label?: string | null;
+    start_local?: string | null;
+    end_local?: string | null;
+    days?: number[] | null;
+  } | null;
+};
+
+type DayTypeTimeBlockLabelRow = {
+  id: string;
+  time_block_id?: string | null;
+  time_blocks?: {
+    label?: string | null;
+    start_local?: string | null;
+    end_local?: string | null;
+  } | null;
 };
 
 type ScheduleSourceType = "PROJECT" | "TASK" | "HABIT";
+type ScheduleSummaryType = AnalyticsScheduleSummary["byType"][number]["type"];
+type TodaySummaryType = AnalyticsTodaySummary["byType"][number]["type"];
+type ScheduleInstanceStatus =
+  | "scheduled"
+  | "completed"
+  | "missed"
+  | "canceled";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+type OverviewUsableScheduleSource = {
+  generalWindows: OverviewUsableWindowMeta[];
+  dayTypeAssignmentsByDateKey: Map<string, string>;
+  dayTypesById: Map<
+    string,
+    {
+      id: string;
+      days: number[] | null;
+      createdAt: string | null;
+      isDefault: boolean;
+      isTemporary: boolean;
+      temporaryDateKey: string | null;
+      temporaryExpiresAt: string | null;
+    }
+  >;
+  defaultDayTypes: Array<{
+    id: string;
+    days: number[] | null;
+    createdAt: string | null;
+  }>;
+  dayTypeWindowsByDayTypeId: Map<string, OverviewUsableWindowMeta[]>;
+};
+
+type OverviewCapacitySource =
+  AnalyticsOverviewEfficiencyDebugDay["capacitySource"];
+
+type OverviewResolvedDayType = {
+  resolvedDayTypeId: string | null;
+  assignedDayTypeId: string | null;
+  capacitySource: OverviewCapacitySource;
+};
+
+type OverviewUsableWindowDebugDayInternal = Omit<
+  AnalyticsOverviewEfficiencyDebugDay,
+  "completedMinutes"
+> & {
+  dayStartDate: Date;
+  dayEndDateExclusive: Date;
+};
+
+type OverviewUsableWindowMinutesResult = {
+  minutesByPoint: Map<string, number>;
+  perDay: OverviewUsableWindowDebugDayInternal[];
+};
 
 export async function GET(request: NextRequest) {
   const gate = await requirePlus();
@@ -195,12 +383,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const days = RANGE_TO_DAYS[range];
-  const { start, end, previousStart, previousEnd } = computeDateWindows(days);
+  const profileTimeZone = await resolveProfileTimeZone(supabase, user.id);
+  const timeZone = profileTimeZone
+    ? normalizeTimeZone(profileTimeZone)
+    : "America/Chicago"; // Temporary fallback until this route gets a guaranteed app/user timezone source.
+  const { start: todayStart, end: todayEnd } =
+    computeProductivityDayWindow(timeZone);
+  const { start, end, previousStart, previousEnd } = computeAnalyticsWindows({
+    range,
+    productivityDayStart: todayStart,
+    productivityDayEnd: todayEnd,
+    timeZone,
+  });
   const combinedStartIso = previousStart.toISOString();
+  const todayDayKey = formatProductivityDayKey(todayStart, timeZone);
 
   const habitHistoryStart = startOfDay(addDays(end, -365));
   const habitCompletionStart = habitHistoryStart.toISOString().slice(0, 10);
+  const overviewStartDateKey = formatProductivityDayKey(start, timeZone);
+  const overviewEndDateKey =
+    range === "1d" ? overviewStartDateKey : formatProductivityDayKey(end, timeZone);
 
   const [
     xpEventsRes,
@@ -209,12 +411,19 @@ export async function GET(request: NextRequest) {
     habitsRes,
     monumentsRes,
     windowsRes,
+    dayTypeAssignmentsRes,
+    defaultDayTypesRes,
+    dayTypeTimeBlocksRes,
     skillsRes,
     skillProgressRes,
     goalsRes,
     habitHistoryRes,
     habitRoutinesRes,
     habitCompletionRes,
+    scheduleSummaryInstancesRes,
+    scheduleSummaryObservedRes,
+    todayScheduleInstancesRes,
+    todaySummaryObservedRes,
     recentScheduleInstancesRes,
   ] = await Promise.all([
     supabase
@@ -283,9 +492,30 @@ export async function GET(request: NextRequest) {
     ),
     supabase
       .from("windows")
-      .select("id, created_at, days, start_local, end_local, energy, label")
+      .select(
+        "id, created_at, label, start_local, end_local, days, energy, window_kind"
+      )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("day_type_assignments")
+      .select("date_key, day_type_id")
+      .eq("user_id", user.id)
+      .gte("date_key", overviewStartDateKey)
+      .lte("date_key", overviewEndDateKey),
+    supabase
+      .from("day_types")
+      .select(
+        "id, days, is_default, created_at, is_temporary, temporary_date_key, temporary_expires_at"
+      )
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("day_type_time_blocks")
+      .select(
+        "id, day_type_id, energy, block_type, time_blocks(label, start_local, end_local)"
+      )
+      .eq("user_id", user.id),
     queryWithFallback(
       () =>
         supabase
@@ -330,6 +560,42 @@ export async function GET(request: NextRequest) {
     supabase
       .from("schedule_instances")
       .select(
+        "id, source_type, status, window_id, day_type_time_block_id, time_block_id, start_utc, end_utc, duration_min, completed_at"
+      )
+      .eq("user_id", user.id)
+      .gte("start_utc", start.toISOString())
+      .lte("start_utc", end.toISOString())
+      .order("start_utc", { ascending: false }),
+    supabase
+      .from("daily_schedule_analytics_observed_instances")
+      .select(
+        "id, schedule_instance_id, source_id, source_type, observed_status, scheduled_start_utc, scheduled_end_utc, day_start_utc, day_end_utc, duration_min, time_block_id, day_type_time_block_id, window_id"
+      )
+      .eq("user_id", user.id)
+      .gte("day_start_utc", start.toISOString())
+      .lte("day_start_utc", end.toISOString())
+      .order("scheduled_start_utc", { ascending: false }),
+    supabase
+      .from("schedule_instances")
+      .select(
+        "id, user_id, source_id, source_type, status, start_utc, end_utc, duration_min, time_block_id, day_type_time_block_id, window_id, completed_at"
+      )
+      .eq("user_id", user.id)
+      .in("status", ["scheduled", "completed", "missed", "canceled"])
+      .gte("start_utc", todayStart.toISOString())
+      .lt("start_utc", todayEnd.toISOString())
+      .order("start_utc", { ascending: true }),
+    supabase
+      .from("daily_schedule_analytics_observed_instances")
+      .select(
+        "id, schedule_instance_id, source_id, source_type, observed_status, scheduled_start_utc, scheduled_end_utc, day_start_utc, day_end_utc, duration_min, time_block_id, day_type_time_block_id, window_id"
+      )
+      .eq("user_id", user.id)
+      .eq("day_key", todayDayKey)
+      .order("scheduled_start_utc", { ascending: true }),
+    supabase
+      .from("schedule_instances")
+      .select(
         "id, source_id, source_type, start_utc, end_utc, duration_min, energy_resolved, completed_at"
       )
       .eq("user_id", user.id)
@@ -354,6 +620,10 @@ export async function GET(request: NextRequest) {
     habitHistoryRes.error ||
     habitRoutinesRes.error ||
     habitCompletionRes.error ||
+    scheduleSummaryInstancesRes.error ||
+    scheduleSummaryObservedRes.error ||
+    todayScheduleInstancesRes.error ||
+    todaySummaryObservedRes.error ||
     recentScheduleInstancesRes.error;
 
   if (queryError) {
@@ -365,7 +635,19 @@ export async function GET(request: NextRequest) {
   const projects = normalizeProjectRows(projectsRes.data ?? []);
   const habits = normalizeHabitRows(habitsRes.data ?? []);
   const monuments = normalizeMonumentRows(monumentsRes.data ?? []);
-  const windows = windowsRes.data ?? [];
+  const windows = (windowsRes.data ?? []) as RawOverviewWindowRow[];
+  const dayTypeAssignments =
+    dayTypeAssignmentsRes.error == null
+      ? ((dayTypeAssignmentsRes.data ?? []) as RawDayTypeAssignmentRow[])
+      : [];
+  const defaultDayTypes =
+    defaultDayTypesRes.error == null
+      ? ((defaultDayTypesRes.data ?? []) as RawDayTypeRow[])
+      : [];
+  const dayTypeTimeBlocks =
+    dayTypeTimeBlocksRes.error == null
+      ? ((dayTypeTimeBlocksRes.data ?? []) as RawDayTypeTimeBlockSnapshotRow[])
+      : [];
   const skills = normalizeSkillRows(skillsRes.data ?? []);
   const skillProgress = skillProgressRes.data ?? [];
   const goals = goalsRes.data ?? [];
@@ -374,9 +656,153 @@ export async function GET(request: NextRequest) {
   const habitCompletions = normalizeHabitCompletionRows(
     habitCompletionRes.data ?? []
   );
+  const scheduleSummaryInstances = normalizeScheduleInstanceRows(
+    (scheduleSummaryInstancesRes.data ?? []) as RawScheduleInstanceRow[]
+  );
+  let scheduleSummaryObservedInstances = normalizeObservedScheduleAnalyticsRows(
+    (scheduleSummaryObservedRes.data ?? []) as RawObservedScheduleAnalyticsRow[]
+  );
+  let todayObservedInstances = normalizeObservedScheduleAnalyticsRows(
+    (todaySummaryObservedRes.data ?? []) as RawObservedScheduleAnalyticsRow[]
+  );
+  if (
+    dayTypeAssignmentsRes.error ||
+    defaultDayTypesRes.error ||
+    dayTypeTimeBlocksRes.error
+  ) {
+    console.warn(
+      "[analytics:overview-efficiency] capacity lookup failed",
+      dayTypeAssignmentsRes.error ??
+        defaultDayTypesRes.error ??
+        dayTypeTimeBlocksRes.error
+    );
+  }
+  const observedTodayScheduleRows = (todayScheduleInstancesRes.data ?? []).filter(
+    (
+      row
+    ): row is Required<
+      Pick<
+        RawScheduleInstanceRow,
+        | "id"
+        | "source_id"
+        | "source_type"
+        | "status"
+        | "start_utc"
+        | "end_utc"
+        | "duration_min"
+      >
+    > &
+      Pick<
+        RawScheduleInstanceRow,
+        "time_block_id" | "day_type_time_block_id" | "window_id"
+      > & { user_id: string } => {
+      const hasPlacement =
+        (typeof row?.time_block_id === "string" && row.time_block_id.length > 0) ||
+        (typeof row?.day_type_time_block_id === "string" &&
+          row.day_type_time_block_id.length > 0) ||
+        (typeof row?.window_id === "string" && row.window_id.length > 0);
+
+      // Observation analytics only records placed events; loose due/missed rows without a Time Block/window are handled by unscheduled analytics later.
+      return (
+        typeof row?.id === "string" &&
+        typeof row?.user_id === "string" &&
+        row.user_id === user.id &&
+        typeof row?.source_id === "string" &&
+        typeof row?.source_type === "string" &&
+        typeof row?.status === "string" &&
+        typeof row?.start_utc === "string" &&
+        typeof row?.end_utc === "string" &&
+        typeof row?.duration_min === "number" &&
+        hasPlacement
+      );
+    }
+  );
   const recentScheduleInstances = normalizeScheduleInstanceRows(
     (recentScheduleInstancesRes.data ?? []) as RawScheduleInstanceRow[]
   );
+  if (observedTodayScheduleRows.length > 0) {
+    try {
+      await upsertObservedScheduleInstances({
+        userId: user.id,
+        timezone: timeZone,
+        dayKey: todayDayKey,
+        dayStartUtc: todayStart,
+        dayEndUtc: todayEnd,
+        scheduleInstances: observedTodayScheduleRows,
+      });
+    } catch (error) {
+      console.warn("[analytics] failed to stamp observed schedule instances", {
+        userId: user.id,
+        dayKey: todayDayKey,
+        attemptedRows: observedTodayScheduleRows.length,
+        error,
+      });
+    }
+  }
+  if (observedTodayScheduleRows.length > 0) {
+    const [
+      refreshedScheduleSummaryObservedRes,
+      refreshedTodaySummaryObservedRes,
+    ] = await Promise.all([
+      supabase
+        .from("daily_schedule_analytics_observed_instances")
+        .select(
+          "id, schedule_instance_id, source_id, source_type, observed_status, scheduled_start_utc, scheduled_end_utc, day_start_utc, day_end_utc, duration_min, time_block_id, day_type_time_block_id, window_id"
+        )
+        .eq("user_id", user.id)
+        .gte("day_start_utc", start.toISOString())
+        .lte("day_start_utc", end.toISOString())
+        .order("scheduled_start_utc", { ascending: false }),
+      supabase
+        .from("daily_schedule_analytics_observed_instances")
+        .select(
+          "id, schedule_instance_id, source_id, source_type, observed_status, scheduled_start_utc, scheduled_end_utc, day_start_utc, day_end_utc, duration_min, time_block_id, day_type_time_block_id, window_id"
+        )
+        .eq("user_id", user.id)
+        .eq("day_key", todayDayKey)
+        .order("scheduled_start_utc", { ascending: true }),
+    ]);
+
+    if (!refreshedScheduleSummaryObservedRes.error) {
+      scheduleSummaryObservedInstances = normalizeObservedScheduleAnalyticsRows(
+        (refreshedScheduleSummaryObservedRes.data ?? []) as RawObservedScheduleAnalyticsRow[]
+      );
+    }
+
+    if (!refreshedTodaySummaryObservedRes.error) {
+      todayObservedInstances = normalizeObservedScheduleAnalyticsRows(
+        (refreshedTodaySummaryObservedRes.data ?? []) as RawObservedScheduleAnalyticsRow[]
+      );
+    }
+  }
+  const analyticsNow = new Date();
+  const scheduleSummary = buildScheduleSummary(
+    scheduleSummaryObservedInstances,
+    analyticsNow
+  );
+  const unscheduledPressure = buildUnscheduledPressure(
+    scheduleSummaryInstances,
+    habits,
+    analyticsNow
+  );
+  const todaySummary = buildTodaySummary(
+    todayObservedInstances,
+    analyticsNow,
+    todayStart,
+    todayEnd
+  );
+  const timeBlockPerformance = await buildTimeBlockPerformanceSummary({
+    client: supabase,
+    userId: user.id,
+    instances: scheduleSummaryObservedInstances,
+    now: analyticsNow,
+  });
+  const overviewUsableScheduleSource = buildOverviewUsableScheduleSource({
+    windows,
+    dayTypeAssignments,
+    defaultDayTypes,
+    dayTypeTimeBlocks,
+  });
 
   const xpSplit = splitByPeriod(
     xpEvents,
@@ -386,6 +812,17 @@ export async function GET(request: NextRequest) {
     previousEnd,
     (event) => parseDate(event.created_at)
   );
+  const overviewDailyResult = await buildOverviewDailySeries({
+    xpEvents: xpSplit.current,
+    observedInstances: scheduleSummaryObservedInstances,
+    start,
+    end,
+    now: analyticsNow,
+    range,
+    timeZone,
+    usableScheduleSource: overviewUsableScheduleSource,
+  });
+  const overviewDaily = overviewDailyResult.overviewDaily;
 
   const skillXpDuringRange = new Map<string, number>();
   for (const event of xpEvents) {
@@ -662,21 +1099,21 @@ export async function GET(request: NextRequest) {
       const projectIds = Array.from(
         new Set(
           activeInstances
-            .filter((instance) => instance.sourceType === "PROJECT")
+            .filter((instance) => instance.scheduleSourceType === "PROJECT")
             .map((instance) => instance.sourceId)
         )
       );
       const taskIds = Array.from(
         new Set(
           activeInstances
-            .filter((instance) => instance.sourceType === "TASK")
+            .filter((instance) => instance.scheduleSourceType === "TASK")
             .map((instance) => instance.sourceId)
         )
       );
       const habitIds = Array.from(
         new Set(
           activeInstances
-            .filter((instance) => instance.sourceType === "HABIT")
+            .filter((instance) => instance.scheduleSourceType === "HABIT")
             .map((instance) => instance.sourceId)
         )
       );
@@ -765,19 +1202,21 @@ export async function GET(request: NextRequest) {
       const trimmedInstances = activeInstances.slice(0, 6);
       recentScheduleShowcase = trimmedInstances.map((instance) => {
         let resolvedTitle: string | null = null;
-        if (instance.sourceType === "PROJECT") {
+        if (instance.scheduleSourceType === "PROJECT") {
           resolvedTitle = projectNameById.get(instance.sourceId) ?? null;
-        } else if (instance.sourceType === "TASK") {
+        } else if (instance.scheduleSourceType === "TASK") {
           resolvedTitle = taskNameById.get(instance.sourceId) ?? null;
-        } else if (instance.sourceType === "HABIT") {
+        } else if (instance.scheduleSourceType === "HABIT") {
           resolvedTitle = habitNameById.get(instance.sourceId) ?? null;
         }
 
+        const scheduleType = instance.scheduleSourceType ?? "HABIT";
+
         return {
           id: instance.id,
-          title: resolvedTitle ?? fallbackScheduleLabel(instance.sourceType),
-          type: SCHEDULE_SOURCE_TYPE_MAP[instance.sourceType],
-          completedAt: instance.completedAt,
+          title: resolvedTitle ?? fallbackScheduleLabel(scheduleType),
+          type: SCHEDULE_SOURCE_TYPE_MAP[scheduleType],
+          completedAt: instance.completedAt ?? instance.endUtc,
           startUtc: instance.startUtc,
           endUtc: instance.endUtc,
           durationMinutes: instance.durationMinutes,
@@ -827,24 +1266,99 @@ export async function GET(request: NextRequest) {
     projects: rankedProjects,
     monuments: rankedMonuments,
     recentSchedules: recentScheduleShowcase,
+    scheduleSummary,
+    timeBlockPerformance,
+    unscheduledPressure,
+    todaySummary,
+    overviewDaily,
     windows: windowSummary,
     activity: activityEvents,
     habit: habitSummary,
     projectVelocity,
   };
 
+  if (process.env.NODE_ENV !== "production") {
+    const totalCompletedMinutes = overviewDaily.reduce(
+      (sum, point) => sum + point.completedMinutes,
+      0
+    );
+    const totalUsableWindowMinutes = overviewDaily.reduce(
+      (sum, point) => sum + point.usableWindowMinutes,
+      0
+    );
+    const rangeEfficiencyRate =
+      totalUsableWindowMinutes > 0
+        ? clampPercent(
+            Math.round(
+              (totalCompletedMinutes / totalUsableWindowMinutes) * 100
+            )
+          )
+        : 0;
+
+    response.overviewEfficiencyDebug = buildOverviewEfficiencyDebug({
+      range,
+      start,
+      end,
+      overviewDaily: overviewDailyResult,
+      timeZone,
+      totalCompletedMinutes,
+      totalUsableWindowMinutes,
+      rangeEfficiencyRate,
+    });
+  }
+
   return NextResponse.json(response);
 }
 
 function isAnalyticsRange(value: string | null): value is AnalyticsRange {
-  return value === "7d" || value === "30d" || value === "90d";
+  return value === "1d" || value === "7d" || value === "30d" || value === "90d";
 }
 
-function computeDateWindows(days: number) {
-  const end = endOfDay(new Date());
-  const start = startOfDay(addDays(end, -(days - 1)));
-  const previousEnd = endOfDay(addDays(start, -1));
-  const previousStart = startOfDay(addDays(previousEnd, -(days - 1)));
+function computeAnalyticsWindows({
+  range,
+  productivityDayStart,
+  productivityDayEnd,
+  timeZone,
+}: {
+  range: AnalyticsRange;
+  productivityDayStart: Date;
+  productivityDayEnd: Date;
+  timeZone: string;
+}) {
+  if (range === "1d") {
+    const start = productivityDayStart;
+    const end = new Date(productivityDayEnd.getTime() - 1);
+    const previousStart = new Date(start.getTime() - MS_PER_DAY);
+    const previousEnd = new Date(productivityDayEnd.getTime() - 1 - MS_PER_DAY);
+
+    return { start, end, previousStart, previousEnd };
+  }
+
+  const days = RANGE_TO_DAYS[range];
+  return computeProductivityDateWindows({
+    days,
+    productivityDayStart,
+    timeZone,
+  });
+}
+
+function computeProductivityDateWindows({
+  days,
+  productivityDayStart,
+  timeZone,
+}: {
+  days: number;
+  productivityDayStart: Date;
+  timeZone: string;
+}) {
+  const start = getProductivityDayStartForDate(
+    addDays(productivityDayStart, -(days - 1)),
+    timeZone
+  );
+  const endExclusive = addProductivityDay(productivityDayStart, timeZone);
+  const end = new Date(endExclusive.getTime() - 1);
+  const previousStart = getProductivityDayStartForDate(addDays(start, -days), timeZone);
+  const previousEnd = new Date(start.getTime() - 1);
   return { start, end, previousStart, previousEnd };
 }
 
@@ -858,10 +1372,61 @@ function startOfDay(date: Date) {
   return startOfDayInTimeZone(date, "UTC");
 }
 
-function endOfDay(date: Date) {
-  const start = startOfDay(date);
-  const nextStart = startOfDay(addDays(start, 1));
-  return new Date(nextStart.getTime() - 1);
+async function resolveProfileTimeZone(
+  client: SupabaseClient<Database>,
+  userId: string
+) {
+  try {
+    const { data, error } = await client
+      .from("profiles")
+      .select("timezone")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) {
+      return null;
+    }
+    return typeof data?.timezone === "string" ? data.timezone.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function computeProductivityDayWindow(timeZone: string) {
+  const now = new Date();
+  const parts = getDateTimeParts(now, timeZone);
+  const start = makeZonedDate(
+    {
+      year: parts.year,
+      month: parts.month,
+      day:
+        parts.hour >= PRODUCTIVITY_DAY_START_HOUR ? parts.day : parts.day - 1,
+      hour: PRODUCTIVITY_DAY_START_HOUR,
+      minute: 0,
+      second: 0,
+    },
+    timeZone
+  );
+  const startParts = getDateTimeParts(start, timeZone);
+  const end = makeZonedDate(
+    {
+      year: startParts.year,
+      month: startParts.month,
+      day: startParts.day + 1,
+      hour: PRODUCTIVITY_DAY_START_HOUR,
+      minute: 0,
+      second: 0,
+    },
+    timeZone
+  );
+  return { start, end };
+}
+
+function formatProductivityDayKey(date: Date, timeZone: string) {
+  const dayStart = getProductivityDayStartForDate(date, timeZone);
+  const parts = getDateTimeParts(dayStart, timeZone);
+  const month = String(parts.month).padStart(2, "0");
+  const day = String(parts.day).padStart(2, "0");
+  return `${parts.year}-${month}-${day}`;
 }
 
 function parseDate(value: string | null | undefined) {
@@ -1028,12 +1593,27 @@ function normalizeScheduleInstanceRows(
       if (typeof row.id !== "string") {
         return null;
       }
-      const sourceId = typeof row.source_id === "string" ? row.source_id : null;
-      const sourceType = normalizeScheduleSourceType(row.source_type);
+      const sourceId = typeof row.source_id === "string" ? row.source_id : "";
+      const scheduleSourceType = normalizeScheduleSourceType(row.source_type);
+      const sourceType = normalizeScheduleSummaryType(row.source_type);
+      const status = normalizeScheduleStatus(row.status);
+      const windowId =
+        typeof row.window_id === "string" && row.window_id.length > 0
+          ? row.window_id
+          : null;
+      const dayTypeTimeBlockId =
+        typeof row.day_type_time_block_id === "string" &&
+        row.day_type_time_block_id.length > 0
+          ? row.day_type_time_block_id
+          : null;
+      const timeBlockId =
+        typeof row.time_block_id === "string" && row.time_block_id.length > 0
+          ? row.time_block_id
+          : null;
       const startUtc = normalizeIsoString(row.start_utc);
       const endUtc = normalizeIsoString(row.end_utc);
       const completedAt = normalizeIsoString(row.completed_at);
-      if (!sourceId || !sourceType || !startUtc || !endUtc || !completedAt) {
+      if (!sourceType || !startUtc || !endUtc) {
         return null;
       }
       const durationMinutes = deriveDurationMinutes(
@@ -1045,6 +1625,11 @@ function normalizeScheduleInstanceRows(
         id: row.id,
         sourceId,
         sourceType,
+        scheduleSourceType,
+        status,
+        windowId,
+        dayTypeTimeBlockId,
+        timeBlockId,
         startUtc,
         endUtc,
         durationMinutes,
@@ -1054,6 +1639,1077 @@ function normalizeScheduleInstanceRows(
       } satisfies NormalizedScheduleInstanceRow;
     })
     .filter((row): row is NormalizedScheduleInstanceRow => row !== null);
+}
+
+function normalizeObservedScheduleAnalyticsRows(
+  rows: RawObservedScheduleAnalyticsRow[]
+): NormalizedObservedScheduleAnalyticsRow[] {
+  return rows
+    .map((row) => {
+      const sourceType = normalizeScheduleSummaryType(row.source_type);
+      const startUtc = normalizeIsoString(row.scheduled_start_utc ?? row.day_start_utc);
+      const endUtc = normalizeIsoString(
+        row.scheduled_end_utc ??
+          row.scheduled_start_utc ??
+          row.day_end_utc ??
+          row.day_start_utc
+      );
+      if (!sourceType || !startUtc || !endUtc) {
+        return null;
+      }
+
+      return {
+        id:
+          typeof row.schedule_instance_id === "string" &&
+          row.schedule_instance_id.length > 0
+            ? row.schedule_instance_id
+            : row.id,
+        sourceId: typeof row.source_id === "string" ? row.source_id : "",
+        sourceType,
+        status: normalizeObservedScheduleStatus(row.observed_status),
+        dayStartUtc: normalizeIsoString(row.day_start_utc),
+        windowId:
+          typeof row.window_id === "string" && row.window_id.length > 0
+            ? row.window_id
+            : null,
+        dayTypeTimeBlockId:
+          typeof row.day_type_time_block_id === "string" &&
+          row.day_type_time_block_id.length > 0
+            ? row.day_type_time_block_id
+            : null,
+        timeBlockId:
+          typeof row.time_block_id === "string" && row.time_block_id.length > 0
+            ? row.time_block_id
+            : null,
+        startUtc,
+        endUtc,
+        durationMinutes: deriveDurationMinutes(row.duration_min, startUtc, endUtc),
+      } satisfies NormalizedObservedScheduleAnalyticsRow;
+    })
+    .filter((row): row is NormalizedObservedScheduleAnalyticsRow => row !== null);
+}
+
+async function buildOverviewDailySeries({
+  xpEvents,
+  observedInstances,
+  usableScheduleSource,
+  start,
+  end,
+  now,
+  range,
+  timeZone,
+}: {
+  xpEvents: RawXpEventRow[];
+  observedInstances: NormalizedObservedScheduleAnalyticsRow[];
+  usableScheduleSource: OverviewUsableScheduleSource;
+  start: Date;
+  end: Date;
+  now: Date;
+  range: AnalyticsRange;
+  timeZone: string;
+}): Promise<{
+  overviewDaily: AnalyticsOverviewDailyPoint[];
+  overviewEfficiencyDebugPerDay: OverviewUsableWindowDebugDayInternal[];
+}> {
+  const points = new Map<string, AnalyticsOverviewDailyPoint>();
+
+  if (range === "1d") {
+    for (
+      let cursor = new Date(start);
+      cursor.getTime() <= end.getTime();
+      cursor = new Date(cursor.getTime() + 60 * 60 * 1000)
+    ) {
+      const date = cursor.toISOString();
+      points.set(date, {
+        date,
+        xpGained: 0,
+        projectXp: 0,
+        habitXp: 0,
+        taskXp: 0,
+        completedEvents: 0,
+        completedProjects: 0,
+        completedHabits: 0,
+        completedTasks: 0,
+        scheduledEvents: 0,
+        missedEvents: 0,
+        usableWindowMinutes: 0,
+        completedMinutes: 0,
+        efficiencyRate: 0,
+      });
+    }
+  } else {
+    for (
+      let cursor = getProductivityDayStartForDate(start, timeZone);
+      cursor.getTime() <= end.getTime();
+      cursor = addProductivityDay(cursor, timeZone)
+    ) {
+      const date = formatProductivityDayKey(cursor, timeZone);
+      points.set(date, {
+        date,
+        xpGained: 0,
+        projectXp: 0,
+        habitXp: 0,
+        taskXp: 0,
+        completedEvents: 0,
+        completedProjects: 0,
+        completedHabits: 0,
+        completedTasks: 0,
+        scheduledEvents: 0,
+        missedEvents: 0,
+        usableWindowMinutes: 0,
+        completedMinutes: 0,
+        efficiencyRate: 0,
+      });
+    }
+  }
+
+  for (const event of xpEvents) {
+    const eventDate = parseDate(event.created_at);
+    if (!isWithinRange(eventDate, start, end) || !eventDate) {
+      continue;
+    }
+
+    const amount = Number(event.amount ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      continue;
+    }
+
+    const date =
+      range === "1d"
+        ? formatHourBucketKey(eventDate)
+        : formatProductivityDayKey(eventDate, timeZone);
+    const point = points.get(date);
+    if (!point) {
+      continue;
+    }
+
+    point.xpGained += amount;
+
+    if (event.kind === "project") {
+      point.projectXp += amount;
+    } else if (event.kind === "habit") {
+      point.habitXp += amount;
+    } else if (event.kind === "task") {
+      point.taskXp += amount;
+    }
+  }
+
+  for (const instance of observedInstances) {
+    const effectiveStatus = getEffectiveObservedSummaryStatus(instance, now);
+    if (!effectiveStatus) {
+      continue;
+    }
+
+    const bucketAnchor = parseDate(
+      range === "1d" ? instance.startUtc : instance.dayStartUtc ?? instance.startUtc
+    );
+    if (!isWithinRange(bucketAnchor, start, end) || !bucketAnchor) {
+      continue;
+    }
+
+    const date =
+      range === "1d"
+        ? formatHourBucketKey(bucketAnchor)
+        : formatProductivityDayKey(bucketAnchor, timeZone);
+    const point = points.get(date);
+    if (!point) {
+      continue;
+    }
+
+    if (effectiveStatus === "completed") {
+      point.completedEvents += 1;
+
+      if (instance.sourceType === "project") {
+        point.completedProjects += 1;
+      } else if (instance.sourceType === "habit") {
+        point.completedHabits += 1;
+      } else if (instance.sourceType === "task") {
+        point.completedTasks += 1;
+      }
+
+      if (range === "1d") {
+        addIntervalMinutesToHourlyPointField(
+          points,
+          instance.startUtc,
+          instance.endUtc,
+          start,
+          end,
+          "completedMinutes"
+        );
+      } else {
+        point.completedMinutes += instance.durationMinutes;
+      }
+
+      continue;
+    }
+
+    if (effectiveStatus === "scheduled") {
+      point.scheduledEvents += 1;
+      continue;
+    }
+
+    if (effectiveStatus === "missed") {
+      point.missedEvents += 1;
+    }
+  }
+
+  let usableWindowMinutesByPoint = new Map<string, number>();
+  let overviewEfficiencyDebugPerDay: OverviewUsableWindowDebugDayInternal[] = [];
+  try {
+    const usableWindowMinutes = await buildOverviewUsableWindowMinutes({
+      usableScheduleSource,
+      start,
+      end,
+      range,
+      timeZone,
+    });
+    usableWindowMinutesByPoint = usableWindowMinutes.minutesByPoint;
+    overviewEfficiencyDebugPerDay = usableWindowMinutes.perDay;
+  } catch (error) {
+    console.warn("[analytics:overview-efficiency] capacity lookup failed", error);
+  }
+
+  for (const [date, minutes] of usableWindowMinutesByPoint) {
+    const point = points.get(date);
+    if (!point) {
+      continue;
+    }
+    point.usableWindowMinutes = minutes;
+    point.efficiencyRate =
+      minutes > 0
+        ? clampPercent(
+            Math.round((point.completedMinutes / minutes) * 100)
+          )
+        : 0;
+  }
+
+  return {
+    overviewDaily: Array.from(points.values()),
+    overviewEfficiencyDebugPerDay,
+  };
+}
+
+function formatHourBucketKey(date: Date) {
+  return new Date(
+    Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth(),
+      date.getUTCDate(),
+      date.getUTCHours(),
+      0,
+      0,
+      0
+    )
+  ).toISOString();
+}
+
+type OverviewUsableWindowMeta = WindowLite & {
+  sourceKey: string;
+  sourceKind: "window" | "time_block" | "day_type_time_block";
+};
+
+function normalizeOverviewWindowKind(
+  value?: string | null
+): OverviewUsableWindowMeta["window_kind"] {
+  if (!value) {
+    return "DEFAULT";
+  }
+  const normalized = value.toUpperCase().trim();
+  if (normalized === "BREAK" || normalized === "PRACTICE") {
+    return normalized;
+  }
+  return "DEFAULT";
+}
+
+function isUsableOverviewWindow(window: Pick<WindowLite, "window_kind">) {
+  // Preserve existing behavior for unknown kinds by treating them as usable.
+  return window.window_kind !== "BREAK";
+}
+
+function dedupeOverviewWindows(windows: OverviewUsableWindowMeta[]) {
+  const deduped = new Map<string, OverviewUsableWindowMeta>();
+  for (const window of windows) {
+    if (!deduped.has(window.sourceKey)) {
+      deduped.set(window.sourceKey, window);
+    }
+  }
+  return Array.from(deduped.values()).sort((a, b) => {
+    const startCompare = a.start_local.localeCompare(b.start_local);
+    if (startCompare !== 0) {
+      return startCompare;
+    }
+    return a.sourceKey.localeCompare(b.sourceKey);
+  });
+}
+
+function isOverviewDayTypeActiveForDate(
+  dayType: {
+    isTemporary: boolean;
+    temporaryDateKey: string | null;
+    temporaryExpiresAt: string | null;
+  },
+  dateKey: string
+) {
+  if (!dayType.isTemporary) {
+    return true;
+  }
+  if (dayType.temporaryDateKey && dayType.temporaryDateKey !== dateKey) {
+    return false;
+  }
+  if (
+    dayType.temporaryExpiresAt &&
+    dayType.temporaryExpiresAt.length > 0 &&
+    dayType.temporaryExpiresAt < dateKey
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function buildOverviewUsableScheduleSource({
+  windows,
+  dayTypeAssignments,
+  defaultDayTypes,
+  dayTypeTimeBlocks,
+}: {
+  windows: RawOverviewWindowRow[];
+  dayTypeAssignments: RawDayTypeAssignmentRow[];
+  defaultDayTypes: RawDayTypeRow[];
+  dayTypeTimeBlocks: RawDayTypeTimeBlockSnapshotRow[];
+}): OverviewUsableScheduleSource {
+  const generalWindows = dedupeOverviewWindows(
+    windows
+      .filter((row) => row.id && row.start_local && row.end_local)
+      .map(
+        (row) =>
+          ({
+            sourceKey: `window:${row.id}`,
+            sourceKind: "window",
+            id: row.id,
+            label: normalizeText(row.label) ?? "Window",
+            energy: row.energy ?? "neutral",
+            start_local: row.start_local!,
+            end_local: row.end_local!,
+            days: Array.isArray(row.days) ? row.days : null,
+            location_context_id: null,
+            location_context_value: null,
+            location_context_name: null,
+            window_kind: normalizeOverviewWindowKind(row.window_kind),
+          }) satisfies OverviewUsableWindowMeta
+      )
+  );
+
+  const dayTypeAssignmentsByDateKey = new Map<string, string>();
+  for (const row of dayTypeAssignments) {
+    if (
+      typeof row.date_key === "string" &&
+      row.date_key.length > 0 &&
+      typeof row.day_type_id === "string" &&
+      row.day_type_id.length > 0
+    ) {
+      dayTypeAssignmentsByDateKey.set(row.date_key, row.day_type_id);
+    }
+  }
+
+  const normalizedDayTypes = defaultDayTypes
+    .filter((row) => row.id)
+    .map((row) => ({
+      id: row.id,
+      days: Array.isArray(row.days) ? row.days : null,
+      createdAt: row.created_at ?? null,
+      isDefault: row.is_default === true,
+      isTemporary: row.is_temporary === true,
+      temporaryDateKey:
+        typeof row.temporary_date_key === "string" &&
+        row.temporary_date_key.length > 0
+          ? row.temporary_date_key
+          : null,
+      temporaryExpiresAt:
+        typeof row.temporary_expires_at === "string" &&
+        row.temporary_expires_at.length > 0
+          ? row.temporary_expires_at
+          : null,
+    }))
+    .sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
+  const dayTypesById = new Map(normalizedDayTypes.map((row) => [row.id, row]));
+  const normalizedDefaultDayTypes = normalizedDayTypes
+    .filter((row) => row.isDefault && !row.isTemporary)
+    .map((row) => ({
+      id: row.id,
+      days: row.days,
+      createdAt: row.createdAt,
+    }));
+
+  const dayTypeWindowsByDayTypeId = new Map<string, OverviewUsableWindowMeta[]>();
+  for (const row of dayTypeTimeBlocks) {
+    if (
+      !row.id ||
+      !row.day_type_id ||
+      !row.time_blocks?.start_local ||
+      !row.time_blocks?.end_local
+    ) {
+      continue;
+    }
+
+    const nextWindow = {
+      sourceKey: `day_type_time_block:${row.id}`,
+      sourceKind: "day_type_time_block",
+      id: row.id,
+      label: normalizeText(row.time_blocks.label) ?? "Time Block",
+      energy: row.energy ?? "neutral",
+      start_local: row.time_blocks.start_local,
+      end_local: row.time_blocks.end_local,
+      // Day type selection determines applicability for the day.
+      days: null,
+      location_context_id: null,
+      location_context_value: null,
+      location_context_name: null,
+      window_kind: normalizeOverviewWindowKind(row.block_type),
+      dayTypeTimeBlockId: row.id,
+    } satisfies OverviewUsableWindowMeta;
+
+    const existing = dayTypeWindowsByDayTypeId.get(row.day_type_id) ?? [];
+    existing.push(nextWindow);
+    dayTypeWindowsByDayTypeId.set(row.day_type_id, existing);
+  }
+
+  for (const [dayTypeId, entries] of dayTypeWindowsByDayTypeId) {
+    dayTypeWindowsByDayTypeId.set(dayTypeId, dedupeOverviewWindows(entries));
+  }
+
+  return {
+    generalWindows,
+    dayTypeAssignmentsByDateKey,
+    dayTypesById,
+    defaultDayTypes: normalizedDefaultDayTypes,
+    dayTypeWindowsByDayTypeId,
+  };
+}
+
+function resolveOverviewDayTypeForDate({
+  source,
+  anchor,
+  timeZone,
+}: {
+  source: OverviewUsableScheduleSource;
+  anchor: Date;
+  timeZone: string;
+}): OverviewResolvedDayType {
+  const dateKey = formatProductivityDayKey(anchor, timeZone);
+  const assigned = source.dayTypeAssignmentsByDateKey.get(dateKey);
+  const assignedDayType = assigned ? source.dayTypesById.get(assigned) ?? null : null;
+  if (
+    assigned &&
+    assignedDayType &&
+    isOverviewDayTypeActiveForDate(assignedDayType, dateKey)
+  ) {
+    return {
+      resolvedDayTypeId: assigned,
+      assignedDayTypeId: assigned,
+      capacitySource: "assigned_day_type",
+    };
+  }
+
+  const weekday = weekdayInTimeZone(anchor, timeZone);
+  const weekdayMatch = source.defaultDayTypes.find((row) =>
+    Array.isArray(row.days) ? row.days.includes(weekday) : false
+  );
+  if (weekdayMatch) {
+    return {
+      resolvedDayTypeId: weekdayMatch.id,
+      assignedDayTypeId: assigned ?? null,
+      capacitySource: "default_day_type",
+    };
+  }
+
+  const fallbackDayTypeId = source.defaultDayTypes[0]?.id ?? null;
+  return {
+    resolvedDayTypeId: fallbackDayTypeId,
+    assignedDayTypeId: assigned ?? null,
+    capacitySource: fallbackDayTypeId ? "fallback" : "general_windows",
+  };
+}
+
+function getProductivityDayStartForDate(date: Date, timeZone: string) {
+  const parts = getDateTimeParts(date, timeZone);
+  return makeZonedDate(
+    {
+      year: parts.year,
+      month: parts.month,
+      day:
+        parts.hour >= PRODUCTIVITY_DAY_START_HOUR ? parts.day : parts.day - 1,
+      hour: PRODUCTIVITY_DAY_START_HOUR,
+      minute: 0,
+      second: 0,
+    },
+    timeZone
+  );
+}
+
+function addProductivityDay(anchor: Date, timeZone: string) {
+  const parts = getDateTimeParts(anchor, timeZone);
+  return makeZonedDate(
+    {
+      year: parts.year,
+      month: parts.month,
+      day: parts.day + 1,
+      hour: PRODUCTIVITY_DAY_START_HOUR,
+      minute: 0,
+      second: 0,
+    },
+    timeZone
+  );
+}
+
+function clipIntervalToBounds(
+  interval: { start: Date; end: Date },
+  start: Date,
+  end: Date
+) {
+  const clippedStart = new Date(Math.max(interval.start.getTime(), start.getTime()));
+  const clippedEnd = new Date(Math.min(interval.end.getTime(), end.getTime()));
+  if (clippedEnd.getTime() <= clippedStart.getTime()) {
+    return null;
+  }
+  return { start: clippedStart, end: clippedEnd };
+}
+
+function intervalOverlapsBounds(
+  interval: { start: Date; end: Date },
+  start: Date,
+  end: Date
+) {
+  return interval.end.getTime() > start.getTime() &&
+    interval.start.getTime() < end.getTime();
+}
+
+async function buildOverviewUsableWindowMinutes({
+  usableScheduleSource,
+  start,
+  end,
+  range,
+  timeZone,
+}: {
+  usableScheduleSource: OverviewUsableScheduleSource;
+  start: Date;
+  end: Date;
+  range: AnalyticsRange;
+  timeZone: string;
+}): Promise<OverviewUsableWindowMinutesResult> {
+  const points = new Map<string, number>();
+  const rangeStart = new Date(start);
+  const rangeEndExclusive = new Date(end.getTime() + 1);
+  const dayStart =
+    range === "1d"
+      ? new Date(start)
+      : getProductivityDayStartForDate(start, timeZone);
+  const dayEnd =
+    range === "1d"
+      ? new Date(start)
+      : getProductivityDayStartForDate(end, timeZone);
+  const hasDayTypeCapacity = usableScheduleSource.dayTypeWindowsByDayTypeId.size > 0;
+  const debugDays: OverviewUsableWindowDebugDayInternal[] = [];
+  let datesGenerated = 0;
+
+  for (
+    let anchor = dayStart;
+    anchor.getTime() <= dayEnd.getTime();
+    anchor = addProductivityDay(anchor, timeZone)
+  ) {
+    datesGenerated += 1;
+    const dateKey = formatProductivityDayKey(anchor, timeZone);
+    const resolvedDayType = resolveOverviewDayTypeForDate({
+      source: usableScheduleSource,
+      anchor,
+      timeZone,
+    });
+    const dayTypeId = resolvedDayType.resolvedDayTypeId;
+    const dayTypeWindows =
+      typeof dayTypeId === "string"
+        ? usableScheduleSource.dayTypeWindowsByDayTypeId.get(dayTypeId) ?? []
+        : [];
+    const dayWindowEnd = addProductivityDay(anchor, timeZone);
+    const rawSourceWindows =
+      dayTypeWindows.length > 0
+        ? dayTypeWindows
+        : !hasDayTypeCapacity
+          ? usableScheduleSource.generalWindows
+          : [];
+    const usableSourceWindows = rawSourceWindows.filter(isUsableOverviewWindow);
+    const capacitySource =
+      dayTypeWindows.length > 0
+        ? resolvedDayType.capacitySource
+        : usableSourceWindows.length > 0
+          ? "general_windows"
+          : resolvedDayType.capacitySource === "general_windows"
+            ? "general_windows"
+            : "fallback";
+    const excludedSources: AnalyticsOverviewEfficiencyDebugExcludedSource[] =
+      rawSourceWindows
+        .filter((window) => !isUsableOverviewWindow(window))
+        .map((window) => ({
+          sourceKind: window.sourceKind,
+          sourceId: window.id,
+          label: window.label ?? "Window",
+          reason: "window_kind_break",
+        }));
+
+    if (usableSourceWindows.length === 0) {
+      debugDays.push({
+        dayKey: dateKey,
+        dayStartUtc: anchor.toISOString(),
+        dayEndUtc: new Date(dayWindowEnd.getTime() - 1).toISOString(),
+        dayStartDate: new Date(anchor),
+        dayEndDateExclusive: dayWindowEnd,
+        assignedDayTypeId: resolvedDayType.assignedDayTypeId,
+        capacitySource,
+        completedMinutes: 0,
+        usableWindowMinutes: 0,
+        mergedIntervalCount: 0,
+        intervalsBeforeMergeCount: 0,
+        includedSources: [],
+        excludedSources,
+      });
+      continue;
+    }
+
+    const instantiated =
+      dayTypeWindows.length > 0
+        ? buildWindowsForDateFromDayTypeBlocks(
+            usableSourceWindows,
+            anchor,
+            timeZone
+          )
+        : windowsForDateFromSnapshot(usableSourceWindows, anchor, timeZone);
+
+    // Merge overlapping usable intervals so adjacent or overlapping containers do not inflate capacity.
+    const clippedInstantiated = instantiated
+      .map((window) => {
+        const startMs = window.dayTypeStartUtcMs ?? null;
+        const endMs = window.dayTypeEndUtcMs ?? null;
+        if (
+          !Number.isFinite(startMs) ||
+          !Number.isFinite(endMs) ||
+          startMs == null ||
+          endMs == null ||
+          endMs <= startMs
+        ) {
+          excludedSources.push({
+            sourceKind: inferOverviewDebugSourceKind(window),
+            sourceId: window.dayTypeTimeBlockId ?? window.id,
+            label: window.label ?? "Window",
+            reason: "invalid_interval",
+          });
+          return null;
+        }
+        const interval = { start: new Date(startMs), end: new Date(endMs) };
+        if (!intervalOverlapsBounds(interval, anchor, dayWindowEnd)) {
+          excludedSources.push({
+            sourceKind: inferOverviewDebugSourceKind(window),
+            sourceId: window.dayTypeTimeBlockId ?? window.id,
+            label: window.label ?? "Window",
+            reason: "outside_productivity_day",
+          });
+          return null;
+        }
+        const clippedToDay = clipIntervalToBounds(
+          interval,
+          anchor,
+          dayWindowEnd
+        );
+        if (!clippedToDay) {
+          excludedSources.push({
+            sourceKind: inferOverviewDebugSourceKind(window),
+            sourceId: window.dayTypeTimeBlockId ?? window.id,
+            label: window.label ?? "Window",
+            reason: "outside_productivity_day",
+          });
+          return null;
+        }
+        if (!intervalOverlapsBounds(clippedToDay, rangeStart, rangeEndExclusive)) {
+          excludedSources.push({
+            sourceKind: inferOverviewDebugSourceKind(window),
+            sourceId: window.dayTypeTimeBlockId ?? window.id,
+            label: window.label ?? "Window",
+            reason: "outside_selected_range",
+          });
+          return null;
+        }
+        const clippedToRange = clipIntervalToBounds(
+          clippedToDay,
+          rangeStart,
+          rangeEndExclusive
+        );
+        const minutesAfterClipping = clippedToRange
+          ? Math.max(
+              0,
+              Math.round(
+                (clippedToRange.end.getTime() - clippedToRange.start.getTime()) /
+                  60000
+              )
+            )
+          : 0;
+        if (clippedToRange == null || minutesAfterClipping <= 0) {
+          excludedSources.push({
+            sourceKind: inferOverviewDebugSourceKind(window),
+            sourceId: window.dayTypeTimeBlockId ?? window.id,
+            label: window.label ?? "Window",
+            reason: "outside_selected_range",
+          });
+          return null;
+        }
+        return {
+          id: `${dateKey}:${window.dayTypeTimeBlockId ?? window.id}`,
+          sourceKind: inferOverviewDebugSourceKind(window),
+          sourceId: window.dayTypeTimeBlockId ?? window.id,
+          label: window.label ?? "Window",
+          startLocal: window.start_local,
+          endLocal: window.end_local,
+          minutesAfterClipping,
+          start: clippedToRange.start,
+          end: clippedToRange.end,
+        };
+      })
+      .filter(
+        (
+          interval
+        ): interval is {
+          id: string;
+          sourceKind: AnalyticsOverviewEfficiencyDebugSource["sourceKind"];
+          sourceId: string;
+          label: string;
+          startLocal: string | null;
+          endLocal: string | null;
+          minutesAfterClipping: number;
+          start: Date;
+          end: Date;
+        } => interval !== null
+      )
+      .map((interval, index) => ({
+        id: `${dateKey}:${index}`,
+        start_local: interval.startLocal ?? "",
+        end_local: interval.endLocal ?? "",
+        label: interval.label,
+        energy: null,
+        days: null,
+        location_context_id: null,
+        location_context_value: null,
+        location_context_name: null,
+        window_kind: "DEFAULT" as const,
+        dayTypeStartUtcMs: interval.start.getTime(),
+        dayTypeEndUtcMs: interval.end.getTime(),
+      }));
+    const intervals = mergeWindowIntervals(clippedInstantiated);
+    let mergedMinutes = intervals.reduce(
+      (sum, interval) =>
+        sum +
+        Math.max(
+          0,
+          Math.round((interval.end.getTime() - interval.start.getTime()) / 60000)
+        ),
+      0
+    );
+    if (mergedMinutes > 1440) {
+      console.warn("[analytics:overview-efficiency] day capacity exceeded 1440m", {
+        date: dateKey,
+        mergedMinutes,
+        dayTypeId,
+        source: capacitySource,
+      });
+      mergedMinutes = 1440;
+    }
+    debugDays.push({
+      dayKey: dateKey,
+      dayStartUtc: anchor.toISOString(),
+      dayEndUtc: new Date(dayWindowEnd.getTime() - 1).toISOString(),
+      dayStartDate: new Date(anchor),
+      dayEndDateExclusive: dayWindowEnd,
+      assignedDayTypeId: resolvedDayType.assignedDayTypeId,
+      capacitySource,
+      completedMinutes: 0,
+      usableWindowMinutes: mergedMinutes,
+      mergedIntervalCount: intervals.length,
+      intervalsBeforeMergeCount: clippedInstantiated.length,
+      includedSources: clippedInstantiated.map((interval) => ({
+        sourceKind: interval.sourceKind,
+        sourceId: interval.sourceId,
+        label: interval.label,
+        startLocal: interval.startLocal,
+        endLocal: interval.endLocal,
+        minutesAfterClipping: interval.minutesAfterClipping,
+      })),
+      excludedSources,
+    });
+
+    if (range === "1d") {
+      let remainingMinutes = mergedMinutes;
+      for (const interval of intervals) {
+        if (remainingMinutes <= 0) {
+          break;
+        }
+        const intervalMinutes = Math.max(
+          0,
+          Math.round((interval.end.getTime() - interval.start.getTime()) / 60000)
+        );
+        if (intervalMinutes <= 0) {
+          continue;
+        }
+        if (intervalMinutes > remainingMinutes) {
+          const truncatedEnd = new Date(
+            interval.start.getTime() + remainingMinutes * 60000
+          );
+          addIntervalMinutesToHourlyTotals(
+            points,
+            interval.start,
+            truncatedEnd,
+            start,
+            end
+          );
+          remainingMinutes = 0;
+          break;
+        }
+        addIntervalMinutesToHourlyTotals(
+          points,
+          interval.start,
+          interval.end,
+          start,
+          end
+        );
+        remainingMinutes -= intervalMinutes;
+      }
+      continue;
+    }
+
+    points.set(dateKey, mergedMinutes);
+  }
+
+  const suspiciousDays = debugDays.filter(
+    (day) =>
+      day.capacitySource === "general_windows" ||
+      day.intervalsBeforeMergeCount > 20 ||
+      day.usableWindowMinutes > 900
+  );
+  if (suspiciousDays.length > 0) {
+    console.warn("[analytics:overview-efficiency] debug", {
+      range,
+      datesGenerated,
+      generalWindows: usableScheduleSource.generalWindows.length,
+      dayTypeWindows: Array.from(
+        usableScheduleSource.dayTypeWindowsByDayTypeId.values()
+      ).reduce((sum, windows) => sum + windows.length, 0),
+      days: suspiciousDays.map((day) => ({
+        dayKey: day.dayKey,
+        assignedDayTypeId: day.assignedDayTypeId,
+        capacitySource: day.capacitySource,
+        intervalsBeforeMergeCount: day.intervalsBeforeMergeCount,
+        mergedIntervalCount: day.mergedIntervalCount,
+        usableWindowMinutes: day.usableWindowMinutes,
+      })),
+    });
+  }
+
+  return {
+    minutesByPoint: points,
+    perDay: debugDays,
+  };
+}
+
+function inferOverviewDebugSourceKind(
+  window: Pick<OverviewUsableWindowMeta, "sourceKind">
+): AnalyticsOverviewEfficiencyDebugSource["sourceKind"] {
+  return window.sourceKind;
+}
+
+function buildOverviewEfficiencyDebug({
+  range,
+  start,
+  end,
+  overviewDaily,
+  timeZone,
+  totalCompletedMinutes,
+  totalUsableWindowMinutes,
+  rangeEfficiencyRate,
+}: {
+  range: AnalyticsRange;
+  start: Date;
+  end: Date;
+  overviewDaily: {
+    overviewDaily: AnalyticsOverviewDailyPoint[];
+    overviewEfficiencyDebugPerDay: OverviewUsableWindowDebugDayInternal[];
+  };
+  timeZone: string;
+  totalCompletedMinutes: number;
+  totalUsableWindowMinutes: number;
+  rangeEfficiencyRate: number;
+}): AnalyticsOverviewEfficiencyDebug {
+  const completedMinutesByDayKey = new Map<string, number>();
+
+  if (range === "1d") {
+    const dayKey = formatProductivityDayKey(start, timeZone);
+    completedMinutesByDayKey.set(
+      dayKey,
+      overviewDaily.overviewDaily.reduce(
+        (sum, point) => sum + point.completedMinutes,
+        0
+      )
+    );
+  } else {
+    for (const point of overviewDaily.overviewDaily) {
+      const dayKey = point.date;
+      completedMinutesByDayKey.set(
+        dayKey,
+        (completedMinutesByDayKey.get(dayKey) ?? 0) + point.completedMinutes
+      );
+    }
+  }
+
+  return {
+    selectedRange: range,
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+    totalCompletedMinutes,
+    totalUsableWindowMinutes,
+    rangeEfficiencyRate,
+    perDay: overviewDaily.overviewEfficiencyDebugPerDay.map((day) => ({
+      dayKey: day.dayKey,
+      dayStartUtc: day.dayStartUtc,
+      dayEndUtc: day.dayEndUtc,
+      assignedDayTypeId: day.assignedDayTypeId,
+      capacitySource: day.capacitySource,
+      completedMinutes: completedMinutesByDayKey.get(day.dayKey) ?? 0,
+      usableWindowMinutes: day.usableWindowMinutes,
+      mergedIntervalCount: day.mergedIntervalCount,
+      intervalsBeforeMergeCount: day.intervalsBeforeMergeCount,
+      includedSources: day.includedSources,
+      excludedSources: day.excludedSources,
+    })),
+  };
+}
+
+function mergeWindowIntervals(
+  windows: Array<Pick<WindowLite, "dayTypeStartUtcMs" | "dayTypeEndUtcMs">>
+) {
+  const sorted = windows
+    .map((window) => {
+      const startMs = window.dayTypeStartUtcMs ?? null;
+      const endMs = window.dayTypeEndUtcMs ?? null;
+      if (
+        !Number.isFinite(startMs) ||
+        !Number.isFinite(endMs) ||
+        startMs == null ||
+        endMs == null ||
+        endMs <= startMs
+      ) {
+        return null;
+      }
+      return {
+        start: new Date(startMs),
+        end: new Date(endMs),
+      };
+    })
+    .filter((interval): interval is { start: Date; end: Date } => interval !== null)
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  const merged: Array<{ start: Date; end: Date }> = [];
+  for (const interval of sorted) {
+    const previous = merged[merged.length - 1];
+    if (!previous || interval.start.getTime() > previous.end.getTime()) {
+      merged.push(interval);
+      continue;
+    }
+    if (interval.end.getTime() > previous.end.getTime()) {
+      previous.end = interval.end;
+    }
+  }
+  return merged;
+}
+
+function addIntervalMinutesToHourlyPointField(
+  points: Map<string, AnalyticsOverviewDailyPoint>,
+  intervalStart: Date | string,
+  intervalEnd: Date | string,
+  rangeStart: Date,
+  rangeEnd: Date,
+  field: "completedMinutes"
+) {
+  const start = intervalStart instanceof Date ? intervalStart : parseDate(intervalStart);
+  const end = intervalEnd instanceof Date ? intervalEnd : parseDate(intervalEnd);
+  if (!start || !end || end.getTime() <= start.getTime()) {
+    return;
+  }
+
+  const clampedStart = new Date(Math.max(start.getTime(), rangeStart.getTime()));
+  const clampedEnd = new Date(Math.min(end.getTime(), rangeEnd.getTime()));
+  if (clampedEnd.getTime() <= clampedStart.getTime()) {
+    return;
+  }
+
+  let cursor = new Date(clampedStart);
+  cursor.setUTCMinutes(0, 0, 0);
+
+  while (cursor.getTime() < clampedEnd.getTime()) {
+    const bucketStart = cursor;
+    const bucketEnd = new Date(bucketStart.getTime() + 60 * 60 * 1000);
+    const overlapMinutes = Math.round(
+      Math.max(
+        0,
+        Math.min(clampedEnd.getTime(), bucketEnd.getTime()) -
+          Math.max(clampedStart.getTime(), bucketStart.getTime())
+      ) / 60000
+    );
+
+    if (overlapMinutes > 0) {
+      const key = formatHourBucketKey(bucketStart);
+      const point = points.get(key);
+      if (point) {
+        point[field] += overlapMinutes;
+      }
+    }
+
+    cursor = bucketEnd;
+  }
+}
+
+function addIntervalMinutesToHourlyTotals(
+  points: Map<string, number>,
+  intervalStart: Date | string,
+  intervalEnd: Date | string,
+  rangeStart: Date,
+  rangeEnd: Date
+) {
+  const start = intervalStart instanceof Date ? intervalStart : parseDate(intervalStart);
+  const end = intervalEnd instanceof Date ? intervalEnd : parseDate(intervalEnd);
+  if (!start || !end || end.getTime() <= start.getTime()) {
+    return;
+  }
+
+  const clampedStart = new Date(Math.max(start.getTime(), rangeStart.getTime()));
+  const clampedEnd = new Date(Math.min(end.getTime(), rangeEnd.getTime()));
+  if (clampedEnd.getTime() <= clampedStart.getTime()) {
+    return;
+  }
+
+  let cursor = new Date(clampedStart);
+  cursor.setUTCMinutes(0, 0, 0);
+
+  while (cursor.getTime() < clampedEnd.getTime()) {
+    const bucketStart = cursor;
+    const bucketEnd = new Date(bucketStart.getTime() + 60 * 60 * 1000);
+    const overlapMinutes = Math.round(
+      Math.max(
+        0,
+        Math.min(clampedEnd.getTime(), bucketEnd.getTime()) -
+          Math.max(clampedStart.getTime(), bucketStart.getTime())
+      ) / 60000
+    );
+
+    if (overlapMinutes > 0) {
+      const key = formatHourBucketKey(bucketStart);
+      points.set(key, (points.get(key) ?? 0) + overlapMinutes);
+    }
+
+    cursor = bucketEnd;
+  }
 }
 
 function normalizeScheduleSourceType(
@@ -1067,6 +2723,46 @@ function normalizeScheduleSourceType(
     normalized === "HABIT"
   ) {
     return normalized as ScheduleSourceType;
+  }
+  return null;
+}
+
+function normalizeScheduleSummaryType(
+  value: string | null | undefined
+): ScheduleSummaryType {
+  const normalized = normalizeScheduleSourceType(value);
+  if (!normalized) {
+    return "unknown";
+  }
+  return SCHEDULE_SOURCE_TYPE_MAP[normalized];
+}
+
+function normalizeScheduleStatus(
+  value: string | null | undefined
+): ScheduleInstanceStatus | null {
+  if (!value) return null;
+  const normalized = value.toLowerCase();
+  if (
+    normalized === "scheduled" ||
+    normalized === "completed" ||
+    normalized === "missed" ||
+    normalized === "canceled"
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
+function normalizeObservedScheduleStatus(
+  value: string | null | undefined
+): "scheduled" | "completed" | null {
+  if (!value) return null;
+  const normalized = value.toLowerCase();
+  if (normalized === "completed") {
+    return "completed";
+  }
+  if (normalized === "scheduled") {
+    return "scheduled";
   }
   return null;
 }
@@ -1098,7 +2794,7 @@ function fallbackScheduleLabel(type: ScheduleSourceType) {
     case "PROJECT":
       return "Project focus";
     case "TASK":
-      return "Task block";
+      return "Task event";
     case "HABIT":
     default:
       return "Habit session";
@@ -1131,6 +2827,224 @@ function collectCancelledScheduleInstances(
     }
   }
   return cancelled;
+}
+
+function buildScheduleSummary(
+  instances: NormalizedObservedScheduleAnalyticsRow[],
+  now: Date
+): AnalyticsScheduleSummary {
+  const byTypeMap = new Map<
+    ScheduleSummaryType,
+    AnalyticsScheduleSummary["byType"][number]
+  >(
+    ["project", "task", "habit", "unknown"].map((type) => [
+      type as ScheduleSummaryType,
+      { type: type as ScheduleSummaryType, planned: 0, completed: 0, missed: 0, minutes: 0 },
+    ])
+  );
+
+  let completedEvents = 0;
+  let scheduledEvents = 0;
+  let missedEvents = 0;
+  let completedMinutes = 0;
+  let missedMinutes = 0;
+  let pastEvents = 0;
+  let completedPastEvents = 0;
+  let upcomingScheduledEvents = 0;
+
+  for (const instance of instances) {
+    const bucket = byTypeMap.get(instance.sourceType);
+    const effectiveStatus = getEffectiveObservedSummaryStatus(instance, now);
+    if (!bucket || !effectiveStatus) {
+      continue;
+    }
+
+    const classification = classifyObservedScheduleInstance(instance, now);
+
+    if (effectiveStatus === "completed") {
+      completedEvents += 1;
+      completedMinutes += instance.durationMinutes;
+      bucket.completed += 1;
+      bucket.planned += 1;
+      bucket.minutes += instance.durationMinutes;
+      if (classification.isAssigned) {
+        if (classification.isPast) {
+          pastEvents += 1;
+          completedPastEvents += 1;
+        }
+      }
+      continue;
+    }
+
+    if (effectiveStatus === "missed") {
+      missedEvents += 1;
+      missedMinutes += instance.durationMinutes;
+      bucket.missed += 1;
+      bucket.planned += 1;
+      if (classification.isAssigned && classification.isPast) {
+        pastEvents += 1;
+      }
+      continue;
+    }
+
+    if (effectiveStatus === "scheduled") {
+      scheduledEvents += 1;
+      bucket.planned += 1;
+      if (classification.isAssigned) {
+        if (classification.isPast) {
+          pastEvents += 1;
+        } else {
+          upcomingScheduledEvents += 1;
+        }
+      }
+      continue;
+    }
+  }
+
+  const plannedEvents = completedEvents + scheduledEvents + missedEvents;
+  const assignedExecutionRate =
+    pastEvents > 0
+      ? Math.round((completedPastEvents / pastEvents) * 100)
+      : 0;
+
+  return {
+    plannedEvents,
+    completedEvents,
+    missedEvents,
+    scheduledEvents,
+    executionRate:
+      plannedEvents > 0 ? Math.round((completedEvents / plannedEvents) * 100) : 0,
+    pastEvents,
+    completedPastEvents,
+    upcomingScheduledEvents,
+    assignedExecutionRate,
+    missedRate:
+      plannedEvents > 0 ? Math.round((missedEvents / plannedEvents) * 100) : 0,
+    completedMinutes,
+    missedMinutes,
+    byType: Array.from(byTypeMap.values()),
+  };
+}
+
+function buildUnscheduledPressure(
+  instances: NormalizedScheduleInstanceRow[],
+  habits: NormalizedHabitRow[],
+  now: Date
+): AnalyticsUnscheduledPressure {
+  const habitNameById = new Map(habits.map((habit) => [habit.id, habit.name]));
+  const pressureHabits = new Map<
+    string,
+    { id: string; name: string; durationMinutes: number }
+  >();
+  let blocks = 0;
+  let minutes = 0;
+
+  for (const instance of instances) {
+    if (instance.status !== "missed") {
+      continue;
+    }
+    const classification = classifyScheduleInstance(instance, now);
+    if (
+      classification.isAssigned ||
+      instance.scheduleSourceType !== "HABIT" ||
+      !instance.sourceId
+    ) {
+      continue;
+    }
+
+    blocks += 1;
+    minutes += instance.durationMinutes;
+
+    const existing = pressureHabits.get(instance.sourceId);
+    if (existing) {
+      existing.durationMinutes += instance.durationMinutes;
+      continue;
+    }
+
+    pressureHabits.set(instance.sourceId, {
+      id: instance.sourceId,
+      name: habitNameById.get(instance.sourceId) ?? "Untitled habit",
+      durationMinutes: instance.durationMinutes,
+    });
+  }
+
+  return {
+    blocks,
+    minutes,
+    habits: Array.from(pressureHabits.values()).sort(
+      (a, b) => b.durationMinutes - a.durationMinutes || a.name.localeCompare(b.name)
+    ),
+  };
+}
+
+function buildTodaySummary(
+  instances: NormalizedObservedScheduleAnalyticsRow[],
+  now: Date,
+  dayStart: Date,
+  dayEnd: Date
+): AnalyticsTodaySummary {
+  const byTypeMap = new Map<TodaySummaryType, AnalyticsTodaySummary["byType"][number]>(
+    ["project", "task", "habit", "unknown"].map((type) => [
+      type as TodaySummaryType,
+      {
+        type: type as TodaySummaryType,
+        planned: 0,
+        completed: 0,
+        missed: 0,
+        scheduled: 0,
+      },
+    ])
+  );
+
+  let completedEvents = 0;
+  let scheduledEvents = 0;
+  let missedEvents = 0;
+  let completedMinutes = 0;
+
+  for (const instance of instances) {
+    const bucket = byTypeMap.get(instance.sourceType);
+    const effectiveStatus = getEffectiveObservedSummaryStatus(instance, now);
+    if (!bucket || !effectiveStatus) {
+      continue;
+    }
+
+    if (effectiveStatus === "completed") {
+      completedEvents += 1;
+      completedMinutes += instance.durationMinutes;
+      bucket.completed += 1;
+      bucket.planned += 1;
+      continue;
+    }
+
+    if (effectiveStatus === "missed") {
+      missedEvents += 1;
+      bucket.missed += 1;
+      bucket.planned += 1;
+      continue;
+    }
+
+    if (effectiveStatus === "scheduled") {
+      scheduledEvents += 1;
+      bucket.scheduled += 1;
+      bucket.planned += 1;
+    }
+  }
+
+  const plannedEvents = completedEvents + scheduledEvents + missedEvents;
+
+  return {
+    dayStartUtc: dayStart.toISOString(),
+    dayEndUtc: dayEnd.toISOString(),
+    plannedEvents,
+    completedEvents,
+    missedEvents,
+    scheduledEvents,
+    executionRate:
+      plannedEvents > 0 ? Math.round((completedEvents / plannedEvents) * 100) : 0,
+    completedMinutes,
+    remainingScheduledEvents: scheduledEvents,
+    byType: Array.from(byTypeMap.values()),
+  };
 }
 
 function splitByPeriod<T>(
@@ -1279,6 +3193,313 @@ function buildEnergyBreakdown(windows: Array<{ energy?: string | null }>) {
     label,
     value,
   }));
+}
+
+async function buildTimeBlockPerformanceSummary({
+  client,
+  userId,
+  instances,
+  now,
+}: {
+  client: SupabaseClient<Database>;
+  userId: string;
+  instances: NormalizedObservedScheduleAnalyticsRow[];
+  now: Date;
+}): Promise<AnalyticsTimeBlockPerformance[]> {
+  const relevantInstances = instances.filter(
+    (instance) =>
+      Boolean(
+        instance.timeBlockId || instance.dayTypeTimeBlockId || instance.windowId
+      ) &&
+      getEffectiveObservedSummaryStatus(instance, now) !== null
+  );
+
+  if (relevantInstances.length === 0) {
+    return [];
+  }
+
+  const timeBlockIds = Array.from(
+    new Set(
+      relevantInstances
+        .map((instance) => instance.timeBlockId)
+        .filter((id): id is string => typeof id === "string")
+    )
+  );
+  const dayTypeTimeBlockIds = Array.from(
+    new Set(
+      relevantInstances
+        .map((instance) => instance.dayTypeTimeBlockId)
+        .filter((id): id is string => typeof id === "string")
+    )
+  );
+  const windowIds = Array.from(
+    new Set(
+      relevantInstances
+        .map((instance) => instance.windowId)
+        .filter((id): id is string => typeof id === "string")
+    )
+  );
+
+  const [timeBlocksRes, dayTypeTimeBlocksRes, windowsRes] = await Promise.all([
+    timeBlockIds.length > 0
+      ? client
+          .from("time_blocks")
+          .select("id, label, start_local, end_local")
+          .eq("user_id", userId)
+          .in("id", timeBlockIds)
+      : Promise.resolve({ data: [], error: null }),
+    dayTypeTimeBlockIds.length > 0
+      ? client
+          .from("day_type_time_blocks")
+          .select(
+            "id, time_block_id, time_blocks(label, start_local, end_local)"
+          )
+          .eq("user_id", userId)
+          .in("id", dayTypeTimeBlockIds)
+      : Promise.resolve({ data: [], error: null }),
+    windowIds.length > 0
+      ? client
+          .from("windows")
+          .select("id, label")
+          .eq("user_id", userId)
+          .in("id", windowIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const lookupError =
+    timeBlocksRes.error || dayTypeTimeBlocksRes.error || windowsRes.error;
+  if (lookupError) {
+    throw lookupError;
+  }
+
+  const timeBlockMetaById = new Map<
+    string,
+    { label: string | null; startLocal: string | null; endLocal: string | null }
+  >();
+  for (const row of (timeBlocksRes.data ?? []) as TimeBlockLabelRow[]) {
+    if (row.id) {
+      timeBlockMetaById.set(row.id, {
+        label: normalizeText(row.label),
+        startLocal: normalizeTimeValue(row.start_local),
+        endLocal: normalizeTimeValue(row.end_local),
+      });
+    }
+  }
+
+  const dayTypeTimeBlockMetaById = new Map<
+    string,
+    {
+      timeBlockId: string | null;
+      label: string | null;
+      startLocal: string | null;
+      endLocal: string | null;
+    }
+  >();
+  for (const row of (dayTypeTimeBlocksRes.data ?? []) as DayTypeTimeBlockLabelRow[]) {
+    if (!row.id) {
+      continue;
+    }
+    dayTypeTimeBlockMetaById.set(row.id, {
+      timeBlockId:
+        typeof row.time_block_id === "string" && row.time_block_id.length > 0
+          ? row.time_block_id
+          : null,
+      label: normalizeText(row.time_blocks?.label),
+      startLocal: normalizeTimeValue(row.time_blocks?.start_local),
+      endLocal: normalizeTimeValue(row.time_blocks?.end_local),
+    });
+  }
+
+  const windowLabelById = new Map<string, string>();
+  for (const row of (windowsRes.data ?? []) as WindowLabelRow[]) {
+    const label = normalizeText(row.label);
+    if (row.id && label) {
+      windowLabelById.set(row.id, label);
+    }
+  }
+
+  const groups = new Map<string, AnalyticsTimeBlockPerformance>();
+
+  for (const instance of relevantInstances) {
+    const directTimeBlockMeta = instance.timeBlockId
+      ? timeBlockMetaById.get(instance.timeBlockId) ?? null
+      : null;
+    const dayTypeTimeBlockMeta = instance.dayTypeTimeBlockId
+      ? dayTypeTimeBlockMetaById.get(instance.dayTypeTimeBlockId) ?? null
+      : null;
+    const dayTypeTimeBlockLabel =
+      dayTypeTimeBlockMeta?.label ??
+      (dayTypeTimeBlockMeta?.timeBlockId
+        ? timeBlockMetaById.get(dayTypeTimeBlockMeta.timeBlockId)?.label ?? null
+        : null);
+    const windowLabel = instance.windowId
+      ? windowLabelById.get(instance.windowId) ?? null
+      : null;
+    const resolvedTimeBlockId =
+      instance.timeBlockId ?? dayTypeTimeBlockMeta?.timeBlockId ?? null;
+    const joinedTimeBlockMeta =
+      dayTypeTimeBlockMeta?.timeBlockId != null
+        ? timeBlockMetaById.get(dayTypeTimeBlockMeta.timeBlockId) ?? null
+        : null;
+    const resolvedStartLocal =
+      directTimeBlockMeta?.startLocal ??
+      dayTypeTimeBlockMeta?.startLocal ??
+      joinedTimeBlockMeta?.startLocal ??
+      null;
+    const resolvedEndLocal =
+      directTimeBlockMeta?.endLocal ??
+      dayTypeTimeBlockMeta?.endLocal ??
+      joinedTimeBlockMeta?.endLocal ??
+      null;
+    const resolvedLabel =
+      directTimeBlockMeta?.label ??
+      dayTypeTimeBlockLabel ??
+      windowLabel ??
+      "Unnamed Time Block";
+    const resolvedId =
+      resolvedTimeBlockId != null
+        ? `time_block:${resolvedTimeBlockId}`
+        : instance.windowId != null
+          ? `window:${instance.windowId}`
+          : instance.dayTypeTimeBlockId != null
+            ? `day_type_time_block:${instance.dayTypeTimeBlockId}`
+            : `time_block:${resolvedLabel.toLowerCase()}`;
+
+    const group = groups.get(resolvedId) ?? {
+      id: resolvedId,
+      label: resolvedLabel,
+      startLocal: resolvedStartLocal,
+      endLocal: resolvedEndLocal,
+      plannedEvents: 0,
+      completedEvents: 0,
+      scheduledEvents: 0,
+      missedEvents: 0,
+      completionRate: 0,
+      missedRate: 0,
+      totalMinutes: 0,
+      completedMinutes: 0,
+    };
+
+    const effectiveStatus = getEffectiveObservedSummaryStatus(instance, now);
+    if (!effectiveStatus) {
+      continue;
+    }
+
+    group.plannedEvents += 1;
+    group.totalMinutes += instance.durationMinutes;
+
+    if (effectiveStatus === "completed") {
+      group.completedEvents += 1;
+      group.completedMinutes += instance.durationMinutes;
+    } else if (effectiveStatus === "missed") {
+      group.missedEvents += 1;
+    } else if (effectiveStatus === "scheduled") {
+      group.scheduledEvents += 1;
+    }
+
+    groups.set(resolvedId, group);
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      completionRate:
+        group.plannedEvents > 0
+          ? Math.round((group.completedEvents / group.plannedEvents) * 100)
+          : 0,
+      missedRate:
+        group.plannedEvents > 0
+          ? Math.round((group.missedEvents / group.plannedEvents) * 100)
+          : 0,
+    }))
+    .sort((a, b) => {
+      const startCompare = compareLocalTimes(a.startLocal, b.startLocal);
+      if (startCompare !== 0) {
+        return startCompare;
+      }
+      return a.label.localeCompare(b.label);
+    });
+}
+
+function normalizeTimeValue(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function compareLocalTimes(a: string | null, b: string | null) {
+  if (a == null && b == null) {
+    return 0;
+  }
+  if (a == null) {
+    return 1;
+  }
+  if (b == null) {
+    return -1;
+  }
+  return a.localeCompare(b);
+}
+
+function classifyScheduleInstance(
+  instance: NormalizedScheduleInstanceRow,
+  now: Date
+) {
+  const isAssigned = Boolean(
+    instance.timeBlockId || instance.dayTypeTimeBlockId || instance.windowId
+  );
+  const end = parseDate(instance.endUtc);
+  const isPast = end ? end.getTime() < now.getTime() : false;
+
+  return {
+    isAssigned,
+    isPast,
+    isFutureOrCurrent: !isPast,
+  };
+}
+
+function classifyObservedScheduleInstance(
+  instance: Pick<
+    NormalizedObservedScheduleAnalyticsRow,
+    "endUtc" | "timeBlockId" | "dayTypeTimeBlockId" | "windowId"
+  >,
+  now: Date
+) {
+  const isAssigned = Boolean(
+    instance.timeBlockId || instance.dayTypeTimeBlockId || instance.windowId
+  );
+  const end = parseDate(instance.endUtc);
+  const isPast = end ? end.getTime() < now.getTime() : false;
+
+  return {
+    isAssigned,
+    isPast,
+    isFutureOrCurrent: !isPast,
+  };
+}
+
+function getEffectiveObservedSummaryStatus(
+  instance: NormalizedObservedScheduleAnalyticsRow,
+  now: Date
+): "completed" | "scheduled" | "missed" | null {
+  if (instance.status === "completed") {
+    return "completed";
+  }
+
+  if (instance.status !== "scheduled") {
+    return null;
+  }
+
+  const end = parseDate(instance.endUtc);
+  const start = parseDate(instance.startUtc);
+  const comparisonDate = end ?? start;
+
+  if (comparisonDate && comparisonDate.getTime() < now.getTime()) {
+    return "missed";
+  }
+
+  return "scheduled";
 }
 
 function buildActivityFeed(input: {

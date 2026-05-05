@@ -1,46 +1,30 @@
 "use client";
 
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
-  TrendingUp,
-  CheckSquare,
-  FolderKanban,
-  BatteryCharging,
-  Clock,
-  Flame,
-  ArrowLeft,
-  Bookmark,
-  PenLine,
-  Share2,
-  Sparkles,
-} from "lucide-react";
-import { CircularProgress } from "@/components/visuals/CircularProgress";
-import { Ticker } from "@/components/ui/Ticker";
-import { SkillMasterySection } from "@/app/analytics/_sections/SkillMasterySection";
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useRouter } from "next/navigation";
+import { CheckSquare, FolderKanban, Flame, ArrowLeft } from "lucide-react";
 import type {
+  AnalyticsOverviewDailyPoint,
+  AnalyticsOverviewEfficiencyDebug,
+  AnalyticsRange,
   AnalyticsResponse,
-  AnalyticsKpiId,
   AnalyticsHabitSummary,
   AnalyticsHabitRoutine,
   AnalyticsHabitPerformance,
   AnalyticsHabitStreakPoint,
   AnalyticsHabitWeeklyReflection,
   AnalyticsScheduleCompletion,
+  AnalyticsTimeBlockPerformance,
+  AnalyticsView,
 } from "@/types/analytics";
-
-const KPI_ICON_MAP: Record<
-  AnalyticsKpiId,
-  ComponentType<{ className?: string }>
-> = {
-  skill_xp: TrendingUp,
-  tasks: CheckSquare,
-  projects: FolderKanban,
-  monuments: BatteryCharging,
-  windows: Clock,
-  habits: Flame,
-};
 
 const SCHEDULE_ICON_MAP: Record<
   AnalyticsScheduleCompletion["type"],
@@ -64,15 +48,6 @@ function classNames(
   ...classes: (string | boolean | null | undefined)[]
 ): string {
   return classes.filter(Boolean).join(" ");
-}
-
-function formatNumber(num: number): string {
-  return new Intl.NumberFormat().format(num);
-}
-
-function formatDelta(delta: number): string {
-  const sign = delta > 0 ? "+" : "";
-  return `${sign}${delta}`;
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -203,9 +178,9 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
 
   const weeklyReflections = Array.isArray(record.weeklyReflections)
     ? record.weeklyReflections
-        .map((item, index) => {
+        .reduce<AnalyticsHabitWeeklyReflection[]>((acc, item, index) => {
           if (!item || typeof item !== "object") {
-            return null;
+            return acc;
           }
 
           const reflection = item as Record<string, unknown>;
@@ -221,7 +196,9 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
             ? Math.max(0, Math.round(reflection.streak))
             : 0;
           const bestDay =
-            typeof reflection.bestDay === "string" ? reflection.bestDay : "—";
+            typeof reflection.bestDay === "string"
+              ? reflection.bestDay
+              : "N/A";
           const lesson =
             typeof reflection.lesson === "string"
               ? reflection.lesson
@@ -233,7 +210,7 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
               ? reflection.recommendation
               : undefined;
 
-          return {
+          acc.push({
             id,
             weekLabel,
             streak,
@@ -241,11 +218,9 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
             lesson,
             pinned,
             recommendation,
-          } satisfies AnalyticsHabitWeeklyReflection;
-        })
-        .filter(
-          (entry): entry is AnalyticsHabitWeeklyReflection => entry !== null
-        )
+          } satisfies AnalyticsHabitWeeklyReflection);
+          return acc;
+        }, [])
     : base.weeklyReflections;
 
   return {
@@ -261,14 +236,6 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
   };
 }
 
-interface Skill {
-  id: string;
-  name: string;
-  level: number;
-  progress: number; // 0-100
-  xpGained: number;
-}
-
 interface Project {
   id: string;
   title: string;
@@ -277,65 +244,87 @@ interface Project {
   tasksTotal: number;
 }
 
-interface Monument {
-  id: string;
-  title: string;
-  progress: number;
-  goalCount: number;
+const ANALYTICS_TABS: Array<{ id: AnalyticsView; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "execution", label: "Execution" },
+  { id: "schedule", label: "Schedule" },
+  { id: "identity", label: "Identity" },
+  { id: "habits", label: "Habits" },
+  { id: "system-health", label: "System Health" },
+];
+
+const OVERVIEW_RANGE_OPTIONS: Array<{ value: AnalyticsRange; label: string }> = [
+  { value: "1d", label: "24H" },
+  { value: "7d", label: "7D" },
+  { value: "30d", label: "30D" },
+  { value: "90d", label: "90D" },
+];
+
+async function fetchAnalyticsRange(
+  range: AnalyticsRange,
+  signal: AbortSignal
+): Promise<AnalyticsResponse> {
+  const response = await fetch(`/api/analytics?range=${range}`, {
+    credentials: "include",
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(response.status === 401 ? "unauthorized" : "fetch_failed");
+  }
+
+  return (await response.json()) as AnalyticsResponse;
 }
 
-interface ActivityEvent {
-  id: string;
-  label: string;
-  date: string;
-}
-
-export default function AnalyticsDashboard() {
-  const [dateRange, setDateRange] = useState<"7d" | "30d" | "90d" | "custom">(
-    "30d"
-  );
-  const [skillsView, setSkillsView] = useState<"grid" | "list">("grid");
+export default function AnalyticsDashboard({
+  activeView,
+  onViewChange,
+}: {
+  activeView: AnalyticsView;
+  onViewChange: (view: AnalyticsView) => void;
+}) {
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [overviewRange, setOverviewRange] = useState<AnalyticsRange>("30d");
+  const [overviewAnalytics, setOverviewAnalytics] =
+    useState<AnalyticsResponse | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [overviewRefreshing, setOverviewRefreshing] = useState(false);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [overviewCache, setOverviewCache] = useState<
+    Partial<Record<AnalyticsRange, AnalyticsResponse>>
+  >({});
+  const previousViewRef = useRef<AnalyticsView>(activeView);
+  const overviewRequestIdRef = useRef(0);
+  const overviewAbortRef = useRef<AbortController | null>(null);
+  const [slideDirection, setSlideDirection] = useState(1);
+  const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
     const load = async () => {
-      const rangeParam = dateRange === "custom" ? "30d" : dateRange;
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/analytics?range=${rangeParam}`, {
-          credentials: "include",
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          const message =
-            response.status === 401
-              ? "Sign in to view analytics."
-              : "Unable to load analytics data.";
-          if (!cancelled) {
-            setAnalytics(null);
-            setError(message);
-          }
-          return;
-        }
-        const payload = (await response.json()) as AnalyticsResponse;
+        const payload = await fetchAnalyticsRange("30d", controller.signal);
         if (!cancelled) {
           setAnalytics(payload);
-          setLastUpdated(payload.generatedAt);
+          setOverviewCache((current) => ({ ...current, "30d": payload }));
         }
       } catch (err) {
         if (cancelled) return;
         if (err instanceof DOMException && err.name === "AbortError") {
           return;
         }
+        const message =
+          err instanceof Error && err.message === "unauthorized"
+            ? "Sign in to view analytics."
+            : "Unable to load analytics data.";
         console.error("Failed to load analytics data", err);
         setAnalytics(null);
-        setError("Unable to load analytics data.");
+        setError(message);
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -349,505 +338,402 @@ export default function AnalyticsDashboard() {
       cancelled = true;
       controller.abort();
     };
-  }, [dateRange]);
+  }, []);
 
-  const kpis = (analytics?.kpis ?? []).map((kpi) => ({
-    ...kpi,
-    icon: KPI_ICON_MAP[kpi.id],
-  }));
-  const skills = analytics?.skills ?? [];
+  useEffect(() => {
+    const sharedThirtyDayAnalytics = overviewRange === "30d" ? analytics : null;
+    const cachedAnalytics = overviewCache[overviewRange] ?? null;
+    const nextAnalytics = sharedThirtyDayAnalytics ?? cachedAnalytics;
+    const hasVisibleOverviewData = overviewAnalytics !== null;
+
+    if (nextAnalytics) {
+      setOverviewAnalytics(nextAnalytics);
+      setOverviewError(null);
+      setOverviewLoading(false);
+      setOverviewRefreshing(false);
+      return;
+    }
+
+    if (overviewRange === "30d" && loading && !analytics) {
+      setOverviewLoading(true);
+      setOverviewRefreshing(false);
+      return;
+    }
+
+    overviewAbortRef.current?.abort();
+    const controller = new AbortController();
+    overviewAbortRef.current = controller;
+    const requestId = overviewRequestIdRef.current + 1;
+    overviewRequestIdRef.current = requestId;
+
+    setOverviewError(null);
+    setOverviewLoading(!hasVisibleOverviewData);
+    setOverviewRefreshing(hasVisibleOverviewData);
+
+    const load = async () => {
+      try {
+        const payload = await fetchAnalyticsRange(overviewRange, controller.signal);
+        if (
+          controller.signal.aborted ||
+          overviewRequestIdRef.current !== requestId
+        ) {
+          return;
+        }
+
+        setOverviewCache((current) => ({ ...current, [overviewRange]: payload }));
+        setOverviewAnalytics(payload);
+        setOverviewError(null);
+      } catch (err) {
+        if (
+          controller.signal.aborted ||
+          (err instanceof DOMException && err.name === "AbortError")
+        ) {
+          return;
+        }
+
+        console.error("Failed to load overview analytics data", err);
+        setOverviewError(
+          err instanceof Error && err.message === "unauthorized"
+            ? "Sign in to view analytics."
+            : hasVisibleOverviewData
+              ? "Unable to update analytics."
+              : "Unable to load analytics data."
+        );
+      } finally {
+        if (overviewRequestIdRef.current === requestId) {
+          setOverviewLoading(false);
+          setOverviewRefreshing(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      controller.abort();
+      if (overviewAbortRef.current === controller) {
+        overviewAbortRef.current = null;
+      }
+    };
+  }, [overviewRange, analytics, loading, overviewAnalytics, overviewCache]);
+
+  useEffect(() => {
+    const previousIndex = ANALYTICS_TABS.findIndex(
+      (tab) => tab.id === previousViewRef.current
+    );
+    const nextIndex = ANALYTICS_TABS.findIndex((tab) => tab.id === activeView);
+
+    if (previousIndex !== -1 && nextIndex !== -1 && previousIndex !== nextIndex) {
+      setSlideDirection(nextIndex > previousIndex ? 1 : -1);
+    }
+
+    previousViewRef.current = activeView;
+  }, [activeView]);
+
   const projects = analytics?.projects ?? [];
-  const monuments = analytics?.monuments ?? [];
-  const windows = analytics?.windows ?? { heatmap: [], energy: [] };
-  const activity = analytics?.activity ?? [];
-  const projectVelocity = analytics?.projectVelocity ?? [];
   const habitSummary = normalizeHabitSummary(analytics?.habit);
   const recentSchedules = analytics?.recentSchedules ?? [];
-
-  const bestSkill =
-    skills.length > 0
-      ? skills.reduce((prev, curr) =>
-          curr.progress > prev.progress ? curr : prev
-        )
-      : null;
-  const leadProject =
-    projects.length > 0
-      ? projects.reduce((prev, curr) =>
-          curr.progress > prev.progress ? curr : prev
-        )
-      : null;
-  const strongestKpi =
-    kpis.length > 0
-      ? kpis.reduce((prev, curr) =>
-          Math.abs(curr.delta) > Math.abs(prev.delta) ? curr : prev
-        )
-      : null;
-  const totalEnergy = windows.energy.reduce(
-    (sum, entry) => sum + (entry.value ?? 0),
-    0
-  );
-  const dominantEnergy =
-    windows.energy.length > 0
-      ? windows.energy.reduce((prev, curr) =>
-          curr.value > prev.value ? curr : prev
-        )
-      : null;
-  const dominantEnergyShare =
-    dominantEnergy && totalEnergy > 0
-      ? Math.round((dominantEnergy.value / totalEnergy) * 100)
-      : 0;
+  const scheduleSummary = analytics?.scheduleSummary;
+  const timeBlockPerformance = analytics?.timeBlockPerformance ?? [];
+  const overviewTrend = overviewAnalytics?.overviewDaily ?? [];
+  const hasOverviewData = overviewAnalytics !== null;
 
   const longestStreak = habitSummary.longestStreak;
   const currentStreak = habitSummary.currentStreak;
   const routineTrends = habitSummary.routines;
   const streakHistory = habitSummary.streakHistory;
-  const bestTimes = habitSummary.bestTimes;
-  const bestDays = habitSummary.bestDays;
-  const weeklyReflections = habitSummary.weeklyReflections;
+  const activeTabLabel =
+    ANALYTICS_TABS.find((tab) => tab.id === activeView)?.label ?? "Analytics";
 
-  const focusInsights = [
-    {
-      id: "skill",
-      title: "Momentum skill",
-      metric: bestSkill?.name ?? "—",
-      helper:
-        bestSkill != null
-          ? `${bestSkill.progress}% toward next level`
-          : "Track progress as you add skills",
-    },
-    {
-      id: "project",
-      title: "Lead project",
-      metric: leadProject?.title ?? "—",
-      helper:
-        leadProject != null
-          ? `${leadProject.tasksDone}/${leadProject.tasksTotal} tasks complete`
-          : "Kick off a project to see insights",
-    },
-    {
-      id: "energy",
-      title: "Dominant energy",
-      metric: dominantEnergy?.label ?? "—",
-      helper:
-        dominantEnergy != null
-          ? `${dominantEnergyShare}% of focus windows`
-          : "Log windows to unlock energy data",
-    },
-    {
-      id: "growth",
-      title: "Biggest delta",
-      metric: strongestKpi?.label ?? "—",
-      helper:
-        strongestKpi != null
-          ? `${formatDelta(strongestKpi.delta)} vs last period`
-          : "No KPIs yet",
-    },
-  ];
-  return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-[#050505] via-[#080808] to-[#050505] text-[#E6E6EB]">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-[-40%] h-[520px] bg-[radial-gradient(circle_at_top,rgba(248,113,113,0.35),transparent_65%)] blur-3xl"
-      />
-      <div className="relative mx-auto max-w-7xl space-y-10 px-4 pb-16 pt-10 sm:px-6 lg:px-8">
-        <Header
-          dateRange={dateRange}
-          onRangeChange={setDateRange}
-          lastUpdated={lastUpdated ?? undefined}
-        />
+  let activeContent: ReactNode = null;
 
+  if (activeView === "overview") {
+    activeContent = (
+      <div className="space-y-4 xl:space-y-5">
         <SectionCard
-          title="Focus insights"
-          description="Quick cues for where to lean in next."
-          className="scroll-mt-8"
-          id="planning"
+          className="rounded-[22px]"
+        >
+          {!hasOverviewData && overviewLoading ? (
+            <Skeleton className="h-64" />
+          ) : !hasOverviewData && overviewError ? (
+            <ErrorState message={overviewError} />
+          ) : overviewTrend.length === 0 ? (
+            <div
+              className={classNames(
+                "transition-opacity duration-200",
+                overviewRefreshing && "opacity-80"
+              )}
+            >
+              <OverviewPanelStatus
+                isRefreshing={overviewRefreshing}
+                message={overviewError}
+              />
+              <EmptyCopy copy="No execution trend data in this range yet." />
+            </div>
+          ) : (
+            <OverviewDiagnosticsSection
+              points={overviewTrend}
+              efficiencyDebug={overviewAnalytics?.overviewEfficiencyDebug}
+              range={overviewAnalytics?.range ?? overviewRange}
+              selectedRange={overviewRange}
+              onRangeChange={setOverviewRange}
+              isRefreshing={overviewRefreshing}
+              statusMessage={overviewError}
+            />
+          )}
+        </SectionCard>
+      </div>
+    );
+  } else if (activeView === "execution") {
+    activeContent = (
+      <div className="space-y-4 xl:space-y-6">
+        <SectionCard
+          title="Recently completed"
+          description="Latest completed events."
         >
           {loading ? (
-            <Skeleton className="h-48" />
+            <Skeleton className="h-40" />
+          ) : error ? (
+            <ErrorState message={error} />
+          ) : recentSchedules.length === 0 ? (
+            <EmptyCopy copy="No completed events in this range." />
+          ) : (
+            <RecentScheduleShowcase items={recentSchedules} />
+          )}
+        </SectionCard>
+      </div>
+    );
+  } else if (activeView === "schedule") {
+    activeContent = (
+      <div className="grid gap-4 xl:grid-cols-[1fr_1fr] xl:gap-6">
+        <SectionCard
+          title="Event status"
+          description="Observed scheduled events in the selected range."
+        >
+          {loading ? (
+            <Skeleton className="h-44" />
           ) : error ? (
             <ErrorState message={error} />
           ) : (
-            <div className="relative overflow-hidden">
-              <div className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[#050505] via-[#050505]/60 to-transparent" />
-              <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[#050505] via-[#050505]/60 to-transparent" />
-              <Ticker
-                items={focusInsights}
-                speed={60}
-                trackClassName="flex flex-nowrap gap-4 pb-2 will-change-transform"
-                renderItem={(insight, index) => (
-                  <div
-                    key={`${insight.id}-${index}`}
-                    className="min-w-[240px] shrink-0 rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)]"
-                  >
-                    <span className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-                      {insight.title}
-                    </span>
-                    <div className="mt-2 text-lg font-semibold text-white">
-                      {insight.metric}
-                    </div>
-                    <p className="mt-1 text-sm text-[#99A4BD]">
-                      {insight.helper}
-                    </p>
-                  </div>
-                )}
-              />
+            <div className="space-y-4">
+              <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                <StatTile
+                  label="Planned events"
+                  value={`${scheduleSummary?.plannedEvents ?? 0}`}
+                />
+                <StatTile
+                  label="Completed events"
+                  value={`${scheduleSummary?.completedEvents ?? 0}`}
+                />
+                <StatTile
+                  label="Scheduled events"
+                  value={`${scheduleSummary?.scheduledEvents ?? 0}`}
+                />
+                <StatTile
+                  label="Missed events"
+                  value={`${scheduleSummary?.missedEvents ?? 0}`}
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <StatTile
+                  label="Projects"
+                  value={`${
+                    scheduleSummary?.byType.find((entry) => entry.type === "project")
+                      ?.planned ?? 0
+                  }`}
+                />
+                <StatTile
+                  label="Tasks"
+                  value={`${
+                    scheduleSummary?.byType.find((entry) => entry.type === "task")
+                      ?.planned ?? 0
+                  }`}
+                />
+                <StatTile
+                  label="Habits"
+                  value={`${
+                    scheduleSummary?.byType.find((entry) => entry.type === "habit")
+                      ?.planned ?? 0
+                  }`}
+                />
+              </div>
             </div>
           )}
         </SectionCard>
 
-        <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
-          <div className="space-y-6">
-            <SkillMasterySection
-              skills={skills}
-              loading={loading}
-              error={error}
-              defaultExpanded={false}
-            />
+        <SectionCard
+          title="Time Block performance"
+          description="How scheduled events are performing inside each Time Block."
+        >
+          {loading ? (
+            <Skeleton className="h-44" />
+          ) : error ? (
+            <ErrorState message={error} />
+          ) : timeBlockPerformance.length === 0 ? (
+            <EmptyCopy copy="No Time Block event data in this range yet." />
+          ) : (
+            <TimeBlockPerformanceList items={timeBlockPerformance} />
+          )}
+        </SectionCard>
+      </div>
+    );
+  } else if (activeView === "identity") {
+    activeContent = (
+      <div className="space-y-4 xl:space-y-6">
+        <SectionCard
+          title="Projects"
+          description="Projects currently contributing to identity progress."
+        >
+          {loading ? (
+            <Skeleton className="h-40" />
+          ) : error ? (
+            <ErrorState message={error} />
+          ) : projects.length === 0 ? (
+            <EmptyCopy copy="No project identity data in this range." />
+          ) : (
+            <div className="space-y-3">
+              {projects.map((project) => (
+                <ProjectCard key={project.id} project={project} />
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+    );
+  } else if (activeView === "habits") {
+    activeContent = (
+      <div className="space-y-4 xl:space-y-6">
+        <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr] xl:gap-6">
+          <DailyConsistencyCard summary={habitSummary} />
+          <StreakTrendCard
+            currentStreak={currentStreak}
+            longestStreak={longestStreak}
+            history={streakHistory}
+          />
+        </div>
 
-            <SectionCard
-              title="Recently completed"
-              description="A snapshot of the latest schedule blocks you crossed off."
+        <SectionCard
+          title="Routine heatmaps"
+          description="Consistency patterns by routine."
+        >
+          {loading ? (
+            <Skeleton className="h-40" />
+          ) : error ? (
+            <ErrorState message={error} />
+          ) : (
+            <RoutineHeatmap routines={routineTrends} />
+          )}
+        </SectionCard>
+      </div>
+    );
+  } else if (activeView === "system-health") {
+    activeContent = (
+      <SectionCard
+        title="System health"
+        description="This section is being rebuilt from trustworthy analytics data."
+      >
+        <DataNotice copy="System health analytics are being rebuilt from trustworthy analytics data." />
+      </SectionCard>
+    );
+  }
+
+  return (
+    <div className="relative overflow-hidden text-[#E6E6EB]">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-[-35%] h-[420px] bg-[radial-gradient(circle_at_top,rgba(120,120,120,0.18),transparent_68%)] blur-3xl"
+      />
+      <div className="relative mx-auto max-w-7xl space-y-4 pb-6 sm:space-y-8 sm:pb-8">
+        <Header activeView={activeView} onViewChange={onViewChange} />
+        <section
+          aria-label={`${activeTabLabel} analytics`}
+          className="relative overflow-hidden rounded-[20px] border border-zinc-900/80 bg-zinc-950/35 p-0.5 min-[480px]:p-1.5 sm:rounded-[26px]"
+        >
+          <AnimatePresence custom={slideDirection} initial={false} mode="wait">
+            <motion.div
+              key={activeView}
+              custom={slideDirection}
+              initial={
+                prefersReducedMotion ? { opacity: 1 } : { opacity: 0, x: slideDirection * 24 }
+              }
+              animate={{ opacity: 1, x: 0 }}
+              exit={
+                prefersReducedMotion
+                  ? { opacity: 1 }
+                  : { opacity: 0, x: slideDirection * -24 }
+              }
+              transition={
+                prefersReducedMotion
+                  ? { duration: 0 }
+                  : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }
+              }
+              className="motion-reduce:transform-none"
             >
-              {loading ? (
-                <Skeleton className="h-56" />
-              ) : error ? (
-                <ErrorState message={error} />
-              ) : recentSchedules.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
-                  Wrap a scheduled task, project, or habit to see it showcased
-                  here.
-                </div>
-              ) : (
-                <RecentScheduleShowcase items={recentSchedules} />
-              )}
-            </SectionCard>
-          </div>
-
-          <SectionCard
-            title="Habits & streaks"
-            description="Consistency builds momentum across your routines."
-          >
-            {loading ? (
-              <Skeleton className="h-56" />
-            ) : error ? (
-              <ErrorState message={error} />
-            ) : (
-              <div className="space-y-6">
-                <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-                  <DailyConsistencyCard summary={habitSummary} />
-                  <StreakTrendCard
-                    currentStreak={currentStreak}
-                    longestStreak={longestStreak}
-                    history={streakHistory}
-                  />
-                </div>
-                <div className="rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 sm:p-5">
-                  <RoutineHeatmap routines={routineTrends} />
-                </div>
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <BestPerformanceList
-                    title="Best time slots"
-                    emptyLabel="Log routines to surface timing insights."
-                    data={bestTimes}
-                  />
-                  <BestPerformanceList
-                    title="Most consistent days"
-                    emptyLabel="Add more entries to reveal pattern days."
-                    data={bestDays}
-                  />
-                </div>
-                <div className="rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 sm:p-5">
-                  <WeeklyReflectionPanel reflections={weeklyReflections} />
-                </div>
-                <div className="flex justify-end">
-                  <Link
-                    href="#"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
-                  >
-                    Review rituals<span aria-hidden="true">→</span>
-                  </Link>
-                </div>
-              </div>
-            )}
-          </SectionCard>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
-          <SectionCard
-            title="Project delivery"
-            description="Ship work by keeping throughput steady across weeks."
-          >
-            {loading ? (
-              <Skeleton className="h-56" />
-            ) : error ? (
-              <ErrorState message={error} />
-            ) : (
-              <div className="space-y-6">
-                <BarChart data={projectVelocity} />
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {projects.map((p) => (
-                    <ProjectCard key={p.id} project={p} />
-                  ))}
-                </div>
-                <div className="flex justify-end">
-                  <Link
-                    href="/projects"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
-                  >
-                    Open projects<span aria-hidden="true">→</span>
-                  </Link>
-                </div>
-              </div>
-            )}
-          </SectionCard>
-
-          <SectionCard
-            title="Monument progress"
-            description="Big-picture milestones that anchor your goals."
-          >
-            {loading ? (
-              <Skeleton className="h-56" />
-            ) : error ? (
-              <ErrorState message={error} />
-            ) : monuments.length === 0 ? (
-              <EmptyState title="No monuments yet" cta="Add Monument" />
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {monuments.map((m) => (
-                  <MonumentCard key={m.id} monument={m} />
-                ))}
-              </div>
-            )}
-          </SectionCard>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
-          <SectionCard
-            title="Window energy mix"
-            description="Where you’re investing your scheduled focus time."
-          >
-            {loading ? (
-              <Skeleton className="h-56" />
-            ) : error ? (
-              <ErrorState message={error} />
-            ) : windows.energy.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
-                Log a few focus windows to see the energy breakdown.
-              </div>
-            ) : (
-              <DonutChart data={windows.energy} />
-            )}
-          </SectionCard>
-
-          <SectionCard
-            title="Activity feed"
-            description="Highlights from tasks, projects, and rituals."
-            id="logs"
-          >
-            {loading ? (
-              <Skeleton className="h-56" />
-            ) : error ? (
-              <ErrorState message={error} />
-            ) : (
-              <>
-                <ActivityTimeline events={activity} />
-                <div className="mt-6 flex justify-end">
-                  <button className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-4 py-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]">
-                    Show more
-                  </button>
-                </div>
-              </>
-            )}
-          </SectionCard>
-        </div>
+              {activeContent}
+            </motion.div>
+          </AnimatePresence>
+        </section>
       </div>
     </div>
   );
 }
 
 function Header({
-  dateRange,
-  onRangeChange,
-  lastUpdated,
+  activeView,
+  onViewChange,
 }: {
-  dateRange: "7d" | "30d" | "90d" | "custom";
-  onRangeChange: (range: "7d" | "30d" | "90d" | "custom") => void;
-  lastUpdated?: string;
+  activeView: AnalyticsView;
+  onViewChange: (view: AnalyticsView) => void;
 }) {
   const router = useRouter();
-  const updatedAt = lastUpdated ? new Date(lastUpdated) : new Date();
   return (
-    <header className="overflow-hidden rounded-3xl border border-[#191919] bg-gradient-to-br from-[#1F1F1F] via-[#0F0F0F] to-[#050505] px-4 py-5 shadow-[0_30px_80px_rgba(7,10,16,0.55)] sm:px-6 sm:py-8">
-      <div className="flex flex-col gap-5 sm:gap-6 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
-        <div className="space-y-4 sm:space-y-6">
-          <div className="flex items-start gap-3 sm:items-center sm:gap-4">
-            <button
-              onClick={() => router.push("/dashboard")}
-              aria-label="Back to dashboard"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#272727] bg-[#080808] text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171] sm:h-11 sm:w-11"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <div>
-              <h1 className="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-4xl">
-                Analytics
-              </h1>
-              <p className="mt-2 max-w-xl text-xs text-[#9DA6BB] sm:text-sm">
-                An integrated view of how your skills, projects, and rituals are
-                compounding.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 text-[11px] text-[#8A94AB] sm:gap-3 sm:text-xs">
-            <span className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-3 py-1">
-              <span
-                aria-hidden="true"
-                className="h-2 w-2 rounded-full bg-[#6DD3A8]"
-              />
-              Systems nominal
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-3 py-1">
-              Updated{" "}
-              {new Intl.DateTimeFormat("en-US", {
-                month: "long",
-                day: "numeric",
-              }).format(updatedAt)}
-            </span>
+    <header className="mb-3 flex flex-col gap-1.5 sm:mb-5 sm:gap-3">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+        <button
+          onClick={() => router.push("/dashboard")}
+          aria-label="Back to dashboard"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950 text-zinc-300 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-600 sm:h-9 sm:w-9"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <div className="w-full min-w-0 overflow-x-auto lg:flex lg:justify-center">
+          <div className="-mx-1 w-max min-w-full px-1 pb-1 lg:min-w-0">
+            <AnalyticsTabs activeView={activeView} onViewChange={onViewChange} />
           </div>
         </div>
-        <DateRangeSelector value={dateRange} onChange={onRangeChange} />
       </div>
     </header>
   );
 }
 
-function DateRangeSelector({
-  value,
-  onChange,
+function AnalyticsTabs({
+  activeView,
+  onViewChange,
 }: {
-  value: "7d" | "30d" | "90d" | "custom";
-  onChange: (range: "7d" | "30d" | "90d" | "custom") => void;
+  activeView: AnalyticsView;
+  onViewChange: (view: AnalyticsView) => void;
 }) {
-  const ranges: { value: "7d" | "30d" | "90d" | "custom"; label: string }[] = [
-    { value: "7d", label: "7 days" },
-    { value: "30d", label: "30 days" },
-    { value: "90d", label: "90 days" },
-    { value: "custom", label: "Custom" },
-  ];
   return (
-    <div className="flex flex-col items-end gap-3 text-right">
-      <div className="inline-flex items-center gap-1 rounded-full border border-[#2B2B2B] bg-[#0A0A0A] p-1 shadow-[0_12px_30px_rgba(7,9,14,0.45)]">
-        {ranges.map((range) => {
-          const active = value === range.value;
-          return (
-            <button
-              key={range.value}
-              type="button"
-              onClick={() => onChange(range.value)}
-              className={classNames(
-                "min-w-[72px] rounded-full px-3 py-1.5 text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80",
-                active
-                  ? "bg-[#F87171] text-white shadow-[0_12px_30px_rgba(248,113,113,0.45)]"
-                  : "text-[#A1ADC7] hover:text-white"
-              )}
-            >
-              {range.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function SkillCard({ skill, view }: { skill: Skill; view: "grid" | "list" }) {
-  const size = view === "grid" ? 88 : 68;
-  const strokeWidth = 6;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (skill.progress / 100) * circumference;
-  return (
-    <div
-      className={classNames(
-        "group rounded-2xl border border-[#1B1B1B] bg-[#101010]/90 p-5 transition hover:border-[#F87171]/60 hover:shadow-[0_18px_40px_rgba(8,10,16,0.4)]",
-        view === "grid"
-          ? "flex flex-col items-center gap-4 text-center"
-          : "flex items-center justify-between gap-4"
-      )}
-      aria-label={`${skill.name} progress`}
-    >
-      <div
-        className={classNames(
-          "relative flex items-center justify-center rounded-full bg-[#080808]",
-          view === "grid" ? "h-20 w-20" : "h-16 w-16"
-        )}
-      >
-        <svg
-          width={size}
-          height={size}
-          viewBox={`0 0 ${size} ${size}`}
-          aria-hidden="true"
-          className="h-full w-full"
-        >
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke="#222222"
-            strokeWidth={strokeWidth}
-            fill="none"
-          />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke="#F87171"
-            strokeWidth={strokeWidth}
-            fill="none"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            style={{ transition: "stroke-dashoffset 0.6s ease" }}
-          />
-        </svg>
-        <span className="absolute text-xs font-semibold text-white">
-          {skill.progress}%
-        </span>
-      </div>
-      <div
-        className={classNames(
-          "flex-1",
-          view === "grid" ? "w-full max-w-[180px]" : "w-full"
-        )}
-      >
-        <div
-          className={classNames(
-            "text-sm font-semibold text-white",
-            view === "grid" ? "text-center" : "text-left"
-          )}
-        >
-          {skill.name}
-        </div>
-        <div
-          className={classNames(
-            "mt-1 text-xs text-[#6E7A96]",
-            view === "grid" ? "text-center" : "text-left"
-          )}
-        >
-          Level {skill.level} · +{formatNumber(skill.xpGained)} XP
-        </div>
-        <div
-          className={classNames(
-            "mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#222222]",
-            view === "grid" ? "mx-auto" : ""
-          )}
-        >
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-[#F87171] via-[#FECACA] to-[#6DD3A8]"
-            style={{ width: `${skill.progress}%` }}
-          />
-        </div>
-      </div>
+    <div className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/80 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:rounded-xl">
+      {ANALYTICS_TABS.map((tab) => {
+        const isActive = activeView === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onViewChange(tab.id)}
+            aria-pressed={isActive}
+            className={classNames(
+              "h-7 shrink-0 rounded-md px-2.5 text-[11px] font-medium text-zinc-400 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 motion-reduce:transition-none sm:h-8 sm:rounded-lg sm:px-3.5 sm:text-xs",
+              isActive
+                ? "border border-zinc-200/90 bg-zinc-100 text-zinc-950 shadow-[0_8px_18px_rgba(0,0,0,0.22)]"
+                : "hover:bg-zinc-900/70 hover:text-zinc-100"
+            )}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -867,7 +753,7 @@ function RecentScheduleShowcase({
   });
 
   return (
-    <ul className="space-y-4">
+    <ul className="space-y-2 sm:space-y-3">
       {items.map((item) => {
         const start = safeDate(item.startUtc);
         const end = safeDate(item.endUtc);
@@ -875,16 +761,16 @@ function RecentScheduleShowcase({
         const Icon = SCHEDULE_ICON_MAP[item.type];
         const timeRange =
           start && end
-            ? `${timeFormatter.format(start)} – ${timeFormatter.format(end)}`
-            : "Scheduled block";
-        const completedLabel = completed ? dayFormatter.format(completed) : "—";
+            ? `${timeFormatter.format(start)} to ${timeFormatter.format(end)}`
+            : "Scheduled event";
+        const completedLabel = completed ? dayFormatter.format(completed) : "N/A";
         return (
           <li
             key={item.id}
-            className="flex flex-col gap-4 rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)] sm:flex-row sm:items-center sm:justify-between"
+            className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-zinc-950/80 p-2.5 shadow-[0_12px_24px_rgba(0,0,0,0.22)] sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:rounded-2xl sm:p-3"
           >
             <div className="flex flex-1 items-start gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#272727] bg-[#0B0B0B] text-[#FECACA]">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950 text-zinc-300">
                 <Icon className="h-4 w-4" />
               </span>
               <div className="min-w-0">
@@ -901,20 +787,20 @@ function RecentScheduleShowcase({
                     {item.type}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-[#8A94AB]">{timeRange}</p>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#C4CBDC]">
-                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-white/80">
+                <p className="mt-1 text-xs text-zinc-500">{timeRange}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-300">
+                  <span className="rounded-full border border-zinc-800 px-2 py-0.5 text-zinc-200">
                     {formatDurationLabel(item.durationMinutes)}
                   </span>
-                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-white/80">
+                  <span className="rounded-full border border-zinc-800 px-2 py-0.5 text-zinc-200">
                     {formatEnergyLabel(item.energy)}
                   </span>
                 </div>
               </div>
             </div>
-            <div className="text-xs text-[#8A94AB] sm:text-right">
+            <div className="text-xs text-zinc-500 sm:text-right">
               <div className="font-semibold text-white">{completedLabel}</div>
-              <div className="text-[11px] uppercase tracking-[0.2em] text-[#5F6783]">
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-600">
                 Completed
               </div>
             </div>
@@ -930,6 +816,852 @@ function safeDate(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date;
+}
+
+function OverviewDiagnosticsSection({
+  points,
+  efficiencyDebug,
+  range,
+  selectedRange,
+  onRangeChange,
+  isRefreshing,
+  statusMessage,
+}: {
+  points: AnalyticsOverviewDailyPoint[];
+  efficiencyDebug?: AnalyticsOverviewEfficiencyDebug;
+  range: AnalyticsRange;
+  selectedRange: AnalyticsRange;
+  onRangeChange: (range: AnalyticsRange) => void;
+  isRefreshing: boolean;
+  statusMessage: string | null;
+}) {
+  const totalXp = points.reduce((sum, point) => sum + point.xpGained, 0);
+  const completedEvents = points.reduce(
+    (sum, point) => sum + point.completedEvents,
+    0
+  );
+  const totalCompletedMinutes = points.reduce(
+    (sum, point) => sum + point.completedMinutes,
+    0
+  );
+  const totalUsableWindowMinutes = points.reduce(
+    (sum, point) => sum + point.usableWindowMinutes,
+    0
+  );
+  const unusedUsableMinutes = Math.max(
+    0,
+    totalUsableWindowMinutes - totalCompletedMinutes
+  );
+  const rangeEfficiencyRate =
+    totalUsableWindowMinutes > 0
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            Math.round((totalCompletedMinutes / totalUsableWindowMinutes) * 100)
+          )
+        )
+      : 0;
+  const peakXp = points.reduce(
+    (max, point) => Math.max(max, point.xpGained),
+    0
+  );
+  const completedProjects = points.reduce(
+    (sum, point) => sum + point.completedProjects,
+    0
+  );
+  const completedHabits = points.reduce(
+    (sum, point) => sum + point.completedHabits,
+    0
+  );
+  const completedTasks = points.reduce(
+    (sum, point) => sum + point.completedTasks,
+    0
+  );
+  const averageLabel = range === "1d" ? "Avg/hour" : "Avg/day";
+  const averageValue =
+    points.length > 0 ? totalXp / points.length : 0;
+
+  return (
+    <div
+      className={classNames(
+        "space-y-3 transition-opacity duration-200 sm:space-y-5",
+        isRefreshing && "opacity-80"
+      )}
+    >
+      <div className="flex flex-col gap-2.5 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-600">
+            Progress Trend
+          </div>
+          <p className="mt-1 text-sm text-zinc-400">
+            Range-based XP and usable-time conversion diagnostics.
+          </p>
+          <OverviewPanelStatus
+            isRefreshing={isRefreshing}
+            message={statusMessage}
+          />
+        </div>
+        <OverviewRangeSelector
+          selectedRange={selectedRange}
+          onRangeChange={onRangeChange}
+          isRefreshing={isRefreshing}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+        <OverviewKpiTile
+          label="XP"
+          value={formatCompactNumber(totalXp)}
+          detail={formatRangeSummary(range, points.length)}
+        />
+        <OverviewKpiTile
+          label={averageLabel}
+          value={formatAverageXp(averageValue)}
+          detail={`Peak ${formatCompactNumber(peakXp)} XP`}
+        />
+        <OverviewKpiTile
+          label="Completed"
+          value={formatCompactNumber(completedEvents)}
+          detail={`${formatCompactNumber(completedProjects)} projects · ${formatCompactNumber(completedTasks)} tasks · ${formatCompactNumber(completedHabits)} habits`}
+        />
+        <div className="space-y-1.5">
+          <OverviewKpiTile
+            label="Efficiency"
+            value={`${rangeEfficiencyRate}%`}
+            detail={`${totalCompletedMinutes}m / ${totalUsableWindowMinutes}m utilized`}
+            secondaryDetail={
+              unusedUsableMinutes > 0 ? `${unusedUsableMinutes}m unused` : null
+            }
+            tone={getEfficiencyTone(rangeEfficiencyRate)}
+          />
+          {process.env.NODE_ENV !== "production" && efficiencyDebug ? (
+            <EfficiencyDebugPanel debug={efficiencyDebug} />
+          ) : null}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-[18px] border border-zinc-800 bg-zinc-950/85 sm:rounded-[22px]">
+        <OverviewLineChart points={points} range={range} />
+      </div>
+    </div>
+  );
+}
+
+function OverviewPanelStatus({
+  isRefreshing,
+  message,
+}: {
+  isRefreshing: boolean;
+  message: string | null;
+}) {
+  const toneClass = message
+    ? "border-rose-500/20 bg-rose-500/10 text-rose-200"
+    : "border-emerald-500/20 bg-emerald-500/10 text-emerald-200";
+
+  if (!isRefreshing && !message) {
+    return null;
+  }
+
+  return (
+    <div className="mt-2 h-5">
+      {isRefreshing ? (
+        <div
+          className={classNames(
+            "inline-flex items-center gap-2 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]",
+            toneClass
+          )}
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-current opacity-80" />
+          {message ?? "Updating"}
+        </div>
+      ) : message ? (
+        <div
+          className={classNames(
+            "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]",
+            toneClass
+          )}
+        >
+          {message}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function EfficiencyDebugPanel({
+  debug,
+}: {
+  debug: AnalyticsOverviewEfficiencyDebug;
+}) {
+  return (
+    <details className="rounded-md border border-zinc-800 bg-zinc-950/90 px-2 py-1 text-[10px] text-zinc-400">
+      <summary className="cursor-pointer select-none uppercase tracking-[0.16em] text-zinc-500">
+        Efficiency debug
+      </summary>
+      <div className="mt-2 space-y-2">
+        <div>
+          <div>range: {debug.selectedRange}</div>
+          <div>start: {debug.startIso}</div>
+          <div>end: {debug.endIso}</div>
+          <div>completed: {debug.totalCompletedMinutes}m</div>
+          <div>usable: {debug.totalUsableWindowMinutes}m</div>
+          <div>rate: {debug.rangeEfficiencyRate}%</div>
+        </div>
+        <div className="space-y-2">
+          {debug.perDay.map((day) => (
+            <div
+              key={`${day.dayKey}:${day.dayStartUtc}`}
+              className="border-t border-zinc-900 pt-2 first:border-t-0 first:pt-0"
+            >
+              <div className="text-zinc-200">
+                {day.dayKey}: {day.usableWindowMinutes}m usable,{" "}
+                {day.completedMinutes}m completed
+              </div>
+              <div>capacity source: {day.capacitySource}</div>
+              <div>assigned day type: {day.assignedDayTypeId ?? "none"}</div>
+              <div>
+                merge: {day.intervalsBeforeMergeCount} before /{" "}
+                {day.mergedIntervalCount} after
+              </div>
+              {day.includedSources.length > 0 ? (
+                <div className="space-y-0.5">
+                  {day.includedSources.map((source) => (
+                    <div
+                      key={`${day.dayKey}:${source.sourceKind}:${source.sourceId}`}
+                    >
+                      + {source.label} ({source.sourceKind}){" "}
+                      {source.minutesAfterClipping}m
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div>+ no included sources</div>
+              )}
+              {day.excludedSources.length > 0 ? (
+                <div className="space-y-0.5 text-zinc-500">
+                  {day.excludedSources.map((source) => (
+                    <div
+                      key={`${day.dayKey}:excluded:${source.sourceKind}:${source.sourceId}:${source.reason}`}
+                    >
+                      - {source.label} ({source.sourceKind}) {source.reason}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function OverviewRangeSelector({
+  selectedRange,
+  onRangeChange,
+  isRefreshing,
+}: {
+  selectedRange: AnalyticsRange;
+  onRangeChange: (range: AnalyticsRange) => void;
+  isRefreshing: boolean;
+}) {
+  return (
+    <div className="overflow-x-auto pb-1">
+      <div className="inline-flex min-w-max items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-950/95 p-0.5 sm:rounded-2xl sm:p-1">
+        {OVERVIEW_RANGE_OPTIONS.map((option) => {
+          const isActive = option.value === selectedRange;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onRangeChange(option.value)}
+              aria-pressed={isActive}
+              aria-busy={isRefreshing && isActive}
+              className={classNames(
+                "rounded-lg px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 sm:rounded-xl sm:px-3 sm:py-2 sm:text-[11px] sm:tracking-[0.18em]",
+                isActive
+                  ? "border border-emerald-500/25 bg-emerald-500/12 text-zinc-50"
+                  : "text-zinc-500 hover:bg-zinc-900/90 hover:text-zinc-200",
+                isRefreshing && isActive && "opacity-70"
+              )}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OverviewKpiTile({
+  label,
+  value,
+  detail,
+  secondaryDetail = null,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  secondaryDetail?: string | null;
+  tone?: "default" | "good" | "neutral" | "low";
+}) {
+  const toneClass =
+    tone === "good"
+      ? "border-emerald-500/25 bg-emerald-500/10"
+      : tone === "low"
+        ? "border-amber-500/25 bg-amber-500/10"
+        : tone === "neutral"
+          ? "border-zinc-700 bg-zinc-950/90"
+          : "border-zinc-800 bg-zinc-950/80";
+  const valueClass =
+    tone === "good"
+      ? "text-emerald-100"
+      : tone === "low"
+        ? "text-amber-100"
+        : "text-zinc-50";
+
+  return (
+    <div
+      className={classNames(
+        "rounded-[14px] border px-3 py-2.5 sm:rounded-[18px] sm:px-4 sm:py-3",
+        toneClass
+      )}
+    >
+      <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+        {label}
+      </div>
+      <div
+        className={classNames(
+          "mt-1 text-lg font-semibold sm:mt-1.5 sm:text-2xl",
+          valueClass
+        )}
+      >
+        {value}
+      </div>
+      <div className="mt-0.5 text-[11px] text-zinc-500 sm:mt-1 sm:text-xs">{detail}</div>
+      {secondaryDetail ? (
+        <div className="mt-0.5 text-[10px] text-zinc-600 sm:text-[11px]">
+          {secondaryDetail}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function OverviewLineChart({
+  points,
+  range,
+}: {
+  points: AnalyticsOverviewDailyPoint[];
+  range: AnalyticsRange;
+}) {
+  const [activeIndex, setActiveIndex] = useState(points.length - 1);
+
+  useEffect(() => {
+    setActiveIndex(points.length > 0 ? points.length - 1 : 0);
+  }, [points, range]);
+
+  const width = 720;
+  const height = 320;
+  const padding = { top: 16, right: 12, bottom: 42, left: 38 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const values = points.map((point) => point.xpGained);
+  const totalXp = values.reduce((sum, value) => sum + value, 0);
+  const rawMaxValue = values.length > 0 ? Math.max(...values) : 0;
+  const yMax = getTrendYAxisMax(rawMaxValue);
+  const isEmpty = rawMaxValue <= 0;
+  const activePoint = points[Math.min(activeIndex, points.length - 1)] ?? null;
+  const yTickValues = buildYTickValues(yMax);
+  const svgPoints = points.map((point, index) => {
+    const x =
+      points.length === 1
+        ? padding.left + chartWidth / 2
+        : padding.left + (index / (points.length - 1)) * chartWidth;
+    const y =
+      padding.top + chartHeight - (point.xpGained / yMax) * chartHeight;
+    return { x, y, point };
+  });
+  const linePath = svgPoints
+    .map(
+      (point, index) =>
+        `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`
+    )
+    .join(" ");
+  const areaPath = [
+    `M${padding.left},${padding.top + chartHeight}`,
+    ...svgPoints.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`),
+    `L${padding.left + chartWidth},${padding.top + chartHeight}`,
+    "Z",
+  ].join(" ");
+  const xLabels = getTrendAxisLabelIndices(range, points)
+    .map((index) => ({
+      x:
+        points.length === 1
+          ? padding.left + chartWidth / 2
+          : padding.left + (index / (points.length - 1)) * chartWidth,
+      label: formatTrendXAxisLabel(points[index]?.date, range),
+      weekday: formatTrendWeekdayLabel(points[index]?.date, range),
+    }));
+  const peakPoint = getTrendPeakPoint(points);
+  const lowPoint = getTrendLowPoint(points);
+
+  return (
+    <div className="space-y-0">
+      <div className="flex flex-col gap-2.5 border-b border-zinc-800 px-3 py-3 sm:px-4 sm:py-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-600">
+            XP
+          </div>
+          <div className="mt-1 text-xl font-semibold text-zinc-50 sm:mt-1.5 sm:text-3xl">
+            {formatCompactNumber(activePoint?.xpGained ?? 0)}
+          </div>
+          <div className="mt-1 text-sm text-zinc-500">
+            {formatTrendActiveLabel(activePoint?.date ?? null, range)}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5 text-right text-[11px] sm:gap-2 sm:text-xs lg:min-w-[260px]">
+          <ActiveTrendMetric
+            label="Completed"
+            value={formatCompactNumber(activePoint?.completedEvents ?? 0)}
+            tone="completed"
+          />
+          <ActiveTrendMetric
+            label="Scheduled"
+            value={formatCompactNumber(activePoint?.scheduledEvents ?? 0)}
+            tone="scheduled"
+          />
+          <ActiveTrendMetric
+            label="Missed"
+            value={formatCompactNumber(activePoint?.missedEvents ?? 0)}
+            tone="missed"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2.5 px-3 py-3 sm:px-4 sm:py-4">
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+          <ChartMetaTile
+            label="Peak"
+            value={formatCompactNumber(peakPoint?.xpGained ?? 0)}
+            detail={formatTrendPointSummary(peakPoint, range)}
+          />
+          <ChartMetaTile
+            label="Low"
+            value={formatCompactNumber(lowPoint?.xpGained ?? 0)}
+            detail={formatTrendPointSummary(lowPoint, range)}
+          />
+          <ChartMetaTile
+            label="Total XP"
+            value={formatCompactNumber(totalXp)}
+            detail={formatRangeSummary(range, points.length)}
+          />
+        </div>
+
+        <div className="relative">
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            className="h-[190px] w-full sm:h-[248px] md:h-[300px] lg:h-[320px]"
+          >
+            <defs>
+              <linearGradient id="overviewDailyArea" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="rgba(16,185,129,0.22)" />
+                <stop offset="100%" stopColor="rgba(16,185,129,0.01)" />
+              </linearGradient>
+              <linearGradient id="overviewDailyLine" x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0%" stopColor="#10b981" />
+                <stop offset="100%" stopColor="#34d399" />
+              </linearGradient>
+            </defs>
+
+            {yTickValues.map((value) => {
+              const ratio = yMax === 0 ? 0 : value / yMax;
+              const y = padding.top + chartHeight - ratio * chartHeight;
+              return (
+                <g key={`grid-${value}`}>
+                  <line
+                    x1={padding.left}
+                    x2={padding.left + chartWidth}
+                    y1={y}
+                    y2={y}
+                    stroke="rgba(63,63,70,0.42)"
+                  />
+                  <text
+                    x={padding.left - 10}
+                    y={y + 5}
+                    textAnchor="end"
+                    fill="rgba(161,161,170,0.82)"
+                    fontSize="12"
+                  >
+                    {formatCompactNumber(value)}
+                  </text>
+                </g>
+              );
+            })}
+
+            <line
+              x1={padding.left}
+              x2={padding.left + chartWidth}
+              y1={padding.top + chartHeight}
+              y2={padding.top + chartHeight}
+              stroke="rgba(82,82,91,0.6)"
+            />
+
+            {!isEmpty ? (
+              <>
+                <path d={areaPath} fill="url(#overviewDailyArea)" />
+                <path
+                  d={linePath}
+                  fill="none"
+                  stroke="url(#overviewDailyLine)"
+                  strokeWidth={2.5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                {activePoint ? (
+                  <line
+                    x1={svgPoints[activeIndex]?.x ?? 0}
+                    x2={svgPoints[activeIndex]?.x ?? 0}
+                    y1={padding.top}
+                    y2={padding.top + chartHeight}
+                    stroke="rgba(113,113,122,0.45)"
+                    strokeDasharray="3 5"
+                  />
+                ) : null}
+
+                {svgPoints.map(({ x, y, point }, index) => {
+                  const isActive = index === activeIndex;
+                  return (
+                    <g key={`${point.date}-${index}`}>
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r={isActive ? 4 : 2.5}
+                        fill={isActive ? "#d1fae5" : "#34d399"}
+                        stroke="rgba(9,9,11,0.95)"
+                        strokeWidth={isActive ? 1.5 : 1}
+                      />
+                    </g>
+                  );
+                })}
+              </>
+            ) : (
+              <g>
+                <line
+                  x1={padding.left}
+                  x2={padding.left + chartWidth}
+                  y1={padding.top + chartHeight * 0.55}
+                  y2={padding.top + chartHeight * 0.55}
+                  stroke="rgba(63,63,70,0.55)"
+                  strokeDasharray="4 6"
+                />
+                <text
+                  x={padding.left + chartWidth / 2}
+                  y={padding.top + chartHeight * 0.46}
+                  textAnchor="middle"
+                  fill="rgba(161,161,170,0.88)"
+                  fontSize="13"
+                >
+                  No XP recorded in this range
+                </text>
+              </g>
+            )}
+
+            {xLabels.map((label, index) => (
+              <text
+                key={`${label.label}-${index}`}
+                x={label.x}
+                y={height - 20}
+                textAnchor="middle"
+                fill="rgba(161,161,170,0.9)"
+                fontSize="12"
+              >
+                <tspan x={label.x} dy="0">
+                  {label.label}
+                </tspan>
+                <tspan
+                  x={label.x}
+                  dy="14"
+                  fill="rgba(113,113,122,0.92)"
+                  fontSize="11"
+                >
+                  {label.weekday}
+                </tspan>
+              </text>
+            ))}
+          </svg>
+
+          <div className="pointer-events-none absolute inset-0">
+            <div className="relative h-full">
+              {!isEmpty
+                ? svgPoints.map((point, index) => (
+                    <button
+                      key={`${point.point.date}-hitbox`}
+                      type="button"
+                      onMouseEnter={() => setActiveIndex(index)}
+                      onFocus={() => setActiveIndex(index)}
+                      onClick={() => setActiveIndex(index)}
+                      className="pointer-events-auto absolute bottom-0 top-0 -translate-x-1/2 focus:outline-none"
+                      style={{
+                        left: `${((point.x / width) * 100).toFixed(4)}%`,
+                        width: `${Math.max(100 / Math.max(points.length, 1), 2)}%`,
+                      }}
+                      aria-label={`${formatTrendActiveLabel(point.point.date, range)} ${point.point.xpGained} XP`}
+                    />
+                  ))
+                : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActiveTrendMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "completed" | "scheduled" | "missed";
+}) {
+  const toneClass =
+    tone === "completed"
+      ? "border-emerald-500/18 text-emerald-100"
+      : tone === "missed"
+        ? "border-rose-500/18 text-rose-100"
+        : "border-zinc-800 text-zinc-200";
+
+  return (
+    <div
+      className={classNames(
+        "rounded-xl border bg-zinc-950/75 px-2 py-1.5 sm:rounded-2xl sm:px-3 sm:py-2",
+        toneClass
+      )}
+    >
+      <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-600">
+        {label}
+      </div>
+      <div className="mt-0.5 text-xs font-semibold sm:mt-1 sm:text-base">{value}</div>
+    </div>
+  );
+}
+
+function ChartMetaTile({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-[12px] border border-zinc-800 bg-zinc-950/55 px-2.5 py-2 sm:rounded-[16px] sm:px-3 sm:py-2.5">
+      <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-600">
+        {label}
+      </div>
+      <div className="mt-0.5 text-sm font-semibold text-zinc-100 sm:mt-1 sm:text-lg">
+        {value}
+      </div>
+      <div className="truncate text-xs text-zinc-500">{detail}</div>
+    </div>
+  );
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 0,
+  }).format(Math.round(value));
+}
+
+function formatAverageXp(value: number) {
+  const rounded = value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: Number.isInteger(rounded) ? 0 : 1,
+    maximumFractionDigits: 1,
+  }).format(rounded);
+}
+
+function formatRangeSummary(range: AnalyticsRange, pointsCount: number) {
+  if (range === "1d") {
+    return `${pointsCount} hourly buckets`;
+  }
+
+  return `${pointsCount} daily points`;
+}
+
+function buildYTickValues(yMax: number) {
+  const top = Math.max(1, Math.ceil(yMax));
+  const mid = Math.round(top / 2);
+  return [0, mid, top].filter(
+    (value, index, values) => values.indexOf(value) === index
+  );
+}
+
+function getTrendYAxisMax(maxValue: number) {
+  if (maxValue <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.ceil(maxValue * 1.15));
+}
+
+function getTrendAxisLabelIndices(
+  range: AnalyticsRange,
+  points: AnalyticsOverviewDailyPoint[]
+) {
+  const length = points.length;
+  if (length <= 1) {
+    return [0];
+  }
+
+  if (range === "1d") {
+    return [0, 6, 12, 18, length - 1].filter(
+      (value, index, values) => value < length && values.indexOf(value) === index
+    );
+  }
+
+  if (range === "7d") {
+    return points.map((_, index) => index);
+  }
+
+  if (range === "30d") {
+    return [0, 7, 14, 21, length - 1].filter(
+      (value, index, values) => value < length && values.indexOf(value) === index
+    );
+  }
+
+  const monthMarkers = points.reduce<number[]>((acc, point, index) => {
+    const current = parseTrendDate(point.date, range);
+    const previous = index > 0 ? parseTrendDate(points[index - 1].date, range) : null;
+    if (
+      index === 0 ||
+      !previous ||
+      current.getUTCMonth() !== previous.getUTCMonth()
+    ) {
+      acc.push(index);
+    }
+    return acc;
+  }, []);
+
+  const candidates = [...monthMarkers, length - 1];
+  return candidates.filter(
+    (value, index, values) => value < length && values.indexOf(value) === index
+  );
+}
+
+function formatTrendXAxisLabel(value: string | null, range: AnalyticsRange) {
+  if (!value) {
+    return "";
+  }
+
+  const date = parseTrendDate(value, range);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  if (range === "1d") {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+    }).format(date);
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function formatTrendWeekdayLabel(value: string | null, range: AnalyticsRange) {
+  if (!value) {
+    return "";
+  }
+
+  const date = parseTrendDate(value, range);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+  }).format(date);
+}
+
+function formatTrendPointSummary(
+  point: AnalyticsOverviewDailyPoint | null,
+  range: AnalyticsRange
+) {
+  if (!point) {
+    return "No data";
+  }
+  return formatTrendActiveLabel(point.date, range);
+}
+
+function getEfficiencyTone(efficiencyRate: number) {
+  if (efficiencyRate >= 70) {
+    return "good" as const;
+  }
+  if (efficiencyRate >= 45) {
+    return "neutral" as const;
+  }
+  return "low" as const;
+}
+
+function formatTrendActiveLabel(value: string | null, range: AnalyticsRange) {
+  if (!value) {
+    return "No data";
+  }
+
+  const date = parseTrendDate(value, range);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  if (range === "1d") {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+    }).format(date);
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function parseTrendDate(value: string, range: AnalyticsRange) {
+  return range === "1d" ? new Date(value) : new Date(`${value}T12:00:00Z`);
+}
+
+function getTrendPeakPoint(points: AnalyticsOverviewDailyPoint[]) {
+  return points.reduce<AnalyticsOverviewDailyPoint | null>(
+    (best, point) => {
+      if (!best || point.xpGained > best.xpGained) {
+        return point;
+      }
+      return best;
+    },
+    null
+  );
+}
+
+function getTrendLowPoint(points: AnalyticsOverviewDailyPoint[]) {
+  return points.reduce<AnalyticsOverviewDailyPoint | null>(
+    (lowest, point) => {
+      if (!lowest || point.xpGained < lowest.xpGained) {
+        return point;
+      }
+      return lowest;
+    },
+    null
+  );
 }
 
 function formatDurationLabel(minutes: number) {
@@ -955,109 +1687,10 @@ function formatEnergyLabel(value: string | null) {
   return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)} energy`;
 }
 
-function BarChart({ data }: { data: number[] }) {
-  if (data.length === 0) {
-    return (
-      <div className="rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 text-sm text-[#99A4BD] shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
-        No recent throughput recorded.
-      </div>
-    );
-  }
-
-  const today = new Date();
-  const weekdayFormatter = new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-  });
-  const headerFormatter = new Intl.DateTimeFormat(undefined, {
-    month: "long",
-    year: "numeric",
-  });
-  const points = data.map((value, index) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() - (data.length - 1 - index));
-    return { value, date, weekday: date.getDay() };
-  });
-  const pointByWeekday = new Map<number, { value: number; date: Date }>();
-  points.forEach((point) => pointByWeekday.set(point.weekday, point));
-  const getFallbackDateForWeekday = (weekday: number) => {
-    const date = new Date(today);
-    const diff = (today.getDay() - weekday + 7) % 7;
-    date.setDate(today.getDate() - diff);
-    return date;
-  };
-  const orderedPoints = [0, 1, 2, 3, 4, 5, 6].map((weekday) => {
-    const point = pointByWeekday.get(weekday);
-    if (point) return point;
-    return { value: 0, date: getFallbackDateForWeekday(weekday) };
-  });
-  const values = orderedPoints.map((point) => point.value);
-  const max = Math.max(...values);
-  const total = values.reduce((sum, value) => sum + value, 0);
-  const average = Math.round(total / values.length);
-
-  return (
-    <div
-      className="rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 shadow-[0_18px_40px_rgba(8,10,16,0.4)]"
-      aria-label="Tasks completed per period"
-    >
-      <div className="flex items-center justify-between text-sm text-white">
-        <span className="font-semibold">Project completions</span>
-        <span className="text-xs text-[#6E7A96]">
-          {headerFormatter.format(today)}
-        </span>
-      </div>
-      <div
-        className="grid h-44 items-end gap-3"
-        style={{
-          gridTemplateColumns: `repeat(${orderedPoints.length}, minmax(0, 1fr))`,
-        }}
-      >
-        {orderedPoints.map((point, index) => {
-          const { value, date } = point;
-          const heightPercent = max === 0 ? 0 : (value / max) * 100;
-          const barHeight =
-            max === 0 ? "6px" : `${Math.max(heightPercent, 6)}%`;
-          const isZero = value === 0;
-          return (
-            <div
-              key={`${date.toISOString()}-${index}`}
-              className="flex h-full flex-col items-center justify-end gap-2"
-            >
-              <span className="text-xs font-semibold text-[#A1ADC7]">
-                {value}
-              </span>
-              <div
-                className={classNames(
-                  "w-full rounded-t-lg shadow-[0_12px_24px_rgba(248,113,113,0.35)]",
-                  isZero
-                    ? "bg-[#222222]"
-                    : "bg-gradient-to-t from-[#F87171]/30 via-[#F87171]/70 to-[#FECACA]"
-                )}
-                style={{ height: barHeight }}
-              />
-              <span className="text-center text-xs font-medium uppercase tracking-[0.2em] text-[#6E7A96]">
-                {weekdayFormatter.format(date)}
-                <br />
-                <span className="text-[10px] font-normal text-[#8A94AB]">
-                  {date.getDate()}
-                </span>
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-4 flex items-center justify-between text-xs text-[#8A94AB]">
-        <span>Weekly throughput</span>
-        <span>Avg {average}/day</span>
-      </div>
-    </div>
-  );
-}
-
 function ProjectCard({ project }: { project: Project }) {
   return (
     <div
-      className="rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_32px_rgba(8,10,16,0.4)]"
+      className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-2.5 shadow-[0_12px_24px_rgba(0,0,0,0.22)] sm:rounded-2xl sm:p-3.5"
       aria-label={`${project.title} progress`}
     >
       <div className="flex items-start justify-between">
@@ -1065,130 +1698,21 @@ function ProjectCard({ project }: { project: Project }) {
           <div className="text-sm font-semibold text-white">
             {project.title}
           </div>
-          <div className="mt-1 text-xs text-[#6E7A96]">
+          <div className="mt-1 text-xs text-zinc-500">
             {project.tasksDone}/{project.tasksTotal} tasks complete
           </div>
         </div>
-        <span className="text-sm font-semibold text-[#FECACA]">
+        <span className="text-sm font-semibold text-zinc-300">
           {project.progress}%
         </span>
       </div>
-      <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-[#222222]">
+      <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-[#F87171] to-[#6DD3A8]"
+          className="h-full rounded-full bg-zinc-300"
           style={{ width: `${project.progress}%` }}
         />
       </div>
     </div>
-  );
-}
-
-function MonumentCard({ monument }: { monument: Monument }) {
-  return (
-    <div
-      className="flex flex-col items-center gap-4 rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 text-center shadow-[0_12px_32px_rgba(8,10,16,0.4)]"
-      aria-label={`${monument.title} progress`}
-    >
-      <CircularProgress
-        size={76}
-        progress={monument.progress}
-        trackClassName="stroke-gray-700"
-        progressClassName="stroke-green-400"
-        label={`${monument.progress}%`}
-      />
-      <div>
-        <div className="text-sm font-semibold text-white">{monument.title}</div>
-        <div className="mt-1 text-xs text-[#6E7A96]">
-          {monument.goalCount} goal{monument.goalCount === 1 ? "" : "s"} linked
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DonutChart({ data }: { data: { label: string; value: number }[] }) {
-  const total = data.reduce((sum, d) => sum + d.value, 0);
-  const colors = ["#FB7185", "#7C838A", "#6DD3A8", "#E8C268", "#22262A"];
-  let current = 0;
-  const segments = data.map((d, i) => {
-    const start = current;
-    const portion = total === 0 ? 0 : d.value / total;
-    const end = current + portion;
-    current = end;
-    return `${colors[i % colors.length]} ${start * 360}deg ${end * 360}deg`;
-  });
-  return (
-    <div className="flex flex-col items-center gap-6 rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 text-center shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
-      <div
-        className="relative h-36 w-36 rounded-full border border-[#2B2B2B] bg-[#0A0A0A]"
-        style={{
-          background:
-            total === 0 ? "#151515" : `conic-gradient(${segments.join(",")})`,
-        }}
-        aria-label="Energy distribution"
-      >
-        <div className="absolute inset-6 rounded-full bg-[#050505]" />
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-          <span className="text-[10px] uppercase tracking-[0.3em] text-[#6E7A96]">
-            Focus
-          </span>
-          <span className="text-lg font-semibold text-white">{total}%</span>
-        </div>
-      </div>
-      <div className="w-full space-y-3 text-left">
-        {data.map((d, i) => {
-          const percent = total === 0 ? 0 : Math.round((d.value / total) * 100);
-          return (
-            <div
-              key={d.label}
-              className="flex items-center justify-between text-xs text-[#9DA6BB]"
-            >
-              <span className="flex items-center gap-2">
-                <span
-                  aria-hidden="true"
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: colors[i % colors.length] }}
-                />
-                {d.label}
-              </span>
-              <span className="text-white">{percent}%</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ActivityTimeline({ events }: { events: ActivityEvent[] }) {
-  return (
-    <ul className="relative space-y-6" aria-label="Activity feed">
-      {events.map((event, index) => {
-        const formattedDate = new Date(event.date);
-        const dateLabel = new Intl.DateTimeFormat("en-US", {
-          month: "short",
-          day: "numeric",
-        }).format(formattedDate);
-        return (
-          <li key={event.id} className="relative flex gap-4">
-            <div className="flex flex-col items-center">
-              <span className="relative z-10 flex h-4 w-4 items-center justify-center">
-                <span className="h-3 w-3 rounded-full border border-[#F87171] bg-[#080808]" />
-              </span>
-              {index !== events.length - 1 && (
-                <span className="mt-1 h-full w-px bg-gradient-to-b from-[#F87171]/60 to-transparent" />
-              )}
-            </div>
-            <div className="flex-1 rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] px-4 py-3 shadow-[0_12px_24px_rgba(8,10,16,0.35)]">
-              <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-                {dateLabel}
-              </div>
-              <div className="mt-2 text-sm text-white">{event.label}</div>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 
@@ -1202,18 +1726,18 @@ function StreakTrendCard({
   history: { label: string; value: number }[];
 }) {
   return (
-    <div className="rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 text-sm text-[#9DA6BB] sm:p-5">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-2.5 text-xs text-zinc-400 sm:rounded-2xl sm:p-4 sm:text-sm">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+          <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
             Streak momentum
           </div>
-          <p className="mt-1 text-sm text-[#9DA6BB]">
+          <p className="mt-1 text-sm text-zinc-400">
             See how your streak evolved over time.
           </p>
         </div>
         <div className="text-right">
-          <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+          <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
             Current streak
           </div>
           <div className="mt-1 text-2xl font-semibold text-white">
@@ -1221,21 +1745,19 @@ function StreakTrendCard({
           </div>
         </div>
       </div>
-      <div className="mt-6">
+      <div className="mt-4 sm:mt-6">
         <StreakSparkline data={history} />
       </div>
-      <div className="mt-4 rounded-xl border border-[#222222] bg-[#121212] p-4 text-xs text-[#9DA6BB]">
+      <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/80 p-2.5 text-[11px] text-zinc-400 sm:mt-4 sm:p-3 sm:text-xs">
         <div className="flex items-center justify-between">
-          <span className="uppercase tracking-[0.2em] text-[#6E7A96]">
+          <span className="uppercase tracking-[0.2em] text-zinc-500">
             Longest streak
           </span>
           <span className="text-lg font-semibold text-white">
             {longestStreak} days
           </span>
         </div>
-        <p className="mt-2 text-[13px]">
-          Use these momentum bursts to plan your next focus block.
-        </p>
+        <p className="mt-2 text-[13px]">Use these momentum bursts to plan your next focus session.</p>
       </div>
     </div>
   );
@@ -1248,7 +1770,7 @@ function StreakSparkline({
 }) {
   if (data.length === 0) {
     return (
-      <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] text-center text-xs text-[#6E7A96]">
+      <div className="flex h-28 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-950/70 text-center text-xs text-zinc-500">
         Log more rituals to unlock streak trends.
       </div>
     );
@@ -1286,11 +1808,11 @@ function StreakSparkline({
 
   return (
     <div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-32 w-full">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full sm:h-32">
         <defs>
           <linearGradient id="streakGradient" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(254,202,202,0.6)" />
-            <stop offset="100%" stopColor="rgba(248,113,113,0.05)" />
+            <stop offset="0%" stopColor="rgba(161,161,170,0.45)" />
+            <stop offset="100%" stopColor="rgba(82,82,91,0.04)" />
           </linearGradient>
         </defs>
         <path d={areaPath} fill="url(#streakGradient)" />
@@ -1302,7 +1824,7 @@ function StreakSparkline({
           strokeLinecap="round"
         />
       </svg>
-      <div className="mt-2 flex items-center justify-between text-xs text-[#6E7A96]">
+      <div className="mt-2 flex items-center justify-between text-xs text-zinc-500">
         <span>{data[0]?.label ?? ""}</span>
         <span>{data[data.length - 1]?.label ?? ""}</span>
       </div>
@@ -1317,9 +1839,9 @@ function RoutineHeatmap({
 }) {
   if (routines.length === 0) {
     return (
-      <div className="flex h-full min-h-[160px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] text-center text-sm text-[#6E7A96]">
+      <div className="flex h-full min-h-[120px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-800 bg-zinc-950/70 px-3 text-center text-xs text-zinc-500 sm:min-h-[144px] sm:gap-3 sm:text-sm">
         No routine data yet.
-        <span className="text-xs text-[#4E5A73]">
+        <span className="text-xs text-zinc-600">
           Log habits like exercise or journaling to reveal patterns.
         </span>
       </div>
@@ -1334,20 +1856,20 @@ function RoutineHeatmap({
     <div>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+          <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
             Routine trends
           </div>
-          <p className="mt-1 text-sm text-[#9DA6BB]">
+          <p className="mt-1 text-sm text-zinc-400">
             Visualize which habits stay consistent week over week.
           </p>
         </div>
         {weeks > 0 ? (
-          <span className="text-xs font-medium text-[#6E7A96]">
+          <span className="text-xs font-medium text-zinc-500">
             Past {weeks} week{weeks === 1 ? "" : "s"}
           </span>
         ) : null}
       </div>
-      <div className="mt-5 space-y-5">
+      <div className="mt-4 space-y-4 sm:mt-5 sm:space-y-5">
         {routines.map((routine) => {
           const flattened = routine.heatmap.flat();
           const totalDays = flattened.length;
@@ -1359,12 +1881,12 @@ function RoutineHeatmap({
             <div key={routine.id} className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium text-white">{routine.name}</span>
-                <span className="text-xs text-[#6E7A96]">
+                <span className="text-xs text-zinc-500">
                   {average}% consistency
                 </span>
               </div>
               <div className="grid grid-cols-[auto,1fr] gap-3">
-                <div className="flex flex-col justify-between text-[10px] uppercase tracking-[0.2em] text-[#465066]">
+                <div className="flex flex-col justify-between text-[10px] uppercase tracking-[0.2em] text-zinc-600">
                   {dayLabels.map((label) => (
                     <span key={label} className="h-6">
                       {label}
@@ -1387,16 +1909,16 @@ function RoutineHeatmap({
                         const backgroundColor =
                           ratio === 0
                             ? "#080808"
-                            : `rgba(248,113,113,${opacity.toFixed(2)})`;
+                            : `rgba(161,161,170,${opacity.toFixed(2)})`;
                         const boxShadow =
                           ratio === 0
                             ? undefined
-                            : "0 3px 10px rgba(248,113,113,0.35)";
+                            : "0 3px 10px rgba(113,113,122,0.2)";
                         const percent = Math.round(ratio * 100);
                         return (
                           <span
                             key={`${routine.id}-week-${weekIndex}-day-${dayIndex}`}
-                            className="h-6 w-6 rounded-md border border-[#222222]"
+                            className="h-6 w-6 rounded-md border border-zinc-800"
                             style={{ backgroundColor, boxShadow }}
                             title={`${dayLabels[dayIndex]} · ${percent}%`}
                           />
@@ -1414,276 +1936,446 @@ function RoutineHeatmap({
   );
 }
 
-function BestPerformanceList({
-  title,
-  data,
-  emptyLabel,
+function TimeBlockPerformanceList({
+  items,
 }: {
-  title: string;
-  data: { label: string; successRate: number }[];
-  emptyLabel: string;
+  items: AnalyticsTimeBlockPerformance[];
 }) {
+  const parseStartTime = (value: string | null) => {
+    if (!value) {
+      return null;
+    }
+
+    const match = value.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (!match) {
+      return null;
+    }
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const seconds = Number(match[3] ?? "0");
+
+    if (
+      !Number.isInteger(hours) ||
+      !Number.isInteger(minutes) ||
+      !Number.isInteger(seconds) ||
+      hours < 0 ||
+      hours > 23 ||
+      minutes < 0 ||
+      minutes > 59 ||
+      seconds < 0 ||
+      seconds > 59
+    ) {
+      return null;
+    }
+
+    return hours * 3600 + minutes * 60 + seconds;
+  };
+
+  const formatStartTime = (value: string | null) =>
+    formatLocalTime(value) ?? "Anytime";
+
+  const formatMinutesText = (completedMinutes: number, totalMinutes: number) =>
+    `${completedMinutes}/${totalMinutes} min`;
+
+  const getPercentText = (value: number) => `${Math.round(value)}%`;
+
+  const getTimeBlockReadout = (item: (typeof items)[number]) => {
+    if (item.plannedEvents === 0) {
+      return {
+        title: "No Events planned",
+        detail: "This Time Block has no scheduled Events yet.",
+        tone: "idle",
+      } as const;
+    }
+    if (item.completedEvents === 0 && item.missedEvents > 0) {
+      return {
+        title: "No completions",
+        detail: `${item.missedEvents} of ${item.plannedEvents} Events were missed.`,
+        tone: "missed",
+      } as const;
+    }
+    if (item.completionRate >= 80 && item.missedEvents === 0) {
+      return {
+        title: "Strong block",
+        detail: `${item.completedEvents} of ${item.plannedEvents} Events completed with no misses.`,
+        tone: "completed",
+      } as const;
+    }
+    if (item.missedRate >= 40) {
+      return {
+        title: "Too much planned",
+        detail: `${item.missedEvents} of ${item.plannedEvents} Events were missed.`,
+        tone: "missed",
+      } as const;
+    }
+    if (item.scheduledEvents > 0) {
+      return {
+        title: "Still active",
+        detail: `${item.scheduledEvents} Events remain Scheduled.`,
+        tone: "scheduled",
+      } as const;
+    }
+    return {
+      title: "Partial completion",
+      detail: `${item.completedEvents} of ${item.plannedEvents} Events completed.`,
+      tone: "partial",
+    } as const;
+  };
+
+  const sortedItems = useMemo(() => {
+    return [...items].sort((left, right) => {
+      const leftStart = parseStartTime(left.startLocal);
+      const rightStart = parseStartTime(right.startLocal);
+
+      if (leftStart == null && rightStart == null) {
+        return left.label.localeCompare(right.label);
+      }
+      if (leftStart == null) {
+        return 1;
+      }
+      if (rightStart == null) {
+        return -1;
+      }
+      if (leftStart !== rightStart) {
+        return leftStart - rightStart;
+      }
+      return left.label.localeCompare(right.label);
+    });
+  }, [items]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  useEffect(() => {
+    setSelectedIndex((currentIndex) => {
+      if (sortedItems.length === 0) {
+        return 0;
+      }
+
+      return Math.min(Math.max(currentIndex, 0), sortedItems.length - 1);
+    });
+  }, [sortedItems]);
+
+  const selectedItem = sortedItems[selectedIndex];
+
+  if (!selectedItem) {
+    return null;
+  }
+
+  const readout = getTimeBlockReadout(selectedItem);
+  const timeRange =
+    formatLocalTimeRange(selectedItem.startLocal, selectedItem.endLocal) ??
+    "Anytime";
+  const completedRatioText = `${selectedItem.completedEvents}/${selectedItem.plannedEvents}`;
+  const completionPercentText = getPercentText(selectedItem.completionRate);
+  const missedPercentText = getPercentText(selectedItem.missedRate);
+  const timeText = formatMinutesText(
+    selectedItem.completedMinutes,
+    selectedItem.totalMinutes
+  );
+  const minuteCompletionRate =
+    selectedItem.totalMinutes > 0
+      ? (selectedItem.completedMinutes / selectedItem.totalMinutes) * 100
+      : 0;
+  const breakdownMax = Math.max(
+    selectedItem.completedEvents,
+    selectedItem.scheduledEvents,
+    selectedItem.missedEvents
+  );
+  const breakdownSegments = [
+    {
+      key: "completed",
+      label: "Completed",
+      value: selectedItem.completedEvents,
+      className: "bg-teal-400/75",
+    },
+    {
+      key: "scheduled",
+      label: "Scheduled",
+      value: selectedItem.scheduledEvents,
+      className: "bg-violet-400/60",
+    },
+    {
+      key: "missed",
+      label: "Missed",
+      value: selectedItem.missedEvents,
+      className: "bg-rose-400/65",
+    },
+  ] as const;
+  const readoutToneClass = {
+    idle: "text-zinc-400",
+    completed: "text-teal-300",
+    scheduled: "text-violet-300",
+    missed: "text-rose-300",
+    partial: "text-zinc-300",
+  }[readout.tone];
+  const rowBarWidth = (value: number) =>
+    value <= 0 ? "0%" : `${Math.max(4, Math.min(value, 100))}%`;
+
   return (
-    <div className="rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 text-sm text-[#9DA6BB] sm:p-5">
-      <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-        {title}
+    <div className="space-y-2.5 rounded-xl border border-zinc-800 bg-zinc-950 p-2.5 sm:space-y-3 sm:p-4">
+      <div className="flex min-h-9 items-center justify-between gap-2.5 border-b border-zinc-800 pb-2.5 sm:min-h-10 sm:gap-3 sm:pb-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-zinc-100">
+            Time Block Analytics
+          </div>
+          <div className="text-xs text-zinc-400">Scheduled Events by block</div>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <div className="hidden text-zinc-400 sm:block">{timeRange}</div>
+          <button
+            type="button"
+            onClick={() =>
+              setSelectedIndex((currentIndex) => Math.max(0, currentIndex - 1))
+            }
+            disabled={selectedIndex === 0}
+            className="rounded-md border border-zinc-800 bg-zinc-900/40 px-2 py-1 text-zinc-300 transition hover:bg-zinc-900/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Prev
+          </button>
+          <div className="min-w-[34px] text-center text-zinc-500">
+            {selectedIndex + 1} / {sortedItems.length}
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              setSelectedIndex((currentIndex) =>
+                Math.min(sortedItems.length - 1, currentIndex + 1)
+              )
+            }
+            disabled={selectedIndex === sortedItems.length - 1}
+            className="rounded-md border border-zinc-800 bg-zinc-900/40 px-2 py-1 text-zinc-300 transition hover:bg-zinc-900/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
       </div>
-      {data.length === 0 ? (
-        <p className="mt-3 text-sm text-[#6E7A96]">{emptyLabel}</p>
-      ) : (
-        <ul className="mt-4 space-y-3">
-          {data.map((item) => {
-            const percent =
-              item.successRate > 1
-                ? Math.round(item.successRate)
-                : Math.round(item.successRate * 100);
+
+      <div className="grid rounded-xl border border-zinc-800 bg-zinc-900/35 sm:grid-cols-4">
+        {[
+          {
+            label: "Completion",
+            value: completedRatioText,
+            helper: `${selectedItem.plannedEvents} Scheduled`,
+          },
+          {
+            label: "Rate",
+            value: completionPercentText,
+            helper:
+              selectedItem.scheduledEvents > 0
+                ? `${selectedItem.scheduledEvents} Scheduled`
+                : "No Scheduled left",
+          },
+          {
+            label: "Missed",
+            value: `${selectedItem.missedEvents}`,
+            helper:
+              selectedItem.missedEvents > 0
+                ? missedPercentText
+                : "No Missed Events",
+          },
+          {
+            label: "Time",
+            value: timeText,
+            helper:
+              selectedItem.totalMinutes > 0
+                ? getPercentText(minuteCompletionRate)
+                : "No minutes tracked",
+          },
+        ].map((metric, index) => (
+          <div
+            key={metric.label}
+            className={classNames(
+              "px-3 py-2.5 sm:px-4 sm:py-3",
+              index > 0 && "border-t border-zinc-800 sm:border-l sm:border-t-0"
+            )}
+          >
+            <div className="text-xs text-zinc-400">{metric.label}</div>
+            <div className="mt-1 text-lg font-semibold text-zinc-100">
+              {metric.value}
+            </div>
+            <div className="mt-0.5 text-[11px] text-zinc-500">{metric.helper}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40">
+        <div className="grid grid-cols-[76px_minmax(0,1.1fr)_minmax(120px,1fr)_56px_72px] gap-3 border-b border-zinc-800 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+          <span>Start</span>
+          <span>Time Block</span>
+          <span>Completed</span>
+          <span className="text-right">Rate</span>
+          <span className="text-right">Missed</span>
+        </div>
+        <div className="divide-y divide-zinc-800">
+          {sortedItems.map((item, index) => {
+            const isSelected = index === selectedIndex;
+            const timeLabel = formatStartTime(item.startLocal);
+            const ratioText = `${item.completedEvents}/${item.plannedEvents}`;
+
             return (
-              <li key={item.label} className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-[#6E7A96]">
-                  <span className="text-sm font-medium text-white">
-                    {item.label}
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setSelectedIndex(index)}
+                aria-pressed={isSelected}
+                title={item.label}
+                className={classNames(
+                  "grid h-10 w-full grid-cols-[76px_minmax(0,1.1fr)_minmax(120px,1fr)_56px_72px] items-center gap-3 px-3 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50",
+                  isSelected
+                    ? "bg-violet-500/10 text-zinc-50"
+                    : "bg-transparent text-zinc-300 hover:bg-zinc-900/70"
+                )}
+              >
+                <span className="text-xs text-zinc-400">{timeLabel}</span>
+                <div className="truncate text-sm font-medium text-zinc-100">
+                  {item.label}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+                    <div
+                      className="relative h-full rounded-full bg-violet-300/75"
+                      style={{ width: rowBarWidth(item.completionRate) }}
+                    >
+                      {item.missedEvents > 0 ? (
+                        <span className="absolute right-0 top-0 h-full w-1 rounded-full bg-rose-300/80" />
+                      ) : null}
+                    </div>
+                  </div>
+                  <span className="hidden text-[11px] text-zinc-500 sm:inline">
+                    {ratioText}
                   </span>
-                  <span>{percent}%</span>
                 </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#222222]">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#F87171] via-[#FECACA] to-[#6DD3A8]"
-                    style={{ width: `${percent}%` }}
-                  />
-                </div>
-              </li>
+                <span className="text-right text-xs text-zinc-300">
+                  {getPercentText(item.completionRate)}
+                </span>
+                <span className="text-right text-xs text-zinc-400">
+                  {item.missedEvents > 0 ? `${item.missedEvents} missed` : "0"}
+                </span>
+              </button>
             );
           })}
-        </ul>
-      )}
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+            Outcome Breakdown
+          </div>
+          {breakdownMax === 0 ? (
+            <div className="mt-3 space-y-2">
+              <div className="h-1.5 rounded-full bg-zinc-800" />
+              <div className="text-xs text-zinc-500">No Events in this Time Block.</div>
+            </div>
+          ) : (
+            <div className="mt-3 space-y-2.5">
+              {breakdownSegments.map((segment) => (
+                <div
+                  key={segment.key}
+                  className="grid grid-cols-[68px_minmax(0,1fr)_20px] items-center gap-2 text-xs"
+                >
+                  <span className="text-zinc-400">{segment.label}</span>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                    <div
+                      className={classNames("h-full rounded-full", segment.className)}
+                      style={{
+                        width: `${(segment.value / breakdownMax) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-right text-zinc-100">{segment.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+            Readout
+          </div>
+          <div className="mt-3 space-y-2">
+            <div className="text-sm font-medium text-zinc-100">{readout.title}</div>
+            <div className="text-xs leading-5 text-zinc-400">{readout.detail}</div>
+            <div className={classNames("text-xs font-medium", readoutToneClass)}>
+              {selectedItem.label}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+            Time Utilization
+          </div>
+          <div className="mt-3 space-y-2">
+            {selectedItem.totalMinutes > 0 ? (
+              <>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-xs text-zinc-400">Minutes</span>
+                  <span className="text-sm font-medium text-zinc-100">
+                    {timeText}
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-xs text-zinc-400">Completed</span>
+                  <span className="text-sm text-zinc-300">
+                    {getPercentText(minuteCompletionRate)}
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                  <div
+                    className="h-full rounded-full bg-violet-300/75"
+                    style={{ width: `${Math.max(0, Math.min(minuteCompletionRate, 100))}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <div className="h-1.5 rounded-full bg-zinc-800" />
+                <div className="text-xs text-zinc-500">No minutes in this Time Block.</div>
+              </div>
+            )}
+            <div className="border-t border-zinc-800 pt-2 text-xs text-zinc-500">
+              {timeRange}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function WeeklyReflectionPanel({
-  reflections,
-}: {
-  reflections: AnalyticsHabitWeeklyReflection[];
-}) {
-  const [pinnedState, setPinnedState] = useState<Record<string, boolean>>({});
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [saveStatus, setSaveStatus] = useState<
-    Record<string, "idle" | "saved">
-  >({});
-  const [shareStatus, setShareStatus] = useState<
-    Record<string, "idle" | "copied" | "error">
-  >({});
+function formatLocalTimeRange(
+  startLocal: string | null,
+  endLocal: string | null
+) {
+  const startLabel = formatLocalTime(startLocal);
+  const endLabel = formatLocalTime(endLocal);
 
-  useEffect(() => {
-    setPinnedState((prev) => {
-      const next: Record<string, boolean> = {};
-      reflections.forEach((reflection) => {
-        next[reflection.id] = prev[reflection.id] ?? reflection.pinned;
-      });
-      return next;
-    });
-    setNotes((prev) => {
-      const next: Record<string, string> = {};
-      reflections.forEach((reflection) => {
-        next[reflection.id] = prev[reflection.id] ?? "";
-      });
-      return next;
-    });
-    setSaveStatus((prev) => {
-      const next: Record<string, "idle" | "saved"> = {};
-      reflections.forEach((reflection) => {
-        next[reflection.id] = prev[reflection.id] ?? "idle";
-      });
-      return next;
-    });
-    setShareStatus((prev) => {
-      const next: Record<string, "idle" | "copied" | "error"> = {};
-      reflections.forEach((reflection) => {
-        next[reflection.id] = prev[reflection.id] ?? "idle";
-      });
-      return next;
-    });
-  }, [reflections]);
+  if (startLabel && endLabel) {
+    return `${startLabel} to ${endLabel}`;
+  }
+  return null;
+}
 
-  if (reflections.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
-        Weekly reflections will appear once you build a streak.
-        <span className="text-xs text-[#4E5A73]">
-          Capture highlights to train smarter recommendations.
-        </span>
-      </div>
-    );
+function formatLocalTime(value: string | null) {
+  if (!value) {
+    return null;
+  }
+  const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) {
+    return null;
   }
 
-  const handleTogglePin = (id: string) => {
-    setPinnedState((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  const hours = Number(match[1]);
+  const minutes = match[2];
+  if (!Number.isInteger(hours) || hours < 0 || hours > 23) {
+    return null;
+  }
 
-  const handleSave = (id: string) => {
-    setSaveStatus((prev) => ({ ...prev, [id]: "saved" }));
-    window.setTimeout(() => {
-      setSaveStatus((prev) => ({ ...prev, [id]: "idle" }));
-    }, 3000);
-  };
-
-  const handleShare = async (id: string) => {
-    const reflection = reflections.find((entry) => entry.id === id);
-    if (!reflection) {
-      return;
-    }
-
-    const summary = `Week: ${reflection.weekLabel}\nStreak: ${reflection.streak} days\nBest day: ${reflection.bestDay}\nLesson: ${reflection.lesson}`;
-
-    try {
-      if (
-        typeof navigator !== "undefined" &&
-        navigator.clipboard &&
-        typeof navigator.clipboard.writeText === "function"
-      ) {
-        await navigator.clipboard.writeText(summary);
-        setShareStatus((prev) => ({ ...prev, [id]: "copied" }));
-        window.setTimeout(() => {
-          setShareStatus((prev) => ({ ...prev, [id]: "idle" }));
-        }, 3000);
-      } else {
-        throw new Error("Clipboard unavailable");
-      }
-    } catch (error) {
-      console.error("Unable to copy weekly reflection", error);
-      setShareStatus((prev) => ({ ...prev, [id]: "error" }));
-      window.setTimeout(() => {
-        setShareStatus((prev) => ({ ...prev, [id]: "idle" }));
-      }, 4000);
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-1 text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-        <span>Weekly reflection</span>
-        <span className="text-[11px] normal-case tracking-normal text-[#9DA6BB]">
-          Summaries feed your future habit recommendations.
-        </span>
-      </div>
-      <div className="space-y-5">
-        {reflections.map((reflection) => {
-          const pinned = pinnedState[reflection.id] ?? reflection.pinned;
-          const note = notes[reflection.id] ?? "";
-          const saved = saveStatus[reflection.id] ?? "idle";
-          const shared = shareStatus[reflection.id] ?? "idle";
-          return (
-            <div
-              key={reflection.id}
-              className="space-y-4 rounded-2xl border border-[#222222] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 shadow-[0_16px_36px_rgba(7,9,14,0.45)]"
-            >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-[#6E7A96]">
-                    <Sparkles className="h-4 w-4 text-[#FECACA]" />
-                    {reflection.weekLabel}
-                  </div>
-                  <h3 className="mt-2 text-lg font-semibold text-white">
-                    {reflection.streak} day streak snapshot
-                  </h3>
-                  <dl className="mt-3 grid gap-3 text-sm text-[#9DA6BB] sm:grid-cols-2">
-                    <div className="rounded-xl border border-[#222222] bg-[#080808] p-3">
-                      <dt className="text-[11px] uppercase tracking-[0.2em] text-[#6E7A96]">
-                        Best day
-                      </dt>
-                      <dd className="mt-1 text-white">{reflection.bestDay}</dd>
-                    </div>
-                    <div className="rounded-xl border border-[#222222] bg-[#080808] p-3">
-                      <dt className="text-[11px] uppercase tracking-[0.2em] text-[#6E7A96]">
-                        Lesson learned
-                      </dt>
-                      <dd className="mt-1 text-white">{reflection.lesson}</dd>
-                    </div>
-                  </dl>
-                  {reflection.recommendation ? (
-                    <div className="mt-4 flex items-center gap-2 rounded-xl border border-[#292929] bg-[#121212] p-3 text-sm text-[#9DA6BB]">
-                      <PenLine className="h-4 w-4 text-[#6DD3A8]" />
-                      <span>{reflection.recommendation}</span>
-                    </div>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleTogglePin(reflection.id)}
-                  className={classNames(
-                    "inline-flex items-center gap-2 self-end rounded-full border px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80",
-                    pinned
-                      ? "border-[#F87171] bg-[#F87171]/10 text-[#FECACA]"
-                      : "border-[#2B2B2B] text-[#9DA6BB] hover:text-white"
-                  )}
-                >
-                  <Bookmark className="h-4 w-4" />
-                  {pinned ? "Pinned for insights" : "Pin this week"}
-                </button>
-              </div>
-              <div className="space-y-3">
-                <label className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-                  <span>Journal prompt</span>
-                  <span className="text-[11px] normal-case tracking-normal text-[#4E5A73]">
-                    What made this week so consistent?
-                  </span>
-                </label>
-                <textarea
-                  value={note}
-                  onChange={(event) =>
-                    setNotes((prev) => ({
-                      ...prev,
-                      [reflection.id]: event.target.value,
-                    }))
-                  }
-                  rows={3}
-                  className="w-full resize-none rounded-xl border border-[#2B2B2B] bg-[#050505] p-3 text-sm text-white placeholder:text-[#3F4A63] focus:border-[#F87171] focus:outline-none focus:ring-2 focus:ring-[#F87171]/50"
-                  placeholder="Capture the habits, supports, or rituals that unlocked momentum."
-                />
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => handleSave(reflection.id)}
-                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#F87171] to-[#FECACA] px-4 py-1.5 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(248,113,113,0.45)] transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80"
-                  >
-                    <PenLine className="h-4 w-4" />
-                    Save reflection
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleShare(reflection.id)}
-                    className="inline-flex items-center gap-2 rounded-full border border-[#2B2B2B] px-4 py-1.5 text-xs font-medium text-[#9DA6BB] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80"
-                  >
-                    <Share2 className="h-4 w-4" />
-                    Share snapshot
-                  </button>
-                  <div className="flex items-center text-xs text-[#6E7A96]">
-                    {saved === "saved" ? (
-                      <span className="text-[#6DD3A8]">
-                        Saved! We’ll tailor future nudges.
-                      </span>
-                    ) : shared === "copied" ? (
-                      <span className="text-[#FECACA]">
-                        Copied summary to clipboard.
-                      </span>
-                    ) : shared === "error" ? (
-                      <span className="text-[#FFB4A2]">
-                        Clipboard unavailable—share manually.
-                      </span>
-                    ) : pinned ? (
-                      <span>
-                        Pinned weeks guide your habit recommendations.
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+  const period = hours >= 12 ? "PM" : "AM";
+  const displayHour = hours % 12 || 12;
+  return `${displayHour}:${minutes} ${period}`;
 }
 
 function StreakCalendar({
@@ -1707,22 +2399,22 @@ function StreakCalendar({
 
   return (
     <div>
-      <div className="grid grid-cols-7 gap-2 text-[10px] uppercase tracking-[0.2em] text-[#6E7A96]">
+      <div className="grid grid-cols-7 gap-1.5 text-[10px] uppercase tracking-[0.2em] text-zinc-500">
         {weekLabels.map((label) => (
           <span key={label} className="text-center">
             {label}
           </span>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-7 gap-2" aria-label="Streak calendar">
+      <div className="mt-3 grid grid-cols-7 gap-1.5" aria-label="Streak calendar">
         {cells.map(({ key, date, isComplete }) => (
           <div
             key={key}
             className={classNames(
-              "flex h-8 w-full items-center justify-center rounded-lg border text-sm font-semibold transition",
+              "flex h-7 w-full items-center justify-center rounded-lg border text-sm font-semibold transition sm:h-8",
               isComplete
-                ? "border-transparent bg-gradient-to-br from-[#F87171] to-[#FECACA] text-white shadow-[0_8px_18px_rgba(248,113,113,0.35)]"
-                : "border-[#1B1B1B] bg-[#080808] text-[#6E7A96]"
+                ? "border-zinc-600 bg-zinc-200 text-zinc-950"
+                : "border-zinc-800 bg-[#080808] text-zinc-500"
             )}
             title={date.toDateString()}
           >
@@ -1751,42 +2443,65 @@ function SectionCard({
 }) {
   return (
     <section
+      id={id}
       className={classNames(
-        "rounded-3xl border border-[#191919] bg-gradient-to-br from-[#1C1C1C]/90 via-[#0F0F0F]/90 to-[#050505]/90 p-6 shadow-[0_30px_80px_rgba(7,10,16,0.55)] backdrop-blur",
+        "rounded-xl border border-zinc-800 bg-zinc-950/85 p-3 shadow-[0_18px_40px_rgba(0,0,0,0.28)] backdrop-blur sm:rounded-2xl sm:p-5",
         className
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-2.5 sm:gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          <h2 className="text-sm font-semibold text-white sm:text-lg">{title}</h2>
           {description ? (
-            <p className="mt-1 text-sm text-[#95A1B6]">{description}</p>
+            <p className="mt-1 text-xs text-zinc-400 sm:text-sm">{description}</p>
           ) : null}
         </div>
         {action}
       </div>
-      <div className="mt-6">{children}</div>
+      <div className="mt-3 sm:mt-4">{children}</div>
     </section>
   );
 }
 
-function EmptyState({ title, cta }: { title: string; cta: string }) {
+function StatTile({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+}) {
   return (
-    <div
-      className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-[#2B2B2B] bg-[#080808] px-6 py-8 text-center text-sm text-[#9DA6BB]"
-      aria-label="Empty state"
-    >
-      <div>{title}</div>
-      <button className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#0A0A0A] px-4 py-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]">
-        {cta}
-      </button>
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-2 sm:rounded-2xl sm:p-3">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+        {label}
+      </div>
+      <div className="mt-0.5 text-base font-semibold text-white sm:mt-1 sm:text-xl">{value}</div>
+      {detail ? <div className="mt-1 text-xs text-zinc-400">{detail}</div> : null}
+    </div>
+  );
+}
+
+function DataNotice({ copy }: { copy: string }) {
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-500 sm:px-3 sm:py-2 sm:text-xs">
+      {copy}
+    </div>
+  );
+}
+
+function EmptyCopy({ copy }: { copy: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-950/60 px-3 py-4 text-center text-xs text-zinc-500 sm:px-4 sm:py-5 sm:text-sm">
+      {copy}
     </div>
   );
 }
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl border border-[#3C1E2A] bg-[#160E12] px-4 py-6 text-sm text-[#F5B8C9]">
+    <div className="rounded-xl border border-red-900/40 bg-red-950/20 px-3 py-4 text-xs text-red-200 sm:rounded-2xl sm:px-4 sm:py-5 sm:text-sm">
       {message}
     </div>
   );
@@ -1796,7 +2511,7 @@ function Skeleton({ className }: { className?: string }) {
   return (
     <div
       className={classNames(
-        "animate-pulse rounded-2xl bg-[#151515]/80",
+        "animate-pulse rounded-2xl bg-zinc-900/80",
         className
       )}
     />
@@ -1811,17 +2526,17 @@ function DailyConsistencyCard({ summary }: { summary: AnalyticsHabitSummary }) {
   });
 
   return (
-    <div className="rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 sm:p-5">
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-3.5 sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+          <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
             Daily consistency
           </div>
-          <p className="mt-1 text-sm text-[#9DA6BB]">
+          <p className="mt-1 text-sm text-zinc-400">
             Streak coverage for the last {summary.calendarDays} days.
           </p>
         </div>
-        <div className="text-right text-xs font-medium text-[#6E7A96]">
+        <div className="text-right text-xs font-medium text-zinc-500">
           <div>
             {weeks} week{weeks === 1 ? "" : "s"}
           </div>

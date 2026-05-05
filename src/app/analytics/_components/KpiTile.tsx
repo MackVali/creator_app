@@ -8,7 +8,6 @@ interface KpiTileProps extends Kpi {
 }
 
 export function KpiTile({
-  id,
   label,
   value,
   delta,
@@ -21,6 +20,7 @@ export function KpiTile({
   const [isHovered, setIsHovered] = useState(false);
 
   const isPositive = delta > 0;
+  const isNegative = delta < 0;
   const deltaColor = isPositive ? "text-emerald-400" : "text-red-400";
   const deltaSymbol = isPositive ? "▲" : "▼";
 
@@ -73,16 +73,18 @@ export function KpiTile({
       onClick={onOpen}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className={`group relative w-full rounded-2xl border border-zinc-800 bg-gradient-to-b from-zinc-950/80 to-black/60 p-4 text-left transition-all hover:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-600 ${
-        isHovered ? "shadow-lg" : ""
+      className={`group relative w-full rounded-2xl border border-zinc-800/90 bg-zinc-950/80 p-3 text-left transition-all hover:border-zinc-700 hover:bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-zinc-700 sm:p-4 ${
+        isHovered ? "shadow-[0_12px_30px_rgba(0,0,0,0.3)]" : ""
       }`}
       aria-label={`${label}: ${value} (${delta > 0 ? "+" : ""}${delta})`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="text-sm text-zinc-400">{label}</div>
+        <div className="min-w-0 flex-1">
+          <div className="text-xs uppercase tracking-[0.12em] text-zinc-500 sm:text-sm sm:tracking-normal">
+            {label}
+          </div>
           <div className="mt-1 flex items-baseline gap-2">
-            <div className="text-3xl font-semibold text-white">
+            <div className="text-2xl font-semibold leading-none text-white sm:text-[1.75rem]">
               {typeof value === "number" && value % 1 !== 0
                 ? value.toFixed(2)
                 : value}
@@ -93,10 +95,11 @@ export function KpiTile({
                 <span>{Math.abs(delta)}</span>
               </div>
             )}
+            {delta === 0 && <div className="text-xs text-zinc-500">Flat</div>}
           </div>
           {top && <div className="mt-1 text-xs text-zinc-500">Top: {top}</div>}
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-end gap-1.5">
           {confidence && (
             <div className="text-xs text-zinc-500 uppercase tracking-wider">
               {confidence}
@@ -106,7 +109,13 @@ export function KpiTile({
             width={width}
             height={height}
             viewBox={`0 0 ${width} ${height}`}
-            className="text-zinc-400"
+            className={
+              isPositive
+                ? "text-emerald-400/70"
+                : isNegative
+                ? "text-red-400/70"
+                : "text-zinc-500"
+            }
             aria-hidden="true"
           >
             {targetBand}
