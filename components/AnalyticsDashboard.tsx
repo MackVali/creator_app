@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type ComponentType,
+  type PointerEvent,
   type ReactNode,
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -13,7 +14,6 @@ import { useRouter } from "next/navigation";
 import { CheckSquare, FolderKanban, Flame, ArrowLeft } from "lucide-react";
 import type {
   AnalyticsOverviewDailyPoint,
-  AnalyticsOverviewEfficiencyDebug,
   AnalyticsRange,
   AnalyticsResponse,
   AnalyticsHabitSummary,
@@ -22,6 +22,8 @@ import type {
   AnalyticsHabitStreakPoint,
   AnalyticsHabitWeeklyReflection,
   AnalyticsScheduleCompletion,
+  AnalyticsSkillCategoryContribution,
+  AnalyticsSkillCategoryContributionMeta,
   AnalyticsTimeBlockPerformance,
   AnalyticsView,
 } from "@/types/analytics";
@@ -253,7 +255,7 @@ const ANALYTICS_TABS: Array<{ id: AnalyticsView; label: string }> = [
   { id: "system-health", label: "System Health" },
 ];
 
-const OVERVIEW_RANGE_OPTIONS: Array<{ value: AnalyticsRange; label: string }> = [
+const ANALYTICS_RANGE_OPTIONS: Array<{ value: AnalyticsRange; label: string }> = [
   { value: "1d", label: "24H" },
   { value: "7d", label: "7D" },
   { value: "30d", label: "30D" },
@@ -285,104 +287,65 @@ export default function AnalyticsDashboard({
 }) {
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [analyticsRefreshing, setAnalyticsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [overviewRange, setOverviewRange] = useState<AnalyticsRange>("30d");
-  const [overviewAnalytics, setOverviewAnalytics] =
-    useState<AnalyticsResponse | null>(null);
-  const [overviewLoading, setOverviewLoading] = useState(true);
-  const [overviewRefreshing, setOverviewRefreshing] = useState(false);
-  const [overviewError, setOverviewError] = useState<string | null>(null);
-  const [overviewCache, setOverviewCache] = useState<
+  const [selectedRange, setSelectedRange] = useState<AnalyticsRange>("30d");
+  const [analyticsCache, setAnalyticsCache] = useState<
     Partial<Record<AnalyticsRange, AnalyticsResponse>>
   >({});
   const previousViewRef = useRef<AnalyticsView>(activeView);
-  const overviewRequestIdRef = useRef(0);
-  const overviewAbortRef = useRef<AbortController | null>(null);
+  const analyticsRequestIdRef = useRef(0);
+  const analyticsAbortRef = useRef<AbortController | null>(null);
+  const analyticsRef = useRef<AnalyticsResponse | null>(null);
+  const analyticsCacheRef = useRef<
+    Partial<Record<AnalyticsRange, AnalyticsResponse>>
+  >({});
   const [slideDirection, setSlideDirection] = useState(1);
   const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const payload = await fetchAnalyticsRange("30d", controller.signal);
-        if (!cancelled) {
-          setAnalytics(payload);
-          setOverviewCache((current) => ({ ...current, "30d": payload }));
-        }
-      } catch (err) {
-        if (cancelled) return;
-        if (err instanceof DOMException && err.name === "AbortError") {
-          return;
-        }
-        const message =
-          err instanceof Error && err.message === "unauthorized"
-            ? "Sign in to view analytics."
-            : "Unable to load analytics data.";
-        console.error("Failed to load analytics data", err);
-        setAnalytics(null);
-        setError(message);
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, []);
+    analyticsRef.current = analytics;
+  }, [analytics]);
 
   useEffect(() => {
-    const sharedThirtyDayAnalytics = overviewRange === "30d" ? analytics : null;
-    const cachedAnalytics = overviewCache[overviewRange] ?? null;
-    const nextAnalytics = sharedThirtyDayAnalytics ?? cachedAnalytics;
-    const hasVisibleOverviewData = overviewAnalytics !== null;
+    analyticsCacheRef.current = analyticsCache;
+  }, [analyticsCache]);
 
-    if (nextAnalytics) {
-      setOverviewAnalytics(nextAnalytics);
-      setOverviewError(null);
-      setOverviewLoading(false);
-      setOverviewRefreshing(false);
+  useEffect(() => {
+    const cachedAnalytics = analyticsCacheRef.current[selectedRange] ?? null;
+    const hasVisibleAnalytics = analyticsRef.current !== null;
+
+    if (cachedAnalytics) {
+      setAnalytics(cachedAnalytics);
+      setError(null);
+      setLoading(false);
+      setAnalyticsRefreshing(false);
       return;
     }
 
-    if (overviewRange === "30d" && loading && !analytics) {
-      setOverviewLoading(true);
-      setOverviewRefreshing(false);
-      return;
-    }
-
-    overviewAbortRef.current?.abort();
+    analyticsAbortRef.current?.abort();
     const controller = new AbortController();
-    overviewAbortRef.current = controller;
-    const requestId = overviewRequestIdRef.current + 1;
-    overviewRequestIdRef.current = requestId;
+    analyticsAbortRef.current = controller;
+    const requestId = analyticsRequestIdRef.current + 1;
+    analyticsRequestIdRef.current = requestId;
 
-    setOverviewError(null);
-    setOverviewLoading(!hasVisibleOverviewData);
-    setOverviewRefreshing(hasVisibleOverviewData);
+    setError(null);
+    setLoading(!hasVisibleAnalytics);
+    setAnalyticsRefreshing(hasVisibleAnalytics);
 
     const load = async () => {
       try {
-        const payload = await fetchAnalyticsRange(overviewRange, controller.signal);
+        const payload = await fetchAnalyticsRange(selectedRange, controller.signal);
         if (
           controller.signal.aborted ||
-          overviewRequestIdRef.current !== requestId
+          analyticsRequestIdRef.current !== requestId
         ) {
           return;
         }
 
-        setOverviewCache((current) => ({ ...current, [overviewRange]: payload }));
-        setOverviewAnalytics(payload);
-        setOverviewError(null);
+        setAnalyticsCache((current) => ({ ...current, [selectedRange]: payload }));
+        setAnalytics(payload);
+        setError(null);
       } catch (err) {
         if (
           controller.signal.aborted ||
@@ -390,19 +353,18 @@ export default function AnalyticsDashboard({
         ) {
           return;
         }
-
-        console.error("Failed to load overview analytics data", err);
-        setOverviewError(
+        const message =
           err instanceof Error && err.message === "unauthorized"
             ? "Sign in to view analytics."
-            : hasVisibleOverviewData
+            : hasVisibleAnalytics
               ? "Unable to update analytics."
-              : "Unable to load analytics data."
-        );
+              : "Unable to load analytics data.";
+        console.error("Failed to load analytics data", err);
+        setError(message);
       } finally {
-        if (overviewRequestIdRef.current === requestId) {
-          setOverviewLoading(false);
-          setOverviewRefreshing(false);
+        if (analyticsRequestIdRef.current === requestId) {
+          setLoading(false);
+          setAnalyticsRefreshing(false);
         }
       }
     };
@@ -411,11 +373,11 @@ export default function AnalyticsDashboard({
 
     return () => {
       controller.abort();
-      if (overviewAbortRef.current === controller) {
-        overviewAbortRef.current = null;
+      if (analyticsAbortRef.current === controller) {
+        analyticsAbortRef.current = null;
       }
     };
-  }, [overviewRange, analytics, loading, overviewAnalytics, overviewCache]);
+  }, [selectedRange]);
 
   useEffect(() => {
     const previousIndex = ANALYTICS_TABS.findIndex(
@@ -431,12 +393,15 @@ export default function AnalyticsDashboard({
   }, [activeView]);
 
   const projects = analytics?.projects ?? [];
+  const skillCategoryContribution = analytics?.skillCategoryContribution ?? [];
+  const skillCategoryContributionMeta =
+    analytics?.skillCategoryContributionMeta ?? null;
   const habitSummary = normalizeHabitSummary(analytics?.habit);
   const recentSchedules = analytics?.recentSchedules ?? [];
   const scheduleSummary = analytics?.scheduleSummary;
   const timeBlockPerformance = analytics?.timeBlockPerformance ?? [];
-  const overviewTrend = overviewAnalytics?.overviewDaily ?? [];
-  const hasOverviewData = overviewAnalytics !== null;
+  const overviewTrend = analytics?.overviewDaily ?? [];
+  const hasAnalyticsData = analytics !== null;
 
   const longestStreak = habitSummary.longestStreak;
   const currentStreak = habitSummary.currentStreak;
@@ -453,32 +418,30 @@ export default function AnalyticsDashboard({
         <SectionCard
           className="rounded-[22px]"
         >
-          {!hasOverviewData && overviewLoading ? (
+          {!hasAnalyticsData && loading ? (
             <Skeleton className="h-64" />
-          ) : !hasOverviewData && overviewError ? (
-            <ErrorState message={overviewError} />
+          ) : !hasAnalyticsData && error ? (
+            <ErrorState message={error} />
           ) : overviewTrend.length === 0 ? (
             <div
               className={classNames(
                 "transition-opacity duration-200",
-                overviewRefreshing && "opacity-80"
+                analyticsRefreshing && "opacity-80"
               )}
             >
               <OverviewPanelStatus
-                isRefreshing={overviewRefreshing}
-                message={overviewError}
+                isRefreshing={analyticsRefreshing}
+                message={error}
               />
               <EmptyCopy copy="No execution trend data in this range yet." />
             </div>
           ) : (
             <OverviewDiagnosticsSection
               points={overviewTrend}
-              efficiencyDebug={overviewAnalytics?.overviewEfficiencyDebug}
-              range={overviewAnalytics?.range ?? overviewRange}
-              selectedRange={overviewRange}
-              onRangeChange={setOverviewRange}
-              isRefreshing={overviewRefreshing}
-              statusMessage={overviewError}
+              range={analytics?.range ?? selectedRange}
+              selectedRange={selectedRange}
+              isRefreshing={analyticsRefreshing}
+              statusMessage={error}
             />
           )}
         </SectionCard>
@@ -487,6 +450,19 @@ export default function AnalyticsDashboard({
   } else if (activeView === "execution") {
     activeContent = (
       <div className="space-y-4 xl:space-y-6">
+        <SectionCard title="Skill Contribution">
+          {loading ? (
+            <Skeleton className="h-72" />
+          ) : error ? (
+            <ErrorState message={error} />
+          ) : (
+            <SkillContributionDashboard
+              range={selectedRange}
+              categories={skillCategoryContribution}
+              meta={skillCategoryContributionMeta}
+            />
+          )}
+        </SectionCard>
         <SectionCard
           title="Recently completed"
           description="Latest completed events."
@@ -644,7 +620,13 @@ export default function AnalyticsDashboard({
         className="pointer-events-none absolute inset-x-0 top-[-35%] h-[420px] bg-[radial-gradient(circle_at_top,rgba(120,120,120,0.18),transparent_68%)] blur-3xl"
       />
       <div className="relative mx-auto max-w-7xl space-y-4 pb-6 sm:space-y-8 sm:pb-8">
-        <Header activeView={activeView} onViewChange={onViewChange} />
+        <Header
+          activeView={activeView}
+          onViewChange={onViewChange}
+          selectedRange={selectedRange}
+          onRangeChange={setSelectedRange}
+          isRefreshing={analyticsRefreshing}
+        />
         <section
           aria-label={`${activeTabLabel} analytics`}
           className="relative overflow-hidden rounded-[20px] border border-zinc-900/80 bg-zinc-950/35 p-0.5 min-[480px]:p-1.5 sm:rounded-[26px]"
@@ -681,28 +663,50 @@ export default function AnalyticsDashboard({
 function Header({
   activeView,
   onViewChange,
+  selectedRange,
+  onRangeChange,
+  isRefreshing,
 }: {
   activeView: AnalyticsView;
   onViewChange: (view: AnalyticsView) => void;
+  selectedRange: AnalyticsRange;
+  onRangeChange: (range: AnalyticsRange) => void;
+  isRefreshing: boolean;
 }) {
   const router = useRouter();
   return (
     <header className="mb-3 flex flex-col gap-1.5 sm:mb-5 sm:gap-3">
-      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-        <button
-          onClick={() => router.push("/dashboard")}
-          aria-label="Back to dashboard"
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950 text-zinc-300 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-600 sm:h-9 sm:w-9"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <div className="w-full min-w-0 overflow-x-auto lg:flex lg:justify-center">
-          <div className="-mx-1 w-max min-w-full px-1 pb-1 lg:min-w-0">
-            <AnalyticsTabs activeView={activeView} onViewChange={onViewChange} />
+      <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <button
+            onClick={() => router.push("/dashboard")}
+            aria-label="Back to dashboard"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950 text-zinc-300 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-600 sm:h-9 sm:w-9"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="w-full min-w-0 overflow-x-auto lg:flex lg:justify-center">
+            <div className="-mx-1 w-max min-w-full px-1 pb-1 lg:min-w-0">
+              <AnalyticsTabs activeView={activeView} onViewChange={onViewChange} />
+            </div>
           </div>
+        </div>
+        <div className="flex justify-end">
+          <AnalyticsRangeSelector
+            selectedRange={selectedRange}
+            onRangeChange={onRangeChange}
+            isRefreshing={isRefreshing}
+          />
         </div>
       </div>
     </header>
+  );
+}
+
+function formatAnalyticsRangeLabel(range: AnalyticsRange) {
+  return (
+    ANALYTICS_RANGE_OPTIONS.find((option) => option.value === range)?.label ??
+    range.toUpperCase()
   );
 }
 
@@ -736,6 +740,1093 @@ function AnalyticsTabs({
       })}
     </div>
   );
+}
+
+const CATEGORY_DONUT_COLORS = [
+  "#c5c8ce",
+  "#adb2ba",
+  "#969ca6",
+  "#7f8691",
+  "#6b727d",
+  "#575f6b",
+  "#464e59",
+  "#3a424d",
+];
+
+type VisibleSkillCategoryContribution =
+  AnalyticsSkillCategoryContribution & {
+    groupedCategories?: AnalyticsSkillCategoryContribution[];
+  };
+
+type SkillContributionSkill = AnalyticsSkillCategoryContribution["skills"][number];
+
+type CategoryDonutSegment = {
+  category: VisibleSkillCategoryContribution;
+  color: string;
+  endAngle: number;
+  path: string;
+  startAngle: number;
+};
+
+type CategoryDonutLabel = {
+  anchorX: number;
+  anchorY: number;
+  connectorX: number;
+  connectorY: number;
+  elbowX: number;
+  labelX: number;
+  labelY: number;
+  lineEndX: number;
+  midAngle: number;
+  preferredY: number;
+  segment: CategoryDonutSegment;
+  side: "left" | "right";
+};
+
+type CategoryDonutLabelSideConfig = {
+  elbowX: number;
+  labelX: number;
+  lineEndX: number;
+  maxY: number;
+  minGap: number;
+  minY: number;
+};
+
+const CATEGORY_DONUT_LABEL_TOP_PADDING = 38;
+const CATEGORY_DONUT_LABEL_BOTTOM_PADDING = 342;
+const CATEGORY_DONUT_LABEL_DESKTOP_ROW_GAP = 34;
+const CATEGORY_DONUT_LABEL_MOBILE_ROW_GAP = 24;
+
+const CATEGORY_DONUT_LABEL_CONFIG: Record<
+  CategoryDonutLabel["side"],
+  CategoryDonutLabelSideConfig
+> = {
+  left: {
+    elbowX: 112,
+    labelX: 106,
+    lineEndX: 118,
+    maxY: CATEGORY_DONUT_LABEL_BOTTOM_PADDING,
+    minGap: CATEGORY_DONUT_LABEL_DESKTOP_ROW_GAP,
+    minY: CATEGORY_DONUT_LABEL_TOP_PADDING,
+  },
+  right: {
+    elbowX: 308,
+    labelX: 314,
+    lineEndX: 302,
+    maxY: CATEGORY_DONUT_LABEL_BOTTOM_PADDING,
+    minGap: CATEGORY_DONUT_LABEL_DESKTOP_ROW_GAP,
+    minY: CATEGORY_DONUT_LABEL_TOP_PADDING,
+  },
+};
+
+function SkillContributionDashboard({
+  range,
+  categories,
+  meta,
+}: {
+  range: AnalyticsRange;
+  categories: AnalyticsSkillCategoryContribution[];
+  meta: AnalyticsSkillCategoryContributionMeta | null;
+}) {
+  const visibleCategories = useMemo(
+    () => buildVisibleSkillCategories(categories),
+    [categories]
+  );
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedCategoryId((current) =>
+      current && visibleCategories.some((category) => category.categoryId === current)
+        ? current
+        : null
+    );
+  }, [visibleCategories]);
+
+  const fallbackTotalXp = categories.reduce(
+    (sum, category) => sum + category.xpGained,
+    0
+  );
+  const rangeLabel = formatAnalyticsRangeLabel(range);
+  const totalXp = meta?.totalXpGained ?? fallbackTotalXp;
+  const xpComparison = getSkillXpComparison(meta, rangeLabel);
+  const selectedCategory =
+    visibleCategories.find((category) => category.categoryId === selectedCategoryId) ??
+    null;
+  const topCategory = getTopSkillCategory(categories);
+  const topSkill = getTopSkillContribution(categories);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <ContributionChip
+          label="TOTAL XP"
+          value={`${formatCompactNumber(totalXp)} XP`}
+          detail={xpComparison.label}
+          detailTone={xpComparison.tone}
+        />
+        <ContributionChip
+          label="TOP CATEGORY"
+          value={topCategory?.categoryName ?? "None yet"}
+        />
+        <ContributionChip
+          label="TOP SKILL"
+          value={topSkill?.skillName ?? "None yet"}
+        />
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[390px_minmax(0,1fr)]">
+        <CategoryDonut
+          categories={visibleCategories}
+          selectedCategoryId={selectedCategory?.categoryId ?? null}
+          totalXp={totalXp}
+          rangeLabel={rangeLabel}
+          onSelectCategory={setSelectedCategoryId}
+        />
+        <SkillCategoryDetail
+          category={selectedCategory}
+          categories={visibleCategories}
+          totalXp={totalXp}
+          rangeLabel={rangeLabel}
+        />
+      </div>
+    </div>
+  );
+}
+
+function getTopSkillCategory(
+  categories: AnalyticsSkillCategoryContribution[]
+): AnalyticsSkillCategoryContribution | null {
+  return categories.reduce<AnalyticsSkillCategoryContribution | null>(
+    (topCategory, category) =>
+      topCategory === null || category.xpGained > topCategory.xpGained
+        ? category
+        : topCategory,
+    null
+  );
+}
+
+function getTopSkillContribution(
+  categories: AnalyticsSkillCategoryContribution[]
+): SkillContributionSkill | null {
+  return categories.reduce<SkillContributionSkill | null>((topSkill, category) => {
+    return category.skills.reduce<SkillContributionSkill | null>((categoryTop, skill) => {
+      if (skill.xpGained <= 0) {
+        return categoryTop;
+      }
+
+      return categoryTop === null || skill.xpGained > categoryTop.xpGained
+        ? skill
+        : categoryTop;
+    }, topSkill);
+  }, null);
+}
+
+function getSkillXpComparison(
+  meta: AnalyticsSkillCategoryContributionMeta | null,
+  rangeLabel: string
+): { label: string; tone: "up" | "down" | "neutral" } {
+  if (!meta) {
+    return { label: "No change vs previous", tone: "neutral" };
+  }
+
+  const currentTotal = meta.totalXpGained;
+  const previousTotal = meta.previousTotalXpGained;
+
+  if (previousTotal <= 0) {
+    return currentTotal > 0
+      ? { label: "New activity vs previous", tone: "up" }
+      : { label: "No change vs previous", tone: "neutral" };
+  }
+
+  if (currentTotal <= 0) {
+    return { label: "Down 100% vs previous", tone: "down" };
+  }
+
+  const percentChange =
+    meta.totalXpPercentChange ??
+    ((currentTotal - previousTotal) / previousTotal) * 100;
+
+  if (percentChange === 0) {
+    return { label: "No change vs previous", tone: "neutral" };
+  }
+
+  const roundedPercent = Math.max(1, Math.round(Math.abs(percentChange)));
+
+  return percentChange > 0
+    ? {
+        label: `Up ${roundedPercent}% vs previous ${rangeLabel}`,
+        tone: "up",
+      }
+    : {
+        label: `Down ${roundedPercent}% vs previous ${rangeLabel}`,
+        tone: "down",
+      };
+}
+
+function ContributionChip({
+  label,
+  value,
+  detail,
+  detailTone = "neutral",
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  detailTone?: "up" | "down" | "neutral";
+}) {
+  const detailClass =
+    detailTone === "up"
+      ? "text-emerald-300/85"
+      : detailTone === "down"
+        ? "text-amber-300/85"
+        : "text-zinc-500";
+
+  return (
+    <div className="min-w-0 rounded-lg border border-zinc-800 bg-[#080b11] px-3 py-2">
+      <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-500">
+        {label}
+      </div>
+      <div className="mt-0.5 truncate text-sm font-semibold text-zinc-100">
+        {value}
+      </div>
+      {detail ? (
+        <div
+          className={classNames(
+            "mt-1 truncate text-[10px] font-medium leading-tight",
+            detailClass
+          )}
+        >
+          {detail}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CategoryDonut({
+  categories,
+  selectedCategoryId,
+  totalXp,
+  rangeLabel,
+  onSelectCategory,
+}: {
+  categories: VisibleSkillCategoryContribution[];
+  selectedCategoryId: string | null;
+  totalXp: number;
+  rangeLabel: string;
+  onSelectCategory: (categoryId: string) => void;
+}) {
+  const size = 420;
+  const centerX = size / 2;
+  const centerY = 190;
+  const radius = 74;
+  const strokeWidth = 20;
+  const separatorWidth = strokeWidth + 2;
+  const selectedCategory =
+    categories.find((category) => category.categoryId === selectedCategoryId) ?? null;
+  const segments = useMemo<CategoryDonutSegment[]>(() => {
+    let cursor = -90;
+
+    return categories.map((category, index) => {
+      const percent = totalXp > 0 ? (category.xpGained / totalXp) * 100 : 0;
+      const startAngle = cursor;
+      const arcDegrees = Math.min(359.99, (percent / 100) * 360);
+      const endAngle = cursor + arcDegrees;
+      cursor = endAngle;
+
+      return {
+        category,
+        color: CATEGORY_DONUT_COLORS[index % CATEGORY_DONUT_COLORS.length],
+        endAngle,
+        path: describeDonutArc(centerX, centerY, radius, startAngle, endAngle),
+        startAngle,
+      };
+    });
+  }, [categories, centerX, centerY, radius, totalXp]);
+  const labels = useMemo(
+    () => buildCategoryDonutLabels(segments, centerX, centerY, radius),
+    [segments, centerX, centerY, radius]
+  );
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-[#070a0f] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] sm:p-3">
+      <div className="relative mx-auto aspect-[420/380] max-w-[420px]">
+        <svg
+          viewBox={`0 0 ${size} 380`}
+          className="h-full w-full overflow-visible"
+          aria-label="Skill category contribution donut"
+        >
+          <defs>
+            <filter id="category-donut-center-shadow" x="-25%" y="-25%" width="150%" height="150%">
+              <feDropShadow
+                dx="0"
+                dy="2"
+                stdDeviation="3"
+                floodColor="#000000"
+                floodOpacity="0.34"
+              />
+            </filter>
+            <filter id="category-donut-selected-glow" x="-35%" y="-35%" width="170%" height="170%">
+              <feDropShadow
+                dx="0"
+                dy="0"
+                stdDeviation="2.2"
+                floodColor="#d7d9dd"
+                floodOpacity="0.28"
+              />
+            </filter>
+          </defs>
+          <circle
+            cx={centerX}
+            cy={centerY}
+            r={radius}
+            fill="none"
+            stroke="#151922"
+            strokeWidth={separatorWidth}
+          />
+          {segments.map((segment) => {
+            const { category, color, endAngle, path, startAngle } = segment;
+            const selected = category.categoryId === selectedCategoryId;
+            const selectedOuterPath = selected
+              ? describeDonutArc(
+                  centerX,
+                  centerY,
+                  radius + strokeWidth / 2 + 4,
+                  startAngle,
+                  endAngle
+                )
+              : null;
+
+            return (
+              <g key={category.categoryId}>
+                <path
+                  d={path}
+                  fill="none"
+                  stroke="#070a0f"
+                  strokeWidth={separatorWidth}
+                  strokeLinecap="butt"
+                />
+                {selectedOuterPath ? (
+                  <path
+                    d={selectedOuterPath}
+                    fill="none"
+                    stroke="#f4f4f5"
+                    strokeWidth={6}
+                    strokeLinecap="butt"
+                    opacity={0.18}
+                    filter="url(#category-donut-selected-glow)"
+                    pointerEvents="none"
+                  />
+                ) : null}
+                <path
+                  d={path}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={selected ? strokeWidth + 1 : strokeWidth}
+                  strokeLinecap="butt"
+                  opacity={selected || selectedCategoryId == null ? 1 : 0.48}
+                  className="cursor-pointer transition-[opacity,stroke-width] duration-150 focus:outline-none"
+                  onMouseEnter={() => onSelectCategory(category.categoryId)}
+                  onClick={() => onSelectCategory(category.categoryId)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${category.categoryName}, ${formatPercentLabel(
+                    category.percentOfTotal
+                  )} of XP`}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelectCategory(category.categoryId);
+                    }
+                  }}
+                />
+                {selectedOuterPath ? (
+                  <path
+                    d={selectedOuterPath}
+                    fill="none"
+                    stroke="#eef0f3"
+                    strokeWidth={2.5}
+                    strokeLinecap="butt"
+                    opacity={0.9}
+                    pointerEvents="none"
+                  />
+                ) : null}
+              </g>
+            );
+          })}
+          {labels.map((label) => {
+            const { category } = label.segment;
+            const selected = category.categoryId === selectedCategoryId;
+            const name = formatCategoryDonutName(category.categoryName);
+            const details = `${formatPercentLabel(
+              category.percentOfTotal
+            )}  +${formatCategoryDonutXpLabel(category.xpGained)}`;
+
+            return (
+              <g
+                key={`label-${category.categoryId}`}
+                aria-hidden="true"
+                className="pointer-events-none"
+              >
+                <path
+                  d={[
+                    "M",
+                    label.anchorX.toFixed(2),
+                    label.anchorY.toFixed(2),
+                    "L",
+                    label.connectorX.toFixed(2),
+                    label.connectorY.toFixed(2),
+                    "L",
+                    label.elbowX.toFixed(2),
+                    label.labelY.toFixed(2),
+                    "L",
+                    label.lineEndX.toFixed(2),
+                    label.labelY.toFixed(2),
+                  ].join(" ")}
+                  fill="none"
+                  stroke={selected ? "rgba(235,236,240,0.68)" : "rgba(161,166,175,0.34)"}
+                  strokeWidth={selected ? 1.15 : 0.85}
+                  strokeLinecap="round"
+                />
+                <circle
+                  cx={label.anchorX}
+                  cy={label.anchorY}
+                  r={1.45}
+                  fill={selected ? "#e7e9ed" : "#7c838e"}
+                  opacity={selected ? 0.78 : 0.46}
+                />
+                <text
+                  x={label.labelX}
+                  y={label.labelY - 4}
+                  textAnchor={label.side === "right" ? "start" : "end"}
+                  className={classNames(
+                    "fill-current text-[9.5px] font-semibold uppercase tracking-[0.09em] min-[380px]:text-[10.5px]",
+                    selected ? "text-zinc-100" : "text-zinc-400"
+                  )}
+                >
+                  {name}
+                </text>
+                <text
+                  x={label.labelX}
+                  y={label.labelY + 10}
+                  textAnchor={label.side === "right" ? "start" : "end"}
+                  className={classNames(
+                    "fill-current text-[9px] font-medium tabular-nums min-[380px]:text-[10px]",
+                    selected ? "text-zinc-300" : "text-zinc-600"
+                  )}
+                >
+                  {details}
+                </text>
+              </g>
+            );
+          })}
+          <circle
+            cx={centerX}
+            cy={centerY}
+            r={radius - strokeWidth / 2 - 4}
+            fill="#070a0f"
+            filter="url(#category-donut-center-shadow)"
+          />
+          <circle
+            cx={centerX}
+            cy={centerY}
+            r={radius - strokeWidth / 2 - 2}
+            fill="none"
+            stroke="rgba(208,210,214,0.10)"
+            strokeWidth={1}
+          />
+        </svg>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
+          <div className="max-w-[128px]">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 min-[380px]:text-[10px]">
+              {selectedCategory ? selectedCategory.categoryName : "TOTAL XP"}
+            </div>
+            <div className="mt-1 truncate text-base font-semibold leading-tight text-zinc-50 min-[380px]:text-lg sm:text-xl">
+              {selectedCategory
+                ? `${formatCompactNumber(selectedCategory.xpGained)} XP`
+                : formatCompactNumber(totalXp)}
+            </div>
+            <div className="mt-1 text-[10px] font-medium text-zinc-400 min-[380px]:text-xs">
+              {selectedCategory
+                ? `${formatPercentLabel(selectedCategory.percentOfTotal)} of total`
+                : `${rangeLabel} gain`}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildCategoryDonutLabels(
+  segments: CategoryDonutSegment[],
+  centerX: number,
+  centerY: number,
+  radius: number
+): CategoryDonutLabel[] {
+  const preferredLabelRadius = radius + 78;
+  const anchorRadius = radius + 10;
+  const radialBreakRadius = radius + 24;
+  const leftLabels: CategoryDonutLabel[] = [];
+  const rightLabels: CategoryDonutLabel[] = [];
+
+  segments.forEach((segment) => {
+    const midAngle = (segment.startAngle + segment.endAngle) / 2;
+    const side: CategoryDonutLabel["side"] =
+      Math.sin((midAngle * Math.PI) / 180) >= 0 ? "right" : "left";
+    const config = CATEGORY_DONUT_LABEL_CONFIG[side];
+    const anchor = polarToCartesian(centerX, centerY, anchorRadius, midAngle);
+    const radialBreak = polarToCartesian(
+      centerX,
+      centerY,
+      radialBreakRadius,
+      midAngle
+    );
+    const preferred = polarToCartesian(
+      centerX,
+      centerY,
+      preferredLabelRadius,
+      midAngle
+    );
+    const label: CategoryDonutLabel = {
+      anchorX: anchor.x,
+      anchorY: anchor.y,
+      connectorX: radialBreak.x,
+      connectorY: radialBreak.y,
+      elbowX: config.elbowX,
+      labelX: config.labelX,
+      labelY: preferred.y,
+      lineEndX: config.lineEndX,
+      midAngle,
+      preferredY: preferred.y,
+      segment,
+      side,
+    };
+
+    if (side === "right") {
+      rightLabels.push(label);
+    } else {
+      leftLabels.push(label);
+    }
+  });
+
+  return [
+    ...layoutCategoryDonutLabelSide(leftLabels, CATEGORY_DONUT_LABEL_CONFIG.left),
+    ...layoutCategoryDonutLabelSide(rightLabels, CATEGORY_DONUT_LABEL_CONFIG.right),
+  ];
+}
+
+function layoutCategoryDonutLabelSide(
+  labels: CategoryDonutLabel[],
+  config: CategoryDonutLabelSideConfig
+): CategoryDonutLabel[] {
+  const { maxY, minGap, minY } = config;
+
+  if (labels.length <= 1) {
+    return labels.map((label) => ({
+      ...label,
+      labelY: clamp(label.preferredY, minY, maxY),
+    }));
+  }
+
+  const sorted = [...labels].sort((a, b) => a.preferredY - b.preferredY);
+  const available = maxY - minY;
+  const required = minGap * (sorted.length - 1);
+  const effectiveGap =
+    required > available
+      ? Math.max(
+          CATEGORY_DONUT_LABEL_MOBILE_ROW_GAP,
+          available / (sorted.length - 1)
+        )
+      : minGap;
+  let previousY = minY - effectiveGap;
+
+  const placed = sorted.map((label) => {
+    const labelY = clamp(
+      Math.max(label.preferredY, previousY + effectiveGap),
+      minY,
+      maxY
+    );
+    previousY = labelY;
+    return { ...label, labelY };
+  });
+
+  for (let index = placed.length - 2; index >= 0; index -= 1) {
+    const next = placed[index + 1];
+    const current = placed[index];
+    if (current.labelY + effectiveGap > next.labelY) {
+      placed[index] = {
+        ...current,
+        labelY: Math.max(minY, next.labelY - effectiveGap),
+      };
+    }
+  }
+
+  const preferredSpan =
+    sorted[sorted.length - 1].preferredY - sorted[0].preferredY;
+  const placedSpan = placed[placed.length - 1].labelY - placed[0].labelY;
+  const visuallyCramped =
+    sorted.length >= 3 &&
+    available > required * 1.12 &&
+    (preferredSpan < available * 0.48 || placedSpan < available * 0.58);
+
+  if (!visuallyCramped) {
+    return placed;
+  }
+
+  const evenGap = Math.min(48, Math.max(effectiveGap, available / (sorted.length - 1)));
+  const evenSpan = evenGap * (sorted.length - 1);
+  const preferredCenter =
+    sorted.reduce((sum, label) => sum + label.preferredY, 0) / sorted.length;
+  const startY = clamp(preferredCenter - evenSpan / 2, minY, maxY - evenSpan);
+
+  return placed.map((label, index) => ({
+    ...label,
+    labelY: startY + evenGap * index,
+  }));
+}
+
+function formatCategoryDonutName(name: string) {
+  const compact = name.trim().replace(/\s+/g, " ");
+
+  if (compact.length <= 15) {
+    return compact;
+  }
+
+  const withoutVowels = compact
+    .split(" ")
+    .map((word, index) =>
+      index === 0 ? word : word.replace(/[aeiou]/gi, "")
+    )
+    .join(" ");
+
+  const candidate = withoutVowels.length < compact.length ? withoutVowels : compact;
+  return candidate.length > 15 ? `${candidate.slice(0, 14)}.` : candidate;
+}
+
+function formatCategoryDonutXpLabel(value: number) {
+  return `${formatCompactNumber(value)} XP`;
+}
+
+function SkillCategoryDetail({
+  category,
+  categories,
+  totalXp,
+  rangeLabel,
+}: {
+  category: VisibleSkillCategoryContribution | null;
+  categories: VisibleSkillCategoryContribution[];
+  totalXp: number;
+  rangeLabel: string;
+}) {
+  if (!category) {
+    return (
+      <div className="rounded-xl border border-zinc-800 bg-[#080b11] p-3">
+        <div className="flex items-start justify-between gap-3 border-b border-zinc-800 pb-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+              {rangeLabel} contribution
+            </div>
+            <div className="mt-1 text-base font-semibold text-zinc-50">
+              Top categories
+            </div>
+          </div>
+          <div className="text-right text-lg font-semibold text-zinc-50">
+            +{formatCompactNumber(totalXp)} XP
+          </div>
+        </div>
+        <div className="mt-3 space-y-2">
+          {categories.slice(0, 6).map((item, index) => (
+            <RankedContributionRow
+              key={item.categoryId}
+              rank={index + 1}
+              icon={item.categoryIcon ?? null}
+              fallback={getSkillInitial(item.categoryName)}
+              name={item.categoryName}
+              xpGained={item.xpGained}
+              primaryPercent={item.percentOfTotal}
+              secondaryLabel="of total"
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const isOther = Boolean(category.groupedCategories?.length);
+  const activeSkills = category.skills.filter((skill) => skill.isActiveInRange);
+  const inactiveSkills = category.skills.filter((skill) => !skill.isActiveInRange);
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-[#080b11] p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-800 pb-3">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+            Selected category
+          </div>
+          <div className="mt-1 truncate text-base font-semibold text-zinc-50">
+            {isOther ? category.categoryName : `Skills in ${category.categoryName}`}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-lg font-semibold text-zinc-50">
+            +{formatCompactNumber(category.xpGained)} XP
+          </div>
+          <div className="text-xs text-zinc-500">
+            {formatPercentLabel(category.percentOfTotal)} of total
+          </div>
+        </div>
+      </div>
+
+      {isOther ? (
+        <div className="mt-3 space-y-2">
+          {category.groupedCategories?.map((grouped, index) => (
+            <RankedContributionRow
+              key={grouped.categoryId}
+              rank={index + 1}
+              icon={grouped.categoryIcon ?? null}
+              fallback={getSkillInitial(grouped.categoryName)}
+              name={grouped.categoryName}
+              xpGained={grouped.xpGained}
+              primaryPercent={grouped.percentOfTotal}
+              secondaryLabel="of total"
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {activeSkills.map((skill) => (
+            <SkillContributionSkillRow
+              key={skill.skillId}
+              icon={normalizeSkillIcon(skill.skillIcon ?? null)}
+              fallback={getSkillInitial(skill.skillName)}
+              name={skill.skillName}
+              xpGained={skill.xpGained}
+              percentOfCategory={skill.percentOfCategory}
+              percentOfTotal={totalXp > 0 ? skill.percentOfTotal : 0}
+              isActiveInRange={skill.isActiveInRange}
+              xpPercentChange={skill.xpPercentChange}
+              xpTrend={skill.xpTrend ?? []}
+            />
+          ))}
+          {inactiveSkills.length > 0 ? (
+            <div className="pt-1">
+              <div className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-600">
+                <span className="h-px flex-1 bg-zinc-800" />
+                <span>No XP this range</span>
+                <span className="h-px flex-1 bg-zinc-800" />
+              </div>
+              <div className="space-y-2">
+                {inactiveSkills.map((skill) => (
+                  <SkillContributionSkillRow
+                    key={skill.skillId}
+                    icon={normalizeSkillIcon(skill.skillIcon ?? null)}
+                    fallback={getSkillInitial(skill.skillName)}
+                    name={skill.skillName}
+                    xpGained={skill.xpGained}
+                    percentOfCategory={skill.percentOfCategory}
+                    percentOfTotal={totalXp > 0 ? skill.percentOfTotal : 0}
+                    isActiveInRange={skill.isActiveInRange}
+                    xpPercentChange={skill.xpPercentChange}
+                    xpTrend={skill.xpTrend ?? []}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SkillContributionSkillRow({
+  icon,
+  fallback,
+  name,
+  xpGained,
+  percentOfCategory,
+  percentOfTotal,
+  isActiveInRange,
+  xpPercentChange,
+  xpTrend,
+}: {
+  icon: string | null;
+  fallback: string;
+  name: string;
+  xpGained: number;
+  percentOfCategory: number;
+  percentOfTotal: number;
+  isActiveInRange: boolean;
+  xpPercentChange: number | null;
+  xpTrend: Array<{ label: string; xp: number }>;
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/55 px-2 py-1.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <SkillIconBadge icon={icon} fallback={fallback} name={name} />
+        <div className="min-w-0">
+          <div className="truncate text-xs font-semibold text-zinc-100">{name}</div>
+          {isActiveInRange ? (
+            <div className="text-[10px] text-zinc-500">
+              {formatPercentLabel(percentOfCategory)} of category ·{" "}
+              {formatPercentLabel(percentOfTotal)} total
+            </div>
+          ) : (
+            <div className="text-[10px] text-zinc-600">0 XP this range</div>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center justify-end gap-1 text-right">
+        <SkillXpSparkline
+          trend={xpTrend}
+          isActiveInRange={isActiveInRange}
+          isFlatTrend={xpPercentChange === 0}
+          isNegativeTrend={xpPercentChange != null && xpPercentChange < 0}
+        />
+        <div
+          className={classNames(
+            "text-xs font-semibold",
+            isActiveInRange ? "text-emerald-300" : "text-zinc-500"
+          )}
+        >
+          +{formatCompactNumber(xpGained)} XP
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkillXpSparkline({
+  trend,
+  isActiveInRange,
+  isFlatTrend,
+  isNegativeTrend,
+}: {
+  trend: Array<{ label: string; xp: number }>;
+  isActiveInRange: boolean;
+  isFlatTrend: boolean;
+  isNegativeTrend: boolean;
+}) {
+  const width = 24;
+  const height = 12;
+  const paddingX = 1.5;
+  const paddingY = 2;
+  const values = trend.map((point) =>
+    Number.isFinite(point.xp) && point.xp > 0 ? point.xp : 0
+  );
+  const maxValue = Math.max(0, ...values);
+  const points = values.length > 0 ? values : [0, 0];
+  const drawableWidth = width - paddingX * 2;
+  const drawableHeight = height - paddingY * 2;
+  const path = points
+    .map((value, index) => {
+      const x =
+        paddingX +
+        (points.length === 1 ? drawableWidth / 2 : (index / (points.length - 1)) * drawableWidth);
+      const y =
+        maxValue > 0
+          ? paddingY + drawableHeight - (value / maxValue) * drawableHeight
+          : height / 2;
+      return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      className="h-3 w-6 shrink-0 grow-0 basis-auto"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d={path}
+        fill="none"
+        stroke={
+          isNegativeTrend
+            ? "rgba(248,113,113,0.62)"
+            : isFlatTrend
+              ? "rgba(113,113,122,0.45)"
+            : isActiveInRange
+              ? "rgba(110,231,183,0.55)"
+              : "rgba(113,113,122,0.45)"
+        }
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1"
+      />
+    </svg>
+  );
+}
+
+function RankedContributionRow({
+  rank,
+  icon,
+  fallback,
+  name,
+  xpGained,
+  primaryPercent,
+  secondaryLabel,
+}: {
+  rank: number;
+  icon: string | null;
+  fallback: string;
+  name: string;
+  xpGained: number;
+  primaryPercent: number;
+  secondaryLabel: string;
+}) {
+  return (
+    <div className="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/55 px-2 py-1.5">
+      <div className="text-center text-[10px] font-semibold text-zinc-500">
+        {rank}
+      </div>
+      <div className="flex min-w-0 items-center gap-2">
+        <SkillIconBadge icon={icon} fallback={fallback} name={name} />
+        <div className="min-w-0">
+          <div className="truncate text-xs font-semibold text-zinc-100">{name}</div>
+          <div className="text-[10px] text-zinc-500">
+            {formatPercentLabel(primaryPercent)} {secondaryLabel}
+          </div>
+        </div>
+      </div>
+      <div className="text-right text-xs font-semibold text-zinc-100">
+        +{formatCompactNumber(xpGained)}
+      </div>
+    </div>
+  );
+}
+
+function buildVisibleSkillCategories(
+  categories: AnalyticsSkillCategoryContribution[]
+): VisibleSkillCategoryContribution[] {
+  if (categories.length <= 8) {
+    return categories;
+  }
+
+  const visible = categories.slice(0, 8);
+  const groupedCategories = categories.slice(8);
+  const otherXp = groupedCategories.reduce(
+    (sum, category) => sum + category.xpGained,
+    0
+  );
+  const totalXp = categories.reduce((sum, category) => sum + category.xpGained, 0);
+
+  if (otherXp <= 0 || totalXp <= 0) {
+    return visible;
+  }
+
+  return [
+    ...visible,
+    {
+      categoryId: "__other_skill_categories",
+      categoryName: "Other",
+      categoryIcon: null,
+      xpGained: otherXp,
+      percentOfTotal: clampPercent((otherXp / totalXp) * 100),
+      skills: [],
+      groupedCategories,
+    },
+  ];
+}
+
+function describeDonutArc(
+  centerX: number,
+  centerY: number,
+  radius: number,
+  startAngle: number,
+  endAngle: number
+) {
+  const start = polarToCartesian(centerX, centerY, radius, endAngle);
+  const end = polarToCartesian(centerX, centerY, radius, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+
+  return [
+    "M",
+    start.x.toFixed(3),
+    start.y.toFixed(3),
+    "A",
+    radius,
+    radius,
+    0,
+    largeArcFlag,
+    0,
+    end.x.toFixed(3),
+    end.y.toFixed(3),
+  ].join(" ");
+}
+
+function polarToCartesian(
+  centerX: number,
+  centerY: number,
+  radius: number,
+  angleInDegrees: number
+) {
+  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
+
+  return {
+    x: centerX + radius * Math.cos(angleInRadians),
+    y: centerY + radius * Math.sin(angleInRadians),
+  };
+}
+
+function formatPercentLabel(value: number) {
+  const clamped = clampPercent(value);
+  return `${clamped}%`;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function SkillIconBadge({
+  icon,
+  fallback,
+  name,
+}: {
+  icon: string | null;
+  fallback: string;
+  name: string;
+}) {
+  const isImageIcon = icon != null && /^https?:\/\//i.test(icon);
+
+  return (
+    <div
+      className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-zinc-700 bg-zinc-900 text-lg font-semibold leading-none text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:h-8 sm:w-8"
+      aria-label={`${name} icon`}
+    >
+      {isImageIcon ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          alt=""
+          src={icon}
+          className="h-full w-full rounded-full object-cover"
+        />
+      ) : (
+        <span className="flex h-full w-full items-center justify-center leading-none" aria-hidden>
+          {icon ?? fallback}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function normalizeSkillIcon(icon: string | null) {
+  const trimmed = icon?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
+}
+
+function getSkillInitial(name: string) {
+  const trimmed = name.trim();
+  return (trimmed[0] ?? "?").toUpperCase();
 }
 
 function RecentScheduleShowcase({
@@ -820,18 +1911,14 @@ function safeDate(value: string | null | undefined) {
 
 function OverviewDiagnosticsSection({
   points,
-  efficiencyDebug,
   range,
   selectedRange,
-  onRangeChange,
   isRefreshing,
   statusMessage,
 }: {
   points: AnalyticsOverviewDailyPoint[];
-  efficiencyDebug?: AnalyticsOverviewEfficiencyDebug;
   range: AnalyticsRange;
   selectedRange: AnalyticsRange;
-  onRangeChange: (range: AnalyticsRange) => void;
   isRefreshing: boolean;
   statusMessage: string | null;
 }) {
@@ -847,10 +1934,6 @@ function OverviewDiagnosticsSection({
   const totalUsableWindowMinutes = points.reduce(
     (sum, point) => sum + point.usableWindowMinutes,
     0
-  );
-  const unusedUsableMinutes = Math.max(
-    0,
-    totalUsableWindowMinutes - totalCompletedMinutes
   );
   const rangeEfficiencyRate =
     totalUsableWindowMinutes > 0
@@ -885,7 +1968,7 @@ function OverviewDiagnosticsSection({
   return (
     <div
       className={classNames(
-        "space-y-3 transition-opacity duration-200 sm:space-y-5",
+        "space-y-3 transition-opacity duration-200 sm:space-y-4",
         isRefreshing && "opacity-80"
       )}
     >
@@ -902,43 +1985,35 @@ function OverviewDiagnosticsSection({
             message={statusMessage}
           />
         </div>
-        <OverviewRangeSelector
-          selectedRange={selectedRange}
-          onRangeChange={onRangeChange}
-          isRefreshing={isRefreshing}
-        />
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+          {formatAnalyticsRangeLabel(selectedRange)}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-        <OverviewKpiTile
+      <div className="grid grid-cols-4 overflow-hidden rounded-xl border border-zinc-800/90 bg-zinc-950/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <OverviewKpiRailItem
           label="XP"
           value={formatCompactNumber(totalXp)}
-          detail={formatRangeSummary(range, points.length)}
+          sublabel={formatRangeSummary(range, points.length)}
+          tone="green"
         />
-        <OverviewKpiTile
+        <OverviewKpiRailItem
           label={averageLabel}
           value={formatAverageXp(averageValue)}
-          detail={`Peak ${formatCompactNumber(peakXp)} XP`}
+          sublabel={`Peak ${formatCompactNumber(peakXp)} XP`}
         />
-        <OverviewKpiTile
+        <OverviewKpiRailItem
           label="Completed"
           value={formatCompactNumber(completedEvents)}
-          detail={`${formatCompactNumber(completedProjects)} projects · ${formatCompactNumber(completedTasks)} tasks · ${formatCompactNumber(completedHabits)} habits`}
+          sublabel={`${formatCompactNumber(completedProjects)}P · ${formatCompactNumber(completedTasks)}T · ${formatCompactNumber(completedHabits)}H`}
+          tone="green"
         />
-        <div className="space-y-1.5">
-          <OverviewKpiTile
-            label="Efficiency"
-            value={`${rangeEfficiencyRate}%`}
-            detail={`${totalCompletedMinutes}m / ${totalUsableWindowMinutes}m utilized`}
-            secondaryDetail={
-              unusedUsableMinutes > 0 ? `${unusedUsableMinutes}m unused` : null
-            }
-            tone={getEfficiencyTone(rangeEfficiencyRate)}
-          />
-          {process.env.NODE_ENV !== "production" && efficiencyDebug ? (
-            <EfficiencyDebugPanel debug={efficiencyDebug} />
-          ) : null}
-        </div>
+        <OverviewKpiRailItem
+          label="Efficiency"
+          value={`${rangeEfficiencyRate}%`}
+          sublabel={`${totalCompletedMinutes}m / ${totalUsableWindowMinutes}m`}
+          tone="amber"
+        />
       </div>
 
       <div className="overflow-hidden rounded-[18px] border border-zinc-800 bg-zinc-950/85 sm:rounded-[22px]">
@@ -989,75 +2064,7 @@ function OverviewPanelStatus({
   );
 }
 
-function EfficiencyDebugPanel({
-  debug,
-}: {
-  debug: AnalyticsOverviewEfficiencyDebug;
-}) {
-  return (
-    <details className="rounded-md border border-zinc-800 bg-zinc-950/90 px-2 py-1 text-[10px] text-zinc-400">
-      <summary className="cursor-pointer select-none uppercase tracking-[0.16em] text-zinc-500">
-        Efficiency debug
-      </summary>
-      <div className="mt-2 space-y-2">
-        <div>
-          <div>range: {debug.selectedRange}</div>
-          <div>start: {debug.startIso}</div>
-          <div>end: {debug.endIso}</div>
-          <div>completed: {debug.totalCompletedMinutes}m</div>
-          <div>usable: {debug.totalUsableWindowMinutes}m</div>
-          <div>rate: {debug.rangeEfficiencyRate}%</div>
-        </div>
-        <div className="space-y-2">
-          {debug.perDay.map((day) => (
-            <div
-              key={`${day.dayKey}:${day.dayStartUtc}`}
-              className="border-t border-zinc-900 pt-2 first:border-t-0 first:pt-0"
-            >
-              <div className="text-zinc-200">
-                {day.dayKey}: {day.usableWindowMinutes}m usable,{" "}
-                {day.completedMinutes}m completed
-              </div>
-              <div>capacity source: {day.capacitySource}</div>
-              <div>assigned day type: {day.assignedDayTypeId ?? "none"}</div>
-              <div>
-                merge: {day.intervalsBeforeMergeCount} before /{" "}
-                {day.mergedIntervalCount} after
-              </div>
-              {day.includedSources.length > 0 ? (
-                <div className="space-y-0.5">
-                  {day.includedSources.map((source) => (
-                    <div
-                      key={`${day.dayKey}:${source.sourceKind}:${source.sourceId}`}
-                    >
-                      + {source.label} ({source.sourceKind}){" "}
-                      {source.minutesAfterClipping}m
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div>+ no included sources</div>
-              )}
-              {day.excludedSources.length > 0 ? (
-                <div className="space-y-0.5 text-zinc-500">
-                  {day.excludedSources.map((source) => (
-                    <div
-                      key={`${day.dayKey}:excluded:${source.sourceKind}:${source.sourceId}:${source.reason}`}
-                    >
-                      - {source.label} ({source.sourceKind}) {source.reason}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      </div>
-    </details>
-  );
-}
-
-function OverviewRangeSelector({
+function AnalyticsRangeSelector({
   selectedRange,
   onRangeChange,
   isRefreshing,
@@ -1069,7 +2076,7 @@ function OverviewRangeSelector({
   return (
     <div className="overflow-x-auto pb-1">
       <div className="inline-flex min-w-max items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-950/95 p-0.5 sm:rounded-2xl sm:p-1">
-        {OVERVIEW_RANGE_OPTIONS.map((option) => {
+        {ANALYTICS_RANGE_OPTIONS.map((option) => {
           const isActive = option.value === selectedRange;
           return (
             <button
@@ -1095,58 +2102,51 @@ function OverviewRangeSelector({
   );
 }
 
-function OverviewKpiTile({
+function OverviewKpiRailItem({
   label,
   value,
-  detail,
-  secondaryDetail = null,
+  sublabel,
   tone = "default",
 }: {
   label: string;
   value: string;
-  detail: string;
-  secondaryDetail?: string | null;
-  tone?: "default" | "good" | "neutral" | "low";
+  sublabel: string;
+  tone?: "default" | "green" | "amber";
 }) {
-  const toneClass =
-    tone === "good"
-      ? "border-emerald-500/25 bg-emerald-500/10"
-      : tone === "low"
-        ? "border-amber-500/25 bg-amber-500/10"
-        : tone === "neutral"
-          ? "border-zinc-700 bg-zinc-950/90"
-          : "border-zinc-800 bg-zinc-950/80";
+  const accentClass =
+    tone === "green"
+      ? "before:bg-emerald-400/70"
+      : tone === "amber"
+        ? "before:bg-amber-400/75"
+        : "before:bg-zinc-700";
   const valueClass =
-    tone === "good"
+    tone === "green"
       ? "text-emerald-100"
-      : tone === "low"
+      : tone === "amber"
         ? "text-amber-100"
         : "text-zinc-50";
 
   return (
     <div
       className={classNames(
-        "rounded-[14px] border px-3 py-2.5 sm:rounded-[18px] sm:px-4 sm:py-3",
-        toneClass
+        "relative min-w-0 border-l border-zinc-800/80 px-2 py-1.5 first:border-l-0 before:absolute before:inset-y-2 before:left-0 before:w-px sm:px-3 sm:py-2",
+        accentClass
       )}
     >
-      <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+      <div className="truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px]">
         {label}
       </div>
       <div
         className={classNames(
-          "mt-1 text-lg font-semibold sm:mt-1.5 sm:text-2xl",
+          "mt-0.5 truncate text-sm font-semibold leading-tight tabular-nums sm:text-base",
           valueClass
         )}
       >
         {value}
       </div>
-      <div className="mt-0.5 text-[11px] text-zinc-500 sm:mt-1 sm:text-xs">{detail}</div>
-      {secondaryDetail ? (
-        <div className="mt-0.5 text-[10px] text-zinc-600 sm:text-[11px]">
-          {secondaryDetail}
-        </div>
-      ) : null}
+      <div className="truncate text-[10px] leading-tight text-zinc-500 sm:text-[11px]">
+        {sublabel}
+      </div>
     </div>
   );
 }
@@ -1158,23 +2158,50 @@ function OverviewLineChart({
   points: AnalyticsOverviewDailyPoint[];
   range: AnalyticsRange;
 }) {
-  const [activeIndex, setActiveIndex] = useState(points.length - 1);
+  const [tooltip, setTooltip] = useState<{
+    index: number;
+    left: number;
+    top: number;
+    visible: boolean;
+  }>({
+    index: points.length - 1,
+    left: 50,
+    top: 50,
+    visible: false,
+  });
 
   useEffect(() => {
-    setActiveIndex(points.length > 0 ? points.length - 1 : 0);
+    setTooltip({
+      index: points.length > 0 ? points.length - 1 : 0,
+      left: 50,
+      top: 50,
+      visible: false,
+    });
   }, [points, range]);
 
   const width = 720;
-  const height = 320;
-  const padding = { top: 16, right: 12, bottom: 42, left: 38 };
+  const height = 260;
+  const padding = { top: 12, right: 12, bottom: 34, left: 36 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
+  const contextHeight = 46;
+  const trendHeight = chartHeight - contextHeight;
+  const trendBaselineY = padding.top + trendHeight;
+  const contextTopY = trendBaselineY + 10;
+  const contextBottomY = padding.top + chartHeight - 5;
   const values = points.map((point) => point.xpGained);
-  const totalXp = values.reduce((sum, value) => sum + value, 0);
   const rawMaxValue = values.length > 0 ? Math.max(...values) : 0;
   const yMax = getTrendYAxisMax(rawMaxValue);
   const isEmpty = rawMaxValue <= 0;
-  const activePoint = points[Math.min(activeIndex, points.length - 1)] ?? null;
+  const hasEfficiencyBuckets = points.some(
+    (point) => point.usableWindowMinutes > 0
+  );
+  const maxCompletedEvents = Math.max(
+    1,
+    ...points.map((point) => point.completedEvents)
+  );
+  const activeIndex = Math.min(tooltip.index, points.length - 1);
+  const activePoint = tooltip.visible ? points[activeIndex] ?? null : null;
   const yTickValues = buildYTickValues(yMax);
   const svgPoints = points.map((point, index) => {
     const x =
@@ -1182,9 +2209,14 @@ function OverviewLineChart({
         ? padding.left + chartWidth / 2
         : padding.left + (index / (points.length - 1)) * chartWidth;
     const y =
-      padding.top + chartHeight - (point.xpGained / yMax) * chartHeight;
+      padding.top + trendHeight - (point.xpGained / yMax) * trendHeight;
     return { x, y, point };
   });
+  const bucketWidth = chartWidth / Math.max(points.length, 1);
+  const completionBarWidth = Math.max(
+    2,
+    Math.min(12, bucketWidth * (points.length > 30 ? 0.42 : 0.52))
+  );
   const linePath = svgPoints
     .map(
       (point, index) =>
@@ -1192,9 +2224,9 @@ function OverviewLineChart({
     )
     .join(" ");
   const areaPath = [
-    `M${padding.left},${padding.top + chartHeight}`,
+    `M${padding.left},${trendBaselineY}`,
     ...svgPoints.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`),
-    `L${padding.left + chartWidth},${padding.top + chartHeight}`,
+    `L${padding.left + chartWidth},${trendBaselineY}`,
     "Z",
   ].join(" ");
   const xLabels = getTrendAxisLabelIndices(range, points)
@@ -1206,65 +2238,52 @@ function OverviewLineChart({
       label: formatTrendXAxisLabel(points[index]?.date, range),
       weekday: formatTrendWeekdayLabel(points[index]?.date, range),
     }));
-  const peakPoint = getTrendPeakPoint(points);
-  const lowPoint = getTrendLowPoint(points);
+  const showTooltip = (index: number, left: number, top: number) => {
+    setTooltip({
+      index,
+      left: Math.max(8, Math.min(92, left)),
+      top: Math.max(12, Math.min(88, top)),
+      visible: true,
+    });
+  };
+  const showTooltipAtPoint = (index: number) => {
+    const point = svgPoints[index];
+    if (!point) {
+      return;
+    }
+
+    showTooltip(index, (point.x / width) * 100, (point.y / height) * 100);
+  };
+  const showTooltipAtPointer = (
+    index: number,
+    event: PointerEvent<HTMLButtonElement>
+  ) => {
+    const bounds = event.currentTarget
+      .closest("[data-overview-line-chart]")
+      ?.getBoundingClientRect();
+
+    if (!bounds) {
+      showTooltipAtPoint(index);
+      return;
+    }
+
+    showTooltip(
+      index,
+      ((event.clientX - bounds.left) / bounds.width) * 100,
+      ((event.clientY - bounds.top) / bounds.height) * 100
+    );
+  };
+  const hideTooltip = () => {
+    setTooltip((current) => ({ ...current, visible: false }));
+  };
 
   return (
     <div className="space-y-0">
-      <div className="flex flex-col gap-2.5 border-b border-zinc-800 px-3 py-3 sm:px-4 sm:py-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-600">
-            XP
-          </div>
-          <div className="mt-1 text-xl font-semibold text-zinc-50 sm:mt-1.5 sm:text-3xl">
-            {formatCompactNumber(activePoint?.xpGained ?? 0)}
-          </div>
-          <div className="mt-1 text-sm text-zinc-500">
-            {formatTrendActiveLabel(activePoint?.date ?? null, range)}
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-1.5 text-right text-[11px] sm:gap-2 sm:text-xs lg:min-w-[260px]">
-          <ActiveTrendMetric
-            label="Completed"
-            value={formatCompactNumber(activePoint?.completedEvents ?? 0)}
-            tone="completed"
-          />
-          <ActiveTrendMetric
-            label="Scheduled"
-            value={formatCompactNumber(activePoint?.scheduledEvents ?? 0)}
-            tone="scheduled"
-          />
-          <ActiveTrendMetric
-            label="Missed"
-            value={formatCompactNumber(activePoint?.missedEvents ?? 0)}
-            tone="missed"
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2.5 px-3 py-3 sm:px-4 sm:py-4">
-        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-          <ChartMetaTile
-            label="Peak"
-            value={formatCompactNumber(peakPoint?.xpGained ?? 0)}
-            detail={formatTrendPointSummary(peakPoint, range)}
-          />
-          <ChartMetaTile
-            label="Low"
-            value={formatCompactNumber(lowPoint?.xpGained ?? 0)}
-            detail={formatTrendPointSummary(lowPoint, range)}
-          />
-          <ChartMetaTile
-            label="Total XP"
-            value={formatCompactNumber(totalXp)}
-            detail={formatRangeSummary(range, points.length)}
-          />
-        </div>
-
-        <div className="relative">
+      <div className="space-y-2 px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="relative" data-overview-line-chart>
           <svg
             viewBox={`0 0 ${width} ${height}`}
-            className="h-[190px] w-full sm:h-[248px] md:h-[300px] lg:h-[320px]"
+            className="h-[160px] w-full sm:h-[210px] md:h-[248px] lg:h-[270px]"
           >
             <defs>
               <linearGradient id="overviewDailyArea" x1="0" x2="0" y1="0" y2="1">
@@ -1279,7 +2298,7 @@ function OverviewLineChart({
 
             {yTickValues.map((value) => {
               const ratio = yMax === 0 ? 0 : value / yMax;
-              const y = padding.top + chartHeight - ratio * chartHeight;
+              const y = padding.top + trendHeight - ratio * trendHeight;
               return (
                 <g key={`grid-${value}`}>
                   <line
@@ -1294,7 +2313,7 @@ function OverviewLineChart({
                     y={y + 5}
                     textAnchor="end"
                     fill="rgba(161,161,170,0.82)"
-                    fontSize="12"
+                    fontSize="11"
                   >
                     {formatCompactNumber(value)}
                   </text>
@@ -1305,10 +2324,68 @@ function OverviewLineChart({
             <line
               x1={padding.left}
               x2={padding.left + chartWidth}
-              y1={padding.top + chartHeight}
-              y2={padding.top + chartHeight}
+              y1={trendBaselineY}
+              y2={trendBaselineY}
               stroke="rgba(82,82,91,0.6)"
             />
+
+            <line
+              x1={padding.left}
+              x2={padding.left + chartWidth}
+              y1={contextTopY}
+              y2={contextTopY}
+              stroke="rgba(63,63,70,0.34)"
+            />
+
+            {points.map((point, index) => {
+              const x =
+                points.length === 1
+                  ? padding.left + chartWidth / 2
+                  : padding.left + (index / (points.length - 1)) * chartWidth;
+              const barHeight =
+                point.completedEvents > 0
+                  ? Math.max(
+                      2,
+                      (point.completedEvents / maxCompletedEvents) *
+                        (contextBottomY - contextTopY - 10)
+                    )
+                  : 0;
+              const efficiencyWidth =
+                hasEfficiencyBuckets && point.usableWindowMinutes > 0
+                  ? Math.max(
+                      1,
+                      Math.min(
+                        bucketWidth * 0.72,
+                        bucketWidth * 0.72 * (point.efficiencyRate / 100)
+                      )
+                    )
+                  : 0;
+
+              return (
+                <g key={`${point.date}-context`}>
+                  {hasEfficiencyBuckets && point.usableWindowMinutes > 0 ? (
+                    <rect
+                      x={x - (bucketWidth * 0.72) / 2}
+                      y={contextTopY + 4}
+                      width={efficiencyWidth}
+                      height={3}
+                      rx={1.5}
+                      fill="rgba(245,158,11,0.62)"
+                    />
+                  ) : null}
+                  {barHeight > 0 ? (
+                    <rect
+                      x={x - completionBarWidth / 2}
+                      y={contextBottomY - barHeight}
+                      width={completionBarWidth}
+                      height={barHeight}
+                      rx={Math.min(2, completionBarWidth / 2)}
+                      fill="rgba(16,185,129,0.24)"
+                    />
+                  ) : null}
+                </g>
+              );
+            })}
 
             {!isEmpty ? (
               <>
@@ -1326,14 +2403,14 @@ function OverviewLineChart({
                     x1={svgPoints[activeIndex]?.x ?? 0}
                     x2={svgPoints[activeIndex]?.x ?? 0}
                     y1={padding.top}
-                    y2={padding.top + chartHeight}
+                    y2={contextBottomY}
                     stroke="rgba(113,113,122,0.45)"
                     strokeDasharray="3 5"
                   />
                 ) : null}
 
                 {svgPoints.map(({ x, y, point }, index) => {
-                  const isActive = index === activeIndex;
+                  const isActive = activePoint != null && index === activeIndex;
                   return (
                     <g key={`${point.date}-${index}`}>
                       <circle
@@ -1353,14 +2430,14 @@ function OverviewLineChart({
                 <line
                   x1={padding.left}
                   x2={padding.left + chartWidth}
-                  y1={padding.top + chartHeight * 0.55}
-                  y2={padding.top + chartHeight * 0.55}
+                  y1={padding.top + trendHeight * 0.55}
+                  y2={padding.top + trendHeight * 0.55}
                   stroke="rgba(63,63,70,0.55)"
                   strokeDasharray="4 6"
                 />
                 <text
                   x={padding.left + chartWidth / 2}
-                  y={padding.top + chartHeight * 0.46}
+                  y={padding.top + trendHeight * 0.46}
                   textAnchor="middle"
                   fill="rgba(161,161,170,0.88)"
                   fontSize="13"
@@ -1374,19 +2451,19 @@ function OverviewLineChart({
               <text
                 key={`${label.label}-${index}`}
                 x={label.x}
-                y={height - 20}
+                y={height - 18}
                 textAnchor="middle"
                 fill="rgba(161,161,170,0.9)"
-                fontSize="12"
+                fontSize="11"
               >
                 <tspan x={label.x} dy="0">
                   {label.label}
                 </tspan>
                 <tspan
                   x={label.x}
-                  dy="14"
+                  dy="12"
                   fill="rgba(113,113,122,0.92)"
-                  fontSize="11"
+                  fontSize="10"
                 >
                   {label.weekday}
                 </tspan>
@@ -1401,75 +2478,118 @@ function OverviewLineChart({
                     <button
                       key={`${point.point.date}-hitbox`}
                       type="button"
-                      onMouseEnter={() => setActiveIndex(index)}
-                      onFocus={() => setActiveIndex(index)}
-                      onClick={() => setActiveIndex(index)}
+                      onPointerEnter={(event) => showTooltipAtPointer(index, event)}
+                      onPointerMove={(event) => showTooltipAtPointer(index, event)}
+                      onPointerDown={(event) => {
+                        if (event.pointerType === "touch") {
+                          showTooltipAtPoint(index);
+                        }
+                      }}
+                      onPointerLeave={(event) => {
+                        if (event.pointerType !== "touch") {
+                          hideTooltip();
+                        }
+                      }}
+                      onFocus={() => showTooltipAtPoint(index)}
+                      onBlur={hideTooltip}
+                      onClick={() => showTooltipAtPoint(index)}
                       className="pointer-events-auto absolute bottom-0 top-0 -translate-x-1/2 focus:outline-none"
                       style={{
                         left: `${((point.x / width) * 100).toFixed(4)}%`,
                         width: `${Math.max(100 / Math.max(points.length, 1), 2)}%`,
                       }}
-                      aria-label={`${formatTrendActiveLabel(point.point.date, range)} ${point.point.xpGained} XP`}
+                      aria-label={formatOverviewPointAriaLabel(
+                        point.point,
+                        range,
+                        hasEfficiencyBuckets
+                      )}
                     />
                   ))
                 : null}
             </div>
           </div>
+
+          {activePoint ? (
+            <div
+              className={classNames(
+                "pointer-events-none absolute z-10 min-w-[132px] rounded-lg border border-white/10 bg-zinc-950/85 px-2.5 py-2 text-[11px] text-zinc-300 shadow-2xl shadow-black/40 backdrop-blur-md",
+                tooltip.left > 72
+                  ? "-translate-x-full"
+                  : tooltip.left < 28
+                    ? "translate-x-0"
+                    : "-translate-x-1/2",
+                tooltip.top > 58 ? "-translate-y-full" : "translate-y-2"
+              )}
+              style={{
+                left: `${tooltip.left}%`,
+                top: `${tooltip.top}%`,
+              }}
+              role="tooltip"
+            >
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <span className="font-medium text-zinc-100">
+                  {formatTrendActiveLabel(activePoint.date, range)}
+                </span>
+                <span className="text-[10px] uppercase tracking-[0.14em] text-emerald-200">
+                  XP
+                </span>
+              </div>
+              <div className="text-base font-semibold leading-none text-zinc-50">
+                {formatCompactNumber(activePoint.xpGained)}
+              </div>
+              <div className="mt-2 grid gap-1 border-t border-white/10 pt-1.5">
+                <OverviewTooltipMetric
+                  label="Completed"
+                  value={activePoint.completedEvents}
+                  tone="text-emerald-200"
+                />
+                <OverviewTooltipMetric
+                  label="Scheduled"
+                  value={activePoint.scheduledEvents}
+                  tone="text-zinc-200"
+                />
+                <OverviewTooltipMetric
+                  label="Missed"
+                  value={activePoint.missedEvents}
+                  tone="text-rose-200"
+                />
+                {hasEfficiencyBuckets && activePoint.usableWindowMinutes > 0 ? (
+                  <OverviewTooltipMetric
+                    label="Efficiency"
+                    value={activePoint.efficiencyRate}
+                    tone="text-amber-200"
+                    suffix="%"
+                  />
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
   );
 }
 
-function ActiveTrendMetric({
+function OverviewTooltipMetric({
   label,
   value,
   tone,
+  suffix = "",
 }: {
   label: string;
-  value: string;
-  tone: "completed" | "scheduled" | "missed";
-}) {
-  const toneClass =
-    tone === "completed"
-      ? "border-emerald-500/18 text-emerald-100"
-      : tone === "missed"
-        ? "border-rose-500/18 text-rose-100"
-        : "border-zinc-800 text-zinc-200";
-
-  return (
-    <div
-      className={classNames(
-        "rounded-xl border bg-zinc-950/75 px-2 py-1.5 sm:rounded-2xl sm:px-3 sm:py-2",
-        toneClass
-      )}
-    >
-      <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-600">
-        {label}
-      </div>
-      <div className="mt-0.5 text-xs font-semibold sm:mt-1 sm:text-base">{value}</div>
-    </div>
-  );
-}
-
-function ChartMetaTile({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
+  value: number;
+  tone: string;
+  suffix?: string;
 }) {
   return (
-    <div className="rounded-[12px] border border-zinc-800 bg-zinc-950/55 px-2.5 py-2 sm:rounded-[16px] sm:px-3 sm:py-2.5">
-      <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-600">
+    <div className="flex items-center justify-between gap-3">
+      <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
         {label}
       </div>
-      <div className="mt-0.5 text-sm font-semibold text-zinc-100 sm:mt-1 sm:text-lg">
-        {value}
+      <div className={classNames("font-semibold tabular-nums", tone)}>
+        {formatCompactNumber(value)}
+        {suffix}
       </div>
-      <div className="truncate text-xs text-zinc-500">{detail}</div>
     </div>
   );
 }
@@ -1490,7 +2610,7 @@ function formatAverageXp(value: number) {
 
 function formatRangeSummary(range: AnalyticsRange, pointsCount: number) {
   if (range === "1d") {
-    return `${pointsCount} hourly buckets`;
+    return `${pointsCount} hourly points`;
   }
 
   return `${pointsCount} daily points`;
@@ -1592,24 +2712,24 @@ function formatTrendWeekdayLabel(value: string | null, range: AnalyticsRange) {
   }).format(date);
 }
 
-function formatTrendPointSummary(
-  point: AnalyticsOverviewDailyPoint | null,
-  range: AnalyticsRange
+function formatOverviewPointAriaLabel(
+  point: AnalyticsOverviewDailyPoint,
+  range: AnalyticsRange,
+  hasEfficiencyBuckets: boolean
 ) {
-  if (!point) {
-    return "No data";
-  }
-  return formatTrendActiveLabel(point.date, range);
-}
+  const parts = [
+    formatTrendActiveLabel(point.date, range),
+    `${formatCompactNumber(point.xpGained)} XP`,
+    `${formatCompactNumber(point.completedEvents)} completed`,
+    `${formatCompactNumber(point.scheduledEvents)} scheduled`,
+    `${formatCompactNumber(point.missedEvents)} missed`,
+  ];
 
-function getEfficiencyTone(efficiencyRate: number) {
-  if (efficiencyRate >= 70) {
-    return "good" as const;
+  if (hasEfficiencyBuckets && point.usableWindowMinutes > 0) {
+    parts.push(`${formatCompactNumber(point.efficiencyRate)}% efficiency`);
   }
-  if (efficiencyRate >= 45) {
-    return "neutral" as const;
-  }
-  return "low" as const;
+
+  return parts.join(", ");
 }
 
 function formatTrendActiveLabel(value: string | null, range: AnalyticsRange) {
@@ -1638,30 +2758,6 @@ function formatTrendActiveLabel(value: string | null, range: AnalyticsRange) {
 
 function parseTrendDate(value: string, range: AnalyticsRange) {
   return range === "1d" ? new Date(value) : new Date(`${value}T12:00:00Z`);
-}
-
-function getTrendPeakPoint(points: AnalyticsOverviewDailyPoint[]) {
-  return points.reduce<AnalyticsOverviewDailyPoint | null>(
-    (best, point) => {
-      if (!best || point.xpGained > best.xpGained) {
-        return point;
-      }
-      return best;
-    },
-    null
-  );
-}
-
-function getTrendLowPoint(points: AnalyticsOverviewDailyPoint[]) {
-  return points.reduce<AnalyticsOverviewDailyPoint | null>(
-    (lowest, point) => {
-      if (!lowest || point.xpGained < lowest.xpGained) {
-        return point;
-      }
-      return lowest;
-    },
-    null
-  );
 }
 
 function formatDurationLabel(minutes: number) {
@@ -1941,6 +3037,8 @@ function TimeBlockPerformanceList({
 }: {
   items: AnalyticsTimeBlockPerformance[];
 }) {
+  type TimeBlockStatus = "strong" | "mixed" | "weak";
+
   const parseStartTime = (value: string | null) => {
     if (!value) {
       return null;
@@ -1975,52 +3073,104 @@ function TimeBlockPerformanceList({
   const formatStartTime = (value: string | null) =>
     formatLocalTime(value) ?? "Anytime";
 
-  const formatMinutesText = (completedMinutes: number, totalMinutes: number) =>
-    `${completedMinutes}/${totalMinutes} min`;
-
   const getPercentText = (value: number) => `${Math.round(value)}%`;
 
-  const getTimeBlockReadout = (item: (typeof items)[number]) => {
-    if (item.plannedEvents === 0) {
-      return {
-        title: "No Events planned",
-        detail: "This Time Block has no scheduled Events yet.",
-        tone: "idle",
-      } as const;
+  const getOutcomeTotal = (item: AnalyticsTimeBlockPerformance) =>
+    item.completedEvents + item.scheduledEvents + item.missedEvents;
+
+  const getStatus = (completionRate: number): TimeBlockStatus => {
+    if (completionRate >= 75) {
+      return "strong";
     }
-    if (item.completedEvents === 0 && item.missedEvents > 0) {
-      return {
-        title: "No completions",
-        detail: `${item.missedEvents} of ${item.plannedEvents} Events were missed.`,
-        tone: "missed",
-      } as const;
+    if (completionRate >= 35) {
+      return "mixed";
     }
-    if (item.completionRate >= 80 && item.missedEvents === 0) {
-      return {
-        title: "Strong block",
-        detail: `${item.completedEvents} of ${item.plannedEvents} Events completed with no misses.`,
-        tone: "completed",
-      } as const;
+    return "weak";
+  };
+
+  const getDiagnosticSentence = (item: AnalyticsTimeBlockPerformance) => {
+    const outcomeTotal = getOutcomeTotal(item);
+
+    if (outcomeTotal === 0) {
+      return "No Events were placed in this Time Block.";
     }
-    if (item.missedRate >= 40) {
-      return {
-        title: "Too much planned",
-        detail: `${item.missedEvents} of ${item.plannedEvents} Events were missed.`,
-        tone: "missed",
-      } as const;
+
+    const largestOutcome = Math.max(
+      item.completedEvents,
+      item.scheduledEvents,
+      item.missedEvents
+    );
+
+    if (item.missedEvents === largestOutcome) {
+      return "Mostly missed after being scheduled.";
     }
-    if (item.scheduledEvents > 0) {
-      return {
-        title: "Still active",
-        detail: `${item.scheduledEvents} Events remain Scheduled.`,
-        tone: "scheduled",
-      } as const;
+    if (item.scheduledEvents === largestOutcome) {
+      return "Mostly still scheduled.";
     }
-    return {
-      title: "Partial completion",
-      detail: `${item.completedEvents} of ${item.plannedEvents} Events completed.`,
-      tone: "partial",
-    } as const;
+    if (item.completedEvents === largestOutcome && item.completionRate >= 75) {
+      return "Strong completion once placed.";
+    }
+    return "Mixed execution in this Time Block.";
+  };
+
+  const getStackedSegments = (item: AnalyticsTimeBlockPerformance) => {
+    const outcomeTotal = getOutcomeTotal(item);
+    const fallbackValue = outcomeTotal === 0 ? 1 : outcomeTotal;
+
+    return [
+      {
+        key: "completed",
+        label: "Completed",
+        value: item.completedEvents,
+        className: "bg-emerald-300/70",
+        width: `${(item.completedEvents / fallbackValue) * 100}%`,
+      },
+      {
+        key: "scheduled",
+        label: "Scheduled",
+        value: item.scheduledEvents,
+        className: "bg-amber-300/60",
+        width: `${(item.scheduledEvents / fallbackValue) * 100}%`,
+      },
+      {
+        key: "missed",
+        label: "Missed",
+        value: item.missedEvents,
+        className: "bg-red-300/65",
+        width: `${(item.missedEvents / fallbackValue) * 100}%`,
+      },
+    ] as const;
+  };
+
+  const getStatusClasses = (status: TimeBlockStatus, isSelected: boolean) => {
+    const classes = {
+      strong: {
+        node: "border-emerald-200/70 bg-emerald-300/80 shadow-emerald-400/20",
+        rate: "text-emerald-200",
+        row: isSelected
+          ? "border-emerald-300/35 bg-emerald-400/[0.07] shadow-[0_0_24px_rgba(52,211,153,0.09)]"
+          : "border-zinc-800/80 bg-zinc-950/70 hover:border-emerald-300/25 hover:bg-emerald-400/[0.04]",
+      },
+      mixed: {
+        node: "border-amber-200/65 bg-amber-300/75 shadow-amber-400/15",
+        rate: "text-amber-100",
+        row: isSelected
+          ? "border-amber-300/35 bg-amber-300/[0.07] shadow-[0_0_24px_rgba(251,191,36,0.08)]"
+          : "border-zinc-800/80 bg-zinc-950/70 hover:border-amber-300/25 hover:bg-amber-300/[0.04]",
+      },
+      weak: {
+        node: "border-red-200/65 bg-red-300/75 shadow-red-400/15",
+        rate: "text-red-200",
+        row: isSelected
+          ? "border-red-300/35 bg-red-400/[0.07] shadow-[0_0_24px_rgba(248,113,113,0.08)]"
+          : "border-zinc-800/80 bg-zinc-950/70 hover:border-red-300/25 hover:bg-red-400/[0.04]",
+      },
+    } satisfies Record<
+      TimeBlockStatus,
+      { node: string; rate: string; row: string }
+    >;
+
+    return classes[status];
   };
 
   const sortedItems = useMemo(() => {
@@ -2056,290 +3206,268 @@ function TimeBlockPerformanceList({
   }, [sortedItems]);
 
   const selectedItem = sortedItems[selectedIndex];
+  const visibleRankCount = sortedItems.length <= 4 ? sortedItems.length : 3;
+  const bestItems = useMemo(
+    () =>
+      [...sortedItems]
+        .sort((left, right) => {
+          if (right.completionRate !== left.completionRate) {
+            return right.completionRate - left.completionRate;
+          }
+          if (right.completedEvents !== left.completedEvents) {
+            return right.completedEvents - left.completedEvents;
+          }
+          return left.label.localeCompare(right.label);
+        })
+        .slice(0, visibleRankCount),
+    [sortedItems, visibleRankCount]
+  );
+  const needsAttentionItems = useMemo(
+    () =>
+      [...sortedItems]
+        .sort((left, right) => {
+          const leftMissPriority = left.missedEvents > 0 ? 0 : 1;
+          const rightMissPriority = right.missedEvents > 0 ? 0 : 1;
+
+          if (leftMissPriority !== rightMissPriority) {
+            return leftMissPriority - rightMissPriority;
+          }
+          if (left.completionRate !== right.completionRate) {
+            return left.completionRate - right.completionRate;
+          }
+          if (right.missedEvents !== left.missedEvents) {
+            return right.missedEvents - left.missedEvents;
+          }
+          return left.label.localeCompare(right.label);
+        })
+        .slice(0, visibleRankCount),
+    [sortedItems, visibleRankCount]
+  );
 
   if (!selectedItem) {
     return null;
   }
 
-  const readout = getTimeBlockReadout(selectedItem);
   const timeRange =
     formatLocalTimeRange(selectedItem.startLocal, selectedItem.endLocal) ??
     "Anytime";
-  const completedRatioText = `${selectedItem.completedEvents}/${selectedItem.plannedEvents}`;
-  const completionPercentText = getPercentText(selectedItem.completionRate);
-  const missedPercentText = getPercentText(selectedItem.missedRate);
-  const timeText = formatMinutesText(
-    selectedItem.completedMinutes,
-    selectedItem.totalMinutes
+  const selectedOutcomeTotal = getOutcomeTotal(selectedItem);
+  const selectedDiagnostic = getDiagnosticSentence(selectedItem);
+
+  const OutcomeBar = ({
+    item,
+    heightClassName = "h-1.5",
+  }: {
+    item: AnalyticsTimeBlockPerformance;
+    heightClassName?: string;
+  }) => {
+    const segments = getStackedSegments(item);
+    const hasEvents = getOutcomeTotal(item) > 0;
+
+    return (
+      <div
+        className={classNames(
+          "flex overflow-hidden rounded-full bg-zinc-800/90",
+          heightClassName
+        )}
+        aria-label={`${item.completedEvents} Completed, ${item.scheduledEvents} Scheduled, ${item.missedEvents} Missed`}
+      >
+        {hasEvents ? (
+          segments.map((segment) =>
+            segment.value > 0 ? (
+              <span
+                key={segment.key}
+                className={segment.className}
+                style={{ width: segment.width }}
+                title={`${segment.label}: ${segment.value}`}
+              />
+            ) : null
+          )
+        ) : (
+          <span className="w-full bg-zinc-700/35" />
+        )}
+      </div>
+    );
+  };
+
+  const RankingList = ({
+    label,
+    rankingItems,
+  }: {
+    label: string;
+    rankingItems: AnalyticsTimeBlockPerformance[];
+  }) => (
+    <div className="min-w-0 rounded-lg border border-zinc-800/80 bg-zinc-950/55 p-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.16)]">
+      <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500">
+        {label}
+      </div>
+      <div className="space-y-1.5">
+        {rankingItems.map((item) => {
+          const outcomeTotal = getOutcomeTotal(item);
+
+          return (
+            <button
+              key={`${label}-${item.id}`}
+              type="button"
+              onClick={() => setSelectedIndex(sortedItems.indexOf(item))}
+              className="grid min-h-8 w-full grid-cols-[minmax(0,1fr)_54px_56px] items-center gap-2 rounded-md px-1.5 py-1 text-left transition hover:bg-zinc-900/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/35"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-xs font-medium text-zinc-200">
+                  {item.label}
+                </div>
+                <OutcomeBar item={item} heightClassName="mt-1 h-1" />
+              </div>
+              <div className="text-right text-[11px] text-zinc-500">
+                {item.completedEvents}/{outcomeTotal}
+              </div>
+              <div className="text-right text-xs font-medium text-zinc-300">
+                {getPercentText(item.completionRate)}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
-  const minuteCompletionRate =
-    selectedItem.totalMinutes > 0
-      ? (selectedItem.completedMinutes / selectedItem.totalMinutes) * 100
-      : 0;
-  const breakdownMax = Math.max(
-    selectedItem.completedEvents,
-    selectedItem.scheduledEvents,
-    selectedItem.missedEvents
-  );
-  const breakdownSegments = [
-    {
-      key: "completed",
-      label: "Completed",
-      value: selectedItem.completedEvents,
-      className: "bg-teal-400/75",
-    },
-    {
-      key: "scheduled",
-      label: "Scheduled",
-      value: selectedItem.scheduledEvents,
-      className: "bg-violet-400/60",
-    },
-    {
-      key: "missed",
-      label: "Missed",
-      value: selectedItem.missedEvents,
-      className: "bg-rose-400/65",
-    },
-  ] as const;
-  const readoutToneClass = {
-    idle: "text-zinc-400",
-    completed: "text-teal-300",
-    scheduled: "text-violet-300",
-    missed: "text-rose-300",
-    partial: "text-zinc-300",
-  }[readout.tone];
-  const rowBarWidth = (value: number) =>
-    value <= 0 ? "0%" : `${Math.max(4, Math.min(value, 100))}%`;
 
   return (
-    <div className="space-y-2.5 rounded-xl border border-zinc-800 bg-zinc-950 p-2.5 sm:space-y-3 sm:p-4">
-      <div className="flex min-h-9 items-center justify-between gap-2.5 border-b border-zinc-800 pb-2.5 sm:min-h-10 sm:gap-3 sm:pb-3">
+    <div className="space-y-3 rounded-xl border border-zinc-800/90 bg-[linear-gradient(180deg,rgba(24,24,27,0.78),rgba(9,9,11,0.96))] p-2.5 shadow-[0_18px_55px_rgba(0,0,0,0.28)] sm:p-3">
+      <div className="flex items-center justify-between gap-3 px-1">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-zinc-100">
             Time Block Analytics
           </div>
-          <div className="text-xs text-zinc-400">Scheduled Events by block</div>
+          <div className="text-xs text-zinc-500">Day Spine by local start time</div>
         </div>
-        <div className="flex items-center gap-2 text-xs">
-          <div className="hidden text-zinc-400 sm:block">{timeRange}</div>
-          <button
-            type="button"
-            onClick={() =>
-              setSelectedIndex((currentIndex) => Math.max(0, currentIndex - 1))
-            }
-            disabled={selectedIndex === 0}
-            className="rounded-md border border-zinc-800 bg-zinc-900/40 px-2 py-1 text-zinc-300 transition hover:bg-zinc-900/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Prev
-          </button>
-          <div className="min-w-[34px] text-center text-zinc-500">
-            {selectedIndex + 1} / {sortedItems.length}
-          </div>
-          <button
-            type="button"
-            onClick={() =>
-              setSelectedIndex((currentIndex) =>
-                Math.min(sortedItems.length - 1, currentIndex + 1)
-              )
-            }
-            disabled={selectedIndex === sortedItems.length - 1}
-            className="rounded-md border border-zinc-800 bg-zinc-900/40 px-2 py-1 text-zinc-300 transition hover:bg-zinc-900/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Next
-          </button>
+        <div className="shrink-0 rounded-full border border-zinc-800 bg-zinc-950/70 px-2 py-1 text-[11px] text-zinc-500">
+          {sortedItems.length} Time Blocks
         </div>
       </div>
 
-      <div className="grid rounded-xl border border-zinc-800 bg-zinc-900/35 sm:grid-cols-4">
-        {[
-          {
-            label: "Completion",
-            value: completedRatioText,
-            helper: `${selectedItem.plannedEvents} Scheduled`,
-          },
-          {
-            label: "Rate",
-            value: completionPercentText,
-            helper:
-              selectedItem.scheduledEvents > 0
-                ? `${selectedItem.scheduledEvents} Scheduled`
-                : "No Scheduled left",
-          },
-          {
-            label: "Missed",
-            value: `${selectedItem.missedEvents}`,
-            helper:
-              selectedItem.missedEvents > 0
-                ? missedPercentText
-                : "No Missed Events",
-          },
-          {
-            label: "Time",
-            value: timeText,
-            helper:
-              selectedItem.totalMinutes > 0
-                ? getPercentText(minuteCompletionRate)
-                : "No minutes tracked",
-          },
-        ].map((metric, index) => (
-          <div
-            key={metric.label}
-            className={classNames(
-              "px-3 py-2.5 sm:px-4 sm:py-3",
-              index > 0 && "border-t border-zinc-800 sm:border-l sm:border-t-0"
-            )}
-          >
-            <div className="text-xs text-zinc-400">{metric.label}</div>
-            <div className="mt-1 text-lg font-semibold text-zinc-100">
-              {metric.value}
-            </div>
-            <div className="mt-0.5 text-[11px] text-zinc-500">{metric.helper}</div>
-          </div>
-        ))}
-      </div>
+      <div className="relative space-y-1.5 pl-1">
+        <div className="absolute bottom-3 left-[3.95rem] top-3 hidden w-px bg-gradient-to-b from-zinc-800 via-zinc-700/80 to-zinc-800 sm:block" />
+        <div className="absolute bottom-3 left-[3.45rem] top-3 w-px bg-gradient-to-b from-zinc-800 via-zinc-700/80 to-zinc-800 sm:hidden" />
+        {sortedItems.map((item, index) => {
+          const isSelected = index === selectedIndex;
+          const timeLabel = formatStartTime(item.startLocal);
+          const outcomeTotal = getOutcomeTotal(item);
+          const status = getStatus(item.completionRate);
+          const statusClasses = getStatusClasses(status, isSelected);
 
-      <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40">
-        <div className="grid grid-cols-[76px_minmax(0,1.1fr)_minmax(120px,1fr)_56px_72px] gap-3 border-b border-zinc-800 px-3 py-2 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-          <span>Start</span>
-          <span>Time Block</span>
-          <span>Completed</span>
-          <span className="text-right">Rate</span>
-          <span className="text-right">Missed</span>
-        </div>
-        <div className="divide-y divide-zinc-800">
-          {sortedItems.map((item, index) => {
-            const isSelected = index === selectedIndex;
-            const timeLabel = formatStartTime(item.startLocal);
-            const ratioText = `${item.completedEvents}/${item.plannedEvents}`;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSelectedIndex(index)}
+              aria-pressed={isSelected}
+              title={item.label}
+              className={classNames(
+                "relative grid min-h-[58px] w-full grid-cols-[56px_minmax(0,1fr)_48px] items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/35 sm:grid-cols-[66px_minmax(0,1fr)_58px] sm:gap-3",
+                statusClasses.row
+              )}
+            >
+              <div className="relative z-10 flex items-center gap-2">
+                <span
+                  className={classNames(
+                    "h-2.5 w-2.5 shrink-0 rounded-full border shadow-[0_0_16px]",
+                    statusClasses.node
+                  )}
+                  aria-hidden="true"
+                />
+                <span className="text-[11px] font-medium tabular-nums text-zinc-400 sm:text-xs">
+                  {timeLabel}
+                </span>
+              </div>
 
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSelectedIndex(index)}
-                aria-pressed={isSelected}
-                title={item.label}
-                className={classNames(
-                  "grid h-10 w-full grid-cols-[76px_minmax(0,1.1fr)_minmax(120px,1fr)_56px_72px] items-center gap-3 px-3 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/50",
-                  isSelected
-                    ? "bg-violet-500/10 text-zinc-50"
-                    : "bg-transparent text-zinc-300 hover:bg-zinc-900/70"
-                )}
-              >
-                <span className="text-xs text-zinc-400">{timeLabel}</span>
+              <div className="min-w-0">
                 <div className="truncate text-sm font-medium text-zinc-100">
                   {item.label}
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
-                    <div
-                      className="relative h-full rounded-full bg-violet-300/75"
-                      style={{ width: rowBarWidth(item.completionRate) }}
-                    >
-                      {item.missedEvents > 0 ? (
-                        <span className="absolute right-0 top-0 h-full w-1 rounded-full bg-rose-300/80" />
-                      ) : null}
-                    </div>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <OutcomeBar item={item} />
                   </div>
-                  <span className="hidden text-[11px] text-zinc-500 sm:inline">
-                    {ratioText}
-                  </span>
+                  <div className="hidden shrink-0 text-[11px] tabular-nums text-zinc-500 sm:block">
+                    {item.completedEvents}C / {item.scheduledEvents}S /{" "}
+                    {item.missedEvents}M
+                  </div>
                 </div>
-                <span className="text-right text-xs text-zinc-300">
+                <div className="mt-1 text-[11px] tabular-nums text-zinc-500 sm:hidden">
+                  {item.completedEvents} Completed / {item.scheduledEvents} Scheduled /{" "}
+                  {item.missedEvents} Missed
+                </div>
+              </div>
+
+              <div className="text-right">
+                <div
+                  className={classNames(
+                    "text-sm font-semibold tabular-nums",
+                    statusClasses.rate
+                  )}
+                >
                   {getPercentText(item.completionRate)}
-                </span>
-                <span className="text-right text-xs text-zinc-400">
-                  {item.missedEvents > 0 ? `${item.missedEvents} missed` : "0"}
-                </span>
-              </button>
-            );
-          })}
+                </div>
+                <div className="text-[11px] tabular-nums text-zinc-500">
+                  {item.completedEvents}/{outcomeTotal}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="rounded-lg border border-zinc-800/90 bg-zinc-950/70 p-3 shadow-[0_14px_40px_rgba(0,0,0,0.18)]">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.85fr)] md:items-center">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-zinc-100">
+                  {selectedItem.label}
+                </div>
+                <div className="mt-0.5 text-xs text-zinc-500">{timeRange}</div>
+              </div>
+              <div className="text-right text-xs tabular-nums text-zinc-400">
+                {selectedItem.completedMinutes}/{selectedItem.totalMinutes} min
+              </div>
+            </div>
+            <div className="mt-2">
+              <OutcomeBar item={selectedItem} heightClassName="h-2" />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500">
+              <span>
+                <span className="text-emerald-200">{selectedItem.completedEvents}</span>{" "}
+                Completed
+              </span>
+              <span>
+                <span className="text-amber-100">{selectedItem.scheduledEvents}</span>{" "}
+                Scheduled
+              </span>
+              <span>
+                <span className="text-red-200">{selectedItem.missedEvents}</span>{" "}
+                Missed
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-zinc-800/80 bg-zinc-900/40 p-2.5">
+            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500">
+              Diagnostic
+            </div>
+            <div className="mt-1.5 text-sm leading-5 text-zinc-200">
+              {selectedDiagnostic}
+            </div>
+            <div className="mt-2 text-xs tabular-nums text-zinc-500">
+              {selectedItem.completedEvents}/{selectedOutcomeTotal} Completed ·{" "}
+              {getPercentText(selectedItem.completionRate)}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-            Outcome Breakdown
-          </div>
-          {breakdownMax === 0 ? (
-            <div className="mt-3 space-y-2">
-              <div className="h-1.5 rounded-full bg-zinc-800" />
-              <div className="text-xs text-zinc-500">No Events in this Time Block.</div>
-            </div>
-          ) : (
-            <div className="mt-3 space-y-2.5">
-              {breakdownSegments.map((segment) => (
-                <div
-                  key={segment.key}
-                  className="grid grid-cols-[68px_minmax(0,1fr)_20px] items-center gap-2 text-xs"
-                >
-                  <span className="text-zinc-400">{segment.label}</span>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
-                    <div
-                      className={classNames("h-full rounded-full", segment.className)}
-                      style={{
-                        width: `${(segment.value / breakdownMax) * 100}%`,
-                      }}
-                    />
-                  </div>
-                  <span className="text-right text-zinc-100">{segment.value}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-            Readout
-          </div>
-          <div className="mt-3 space-y-2">
-            <div className="text-sm font-medium text-zinc-100">{readout.title}</div>
-            <div className="text-xs leading-5 text-zinc-400">{readout.detail}</div>
-            <div className={classNames("text-xs font-medium", readoutToneClass)}>
-              {selectedItem.label}
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-            Time Utilization
-          </div>
-          <div className="mt-3 space-y-2">
-            {selectedItem.totalMinutes > 0 ? (
-              <>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-xs text-zinc-400">Minutes</span>
-                  <span className="text-sm font-medium text-zinc-100">
-                    {timeText}
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-xs text-zinc-400">Completed</span>
-                  <span className="text-sm text-zinc-300">
-                    {getPercentText(minuteCompletionRate)}
-                  </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
-                  <div
-                    className="h-full rounded-full bg-violet-300/75"
-                    style={{ width: `${Math.max(0, Math.min(minuteCompletionRate, 100))}%` }}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="space-y-2">
-                <div className="h-1.5 rounded-full bg-zinc-800" />
-                <div className="text-xs text-zinc-500">No minutes in this Time Block.</div>
-              </div>
-            )}
-            <div className="border-t border-zinc-800 pt-2 text-xs text-zinc-500">
-              {timeRange}
-            </div>
-          </div>
-        </div>
+      <div className="grid gap-2.5 md:grid-cols-2">
+        <RankingList label="Best" rankingItems={bestItems} />
+        <RankingList label="Needs attention" rankingItems={needsAttentionItems} />
       </div>
     </div>
   );

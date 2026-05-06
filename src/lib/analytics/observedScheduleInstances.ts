@@ -70,7 +70,8 @@ function buildObservedInstanceInsert(
   userId: string,
   dayKey: string,
   window: { timezone: string; dayStartUtc: string; dayEndUtc: string },
-  instance: ScheduleInstanceObservationRow
+  instance: ScheduleInstanceObservationRow,
+  observedAtIso: string
 ): ObservedInstanceInsert {
   return {
     id: crypto.randomUUID(),
@@ -89,6 +90,9 @@ function buildObservedInstanceInsert(
     day_type_time_block_id: instance.day_type_time_block_id,
     window_id: instance.window_id,
     observed_status: mapObservedAnalyticsStatus(instance),
+    first_observed_at: observedAtIso,
+    last_observed_at: observedAtIso,
+    observation_count: 1,
   };
 }
 
@@ -139,19 +143,23 @@ export async function upsertObservedScheduleInstances(
       input.userId,
       dayKey,
       { timezone, dayStartUtc, dayEndUtc },
-      instance
+      instance,
+      nowIso
     );
     const existing = existingByInstanceId.get(instance.id);
     if (!existing) {
       return base;
     }
 
+    const existingObservationCount = Number(existing.observation_count);
     return {
       ...base,
       id: existing.id,
-      first_observed_at: existing.first_observed_at,
+      first_observed_at: existing.first_observed_at ?? nowIso,
       last_observed_at: nowIso,
-      observation_count: existing.observation_count + 1,
+      observation_count: Number.isFinite(existingObservationCount)
+        ? existingObservationCount + 1
+        : 1,
       scheduled_start_utc:
         existing.scheduled_start_utc ?? base.scheduled_start_utc ?? null,
       scheduled_end_utc:

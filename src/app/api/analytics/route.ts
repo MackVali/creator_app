@@ -30,6 +30,8 @@ import type {
   AnalyticsMonument,
   AnalyticsOverviewDailyPoint,
   AnalyticsOverviewEfficiencyDebug,
+  AnalyticsOverviewEfficiencyCompletedDebug,
+  AnalyticsOverviewEfficiencyCompletedDebugRow,
   AnalyticsOverviewEfficiencyDebugDay,
   AnalyticsOverviewEfficiencyDebugExcludedSource,
   AnalyticsOverviewEfficiencyDebugSource,
@@ -38,6 +40,8 @@ import type {
   AnalyticsResponse,
   AnalyticsScheduleSummary,
   AnalyticsSkill,
+  AnalyticsSkillCategoryContribution,
+  AnalyticsSkillXpTrendBucket,
   AnalyticsTimeBlockPerformance,
   AnalyticsTodaySummary,
   AnalyticsUnscheduledPressure,
@@ -86,9 +90,17 @@ type RawSkillRow = {
   id: string;
   name?: string | null;
   title?: string | null;
+  icon?: string | null;
+  cat_id?: string | null;
   monument_id?: string | null;
   updated_at?: string | null;
   created_at?: string | null;
+};
+
+type RawCatRow = {
+  id: string;
+  name?: string | null;
+  icon?: string | null;
 };
 
 type RawXpEventRow = {
@@ -143,8 +155,16 @@ type NormalizedMonumentRow = {
 type NormalizedSkillRow = {
   id: string;
   name: string;
+  icon: string | null;
+  cat_id: string | null;
   monument_id: string | null;
   updated_at: string | null;
+};
+
+type NormalizedCatRow = {
+  id: string;
+  name: string;
+  icon: string | null;
 };
 
 type NormalizedHabitRow = {
@@ -306,6 +326,8 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 type OverviewUsableScheduleSource = {
   generalWindows: OverviewUsableWindowMeta[];
+  breakWindowIds: Set<string>;
+  breakDayTypeTimeBlockIds: Set<string>;
   dayTypeAssignmentsByDateKey: Map<string, string>;
   dayTypesById: Map<
     string,
@@ -348,6 +370,9 @@ type OverviewUsableWindowMinutesResult = {
   minutesByPoint: Map<string, number>;
   perDay: OverviewUsableWindowDebugDayInternal[];
 };
+
+type OverviewDailySeriesCompletedDebug =
+  AnalyticsOverviewEfficiencyCompletedDebug;
 
 export async function GET(request: NextRequest) {
   const gate = await requirePlus();
@@ -396,6 +421,7 @@ export async function GET(request: NextRequest) {
     timeZone,
   });
   const combinedStartIso = previousStart.toISOString();
+  const rangeEndExclusiveIso = new Date(end.getTime() + 1).toISOString();
   const todayDayKey = formatProductivityDayKey(todayStart, timeZone);
 
   const habitHistoryStart = startOfDay(addDays(end, -365));
@@ -415,6 +441,7 @@ export async function GET(request: NextRequest) {
     defaultDayTypesRes,
     dayTypeTimeBlocksRes,
     skillsRes,
+    catsRes,
     skillProgressRes,
     goalsRes,
     habitHistoryRes,
@@ -513,22 +540,34 @@ export async function GET(request: NextRequest) {
     supabase
       .from("day_type_time_blocks")
       .select(
-        "id, day_type_id, energy, block_type, time_blocks(label, start_local, end_local)"
+        "id, day_type_id, energy, block_type, time_block_id, time_blocks(label, start_local, end_local)"
       )
       .eq("user_id", user.id),
     queryWithFallback(
       () =>
         supabase
           .from("skills")
-          .select("id, name, monument_id, updated_at")
+          .select("id, name, icon, cat_id, monument_id, updated_at")
           .eq("user_id", user.id)
           .order("updated_at", { ascending: false }),
       () =>
         supabase
           .from("skills")
-          .select("id, title, monument_id, created_at")
+          .select("id, title, cat_id, monument_id, created_at")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
+    ),
+    queryWithFallback(
+      () =>
+        supabase
+          .from("cats")
+          .select("id, name, icon")
+          .eq("user_id", user.id),
+      () =>
+        supabase
+          .from("cats")
+          .select("id, name")
+          .eq("user_id", user.id)
     ),
     supabase
       .from("skill_progress")
@@ -563,8 +602,8 @@ export async function GET(request: NextRequest) {
         "id, source_type, status, window_id, day_type_time_block_id, time_block_id, start_utc, end_utc, duration_min, completed_at"
       )
       .eq("user_id", user.id)
-      .gte("start_utc", start.toISOString())
-      .lte("start_utc", end.toISOString())
+      .gt("end_utc", start.toISOString())
+      .lt("start_utc", rangeEndExclusiveIso)
       .order("start_utc", { ascending: false }),
     supabase
       .from("daily_schedule_analytics_observed_instances")
@@ -615,6 +654,7 @@ export async function GET(request: NextRequest) {
     monumentsRes.error ||
     windowsRes.error ||
     skillsRes.error ||
+    catsRes.error ||
     skillProgressRes.error ||
     goalsRes.error ||
     habitHistoryRes.error ||
@@ -649,6 +689,7 @@ export async function GET(request: NextRequest) {
       ? ((dayTypeTimeBlocksRes.data ?? []) as RawDayTypeTimeBlockSnapshotRow[])
       : [];
   const skills = normalizeSkillRows(skillsRes.data ?? []);
+  const cats = normalizeCatRows(catsRes.data ?? []);
   const skillProgress = skillProgressRes.data ?? [];
   const goals = goalsRes.data ?? [];
   const habitHistory = habitHistoryRes.data ?? [];
@@ -815,6 +856,7 @@ export async function GET(request: NextRequest) {
   const overviewDailyResult = await buildOverviewDailySeries({
     xpEvents: xpSplit.current,
     observedInstances: scheduleSummaryObservedInstances,
+    scheduleInstances: scheduleSummaryInstances,
     start,
     end,
     now: analyticsNow,
@@ -824,18 +866,35 @@ export async function GET(request: NextRequest) {
   });
   const overviewDaily = overviewDailyResult.overviewDaily;
 
-  const skillXpDuringRange = new Map<string, number>();
-  for (const event of xpEvents) {
-    if (!event?.skill_id) continue;
-    const eventDate = parseDate(event.created_at);
-    if (!isWithinRange(eventDate, start, end)) continue;
-    const amount = Number(event.amount ?? 0);
-    if (!Number.isFinite(amount) || amount <= 0) continue;
-    skillXpDuringRange.set(
-      event.skill_id,
-      (skillXpDuringRange.get(event.skill_id) ?? 0) + amount
-    );
-  }
+  const periodSkillXp = buildPeriodSkillXp(xpSplit.current);
+  const previousPeriodSkillXp = buildPeriodSkillXp(xpSplit.previous);
+  const skillCategoryContributionMeta = buildSkillCategoryContributionMeta({
+    skills,
+    cats,
+    periodSkillXp,
+    previousPeriodSkillXp,
+  });
+  const skillXpTrend = buildSkillXpTrend({
+    xpEvents: xpSplit.current,
+    start,
+    end,
+    range,
+    timeZone,
+  });
+  const skillXpTrendBySkill = buildSkillXpTrendBySkill({
+    xpEvents: xpSplit.current,
+    start,
+    end,
+    range,
+    timeZone,
+  });
+  const skillCategoryContribution = buildSkillCategoryContribution({
+    skills,
+    cats,
+    periodSkillXp,
+    previousPeriodSkillXp,
+    skillXpTrendBySkill,
+  });
 
   const taskSplit = splitByPeriod(
     tasks,
@@ -940,19 +999,21 @@ export async function GET(request: NextRequest) {
 
   const rankedSkills: AnalyticsSkill[] = skills
     .map((skill) => {
-      const xpGained = skillXpDuringRange.get(skill.id) ?? 0;
-      if (xpGained <= 0) {
-        return null;
-      }
+      const periodXpGained = periodSkillXp.get(skill.id) ?? 0;
       const progress = skillProgressMap.get(skill.id);
       if (!progress) {
         return {
           id: skill.id,
           name: skill.name,
+          icon: skill.icon,
           level: 1,
           progress: 0,
           updatedAt: skill.updated_at ?? null,
-          xpGained,
+          xpGained: periodXpGained,
+          periodXpGained,
+          totalXp: null,
+          xpIntoLevel: null,
+          xpForNextLevel: null,
         } satisfies AnalyticsSkill;
       }
 
@@ -965,15 +1026,23 @@ export async function GET(request: NextRequest) {
       return {
         id: skill.id,
         name: skill.name,
+        icon: skill.icon,
         level: progress.level ?? 1,
         progress: clampPercent(percent),
         updatedAt: progress.updated_at ?? skill.updated_at ?? null,
-        xpGained,
+        xpGained: periodXpGained,
+        periodXpGained,
+        totalXp: progress.total_xp ?? null,
+        xpIntoLevel: progress.xp_into_level ?? null,
+        xpForNextLevel: cost,
       } satisfies AnalyticsSkill;
     })
-    .filter((skill): skill is AnalyticsSkill => skill !== null)
-    .sort((a, b) => b.xpGained - a.xpGained)
-    .slice(0, 6);
+    .sort((a, b) => {
+      if (a.periodXpGained !== b.periodXpGained) {
+        return b.periodXpGained - a.periodXpGained;
+      }
+      return a.name.localeCompare(b.name);
+    });
 
   const projectIds = projects.map((project) => project.id);
   const projectTasksRes: PostgrestResponse<RawTaskRow> = projectIds.length
@@ -1263,6 +1332,9 @@ export async function GET(request: NextRequest) {
     generatedAt: new Date().toISOString(),
     kpis,
     skills: rankedSkills,
+    skillXpTrend,
+    skillCategoryContribution,
+    skillCategoryContributionMeta,
     projects: rankedProjects,
     monuments: rankedMonuments,
     recentSchedules: recentScheduleShowcase,
@@ -1525,9 +1597,22 @@ function normalizeSkillRows(rows: unknown[]): NormalizedSkillRow[] {
     return {
       id: record.id,
       name: normalizeText(record.name, record.title) ?? "Untitled skill",
+      icon: normalizeText(record.icon) ?? null,
+      cat_id: record.cat_id ?? null,
       monument_id: record.monument_id ?? null,
       updated_at: normalizeIsoString(record.updated_at, record.created_at),
     } satisfies NormalizedSkillRow;
+  });
+}
+
+function normalizeCatRows(rows: unknown[]): NormalizedCatRow[] {
+  return rows.map((row) => {
+    const record = row as RawCatRow;
+    return {
+      id: record.id,
+      name: normalizeText(record.name) ?? "Untitled category",
+      icon: normalizeText(record.icon) ?? null,
+    } satisfies NormalizedCatRow;
   });
 }
 
@@ -1692,6 +1777,7 @@ function normalizeObservedScheduleAnalyticsRows(
 async function buildOverviewDailySeries({
   xpEvents,
   observedInstances,
+  scheduleInstances,
   usableScheduleSource,
   start,
   end,
@@ -1701,6 +1787,7 @@ async function buildOverviewDailySeries({
 }: {
   xpEvents: RawXpEventRow[];
   observedInstances: NormalizedObservedScheduleAnalyticsRow[];
+  scheduleInstances: NormalizedScheduleInstanceRow[];
   usableScheduleSource: OverviewUsableScheduleSource;
   start: Date;
   end: Date;
@@ -1710,6 +1797,7 @@ async function buildOverviewDailySeries({
 }): Promise<{
   overviewDaily: AnalyticsOverviewDailyPoint[];
   overviewEfficiencyDebugPerDay: OverviewUsableWindowDebugDayInternal[];
+  overviewEfficiencyCompletedDebug: OverviewDailySeriesCompletedDebug;
 }> {
   const points = new Map<string, AnalyticsOverviewDailyPoint>();
 
@@ -1817,29 +1905,6 @@ async function buildOverviewDailySeries({
     }
 
     if (effectiveStatus === "completed") {
-      point.completedEvents += 1;
-
-      if (instance.sourceType === "project") {
-        point.completedProjects += 1;
-      } else if (instance.sourceType === "habit") {
-        point.completedHabits += 1;
-      } else if (instance.sourceType === "task") {
-        point.completedTasks += 1;
-      }
-
-      if (range === "1d") {
-        addIntervalMinutesToHourlyPointField(
-          points,
-          instance.startUtc,
-          instance.endUtc,
-          start,
-          end,
-          "completedMinutes"
-        );
-      } else {
-        point.completedMinutes += instance.durationMinutes;
-      }
-
       continue;
     }
 
@@ -1852,6 +1917,18 @@ async function buildOverviewDailySeries({
       point.missedEvents += 1;
     }
   }
+
+  const completedDebug = addOverviewCompletedMinutes({
+    points,
+    observedInstances,
+    scheduleInstances,
+    usableScheduleSource,
+    start,
+    end,
+    range,
+    timeZone,
+    now,
+  });
 
   let usableWindowMinutesByPoint = new Map<string, number>();
   let overviewEfficiencyDebugPerDay: OverviewUsableWindowDebugDayInternal[] = [];
@@ -1886,6 +1963,265 @@ async function buildOverviewDailySeries({
   return {
     overviewDaily: Array.from(points.values()),
     overviewEfficiencyDebugPerDay,
+    overviewEfficiencyCompletedDebug: completedDebug,
+  };
+}
+
+function addOverviewCompletedMinutes({
+  points,
+  observedInstances,
+  scheduleInstances,
+  usableScheduleSource,
+  start,
+  end,
+  range,
+  timeZone,
+}: {
+  points: Map<string, AnalyticsOverviewDailyPoint>;
+  observedInstances: NormalizedObservedScheduleAnalyticsRow[];
+  scheduleInstances: NormalizedScheduleInstanceRow[];
+  usableScheduleSource: OverviewUsableScheduleSource;
+  start: Date;
+  end: Date;
+  range: AnalyticsRange;
+  timeZone: string;
+  now: Date;
+}): OverviewDailySeriesCompletedDebug {
+  const rangeEndExclusive = new Date(end.getTime() + 1);
+  const includedRows: AnalyticsOverviewEfficiencyCompletedDebugRow[] = [];
+  const excludedRows: AnalyticsOverviewEfficiencyCompletedDebugRow[] = [];
+  const observedCompletedIds = new Set<string>();
+  let observedRowsIncluded = 0;
+  let scheduleInstanceRowsIncluded = 0;
+
+  const recordExcluded = (
+    row: AnalyticsOverviewEfficiencyCompletedDebugRow
+  ) => {
+    if (excludedRows.length < 40) {
+      excludedRows.push(row);
+    }
+  };
+
+  const recordIncluded = (
+    row: AnalyticsOverviewEfficiencyCompletedDebugRow
+  ) => {
+    if (includedRows.length < 40) {
+      includedRows.push(row);
+    }
+  };
+
+  const applyCompletedInterval = ({
+    source,
+    id,
+    status,
+    sourceType,
+    startUtc,
+    endUtc,
+  }: {
+    source: AnalyticsOverviewEfficiencyCompletedDebugRow["source"];
+    id: string;
+    status: string | null;
+    sourceType: ScheduleSummaryType;
+    startUtc: string;
+    endUtc: string;
+  }) => {
+    const intervalStart = parseDate(startUtc);
+    const intervalEnd = parseDate(endUtc);
+    if (!intervalStart || !intervalEnd || intervalEnd.getTime() <= intervalStart.getTime()) {
+      recordExcluded({
+        source,
+        id,
+        status,
+        startUtc,
+        endUtc,
+        minutesAfterClipping: 0,
+        reason: "invalid_interval",
+      });
+      return false;
+    }
+
+    const overlapsRange =
+      intervalEnd.getTime() > start.getTime() &&
+      intervalStart.getTime() < rangeEndExclusive.getTime();
+    if (!overlapsRange) {
+      recordExcluded({
+        source,
+        id,
+        status,
+        startUtc,
+        endUtc,
+        minutesAfterClipping: 0,
+        reason: "outside_selected_range",
+      });
+      return false;
+    }
+
+    const clippedStart = new Date(
+      Math.max(intervalStart.getTime(), start.getTime())
+    );
+    const clippedEnd = new Date(
+      Math.min(intervalEnd.getTime(), rangeEndExclusive.getTime())
+    );
+    const minutesAfterClipping = Math.max(
+      0,
+      Math.round((clippedEnd.getTime() - clippedStart.getTime()) / 60000)
+    );
+    if (minutesAfterClipping <= 0) {
+      recordExcluded({
+        source,
+        id,
+        status,
+        startUtc,
+        endUtc,
+        minutesAfterClipping: 0,
+        reason: "outside_selected_range",
+      });
+      return false;
+    }
+
+    if (range === "1d") {
+      addIntervalMinutesToHourlyPointField(
+        points,
+        clippedStart,
+        clippedEnd,
+        start,
+        end,
+        "completedMinutes"
+      );
+    } else {
+      addIntervalMinutesToDailyPointField(
+        points,
+        clippedStart,
+        clippedEnd,
+        timeZone,
+        "completedMinutes"
+      );
+    }
+
+    const eventPointKey =
+      range === "1d"
+        ? formatHourBucketKey(clippedStart)
+        : formatProductivityDayKey(clippedStart, timeZone);
+    const eventPoint = points.get(eventPointKey);
+    if (eventPoint) {
+      eventPoint.completedEvents += 1;
+      if (sourceType === "project") {
+        eventPoint.completedProjects += 1;
+      } else if (sourceType === "habit") {
+        eventPoint.completedHabits += 1;
+      } else if (sourceType === "task") {
+        eventPoint.completedTasks += 1;
+      }
+    }
+
+    recordIncluded({
+      source,
+      id,
+      status,
+      startUtc,
+      endUtc,
+      minutesAfterClipping,
+    });
+    return true;
+  };
+
+  const observedRowsConsidered = observedInstances.length;
+  for (const instance of observedInstances) {
+    if (instance.status !== "completed") {
+      recordExcluded({
+        source: "observed",
+        id: instance.id,
+        status: instance.status,
+        startUtc: instance.startUtc,
+        endUtc: instance.endUtc,
+        minutesAfterClipping: 0,
+        reason: "not_completed",
+      });
+      continue;
+    }
+    if (isOverviewCompletedBreak(instance, usableScheduleSource)) {
+      recordExcluded({
+        source: "observed",
+        id: instance.id,
+        status: instance.status,
+        startUtc: instance.startUtc,
+        endUtc: instance.endUtc,
+        minutesAfterClipping: 0,
+        reason: "window_kind_break",
+      });
+      continue;
+    }
+
+    observedCompletedIds.add(instance.id);
+    const included = applyCompletedInterval({
+      source: "observed",
+      id: instance.id,
+      status: instance.status,
+      sourceType: instance.sourceType,
+      startUtc: instance.startUtc,
+      endUtc: instance.endUtc,
+    });
+    if (included) {
+      observedRowsIncluded += 1;
+    }
+  }
+
+  const fallbackScheduleInstances = scheduleInstances.filter(
+    (instance) =>
+      instance.status === "completed" && !observedCompletedIds.has(instance.id)
+  );
+  const scheduleInstanceRowsConsidered = fallbackScheduleInstances.length;
+  for (const instance of fallbackScheduleInstances) {
+    if (isOverviewCompletedBreak(instance, usableScheduleSource)) {
+      recordExcluded({
+        source: "schedule_instances",
+        id: instance.id,
+        status: instance.status,
+        startUtc: instance.startUtc,
+        endUtc: instance.endUtc,
+        minutesAfterClipping: 0,
+        reason: "window_kind_break",
+      });
+      continue;
+    }
+
+    const included = applyCompletedInterval({
+      source: "schedule_instances",
+      id: instance.id,
+      status: instance.status,
+      sourceType: instance.sourceType,
+      startUtc: instance.startUtc,
+      endUtc: instance.endUtc,
+    });
+    if (included) {
+      scheduleInstanceRowsIncluded += 1;
+    }
+  }
+
+  const rowsIncluded = observedRowsIncluded + scheduleInstanceRowsIncluded;
+  const rowsConsidered = observedRowsConsidered + scheduleInstanceRowsConsidered;
+  const fallbackUsed = scheduleInstanceRowsIncluded > 0;
+  const source =
+    observedRowsIncluded > 0 && fallbackUsed
+      ? "observed_plus_schedule_instances_fallback"
+      : observedRowsIncluded > 0
+        ? "observed"
+        : fallbackUsed
+          ? "schedule_instances_fallback"
+          : "none";
+
+  return {
+    source,
+    rowsConsidered,
+    observedRowsConsidered,
+    scheduleInstanceRowsConsidered,
+    rowsIncluded,
+    observedRowsIncluded,
+    scheduleInstanceRowsIncluded,
+    rowsExcluded: Math.max(0, rowsConsidered - rowsIncluded),
+    fallbackUsed,
+    includedRows,
+    excludedRows,
   };
 }
 
@@ -1901,6 +2237,440 @@ function formatHourBucketKey(date: Date) {
       0
     )
   ).toISOString();
+}
+
+function buildSkillXpTrend({
+  xpEvents,
+  start,
+  end,
+  range,
+  timeZone,
+}: {
+  xpEvents: RawXpEventRow[];
+  start: Date;
+  end: Date;
+  range: AnalyticsRange;
+  timeZone: string;
+}): AnalyticsSkillXpTrendBucket[] {
+  const buckets = new Map<string, AnalyticsSkillXpTrendBucket>();
+
+  if (range === "1d") {
+    for (
+      let cursor = new Date(start);
+      cursor.getTime() <= end.getTime();
+      cursor = new Date(cursor.getTime() + 60 * 60 * 1000)
+    ) {
+      const bucketKey = formatHourBucketKey(cursor);
+      buckets.set(bucketKey, {
+        bucketKey,
+        label: formatSkillXpHourLabel(cursor, timeZone),
+        skills: [],
+        totalXp: 0,
+      });
+    }
+  } else {
+    for (
+      let cursor = getProductivityDayStartForDate(start, timeZone);
+      cursor.getTime() <= end.getTime();
+      cursor = addProductivityDay(cursor, timeZone)
+    ) {
+      const bucketKey = formatProductivityDayKey(cursor, timeZone);
+      buckets.set(bucketKey, {
+        bucketKey,
+        label: formatSkillXpDayLabel(cursor, timeZone),
+        skills: [],
+        totalXp: 0,
+      });
+    }
+  }
+
+  const skillXpByBucket = new Map<string, Map<string, number>>();
+
+  for (const event of xpEvents) {
+    const eventDate = parseDate(event.created_at);
+    if (!isWithinRange(eventDate, start, end) || !eventDate || !event.skill_id) {
+      continue;
+    }
+
+    const amount = Number(event.amount ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      continue;
+    }
+
+    const bucketKey =
+      range === "1d"
+        ? formatHourBucketKey(eventDate)
+        : formatProductivityDayKey(eventDate, timeZone);
+    const bucket = buckets.get(bucketKey);
+    if (!bucket) {
+      continue;
+    }
+
+    const skillXp = skillXpByBucket.get(bucketKey) ?? new Map<string, number>();
+    skillXp.set(event.skill_id, (skillXp.get(event.skill_id) ?? 0) + amount);
+    skillXpByBucket.set(bucketKey, skillXp);
+    bucket.totalXp += amount;
+  }
+
+  return Array.from(buckets.values()).map((bucket) => {
+    const skillXp = skillXpByBucket.get(bucket.bucketKey);
+    if (!skillXp) {
+      return bucket;
+    }
+
+    return {
+      ...bucket,
+      skills: Array.from(skillXp.entries())
+        .map(([skillId, xp]) => ({ skillId, xp }))
+        .sort((a, b) => b.xp - a.xp),
+    };
+  });
+}
+
+type SkillContributionXpTrendPoint = {
+  label: string;
+  xp: number;
+};
+
+type SkillContributionXpTrendBucket = SkillContributionXpTrendPoint & {
+  bucketKey: string;
+  start: Date;
+  endExclusive: Date;
+};
+
+function buildSkillXpTrendBySkill({
+  xpEvents,
+  start,
+  end,
+  range,
+  timeZone,
+}: {
+  xpEvents: RawXpEventRow[];
+  start: Date;
+  end: Date;
+  range: AnalyticsRange;
+  timeZone: string;
+}) {
+  const buckets = buildSkillContributionTrendBuckets({
+    start,
+    end,
+    range,
+    timeZone,
+  });
+  const emptyTrend = buckets.map(({ label }) => ({ label, xp: 0 }));
+  const xpBySkillAndBucket = new Map<string, Map<string, number>>();
+
+  for (const event of xpEvents) {
+    const eventDate = parseDate(event.created_at);
+    if (!eventDate || !event.skill_id || !isWithinRange(eventDate, start, end)) {
+      continue;
+    }
+
+    const amount = Number(event.amount ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      continue;
+    }
+
+    const bucket = buckets.find(
+      (item) =>
+        eventDate.getTime() >= item.start.getTime() &&
+        eventDate.getTime() < item.endExclusive.getTime()
+    );
+    if (!bucket) {
+      continue;
+    }
+
+    const bucketXp = xpBySkillAndBucket.get(event.skill_id) ?? new Map<string, number>();
+    bucketXp.set(bucket.bucketKey, (bucketXp.get(bucket.bucketKey) ?? 0) + amount);
+    xpBySkillAndBucket.set(event.skill_id, bucketXp);
+  }
+
+  const bySkill = new Map<string, SkillContributionXpTrendPoint[]>();
+  for (const [skillId, bucketXp] of xpBySkillAndBucket.entries()) {
+    bySkill.set(
+      skillId,
+      buckets.map((bucket) => ({
+        label: bucket.label,
+        xp: bucketXp.get(bucket.bucketKey) ?? 0,
+      }))
+    );
+  }
+
+  return { bySkill, emptyTrend };
+}
+
+function buildSkillContributionTrendBuckets({
+  start,
+  end,
+  range,
+  timeZone,
+}: {
+  start: Date;
+  end: Date;
+  range: AnalyticsRange;
+  timeZone: string;
+}): SkillContributionXpTrendBucket[] {
+  const buckets: SkillContributionXpTrendBucket[] = [];
+
+  if (range === "1d") {
+    for (
+      let cursor = new Date(start);
+      cursor.getTime() <= end.getTime();
+      cursor = new Date(cursor.getTime() + 60 * 60 * 1000)
+    ) {
+      const endExclusive = new Date(cursor.getTime() + 60 * 60 * 1000);
+      buckets.push({
+        bucketKey: formatHourBucketKey(cursor),
+        label: formatSkillXpHourLabel(cursor, timeZone),
+        xp: 0,
+        start: cursor,
+        endExclusive,
+      });
+    }
+    return buckets;
+  }
+
+  const bucketDays = range === "90d" ? 7 : 1;
+  for (
+    let cursor = getProductivityDayStartForDate(start, timeZone);
+    cursor.getTime() <= end.getTime();
+    cursor = addProductivityDays(cursor, bucketDays, timeZone)
+  ) {
+    const endExclusive = addProductivityDays(cursor, bucketDays, timeZone);
+    buckets.push({
+      bucketKey: `${formatProductivityDayKey(cursor, timeZone)}:${bucketDays}`,
+      label: formatSkillXpDayLabel(cursor, timeZone),
+      xp: 0,
+      start: cursor,
+      endExclusive,
+    });
+  }
+
+  return buckets;
+}
+
+function addProductivityDays(anchor: Date, amount: number, timeZone: string) {
+  let cursor = new Date(anchor);
+  for (let index = 0; index < amount; index += 1) {
+    cursor = addProductivityDay(cursor, timeZone);
+  }
+  return cursor;
+}
+
+function formatSkillXpHourLabel(date: Date, timeZone: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    timeZone,
+  }).format(date);
+}
+
+function formatSkillXpDayLabel(date: Date, timeZone: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone,
+  }).format(date);
+}
+
+function buildPeriodSkillXp(
+  xpEvents: Array<{ amount?: number | null; skill_id?: string | null }>
+) {
+  const periodSkillXp = new Map<string, number>();
+
+  for (const event of xpEvents) {
+    if (!event.skill_id) {
+      continue;
+    }
+
+    const amount = Number(event.amount ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      continue;
+    }
+
+    periodSkillXp.set(
+      event.skill_id,
+      (periodSkillXp.get(event.skill_id) ?? 0) + amount
+    );
+  }
+
+  return periodSkillXp;
+}
+
+function buildSkillCategoryContributionMeta({
+  skills,
+  cats,
+  periodSkillXp,
+  previousPeriodSkillXp,
+}: {
+  skills: NormalizedSkillRow[];
+  cats: NormalizedCatRow[];
+  periodSkillXp: Map<string, number>;
+  previousPeriodSkillXp: Map<string, number>;
+}) {
+  const totalXpGained = sumCategorizedSkillXp(periodSkillXp, skills, cats);
+  const previousTotalXpGained = sumCategorizedSkillXp(
+    previousPeriodSkillXp,
+    skills,
+    cats
+  );
+  const totalXpPercentChange =
+    previousTotalXpGained > 0
+      ? ((totalXpGained - previousTotalXpGained) / previousTotalXpGained) * 100
+      : null;
+
+  return {
+    totalXpGained,
+    previousTotalXpGained,
+    totalXpPercentChange,
+  };
+}
+
+function sumCategorizedSkillXp(
+  periodSkillXp: Map<string, number>,
+  skills: NormalizedSkillRow[],
+  cats: NormalizedCatRow[]
+) {
+  const categoryIds = new Set(cats.map((cat) => cat.id));
+
+  return skills.reduce((sum, skill) => {
+    if (!skill.cat_id || !categoryIds.has(skill.cat_id)) {
+      return sum;
+    }
+
+    return sum + (periodSkillXp.get(skill.id) ?? 0);
+  }, 0);
+}
+
+function buildSkillCategoryContribution({
+  skills,
+  cats,
+  periodSkillXp,
+  previousPeriodSkillXp,
+  skillXpTrendBySkill,
+}: {
+  skills: NormalizedSkillRow[];
+  cats: NormalizedCatRow[];
+  periodSkillXp: Map<string, number>;
+  previousPeriodSkillXp: Map<string, number>;
+  skillXpTrendBySkill: {
+    bySkill: Map<string, SkillContributionXpTrendPoint[]>;
+    emptyTrend: SkillContributionXpTrendPoint[];
+  };
+}): AnalyticsSkillCategoryContribution[] {
+  const catsById = new Map(cats.map((cat) => [cat.id, cat]));
+  const categories = new Map<
+    string,
+    {
+      categoryId: string;
+      categoryName: string;
+      categoryIcon: string | null;
+      xpGained: number;
+      skills: AnalyticsSkillCategoryContribution["skills"];
+    }
+  >();
+
+  for (const skill of skills) {
+    const xpGained = periodSkillXp.get(skill.id) ?? 0;
+    const previousXpGained = previousPeriodSkillXp.get(skill.id) ?? 0;
+    if (!skill.cat_id) {
+      continue;
+    }
+
+    const cat = catsById.get(skill.cat_id);
+    if (!cat) {
+      continue;
+    }
+
+    const category = categories.get(cat.id) ?? {
+      categoryId: cat.id,
+      categoryName: cat.name,
+      categoryIcon: cat.icon,
+      xpGained: 0,
+      skills: [],
+    };
+
+    category.xpGained += xpGained;
+    category.skills.push({
+      skillId: skill.id,
+      skillName: skill.name,
+      skillIcon: skill.icon,
+      xpGained,
+      previousXpGained,
+      xpPercentChange: calculateXpPercentChange(xpGained, previousXpGained),
+      trendLabel: formatSkillTrendLabel(xpGained, previousXpGained),
+      xpTrend: skillXpTrendBySkill.bySkill.get(skill.id) ?? skillXpTrendBySkill.emptyTrend,
+      percentOfCategory: 0,
+      percentOfTotal: 0,
+      isActiveInRange: xpGained > 0,
+    });
+    categories.set(cat.id, category);
+  }
+
+  const totalXp = Array.from(categories.values()).reduce(
+    (sum, category) => sum + category.xpGained,
+    0
+  );
+
+  if (totalXp <= 0) {
+    return [];
+  }
+
+  return Array.from(categories.values())
+    .map((category) => ({
+      categoryId: category.categoryId,
+      categoryName: category.categoryName,
+      categoryIcon: category.categoryIcon,
+      xpGained: category.xpGained,
+      percentOfTotal: clampPercent((category.xpGained / totalXp) * 100),
+      skills: category.skills
+        .map((skill) => ({
+          ...skill,
+          percentOfCategory:
+            category.xpGained > 0
+              ? clampPercent((skill.xpGained / category.xpGained) * 100)
+              : 0,
+          percentOfTotal: clampPercent((skill.xpGained / totalXp) * 100),
+        }))
+        .sort((a, b) => {
+          if (a.xpGained !== b.xpGained) {
+            return b.xpGained - a.xpGained;
+          }
+          return a.skillName.localeCompare(b.skillName);
+        }),
+    }))
+    .filter((category) => category.xpGained > 0)
+    .sort((a, b) => {
+      if (a.xpGained !== b.xpGained) {
+        return b.xpGained - a.xpGained;
+      }
+      return a.categoryName.localeCompare(b.categoryName);
+    });
+}
+
+function calculateXpPercentChange(currentXp: number, previousXp: number) {
+  if (previousXp <= 0) {
+    return currentXp <= 0 ? 0 : null;
+  }
+
+  return ((currentXp - previousXp) / previousXp) * 100;
+}
+
+function formatSkillTrendLabel(currentXp: number, previousXp: number) {
+  if (previousXp <= 0) {
+    return currentXp > 0 ? "new" : "flat";
+  }
+
+  const percentChange = calculateXpPercentChange(currentXp, previousXp);
+  if (percentChange == null) {
+    return "new";
+  }
+
+  const roundedPercent = Math.round(percentChange);
+  if (roundedPercent === 0) {
+    return "flat";
+  }
+
+  return roundedPercent > 0 ? `+${roundedPercent}%` : `${roundedPercent}%`;
 }
 
 type OverviewUsableWindowMeta = WindowLite & {
@@ -1924,6 +2694,20 @@ function normalizeOverviewWindowKind(
 function isUsableOverviewWindow(window: Pick<WindowLite, "window_kind">) {
   // Preserve existing behavior for unknown kinds by treating them as usable.
   return window.window_kind !== "BREAK";
+}
+
+function isOverviewCompletedBreak(
+  instance: Pick<
+    NormalizedObservedScheduleAnalyticsRow | NormalizedScheduleInstanceRow,
+    "windowId" | "dayTypeTimeBlockId"
+  >,
+  source: OverviewUsableScheduleSource
+) {
+  return Boolean(
+    (instance.windowId && source.breakWindowIds.has(instance.windowId)) ||
+      (instance.dayTypeTimeBlockId &&
+        source.breakDayTypeTimeBlockIds.has(instance.dayTypeTimeBlockId))
+  );
 }
 
 function dedupeOverviewWindows(windows: OverviewUsableWindowMeta[]) {
@@ -1998,6 +2782,11 @@ function buildOverviewUsableScheduleSource({
           }) satisfies OverviewUsableWindowMeta
       )
   );
+  const breakWindowIds = new Set(
+    generalWindows
+      .filter((window) => !isUsableOverviewWindow(window))
+      .map((window) => window.id)
+  );
 
   const dayTypeAssignmentsByDateKey = new Map<string, string>();
   for (const row of dayTypeAssignments) {
@@ -2041,6 +2830,7 @@ function buildOverviewUsableScheduleSource({
     }));
 
   const dayTypeWindowsByDayTypeId = new Map<string, OverviewUsableWindowMeta[]>();
+  const breakDayTypeTimeBlockIds = new Set<string>();
   for (const row of dayTypeTimeBlocks) {
     if (
       !row.id ||
@@ -2068,6 +2858,10 @@ function buildOverviewUsableScheduleSource({
       dayTypeTimeBlockId: row.id,
     } satisfies OverviewUsableWindowMeta;
 
+    if (!isUsableOverviewWindow(nextWindow)) {
+      breakDayTypeTimeBlockIds.add(row.id);
+    }
+
     const existing = dayTypeWindowsByDayTypeId.get(row.day_type_id) ?? [];
     existing.push(nextWindow);
     dayTypeWindowsByDayTypeId.set(row.day_type_id, existing);
@@ -2079,6 +2873,8 @@ function buildOverviewUsableScheduleSource({
 
   return {
     generalWindows,
+    breakWindowIds,
+    breakDayTypeTimeBlockIds,
     dayTypeAssignmentsByDateKey,
     dayTypesById,
     defaultDayTypes: normalizedDefaultDayTypes,
@@ -2172,15 +2968,6 @@ function clipIntervalToBounds(
     return null;
   }
   return { start: clippedStart, end: clippedEnd };
-}
-
-function intervalOverlapsBounds(
-  interval: { start: Date; end: Date },
-  start: Date,
-  end: Date
-) {
-  return interval.end.getTime() > start.getTime() &&
-    interval.start.getTime() < end.getTime();
 }
 
 async function buildOverviewUsableWindowMinutes({
@@ -2303,7 +3090,10 @@ async function buildOverviewUsableWindowMinutes({
           return null;
         }
         const interval = { start: new Date(startMs), end: new Date(endMs) };
-        if (!intervalOverlapsBounds(interval, anchor, dayWindowEnd)) {
+        const overlapsProductivityDay =
+          interval.end.getTime() > anchor.getTime() &&
+          interval.start.getTime() < dayWindowEnd.getTime();
+        if (!overlapsProductivityDay) {
           excludedSources.push({
             sourceKind: inferOverviewDebugSourceKind(window),
             sourceId: window.dayTypeTimeBlockId ?? window.id,
@@ -2326,7 +3116,10 @@ async function buildOverviewUsableWindowMinutes({
           });
           return null;
         }
-        if (!intervalOverlapsBounds(clippedToDay, rangeStart, rangeEndExclusive)) {
+        const overlapsSelectedRange =
+          clippedToDay.end.getTime() > rangeStart.getTime() &&
+          clippedToDay.start.getTime() < rangeEndExclusive.getTime();
+        if (!overlapsSelectedRange) {
           excludedSources.push({
             sourceKind: inferOverviewDebugSourceKind(window),
             sourceId: window.dayTypeTimeBlockId ?? window.id,
@@ -2387,6 +3180,11 @@ async function buildOverviewUsableWindowMinutes({
       )
       .map((interval, index) => ({
         id: `${dateKey}:${index}`,
+        sourceKind: interval.sourceKind,
+        sourceId: interval.sourceId,
+        startLocal: interval.startLocal,
+        endLocal: interval.endLocal,
+        minutesAfterClipping: interval.minutesAfterClipping,
         start_local: interval.startLocal ?? "",
         end_local: interval.endLocal ?? "",
         label: interval.label,
@@ -2536,6 +3334,7 @@ function buildOverviewEfficiencyDebug({
   overviewDaily: {
     overviewDaily: AnalyticsOverviewDailyPoint[];
     overviewEfficiencyDebugPerDay: OverviewUsableWindowDebugDayInternal[];
+    overviewEfficiencyCompletedDebug: OverviewDailySeriesCompletedDebug;
   };
   timeZone: string;
   totalCompletedMinutes: number;
@@ -2570,6 +3369,7 @@ function buildOverviewEfficiencyDebug({
     totalCompletedMinutes,
     totalUsableWindowMinutes,
     rangeEfficiencyRate,
+    completed: overviewDaily.overviewEfficiencyCompletedDebug,
     perDay: overviewDaily.overviewEfficiencyDebugPerDay.map((day) => ({
       dayKey: day.dayKey,
       dayStartUtc: day.dayStartUtc,
@@ -2667,6 +3467,41 @@ function addIntervalMinutesToHourlyPointField(
     }
 
     cursor = bucketEnd;
+  }
+}
+
+function addIntervalMinutesToDailyPointField(
+  points: Map<string, AnalyticsOverviewDailyPoint>,
+  intervalStart: Date,
+  intervalEnd: Date,
+  timeZone: string,
+  field: "completedMinutes"
+) {
+  if (intervalEnd.getTime() <= intervalStart.getTime()) {
+    return;
+  }
+
+  for (
+    let dayStart = getProductivityDayStartForDate(intervalStart, timeZone);
+    dayStart.getTime() < intervalEnd.getTime();
+    dayStart = addProductivityDay(dayStart, timeZone)
+  ) {
+    const dayEnd = addProductivityDay(dayStart, timeZone);
+    const overlapMinutes = Math.round(
+      Math.max(
+        0,
+        Math.min(intervalEnd.getTime(), dayEnd.getTime()) -
+          Math.max(intervalStart.getTime(), dayStart.getTime())
+      ) / 60000
+    );
+    if (overlapMinutes <= 0) {
+      continue;
+    }
+
+    const point = points.get(formatProductivityDayKey(dayStart, timeZone));
+    if (point) {
+      point[field] += overlapMinutes;
+    }
   }
 }
 

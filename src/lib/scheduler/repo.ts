@@ -1435,11 +1435,20 @@ export async function fetchGoalsForUser(
       typeof goal.roadmap_id === "string" && goal.roadmap_id.length > 0
         ? goal.roadmap_id
         : goal.roadmap_id ?? null;
-    const weight =
-      typeof globalRank === "number" && globalRank > 0
+    const hasPriorityRank =
+      typeof priorityRank === "number" &&
+      Number.isFinite(priorityRank) &&
+      priorityRank > 0;
+    const hasGlobalRank =
+      typeof globalRank === "number" &&
+      Number.isFinite(globalRank) &&
+      globalRank > 0;
+    const weight = hasPriorityRank
+      ? 100000 - priorityRank
+      : hasGlobalRank
         ? 100000 - globalRank
         : 0;
-    // Temporary compatibility bridge from global_rank to legacy weight.
+    // Roadmap-derived priorityRank is primary; globalRank is only a fallback.
     return {
       id: goal.id,
       name: goal.name ?? null,

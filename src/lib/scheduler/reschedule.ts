@@ -2024,59 +2024,102 @@ export async function scheduleBacklog(
     projectsMap: Record<string, CanonicalProjectRecord>,
     supabase: Client
   ) {
-    // Hierarchical project ranking: parent goal global rank first, then
-    // project stage strength, then project priority strength (project ID as tie-breaker).
-    const projectRankRecords: Array<{
-      id: string;
-      goalGlobalRank: number | null;
-      priorityStrength: number;
-      stageStrength: number;
-    }> = [];
+    type GoalRankRecord = CanonicalGoalRecord & {
+      monumentId?: string | null;
+      monument_id?: string | null;
+      priorityRank?: number | string | null;
+      priority_rank?: number | string | null;
+    };
+
+    // Monument-isolated project ranking: roadmap-derived goal priority first,
+    // then existing project global rank, with project stage/priority only as fallbacks.
+    const projectRankRecordsByMonument = new Map<
+      string,
+      Array<{
+        id: string;
+        goalPriorityRank: number | null;
+        projectGlobalRank: number | null;
+        priorityStrength: number;
+        stageStrength: number;
+      }>
+    >();
+
+    const normalizeMonumentId = (value: unknown): string | null => {
+      if (typeof value !== "string") return null;
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
 
     for (const [projectId, project] of Object.entries(projectsMap)) {
-      const goal = project.goal_id ? goalsById.get(project.goal_id) : null;
+      const goal = project.goal_id
+        ? (goalsById.get(project.goal_id) as GoalRankRecord | undefined)
+        : null;
       if (!goal) continue;
 
-      const goalGlobalRank = normalizeGoalGlobalRank(
-        goal.global_rank ?? goal.globalRank
+      const monumentId = normalizeMonumentId(
+        goal.monumentId ?? goal.monument_id
+      );
+      const monumentKey = monumentId ?? "__NO_MONUMENT__";
+      const goalPriorityRank = normalizeGoalGlobalRank(
+        goal.priorityRank ?? goal.priority_rank
+      );
+      const projectGlobalRank = normalizeGoalGlobalRank(
+        project.globalRank ?? project.global_rank
       );
       const priorityStrength = project.priority
         ? getPriorityIndex(project.priority)
         : 0;
       const stageStrength = project.stage ? getStageIndex(project.stage) : 0;
 
+      const projectRankRecords =
+        projectRankRecordsByMonument.get(monumentKey) ?? [];
       projectRankRecords.push({
         id: projectId,
-        goalGlobalRank,
+        goalPriorityRank,
+        projectGlobalRank,
         priorityStrength,
         stageStrength,
       });
+      projectRankRecordsByMonument.set(monumentKey, projectRankRecords);
     }
 
-    projectRankRecords.sort((a, b) => {
-      const aGoalRank = a.goalGlobalRank ?? Number.POSITIVE_INFINITY;
-      const bGoalRank = b.goalGlobalRank ?? Number.POSITIVE_INFINITY;
-      if (aGoalRank !== bGoalRank) return aGoalRank - bGoalRank;
-      if (a.stageStrength !== b.stageStrength) {
-        return b.stageStrength - a.stageStrength;
-      }
-      if (a.priorityStrength !== b.priorityStrength) {
-        return b.priorityStrength - a.priorityStrength;
-      }
-      return a.id.localeCompare(b.id);
-    });
+    for (const monumentKey of Array.from(
+      projectRankRecordsByMonument.keys()
+    ).sort()) {
+      const projectRankRecords = projectRankRecordsByMonument.get(monumentKey);
+      if (!projectRankRecords) continue;
 
-    // Update global_rank in database (rank 1 = highest priority)
-    for (let i = 0; i < projectRankRecords.length; i++) {
-      const rank = i + 1;
-      const projectId = projectRankRecords[i].id;
-      await supabase
-        .from("projects")
-        .update({ global_rank: rank })
-        .eq("id", projectId);
+      projectRankRecords.sort((a, b) => {
+        const aGoalRank = a.goalPriorityRank ?? Number.POSITIVE_INFINITY;
+        const bGoalRank = b.goalPriorityRank ?? Number.POSITIVE_INFINITY;
+        if (aGoalRank !== bGoalRank) return aGoalRank - bGoalRank;
 
-      if (projectsMap[projectId]) {
-        projectsMap[projectId].globalRank = rank;
+        const aProjectRank = a.projectGlobalRank ?? Number.POSITIVE_INFINITY;
+        const bProjectRank = b.projectGlobalRank ?? Number.POSITIVE_INFINITY;
+        if (aProjectRank !== bProjectRank) return aProjectRank - bProjectRank;
+
+        if (a.stageStrength !== b.stageStrength) {
+          return b.stageStrength - a.stageStrength;
+        }
+        if (a.priorityStrength !== b.priorityStrength) {
+          return b.priorityStrength - a.priorityStrength;
+        }
+        return a.id.localeCompare(b.id);
+      });
+
+      // Update global_rank in database (rank 1 = highest priority within each monument)
+      for (let i = 0; i < projectRankRecords.length; i++) {
+        const rank = i + 1;
+        const projectId = projectRankRecords[i].id;
+        await supabase
+          .from("projects")
+          .update({ global_rank: rank })
+          .eq("id", projectId);
+
+        if (projectsMap[projectId]) {
+          projectsMap[projectId].globalRank = rank;
+          projectsMap[projectId].global_rank = rank;
+        }
       }
     }
   }
