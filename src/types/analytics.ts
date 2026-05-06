@@ -26,10 +26,52 @@ export type AnalyticsKpi = {
 export type AnalyticsSkill = {
   id: string;
   name: string;
+  icon: string | null;
   level: number;
   progress: number;
   updatedAt: string | null;
   xpGained: number;
+  periodXpGained: number;
+  totalXp: number | null;
+  xpIntoLevel: number | null;
+  xpForNextLevel: number | null;
+};
+
+export type AnalyticsSkillXpTrendBucket = {
+  bucketKey: string;
+  label: string;
+  skills: Array<{ skillId: string; xp: number }>;
+  totalXp: number;
+};
+
+export type AnalyticsSkillCategoryContribution = {
+  categoryId: string;
+  categoryName: string;
+  categoryIcon?: string | null;
+  xpGained: number;
+  percentOfTotal: number;
+  skills: Array<{
+    skillId: string;
+    skillName: string;
+    skillIcon?: string | null;
+    xpGained: number;
+    previousXpGained: number;
+    xpPercentChange: number | null;
+    trendLabel?: string;
+    xpTrend?: Array<{
+      label: string;
+      xp: number;
+    }>;
+    percentOfCategory: number;
+    percentOfTotal: number;
+    isActiveInRange: boolean;
+  }>;
+};
+
+export type AnalyticsSkillCategoryContributionMeta = {
+  totalXpGained: number;
+  previousTotalXpGained: number;
+  totalXpPercentChange: number | null;
 };
 
 export type AnalyticsProject = {
@@ -151,6 +193,34 @@ export type AnalyticsOverviewEfficiencyDebugDay = {
   excludedSources: AnalyticsOverviewEfficiencyDebugExcludedSource[];
 };
 
+export type AnalyticsOverviewEfficiencyCompletedDebugRow = {
+  source: "observed" | "schedule_instances";
+  id: string;
+  status: string | null;
+  startUtc: string | null;
+  endUtc: string | null;
+  minutesAfterClipping: number;
+  reason?: string;
+};
+
+export type AnalyticsOverviewEfficiencyCompletedDebug = {
+  source:
+    | "observed"
+    | "schedule_instances_fallback"
+    | "observed_plus_schedule_instances_fallback"
+    | "none";
+  rowsConsidered: number;
+  observedRowsConsidered: number;
+  scheduleInstanceRowsConsidered: number;
+  rowsIncluded: number;
+  observedRowsIncluded: number;
+  scheduleInstanceRowsIncluded: number;
+  rowsExcluded: number;
+  fallbackUsed: boolean;
+  includedRows: AnalyticsOverviewEfficiencyCompletedDebugRow[];
+  excludedRows: AnalyticsOverviewEfficiencyCompletedDebugRow[];
+};
+
 export type AnalyticsOverviewEfficiencyDebug = {
   selectedRange: AnalyticsRange;
   startIso: string;
@@ -158,6 +228,7 @@ export type AnalyticsOverviewEfficiencyDebug = {
   totalCompletedMinutes: number;
   totalUsableWindowMinutes: number;
   rangeEfficiencyRate: number;
+  completed: AnalyticsOverviewEfficiencyCompletedDebug;
   perDay: AnalyticsOverviewEfficiencyDebugDay[];
 };
 
@@ -240,6 +311,9 @@ export type AnalyticsResponse = {
   generatedAt: string;
   kpis: AnalyticsKpi[];
   skills: AnalyticsSkill[];
+  skillXpTrend: AnalyticsSkillXpTrendBucket[];
+  skillCategoryContribution: AnalyticsSkillCategoryContribution[];
+  skillCategoryContributionMeta: AnalyticsSkillCategoryContributionMeta;
   projects: AnalyticsProject[];
   monuments: AnalyticsMonument[];
   recentSchedules: AnalyticsScheduleCompletion[];
