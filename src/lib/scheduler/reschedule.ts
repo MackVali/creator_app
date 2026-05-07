@@ -1418,17 +1418,27 @@ const normalizeLocationContextValue = (value?: string | null) => {
   return normalized;
 };
 
+const resolveWindowLocationContextId = (
+  windowRecord?: (WindowLite & { locationContextId?: string | null }) | null
+) => {
+  if (!windowRecord) return null;
+  const raw =
+    typeof windowRecord.location_context_id === "string"
+      ? windowRecord.location_context_id
+      : typeof windowRecord.locationContextId === "string"
+        ? windowRecord.locationContextId
+        : null;
+  const trimmed = raw?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
+};
+
 const doesWindowMatchHabitLocation = (
   habit: HabitScheduleItem | undefined,
   windowRecord: WindowLite | null
 ) => {
   if (!windowRecord) return true;
   if (!habit) return false;
-  const windowLocationId =
-    typeof windowRecord.location_context_id === "string" &&
-    windowRecord.location_context_id.trim().length > 0
-      ? windowRecord.location_context_id.trim()
-      : null;
+  const windowLocationId = resolveWindowLocationContextId(windowRecord);
   const windowLocationValue = normalizeLocationContextValue(
     windowRecord.location_context_value ?? null
   );
@@ -1447,9 +1457,10 @@ const doesWindowMatchHabitLocation = (
   const habitHasLocation = Boolean(habitLocationId || habitLocationValue);
   if (!habitHasLocation) return false;
   if (habitLocationId) {
-    return windowLocationId === habitLocationId;
+    if (windowLocationId) return windowLocationId === habitLocationId;
+    return habitLocationValue ? windowLocationValue === habitLocationValue : false;
   }
-  return habitLocationValue ? windowLocationValue === habitLocationValue : true;
+  return habitLocationValue ? windowLocationValue === habitLocationValue : false;
 };
 
 const normalizeHabitTypeValue = (value?: string | null) => {
@@ -5359,7 +5370,7 @@ export async function scheduleBacklog(
   const nonProjectInstances = finalInvariantInstances.filter(
     (inst) => !inst.isProject
   );
-  const { canceled: cancelIdSet, overlapPairs } = collectFinalInvariantCancels(
+  const { canceled: cancelIdSet } = collectFinalInvariantCancels(
     nonProjectInstances,
     {
       nonDailyHabitIds,
@@ -5494,7 +5505,9 @@ export async function scheduleBacklog(
   }
 
   if (typeof supabase.from === "function") {
-    const cleanupResult = await cleanupTransientInstances(userId, supabase);
+    const cleanupResult = await cleanupTransientInstances(userId, supabase, {
+      debug: debugEnabled,
+    });
     if (cleanupResult.error) {
       result.failures.push({
         itemId: "cleanup-transient-instances",
@@ -5859,7 +5872,6 @@ async function reserveMandatoryHabitsForDay(params: {
     getLastScheduledHabitStart,
     parity,
     audit,
-    debugEnabled = false,
     isRescheduleRebuild = false,
   } = params;
 
@@ -6151,7 +6163,9 @@ async function reserveMandatoryHabitsForDay(params: {
       lastScheduledStart,
       nextDueOverride,
     });
-    if (!dueInfo.isDue) continue;
+    if (!dueInfo.isDue) {
+      continue;
+    }
     if (!isRescheduleRebuild && hasValidScheduledInstance(habit)) {
       if (auditEnabled) {
         audit.report.scheduling.dueAlreadyHasInstanceToday += 1;
@@ -6327,7 +6341,9 @@ async function reserveMandatoryHabitsForDay(params: {
       durationMin = Math.max(1, Math.round(durationMin * durationMultiplier));
     }
     const baseDurationMs = durationMin * 60000;
-    if (baseDurationMs <= 0) continue;
+    if (baseDurationMs <= 0) {
+      continue;
+    }
     let scheduledDurationMs = baseDurationMs;
 
     const resolvedEnergy = resolveHabitExplicitEnergy(habit) ?? "";
@@ -6551,7 +6567,9 @@ async function reserveMandatoryHabitsForDay(params: {
     let reserved = false;
     for (const target of compatibleWindows) {
       const window = windowsById.get(target.id);
-      if (!window) continue;
+      if (!window) {
+        continue;
+      }
 
       const bounds = availability.get(target.key);
       const startLimit = target.availableStartLocal.getTime();
@@ -6563,7 +6581,6 @@ async function reserveMandatoryHabitsForDay(params: {
           ? windowStartMs
           : defaultDueMs;
       let constraintLowerBound = startMs;
-      const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart ?? null;
       if (
         typeof baseNowMs === "number" &&
         baseNowMs > constraintLowerBound &&
@@ -6835,7 +6852,7 @@ async function reserveMandatoryHabitsForDay(params: {
             setAvailabilityBoundsForKey(
               availability,
               target.key,
-              startLimit,
+              Number.isFinite(windowStartMs) ? windowStartMs : startLimit,
               startDate.getTime()
             );
           }
@@ -7697,8 +7714,9 @@ async function scheduleHabitsForDay(params: {
       }
       continue;
     }
-    // Exclude SYNC/ASYNC habits from regular habit scheduling - they get post-pass treatment
-    if (normalizedType === "SYNC") {
+    // Exclude unreserved SYNC/ASYNC habits from regular habit scheduling - they get post-pass treatment.
+    // Reserved SYNC habits must continue so the reservation can be consumed and persisted.
+    if (normalizedType === "SYNC" && !reservedPlacements?.has(habit.id)) {
       continue;
     }
     const windowDays = habit.windowId ? null : habit.window?.days ?? null;
@@ -7742,7 +7760,9 @@ async function scheduleHabitsForDay(params: {
     ) {
       logSchedulerDebug("practice due info", { offset, isDue: dueInfo.isDue });
     }
-    if (!dueInfo.isDue) continue;
+    if (!dueInfo.isDue) {
+      continue;
+    }
     if (overrideDayStart) {
       const overrideMs = overrideDayStart.getTime();
       const dayMs = dayStart.getTime();
@@ -7937,7 +7957,9 @@ async function scheduleHabitsForDay(params: {
       durationMin = Math.max(1, Math.round(durationMin * durationMultiplier));
     }
     const baseDurationMs = durationMin * 60000;
-    if (baseDurationMs <= 0) continue;
+    if (baseDurationMs <= 0) {
+      continue;
+    }
     let scheduledDurationMs = baseDurationMs;
 
     const resolvedEnergy = resolveHabitExplicitEnergy(habit) ?? "";
@@ -8265,7 +8287,9 @@ async function scheduleHabitsForDay(params: {
     let persistFailed = false;
     for (const target of compatibleWindows) {
       const window = windowsById.get(target.id);
-      if (!window) continue;
+      if (!window) {
+        continue;
+      }
 
       const bounds = availability.get(target.key);
       const startLimit = target.availableStartLocal.getTime();
@@ -8388,9 +8412,13 @@ async function scheduleHabitsForDay(params: {
           }
         }
 
-        if (candidateStart >= endLimit) continue;
+        if (candidateStart >= endLimit) {
+          continue;
+        }
 
-        if (candidateStart > latestStartAllowed) continue;
+        if (candidateStart > latestStartAllowed) {
+          continue;
+        }
 
         let candidateEnd = candidateStart + scheduledDurationMs;
         let candidateClipped = false;
@@ -8408,7 +8436,9 @@ async function scheduleHabitsForDay(params: {
           candidateEnd = crossMidnightClamp.endMs;
           candidateClipped = true;
         }
-        if (candidateEnd <= candidateStart) continue;
+        if (candidateEnd <= candidateStart) {
+          continue;
+        }
 
         if (
           isSyncHabit &&
@@ -8454,7 +8484,9 @@ async function scheduleHabitsForDay(params: {
           candidateEnd = postSyncClamp.endMs;
           candidateClipped = true;
         }
-        if (candidateEnd <= candidateStart) continue;
+        if (candidateEnd <= candidateStart) {
+          continue;
+        }
 
         startCandidate = candidateStart;
         endCandidate = candidateEnd;
@@ -8507,7 +8539,9 @@ async function scheduleHabitsForDay(params: {
           }
         }
       }
-      if (overlapInspection.result) continue;
+      if (overlapInspection.result) {
+        continue;
+      }
 
       if (normalizedType === "PRACTICE") {
         const habitSkillContextId = habit.skillMonumentId ?? null;
@@ -8857,7 +8891,7 @@ async function scheduleHabitsForDay(params: {
           setAvailabilityBoundsForKey(
             availability,
             target.key,
-            startDate.getTime(),
+            Number.isFinite(windowStartMs) ? windowStartMs : startDate.getTime(),
             startDate.getTime()
           );
         } else {
@@ -8865,7 +8899,7 @@ async function scheduleHabitsForDay(params: {
             availability,
             target.key,
             endDate.getTime(),
-            endDate.getTime()
+            endLimit
           );
         }
       }
@@ -8926,7 +8960,9 @@ async function scheduleHabitsForDay(params: {
     if (persistFailed) {
       continue;
     }
-    if (!placedInWindow) continue;
+    if (!placedInWindow) {
+      continue;
+    }
 
     if (isRepeatablePractice) {
       habitQueue.push(habit);
@@ -9579,15 +9615,10 @@ export async function fetchCompatibleWindowsForItem(
     if (stagePassCounts) stagePassCounts["energy match"] += 1;
     if (options?.horizonEnd) afterEnergy++;
 
-    const windowLocationId =
-      typeof win.location_context_id === "string" &&
-      win.location_context_id.trim().length > 0
-        ? win.location_context_id.trim()
-        : null;
-    const windowLocationValue =
-      win.location_context_value && win.location_context_value.length > 0
-        ? win.location_context_value.toUpperCase().trim()
-        : null;
+    const windowLocationId = resolveWindowLocationContextId(win);
+    const windowLocationValue = normalizeLocationContextValue(
+      win.location_context_value ?? null
+    );
     const windowHasLocation = Boolean(windowLocationId || windowLocationValue);
     const attemptHasLocation = Boolean(desiredLocationId || desiredLocationValue);
     const applyLocationGate =
@@ -9609,7 +9640,14 @@ export async function fetchCompatibleWindowsForItem(
           addFilterRejection(filterCounters, "LOCATION_MISMATCH");
           continue;
         }
-        if (desiredLocationId !== windowLocationId) {
+        const idsBothPresent = Boolean(desiredLocationId && windowLocationId);
+        const idsMatch = idsBothPresent && desiredLocationId === windowLocationId;
+        const valueFallbackMatches =
+          !idsBothPresent &&
+          Boolean(
+            desiredLocationValue && windowLocationValue === desiredLocationValue
+          );
+        if (!idsMatch && !valueFallbackMatches) {
           recordStage("location match", false, "window location id mismatch");
           options?.locationDebugContext?.rejectedByLocation?.();
           addFilterRejection(filterCounters, "LOCATION_MISMATCH");
@@ -9626,13 +9664,15 @@ export async function fetchCompatibleWindowsForItem(
       }
 
       if (desiredLocationId || windowLocationId) {
-        if (!desiredLocationId || !windowLocationId) {
+        const idsBothPresent = Boolean(desiredLocationId && windowLocationId);
+        const idsMatch = idsBothPresent && desiredLocationId === windowLocationId;
+        const valueFallbackMatches =
+          !idsBothPresent &&
+          Boolean(
+            desiredLocationValue && windowLocationValue === desiredLocationValue
+          );
+        if (!idsMatch && !valueFallbackMatches) {
           recordStage("location match", false, "location context id missing");
-          addFilterRejection(filterCounters, "LOCATION_MISMATCH");
-          continue;
-        }
-        if (windowLocationId !== desiredLocationId) {
-          recordStage("location match", false, "location context id mismatch");
           addFilterRejection(filterCounters, "LOCATION_MISMATCH");
           continue;
         }
@@ -9765,7 +9805,9 @@ export async function fetchCompatibleWindowsForItem(
       }
     }
 
-    if (frontBoundMs >= backBoundMs) continue;
+    if (frontBoundMs >= backBoundMs) {
+      continue;
+    }
     recordStage("daylight/night constraints", true);
     if (stagePassCounts) stagePassCounts["daylight/night constraints"] += 1;
     if (options?.horizonEnd) afterDaylight++;
@@ -9787,7 +9829,9 @@ export async function fetchCompatibleWindowsForItem(
       setAvailabilityBoundsForKey(availability, key, frontBoundMs, backBoundMs);
     }
 
-    if (frontBoundMs >= backBoundMs) continue;
+    if (frontBoundMs >= backBoundMs) {
+      continue;
+    }
     recordStage("availability bounds", true);
     if (stagePassCounts) stagePassCounts["availability bounds"] += 1;
     if (options?.horizonEnd) afterAvailability++;

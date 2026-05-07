@@ -397,6 +397,20 @@ type WindowGapRecord = {
   availableStartMs: number;
 };
 
+const SCHEDULER_HABIT_PLACEMENT_DEBUG_TAG =
+  "[SCHEDULER_DEBUG_HABIT_PLACEMENT]";
+
+function isDebugHabitPlacement(params: Pick<PlaceParams, "debugEnabled" | "item">) {
+  return params.debugEnabled === true && params.item.sourceType === "HABIT";
+}
+
+function formatDebugInstant(value: Date | number | null | undefined) {
+  if (value === null || value === undefined) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  const time = date.getTime();
+  return Number.isFinite(time) ? date.toISOString() : null;
+}
+
 function parseLocalClock(value?: string | null): { hour: number; minute: number } | null {
   if (!value || typeof value !== "string") return null;
   const parts = value.split(":").map((part) => Number.parseInt(part, 10));
@@ -846,6 +860,37 @@ export async function placeItemInWindows(
 
   const scheduleDateIso = params.date.toISOString();
   const windowDiagnostics: PlacementFailureWindowDiagnostic[] = [];
+  if (isDebugHabitPlacement(params)) {
+    console.log(SCHEDULER_HABIT_PLACEMENT_DEBUG_TAG, {
+      event: "HABIT_PLACEMENT_WINDOWS_CONSIDERED",
+      habitId: item.id,
+      habitName: item.eventName,
+      habitType: habitTypeById?.get(item.id) ?? null,
+      sourceType: item.sourceType,
+      targetDate: scheduleDateIso,
+      dayKey,
+      timeZone: resolvedTimeZone,
+      durationMinutes: item.duration_min,
+      candidateWindows: windows.map((window, index) => {
+        const record = windowRecordsByWindow[index];
+        return {
+          index,
+          windowId: window.id,
+          windowKey: window.key ?? null,
+          fromPrevDay: window.fromPrevDay ?? false,
+          startLocal: formatDebugInstant(window.startLocal),
+          endLocal: formatDebugInstant(window.endLocal),
+          availableStartLocal: formatDebugInstant(window.availableStartLocal),
+          resolvedStartUtc: record ? formatDebugInstant(record.startMs) : null,
+          resolvedEndUtc: record ? formatDebugInstant(record.endMs) : null,
+          resolvedAvailableStartUtc: record
+            ? formatDebugInstant(record.availableStartMs)
+            : null,
+        };
+      }),
+      notBefore: formatDebugInstant(notBefore ?? null),
+    });
+  }
   const recordWindowDiagnostic = (
     diag: Omit<PlacementFailureWindowDiagnostic, "dateIso">
   ) => {
@@ -1267,6 +1312,27 @@ export async function placeItemInWindows(
   }
 
   if (!best) {
+    if (isDebugHabitPlacement(params)) {
+      console.log(SCHEDULER_HABIT_PLACEMENT_DEBUG_TAG, {
+        event: "HABIT_PLACEMENT_FAILED",
+        habitId: item.id,
+        habitName: item.eventName,
+        habitType: habitTypeById?.get(item.id) ?? null,
+        sourceType: item.sourceType,
+        targetDate: scheduleDateIso,
+        dayKey,
+        failureReason: "no_compatible_window_found",
+        windowsConsidered: windows.length,
+        longestWindowMinutes: Math.round(longestWindowMs / 60000),
+        availabilityGapMinutes: Math.round(availabilityGapMs / 60000),
+        gapWithBlockersMinutes:
+          computedMaxGapMs !== null
+            ? Math.round(computedMaxGapMs / 60000)
+            : null,
+        overlapBlockers: dayBlockingInstances.length,
+        windowDiagnostics: windowDiagnostics.slice(),
+      });
+    }
     logPlacementFailure({
       item,
       habitType: habitTypeById?.get(item.id),
@@ -1313,8 +1379,20 @@ export async function placeItemInWindows(
     };
   }
 
-  let startUtc = safeDate(best.start);
+  const startUtc = safeDate(best.start);
   if (!startUtc) {
+    if (isDebugHabitPlacement(params)) {
+      console.log(SCHEDULER_HABIT_PLACEMENT_DEBUG_TAG, {
+        event: "HABIT_PLACEMENT_FAILED",
+        habitId: item.id,
+        habitName: item.eventName,
+        habitType: habitTypeById?.get(item.id) ?? null,
+        sourceType: item.sourceType,
+        targetDate: scheduleDateIso,
+        dayKey,
+        failureReason: "invalid_start_date",
+      });
+    }
     logPlacementFailure({
       item,
       habitType: habitTypeById?.get(item.id),
@@ -1328,6 +1406,21 @@ export async function placeItemInWindows(
   }
   let endUtc = safeDate(addMin(best.start, item.duration_min));
   if (!endUtc) {
+    if (isDebugHabitPlacement(params)) {
+      console.log(SCHEDULER_HABIT_PLACEMENT_DEBUG_TAG, {
+        event: "HABIT_PLACEMENT_FAILED",
+        habitId: item.id,
+        habitName: item.eventName,
+        habitType: habitTypeById?.get(item.id) ?? null,
+        sourceType: item.sourceType,
+        targetDate: scheduleDateIso,
+        dayKey,
+        failureReason: "invalid_end_date",
+        selectedWindowId: best.window.id,
+        selectedWindowKey: best.window.key ?? null,
+        selectedStartUtc: formatDebugInstant(startUtc),
+      });
+    }
     logPlacementFailure({
       item,
       habitType: habitTypeById?.get(item.id),
@@ -1366,6 +1459,22 @@ export async function placeItemInWindows(
       }
       const durationMs = endUtc.getTime() - startUtc.getTime();
       if (durationMs <= 0) {
+        if (isDebugHabitPlacement(params)) {
+          console.log(SCHEDULER_HABIT_PLACEMENT_DEBUG_TAG, {
+            event: "HABIT_PLACEMENT_FAILED",
+            habitId: item.id,
+            habitName: item.eventName,
+            habitType: habitTypeById?.get(item.id) ?? null,
+            sourceType: item.sourceType,
+            targetDate: scheduleDateIso,
+            dayKey,
+            failureReason: "day_boundary_clamp_exceeded",
+            selectedWindowId: best.window.id,
+            selectedWindowKey: best.window.key ?? null,
+            selectedStartUtc: formatDebugInstant(startUtc),
+            selectedEndUtc: formatDebugInstant(endUtc),
+          });
+        }
         logPlacementFailure({
           item,
           habitType: habitTypeById?.get(item.id),
@@ -1448,6 +1557,25 @@ export async function placeItemInWindows(
   // {id: string, startLocal: Date, endLocal: Date, ...}
   // The underlying WindowLite properties (including dayTypeTimeBlockId) are available directly on the occurrence object
   const windowRefs = extractWindowRefs(best.window);
+
+  if (isDebugHabitPlacement(params)) {
+    console.log(SCHEDULER_HABIT_PLACEMENT_DEBUG_TAG, {
+      event: "HABIT_PLACEMENT_SELECTED",
+      habitId: item.id,
+      habitName: item.eventName,
+      habitType: habitTypeById?.get(item.id) ?? null,
+      sourceType: item.sourceType,
+      targetDate: scheduleDateIso,
+      dayKey,
+      selectedWindowId: best.window.id,
+      selectedWindowKey: best.window.key ?? null,
+      selectedWindowIndex: best.windowIndex,
+      selectedStartUtc: startUtc.toISOString(),
+      selectedEndUtc: endUtc.toISOString(),
+      durationMinutes: durationMin,
+      windowRefs,
+    });
+  }
 
   return await persistPlacement(
     {

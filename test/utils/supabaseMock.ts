@@ -42,11 +42,20 @@ export const createSupabaseMock = (
     statusText: "OK",
   }));
   const buildUpdateChain = () => {
+    const response = {
+      data: { id: lastEqValue },
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
     const chain: Record<string, any> = {};
     chain.select = vi.fn(() => chain);
     chain.single = single;
     chain.lt = vi.fn(() => chain);
+    chain.lte = vi.fn(() => chain);
     chain.gt = vi.fn(() => chain);
+    chain.gte = vi.fn(() => chain);
     chain.or = vi.fn(() => chain);
     chain.eq = vi.fn((column: string, value: string) => {
       lastEqValue = value;
@@ -71,6 +80,10 @@ export const createSupabaseMock = (
       }
       return chain;
     });
+    chain.then = (
+      onFulfilled?: (value: unknown) => unknown,
+      onRejected?: (reason: unknown) => unknown
+    ) => Promise.resolve(response).then(onFulfilled, onRejected);
     return chain;
   };
   const update = vi.fn((payload: Record<string, unknown>) => {

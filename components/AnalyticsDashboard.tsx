@@ -675,23 +675,23 @@ function Header({
 }) {
   const router = useRouter();
   return (
-    <header className="mb-3 flex flex-col gap-1.5 sm:mb-5 sm:gap-3">
-      <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+    <header className="sticky top-2 z-20 mb-3 -mx-1 rounded-2xl border border-zinc-800/90 bg-black/72 px-2 py-2 shadow-[0_12px_30px_rgba(0,0,0,0.28)] backdrop-blur-xl sm:static sm:mx-0 sm:mb-5 sm:rounded-none sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:shadow-none sm:backdrop-blur-none">
+      <div className="flex min-w-0 flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+        <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
           <button
             onClick={() => router.push("/dashboard")}
             aria-label="Back to dashboard"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950 text-zinc-300 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-600 sm:h-9 sm:w-9"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-zinc-800/90 bg-zinc-950/80 text-zinc-300 transition hover:border-zinc-700 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-600 sm:h-9 sm:w-9 sm:bg-zinc-950"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
           </button>
-          <div className="w-full min-w-0 overflow-x-auto lg:flex lg:justify-center">
-            <div className="-mx-1 w-max min-w-full px-1 pb-1 lg:min-w-0">
+          <div className="w-full min-w-0 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden lg:flex lg:justify-center">
+            <div className="w-max min-w-full pr-1 lg:min-w-0 lg:pr-0">
               <AnalyticsTabs activeView={activeView} onViewChange={onViewChange} />
             </div>
           </div>
         </div>
-        <div className="flex justify-end">
+        <div className="flex min-w-0 justify-end">
           <AnalyticsRangeSelector
             selectedRange={selectedRange}
             onRangeChange={onRangeChange}
@@ -718,7 +718,7 @@ function AnalyticsTabs({
   onViewChange: (view: AnalyticsView) => void;
 }) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/80 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:rounded-xl">
+    <div className="inline-flex min-w-max items-center gap-0.5 rounded-full border border-zinc-800/90 bg-zinc-950/70 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:gap-1 sm:rounded-xl sm:bg-zinc-950/80">
       {ANALYTICS_TABS.map((tab) => {
         const isActive = activeView === tab.id;
         return (
@@ -728,13 +728,16 @@ function AnalyticsTabs({
             onClick={() => onViewChange(tab.id)}
             aria-pressed={isActive}
             className={classNames(
-              "h-7 shrink-0 rounded-md px-2.5 text-[11px] font-medium text-zinc-400 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 motion-reduce:transition-none sm:h-8 sm:rounded-lg sm:px-3.5 sm:text-xs",
+              "relative h-6 shrink-0 rounded-full px-2.5 text-[11px] font-medium leading-none text-zinc-400 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/35 motion-reduce:transition-none sm:h-8 sm:rounded-lg sm:px-3.5 sm:text-xs",
               isActive
-                ? "border border-zinc-200/90 bg-zinc-100 text-zinc-950 shadow-[0_8px_18px_rgba(0,0,0,0.22)]"
-                : "hover:bg-zinc-900/70 hover:text-zinc-100"
+                ? "bg-zinc-100 text-zinc-950 shadow-[0_8px_18px_rgba(0,0,0,0.24),inset_0_0_0_1px_rgba(255,255,255,0.7)]"
+                : "hover:bg-zinc-900/80 hover:text-zinc-100"
             )}
           >
             {tab.label}
+            {isActive ? (
+              <span className="absolute inset-x-3 -bottom-0.5 h-px rounded-full bg-emerald-300/55 sm:hidden" />
+            ) : null}
           </button>
         );
       })}
@@ -857,20 +860,34 @@ function SkillContributionDashboard({
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-3">
-        <ContributionChip
+      <div className="grid grid-cols-3 gap-1 sm:gap-2">
+        <TotalXpContributionChip
           label="TOTAL XP"
           value={`${formatCompactNumber(totalXp)} XP`}
-          detail={xpComparison.label}
-          detailTone={xpComparison.tone}
+          comparison={formatCompactSkillXpComparisonLabel(xpComparison.label)}
+          comparisonTone={xpComparison.tone}
         />
         <ContributionChip
           label="TOP CATEGORY"
-          value={topCategory?.categoryName ?? "None yet"}
+          value={
+            topCategory
+              ? formatContributionIconLabel(
+                  topCategory.categoryIcon ?? null,
+                  topCategory.categoryName
+                )
+              : "None yet"
+          }
         />
         <ContributionChip
           label="TOP SKILL"
-          value={topSkill?.skillName ?? "None yet"}
+          value={
+            topSkill
+              ? formatContributionIconLabel(
+                  normalizeSkillIcon(topSkill.skillIcon ?? null),
+                  topSkill.skillName
+                )
+              : "None yet"
+          }
         />
       </div>
 
@@ -963,6 +980,64 @@ function getSkillXpComparison(
       };
 }
 
+function formatCompactSkillXpComparisonLabel(label: string) {
+  if (label.startsWith("New activity")) {
+    return "New";
+  }
+
+  if (label.startsWith("No change")) {
+    return "Flat";
+  }
+
+  const percentMatch = /^(Up|Down)\s+(\d+%)/.exec(label);
+
+  if (percentMatch) {
+    return `${percentMatch[1] === "Up" ? "+" : "-"}${percentMatch[2]}`;
+  }
+
+  return label.replace(/\s+vs previous.*$/i, "");
+}
+
+function TotalXpContributionChip({
+  label,
+  value,
+  comparison,
+  comparisonTone,
+}: {
+  label: string;
+  value: string;
+  comparison: string;
+  comparisonTone: "up" | "down" | "neutral";
+}) {
+  const comparisonClass =
+    comparisonTone === "up"
+      ? "bg-emerald-500/10 text-emerald-300/80"
+      : comparisonTone === "down"
+        ? "bg-amber-500/10 text-amber-300/80"
+        : "bg-zinc-800/70 text-zinc-400";
+
+  return (
+    <div className="min-w-0 rounded-lg border border-zinc-800 bg-[#080b11] px-1.5 py-2 sm:px-3">
+      <div className="truncate text-[8px] uppercase tracking-[0.08em] text-zinc-500 sm:text-[9px] sm:tracking-[0.14em]">
+        {label}
+      </div>
+      <div className="mt-0.5 flex min-w-0 items-baseline gap-1 sm:gap-1.5">
+        <div className="shrink-0 truncate text-[11px] font-semibold text-zinc-100 sm:text-sm">
+          {value}
+        </div>
+        <div
+          className={classNames(
+            "min-w-0 truncate rounded-full px-1 py-0.5 text-[8px] font-medium leading-none sm:text-[10px]",
+            comparisonClass
+          )}
+        >
+          {comparison}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ContributionChip({
   label,
   value,
@@ -982,17 +1057,17 @@ function ContributionChip({
         : "text-zinc-500";
 
   return (
-    <div className="min-w-0 rounded-lg border border-zinc-800 bg-[#080b11] px-3 py-2">
-      <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-500">
+    <div className="min-w-0 rounded-lg border border-zinc-800 bg-[#080b11] px-1.5 py-2 sm:px-3">
+      <div className="truncate text-[8px] uppercase tracking-[0.08em] text-zinc-500 sm:text-[9px] sm:tracking-[0.14em]">
         {label}
       </div>
-      <div className="mt-0.5 truncate text-sm font-semibold text-zinc-100">
+      <div className="mt-0.5 truncate text-[11px] font-semibold text-zinc-100 sm:text-sm">
         {value}
       </div>
       {detail ? (
         <div
           className={classNames(
-            "mt-1 truncate text-[10px] font-medium leading-tight",
+            "mt-1 text-[8px] font-medium leading-tight [overflow-wrap:anywhere] sm:text-[10px]",
             detailClass
           )}
         >
@@ -1824,6 +1899,16 @@ function normalizeSkillIcon(icon: string | null) {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
+function formatContributionIconLabel(icon: string | null, label: string) {
+  const normalizedIcon = normalizeSkillIcon(icon);
+
+  if (!normalizedIcon || /^https?:\/\//i.test(normalizedIcon)) {
+    return label;
+  }
+
+  return `${normalizedIcon} ${label}`;
+}
+
 function getSkillInitial(name: string) {
   const trimmed = name.trim();
   return (trimmed[0] ?? "?").toUpperCase();
@@ -1977,9 +2062,6 @@ function OverviewDiagnosticsSection({
           <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-600">
             Progress Trend
           </div>
-          <p className="mt-1 text-sm text-zinc-400">
-            Range-based XP and usable-time conversion diagnostics.
-          </p>
           <OverviewPanelStatus
             isRefreshing={isRefreshing}
             message={statusMessage}
@@ -2074,8 +2156,8 @@ function AnalyticsRangeSelector({
   isRefreshing: boolean;
 }) {
   return (
-    <div className="overflow-x-auto pb-1">
-      <div className="inline-flex min-w-max items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-950/95 p-0.5 sm:rounded-2xl sm:p-1">
+    <div className="min-w-0 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <div className="inline-flex min-w-max items-center gap-px rounded-full border border-zinc-800 bg-zinc-950/80 p-px">
         {ANALYTICS_RANGE_OPTIONS.map((option) => {
           const isActive = option.value === selectedRange;
           return (
@@ -2086,10 +2168,10 @@ function AnalyticsRangeSelector({
               aria-pressed={isActive}
               aria-busy={isRefreshing && isActive}
               className={classNames(
-                "rounded-lg px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 sm:rounded-xl sm:px-3 sm:py-2 sm:text-[11px] sm:tracking-[0.18em]",
+                "h-[18px] rounded-full px-1.5 text-[9px] font-semibold uppercase leading-none tracking-[0.08em] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/70 sm:h-6 sm:px-2 sm:text-[10px] sm:tracking-[0.1em]",
                 isActive
-                  ? "border border-emerald-500/25 bg-emerald-500/12 text-zinc-50"
-                  : "text-zinc-500 hover:bg-zinc-900/90 hover:text-zinc-200",
+                  ? "border border-zinc-700 bg-zinc-800/80 text-zinc-100"
+                  : "border border-transparent text-zinc-500 hover:text-zinc-300",
                 isRefreshing && isActive && "opacity-70"
               )}
             >
