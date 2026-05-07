@@ -490,12 +490,42 @@ export async function fetchBacklogNeedingSchedule(
 
 export async function cleanupTransientInstances(
   userId: string,
-  client?: Client
+  client?: Client,
+  options?: { debug?: boolean }
 ) {
   const supabase = await ensureClient(client);
   const query = supabase.from("schedule_instances");
   if (!query || typeof query.delete !== "function") {
     return { data: null, error: null };
+  }
+  if (options?.debug === true) {
+    const { data, error } = await supabase
+      .from("schedule_instances")
+      .select("id, source_id, source_type, status, start_utc, end_utc, canceled_reason, event_name")
+      .eq("user_id", userId)
+      .eq("status", "canceled");
+
+    if (error) {
+      return { data: null, error };
+    }
+
+    console.log("[SCHEDULER_DEBUG_CLEANUP_TRANSIENT]", {
+      event: "CLEANUP_TRANSIENT_SKIPPED_DEBUG",
+      userId,
+      skippedDeleteCount: data?.length ?? 0,
+      rows: (data ?? []).map((row) => ({
+        id: row.id ?? null,
+        source_id: row.source_id ?? null,
+        source_type: row.source_type ?? null,
+        status: row.status ?? null,
+        start_utc: row.start_utc ?? null,
+        end_utc: row.end_utc ?? null,
+        canceled_reason: row.canceled_reason ?? null,
+        event_name: row.event_name ?? null,
+      })),
+    });
+
+    return { data, error: null };
   }
   return query.delete().eq("user_id", userId).eq("status", "canceled");
 }

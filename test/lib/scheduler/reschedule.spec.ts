@@ -1724,6 +1724,114 @@ describe("scheduleBacklog", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("persists SYNC habits that were reserved before the live habit pass", async () => {
+    instances = [];
+    const { client } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-sync-reserved",
+      label: "Sync Reserved Window",
+      energy: "LOW",
+      start_local: "08:00",
+      end_local: "09:00",
+      days: [2],
+    });
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (
+      repo.fetchProjectSkillsForProjects as unknown as vi.Mock
+    ).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      windowLite,
+    ]);
+
+    const syncHabit: HabitScheduleItem = {
+      id: "habit-sync-reserved",
+      name: "Reserved Sync Habit",
+      durationMinutes: 20,
+      createdAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+      updatedAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+      lastCompletedAt: null,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: windowLite.energy ?? null,
+        startLocal: windowLite.start_local ?? "08:00",
+        endLocal: windowLite.end_local ?? "09:00",
+        days: windowLite.days ?? null,
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([syncHabit]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const durationMs = Math.max(1, params.item.duration_min) * 60_000;
+      const end = new Date(start.getTime() + durationMs);
+
+      return {
+        data: createInstanceRecord({
+          id: "inst-sync-reserved",
+          source_id: syncHabit.id,
+          source_type: "HABIT",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(placeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        item: expect.objectContaining({
+          id: syncHabit.id,
+          sourceType: "HABIT",
+        }),
+        allowHabitOverlap: true,
+      })
+    );
+    expect(result.placed).toContainEqual(
+      expect.objectContaining({
+        id: "inst-sync-reserved",
+        source_id: syncHabit.id,
+        source_type: "HABIT",
+        window_id: windowLite.id,
+      })
+    );
+    expect(
+      result.timeline.some(
+        (entry) => entry.type === "HABIT" && entry.habit.id === syncHabit.id
+      )
+    ).toBe(true);
+  });
+
   it("reschedules habits that conflict with scheduled projects", async () => {
     const { client } = createSupabaseMock();
 

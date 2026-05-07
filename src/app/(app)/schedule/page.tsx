@@ -5179,13 +5179,6 @@ export default function SchedulePage() {
     (dateKey: string, habitId: string): HabitCompletionStatus => {
       const dayMap = habitCompletionByDate[dateKey];
       const status = dayMap?.[habitId] ?? "scheduled";
-      console.log("[HABIT_COMPLETION][READ]", {
-        dayKey: dateKey,
-        habitId,
-        dayMap,
-        knownKeys: Object.keys(habitCompletionByDate),
-        status,
-      });
       return status;
     },
     [habitCompletionByDate]
@@ -5542,7 +5535,7 @@ export default function SchedulePage() {
 
       try {
         const response = await fetch(
-          "/api/scheduler/run?writeThroughDays=14&debug=1",
+          "/api/scheduler/run?writeThroughDays=14",
           {
             method: "POST",
             cache: "no-store",
