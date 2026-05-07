@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { computeSyncHabitDuration } from "@/lib/scheduler/syncLayout";
+import {
+  computeSyncHabitDuration,
+  computeTimelineLayoutForSyncHabits,
+} from "@/lib/scheduler/syncLayout";
 
 describe("computeSyncHabitDuration", () => {
   const minDurationMs = 30 * 60 * 1000; // 30 minutes
@@ -206,5 +209,54 @@ describe("computeSyncHabitDuration", () => {
     expect(result.finalStart).toBeNull();
     expect(result.finalEnd).toBeNull();
     expect(result.pairedInstances).toEqual([]);
+  });
+});
+
+describe("computeTimelineLayoutForSyncHabits", () => {
+  it("splits normal Events by SYNC overlap range and keeps touching edges full width", () => {
+    const result = computeTimelineLayoutForSyncHabits({
+      habitPlacements: [
+        {
+          habitType: "CHORE",
+          instanceId: "wash-dishes",
+          start: new Date("2026-05-07T20:00:00Z"),
+          end: new Date("2026-05-07T20:20:00Z"),
+        },
+        {
+          habitType: "CHORE",
+          instanceId: "wash-bedsheets",
+          start: new Date("2026-05-07T22:25:00Z"),
+          end: new Date("2026-05-07T22:40:00Z"),
+        },
+        {
+          habitType: "SYNC",
+          instanceId: "nma",
+          start: new Date("2026-05-07T20:00:00Z"),
+          end: new Date("2026-05-07T22:25:00Z"),
+        },
+        {
+          habitType: "SYNC",
+          instanceId: "podcast",
+          start: new Date("2026-05-07T21:00:00Z"),
+          end: new Date("2026-05-07T22:25:00Z"),
+        },
+      ],
+      projectInstances: [],
+    });
+
+    expect(result.habitLayouts).toEqual([
+      "paired-left",
+      "full",
+      "paired-right",
+      "paired-right",
+    ]);
+    expect(result.syncHabitLaneLayouts.get(2)).toEqual({
+      lane: 0,
+      laneCount: 2,
+    });
+    expect(result.syncHabitLaneLayouts.get(3)).toEqual({
+      lane: 1,
+      laneCount: 2,
+    });
   });
 });

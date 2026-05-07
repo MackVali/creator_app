@@ -1,6 +1,7 @@
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 
 export type TimelineCardLayoutMode = "full" | "paired-left" | "paired-right";
+export type TimelineCardLaneLayout = { lane: number; laneCount: number };
 
 export const DEFAULT_SYNC_MIN_DURATION_MS = 30 * 60 * 1000;
 
@@ -12,6 +13,13 @@ type HabitPlacementLike = {
 };
 
 type ProjectInstanceLike = {
+  instanceId?: string | null;
+  instance?: { id?: string | null } | null;
+  start: Date;
+  end: Date;
+};
+
+type TaskInstanceLike = {
   instanceId?: string | null;
   instance?: { id?: string | null } | null;
   start: Date;
@@ -41,6 +49,63 @@ type OverlapSegment = {
 };
 
 export type SyncPairingsByInstanceId = Record<string, string[]>;
+
+function isSyncHabitType(habitType?: HabitScheduleItem["habitType"] | null) {
+  const normalized = (habitType ?? "HABIT").toUpperCase();
+  return normalized === "SYNC" || normalized === "ASYNC";
+}
+
+function intervalsOverlap(
+  left: { startMs: number; endMs: number },
+  right: { startMs: number; endMs: number }
+) {
+  return left.startMs < right.endMs && left.endMs > right.startMs;
+}
+
+function computeSyncHabitLaneLayouts(
+  syncHabits: Array<{ index: number; startMs: number; endMs: number }>
+) {
+  const laneLayouts = new Map<number, TimelineCardLaneLayout>();
+  const sorted = [...syncHabits].sort((a, b) => {
+    if (a.startMs !== b.startMs) return a.startMs - b.startMs;
+    if (a.endMs !== b.endMs) return a.endMs - b.endMs;
+    return a.index - b.index;
+  });
+
+  let active: Array<{ index: number; endMs: number; lane: number }> = [];
+  let group: Array<{ index: number; lane: number }> = [];
+  let groupMaxLane = 0;
+
+  const flushGroup = () => {
+    if (group.length === 0) return;
+    const laneCount = groupMaxLane + 1;
+    for (const entry of group) {
+      laneLayouts.set(entry.index, { lane: entry.lane, laneCount });
+    }
+    group = [];
+    groupMaxLane = 0;
+  };
+
+  for (const syncHabit of sorted) {
+    active = active.filter((entry) => entry.endMs > syncHabit.startMs);
+    if (active.length === 0) {
+      flushGroup();
+    }
+
+    const usedLanes = new Set(active.map((entry) => entry.lane));
+    let lane = 0;
+    while (usedLanes.has(lane)) {
+      lane += 1;
+    }
+
+    active.push({ index: syncHabit.index, endMs: syncHabit.endMs, lane });
+    group.push({ index: syncHabit.index, lane });
+    groupMaxLane = Math.max(groupMaxLane, lane);
+  }
+
+  flushGroup();
+  return laneLayouts;
+}
 
 export function computeSyncHabitDuration({
   syncWindow,
@@ -129,10 +194,12 @@ export function computeSyncHabitDuration({
 export function computeTimelineLayoutForSyncHabits({
   habitPlacements,
   projectInstances,
+  taskInstances = [],
   syncPairingsByInstanceId,
 }: {
   habitPlacements: HabitPlacementLike[];
   projectInstances: ProjectInstanceLike[];
+  taskInstances?: TaskInstanceLike[];
   syncPairingsByInstanceId?: SyncPairingsByInstanceId | null;
 }) {
   const habitLayouts = habitPlacements.map<TimelineCardLayoutMode>(
@@ -141,6 +208,7 @@ export function computeTimelineLayoutForSyncHabits({
   const projectLayouts = projectInstances.map<TimelineCardLayoutMode>(
     () => "full"
   );
+  const taskLayouts = taskInstances.map<TimelineCardLayoutMode>(() => "full");
   const syncHabitAlignment = new Map<number, SyncAlignment>();
   const pairingLookup = syncPairingsByInstanceId ?? null;
 
@@ -182,8 +250,7 @@ export function computeTimelineLayoutForSyncHabits({
   const syncHabits = habitPlacements
     .map((placement, index) => ({ placement, index }))
     .filter(({ placement }) => {
-      const habitType = (placement.habitType ?? "HABIT").toUpperCase();
-      return habitType === "SYNC";
+      return isSyncHabitType(placement.habitType);
     })
     .map(({ placement, index }) => ({
       index,
@@ -284,5 +351,59 @@ export function computeTimelineLayoutForSyncHabits({
     }
   });
 
-  return { habitLayouts, projectLayouts, syncHabitAlignment };
+  const normalEvents: Array<{
+    kind: "habit" | "project" | "task";
+    index: number;
+    startMs: number;
+    endMs: number;
+  }> = [];
+
+  habitPlacements.forEach((placement, index) => {
+    if (isSyncHabitType(placement.habitType)) return;
+    const startMs = placement.start.getTime();
+    const endMs = placement.end.getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return;
+    normalEvents.push({ kind: "habit", index, startMs, endMs });
+  });
+
+  projectInstances.forEach((instance, index) => {
+    const startMs = instance.start.getTime();
+    const endMs = instance.end.getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return;
+    normalEvents.push({ kind: "project", index, startMs, endMs });
+  });
+
+  taskInstances.forEach((instance, index) => {
+    const startMs = instance.start.getTime();
+    const endMs = instance.end.getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return;
+    normalEvents.push({ kind: "task", index, startMs, endMs });
+  });
+
+  for (const syncHabit of syncHabits) {
+    habitLayouts[syncHabit.index] = "paired-right";
+  }
+
+  // SYNC habits create an overlay lane; normal Events must respect it by time-overlap range.
+  for (const event of normalEvents) {
+    const overlapsSync = syncHabits.some((syncHabit) =>
+      intervalsOverlap(event, syncHabit)
+    );
+    if (!overlapsSync) continue;
+    if (event.kind === "habit") {
+      habitLayouts[event.index] = "paired-left";
+    } else if (event.kind === "project") {
+      projectLayouts[event.index] = "paired-left";
+    } else {
+      taskLayouts[event.index] = "paired-left";
+    }
+  }
+
+  return {
+    habitLayouts,
+    projectLayouts,
+    taskLayouts,
+    syncHabitAlignment,
+    syncHabitLaneLayouts: computeSyncHabitLaneLayouts(syncHabits),
+  };
 }

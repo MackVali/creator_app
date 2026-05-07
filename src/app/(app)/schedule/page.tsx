@@ -89,6 +89,7 @@ import { normalizeHabitType } from "@/lib/scheduler/habits";
 import { mergeHabitCompletionStateFromInstances } from "@/lib/scheduler/habitCompletionState";
 import {
   computeTimelineLayoutForSyncHabits,
+  type TimelineCardLaneLayout,
   type SyncPairingsByInstanceId,
   type TimelineCardLayoutMode,
 } from "@/lib/scheduler/syncLayout";
@@ -1856,10 +1857,19 @@ const TIMELINE_RIGHT_OFFSET = "0.5rem";
 const TIMELINE_PAIR_WIDTH = `calc((100% - ${TIMELINE_LEFT_OFFSET} - ${TIMELINE_RIGHT_OFFSET}) / 2)`;
 const TIMELINE_PAIR_RIGHT_LEFT = `calc(${TIMELINE_LEFT_OFFSET} + ${TIMELINE_PAIR_WIDTH})`;
 
+function computeTimelineLaneLeft(lane: number, laneCount: number) {
+  if (lane <= 0) return TIMELINE_PAIR_RIGHT_LEFT;
+  const offsets = Array.from(
+    { length: lane },
+    () => `(${TIMELINE_PAIR_WIDTH} / ${laneCount})`
+  ).join(" + ");
+  return `calc(${TIMELINE_PAIR_RIGHT_LEFT} + ${offsets})`;
+}
+
 function applyTimelineLayoutStyle(
   style: CSSProperties,
   mode: TimelineCardLayoutMode,
-  options?: { animate?: boolean }
+  options?: { animate?: boolean; laneLayout?: TimelineCardLaneLayout | null }
 ): CSSProperties {
   const baseStyle: CSSProperties = { ...style };
   if (mode === "paired-left") {
@@ -1867,8 +1877,14 @@ function applyTimelineLayoutStyle(
     baseStyle.width = TIMELINE_PAIR_WIDTH;
     baseStyle.right = undefined;
   } else if (mode === "paired-right") {
-    baseStyle.left = TIMELINE_PAIR_RIGHT_LEFT;
-    baseStyle.width = TIMELINE_PAIR_WIDTH;
+    const laneLayout = options?.laneLayout;
+    const laneCount = Math.max(1, laneLayout?.laneCount ?? 1);
+    const lane = Math.min(Math.max(0, laneLayout?.lane ?? 0), laneCount - 1);
+    baseStyle.left = computeTimelineLaneLeft(lane, laneCount);
+    baseStyle.width =
+      laneCount > 1
+        ? `calc(${TIMELINE_PAIR_WIDTH} / ${laneCount})`
+        : TIMELINE_PAIR_WIDTH;
     baseStyle.right = undefined;
   } else {
     baseStyle.left = TIMELINE_LEFT_OFFSET;
@@ -7100,10 +7116,11 @@ export default function SchedulePage() {
             touchAction: timelineTouchAction,
           };
 
-      const { habitLayouts, projectLayouts } =
+      const { habitLayouts, projectLayouts, taskLayouts, syncHabitLaneLayouts } =
         computeTimelineLayoutForSyncHabits({
           habitPlacements: dayHabitPlacements,
           projectInstances: dayProjectInstances,
+          taskInstances: modelStandaloneTaskInstances,
           syncPairingsByInstanceId: syncPairings,
         });
 
@@ -7514,6 +7531,7 @@ export default function SchedulePage() {
               const layoutMode = pairedProjectIsLeft
                 ? "paired-right"
                 : originalLayoutMode;
+              const syncLaneLayout = syncHabitLaneLayouts.get(index) ?? null;
               const habitCornerClass = getTimelineCardCornerClass(layoutMode);
               const useCompactShadow =
                 habitHeightPx <= HABIT_COMPACT_SHADOW_HEIGHT_PX;
@@ -7532,7 +7550,10 @@ export default function SchedulePage() {
                   outlineOffset: "-1px",
                 },
                 layoutMode,
-                { animate: !prefersReducedMotion }
+                {
+                  animate: !prefersReducedMotion,
+                  laneLayout: syncLaneLayout,
+                }
               );
               const hasHabitInstance = Boolean(placement.habitId);
               const habitBounceActive =
@@ -8602,7 +8623,7 @@ export default function SchedulePage() {
             )}
             <AnimatePresence initial={false}>
               {modelStandaloneTaskInstances.map(
-                ({ instance, task, start, end }) => {
+                ({ instance, task, start, end }, index) => {
                   if (!isValidDate(start) || !isValidDate(end)) return null;
                   const startMin = getDayMinuteOffset(start, renderDayStart);
                   const startOffsetMinutes = startMin;
@@ -8651,16 +8672,21 @@ export default function SchedulePage() {
                   const completedStandaloneShadow = useCompactStandaloneShadow
                     ? TIMELINE_COMPACT_CARD_COMPLETED_SHADOW
                     : "0 22px 42px rgba(4, 47, 39, 0.55)";
-                  const style: CSSProperties = {
-                    ...TIMELINE_CARD_BOUNDS,
-                    top: toTimelinePosition(startOffsetMinutes),
-                    height: toTimelinePosition(durationMinutes),
-                    boxShadow: isCompleted
-                      ? completedStandaloneShadow
-                      : baseStandaloneShadow,
-                    outline: "1px solid var(--event-border)",
-                    outlineOffset: "-1px",
-                  };
+                  const layoutMode = taskLayouts[index] ?? "full";
+                  const style: CSSProperties = applyTimelineLayoutStyle(
+                    {
+                      ...TIMELINE_CARD_BOUNDS,
+                      top: toTimelinePosition(startOffsetMinutes),
+                      height: toTimelinePosition(durationMinutes),
+                      boxShadow: isCompleted
+                        ? completedStandaloneShadow
+                        : baseStandaloneShadow,
+                      outline: "1px solid var(--event-border)",
+                      outlineOffset: "-1px",
+                    },
+                    layoutMode,
+                    { animate: !prefersReducedMotion }
+                  );
                   const stackingZIndex =
                     computeTimelineStackingIndex(startOffsetMinutes);
                   const layeredStyle = { ...style, zIndex: stackingZIndex };
@@ -8670,13 +8696,16 @@ export default function SchedulePage() {
                     ? "text-sm font-medium leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate"
                     : "text-sm font-medium leading-tight truncate";
                   const standaloneBaseClass =
-                    "absolute flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 py-2";
+                    "absolute flex items-center justify-between px-3 py-2";
                   const standaloneScheduledClass = `${standaloneBaseClass} text-zinc-100 shadow-[0_12px_28px_rgba(24,24,27,0.35)] bg-[linear-gradient(135deg,_rgba(46,46,52,0.94)_0%,_rgba(58,58,66,0.92)_45%,_rgba(82,82,92,0.88)_100%)]`;
                   const standaloneCompletedClass = `${standaloneBaseClass} text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)]`;
+                  const standaloneCornerClass =
+                    getTimelineCardCornerClass(layoutMode);
                   const standaloneClassName = [
                     isCompleted
                       ? standaloneCompletedClass
                       : standaloneScheduledClass,
+                    standaloneCornerClass,
                     canToggle && !isPending ? "cursor-pointer" : "",
                   ]
                     .filter(Boolean)
