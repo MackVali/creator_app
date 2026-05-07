@@ -258,6 +258,48 @@ describe("scheduleBacklog", () => {
     ...overrides,
   });
 
+  const makeHabit = (
+    overrides: Partial<HabitScheduleItem> = {}
+  ): HabitScheduleItem => ({
+    id: "habit-default",
+    name: "Habit",
+    durationMinutes: 60,
+    createdAt: "2024-01-01T00:00:00Z",
+    updatedAt: "2024-01-01T00:00:00Z",
+    lastCompletedAt: null,
+    currentStreakDays: 0,
+    longestStreakDays: 0,
+    habitType: "HABIT",
+    windowId: "win-default",
+    energy: "LOW",
+    recurrence: "daily",
+    recurrenceDays: null,
+    recurrenceMode: null,
+    anchorType: null,
+    anchorValue: null,
+    anchorStartDate: null,
+    skillId: null,
+    goalId: null,
+    completionTarget: null,
+    locationContextId: null,
+    locationContextValue: null,
+    locationContextName: null,
+    daylightPreference: null,
+    windowEdgePreference: null,
+    window: {
+      id: "win-default",
+      label: "Window",
+      energy: "LOW",
+      startLocal: "00:00",
+      endLocal: "00:00",
+      days: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+    },
+    ...overrides,
+  });
+
   let instances: ScheduleInstance[];
   let fetchInstancesForRangeSpy: ReturnType<typeof vi.spyOn>;
   let attemptedProjectIds: string[];
@@ -1470,6 +1512,7 @@ describe("scheduleBacklog", () => {
       duration_min: 15,
       window_id: "win-habit",
       energy_resolved: "LOW",
+      locked: true,
     });
     const duplicate = createInstanceRecord({
       id: "inst-habit-duplicate",
@@ -1517,7 +1560,11 @@ describe("scheduleBacklog", () => {
 
     const result = await scheduleBacklog(userId, baseDate, client);
 
-    expect(placeSpy).toHaveBeenCalled();
+    expect(placeSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        item: expect.objectContaining({ id: habit.id }),
+      })
+    );
     expect(update).toHaveBeenCalledTimes(1);
     expect(update.mock.calls[0][0]).toEqual({ status: "canceled" });
     const eqMock = update.mock.results[0].value.eq as vi.Mock;
@@ -1532,6 +1579,178 @@ describe("scheduleBacklog", () => {
     expect(
       result.failures.filter((failure) => failure.reason === "error")
     ).toEqual([]);
+  });
+
+  it("keeps a surviving daily habit row when duplicate cleanup cancels another row", async () => {
+    const { client, canceledIds } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-record-content",
+      label: "Creator",
+      energy: "LOW",
+      start_local: "08:00",
+      end_local: "10:00",
+      days: [2],
+    });
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      windowLite,
+    ]);
+
+    const habit = makeHabit({
+      id: "habit-record-content-survivor",
+      name: "RECORD CONTENT",
+      durationMinutes: 60,
+      habitType: "HABIT",
+      windowId: windowLite.id,
+      energy: "LOW",
+      window: {
+        id: windowLite.id,
+        label: "Creator",
+        energy: "LOW",
+        startLocal: "08:00",
+        endLocal: "10:00",
+        days: [2],
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    });
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+    const keeper = createInstanceRecord({
+      id: "inst-record-content-keeper",
+      source_id: habit.id,
+      source_type: "HABIT",
+      status: "scheduled",
+      start_utc: "2024-01-02T08:00:00Z",
+      end_utc: "2024-01-02T09:00:00Z",
+      duration_min: 60,
+      window_id: windowLite.id,
+      energy_resolved: "LOW",
+      locked: true,
+    });
+    const duplicate = createInstanceRecord({
+      id: "inst-record-content-duplicate",
+      source_id: habit.id,
+      source_type: "HABIT",
+      status: "scheduled",
+      start_utc: "2024-01-02T09:00:00Z",
+      end_utc: "2024-01-02T10:00:00Z",
+      duration_min: 60,
+      window_id: windowLite.id,
+      energy_resolved: "LOW",
+      locked: false,
+    });
+    instances = [keeper, duplicate];
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockReset();
+    placeSpy.mockResolvedValue({ error: "NO_FIT" as const });
+
+    await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    expect(canceledIds).toContain(duplicate.id);
+    expect(canceledIds).not.toContain(keeper.id);
+    expect(placeSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        item: expect.objectContaining({ id: habit.id }),
+      })
+    );
+  });
+
+  it("allows a daily habit to place again when duplicate cleanup canceled its only same-day row", async () => {
+    instances = [];
+    const { client, canceledIds } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-record-content-replace",
+      label: "Creator",
+      energy: "LOW",
+      start_local: "08:00",
+      end_local: "11:00",
+      days: [2],
+    });
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      windowLite,
+    ]);
+
+    const habit = makeHabit({
+      id: "habit-record-content-replace",
+      name: "RECORD CONTENT",
+      durationMinutes: 60,
+      habitType: "HABIT",
+      windowId: windowLite.id,
+      energy: "LOW",
+      window: {
+        id: windowLite.id,
+        label: "Creator",
+        energy: "LOW",
+        startLocal: "08:00",
+        endLocal: "11:00",
+        days: [2],
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    });
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockReset();
+    let placementCount = 0;
+    placeSpy.mockImplementation(async (params) => {
+      placementCount += 1;
+      const start = new Date(
+        placementCount === 1
+          ? "2024-01-02T08:00:00.000Z"
+          : "2024-01-02T09:00:00.000Z"
+      );
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-record-content-${placementCount}`,
+          source_id: params.item.id,
+          source_type: "HABIT",
+          status: "scheduled",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowLite.id,
+          energy_resolved: params.item.energy,
+          locked: false,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    const habitPlacementCalls = placeSpy.mock.calls.filter(
+      ([params]) => params.item.id === habit.id
+    );
+    expect(habitPlacementCalls).toHaveLength(2);
+    expect(canceledIds).toContain("inst-record-content-1");
+    expect(canceledIds).not.toContain("inst-record-content-2");
+    expect(
+      result.placed.some((instance) => instance.id === "inst-record-content-2")
+    ).toBe(true);
   });
 
   it("prevents sync habits from overlapping when scheduling multiple habits", async () => {
@@ -1597,38 +1816,21 @@ describe("scheduleBacklog", () => {
 
     fetchHabitsForScheduleSpy.mockResolvedValue([habitA, habitB]);
 
-    const firstInstance = createInstanceRecord({
-      id: "inst-sync-1",
-      source_id: habitA.id,
-      source_type: "HABIT",
-      start_utc: "2024-01-02T08:00:00Z",
-      end_utc: "2024-01-02T08:15:00Z",
-      duration_min: 15,
-      window_id: windowLite.id,
-      energy_resolved: "LOW",
-    });
-
-    const secondInstance = createInstanceRecord({
-      id: "inst-sync-2",
-      source_id: habitB.id,
-      source_type: "HABIT",
-      start_utc: "2024-01-02T08:00:00Z",
-      end_utc: "2024-01-02T08:15:00Z",
-      duration_min: 15,
-      window_id: windowLite.id,
-      energy_resolved: "LOW",
-    });
-
     type PlacementCall = {
       allowHabitOverlap?: boolean;
       existing: Array<{ id: string; sourceType: string }>;
       itemId: string;
       sourceType: string;
+      availableStartUTC: string;
     };
     const placementCalls: PlacementCall[] = [];
 
     const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
     placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const durationMs = Math.max(1, params.item.duration_min) * 60_000;
+      const end = new Date(start.getTime() + durationMs);
       placementCalls.push({
         allowHabitOverlap: params.allowHabitOverlap,
         existing: (params.existingInstances ?? []).map((inst) => ({
@@ -1637,20 +1839,24 @@ describe("scheduleBacklog", () => {
         })),
         itemId: params.item.id,
         sourceType: params.item.sourceType,
+        availableStartUTC: start.toISOString(),
       });
 
-      if (params.item.id === habitA.id) {
+      if (params.item.id === habitA.id || params.item.id === habitB.id) {
         return {
-          data: firstInstance,
-          error: null,
-          count: null,
-          status: 201,
-          statusText: "Created",
-        } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
-      }
-      if (params.item.id === habitB.id) {
-        return {
-          data: secondInstance,
+          data: createInstanceRecord({
+            id:
+              params.item.id === habitA.id
+                ? "inst-sync-1"
+                : "inst-sync-2",
+            source_id: params.item.id,
+            source_type: "HABIT",
+            start_utc: start.toISOString(),
+            end_utc: end.toISOString(),
+            duration_min: params.item.duration_min,
+            window_id: windowDef.id,
+            energy_resolved: params.item.energy,
+          }),
           error: null,
           count: null,
           status: 201,
@@ -1675,7 +1881,7 @@ describe("scheduleBacklog", () => {
     const latestHabitBCall = habitBCalls[habitBCalls.length - 1];
     expect(
       latestHabitBCall.existing.some(
-        (inst) => inst.id === firstInstance.id && inst.sourceType === "HABIT"
+        (inst) => inst.id === "inst-sync-1" && inst.sourceType === "HABIT"
       )
     ).toBe(true);
 
@@ -1710,8 +1916,10 @@ describe("scheduleBacklog", () => {
     const habitBStartMs = new Date(earliestHabitB.startUTC).getTime();
     const habitBEndMs = new Date(earliestHabitB.endUTC).getTime();
     expect(habitAEndMs > habitBStartMs && habitBEndMs > habitAStartMs).toBe(
-      true
+      false
     );
+    expect(habitBStartMs).toBeGreaterThanOrEqual(habitAEndMs);
+    expect(habitBStartMs).toBe(habitAEndMs);
 
     const persistedByHabit = (result.placed ?? []).filter(
       (inst) => inst.source_id === habitA.id || inst.source_id === habitB.id
@@ -1722,6 +1930,1714 @@ describe("scheduleBacklog", () => {
     expect(
       persistedByHabit.filter((inst) => inst.source_id === habitB.id).length
     ).toBeGreaterThan(0);
+  });
+
+  it("advances a SYNC habit past an earlier SYNC placement in the same window", async () => {
+    instances = [];
+    const { client } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-sync-evening",
+      label: "Evening Sync",
+      energy: "LOW",
+      start_local: "20:00",
+      end_local: "23:50",
+      days: [2],
+    });
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (
+      repo.fetchProjectSkillsForProjects as unknown as vi.Mock
+    ).mockResolvedValue({});
+
+    const habitA: HabitScheduleItem = {
+      id: "habit-sync-long",
+      name: "NMA Sync",
+      durationMinutes: 145,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: windowLite.energy ?? null,
+        startLocal: windowLite.start_local ?? "20:00",
+        endLocal: windowLite.end_local ?? "23:50",
+        days: windowLite.days ?? null,
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+    const habitB: HabitScheduleItem = {
+      ...habitA,
+      id: "habit-sync-audio",
+      name: "Podcast/Audiobook Sync",
+      durationMinutes: 85,
+      createdAt: "2024-01-01T00:01:00Z",
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([habitA, habitB]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}`,
+          source_id: params.item.id,
+          source_type: "HABIT",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+    const longSync = result.placed.find(
+      (inst) => inst.source_id === habitA.id
+    );
+    const audioSync = result.placed.find(
+      (inst) => inst.source_id === habitB.id
+    );
+
+    expect(longSync?.start_utc).toBe("2024-01-02T20:00:00.000Z");
+    expect(longSync?.end_utc).toBe("2024-01-02T22:25:00.000Z");
+    expect(audioSync?.start_utc).toBe("2024-01-02T22:25:00.000Z");
+    expect(new Date(audioSync?.start_utc ?? 0).getTime()).toBeGreaterThanOrEqual(
+      new Date(longSync?.end_utc ?? 0).getTime()
+    );
+  });
+
+  it("does not move a SYNC habit into an empty tail gap after avoiding another SYNC", async () => {
+    const { client } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-sync-tail-gap",
+      label: "Sync Tail Gap",
+      energy: "LOW",
+      start_local: "21:00",
+      end_local: "23:50",
+      days: [2],
+    });
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-anchor-event",
+        source_id: "event-anchor",
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:40:00.000Z",
+        window_id: windowLite.id,
+        locked: true,
+      }),
+      createInstanceRecord({
+        id: "inst-existing-sync",
+        source_id: "habit-existing-sync",
+        source_type: "HABIT",
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:40:00.000Z",
+        window_id: windowLite.id,
+        locked: true,
+      }),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (
+      repo.fetchProjectSkillsForProjects as unknown as vi.Mock
+    ).mockResolvedValue({});
+
+    const existingSyncHabit: HabitScheduleItem = {
+      id: "habit-existing-sync",
+      name: "Existing Sync",
+      durationMinutes: 100,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: windowLite.energy ?? null,
+        startLocal: windowLite.start_local ?? "21:00",
+        endLocal: windowLite.end_local ?? "23:50",
+        days: windowLite.days ?? null,
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+    const podcastSyncHabit: HabitScheduleItem = {
+      ...existingSyncHabit,
+      id: "habit-podcast-sync",
+      name: "Podcast Sync",
+      durationMinutes: 60,
+      createdAt: "2024-01-01T00:01:00Z",
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([
+      existingSyncHabit,
+      podcastSyncHabit,
+    ]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}`,
+          source_id: params.item.id,
+          source_type: "HABIT",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    expect(
+      result.placed.some((inst) => inst.source_id === podcastSyncHabit.id)
+    ).toBe(false);
+    expect(placeSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        item: expect.objectContaining({ id: podcastSyncHabit.id }),
+      })
+    );
+  });
+
+  it("allows a later SYNC placement after conflict avoidance when a later anchor overlaps it", async () => {
+    const { client } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-sync-later-anchor",
+      label: "Sync Later Anchor",
+      energy: "LOW",
+      start_local: "21:00",
+      end_local: "23:50",
+      days: [2],
+    });
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-anchor-early",
+        source_id: "event-anchor-early",
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:40:00.000Z",
+        window_id: windowLite.id,
+        locked: true,
+      }),
+      createInstanceRecord({
+        id: "inst-anchor-late",
+        source_id: "event-anchor-late",
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        start_utc: "2024-01-02T23:00:00.000Z",
+        end_utc: "2024-01-02T23:50:00.000Z",
+        window_id: windowLite.id,
+      }),
+      createInstanceRecord({
+        id: "inst-existing-sync-later",
+        source_id: "habit-existing-sync-later",
+        source_type: "HABIT",
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:40:00.000Z",
+        window_id: windowLite.id,
+        locked: true,
+      }),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (
+      repo.fetchProjectSkillsForProjects as unknown as vi.Mock
+    ).mockResolvedValue({});
+
+    const existingSyncHabit: HabitScheduleItem = {
+      id: "habit-existing-sync-later",
+      name: "Existing Sync",
+      durationMinutes: 100,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: windowLite.energy ?? null,
+        startLocal: windowLite.start_local ?? "21:00",
+        endLocal: windowLite.end_local ?? "23:50",
+        days: windowLite.days ?? null,
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+    const podcastSyncHabit: HabitScheduleItem = {
+      ...existingSyncHabit,
+      id: "habit-podcast-sync-later",
+      name: "Podcast Sync",
+      durationMinutes: 60,
+      createdAt: "2024-01-01T00:01:00Z",
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([
+      existingSyncHabit,
+      podcastSyncHabit,
+    ]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}`,
+          source_id: params.item.id,
+          source_type: "HABIT",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+    const podcast = result.placed.find(
+      (inst) => inst.source_id === podcastSyncHabit.id
+    );
+
+    expect(podcast?.start_utc).toBe("2024-01-02T22:40:00.000Z");
+    expect(podcast?.end_utc).toBe("2024-01-02T23:40:00.000Z");
+  });
+
+  it("retries an unreserved SYNC habit after a later project anchor exists", async () => {
+    const { client } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-sync-project-anchor",
+      label: "Creator Sync",
+      energy: "LOW",
+      start_local: "21:00",
+      end_local: "23:45",
+      days: [2],
+    });
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-normal-anchor-early",
+        source_id: "event-anchor-early",
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:40:00.000Z",
+        window_id: windowLite.id,
+      }),
+      createInstanceRecord({
+        id: "inst-nma-sync",
+        source_id: "habit-nma-sync",
+        source_type: "HABIT",
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:40:00.000Z",
+        window_id: windowLite.id,
+        locked: true,
+      }),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    const project = {
+      id: "proj-refine-socials",
+      name: "REFINE SOCIALS",
+      priority: "HIGH",
+      stage: "BUILD",
+      energy: "LOW",
+      duration_min: 60,
+    };
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      [project.id]: project,
+    });
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      [project.id]: project,
+    });
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (
+      instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock
+    ).mockResolvedValue({
+      data: [
+        createInstanceRecord({
+          id: "inst-missed-project-anchor",
+          source_id: project.id,
+          source_type: "PROJECT",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "LOW",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    } satisfies BacklogResponse);
+
+    const nmaSync = makeHabit({
+      id: "habit-nma-sync",
+      name: "NMA SYNC",
+      durationMinutes: 100,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: "LOW",
+        startLocal: "21:00",
+        endLocal: "23:45",
+        days: [2],
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    });
+    const podcastSync = makeHabit({
+      ...nmaSync,
+      id: "habit-podcast-sync-retry",
+      name: "PODCAST/AUDIOBOOK",
+      durationMinutes: 60,
+      createdAt: "2024-01-01T00:01:00Z",
+    });
+    fetchHabitsForScheduleSpy.mockResolvedValue([nmaSync, podcastSync]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start =
+        params.item.sourceType === "PROJECT"
+          ? new Date("2024-01-02T22:45:00.000Z")
+          : new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}`,
+          source_id: params.item.id,
+          source_type: params.item.sourceType,
+          status: "scheduled",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+    const podcast = result.placed.find(
+      (inst) => inst.source_id === podcastSync.id
+    );
+
+    expect(podcast?.start_utc).toBe("2024-01-02T22:45:00.000Z");
+    expect(podcast?.end_utc).toBe("2024-01-02T23:45:00.000Z");
+    expect(
+      result.timeline.some(
+        (entry) => entry.type === "PROJECT" && entry.projectId === project.id
+      )
+    ).toBe(true);
+  });
+
+  it("runs the final SYNC retry after normal habit and project anchors are present", async () => {
+    const { client } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-creator-final-sync",
+      label: "Creator",
+      energy: "LOW",
+      start_local: "21:00",
+      end_local: "23:45",
+      days: [2],
+    });
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-nma-event-final-sync",
+        source_id: "event-nma",
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:40:00.000Z",
+        window_id: windowLite.id,
+      }),
+      createInstanceRecord({
+        id: "inst-nma-sync-final-sync",
+        source_id: "habit-nma-sync-final",
+        source_type: "HABIT",
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:40:00.000Z",
+        window_id: windowLite.id,
+        locked: true,
+      }),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+
+    const project = {
+      id: "proj-refine-socials-final-sync",
+      name: "REFINE SOCIALS",
+      priority: "HIGH",
+      stage: "BUILD",
+      energy: "LOW",
+      duration_min: 45,
+    };
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      [project.id]: project,
+    });
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      [project.id]: project,
+    });
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (
+      instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock
+    ).mockResolvedValue({
+      data: [
+        createInstanceRecord({
+          id: "inst-missed-refine-socials-final-sync",
+          source_id: project.id,
+          source_type: "PROJECT",
+          status: "missed",
+          duration_min: 45,
+          energy_resolved: "LOW",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    } satisfies BacklogResponse);
+
+    const baseWindow = {
+      id: windowLite.id,
+      label: windowLite.label ?? null,
+      energy: "LOW",
+      startLocal: "21:00",
+      endLocal: "23:45",
+      days: [2],
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+    };
+    const nmaSync = makeHabit({
+      id: "habit-nma-sync-final",
+      name: "NMA",
+      durationMinutes: 100,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      window: baseWindow,
+    });
+    const breakfast = makeHabit({
+      id: "habit-eat-breakfast-final-sync",
+      name: "EAT BREAKFAST",
+      durationMinutes: 15,
+      habitType: "HABIT",
+      windowId: windowLite.id,
+      window: baseWindow,
+    });
+    const podcast = makeHabit({
+      id: "habit-podcast-final-sync",
+      name: "PODCAST/AUDIOBOOK",
+      durationMinutes: 60,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      window: baseWindow,
+      createdAt: "2024-01-01T00:02:00Z",
+    });
+    fetchHabitsForScheduleSpy.mockResolvedValue([nmaSync, breakfast, podcast]);
+
+    const podcastPlacements: ScheduleInstance[] = [];
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start =
+        params.item.id === project.id
+          ? new Date("2024-01-02T23:00:00.000Z")
+          : params.item.id === breakfast.id
+            ? new Date("2024-01-02T22:45:00.000Z")
+            : new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      const data = createInstanceRecord({
+        id: `inst-${params.item.id}`,
+        source_id: params.item.id,
+        source_type: params.item.sourceType,
+        status: "scheduled",
+        start_utc: start.toISOString(),
+        end_utc: end.toISOString(),
+        duration_min: params.item.duration_min,
+        window_id: windowDef.id,
+        energy_resolved: params.item.energy,
+      });
+      if (params.item.id === podcast.id) {
+        podcastPlacements.push(data);
+      }
+      return {
+        data,
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+    const podcasts = result.placed.filter(
+      (inst) => inst.source_id === podcast.id
+    );
+
+    expect(
+      result.placed.some(
+        (inst) =>
+          inst.source_id === breakfast.id &&
+          inst.start_utc === "2024-01-02T22:45:00.000Z" &&
+          inst.end_utc === "2024-01-02T23:00:00.000Z"
+      )
+    ).toBe(true);
+    expect(
+      result.timeline.some(
+        (entry) => entry.type === "PROJECT" && entry.projectId === project.id
+      )
+    ).toBe(true);
+    expect(podcasts).toHaveLength(1);
+    expect(podcastPlacements).toHaveLength(1);
+    expect(podcasts[0]?.start_utc).toBe("2024-01-02T22:45:00.000Z");
+    expect(podcasts[0]?.end_utc).toBe("2024-01-02T23:45:00.000Z");
+  });
+
+  it("places the 2026-05-07 CRAFT/MUSIC final SYNC retry day-locally in stable order", async () => {
+    const { client } = createSupabaseMock();
+    const craftMusicDate = new Date("2026-05-07T21:00:00.000Z");
+
+    const windowLite = makeWindow({
+      id: "win-craft-music-final-sync",
+      label: "CRAFT/MUSIC",
+      energy: "LOW",
+      start_local: "20:00",
+      end_local: "23:45",
+      days: [4],
+      location_context_id: "ctx-craft-music",
+      location_context_value: "CRAFT/MUSIC",
+      location_context_name: "CRAFT/MUSIC",
+    });
+
+    const anchor = (
+      id: string,
+      name: string,
+      start: string,
+      end: string
+    ) =>
+      createInstanceRecord({
+        id,
+        source_id: `event-${id}`,
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        label: name,
+        start_utc: `2026-05-07T${start}:00.000Z`,
+        end_utc: `2026-05-07T${end}:00.000Z`,
+        window_id: windowLite.id,
+        energy_resolved: "LOW",
+      });
+
+    instances = [
+      anchor("wash-dishes", "WASH DISHES", "20:00", "20:25"),
+      anchor("pay-insurance", "PAY INSURANCE", "20:25", "20:30"),
+      anchor("take-out-trash", "TAKE OUT TRASH", "20:30", "20:45"),
+      anchor("vacuum", "VACUUM", "20:45", "21:00"),
+      anchor("fold-laundry", "FOLD LAUNDRY", "21:00", "21:20"),
+      anchor("clip-nails", "CLIP NAILS", "21:20", "21:25"),
+      anchor("groceries", "$50 GROCERIES", "21:25", "22:25"),
+      anchor("wash-bedsheets", "WASH BEDSHEETS", "22:25", "22:40"),
+      anchor("eat-breakfast", "EAT BREAKFAST", "22:45", "23:00"),
+      anchor("refine-socials", "REFINE SOCIALS", "23:00", "23:45"),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    const baseWindow = {
+      id: windowLite.id,
+      label: windowLite.label ?? null,
+      energy: "LOW",
+      startLocal: "20:00",
+      endLocal: "23:45",
+      days: [4],
+      locationContextId: "ctx-craft-music",
+      locationContextValue: "CRAFT/MUSIC",
+      locationContextName: "CRAFT/MUSIC",
+    };
+    const nma = makeHabit({
+      id: "habit-nma-craft-music",
+      name: "NMA",
+      durationMinutes: 120,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      energy: "LOW",
+      locationContextId: "ctx-craft-music",
+      locationContextValue: "CRAFT/MUSIC",
+      locationContextName: "CRAFT/MUSIC",
+      window: baseWindow,
+      createdAt: "2026-05-01T00:00:00.000Z",
+    });
+    const podcast = makeHabit({
+      ...nma,
+      id: "habit-podcast-craft-music",
+      name: "PODCAST/AUDIOBOOK",
+      durationMinutes: 60,
+      createdAt: "2026-05-01T00:01:00.000Z",
+    });
+    fetchHabitsForScheduleSpy.mockResolvedValue([podcast, nma]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}-${start.toISOString()}`,
+          source_id: params.item.id,
+          source_type: "HABIT",
+          status: "scheduled",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, craftMusicDate, client, {
+      writeThroughDaysOverride: 3,
+    });
+
+    const nmaPlacements = result.placed.filter(
+      (inst) => inst.source_id === nma.id
+    );
+    const podcastPlacements = result.placed.filter(
+      (inst) => inst.source_id === podcast.id
+    );
+    expect(nmaPlacements).toHaveLength(1);
+    expect(podcastPlacements).toHaveLength(1);
+
+    const nmaPlacement = nmaPlacements[0];
+    const podcastPlacement = podcastPlacements[0];
+    expect(nmaPlacement.start_utc).toBe("2026-05-07T21:00:00.000Z");
+    expect(nmaPlacement.end_utc).toBe("2026-05-07T22:40:00.000Z");
+    expect(podcastPlacement.start_utc).toBe("2026-05-07T22:45:00.000Z");
+    expect(podcastPlacement.end_utc).toBe("2026-05-07T23:45:00.000Z");
+
+    expect(nmaPlacement.start_utc?.startsWith("2026-05-07")).toBe(true);
+    expect(podcastPlacement.start_utc?.startsWith("2026-05-07")).toBe(true);
+    expect(
+      new Date(nmaPlacement.start_utc ?? "").getTime() <
+        new Date(podcastPlacement.start_utc ?? "").getTime()
+    ).toBe(true);
+    expect(
+      result.placed.some(
+        (inst) =>
+          inst.source_id === nma.id &&
+          (inst.start_utc?.startsWith("2026-05-08") ||
+            inst.start_utc?.startsWith("2026-05-09"))
+      )
+    ).toBe(false);
+  });
+
+  it("skips the final SYNC retry when the only remaining anchor span is shorter than the habit duration", async () => {
+    const { client } = createSupabaseMock();
+    const craftMusicDate = new Date("2026-05-07T19:00:00.000Z");
+
+    const windowLite = makeWindow({
+      id: "win-craft-music-short-anchor",
+      label: "CRAFT/MUSIC",
+      energy: "LOW",
+      start_local: "20:00",
+      end_local: "23:45",
+      days: [4],
+      location_context_id: "ctx-craft-music",
+      location_context_value: "CRAFT/MUSIC",
+      location_context_name: "CRAFT/MUSIC",
+    });
+
+    const anchor = (
+      id: string,
+      name: string,
+      start: string,
+      end: string
+    ) =>
+      createInstanceRecord({
+        id,
+        source_id: `event-${id}`,
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        label: name,
+        start_utc: `2026-05-07T${start}:00.000Z`,
+        end_utc: `2026-05-07T${end}:00.000Z`,
+        window_id: windowLite.id,
+        energy_resolved: "LOW",
+      });
+
+    instances = [
+      anchor("nma-anchor", "NMA", "20:00", "22:00"),
+      anchor("refine-socials-short", "REFINE SOCIALS", "23:00", "23:45"),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    const baseWindow = {
+      id: windowLite.id,
+      label: windowLite.label ?? null,
+      energy: "LOW",
+      startLocal: "20:00",
+      endLocal: "23:45",
+      days: [4],
+      locationContextId: "ctx-craft-music",
+      locationContextValue: "CRAFT/MUSIC",
+      locationContextName: "CRAFT/MUSIC",
+    };
+    const nma = makeHabit({
+      id: "habit-nma-short-anchor",
+      name: "NMA",
+      durationMinutes: 120,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      energy: "LOW",
+      locationContextId: "ctx-craft-music",
+      locationContextValue: "CRAFT/MUSIC",
+      locationContextName: "CRAFT/MUSIC",
+      window: baseWindow,
+      createdAt: "2026-05-01T00:00:00.000Z",
+    });
+    const podcast = makeHabit({
+      ...nma,
+      id: "habit-podcast-short-anchor",
+      name: "PODCAST/AUDIOBOOK",
+      durationMinutes: 60,
+      createdAt: "2026-05-01T00:01:00.000Z",
+    });
+    fetchHabitsForScheduleSpy.mockResolvedValue([nma, podcast]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}-${start.toISOString()}`,
+          source_id: params.item.id,
+          source_type: "HABIT",
+          status: "scheduled",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, craftMusicDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    const nmaPlacement = result.placed.find(
+      (inst) => inst.source_id === nma.id
+    );
+    const podcastPlacements = result.placed.filter(
+      (inst) => inst.source_id === podcast.id
+    );
+
+    expect(nmaPlacement?.start_utc).toBe("2026-05-07T20:00:00.000Z");
+    expect(nmaPlacement?.end_utc).toBe("2026-05-07T22:00:00.000Z");
+    expect(podcastPlacements).toHaveLength(0);
+    expect(placeSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        item: expect.objectContaining({ id: podcast.id }),
+        windows: expect.arrayContaining([
+          expect.objectContaining({
+            availableStartLocal: new Date("2026-05-07T23:00:00.000Z"),
+            endLocal: new Date("2026-05-07T23:45:00.000Z"),
+          }),
+        ]),
+      })
+    );
+  });
+
+  it("rejects a final SYNC retry candidate that extends beyond continuous anchor coverage", async () => {
+    const { client } = createSupabaseMock();
+    const craftMusicDate = new Date("2026-05-07T19:00:00.000Z");
+
+    const windowLite = makeWindow({
+      id: "win-sync-anchor-tail-gap",
+      label: "CRAFT/MUSIC",
+      energy: "LOW",
+      start_local: "23:00",
+      end_local: "00:15",
+      days: [4],
+      location_context_id: "ctx-craft-music",
+      location_context_value: "CRAFT/MUSIC",
+      location_context_name: "CRAFT/MUSIC",
+    });
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-refine-socials-tail-gap",
+        source_id: "event-refine-socials-tail-gap",
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        label: "REFINE SOCIALS",
+        start_utc: "2026-05-07T23:00:00.000Z",
+        end_utc: "2026-05-07T23:45:00.000Z",
+        window_id: windowLite.id,
+        energy_resolved: "LOW",
+      }),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    const podcast = makeHabit({
+      id: "habit-podcast-tail-gap",
+      name: "PODCAST/AUDIOBOOK",
+      durationMinutes: 60,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      energy: "LOW",
+      locationContextId: "ctx-craft-music",
+      locationContextValue: "CRAFT/MUSIC",
+      locationContextName: "CRAFT/MUSIC",
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: "LOW",
+        startLocal: "23:00",
+        endLocal: "00:15",
+        days: [4],
+        locationContextId: "ctx-craft-music",
+        locationContextValue: "CRAFT/MUSIC",
+        locationContextName: "CRAFT/MUSIC",
+      },
+    });
+    fetchHabitsForScheduleSpy.mockResolvedValue([podcast]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}`,
+          source_id: params.item.id,
+          source_type: "HABIT",
+          status: "scheduled",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, craftMusicDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    expect(result.placed.some((inst) => inst.source_id === podcast.id)).toBe(
+      false
+    );
+    expect(placeSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        item: expect.objectContaining({ id: podcast.id }),
+      })
+    );
+  });
+
+  it("allows adjacent normal anchors to fully cover a final SYNC retry candidate", async () => {
+    const { client } = createSupabaseMock();
+    const craftMusicDate = new Date("2026-05-07T19:00:00.000Z");
+
+    const windowLite = makeWindow({
+      id: "win-sync-adjacent-anchor-coverage",
+      label: "CRAFT/MUSIC",
+      energy: "LOW",
+      start_local: "23:00",
+      end_local: "00:15",
+      days: [4],
+      location_context_id: "ctx-craft-music",
+      location_context_value: "CRAFT/MUSIC",
+      location_context_name: "CRAFT/MUSIC",
+    });
+
+    const anchor = (id: string, start: string, end: string) =>
+      createInstanceRecord({
+        id,
+        source_id: `event-${id}`,
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        label: id === "refine-socials" ? "REFINE SOCIALS" : "Anchor",
+        start_utc: `2026-05-07T${start}:00.000Z`,
+        end_utc:
+          end.startsWith("00") || end.startsWith("01")
+            ? `2026-05-08T${end}:00.000Z`
+            : `2026-05-07T${end}:00.000Z`,
+        window_id: windowLite.id,
+        energy_resolved: "LOW",
+      });
+
+    instances = [
+      anchor("refine-socials", "23:00", "23:45"),
+      anchor("adjacent-normal", "23:45", "00:00"),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    const podcast = makeHabit({
+      id: "habit-podcast-adjacent-coverage",
+      name: "PODCAST/AUDIOBOOK",
+      durationMinutes: 60,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      energy: "LOW",
+      locationContextId: "ctx-craft-music",
+      locationContextValue: "CRAFT/MUSIC",
+      locationContextName: "CRAFT/MUSIC",
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: "LOW",
+        startLocal: "23:00",
+        endLocal: "00:15",
+        days: [4],
+        locationContextId: "ctx-craft-music",
+        locationContextValue: "CRAFT/MUSIC",
+        locationContextName: "CRAFT/MUSIC",
+      },
+    });
+    fetchHabitsForScheduleSpy.mockResolvedValue([podcast]);
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async (params) => {
+        const windowDef = params.windows[0];
+        const start = new Date(windowDef.availableStartLocal);
+        const end = new Date(
+          start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+        );
+        return {
+          data: createInstanceRecord({
+            id: `inst-${params.item.id}`,
+            source_id: params.item.id,
+            source_type: "HABIT",
+            status: "scheduled",
+            start_utc: start.toISOString(),
+            end_utc: end.toISOString(),
+            duration_min: params.item.duration_min,
+            window_id: windowDef.id,
+            energy_resolved: params.item.energy,
+          }),
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      }
+    );
+
+    const result = await scheduleBacklog(userId, craftMusicDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    const podcastPlacement = result.placed.find(
+      (inst) => inst.source_id === podcast.id
+    );
+    expect(podcastPlacement?.start_utc).toBe("2026-05-07T23:00:00.000Z");
+    expect(podcastPlacement?.end_utc).toBe("2026-05-08T00:00:00.000Z");
+  });
+
+  it("does not bridge a gap between normal anchors for a final SYNC retry", async () => {
+    const { client } = createSupabaseMock();
+    const craftMusicDate = new Date("2026-05-07T19:00:00.000Z");
+
+    const windowLite = makeWindow({
+      id: "win-sync-anchor-mid-gap",
+      label: "CRAFT/MUSIC",
+      energy: "LOW",
+      start_local: "23:00",
+      end_local: "00:15",
+      days: [4],
+      location_context_id: "ctx-craft-music",
+      location_context_value: "CRAFT/MUSIC",
+      location_context_name: "CRAFT/MUSIC",
+    });
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-anchor-before-gap",
+        source_id: "event-anchor-before-gap",
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        start_utc: "2026-05-07T23:00:00.000Z",
+        end_utc: "2026-05-07T23:30:00.000Z",
+        window_id: windowLite.id,
+        energy_resolved: "LOW",
+      }),
+      createInstanceRecord({
+        id: "inst-anchor-after-gap",
+        source_id: "event-anchor-after-gap",
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        start_utc: "2026-05-07T23:45:00.000Z",
+        end_utc: "2026-05-08T00:15:00.000Z",
+        window_id: windowLite.id,
+        energy_resolved: "LOW",
+      }),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    const podcast = makeHabit({
+      id: "habit-podcast-mid-gap",
+      name: "PODCAST/AUDIOBOOK",
+      durationMinutes: 60,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      energy: "LOW",
+      locationContextId: "ctx-craft-music",
+      locationContextValue: "CRAFT/MUSIC",
+      locationContextName: "CRAFT/MUSIC",
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: "LOW",
+        startLocal: "23:00",
+        endLocal: "00:15",
+        days: [4],
+        locationContextId: "ctx-craft-music",
+        locationContextValue: "CRAFT/MUSIC",
+        locationContextName: "CRAFT/MUSIC",
+      },
+    });
+    fetchHabitsForScheduleSpy.mockResolvedValue([podcast]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}`,
+          source_id: params.item.id,
+          source_type: "HABIT",
+          status: "scheduled",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, craftMusicDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    expect(result.placed.some((inst) => inst.source_id === podcast.id)).toBe(
+      false
+    );
+    expect(placeSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        item: expect.objectContaining({ id: podcast.id }),
+      })
+    );
+  });
+
+  it("keeps a skipped SYNC unscheduled when the post-anchor retry only has empty space", async () => {
+    const { client } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-sync-empty-retry",
+      label: "Creator Sync",
+      energy: "LOW",
+      start_local: "21:00",
+      end_local: "23:45",
+      days: [2],
+    });
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-normal-anchor-only-early",
+        source_id: "event-anchor-early",
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:40:00.000Z",
+        window_id: windowLite.id,
+      }),
+      createInstanceRecord({
+        id: "inst-nma-sync-empty-retry",
+        source_id: "habit-nma-sync-empty-retry",
+        source_type: "HABIT",
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:40:00.000Z",
+        window_id: windowLite.id,
+        locked: true,
+      }),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    const nmaSync = makeHabit({
+      id: "habit-nma-sync-empty-retry",
+      name: "NMA SYNC",
+      durationMinutes: 100,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: "LOW",
+        startLocal: "21:00",
+        endLocal: "23:45",
+        days: [2],
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    });
+    const podcastSync = makeHabit({
+      ...nmaSync,
+      id: "habit-podcast-sync-empty-retry",
+      name: "PODCAST/AUDIOBOOK",
+      durationMinutes: 60,
+      createdAt: "2024-01-01T00:01:00Z",
+    });
+    fetchHabitsForScheduleSpy.mockResolvedValue([nmaSync, podcastSync]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}`,
+          source_id: params.item.id,
+          source_type: "HABIT",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    expect(
+      result.placed.some((inst) => inst.source_id === podcastSync.id)
+    ).toBe(false);
+    expect(placeSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        item: expect.objectContaining({ id: podcastSync.id }),
+      })
+    );
+  });
+
+  it("does not retry a SYNC habit into a later anchor when another SYNC still overlaps it", async () => {
+    const { client } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-sync-retry-conflict",
+      label: "Creator Sync",
+      energy: "LOW",
+      start_local: "21:00",
+      end_local: "23:45",
+      days: [2],
+    });
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-normal-anchor-conflict",
+        source_id: "event-anchor-early",
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:40:00.000Z",
+        window_id: windowLite.id,
+      }),
+      createInstanceRecord({
+        id: "inst-long-sync-conflict",
+        source_id: "habit-long-sync-conflict",
+        source_type: "HABIT",
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T23:10:00.000Z",
+        window_id: windowLite.id,
+        locked: true,
+      }),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    const project = {
+      id: "proj-refine-socials-conflict",
+      name: "REFINE SOCIALS",
+      priority: "HIGH",
+      stage: "BUILD",
+      energy: "LOW",
+      duration_min: 60,
+    };
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      [project.id]: project,
+    });
+    (repo.fetchAllProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      [project.id]: project,
+    });
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (
+      instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock
+    ).mockResolvedValue({
+      data: [
+        createInstanceRecord({
+          id: "inst-missed-project-conflict",
+          source_id: project.id,
+          source_type: "PROJECT",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "LOW",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    } satisfies BacklogResponse);
+
+    const longSync = makeHabit({
+      id: "habit-long-sync-conflict",
+      name: "NMA SYNC",
+      durationMinutes: 130,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: "LOW",
+        startLocal: "21:00",
+        endLocal: "23:45",
+        days: [2],
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    });
+    const podcastSync = makeHabit({
+      ...longSync,
+      id: "habit-podcast-sync-conflict",
+      name: "PODCAST/AUDIOBOOK",
+      durationMinutes: 60,
+      createdAt: "2024-01-01T00:01:00Z",
+    });
+    fetchHabitsForScheduleSpy.mockResolvedValue([longSync, podcastSync]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start =
+        params.item.sourceType === "PROJECT"
+          ? new Date("2024-01-02T22:45:00.000Z")
+          : new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}`,
+          source_id: params.item.id,
+          source_type: params.item.sourceType,
+          status: "scheduled",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+
+    expect(
+      result.placed.some((inst) => inst.source_id === podcastSync.id)
+    ).toBe(false);
+    expect(placeSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        item: expect.objectContaining({ id: podcastSync.id }),
+      })
+    );
+  });
+
+  it("allows SYNC boundary-touch while still requiring real anchor overlap", async () => {
+    const { client } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-sync-boundary",
+      label: "Sync Boundary",
+      energy: "LOW",
+      start_local: "21:00",
+      end_local: "23:00",
+      days: [2],
+    });
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-anchor-boundary",
+        source_id: "event-anchor-boundary",
+        source_type: "EVENT" as ScheduleInstance["source_type"],
+        start_utc: "2024-01-02T21:00:00.000Z",
+        end_utc: "2024-01-02T22:00:00.000Z",
+        window_id: windowLite.id,
+      }),
+      createInstanceRecord({
+        id: "inst-existing-sync-boundary",
+        source_id: "habit-existing-sync-boundary",
+        source_type: "HABIT",
+        start_utc: "2024-01-02T22:00:00.000Z",
+        end_utc: "2024-01-02T23:00:00.000Z",
+        window_id: windowLite.id,
+      }),
+    ];
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (
+      repo.fetchProjectSkillsForProjects as unknown as vi.Mock
+    ).mockResolvedValue({});
+
+    const existingSyncHabit: HabitScheduleItem = {
+      id: "habit-existing-sync-boundary",
+      name: "Existing Sync",
+      durationMinutes: 60,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: windowLite.energy ?? null,
+        startLocal: windowLite.start_local ?? "21:00",
+        endLocal: windowLite.end_local ?? "23:00",
+        days: windowLite.days ?? null,
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+    const boundarySyncHabit: HabitScheduleItem = {
+      ...existingSyncHabit,
+      id: "habit-boundary-sync",
+      name: "Boundary Sync",
+      createdAt: "2024-01-01T00:01:00Z",
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([
+      existingSyncHabit,
+      boundarySyncHabit,
+    ]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}`,
+          source_id: params.item.id,
+          source_type: "HABIT",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client, {
+      writeThroughDaysOverride: 1,
+    });
+    const boundarySync = result.placed.find(
+      (inst) => inst.source_id === boundarySyncHabit.id
+    );
+
+    expect(boundarySync?.start_utc).toBe("2024-01-02T21:00:00.000Z");
+    expect(boundarySync?.end_utc).toBe("2024-01-02T22:00:00.000Z");
+  });
+
+  it("still allows SYNC habits to overlap normal habit events", async () => {
+    instances = [];
+    const { client } = createSupabaseMock();
+
+    const windowLite = makeWindow({
+      id: "win-sync-overlay",
+      label: "Overlay Window",
+      energy: "LOW",
+      start_local: "20:00",
+      end_local: "23:00",
+      days: [2],
+    });
+
+    fetchWindowsForDateSpy.mockResolvedValue([windowLite]);
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (
+      repo.fetchProjectSkillsForProjects as unknown as vi.Mock
+    ).mockResolvedValue({});
+
+    const normalHabit: HabitScheduleItem = {
+      id: "habit-normal",
+      name: "Chore",
+      durationMinutes: 145,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "CHORE",
+      windowId: windowLite.id,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: windowLite.energy ?? null,
+        startLocal: windowLite.start_local ?? "20:00",
+        endLocal: windowLite.end_local ?? "23:00",
+        days: windowLite.days ?? null,
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+    const syncHabit: HabitScheduleItem = {
+      ...normalHabit,
+      id: "habit-sync-overlay",
+      name: "Sync Overlay",
+      durationMinutes: 85,
+      createdAt: "2024-01-01T00:01:00Z",
+      habitType: "SYNC",
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([normalHabit, syncHabit]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      const windowDef = params.windows[0];
+      const start = new Date(windowDef.availableStartLocal);
+      const end = new Date(
+        start.getTime() + Math.max(1, params.item.duration_min) * 60_000
+      );
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}`,
+          source_id: params.item.id,
+          source_type: "HABIT",
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: windowDef.id,
+          energy_resolved: params.item.energy,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+    const normal = result.placed.find(
+      (inst) => inst.source_id === normalHabit.id
+    );
+    const sync = result.placed.find((inst) => inst.source_id === syncHabit.id);
+
+    expect(normal?.start_utc).toBe("2024-01-02T20:00:00.000Z");
+    expect(normal?.end_utc).toBe("2024-01-02T22:25:00.000Z");
+    expect(sync?.start_utc).toBe("2024-01-02T20:00:00.000Z");
+    expect(
+      new Date(normal?.end_utc ?? 0).getTime() >
+        new Date(sync?.start_utc ?? 0).getTime() &&
+        new Date(sync?.end_utc ?? 0).getTime() >
+          new Date(normal?.start_utc ?? 0).getTime()
+    ).toBe(true);
   });
 
   it("persists SYNC habits that were reserved before the live habit pass", async () => {

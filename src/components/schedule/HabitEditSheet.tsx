@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import {
   HabitFormFields,
@@ -58,6 +65,11 @@ import {
   normalizeRecurrenceMode,
   type AnchorType,
 } from "@/lib/scheduler/habitRecurrence";
+import {
+  cancelFutureScheduledHabitInstancesForUpdate,
+  didHabitSchedulingChange,
+  type HabitSchedulingSnapshot,
+} from "@/lib/habits/scheduleReset";
 
 type RoutineOption = {
   id: string;
@@ -354,6 +366,8 @@ export function HabitEditSheet({
   const [advancedResetKey, setAdvancedResetKey] = useState(0);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [habitWindowDays, setHabitWindowDays] = useState<number[] | null>(null);
+  const originalSchedulingSnapshotRef =
+    useRef<HabitSchedulingSnapshot | null>(null);
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -405,6 +419,7 @@ export function HabitEditSheet({
     setError(null);
     setNextDueOverrideInput("");
     setNextDueOverrideOriginal(null);
+    originalSchedulingSnapshotRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -1033,6 +1048,59 @@ export function HabitEditSheet({
             typeof data.next_due_override === "string"
               ? data.next_due_override
               : null;
+          const safeRecurrenceDays = Array.isArray(data.recurrence_days)
+            ? data.recurrence_days
+                .map((value: unknown) => Number(value))
+                .filter((value: number) => Number.isFinite(value) && value > 0)
+                .map((value: number) => Math.round(value))
+            : [];
+          originalSchedulingSnapshotRef.current = {
+            name: typeof data.name === "string" ? data.name : "",
+            habit_type:
+              typeof data.habit_type === "string"
+                ? data.habit_type
+                : HABIT_TYPE_OPTIONS[0].value,
+            recurrence:
+              typeof data.recurrence === "string" ? data.recurrence : null,
+            recurrence_mode:
+              typeof data.recurrence_mode === "string"
+                ? data.recurrence_mode
+                : "INTERVAL",
+            recurrence_days:
+              safeRecurrenceDays.length > 0 ? safeRecurrenceDays : null,
+            duration_minutes:
+              typeof data.duration_minutes === "number"
+                ? data.duration_minutes
+                : null,
+            energy: typeof data.energy === "string" ? data.energy : null,
+            window_id:
+              typeof data.window_id === "string" ? data.window_id : null,
+            location_context_id:
+              typeof data.location_context_id === "string"
+                ? data.location_context_id
+                : null,
+            skill_id: typeof data.skill_id === "string" ? data.skill_id : null,
+            next_due_override: nextDueOverrideValue,
+            daylight_preference:
+              typeof data.daylight_preference === "string"
+                ? data.daylight_preference
+                : null,
+            window_edge_preference:
+              typeof data.window_edge_preference === "string"
+                ? data.window_edge_preference
+                : null,
+            anchor_type:
+              typeof data.anchor_type === "string" ? data.anchor_type : null,
+            anchor_value:
+              typeof data.anchor_value === "string" ||
+              typeof data.anchor_value === "number"
+                ? String(data.anchor_value)
+                : null,
+            anchor_start_date:
+              typeof data.anchor_start_date === "string"
+                ? data.anchor_start_date
+                : null,
+          };
           setNextDueOverrideOriginal(nextDueOverrideValue);
           setNextDueOverrideInput(toDateTimeLocalInput(nextDueOverrideValue));
           setName(data.name ?? "");
@@ -1040,12 +1108,6 @@ export function HabitEditSheet({
           setHabitType(data.habit_type ?? HABIT_TYPE_OPTIONS[0].value);
           const rawRecurrence = data.recurrence ?? "none";
           setRecurrence(rawRecurrence);
-          const safeRecurrenceDays = Array.isArray(data.recurrence_days)
-            ? data.recurrence_days
-                .map((value: unknown) => Number(value))
-                .filter((value: number) => Number.isFinite(value) && value > 0)
-                .map((value: number) => Math.round(value))
-            : [];
           const everyXDaysInterval =
             rawRecurrence.toLowerCase().trim() === "every x days"
               ? resolveEveryXDaysInterval(rawRecurrence, safeRecurrenceDays)
@@ -1441,6 +1503,11 @@ export function HabitEditSheet({
           next_due_override: nextDueOverrideValue,
         };
 
+        const shouldResetFutureSchedule = didHabitSchedulingChange(
+          originalSchedulingSnapshotRef.current,
+          payload
+        );
+
         const { error: updateError } = await supabase
           .from("habits")
           .update(payload)
@@ -1449,6 +1516,14 @@ export function HabitEditSheet({
 
         if (updateError) {
           throw updateError;
+        }
+
+        if (shouldResetFutureSchedule) {
+          await cancelFutureScheduledHabitInstancesForUpdate({
+            supabase,
+            userId: user.id,
+            habitId,
+          });
         }
 
         if (onSaved) {
@@ -1478,10 +1553,15 @@ export function HabitEditSheet({
       habitType,
       recurrence,
       recurrenceDays,
+      recurrenceMode,
+      anchorType,
+      anchorValue,
+      anchorStartDate,
       duration,
       name,
       energy,
       skillId,
+      windowId,
       daylightPreference,
       windowEdgePreference,
       goalMetadataSupported,

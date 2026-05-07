@@ -131,6 +131,11 @@ type OverlayWindowBlock = {
   endMs: number;
 };
 
+type ScheduleSegment = {
+  start: number;
+  end: number;
+};
+
 type ResolvedWindowEntry = {
   window: WindowLite;
   startLocal: Date;
@@ -160,6 +165,22 @@ const SCHEDULER_PROJECT_DEBUG_LOGGING =
 const SCHEDULER_HABIT_WINDOW_DEBUG_LOGGING =
   process.env.SCHEDULER_DEBUG_LOGGING === "true";
 const SCHEDULER_HABIT_WINDOW_DEBUG_TAG = "[SCHEDULER_HABIT_WINDOWS_DEBUG]";
+const HABIT_PLACEMENT_AUDIT_LOGGING =
+  process.env.DEBUG_HABIT_PLACEMENT_AUDIT === "true";
+const HABIT_PLACEMENT_AUDIT_TAG = "[HABIT_PLACEMENT_AUDIT]";
+const HABIT_PLACEMENT_AUDIT_TARGET_NAMES = new Set([
+  "BRUSH TEETH",
+  "SHOWER",
+  "WASH FACE",
+  "READ",
+  "LATIN",
+  "MEDITATE",
+  "CHECK NOTIS",
+  "RECORD CONTENT",
+  "STRETCH",
+  "CLEAN ROOM",
+  "RUN PROMO",
+]);
 
 const logSchedulerDebug = (
   message: string,
@@ -173,6 +194,200 @@ const logSchedulerDebug = (
 const logSchedulerInfo = (message: string, data?: unknown) => {
   if (!SCHEDULER_DEBUG_LOGGING) return;
   log("info", message, data);
+};
+
+const normalizeHabitPlacementAuditName = (name?: string | null) =>
+  (name ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+
+const shouldAuditHabitPlacement = (
+  habit: Pick<HabitScheduleItem, "name">
+) => {
+  if (!HABIT_PLACEMENT_AUDIT_LOGGING) return false;
+  return HABIT_PLACEMENT_AUDIT_TARGET_NAMES.has(
+    normalizeHabitPlacementAuditName(habit.name)
+  );
+};
+
+const toAuditIso = (value: Date | string | number | null | undefined) => {
+  if (value === null || typeof value === "undefined") return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+};
+
+const scheduleInstanceAuditPayload = (
+  instance: ScheduleInstance | null | undefined
+) => ({
+  instanceId: instance?.id ?? null,
+  sourceId: instance?.source_id ?? null,
+  sourceType: instance?.source_type ?? null,
+  status: instance?.status ?? null,
+  startUtc: instance?.start_utc ?? null,
+  endUtc: instance?.end_utc ?? null,
+  locked: instance?.locked ?? null,
+  canceledReason: instance?.canceled_reason ?? null,
+});
+
+const logHabitPlacementAudit = (
+  habit: Pick<HabitScheduleItem, "id" | "name" | "habitType">,
+  event: string,
+  data?: Record<string, unknown>
+) => {
+  if (!shouldAuditHabitPlacement(habit)) return;
+  log("debug", HABIT_PLACEMENT_AUDIT_TAG, {
+    event,
+    habitId: habit.id,
+    habitName: habit.name ?? null,
+    habitType: habit.habitType ?? null,
+    ...data,
+  });
+};
+
+type BlockIdentityCarrier = Partial<
+  Record<
+    | "dayTypeTimeBlockId"
+    | "day_type_time_block_id"
+    | "timeBlockId"
+    | "time_block_id",
+    string | null
+  >
+>;
+
+const getAuditDayTypeTimeBlockId = (
+  value: BlockIdentityCarrier | null | undefined
+) => value?.dayTypeTimeBlockId ?? value?.day_type_time_block_id ?? null;
+
+const getAuditTimeBlockId = (
+  value: BlockIdentityCarrier | null | undefined
+) => value?.timeBlockId ?? value?.time_block_id ?? null;
+
+const habitPlacementWindowAuditPayload = (params: {
+  target?: {
+    id: string;
+    key: string;
+    startLocal: Date;
+    endLocal: Date;
+    availableStartLocal: Date;
+  } | null;
+  window?: WindowLite | null;
+  targetKey?: string | null;
+}) => ({
+  windowId: params.window?.id ?? params.target?.id ?? null,
+  windowKey: params.targetKey ?? params.target?.key ?? null,
+  windowStart: toAuditIso(params.target?.startLocal ?? null),
+  windowEnd: toAuditIso(params.target?.endLocal ?? null),
+  availableStart: toAuditIso(params.target?.availableStartLocal ?? null),
+  timeBlockId: params.window?.id ?? null,
+  dayTypeTimeBlockId: getAuditDayTypeTimeBlockId(params.window),
+});
+
+const getSegmentOverlapConflict = (
+  startMs: number,
+  endMs: number,
+  segments: ScheduleSegment[]
+) => {
+  for (const segment of segments) {
+    const overlapStart = Math.max(startMs, segment.start);
+    const overlapEnd = Math.min(endMs, segment.end);
+    if (overlapEnd <= overlapStart) continue;
+    return { start: overlapStart, end: overlapEnd };
+  }
+  return null;
+};
+
+const hasContinuousAnchorCoverage = (
+  startMs: number,
+  endMs: number,
+  anchorSegments: ScheduleSegment[]
+) => {
+  if (
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(endMs) ||
+    endMs <= startMs
+  ) {
+    return false;
+  }
+
+  const segments = anchorSegments
+    .filter((segment) => segment.end > startMs && segment.start < endMs)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  let coveredUntil = startMs;
+  for (const segment of segments) {
+    const segmentStart = Math.max(segment.start, startMs);
+    const segmentEnd = Math.min(segment.end, endMs);
+    if (segmentEnd <= segmentStart) continue;
+    if (segmentStart > coveredUntil) {
+      return false;
+    }
+    coveredUntil = Math.max(coveredUntil, segmentEnd);
+    if (coveredUntil >= endMs) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const findAnchoredSyncCandidate = (
+  startMs: number,
+  durationMs: number,
+  endLimit: number,
+  syncSegments: ScheduleSegment[],
+  anchorSegments: ScheduleSegment[]
+) => {
+  if (
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(durationMs) ||
+    !Number.isFinite(endLimit) ||
+    durationMs <= 0
+  ) {
+    return null;
+  }
+
+  let cursor = startMs;
+  const anchors = anchorSegments.filter(
+    (segment) => segment.end > startMs && segment.start < endLimit
+  );
+  let anchorIndex = 0;
+  let guard = 0;
+
+  while (
+    anchorIndex < anchors.length &&
+    guard <= anchors.length + syncSegments.length + 8
+  ) {
+    const anchor = anchors[anchorIndex];
+    cursor = Math.max(cursor, anchor.start);
+    const candidateEnd = cursor + durationMs;
+    if (candidateEnd > endLimit) {
+      return null;
+    }
+
+    if (!hasContinuousAnchorCoverage(cursor, candidateEnd, anchors)) {
+      anchorIndex += 1;
+      guard += 1;
+      continue;
+    }
+
+    const conflict = getSegmentOverlapConflict(
+      cursor,
+      candidateEnd,
+      syncSegments
+    );
+    if (!conflict) {
+      return {
+        start: cursor,
+        end: candidateEnd,
+      };
+    }
+
+    cursor = Math.max(conflict.end, cursor);
+    while (anchorIndex < anchors.length && anchors[anchorIndex].end <= cursor) {
+      anchorIndex += 1;
+    }
+    guard += 1;
+  }
+
+  return null;
 };
 
 function resolveHabitExplicitEnergy(
@@ -329,6 +544,38 @@ const DAILY_RECURRENCES = new Set(["daily", "none", "everyday", ""]);
 function habitTypePriority(value?: string | null) {
   const normalized = (value ?? "HABIT").toUpperCase();
   return HABIT_TYPE_PRIORITY[normalized] ?? Number.MAX_SAFE_INTEGER;
+}
+
+function compareHabitScheduleOrder(
+  a: HabitScheduleItem,
+  b: HabitScheduleItem,
+  dueInfoByHabitId: Map<string, HabitDueEvaluation>,
+  defaultDueMs: number
+) {
+  const dueA = dueInfoByHabitId.get(a.id);
+  const dueB = dueInfoByHabitId.get(b.id);
+  const dueDiff =
+    (dueA?.dueStart?.getTime() ?? defaultDueMs) -
+    (dueB?.dueStart?.getTime() ?? defaultDueMs);
+  if (dueDiff !== 0) return dueDiff;
+  const typeDiff =
+    habitTypePriority(a.habitType) - habitTypePriority(b.habitType);
+  if (typeDiff !== 0) return typeDiff;
+  const aDuration = Number(
+    a.durationMinutes ??
+      (a as { duration_minutes?: number | null }).duration_minutes ??
+      0
+  );
+  const bDuration = Number(
+    b.durationMinutes ??
+      (b as { duration_minutes?: number | null }).duration_minutes ??
+      0
+  );
+  if (aDuration !== bDuration) return bDuration - aDuration;
+  const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+  const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+  if (aTime !== bTime) return aTime - bTime;
+  return a.name.localeCompare(b.name);
 }
 
 function normalizeRecurrenceValue(value: string | null | undefined) {
@@ -1966,6 +2213,24 @@ export async function scheduleBacklog(
     }
     habitScheduledLocalDays.set(habitId, new Set([dayMs]));
   };
+  const clearHabitScheduledStart = (
+    habitId: string | null | undefined,
+    startInput: Date | string | null | undefined
+  ) => {
+    if (!habitId || !startInput) return;
+    const start =
+      startInput instanceof Date
+        ? new Date(startInput.getTime())
+        : new Date(startInput ?? "");
+    if (Number.isNaN(start.getTime())) return;
+    const normalized = startOfDayInTimeZone(start, timeZone);
+    const scheduledDays = habitScheduledLocalDays.get(habitId);
+    if (!scheduledDays) return;
+    scheduledDays.delete(normalized.getTime());
+    if (scheduledDays.size === 0) {
+      habitScheduledLocalDays.delete(habitId);
+    }
+  };
   const getHabitLastScheduledStart = (habitId: string, day?: Date) => {
     const scheduledDays = habitScheduledLocalDays.get(habitId);
     if (!scheduledDays || scheduledDays.size === 0) return null;
@@ -2528,6 +2793,36 @@ export async function scheduleBacklog(
         blockerCache.set(cacheKey, filteredBlockers);
       }
     }
+  };
+
+  const overlapsSchedulerDay = (instance: ScheduleInstance, day: Date) => {
+    const start = new Date(instance.start_utc ?? "");
+    const end = new Date(instance.end_utc ?? "");
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return false;
+    }
+    const dayStart = startOfDayInTimeZone(day, timeZone);
+    const dayEnd = addDaysInTimeZone(dayStart, 1, timeZone);
+    return overlapsHalfOpen(
+      start.getTime(),
+      end.getTime(),
+      dayStart.getTime(),
+      dayEnd.getTime()
+    );
+  };
+
+  const addUniqueInstance = (
+    target: ScheduleInstance[],
+    seenIds: Set<string>,
+    instance: ScheduleInstance | null | undefined,
+    day: Date
+  ) => {
+    if (!instance?.id) return;
+    if (seenIds.has(instance.id)) return;
+    if (instance.status !== "scheduled") return;
+    if (!overlapsSchedulerDay(instance, day)) return;
+    seenIds.add(instance.id);
+    target.push(instance);
   };
 
   const dedupe = await dedupeScheduledProjects(
@@ -3291,6 +3586,7 @@ export async function scheduleBacklog(
       getWindowsForDay,
       getLastScheduledHabitStart: getHabitLastScheduledStart,
       recordHabitScheduledStart,
+      clearHabitScheduledStart,
       createdThisRun,
       logCancel,
       habitMap: habitById,
@@ -5148,6 +5444,74 @@ export async function scheduleBacklog(
   logSchedulerDebug("[SCHEDULER] EXIT project placement pass");
   // ==========================================
 
+  for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
+    const allowSchedulingToday = offset < effectiveDayLimit;
+    const shouldScheduleHabits =
+      allowSchedulingToday && offset < habitWriteLookaheadDays;
+    if (!shouldScheduleHabits) continue;
+
+    let windowAvailability = windowAvailabilityByDay.get(offset);
+    if (!windowAvailability) {
+      windowAvailability = new Map<string, WindowAvailabilityBounds>();
+      windowAvailabilityByDay.set(offset, windowAvailability);
+    }
+
+    const day =
+      offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
+    await prepareWindowsForDay(day);
+    const dayResult = await scheduleHabitsForDay({
+      userId,
+      habits: dailyHabits,
+      day,
+      offset,
+      timeZone,
+      parity: parityOptions,
+      availability: windowAvailability,
+      baseDate,
+      windowCache,
+      maxGapCache: dayMaxGapCache,
+      blockerCache,
+      client: supabase,
+      sunlightLocation: location,
+      timeZoneOffsetMinutes,
+      durationMultiplier,
+      restMode: isRestMode,
+      existingInstances: getDayInstances(offset),
+      registerInstance: registerInstanceForOffsets,
+      getWindowsForDay,
+      getLastScheduledHabitStart: getHabitLastScheduledStart,
+      recordHabitScheduledStart,
+      clearHabitScheduledStart,
+      createdThisRun,
+      logCancel,
+      habitMap: habitById,
+      taskContextById,
+      contextTaskCounts,
+      practiceHistory,
+      effectiveLastCompletedAt,
+      getProjectGoalMonumentId,
+      reservedPlacements: reservedHabitPlacementsByOffset.get(offset),
+      audit: habitAudit,
+      debugEnabled,
+      nonDailyHabitIds,
+      nonDailyReplacementInstanceIds,
+      isRescheduleRebuild,
+    });
+
+    if (dayResult.placements.length > 0) {
+      result.timeline.push(...dayResult.placements);
+    }
+    if (dayResult.instances.length > 0) {
+      result.placed.push(...dayResult.instances);
+      for (const inst of dayResult.instances) {
+        addHabitBlocker(inst);
+      }
+    }
+    if (dayResult.failures.length > 0) {
+      result.failures.push(...dayResult.failures);
+    }
+  }
+
   const habitPassRemovedInstanceIds = new Set<string>();
   for (const bucket of dayInstancesByOffset.values()) {
     for (let index = bucket.length - 1; index >= 0; index -= 1) {
@@ -5254,6 +5618,7 @@ export async function scheduleBacklog(
           getWindowsForDay,
           getLastScheduledHabitStart: getHabitLastScheduledStart,
           recordHabitScheduledStart,
+          clearHabitScheduledStart,
           createdThisRun,
           logCancel,
           habitMap: habitById,
@@ -5275,6 +5640,162 @@ export async function scheduleBacklog(
         }
       }
     }
+  }
+
+  const runFinalSyncRetryForDay = async (offset: number, day: Date) => {
+    let windowAvailability = windowAvailabilityByDay.get(offset);
+    if (!windowAvailability) {
+      windowAvailability = new Map<string, WindowAvailabilityBounds>();
+      windowAvailabilityByDay.set(offset, windowAvailability);
+    }
+
+    await prepareWindowsForDay(day);
+
+    const finalDayInstances: ScheduleInstance[] = [];
+    const seenIds = new Set<string>();
+    for (const inst of getDayInstances(offset)) {
+      addUniqueInstance(finalDayInstances, seenIds, inst, day);
+    }
+    for (const inst of result.placed) {
+      addUniqueInstance(finalDayInstances, seenIds, inst, day);
+    }
+    for (const inst of keptInstancesByProject.values()) {
+      addUniqueInstance(finalDayInstances, seenIds, inst, day);
+    }
+    for (const inst of dedupe.allInstances) {
+      if (inst?.source_type === "HABIT" || inst?.source_type === "PROJECT") {
+        continue;
+      }
+      addUniqueInstance(finalDayInstances, seenIds, inst, day);
+    }
+
+    const finalDayStartMs = startOfDayInTimeZone(day, timeZone).getTime();
+    const finalSyncDueInfoByHabitId = new Map<string, HabitDueEvaluation>();
+    const getFinalDayScheduledHabitStart = (
+      habitId: string,
+      targetDay = day
+    ) => {
+      const targetDayMs = startOfDayInTimeZone(targetDay, timeZone).getTime();
+      for (const inst of finalDayInstances) {
+        if (
+          inst?.source_type !== "HABIT" ||
+          inst.status !== "scheduled" ||
+          inst.source_id !== habitId ||
+          !inst.start_utc
+        ) {
+          continue;
+        }
+        const instStart = new Date(inst.start_utc);
+        if (Number.isNaN(instStart.getTime())) continue;
+        const instDayMs = startOfDayInTimeZone(instStart, timeZone).getTime();
+        if (instDayMs === targetDayMs) {
+          return new Date(instDayMs);
+        }
+      }
+      return null;
+    };
+
+    const finalSyncHabits = dailyHabits
+      .filter((habit) => {
+        const normalizedType =
+          habitTypeById.get(habit.id) ??
+          normalizeHabitTypeValue(habit.habitType);
+        if (normalizedType !== "SYNC") return false;
+        const nextDueOverride = parseNextDueOverride(habit.nextDueOverride);
+        const overrideDayStart = nextDueOverride
+          ? startOfDayInTimeZone(nextDueOverride, timeZone)
+          : null;
+        if (
+          overrideDayStart &&
+          overrideDayStart.getTime() < finalDayStartMs &&
+          isDailyRecurrenceValue(habit.recurrence)
+        ) {
+          return false;
+        }
+        const windowDays = habit.windowId ? null : habit.window?.days ?? null;
+        const dueInfo = evaluateHabitDueOnDate({
+          habit,
+          date: day,
+          timeZone,
+          windowDays,
+          lastScheduledStart: getFinalDayScheduledHabitStart(habit.id, day),
+          nextDueOverride,
+        });
+        if (!dueInfo.isDue) return false;
+        finalSyncDueInfoByHabitId.set(habit.id, dueInfo);
+        return true;
+      })
+      .sort((a, b) =>
+        compareHabitScheduleOrder(
+          a,
+          b,
+          finalSyncDueInfoByHabitId,
+          finalDayStartMs
+        )
+      );
+
+    const finalResult = await scheduleHabitsForDay({
+      userId,
+      habits: finalSyncHabits,
+      day,
+      offset,
+      timeZone,
+      parity: parityOptions,
+      availability: windowAvailability,
+      baseDate,
+      windowCache,
+      maxGapCache: dayMaxGapCache,
+      blockerCache,
+      client: supabase,
+      sunlightLocation: location,
+      timeZoneOffsetMinutes,
+      durationMultiplier,
+      restMode: isRestMode,
+      existingInstances: finalDayInstances,
+      registerInstance: registerInstanceForOffsets,
+      getWindowsForDay,
+      getLastScheduledHabitStart: getFinalDayScheduledHabitStart,
+      recordHabitScheduledStart,
+      clearHabitScheduledStart,
+      createdThisRun,
+      logCancel,
+      habitMap: habitById,
+      taskContextById,
+      contextTaskCounts,
+      practiceHistory,
+      effectiveLastCompletedAt,
+      getProjectGoalMonumentId,
+      audit: habitAudit,
+      debugEnabled,
+      nonDailyHabitIds,
+      nonDailyReplacementInstanceIds,
+      isRescheduleRebuild,
+      postAnchorSyncRetry: true,
+    });
+
+    if (finalResult.placements.length > 0) {
+      result.timeline.push(...finalResult.placements);
+    }
+    if (finalResult.instances.length > 0) {
+      result.placed.push(...finalResult.instances);
+      for (const inst of finalResult.instances) {
+        addHabitBlocker(inst);
+      }
+    }
+    if (finalResult.failures.length > 0) {
+      result.failures.push(...finalResult.failures);
+    }
+  };
+
+  for (let offset = 0; offset < habitWriteLookaheadDays; offset += 1) {
+    const allowSchedulingToday = offset < effectiveDayLimit;
+    const shouldScheduleHabits =
+      allowSchedulingToday && offset < habitWriteLookaheadDays;
+    if (!shouldScheduleHabits) continue;
+
+    const day =
+      offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
+    await runFinalSyncRetryForDay(offset, day);
   }
 
   for (const [projectId, inst] of keptInstancesByProject) {
@@ -6082,42 +6603,11 @@ async function reserveMandatoryHabitsForDay(params: {
     endMs: number,
     segments: { start: number; end: number }[]
   ) => {
-    const events: Array<{ time: number; delta: number }> = [];
     for (const segment of segments) {
       const overlapStart = Math.max(startMs, segment.start);
       const overlapEnd = Math.min(endMs, segment.end);
       if (overlapEnd <= overlapStart) continue;
-      events.push({ time: overlapStart, delta: 1 });
-      events.push({ time: overlapEnd, delta: -1 });
-    }
-    if (events.length === 0) return null;
-    events.sort((a, b) => a.time - b.time || a.delta - b.delta);
-    let active = 0;
-    let prevTime = startMs;
-    let conflictStart: number | null = null;
-    let index = 0;
-    while (index < events.length) {
-      const time = events[index].time;
-      if (active >= 2 && time > prevTime && conflictStart === null) {
-        conflictStart = prevTime;
-      }
-      if (active < 2 && conflictStart !== null) {
-        return { start: conflictStart, end: prevTime };
-      }
-      while (index < events.length && events[index].time === time) {
-        active += events[index].delta;
-        index += 1;
-      }
-      prevTime = time;
-    }
-    if (active >= 2) {
-      if (conflictStart === null) {
-        conflictStart = prevTime;
-      }
-      return { start: conflictStart, end: endMs };
-    }
-    if (conflictStart !== null) {
-      return { start: conflictStart, end: prevTime };
+      return { start: overlapStart, end: overlapEnd };
     }
     return null;
   };
@@ -6608,7 +7098,6 @@ async function reserveMandatoryHabitsForDay(params: {
         const segments = anchorSegments.filter(
           (segment) => segment.end > safeWindowStart && segment.start < endLimit
         );
-        const GAP_TOLERANCE_MS = 60000;
         let index = 0;
         while (index < segments.length && segments[index].end <= searchStart) {
           index += 1;
@@ -6628,7 +7117,7 @@ async function reserveMandatoryHabitsForDay(params: {
             ) {
               const nextSegment = segments[cursor + 1];
               if (
-                nextSegment.start > coverageEnd + GAP_TOLERANCE_MS ||
+                nextSegment.start > coverageEnd ||
                 nextSegment.start >= endLimit
               ) {
                 break;
@@ -6930,6 +7419,10 @@ async function scheduleHabitsForDay(params: {
   getWindowsForDay: (day: Date) => WindowLite[];
   getLastScheduledHabitStart: (habitId: string, day?: Date) => Date | null;
   recordHabitScheduledStart: (habitId: string, start: Date | string) => void;
+  clearHabitScheduledStart: (
+    habitId: string | null | undefined,
+    start: Date | string | null | undefined
+  ) => void;
   createdThisRun: Set<string>;
   logCancel: (
     reason: string,
@@ -6951,6 +7444,7 @@ async function scheduleHabitsForDay(params: {
   debugEnabled?: boolean;
   onPersistedHabit?: (instance: ScheduleInstance | null | undefined) => void;
   isRescheduleRebuild?: boolean;
+  postAnchorSyncRetry?: boolean;
 }): Promise<HabitScheduleDayResult> {
   const {
     userId,
@@ -6973,6 +7467,7 @@ async function scheduleHabitsForDay(params: {
     getWindowsForDay,
     getLastScheduledHabitStart,
     recordHabitScheduledStart,
+    clearHabitScheduledStart,
     createdThisRun,
     logCancel,
     habitMap,
@@ -6990,6 +7485,7 @@ async function scheduleHabitsForDay(params: {
     debugEnabled = false,
     onPersistedHabit,
     isRescheduleRebuild = false,
+    postAnchorSyncRetry = false,
   } = params;
 
   const result: HabitScheduleDayResult = {
@@ -7273,42 +7769,11 @@ async function scheduleHabitsForDay(params: {
     endMs: number,
     segments: { start: number; end: number }[]
   ) => {
-    const events: Array<{ time: number; delta: number }> = [];
     for (const segment of segments) {
       const overlapStart = Math.max(startMs, segment.start);
       const overlapEnd = Math.min(endMs, segment.end);
       if (overlapEnd <= overlapStart) continue;
-      events.push({ time: overlapStart, delta: 1 });
-      events.push({ time: overlapEnd, delta: -1 });
-    }
-    if (events.length === 0) return null;
-    events.sort((a, b) => a.time - b.time || a.delta - b.delta);
-    let active = 0;
-    let prevTime = startMs;
-    let conflictStart: number | null = null;
-    let index = 0;
-    while (index < events.length) {
-      const time = events[index].time;
-      if (active >= 2 && time > prevTime && conflictStart === null) {
-        conflictStart = prevTime;
-      }
-      if (active < 2 && conflictStart !== null) {
-        return { start: conflictStart, end: prevTime };
-      }
-      while (index < events.length && events[index].time === time) {
-        active += events[index].delta;
-        index += 1;
-      }
-      prevTime = time;
-    }
-    if (active >= 2) {
-      if (conflictStart === null) {
-        conflictStart = prevTime;
-      }
-      return { start: conflictStart, end: endMs };
-    }
-    if (conflictStart !== null) {
-      return { start: conflictStart, end: prevTime };
+      return { start: overlapStart, end: overlapEnd };
     }
     return null;
   };
@@ -7352,6 +7817,13 @@ async function scheduleHabitsForDay(params: {
   for (const [habitId, bucket] of scheduledHabitBuckets) {
     bucket.sort((a, b) => startValueForInstance(a) - startValueForInstance(b));
     const isNonDailyHabit = Boolean(nonDailyHabitIds?.has(habitId));
+    if (postAnchorSyncRetry) {
+      if (bucket.length > 0) {
+        existingByHabitId.set(habitId, bucket[0]);
+        carryoverInstances.push(...bucket);
+      }
+      continue;
+    }
     if (repeatablePracticeIds.has(habitId)) {
       // For repeatable practices, only keep locked instances
       for (const instance of bucket) {
@@ -7400,6 +7872,24 @@ async function scheduleHabitsForDay(params: {
     }
   }
 
+  for (const [habitId, bucket] of scheduledHabitBuckets) {
+    const habit = habitMap.get(habitId);
+    if (!habit) continue;
+    logHabitPlacementAudit(habit, "existing_bucket_classified", {
+      day: formatDateKeyInTimeZone(day, zone),
+      dayStart: toAuditIso(dayStart),
+      offset,
+      postAnchorSyncRetry,
+      bucket: bucket.map(scheduleInstanceAuditPayload),
+      existingByHabitId: scheduleInstanceAuditPayload(
+        existingByHabitId.get(habitId)
+      ),
+      duplicatesToCancel: duplicatesToCancel
+        .filter((instance) => instance?.source_id === habitId)
+        .map(scheduleInstanceAuditPayload),
+    });
+  }
+
   existingInstances.length = 0;
   for (const inst of carryoverInstances) {
     existingInstances.push(inst);
@@ -7408,6 +7898,97 @@ async function scheduleHabitsForDay(params: {
   const dayInstances = existingInstances
     .map((inst) => ({ ...inst }))
     .filter((inst) => !canceledInstanceIds.has(inst?.id ?? ""));
+
+  const removeInstanceById = (
+    list: ScheduleInstance[],
+    instanceId: string | null | undefined
+  ) => {
+    if (!instanceId) return;
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      if (list[index]?.id === instanceId) {
+        list.splice(index, 1);
+      }
+    }
+  };
+
+  const getScheduledHabitDayMs = (
+    instance: ScheduleInstance | null | undefined
+  ) => {
+    if (
+      !instance ||
+      instance.source_type !== "HABIT" ||
+      instance.status !== "scheduled" ||
+      !instance.start_utc
+    ) {
+      return null;
+    }
+    const start = new Date(instance.start_utc);
+    if (Number.isNaN(start.getTime())) return null;
+    return startOfDayInTimeZone(start, zone).getTime();
+  };
+
+  const findSurvivingScheduledHabitInstance = (
+    habitId: string,
+    targetDayMs: number,
+    excludedInstanceId: string | null | undefined
+  ) => {
+    const candidates = [dayInstances, placedSoFar, existingInstances];
+    const seenIds = new Set<string>();
+    for (const list of candidates) {
+      for (const instance of list) {
+        const instanceId = instance?.id ?? null;
+        if (!instance || !instanceId || seenIds.has(instanceId)) continue;
+        seenIds.add(instanceId);
+        if (instanceId === excludedInstanceId) continue;
+        if (canceledInstanceIds.has(instanceId)) continue;
+        if (instance.source_type !== "HABIT") continue;
+        if (instance.status !== "scheduled") continue;
+        if (instance.source_id !== habitId) continue;
+        if (getScheduledHabitDayMs(instance) !== targetDayMs) continue;
+        return instance;
+      }
+    }
+    return null;
+  };
+
+  const cleanupCanceledHabitInstance = (instance: ScheduleInstance) => {
+    if (instance.source_type !== "HABIT") return;
+    const habitId = instance.source_id ?? null;
+    if (!habitId) return;
+    const instanceId = instance.id ?? null;
+    const instanceDayMs = getScheduledHabitDayMs(instance);
+    removeInstanceById(dayInstances, instanceId);
+    removeInstanceById(placedSoFar, instanceId);
+    removeInstanceById(existingInstances, instanceId);
+    if (existingByHabitId.get(habitId)?.id === instanceId) {
+      existingByHabitId.delete(habitId);
+    }
+    instance.status = "canceled";
+    if (instanceDayMs === null) return;
+    const survivor = findSurvivingScheduledHabitInstance(
+      habitId,
+      instanceDayMs,
+      instanceId
+    );
+    if (survivor) {
+      if (!existingByHabitId.has(habitId)) {
+        existingByHabitId.set(habitId, survivor);
+      }
+      return;
+    }
+    const habit = habitMap.get(habitId) ?? null;
+    const normalizedType =
+      habitTypeById.get(habitId) ?? normalizeHabitTypeValue(habit?.habitType);
+    if (
+      normalizedType === "SYNC" ||
+      repeatablePracticeIds.has(habitId) ||
+      nonDailyHabitIds?.has(habitId) ||
+      !isDailyRecurrenceValue(habit?.recurrence)
+    ) {
+      return;
+    }
+    clearHabitScheduledStart(habitId, instance.start_utc);
+  };
 
   const practiceOverflowInstances: ScheduleInstance[] = [];
   if (offset >= PRACTICE_LOOKAHEAD_DAYS) {
@@ -7607,22 +8188,25 @@ async function scheduleHabitsForDay(params: {
   if (duplicatesToCancel.length > 0) {
     for (const duplicate of duplicatesToCancel) {
       if (!duplicate?.id) continue;
-      logCancelOnce("REVALIDATION_DUPLICATE_CANCEL", duplicate);
-      const cancel = await client
-        .from("schedule_instances")
-        .update({ status: "canceled" })
-        .eq("id", duplicate.id)
-        .select("id")
-        .single();
-
-      if (cancel.error) {
-        result.failures.push({
-          itemId: duplicate.source_id ?? duplicate.id,
-          reason: "error",
-          detail: cancel.error,
+      const duplicateHabit = duplicate.source_id
+        ? habitMap.get(duplicate.source_id)
+        : null;
+      if (duplicateHabit) {
+        logHabitPlacementAudit(duplicateHabit, "duplicate_cancel_attempt", {
+          day: formatDateKeyInTimeZone(day, zone),
+          dayStart: toAuditIso(dayStart),
+          offset,
+          duplicate: scheduleInstanceAuditPayload(duplicate),
+          existingByHabitId: scheduleInstanceAuditPayload(
+            duplicate.source_id
+              ? existingByHabitId.get(duplicate.source_id)
+              : null
+          ),
         });
-      } else {
-        duplicate.status = "canceled";
+      }
+      logCancelOnce("REVALIDATION_DUPLICATE_CANCEL", duplicate);
+      if (await cancelScheduledInstance(duplicate)) {
+        cleanupCanceledHabitInstance(duplicate);
       }
     }
   }
@@ -7703,6 +8287,9 @@ async function scheduleHabitsForDay(params: {
   for (const habit of habits) {
     const normalizedType =
       habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
+    if (postAnchorSyncRetry && normalizedType !== "SYNC") {
+      continue;
+    }
     if (normalizedType === "PRACTICE") {
       if (process.env.NODE_ENV === "test" && habit.id === "habit-practice") {
         logSchedulerDebug("practice offset check", { offset });
@@ -7716,7 +8303,22 @@ async function scheduleHabitsForDay(params: {
     }
     // Exclude unreserved SYNC/ASYNC habits from regular habit scheduling - they get post-pass treatment.
     // Reserved SYNC habits must continue so the reservation can be consumed and persisted.
-    if (normalizedType === "SYNC" && !reservedPlacements?.has(habit.id)) {
+    if (
+      normalizedType === "SYNC" &&
+      !postAnchorSyncRetry &&
+      !reservedPlacements?.has(habit.id)
+    ) {
+      continue;
+    }
+    if (
+      postAnchorSyncRetry &&
+      dayInstances.some(
+        (inst) =>
+          inst?.source_type === "HABIT" &&
+          inst.status === "scheduled" &&
+          inst.source_id === habit.id
+      )
+    ) {
       continue;
     }
     const windowDays = habit.windowId ? null : habit.window?.days ?? null;
@@ -7740,9 +8342,12 @@ async function scheduleHabitsForDay(params: {
       lastCompletedAt:
         effectiveLastCompletedAtForHabit || habit.lastCompletedAt,
     };
+    const auditEffectiveLastCompletedAt =
+      effectiveLastCompletedAtForHabit || habit.lastCompletedAt || null;
     const dueEvalLastScheduledStart = repeatablePracticeIds.has(habit.id)
       ? null
       : getLastScheduledHabitStart(habit.id, day);
+    const existingInstanceBeforeDue = existingByHabitId.get(habit.id) ?? null;
     const tracedDueInfo = evaluateHabitDueOnDate({
       habit: habitWithEffectiveLastCompletedAt,
       date: day,
@@ -7761,6 +8366,18 @@ async function scheduleHabitsForDay(params: {
       logSchedulerDebug("practice due info", { offset, isDue: dueInfo.isDue });
     }
     if (!dueInfo.isDue) {
+      logHabitPlacementAudit(habit, "due_habits_entry", {
+        enteredDueHabits: false,
+        debugTag: dueInfo.debugTag,
+        dueStart: toAuditIso(dueInfo.dueStart),
+        day: formatDateKeyInTimeZone(day, zone),
+        dayStart: toAuditIso(dayStart),
+        offset,
+        lastScheduledStart: toAuditIso(dueEvalLastScheduledStart),
+        existingByHabitId: scheduleInstanceAuditPayload(existingInstanceBeforeDue),
+        effectiveLastCompletedAt: auditEffectiveLastCompletedAt,
+        postAnchorSyncRetry,
+      });
       continue;
     }
     if (overrideDayStart) {
@@ -7772,6 +8389,18 @@ async function scheduleHabitsForDay(params: {
     }
     dueInfoByHabitId.set(habit.id, dueInfo);
     dueHabits.push(habit);
+    logHabitPlacementAudit(habit, "due_habits_entry", {
+      enteredDueHabits: true,
+      debugTag: dueInfo.debugTag,
+      dueStart: toAuditIso(dueInfo.dueStart),
+      day: formatDateKeyInTimeZone(day, zone),
+      dayStart: toAuditIso(dayStart),
+      offset,
+      lastScheduledStart: toAuditIso(dueEvalLastScheduledStart),
+      existingByHabitId: scheduleInstanceAuditPayload(existingInstanceBeforeDue),
+      effectiveLastCompletedAt: auditEffectiveLastCompletedAt,
+      postAnchorSyncRetry,
+    });
   }
 
   if (dueHabits.length === 0) {
@@ -7860,8 +8489,9 @@ async function scheduleHabitsForDay(params: {
         startUtc: instance.start_utc ?? null,
         endUtc: instance.end_utc ?? null,
       });
-      const candidateEntries =
-        windowEntriesByKey.get(instanceKey) ?? windowEntries;
+      const candidateEntries = postAnchorSyncRetry
+        ? (windowEntriesByKey.get(instanceKey) ?? [])
+        : (windowEntriesByKey.get(instanceKey) ?? windowEntries);
       for (const entry of candidateEntries) {
         if (
           !overlapsHalfOpen(
@@ -7915,24 +8545,9 @@ async function scheduleHabitsForDay(params: {
     sunlightOptions
   );
 
-  const sortedHabits = [...dueHabits].sort((a, b) => {
-    const dueA = dueInfoByHabitId.get(a.id);
-    const dueB = dueInfoByHabitId.get(b.id);
-    const dueDiff =
-      (dueA?.dueStart?.getTime() ?? defaultDueMs) -
-      (dueB?.dueStart?.getTime() ?? defaultDueMs);
-    if (dueDiff !== 0) return dueDiff;
-    const typeDiff =
-      habitTypePriority(a.habitType) - habitTypePriority(b.habitType);
-    if (typeDiff !== 0) return typeDiff;
-    const aDuration = Number(a.durationMinutes ?? a.duration_minutes ?? 0);
-    const bDuration = Number(b.durationMinutes ?? b.duration_minutes ?? 0);
-    if (aDuration !== bDuration) return bDuration - aDuration;
-    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-    if (aTime !== bTime) return aTime - bTime;
-    return a.name.localeCompare(b.name);
-  });
+  const sortedHabits = [...dueHabits].sort((a, b) =>
+    compareHabitScheduleOrder(a, b, dueInfoByHabitId, defaultDueMs)
+  );
 
   const practicePlacementCounts = new Map<string, number>();
   const failedHabitIds = new Set<string>();
@@ -7940,6 +8555,7 @@ async function scheduleHabitsForDay(params: {
   while (habitQueue.length > 0) {
     const habit = habitQueue.shift();
     if (!habit) continue;
+    const shouldLogPlacementAudit = shouldAuditHabitPlacement(habit);
     if (failedHabitIds.has(habit.id)) continue;
     const isRepeatablePractice = repeatablePracticeIds.has(habit.id);
     let existingInstance: ScheduleInstance | null = null;
@@ -7948,6 +8564,13 @@ async function scheduleHabitsForDay(params: {
     } else {
       existingInstance = existingByHabitId.get(habit.id) ?? null;
     }
+    logHabitPlacementAudit(habit, "existing_before_placement", {
+      day: formatDateKeyInTimeZone(day, zone),
+      dayStart: toAuditIso(dayStart),
+      offset,
+      postAnchorSyncRetry,
+      existingByHabitId: scheduleInstanceAuditPayload(existingInstance),
+    });
     const rawDuration = Number(habit.durationMinutes ?? 0);
     let durationMin =
       Number.isFinite(rawDuration) && rawDuration > 0
@@ -8190,8 +8813,8 @@ async function scheduleHabitsForDay(params: {
           )
         : windows;
 
+    let lastZeroStage: string | null = null;
     if (!usedReservation) {
-      let lastZeroStage: string | null = null;
       for (const attempt of attemptQueue) {
         const clonedAvailability = cloneAvailabilityMap(availability);
         const windowsForAttemptResult = await fetchCompatibleWindowsForItem(
@@ -8227,7 +8850,7 @@ async function scheduleHabitsForDay(params: {
                 ? nightEligibleWindows
                 : windows,
             allowedWindowKinds,
-            auditZeroStageCallback: auditEnabled
+            auditZeroStageCallback: auditEnabled || shouldLogPlacementAudit
               ? (stage) => {
                   lastZeroStage = stage;
                 }
@@ -8252,9 +8875,33 @@ async function scheduleHabitsForDay(params: {
         audit.recordWindowZeroStage(lastZeroStage);
       }
     }
+    logHabitPlacementAudit(habit, "compatible_windows", {
+      day: formatDateKeyInTimeZone(day, zone),
+      dayStart: toAuditIso(dayStart),
+      offset,
+      compatibleWindowsCount: compatibleWindows.length,
+      lastZeroStage,
+      sawExpiredTodayWindows,
+      usedReservation,
+      source: usedReservation ? "reservation" : "fetchCompatibleWindowsForItem",
+      attempts: attemptQueue.map((attempt) => ({
+        locationId: attempt.locationId,
+        locationValue: attempt.locationValue,
+        daylightPreference: attempt.daylight?.preference ?? null,
+        enforceLocation: attempt.enforceLocation,
+      })),
+    });
 
     if (compatibleWindows.length === 0) {
       if (offset === 0 && sawExpiredTodayWindows) {
+        logHabitPlacementAudit(habit, "placement_rejection", {
+          reason: "expiredTodayWindows",
+          day: formatDateKeyInTimeZone(day, zone),
+          dayStart: toAuditIso(dayStart),
+          offset,
+          compatibleWindowsCount: compatibleWindows.length,
+          lastZeroStage,
+        });
         continue;
       }
       logHabitWindowCompatibilityFailureDebug({
@@ -8279,6 +8926,14 @@ async function scheduleHabitsForDay(params: {
         audit.report.scheduling.dueFailed_NoCompatibleWindows += 1;
         audit.addSample("dueFailed_NoCompatibleWindows", habit.id);
       }
+      logHabitPlacementAudit(habit, "placement_rejection", {
+        reason: "NO_WINDOW",
+        day: formatDateKeyInTimeZone(day, zone),
+        dayStart: toAuditIso(dayStart),
+        offset,
+        compatibleWindowsCount: compatibleWindows.length,
+        lastZeroStage,
+      });
       result.failures.push({ itemId: habit.id, reason: "NO_WINDOW" });
       continue;
     }
@@ -8321,6 +8976,9 @@ async function scheduleHabitsForDay(params: {
       const desiredDurationMs = scheduledDurationMs;
       const syncSegments = syncUsageByWindow.get(target.key) ?? [];
       const anchorSegments = anchorSegmentsByWindowKey.get(target.key) ?? [];
+      if (isSyncHabit && postAnchorSyncRetry && anchorSegments.length === 0) {
+        continue;
+      }
       let startCandidate: number | null = usedReservation
         ? reservedStartMs
         : null;
@@ -8339,7 +8997,6 @@ async function scheduleHabitsForDay(params: {
         const segments = anchorSegments.filter(
           (segment) => segment.end > safeWindowStart && segment.start < endLimit
         );
-        const GAP_TOLERANCE_MS = 60000;
         let index = 0;
         while (index < segments.length && segments[index].end <= searchStart) {
           index += 1;
@@ -8359,7 +9016,7 @@ async function scheduleHabitsForDay(params: {
             ) {
               const nextSegment = segments[cursor + 1];
               if (
-                nextSegment.start > coverageEnd + GAP_TOLERANCE_MS ||
+                nextSegment.start > coverageEnd ||
                 nextSegment.start >= endLimit
               ) {
                 break;
@@ -8373,13 +9030,14 @@ async function scheduleHabitsForDay(params: {
             }
             if (
               coverageEnd > alignedStart &&
+              coverageEnd - alignedStart >= desiredDurationMs &&
               !hasSyncOverlap(alignedStart, coverageEnd, syncSegments)
             ) {
               startCandidate = alignedStart;
-              endCandidate = coverageEnd;
-              if (totalCoverage + 1 < desiredDurationMs) {
-                clipped = true;
-              }
+              endCandidate = Math.min(
+                alignedStart + desiredDurationMs,
+                coverageEnd
+              );
             }
           }
         }
@@ -8413,10 +9071,30 @@ async function scheduleHabitsForDay(params: {
         }
 
         if (candidateStart >= endLimit) {
+          logHabitPlacementAudit(habit, "placement_rejection", {
+            reason: "candidateStart >= endLimit",
+            day: formatDateKeyInTimeZone(day, zone),
+            dayStart: toAuditIso(dayStart),
+            offset,
+            candidateStart: toAuditIso(candidateStart),
+            endLimit: toAuditIso(endLimit),
+            latestStartAllowed: toAuditIso(latestStartAllowed),
+            ...habitPlacementWindowAuditPayload({ target, window }),
+          });
           continue;
         }
 
         if (candidateStart > latestStartAllowed) {
+          logHabitPlacementAudit(habit, "placement_rejection", {
+            reason: "candidateStart > latestStartAllowed",
+            day: formatDateKeyInTimeZone(day, zone),
+            dayStart: toAuditIso(dayStart),
+            offset,
+            candidateStart: toAuditIso(candidateStart),
+            endLimit: toAuditIso(endLimit),
+            latestStartAllowed: toAuditIso(latestStartAllowed),
+            ...habitPlacementWindowAuditPayload({ target, window }),
+          });
           continue;
         }
 
@@ -8496,6 +9174,78 @@ async function scheduleHabitsForDay(params: {
       if (startCandidate === null || endCandidate === null) {
         continue;
       }
+      if (
+        isSyncHabit &&
+        hasSyncOverlap(startCandidate, endCandidate, syncSegments)
+      ) {
+        const syncDurationMs = endCandidate - startCandidate;
+        const latestStartAllowed = endLimit - syncDurationMs;
+        let adjustedStart = startCandidate;
+        let adjustedEnd = endCandidate;
+        let guard = 0;
+        while (hasSyncOverlap(adjustedStart, adjustedEnd, syncSegments)) {
+          const conflict = findFirstSyncConflict(
+            adjustedStart,
+            adjustedEnd,
+            syncSegments
+          );
+          if (!conflict) break;
+          adjustedStart = Math.max(conflict.end, adjustedStart);
+          if (adjustedStart > latestStartAllowed) break;
+          adjustedEnd = adjustedStart + syncDurationMs;
+          guard += 1;
+          if (guard > syncSegments.length + 4) break;
+        }
+        if (
+          adjustedStart > latestStartAllowed ||
+          adjustedEnd <= adjustedStart ||
+          adjustedEnd > endLimit ||
+          hasSyncOverlap(adjustedStart, adjustedEnd, syncSegments)
+        ) {
+          continue;
+        }
+        startCandidate = adjustedStart;
+        endCandidate = adjustedEnd;
+      }
+      if (isSyncHabit && postAnchorSyncRetry) {
+        const anchoredCandidate = findAnchoredSyncCandidate(
+          startCandidate,
+          endCandidate - startCandidate,
+          endLimit,
+          syncSegments,
+          anchorSegments
+        );
+        if (!anchoredCandidate) {
+          continue;
+        }
+        startCandidate = anchoredCandidate.start;
+        endCandidate = anchoredCandidate.end;
+        const habitDurationMs =
+          Math.max(1, Number(habit.duration_minutes ?? 0)) * 60_000;
+        if (endCandidate - startCandidate < habitDurationMs) {
+          continue;
+        }
+      } else if (
+        isSyncHabit &&
+        !hasContinuousAnchorCoverage(
+          startCandidate,
+          endCandidate,
+          anchorSegments
+        )
+      ) {
+        const anchoredCandidate = findAnchoredSyncCandidate(
+          startCandidate,
+          endCandidate - startCandidate,
+          endLimit,
+          syncSegments,
+          anchorSegments
+        );
+        if (!anchoredCandidate) {
+          continue;
+        }
+        startCandidate = anchoredCandidate.start;
+        endCandidate = anchoredCandidate.end;
+      }
       let overlapInspection = inspectBlockingHabitOverlap({
         candidateIsSync: isSyncHabit,
         candidateId: existingInstance?.id ?? null,
@@ -8540,6 +9290,19 @@ async function scheduleHabitsForDay(params: {
         }
       }
       if (overlapInspection.result) {
+        logHabitPlacementAudit(habit, "placement_rejection", {
+          reason: "overlapInspection.result",
+          day: formatDateKeyInTimeZone(day, zone),
+          dayStart: toAuditIso(dayStart),
+          offset,
+          overlapResult: overlapInspection.result,
+          blockerEndMs: overlapInspection.blockerEndMs,
+          blockerEnd: toAuditIso(overlapInspection.blockerEndMs),
+          candidateStart: toAuditIso(startCandidate),
+          candidateEnd: toAuditIso(endCandidate),
+          latestStartAllowed: toAuditIso(latestStartAllowedFallback),
+          ...habitPlacementWindowAuditPayload({ target, window }),
+        });
         continue;
       }
 
@@ -8755,6 +9518,18 @@ async function scheduleHabitsForDay(params: {
         });
 
         if (!("status" in placement)) {
+          if (placement.error === "NO_FIT") {
+            logHabitPlacementAudit(habit, "placement_rejection", {
+              reason: "placeItemInWindows NO_FIT",
+              day: formatDateKeyInTimeZone(day, zone),
+              dayStart: toAuditIso(dayStart),
+              offset,
+              candidateStart: candidateStartUTC,
+              candidateEnd: candidateEndUTC,
+              durationMinutes,
+              ...habitPlacementWindowAuditPayload({ target, window }),
+            });
+          }
           if (placement.error !== "NO_FIT") {
             result.failures.push({
               itemId: habit.id,
@@ -8768,6 +9543,21 @@ async function scheduleHabitsForDay(params: {
         if (placement.error || !placement.data) {
           const persistError =
             placement.error ?? new Error("Failed to persist habit instance");
+          logHabitPlacementAudit(habit, "placement_rejection", {
+            reason: "PERSIST_FAILED",
+            day: formatDateKeyInTimeZone(day, zone),
+            dayStart: toAuditIso(dayStart),
+            offset,
+            candidateStart: candidateStartUTC,
+            candidateEnd: candidateEndUTC,
+            reuseInstanceId: existingInstance?.id ?? null,
+            hasPlacementData: Boolean(placement.data),
+            error:
+              placement.error instanceof Error
+                ? placement.error.message
+                : String(placement.error ?? "missing placement data"),
+            ...habitPlacementWindowAuditPayload({ target, window }),
+          });
           if (placement.error) {
             const error = placement.error as Partial<{
               message: string;
@@ -8856,6 +9646,21 @@ async function scheduleHabitsForDay(params: {
       }
       const startUTC = startDate.toISOString();
       const endUTC = endDate.toISOString();
+      logHabitPlacementAudit(habit, "placement_success", {
+        day: formatDateKeyInTimeZone(day, zone),
+        dayStart: toAuditIso(dayStart),
+        offset,
+        decision,
+        persistedId: persisted.id ?? null,
+        persistedStart: startUTC,
+        persistedEnd: endUTC,
+        windowId: persisted.window_id ?? window.id,
+        timeBlockId: getAuditTimeBlockId(persisted) ?? window.id,
+        dayTypeTimeBlockId:
+          getAuditDayTypeTimeBlockId(persisted) ??
+          targetDayTypeTimeBlockId,
+        targetWindowKey: target.key,
+      });
 
       addAnchorStart(anchorStartsByWindowKey, target.key, startDate.getTime());
       if (isSyncHabit) {
@@ -8986,6 +9791,24 @@ async function scheduleHabitsForDay(params: {
         instance.status = "missed";
       }
     }
+  }
+
+  for (const habit of habits) {
+    if (!shouldAuditHabitPlacement(habit)) continue;
+    const finalRows = dayInstances
+      .filter(
+        (instance) =>
+          instance?.source_type === "HABIT" &&
+          instance.source_id === habit.id
+      )
+      .map(scheduleInstanceAuditPayload);
+    logHabitPlacementAudit(habit, "final_day_habit_rows", {
+      day: formatDateKeyInTimeZone(day, zone),
+      dayStart: toAuditIso(dayStart),
+      offset,
+      postAnchorSyncRetry,
+      finalRows,
+    });
   }
 
   result.placements.sort((a, b) => {
