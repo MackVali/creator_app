@@ -9793,8 +9793,8 @@ describe("fetchCompatibleWindowsForItem", () => {
         preloadedWindows: [earlyWindow],
       }
     );
-    expect(compatible).toHaveLength(1);
-    const candidate = compatible[0];
+    expect(compatible.windows).toHaveLength(1);
+    const candidate = compatible.windows[0];
     const timeParts = getDateTimeParts(candidate.startLocal, tz);
     expect(timeParts.hour).toBe(1);
     const candidateDayStart = startOfDayInTimeZone(candidate.startLocal, tz);
@@ -9845,8 +9845,8 @@ describe("fetchCompatibleWindowsForItem", () => {
       }
     );
 
-    expect(compatible).toHaveLength(1);
-    expect(compatible[0].dayTypeTimeBlockId).toBe("dttb-chill");
+    expect(compatible.windows).toHaveLength(1);
+    expect(compatible.windows[0].dayTypeTimeBlockId).toBe("dttb-chill");
   });
 
   it("blocks projects without a location from location-locked windows and allows matching ones", async () => {
@@ -9877,6 +9877,7 @@ describe("fetchCompatibleWindowsForItem", () => {
       {
         energy: "LOW",
         duration_min: 30,
+        isProject: true,
       },
       "UTC",
       {
@@ -9885,7 +9886,7 @@ describe("fetchCompatibleWindowsForItem", () => {
         preloadedWindows: [locationWindow],
       }
     );
-    expect(withoutLocation).toHaveLength(0);
+    expect(withoutLocation.windows).toHaveLength(0);
 
     const withMatchingLocation = await fetchCompatibleWindowsForItem(
       client,
@@ -9893,6 +9894,7 @@ describe("fetchCompatibleWindowsForItem", () => {
       {
         energy: "LOW",
         duration_min: 30,
+        isProject: true,
       },
       "UTC",
       {
@@ -9904,6 +9906,6 @@ describe("fetchCompatibleWindowsForItem", () => {
         hasExplicitLocationContext: true,
       }
     );
-    expect(withMatchingLocation).toHaveLength(1);
+    expect(withMatchingLocation.windows).toHaveLength(1);
   });
 });

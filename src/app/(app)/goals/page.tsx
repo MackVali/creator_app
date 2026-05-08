@@ -1367,6 +1367,21 @@ export default function GoalsPage() {
       .eq("id", goal.id);
   };
 
+  const handleGoalGridCardOpen = useCallback(
+    (goal: Goal) => {
+      const monumentId = goal.monumentId?.trim();
+      if (!monumentId) {
+        console.warn("Goal Grid item has no monument id.", {
+          goalId: goal.id,
+        });
+        return;
+      }
+
+      router.push(`/monuments/${monumentId}`);
+    },
+    [router]
+  );
+
   const handleGoalLimitReached = useCallback(
     (_limitCode: LimitErrorCode) => {
       setSaveDisabled(true);
@@ -1731,27 +1746,6 @@ export default function GoalsPage() {
                   <ArrowRight className="h-3 w-3" />
                 </div>
               )}
-              {roadmapsWithItems.length > 0 ? (
-                <div className="mb-8 space-y-4">
-                  <div className="space-y-1">
-                    <h2 className="text-lg font-semibold text-white">
-                      Campaign Roadmap Preview
-                    </h2>
-                    <p className="text-sm text-white/60">
-                      Temporary mixed roadmap reader. Legacy roadmap cards are still active below.
-                    </p>
-                  </div>
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    {roadmapsWithItems.map((roadmap) => (
-                      <MixedRoadmapCard
-                        key={roadmap.id}
-                        roadmap={roadmap}
-                        variant="default"
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
               <div className="grid auto-cols-[minmax(280px,1fr)] grid-flow-col gap-6 overflow-x-auto pb-6 snap-x snap-mandatory sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 sm:snap-none xl:grid-cols-3">
                 {roadmaps.map((roadmap) => {
                   const roadmapGoalsList = roadmapGoals.get(roadmap.id) ?? [];
@@ -1784,6 +1778,7 @@ export default function GoalsPage() {
                       onToggleActive={() => handleToggleActive(goal)}
                       onDelete={() => handleDelete(goal)}
                       onBoost={() => handleBoost(goal)}
+                      onCardClick={() => handleGoalGridCardOpen(goal)}
                       onProjectUpdated={(projectId, updates) =>
                         handleProjectUpdated(goal.id, projectId, updates)
                       }
@@ -1809,6 +1804,27 @@ export default function GoalsPage() {
                   </button>
                 </div>
               )}
+              {roadmapsWithItems.length > 0 ? (
+                <div className="mt-8 space-y-4">
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-semibold text-white">
+                      Campaign Roadmap Preview
+                    </h2>
+                    <p className="text-sm text-white/60">
+                      Temporary mixed roadmap reader. Legacy roadmap cards are still active above.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    {roadmapsWithItems.map((roadmap) => (
+                      <MixedRoadmapCard
+                        key={roadmap.id}
+                        roadmap={roadmap}
+                        variant="default"
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
         </div>

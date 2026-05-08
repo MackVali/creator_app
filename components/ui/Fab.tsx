@@ -8737,10 +8737,23 @@ export function Fab({
       if (shouldIgnoreFabPageSwipe(event.target)) {
         return;
       }
+      const target = event.target;
+      const stage = stageRef.current;
+      const isInsideFabSwipeStage =
+        typeof Element !== "undefined" &&
+        target instanceof Element &&
+        Boolean(
+          target.closest('[data-tour="fab-swipe"]') ||
+            (stage && stage.contains(target)),
+        );
+      if (!isInsideFabSwipeStage) {
+        return;
+      }
+      event.stopPropagation();
       if (
         typeof Element !== "undefined" &&
-        event.target instanceof Element &&
-        event.target.closest('[data-fab-nexus-scroll="true"]')
+        target instanceof Element &&
+        target.closest('[data-fab-nexus-scroll="true"]')
       ) {
         pendingFabSwipeRef.current = {
           pointerId: event.pointerId,
@@ -10073,6 +10086,16 @@ export function Fab({
                 )}
                 layout={!expanded && !shouldUseCenteredEditModal}
                 onTouchStart={(event) => event.stopPropagation()}
+                onTouchMove={(event) => {
+                  if (!expanded) {
+                    event.stopPropagation();
+                  }
+                }}
+                onPointerDown={(event) => {
+                  if (!expanded) {
+                    event.stopPropagation();
+                  }
+                }}
                 onPointerDownCapture={handleExpandedPointerDownCapture}
                 style={{
                   boxShadow: MENU_BOX_SHADOW,
@@ -10152,6 +10175,7 @@ export function Fab({
                           "relative w-full rounded-[inherit]",
                           isContentSizedCreationExpanded ? "" : "h-full",
                         )}
+                        style={{ touchAction: "pan-y" }}
                       >
                         <motion.div
                           className={cn(

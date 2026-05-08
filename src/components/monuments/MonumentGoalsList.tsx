@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalStatusById } from "@/lib/queries/goals";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
@@ -382,12 +388,14 @@ export function MonumentGoalsList({
   monumentView = "goals",
   goalSection = "active",
   onGoalSectionChange,
+  roadmapEmptyState,
 }: {
   monumentId: string;
   monumentEmoji?: string | null;
   monumentView?: "goals" | "roadmap";
   goalSection?: "active" | "completed";
   onGoalSectionChange?: (section: "active" | "completed") => void;
+  roadmapEmptyState?: ReactNode;
 }) {
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -1197,9 +1205,11 @@ export function MonumentGoalsList({
     if (monumentView === "roadmap") {
       if (!hasTrueRoadmaps) {
         return (
-          <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-            No true roadmap linked to this monument yet.
-          </Card>
+          roadmapEmptyState ?? (
+            <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+              No true roadmap linked to this monument yet.
+            </Card>
+          )
         );
       }
 
@@ -1350,6 +1360,7 @@ export function MonumentGoalsList({
     loading,
     goals,
     monumentView,
+    roadmapEmptyState,
     monumentRoadmapsWithItems,
     roadmaps,
     roadmapGoals,

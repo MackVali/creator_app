@@ -80,6 +80,7 @@ interface GoalCardProps {
   onToggleActive?(): void;
   onDelete?(): void;
   onBoost?(): void;
+  onCardClick?(): void;
   showWeight?: boolean;
   showCreatedAt?: boolean;
   showEmojiPrefix?: boolean;
@@ -169,6 +170,7 @@ function GoalCardImpl({
   onToggleActive,
   onDelete,
   onBoost,
+  onCardClick,
   showWeight = true,
   showCreatedAt = true,
   showEmojiPrefix = false,
@@ -210,6 +212,13 @@ function GoalCardImpl({
   const toggle = useCallback(() => {
     setOpen(!open);
   }, [open, setOpen]);
+  const handleShellClick = useCallback(() => {
+    if (onCardClick) {
+      onCardClick();
+      return;
+    }
+    toggle();
+  }, [onCardClick, toggle]);
   const projectLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
@@ -415,9 +424,9 @@ function GoalCardImpl({
             <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
               <motion.button
                 type="button"
-                onClick={toggle}
-                aria-expanded={open}
-                aria-controls={`goal-${goal.id}`}
+                onClick={handleShellClick}
+                aria-expanded={onCardClick ? undefined : open}
+                aria-controls={onCardClick ? undefined : `goal-${goal.id}`}
                 onPointerDown={startProjectLongPress}
                 onPointerUp={handleProjectPointerUp}
                 onPointerCancel={handleProjectPointerCancel}
@@ -496,9 +505,9 @@ function GoalCardImpl({
           <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
             <motion.button
               type="button"
-              onClick={toggle}
-              aria-expanded={open}
-              aria-controls={`goal-${goal.id}`}
+              onClick={handleShellClick}
+              aria-expanded={onCardClick ? undefined : open}
+              aria-controls={onCardClick ? undefined : `goal-${goal.id}`}
               onPointerDown={startProjectLongPress}
               onPointerUp={handleProjectPointerUp}
               onPointerCancel={handleProjectPointerCancel}
@@ -595,9 +604,9 @@ function GoalCardImpl({
         <div className="relative flex h-full flex-col gap-1.5 sm:gap-2">
           <div className="flex items-start justify-between gap-2">
             <motion.button
-              onClick={toggle}
-              aria-expanded={open}
-              aria-controls={`goal-${goal.id}`}
+              onClick={handleShellClick}
+              aria-expanded={onCardClick ? undefined : open}
+              aria-controls={onCardClick ? undefined : `goal-${goal.id}`}
               onPointerDown={startProjectLongPress}
               onPointerUp={handleProjectPointerUp}
               onPointerCancel={handleProjectPointerCancel}
@@ -711,6 +720,7 @@ function GoalCardImpl({
                   <button
                     type="button"
                     onClick={(event) => {
+                      event.preventDefault();
                       event.stopPropagation();
                       onBoost();
                     }}
@@ -726,7 +736,9 @@ function GoalCardImpl({
               <button
                 aria-label="Goal actions"
                 className="rounded-full border border-white/10 bg-white/10 p-1 text-white/70 hover:bg-white/20 sm:p-1.5"
-                onClick={() => {
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
                   console.log("🎯 Three dots clicked, onEdit:", !!onEdit);
                   // Simple custom dropdown toggle
                   const dropdown = document.getElementById(
@@ -749,7 +761,9 @@ function GoalCardImpl({
                 <div className="py-1">
                   <button
                     className="block w-full px-4 py-2 text-left text-sm text-white hover:bg-white/10"
-                    onClick={() => {
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
                       console.log("🎯 Edit button clicked");
                       document
                         .getElementById(`dropdown-${goal.id}`)
@@ -762,7 +776,9 @@ function GoalCardImpl({
                   {normalizedStatus !== "COMPLETED" ? (
                     <button
                       className="block w-full px-4 py-2 text-left text-sm text-white hover:bg-white/10"
-                      onClick={() => {
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
                         console.log("🎯 Toggle active button clicked");
                         document
                           .getElementById(`dropdown-${goal.id}`)
@@ -777,7 +793,9 @@ function GoalCardImpl({
                   ) : null}
                   <button
                     className="block w-full px-4 py-2 text-left text-sm text-rose-400 hover:bg-white/10"
-                    onClick={() => {
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
                       console.log("🎯 Delete button clicked");
                       document
                         .getElementById(`dropdown-${goal.id}`)
