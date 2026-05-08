@@ -208,6 +208,8 @@ const TIMELINE_COMPACT_CARD_SHADOW =
   "0 14px 28px rgba(6, 8, 20, 0.45), 0 8px 18px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 const TIMELINE_COMPACT_CARD_COMPLETED_SHADOW =
   "0 16px 32px rgba(2, 32, 24, 0.5), 0 8px 18px rgba(1, 55, 34, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.12)";
+const TIMELINE_RESTING_CARD_SHADOW =
+  "0 0 0 1px rgba(255, 255, 255, 0.035), 0 10px 24px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
 const TIMELINE_STACK_SCALE = 10;
 
@@ -7861,7 +7863,7 @@ export default function SchedulePage() {
                   projectHeightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
                 const sharedCardShadow = useCompactProjectShadow
                   ? TIMELINE_COMPACT_CARD_SHADOW
-                  : "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+                  : TIMELINE_RESTING_CARD_SHADOW;
                 const sharedCardStyle: CSSProperties = {
                   boxShadow: sharedCardShadow,
                   outline: "1px solid rgba(10, 10, 12, 0.85)",
@@ -9001,7 +9003,7 @@ export default function SchedulePage() {
       heightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
     const shadow = useCompactShadow
       ? TIMELINE_COMPACT_CARD_SHADOW
-      : "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+      : TIMELINE_RESTING_CARD_SHADOW;
     return {
       top: timelineRect
         ? timelineRect.top + startOffset * pxPerMin
@@ -9087,7 +9089,7 @@ export default function SchedulePage() {
                     ghostHeight <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
                   const habitCardShadow = useCompactShadow
                     ? TIMELINE_COMPACT_CARD_SHADOW
-                    : "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+                    : TIMELINE_RESTING_CARD_SHADOW;
                   const habitCornerClass = getTimelineCardCornerClass("full");
                   const habitPaddingClass = "py-2";
                   return (
@@ -9140,7 +9142,7 @@ export default function SchedulePage() {
                   ghostHeight <= TIMELINE_COMPACT_CARD_HEIGHT_PX;
                 const sharedCardShadow = useCompactShadow
                   ? TIMELINE_COMPACT_CARD_SHADOW
-                  : "0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
+                  : TIMELINE_RESTING_CARD_SHADOW;
                 const projectCornerClass = getTimelineCardCornerClass("full");
                 const collapsedCardPaddingClass = goalName ? "pt-4 pb-2" : "py-2";
                 return (

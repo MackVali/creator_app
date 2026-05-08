@@ -1145,7 +1145,7 @@ const HABIT_TYPE_BACKGROUND_MAP: Record<string, string> = {
   CHORE: `radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)`,
   RELAXER: `radial-gradient(circle at 8% -18%, rgba(16, 185, 129, 0.32), transparent 60%), linear-gradient(138deg, rgba(4, 56, 33, 0.94) 0%, rgba(4, 120, 87, 0.88) 46%, rgba(16, 185, 129, 0.78) 100%)`,
   PRACTICE: `radial-gradient(circle at 6% -14%, rgba(54, 57, 66, 0.38), transparent 60%), linear-gradient(142deg, rgba(4, 4, 6, 0.98) 0%, rgba(18, 18, 22, 0.95) 44%, rgba(68, 72, 92, 0.72) 100%)`,
-  SYNC: `radial-gradient(circle at 12% -20%, rgba(209, 213, 219, 0.32), transparent 58%), linear-gradient(135deg, rgba(39, 42, 48, 0.92) 0%, rgba(107, 114, 128, 0.82) 45%, rgba(209, 213, 219, 0.7) 100%)`,
+  SYNC: `radial-gradient(circle at 50% -35%, rgba(209, 213, 219, 0.14), transparent 54%), linear-gradient(135deg, rgba(31, 34, 39, 0.94) 0%, rgba(74, 80, 90, 0.84) 52%, rgba(142, 148, 160, 0.68) 100%)`,
   MEMO: `radial-gradient(circle at 8% -18%, rgba(192, 132, 252, 0.34), transparent 60%), linear-gradient(138deg, rgba(59, 7, 100, 0.94) 0%, rgba(99, 37, 141, 0.88) 46%, rgba(168, 85, 247, 0.74) 100%)`,
 };
 
@@ -10537,8 +10537,8 @@ export function Fab({
                           outlineOffset: "-1px",
                         };
                         const baseShadow = isDragging
-                          ? "0 0 60px rgba(0,0,0,0.55),0 12px 30px rgba(0,0,0,0.45)"
-                          : "0 0 30px rgba(0,0,0,0.35),0 6px 14px rgba(0,0,0,0.30)";
+                          ? "0 0 42px rgba(0,0,0,0.42),0 12px 24px rgba(0,0,0,0.34)"
+                          : "0 0 0 1px rgba(255,255,255,0.035),0 5px 14px rgba(0,0,0,0.22)";
                         const filterValue = isDragging
                           ? "brightness(1.09)"
                           : overlayIsDragging

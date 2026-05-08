@@ -107,17 +107,12 @@
 }
 
 .habit-card--type-sync {
-  --habit-card-scheduled-bg: radial-gradient(
-      circle at 12% -20%,
-      rgba(209, 213, 219, 0.32),
-      transparent 58%
-    ),
-    linear-gradient(
-      135deg,
-      rgba(39, 42, 48, 0.92) 0%,
-      rgba(107, 114, 128, 0.82) 45%,
-      rgba(209, 213, 219, 0.7) 100%
-    );
+  --habit-card-scheduled-bg: linear-gradient(
+    135deg,
+    rgba(32, 35, 41, 0.96) 0%,
+    rgba(55, 60, 70, 0.9) 48%,
+    rgba(105, 112, 126, 0.74) 100%
+  );
 }
 
 .habit-card--type-practice {

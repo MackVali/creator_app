@@ -136,6 +136,20 @@ type ScheduleSegment = {
   end: number;
 };
 
+type AnchorSourceSegment = ScheduleSegment & {
+  ownershipKey: string;
+};
+
+type SyncInvariantViolationReason =
+  | "INVALID_TIME_RANGE"
+  | "UNDER_DURATION"
+  | "LOCATION_MISMATCH"
+  | "WINDOW_KIND_MISMATCH"
+  | "SYNC_OVERLAP"
+  | "ANCHOR_REUSE"
+  | "PARTIAL_ANCHOR_OVERLAP"
+  | "WINDOW_UNRESOLVED";
+
 type ResolvedWindowEntry = {
   window: WindowLite;
   startLocal: Date;
@@ -328,6 +342,374 @@ const hasContinuousAnchorCoverage = (
   return false;
 };
 
+const addMergedScheduleSegment = (
+  segments: ScheduleSegment[],
+  startMs: number,
+  endMs: number
+) => {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return;
+  const normalizedStart = Math.floor(startMs);
+  const normalizedEnd = Math.floor(endMs);
+  if (normalizedEnd <= normalizedStart) return;
+
+  segments.push({ start: normalizedStart, end: normalizedEnd });
+  segments.sort((a, b) => a.start - b.start || a.end - b.end);
+
+  let writeIndex = 0;
+  for (const segment of segments) {
+    if (writeIndex === 0) {
+      segments[writeIndex] = segment;
+      writeIndex += 1;
+      continue;
+    }
+    const previous = segments[writeIndex - 1];
+    if (segment.start <= previous.end) {
+      previous.end = Math.max(previous.end, segment.end);
+      continue;
+    }
+    segments[writeIndex] = segment;
+    writeIndex += 1;
+  }
+  segments.length = writeIndex;
+};
+
+const addMergedScheduleSegmentToMap = (
+  segmentMap: Map<string, ScheduleSegment[]>,
+  key: string,
+  startMs: number,
+  endMs: number
+) => {
+  const existing = segmentMap.get(key);
+  if (existing) {
+    addMergedScheduleSegment(existing, startMs, endMs);
+    return;
+  }
+  const segments: ScheduleSegment[] = [];
+  addMergedScheduleSegment(segments, startMs, endMs);
+  if (segments.length > 0) {
+    segmentMap.set(key, segments);
+  }
+};
+
+const subtractScheduleSegments = (
+  segments: ScheduleSegment[],
+  claimedSegments: ScheduleSegment[]
+) => {
+  if (claimedSegments.length === 0) {
+    return [...segments].sort((a, b) => a.start - b.start || a.end - b.end);
+  }
+
+  const claims = [...claimedSegments].sort(
+    (a, b) => a.start - b.start || a.end - b.end
+  );
+  const available: ScheduleSegment[] = [];
+
+  for (const segment of [...segments].sort(
+    (a, b) => a.start - b.start || a.end - b.end
+  )) {
+    let cursor = segment.start;
+    for (const claim of claims) {
+      if (claim.end <= cursor) continue;
+      if (claim.start >= segment.end) break;
+      if (claim.start > cursor) {
+        available.push({
+          start: cursor,
+          end: Math.min(claim.start, segment.end),
+        });
+      }
+      cursor = Math.max(cursor, claim.end);
+      if (cursor >= segment.end) break;
+    }
+    if (cursor < segment.end) {
+      available.push({ start: cursor, end: segment.end });
+    }
+  }
+
+  return available;
+};
+
+const getAnchorOwnershipKey = (params: {
+  instanceId?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  startMs: number;
+  endMs: number;
+}) => {
+  const instanceId = params.instanceId?.trim();
+  if (instanceId) {
+    return `instance:${instanceId}`;
+  }
+  return [
+    "source",
+    params.sourceType ?? "UNKNOWN",
+    params.sourceId ?? "UNKNOWN",
+    Math.floor(params.startMs),
+    Math.floor(params.endMs),
+  ].join(":");
+};
+
+const addAnchorSourceSegmentToMap = (
+  sourceSegmentMap: Map<string, AnchorSourceSegment[]>,
+  key: string,
+  segment: AnchorSourceSegment
+) => {
+  const existing = sourceSegmentMap.get(key);
+  if (!existing) {
+    sourceSegmentMap.set(key, [segment]);
+    return;
+  }
+  const duplicate = existing.some(
+    (candidate) =>
+      candidate.ownershipKey === segment.ownershipKey &&
+      Math.abs(candidate.start - segment.start) < 30 &&
+      Math.abs(candidate.end - segment.end) < 30
+  );
+  if (duplicate) return;
+  existing.push(segment);
+  existing.sort((a, b) => a.start - b.start || a.end - b.end);
+};
+
+const addClaimedAnchorOwnership = (
+  claimedOwnershipKeys: Set<string>,
+  claimedSegmentsByWindowKey: Map<string, ScheduleSegment[]>,
+  key: string,
+  segment: AnchorSourceSegment
+) => {
+  if (claimedOwnershipKeys.has(segment.ownershipKey)) return;
+  claimedOwnershipKeys.add(segment.ownershipKey);
+  addMergedScheduleSegmentToMap(
+    claimedSegmentsByWindowKey,
+    key,
+    segment.start,
+    segment.end
+  );
+};
+
+const isSegmentFullyCovered = (
+  covered: ScheduleSegment,
+  covering: ScheduleSegment
+) => covered.start >= covering.start && covered.end <= covering.end;
+
+const removeOwnedAnchorSegments = (
+  sourceSegments: AnchorSourceSegment[],
+  ownedKeys: Set<string> | undefined
+) => {
+  if (!ownedKeys || ownedKeys.size === 0) {
+    return sourceSegments.map(({ start, end }) => ({ start, end }));
+  }
+  return sourceSegments
+    .filter((segment) => !ownedKeys.has(segment.ownershipKey))
+    .map(({ start, end }) => ({ start, end }));
+};
+
+const isScheduledSyncInstance = (
+  instance: ScheduleInstance | null | undefined,
+  habitTypeById: Map<string, string>
+) =>
+  instance?.source_type === "HABIT" &&
+  instance.status === "scheduled" &&
+  normalizeHabitTypeValue(habitTypeById.get(instance.source_id ?? "")) ===
+    "SYNC";
+
+const isScheduledNonSyncAnchorInstance = (
+  instance: ScheduleInstance | null | undefined,
+  habitTypeById: Map<string, string>
+) => {
+  if (!instance || instance.status !== "scheduled") return false;
+  if (instance.source_type !== "HABIT") return true;
+  return (
+    normalizeHabitTypeValue(habitTypeById.get(instance.source_id ?? "")) !==
+    "SYNC"
+  );
+};
+
+const getScheduleInstanceRangeMs = (
+  instance: ScheduleInstance | null | undefined
+) => {
+  const startMs = new Date(instance?.start_utc ?? "").getTime();
+  const endMs = new Date(instance?.end_utc ?? "").getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return null;
+  }
+  return { startMs, endMs };
+};
+
+const getUniqueScheduledInstancesForValidation = (
+  instances: ScheduleInstance[],
+  candidate: ScheduleInstance
+) => {
+  const byId = new Map<string, ScheduleInstance>();
+  const anonymous: ScheduleInstance[] = [];
+  for (const instance of instances) {
+    if (!instance || instance.status !== "scheduled") continue;
+    const id = instance.id ?? null;
+    if (id) {
+      byId.set(id, instance);
+    } else if (instance !== candidate) {
+      anonymous.push(instance);
+    }
+  }
+  if (candidate.id) {
+    byId.set(candidate.id, candidate);
+  } else {
+    anonymous.push(candidate);
+  }
+  return [...byId.values(), ...anonymous];
+};
+
+const validateSyncInstanceInvariants = (params: {
+  candidate: ScheduleInstance;
+  habit: HabitScheduleItem;
+  desiredDurationMs: number;
+  instances: ScheduleInstance[];
+  habitTypeById: Map<string, string>;
+  getWindowEntriesForInstance: (instance: ScheduleInstance) => ResolvedWindowEntry[];
+  fallbackWindowKey?: string | null;
+  fallbackWindow?: WindowLite | null;
+}):
+  | { ok: true }
+  | {
+      ok: false;
+      reason: SyncInvariantViolationReason;
+      blockerId?: string | null;
+      anchorId?: string | null;
+    } => {
+  const {
+    candidate,
+    habit,
+    desiredDurationMs,
+    instances,
+    habitTypeById,
+    getWindowEntriesForInstance,
+    fallbackWindowKey = null,
+    fallbackWindow = null,
+  } = params;
+  const candidateRange = getScheduleInstanceRangeMs(candidate);
+  if (!candidateRange) return { ok: false, reason: "INVALID_TIME_RANGE" };
+  if (candidateRange.endMs - candidateRange.startMs + 1 < desiredDurationMs) {
+    return { ok: false, reason: "UNDER_DURATION" };
+  }
+
+  const candidateEntries = getWindowEntriesForInstance(candidate).filter(
+    (entry) =>
+      overlapsHalfOpen(
+        entry.startMs,
+        entry.endMs,
+        candidateRange.startMs,
+        candidateRange.endMs
+      )
+  );
+  const candidateWindowKeys = new Set(candidateEntries.map((entry) => entry.key));
+  if (candidateWindowKeys.size === 0 && fallbackWindowKey) {
+    candidateWindowKeys.add(fallbackWindowKey);
+  }
+  if (candidateWindowKeys.size === 0) {
+    return { ok: false, reason: "WINDOW_UNRESOLVED" };
+  }
+
+  const candidateWindow =
+    candidateEntries[0]?.window ?? fallbackWindow ?? null;
+  if (!doesWindowMatchHabitLocation(habit, candidateWindow)) {
+    return { ok: false, reason: "LOCATION_MISMATCH" };
+  }
+  if (!doesWindowHonorHabitConstraints(habit, candidateWindow)) {
+    return { ok: false, reason: "WINDOW_KIND_MISMATCH" };
+  }
+
+  const hasSameWindow = (instance: ScheduleInstance) => {
+    const entries = getWindowEntriesForInstance(instance);
+    for (const entry of entries) {
+      if (candidateWindowKeys.has(entry.key)) return true;
+    }
+    return false;
+  };
+
+  const snapshot = getUniqueScheduledInstancesForValidation(
+    instances,
+    candidate
+  );
+
+  for (const instance of snapshot) {
+    if (instance === candidate) continue;
+    if (candidate.id && instance.id === candidate.id) continue;
+    if (!isScheduledSyncInstance(instance, habitTypeById)) continue;
+    if (!hasSameWindow(instance)) continue;
+    const range = getScheduleInstanceRangeMs(instance);
+    if (!range) continue;
+    if (
+      overlapsHalfOpen(
+        candidateRange.startMs,
+        candidateRange.endMs,
+        range.startMs,
+        range.endMs
+      )
+    ) {
+      return {
+        ok: false,
+        reason: "SYNC_OVERLAP",
+        blockerId: instance.id ?? null,
+      };
+    }
+  }
+
+  for (const anchor of snapshot) {
+    if (!isScheduledNonSyncAnchorInstance(anchor, habitTypeById)) continue;
+    if (!hasSameWindow(anchor)) continue;
+    const anchorRange = getScheduleInstanceRangeMs(anchor);
+    if (!anchorRange) continue;
+    if (
+      !overlapsHalfOpen(
+        candidateRange.startMs,
+        candidateRange.endMs,
+        anchorRange.startMs,
+        anchorRange.endMs
+      )
+    ) {
+      continue;
+    }
+    if (
+      !isSegmentFullyCovered(
+        { start: anchorRange.startMs, end: anchorRange.endMs },
+        { start: candidateRange.startMs, end: candidateRange.endMs }
+      )
+    ) {
+      return {
+        ok: false,
+        reason: "PARTIAL_ANCHOR_OVERLAP",
+        anchorId: anchor.id ?? null,
+      };
+    }
+
+    let ownerCount = 0;
+    for (const syncInstance of snapshot) {
+      if (!isScheduledSyncInstance(syncInstance, habitTypeById)) continue;
+      if (!hasSameWindow(syncInstance)) continue;
+      const syncRange =
+        syncInstance === candidate
+          ? candidateRange
+          : getScheduleInstanceRangeMs(syncInstance);
+      if (!syncRange) continue;
+      if (
+        isSegmentFullyCovered(
+          { start: anchorRange.startMs, end: anchorRange.endMs },
+          { start: syncRange.startMs, end: syncRange.endMs }
+        )
+      ) {
+        ownerCount += 1;
+        if (ownerCount > 1) {
+          return {
+            ok: false,
+            reason: "ANCHOR_REUSE",
+            anchorId: anchor.id ?? null,
+          };
+        }
+      }
+    }
+  }
+
+  return { ok: true };
+};
+
 const findAnchoredSyncCandidate = (
   startMs: number,
   durationMs: number,
@@ -344,50 +726,108 @@ const findAnchoredSyncCandidate = (
     return null;
   }
 
-  let cursor = startMs;
-  const anchors = anchorSegments.filter(
-    (segment) => segment.end > startMs && segment.start < endLimit
-  );
+  const anchors = anchorSegments
+    .filter((segment) => segment.end > startMs && segment.start < endLimit)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
   let anchorIndex = 0;
+  let blockedUntil = startMs;
   let guard = 0;
 
   while (
     anchorIndex < anchors.length &&
     guard <= anchors.length + syncSegments.length + 8
   ) {
-    const anchor = anchors[anchorIndex];
-    cursor = Math.max(cursor, anchor.start);
-    const candidateEnd = cursor + durationMs;
-    if (candidateEnd > endLimit) {
-      return null;
+    while (
+      anchorIndex < anchors.length &&
+      anchors[anchorIndex].end <= blockedUntil
+    ) {
+      anchorIndex += 1;
+    }
+    if (anchorIndex >= anchors.length) break;
+
+    const firstAnchor = anchors[anchorIndex];
+    if (firstAnchor.start < blockedUntil) {
+      anchorIndex += 1;
+      guard += 1;
+      continue;
     }
 
-    if (!hasContinuousAnchorCoverage(cursor, candidateEnd, anchors)) {
+    const candidateStart = firstAnchor.start;
+    let candidateEnd = firstAnchor.end;
+    if (candidateEnd > endLimit) {
+      anchorIndex += 1;
+      guard += 1;
+      continue;
+    }
+
+    let selectedIndex = anchorIndex;
+    while (candidateEnd - candidateStart < durationMs) {
+      const nextAnchor = anchors[selectedIndex + 1];
+      if (!nextAnchor || nextAnchor.start > candidateEnd) {
+        candidateEnd = Number.NaN;
+        break;
+      }
+      if (nextAnchor.end > endLimit) {
+        candidateEnd = Number.NaN;
+        break;
+      }
+      candidateEnd = Math.max(candidateEnd, nextAnchor.end);
+      selectedIndex += 1;
+    }
+
+    while (Number.isFinite(candidateEnd)) {
+      const nextAnchor = anchors[selectedIndex + 1];
+      if (!nextAnchor || nextAnchor.start >= candidateEnd) break;
+      if (nextAnchor.end > endLimit) {
+        candidateEnd = Number.NaN;
+        break;
+      }
+      candidateEnd = Math.max(candidateEnd, nextAnchor.end);
+      selectedIndex += 1;
+    }
+
+    if (!Number.isFinite(candidateEnd)) {
+      anchorIndex += 1;
+      guard += 1;
+      continue;
+    }
+
+    if (!hasContinuousAnchorCoverage(candidateStart, candidateEnd, anchors)) {
       anchorIndex += 1;
       guard += 1;
       continue;
     }
 
     const conflict = getSegmentOverlapConflict(
-      cursor,
+      candidateStart,
       candidateEnd,
       syncSegments
     );
     if (!conflict) {
       return {
-        start: cursor,
+        start: candidateStart,
         end: candidateEnd,
       };
     }
 
-    cursor = Math.max(conflict.end, cursor);
-    while (anchorIndex < anchors.length && anchors[anchorIndex].end <= cursor) {
+    blockedUntil = Math.max(conflict.end, blockedUntil);
+    while (
+      anchorIndex < anchors.length &&
+      anchors[anchorIndex].end <= blockedUntil
+    ) {
       anchorIndex += 1;
     }
     guard += 1;
   }
 
   return null;
+};
+
+export const __schedulerAnchorCoverageForTest = {
+  findAnchoredSyncCandidate,
+  hasContinuousAnchorCoverage,
+  removeOwnedAnchorSegments,
+  subtractScheduleSegments,
 };
 
 function resolveHabitExplicitEnergy(
@@ -1707,6 +2147,7 @@ const doesWindowMatchHabitLocation = (
     if (windowLocationId) return windowLocationId === habitLocationId;
     return habitLocationValue ? windowLocationValue === habitLocationValue : false;
   }
+  if (windowLocationId) return false;
   return habitLocationValue ? windowLocationValue === habitLocationValue : false;
 };
 
@@ -3277,7 +3718,8 @@ export async function scheduleBacklog(
     const sourceId = instance.source_id ?? "";
     const habitType = sourceId ? (habitTypeById.get(sourceId) ?? null) : null;
     const isSyncHabit =
-      instance.source_type === "HABIT" && habitType === "SYNC";
+      instance.source_type === "HABIT" &&
+      normalizeHabitTypeValue(habitType) === "SYNC";
     if (isSyncHabit) {
       endOffset = startOffset;
     }
@@ -4239,7 +4681,7 @@ export async function scheduleBacklog(
       if (!inst?.id || inst.status !== "scheduled") return;
       if (inst.source_type === "HABIT") {
         const habitType = habitTypeById.get(inst.source_id ?? "") ?? "HABIT";
-        if (habitType === "SYNC") return;
+        if (normalizeHabitTypeValue(habitType) === "SYNC") return;
       }
       scheduledInstanceLookup.set(inst.id, inst);
     };
@@ -4701,7 +5143,7 @@ export async function scheduleBacklog(
       .length,
     habitBlockingCount: habitPassState.blockingInstances.length,
     syncHabitCount: habitPassState.blockingInstances.filter(
-      (h) => habitTypeById.get(h.source_id ?? "") === "SYNC"
+      (h) => normalizeHabitTypeValue(habitTypeById.get(h.source_id ?? "")) === "SYNC"
     ).length,
   });
 
@@ -5663,7 +6105,15 @@ export async function scheduleBacklog(
       addUniqueInstance(finalDayInstances, seenIds, inst, day);
     }
     for (const inst of dedupe.allInstances) {
-      if (inst?.source_type === "HABIT" || inst?.source_type === "PROJECT") {
+      const sourceId = inst?.source_id ?? null;
+      const isScheduledSyncHabit =
+        inst?.source_type === "HABIT" &&
+        sourceId !== null &&
+        normalizeHabitTypeValue(habitTypeById.get(sourceId)) === "SYNC";
+      if (inst?.source_type === "PROJECT") {
+        continue;
+      }
+      if (inst?.source_type === "HABIT" && !isScheduledSyncHabit) {
         continue;
       }
       addUniqueInstance(finalDayInstances, seenIds, inst, day);
@@ -5721,7 +6171,6 @@ export async function scheduleBacklog(
           lastScheduledStart: getFinalDayScheduledHabitStart(habit.id, day),
           nextDueOverride,
         });
-        if (!dueInfo.isDue) return false;
         finalSyncDueInfoByHabitId.set(habit.id, dueInfo);
         return true;
       })
@@ -6525,6 +6974,12 @@ async function reserveMandatoryHabitsForDay(params: {
     string,
     { start: number; end: number }[]
   >();
+  const anchorSourceSegmentsByWindowKey = new Map<
+    string,
+    AnchorSourceSegment[]
+  >();
+  const claimedAnchorSegmentsByWindowKey = new Map<string, ScheduleSegment[]>();
+  const claimedAnchorOwnershipKeys = new Set<string>();
 
   const addSyncUsage = (key: string, startMs: number, endMs: number) => {
     if (
@@ -6564,16 +7019,41 @@ async function reserveMandatoryHabitsForDay(params: {
     }
   };
 
-  const addAnchorSegment = (key: string, startMs: number, endMs: number) => {
+  const addAnchorSegment = (
+    key: string,
+    startMs: number,
+    endMs: number,
+    ownershipKey: string
+  ) => {
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return;
     const normalizedStart = Math.floor(startMs);
     const normalizedEnd = Math.floor(endMs);
     if (normalizedEnd <= normalizedStart) return;
+    const sourceSegment: AnchorSourceSegment = {
+      start: normalizedStart,
+      end: normalizedEnd,
+      ownershipKey,
+    };
+    addAnchorSourceSegmentToMap(
+      anchorSourceSegmentsByWindowKey,
+      key,
+      sourceSegment
+    );
     const existing = anchorSegmentsByWindowKey.get(key);
     if (!existing) {
       anchorSegmentsByWindowKey.set(key, [
         { start: normalizedStart, end: normalizedEnd },
       ]);
+      const syncSegments = syncUsageByWindow.get(key) ?? [];
+      for (const segment of syncSegments) {
+        if (!isSegmentFullyCovered(sourceSegment, segment)) continue;
+        addClaimedAnchorOwnership(
+          claimedAnchorOwnershipKeys,
+          claimedAnchorSegmentsByWindowKey,
+          key,
+          sourceSegment
+        );
+      }
       return;
     }
     const nearDuplicate = existing.some(
@@ -6595,6 +7075,42 @@ async function reserveMandatoryHabitsForDay(params: {
     }
     if (!inserted) {
       existing.push({ start: normalizedStart, end: normalizedEnd });
+    }
+    const syncSegments = syncUsageByWindow.get(key) ?? [];
+    for (const segment of syncSegments) {
+      if (!isSegmentFullyCovered(sourceSegment, segment)) continue;
+      addClaimedAnchorOwnership(
+        claimedAnchorOwnershipKeys,
+        claimedAnchorSegmentsByWindowKey,
+        key,
+        sourceSegment
+      );
+    }
+  };
+
+  const getUnclaimedAnchorSegments = (key: string) =>
+    subtractScheduleSegments(
+      removeOwnedAnchorSegments(
+        anchorSourceSegmentsByWindowKey.get(key) ?? [],
+        claimedAnchorOwnershipKeys
+      ),
+      claimedAnchorSegmentsByWindowKey.get(key) ?? []
+    );
+
+  const claimSyncAnchorCoverage = (
+    key: string,
+    startMs: number,
+    endMs: number
+  ) => {
+    for (const segment of anchorSourceSegmentsByWindowKey.get(key) ?? []) {
+      if (claimedAnchorOwnershipKeys.has(segment.ownershipKey)) continue;
+      if (segment.start < startMs || segment.end > endMs) continue;
+      addClaimedAnchorOwnership(
+        claimedAnchorOwnershipKeys,
+        claimedAnchorSegmentsByWindowKey,
+        key,
+        segment
+      );
     }
   };
 
@@ -6743,7 +7259,7 @@ async function reserveMandatoryHabitsForDay(params: {
       }
       const habitId = instance.source_id ?? null;
       const habitType = habitId ? (habitTypeById.get(habitId) ?? null) : null;
-      const isSyncInstance = habitType === "SYNC";
+      const isSyncInstance = normalizeHabitTypeValue(habitType) === "SYNC";
       const instanceKey = getAvailabilityWindowKey({
         dayTypeTimeBlockId:
           (instance as any).day_type_time_block_id ??
@@ -6771,10 +7287,22 @@ async function reserveMandatoryHabitsForDay(params: {
           const segmentStart = Math.max(entry.startMs, startMs);
           const segmentEnd = Math.min(entry.endMs, endMs);
           addSyncUsage(entry.key, segmentStart, segmentEnd);
+          claimSyncAnchorCoverage(entry.key, segmentStart, segmentEnd);
         } else {
           const segmentStart = Math.max(entry.startMs, startMs);
           const segmentEnd = Math.min(entry.endMs, endMs);
-          addAnchorSegment(entry.key, segmentStart, segmentEnd);
+          addAnchorSegment(
+            entry.key,
+            segmentStart,
+            segmentEnd,
+            getAnchorOwnershipKey({
+              instanceId: instance.id ?? null,
+              sourceType: instance.source_type ?? null,
+              sourceId: instance.source_id ?? null,
+              startMs,
+              endMs,
+            })
+          );
         }
       }
     }
@@ -7081,7 +7609,9 @@ async function reserveMandatoryHabitsForDay(params: {
 
       const desiredDurationMs = scheduledDurationMs;
       const syncSegments = syncUsageByWindow.get(target.key) ?? [];
-      const anchorSegments = anchorSegmentsByWindowKey.get(target.key) ?? [];
+      const anchorSegments = isSyncHabit
+        ? getUnclaimedAnchorSegments(target.key)
+        : (anchorSegmentsByWindowKey.get(target.key) ?? []);
       let startCandidate: number | null = null;
       let endCandidate: number | null = null;
       let clipped = false;
@@ -7090,56 +7620,20 @@ async function reserveMandatoryHabitsForDay(params: {
         const safeWindowStart = Number.isFinite(windowStartMs)
           ? windowStartMs
           : startMs;
-        const earliestStart = Math.max(safeWindowStart, constraintLowerBound);
         const searchStart =
           typeof baseNowMs === "number"
-            ? Math.max(earliestStart, baseNowMs)
-            : earliestStart;
-        const segments = anchorSegments.filter(
-          (segment) => segment.end > safeWindowStart && segment.start < endLimit
+            ? Math.max(safeWindowStart, baseNowMs)
+            : safeWindowStart;
+        const anchoredCandidate = findAnchoredSyncCandidate(
+          searchStart,
+          desiredDurationMs,
+          endLimit,
+          syncSegments,
+          anchorSegments
         );
-        let index = 0;
-        while (index < segments.length && segments[index].end <= searchStart) {
-          index += 1;
-        }
-        if (index < segments.length) {
-          let alignedStart = Math.max(segments[index].start, safeWindowStart);
-          if (typeof baseNowMs === "number") {
-            alignedStart = Math.max(alignedStart, baseNowMs);
-          }
-          if (alignedStart < segments[index].end) {
-            let coverageEnd = Math.min(segments[index].end, endLimit);
-            let totalCoverage = coverageEnd - alignedStart;
-            let cursor = index;
-            while (
-              totalCoverage < desiredDurationMs &&
-              cursor + 1 < segments.length
-            ) {
-              const nextSegment = segments[cursor + 1];
-              if (
-                nextSegment.start > coverageEnd ||
-                nextSegment.start >= endLimit
-              ) {
-                break;
-              }
-              coverageEnd = Math.min(
-                Math.max(coverageEnd, nextSegment.end),
-                endLimit
-              );
-              totalCoverage = coverageEnd - alignedStart;
-              cursor += 1;
-            }
-            if (
-              coverageEnd > alignedStart &&
-              !hasSyncOverlap(alignedStart, coverageEnd, syncSegments)
-            ) {
-              startCandidate = alignedStart;
-              endCandidate = coverageEnd;
-              if (totalCoverage + 1 < desiredDurationMs) {
-                clipped = true;
-              }
-            }
-          }
+        if (anchoredCandidate) {
+          startCandidate = anchoredCandidate.start;
+          endCandidate = anchoredCandidate.end;
         }
       }
 
@@ -7320,10 +7814,32 @@ async function reserveMandatoryHabitsForDay(params: {
         continue;
       }
 
-      scheduledDurationMs = endCandidate - startCandidate;
-      if (scheduledDurationMs <= 0) {
+      if (isSyncHabit) {
+        if (anchorSegments.length === 0) {
+          continue;
+        }
+        const anchoredCandidate = findAnchoredSyncCandidate(
+          startCandidate,
+          desiredDurationMs,
+          endLimit,
+          syncSegments,
+          anchorSegments
+        );
+        if (!anchoredCandidate) {
+          continue;
+        }
+        startCandidate = anchoredCandidate.start;
+        endCandidate = anchoredCandidate.end;
+      }
+
+      const candidateDurationMs = endCandidate - startCandidate;
+      if (candidateDurationMs <= 0) {
         continue;
       }
+      if (isSyncHabit && candidateDurationMs + 1 < desiredDurationMs) {
+        continue;
+      }
+      scheduledDurationMs = candidateDurationMs;
       if (!clipped && scheduledDurationMs + 1 < desiredDurationMs) {
         clipped = true;
       }
@@ -7363,7 +7879,10 @@ async function reserveMandatoryHabitsForDay(params: {
       }
 
       if (isSyncHabit) {
-        addSyncUsage(target.key, startDate.getTime(), endDate.getTime());
+        const startMs = startDate.getTime();
+        const endMs = endDate.getTime();
+        addSyncUsage(target.key, startMs, endMs);
+        claimSyncAnchorCoverage(target.key, startMs, endMs);
       }
 
       const availabilitySnapshot = bounds
@@ -7664,6 +8183,12 @@ async function scheduleHabitsForDay(params: {
     string,
     { start: number; end: number }[]
   >();
+  const anchorSourceSegmentsByWindowKey = new Map<
+    string,
+    AnchorSourceSegment[]
+  >();
+  const claimedAnchorSegmentsByWindowKey = new Map<string, ScheduleSegment[]>();
+  const claimedAnchorOwnershipKeys = new Set<string>();
   const habitTypeById = new Map<string, string>();
   const repeatablePracticeIds = new Set<string>();
   for (const habit of habits) {
@@ -7679,6 +8204,10 @@ async function scheduleHabitsForDay(params: {
         repeatablePracticeIds.add(habit.id);
       }
     }
+  }
+  for (const [habitId, habit] of habitMap) {
+    if (habitTypeById.has(habitId)) continue;
+    habitTypeById.set(habitId, normalizeHabitTypeValue(habit.habitType));
   }
   const recordDueEvaluationForAudit = (
     habit: HabitScheduleItem,
@@ -7730,16 +8259,41 @@ async function scheduleHabitsForDay(params: {
     }
   };
 
-  const addAnchorSegment = (key: string, startMs: number, endMs: number) => {
+  const addAnchorSegment = (
+    key: string,
+    startMs: number,
+    endMs: number,
+    ownershipKey: string
+  ) => {
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return;
     const normalizedStart = Math.floor(startMs);
     const normalizedEnd = Math.floor(endMs);
     if (normalizedEnd <= normalizedStart) return;
+    const sourceSegment: AnchorSourceSegment = {
+      start: normalizedStart,
+      end: normalizedEnd,
+      ownershipKey,
+    };
+    addAnchorSourceSegmentToMap(
+      anchorSourceSegmentsByWindowKey,
+      key,
+      sourceSegment
+    );
     const existing = anchorSegmentsByWindowKey.get(key);
     if (!existing) {
       anchorSegmentsByWindowKey.set(key, [
         { start: normalizedStart, end: normalizedEnd },
       ]);
+      const syncSegments = syncUsageByWindow.get(key) ?? [];
+      for (const segment of syncSegments) {
+        if (!isSegmentFullyCovered(sourceSegment, segment)) continue;
+        addClaimedAnchorOwnership(
+          claimedAnchorOwnershipKeys,
+          claimedAnchorSegmentsByWindowKey,
+          key,
+          sourceSegment
+        );
+      }
       return;
     }
     const nearDuplicate = existing.some(
@@ -7761,6 +8315,42 @@ async function scheduleHabitsForDay(params: {
     }
     if (!inserted) {
       existing.push({ start: normalizedStart, end: normalizedEnd });
+    }
+    const syncSegments = syncUsageByWindow.get(key) ?? [];
+    for (const segment of syncSegments) {
+      if (!isSegmentFullyCovered(sourceSegment, segment)) continue;
+      addClaimedAnchorOwnership(
+        claimedAnchorOwnershipKeys,
+        claimedAnchorSegmentsByWindowKey,
+        key,
+        sourceSegment
+      );
+    }
+  };
+
+  const getUnclaimedAnchorSegments = (key: string) =>
+    subtractScheduleSegments(
+      removeOwnedAnchorSegments(
+        anchorSourceSegmentsByWindowKey.get(key) ?? [],
+        claimedAnchorOwnershipKeys
+      ),
+      claimedAnchorSegmentsByWindowKey.get(key) ?? []
+    );
+
+  const claimSyncAnchorCoverage = (
+    key: string,
+    startMs: number,
+    endMs: number
+  ) => {
+    for (const segment of anchorSourceSegmentsByWindowKey.get(key) ?? []) {
+      if (claimedAnchorOwnershipKeys.has(segment.ownershipKey)) continue;
+      if (segment.start < startMs || segment.end > endMs) continue;
+      addClaimedAnchorOwnership(
+        claimedAnchorOwnershipKeys,
+        claimedAnchorSegmentsByWindowKey,
+        key,
+        segment
+      );
     }
   };
 
@@ -8247,7 +8837,8 @@ async function scheduleHabitsForDay(params: {
     const isSyncOverlapInstance =
       inst.source_type === "HABIT" &&
       Boolean(
-        inst.source_id && habitTypeById.get(inst.source_id) === "SYNC"
+        inst.source_id &&
+          normalizeHabitTypeValue(habitTypeById.get(inst.source_id)) === "SYNC"
       );
     if (isSyncOverlapInstance) continue;
     placedSoFar.push(inst);
@@ -8282,6 +8873,156 @@ async function scheduleHabitsForDay(params: {
     }
     return nextInstance ?? null;
   };
+
+  const windowEntries = windows
+    .map((win) => {
+      const startLocal = resolveWindowStart(win, day, zone);
+      const endLocal = resolveWindowEnd(win, day, zone);
+      const startMs = startLocal.getTime();
+      const endMs = endLocal.getTime();
+      if (
+        !Number.isFinite(startMs) ||
+        !Number.isFinite(endMs) ||
+        endMs <= startMs
+      ) {
+        return null;
+      }
+      const descriptor = describeAvailabilityWindow(win, startLocal, endLocal);
+      const key = getAvailabilityWindowKey(descriptor);
+      return {
+        window: win,
+        startLocal,
+        endLocal,
+        startMs,
+        endMs,
+        key,
+      };
+    })
+    .filter(
+      (
+        entry
+      ): entry is {
+        window: WindowLite;
+        startLocal: Date;
+        endLocal: Date;
+        startMs: number;
+        endMs: number;
+        key: string;
+      } => entry !== null
+    );
+
+  const windowEntriesByKey = new Map<string, typeof windowEntries>();
+  for (const entry of windowEntries) {
+    addAnchorStart(anchorStartsByWindowKey, entry.key, entry.startMs);
+    const existing = windowEntriesByKey.get(entry.key);
+    if (existing) {
+      existing.push(entry);
+    } else {
+      windowEntriesByKey.set(entry.key, [entry]);
+    }
+  }
+
+  const getWindowEntriesForSeedInstance = (instance: ScheduleInstance) => {
+    const instanceKey = getAvailabilityWindowKey({
+      dayTypeTimeBlockId:
+        (instance as any).day_type_time_block_id ??
+        (instance as any).dayTypeTimeBlockId ??
+        null,
+      windowId: instance.window_id ?? null,
+      timeBlockId: instance.time_block_id ?? null,
+      startUtc: instance.start_utc ?? null,
+      endUtc: instance.end_utc ?? null,
+    });
+    const keyedEntries = windowEntriesByKey.get(instanceKey);
+    if (keyedEntries) return keyedEntries;
+
+    const instanceDayTypeTimeBlockId =
+      (instance as any).day_type_time_block_id ??
+      (instance as any).dayTypeTimeBlockId ??
+      null;
+    const instanceWindowId = instance.window_id ?? null;
+    const instanceTimeBlockId =
+      (instance as any).time_block_id ?? (instance as any).timeBlockId ?? null;
+    const matchingEntries = windowEntries.filter((entry) => {
+      const entryDayTypeTimeBlockId =
+        entry.window.dayTypeTimeBlockId ??
+        (entry.window as any).day_type_time_block_id ??
+        null;
+      const entryTimeBlockId =
+        (entry.window as any).time_block_id ??
+        (entryDayTypeTimeBlockId ? entry.window.id : null);
+      if (
+        instanceDayTypeTimeBlockId &&
+        entryDayTypeTimeBlockId === instanceDayTypeTimeBlockId
+      ) {
+        return true;
+      }
+      if (instanceWindowId && entry.window.id === instanceWindowId) {
+        return true;
+      }
+      if (
+        instanceTimeBlockId &&
+        (entryTimeBlockId === instanceTimeBlockId ||
+          entry.window.id === instanceTimeBlockId)
+      ) {
+        return true;
+      }
+      return false;
+    });
+    if (matchingEntries.length > 0) return matchingEntries;
+    return postAnchorSyncRetry ? [] : windowEntries;
+  };
+
+  for (const instance of [...dayInstances]) {
+    if (!isScheduledSyncInstance(instance, habitTypeById)) continue;
+    const habitId = instance.source_id ?? null;
+    const habit = habitId ? habitMap.get(habitId) : null;
+    if (!habit) continue;
+    const rawDuration = Number(habit.durationMinutes ?? 0);
+    let durationMin =
+      Number.isFinite(rawDuration) && rawDuration > 0
+        ? rawDuration
+        : DEFAULT_HABIT_DURATION_MIN;
+    if (durationMultiplier !== 1) {
+      durationMin = Math.max(1, Math.round(durationMin * durationMultiplier));
+    }
+    const validation = validateSyncInstanceInvariants({
+      candidate: instance,
+      habit,
+      desiredDurationMs: durationMin * 60000,
+      instances: dayInstances,
+      habitTypeById,
+      getWindowEntriesForInstance: getWindowEntriesForSeedInstance,
+      fallbackWindowKey: getAvailabilityWindowKey({
+        dayTypeTimeBlockId:
+          (instance as any).day_type_time_block_id ??
+          (instance as any).dayTypeTimeBlockId ??
+          null,
+        windowId: instance.window_id ?? null,
+        timeBlockId: instance.time_block_id ?? null,
+        startUtc: instance.start_utc ?? null,
+        endUtc: instance.end_utc ?? null,
+      }),
+      fallbackWindow:
+        instance.window_id ? (windowsById.get(instance.window_id) ?? null) : null,
+    });
+    if (validation.ok) continue;
+    logHabitPlacementAudit(habit, "sync_invariant_rejection", {
+      reason: validation.reason,
+      phase: "existing_snapshot",
+      day: formatDateKeyInTimeZone(day, zone),
+      dayStart: toAuditIso(dayStart),
+      offset,
+      postAnchorSyncRetry,
+      candidate: scheduleInstanceAuditPayload(instance),
+      blockerId: "blockerId" in validation ? validation.blockerId : null,
+      anchorId: "anchorId" in validation ? validation.anchorId : null,
+    });
+    logCancelOnce(`SYNC_INVARIANT_${validation.reason}`, instance);
+    if (await cancelScheduledInstance(instance)) {
+      cleanupCanceledHabitInstance(instance);
+    }
+  }
 
   const dueHabits: HabitScheduleItem[] = [];
   for (const habit of habits) {
@@ -8408,54 +9149,6 @@ async function scheduleHabitsForDay(params: {
     return result;
   }
 
-  const windowEntries = windows
-    .map((win) => {
-      const startLocal = resolveWindowStart(win, day, zone);
-      const endLocal = resolveWindowEnd(win, day, zone);
-      const startMs = startLocal.getTime();
-      const endMs = endLocal.getTime();
-      if (
-        !Number.isFinite(startMs) ||
-        !Number.isFinite(endMs) ||
-        endMs <= startMs
-      ) {
-        return null;
-      }
-      const descriptor = describeAvailabilityWindow(win, startLocal, endLocal);
-      const key = getAvailabilityWindowKey(descriptor);
-      return {
-        window: win,
-        startLocal,
-        endLocal,
-        startMs,
-        endMs,
-        key,
-      };
-    })
-    .filter(
-      (
-        entry
-      ): entry is {
-        window: WindowLite;
-        startLocal: Date;
-        endLocal: Date;
-        startMs: number;
-        endMs: number;
-        key: string;
-      } => entry !== null
-    );
-
-  const windowEntriesByKey = new Map<string, typeof windowEntries>();
-  for (const entry of windowEntries) {
-    addAnchorStart(anchorStartsByWindowKey, entry.key, entry.startMs);
-    const existing = windowEntriesByKey.get(entry.key);
-    if (existing) {
-      existing.push(entry);
-    } else {
-      windowEntriesByKey.set(entry.key, [entry]);
-    }
-  }
-
   if (windowEntries.length > 0 && dayInstances.length > 0) {
     const anchorableStatuses = new Set([
       "scheduled",
@@ -8478,20 +9171,8 @@ async function scheduleHabitsForDay(params: {
       }
       const habitId = instance.source_id ?? null;
       const habitType = habitId ? (habitTypeById.get(habitId) ?? null) : null;
-      const isSyncInstance = habitType === "SYNC";
-      const instanceKey = getAvailabilityWindowKey({
-        dayTypeTimeBlockId:
-          (instance as any).day_type_time_block_id ??
-          (instance as any).dayTypeTimeBlockId ??
-          null,
-        windowId: instance.window_id ?? null,
-        timeBlockId: instance.time_block_id ?? null,
-        startUtc: instance.start_utc ?? null,
-        endUtc: instance.end_utc ?? null,
-      });
-      const candidateEntries = postAnchorSyncRetry
-        ? (windowEntriesByKey.get(instanceKey) ?? [])
-        : (windowEntriesByKey.get(instanceKey) ?? windowEntries);
+      const isSyncInstance = normalizeHabitTypeValue(habitType) === "SYNC";
+      const candidateEntries = getWindowEntriesForSeedInstance(instance);
       for (const entry of candidateEntries) {
         if (
           !overlapsHalfOpen(
@@ -8510,10 +9191,22 @@ async function scheduleHabitsForDay(params: {
             const segmentStart = Math.max(entry.startMs, startMs);
             const segmentEnd = Math.min(entry.endMs, endMs);
             addSyncUsage(entry.key, segmentStart, segmentEnd);
+            claimSyncAnchorCoverage(entry.key, segmentStart, segmentEnd);
           } else {
             const segmentStart = Math.max(entry.startMs, startMs);
             const segmentEnd = Math.min(entry.endMs, endMs);
-            addAnchorSegment(entry.key, segmentStart, segmentEnd);
+            addAnchorSegment(
+              entry.key,
+              segmentStart,
+              segmentEnd,
+              getAnchorOwnershipKey({
+                instanceId: instance.id ?? null,
+                sourceType: instance.source_type ?? null,
+                sourceId: instance.source_id ?? null,
+                startMs,
+                endMs,
+              })
+            );
           }
         }
       }
@@ -8781,7 +9474,10 @@ async function scheduleHabitsForDay(params: {
           skillMonumentId: habit.skillMonumentId ?? null,
           monumentIds: habit.monumentIds ?? null,
         };
-        if (passesTimeBlockConstraints(constraintItem, reservedWindow)) {
+        if (
+          doesWindowMatchHabitLocation(habit, reservedWindow) &&
+          passesTimeBlockConstraints(constraintItem, reservedWindow)
+        ) {
           compatibleWindows = [
             {
               id: reservation.windowId,
@@ -8975,7 +9671,9 @@ async function scheduleHabitsForDay(params: {
 
       const desiredDurationMs = scheduledDurationMs;
       const syncSegments = syncUsageByWindow.get(target.key) ?? [];
-      const anchorSegments = anchorSegmentsByWindowKey.get(target.key) ?? [];
+      const anchorSegments = isSyncHabit
+        ? getUnclaimedAnchorSegments(target.key)
+        : (anchorSegmentsByWindowKey.get(target.key) ?? []);
       if (isSyncHabit && postAnchorSyncRetry && anchorSegments.length === 0) {
         continue;
       }
@@ -8989,57 +9687,24 @@ async function scheduleHabitsForDay(params: {
         const safeWindowStart = Number.isFinite(windowStartMs)
           ? windowStartMs
           : startMs;
-        const earliestStart = Math.max(safeWindowStart, constraintLowerBound);
+        const earliestStart =
+          typeof dueStartMs === "number" && Number.isFinite(dueStartMs)
+            ? Math.max(safeWindowStart, dueStartMs)
+            : safeWindowStart;
         const searchStart =
           typeof baseNowMs === "number"
             ? Math.max(earliestStart, baseNowMs)
             : earliestStart;
-        const segments = anchorSegments.filter(
-          (segment) => segment.end > safeWindowStart && segment.start < endLimit
+        const anchoredCandidate = findAnchoredSyncCandidate(
+          searchStart,
+          desiredDurationMs,
+          endLimit,
+          syncSegments,
+          anchorSegments
         );
-        let index = 0;
-        while (index < segments.length && segments[index].end <= searchStart) {
-          index += 1;
-        }
-        if (index < segments.length) {
-          let alignedStart = Math.max(segments[index].start, safeWindowStart);
-          if (typeof baseNowMs === "number") {
-            alignedStart = Math.max(alignedStart, baseNowMs);
-          }
-          if (alignedStart < segments[index].end) {
-            let coverageEnd = Math.min(segments[index].end, endLimit);
-            let totalCoverage = coverageEnd - alignedStart;
-            let cursor = index;
-            while (
-              totalCoverage < desiredDurationMs &&
-              cursor + 1 < segments.length
-            ) {
-              const nextSegment = segments[cursor + 1];
-              if (
-                nextSegment.start > coverageEnd ||
-                nextSegment.start >= endLimit
-              ) {
-                break;
-              }
-              coverageEnd = Math.min(
-                Math.max(coverageEnd, nextSegment.end),
-                endLimit
-              );
-              totalCoverage = coverageEnd - alignedStart;
-              cursor += 1;
-            }
-            if (
-              coverageEnd > alignedStart &&
-              coverageEnd - alignedStart >= desiredDurationMs &&
-              !hasSyncOverlap(alignedStart, coverageEnd, syncSegments)
-            ) {
-              startCandidate = alignedStart;
-              endCandidate = Math.min(
-                alignedStart + desiredDurationMs,
-                coverageEnd
-              );
-            }
-          }
+        if (anchoredCandidate) {
+          startCandidate = anchoredCandidate.start;
+          endCandidate = anchoredCandidate.end;
         }
       }
 
@@ -9210,7 +9875,7 @@ async function scheduleHabitsForDay(params: {
       if (isSyncHabit && postAnchorSyncRetry) {
         const anchoredCandidate = findAnchoredSyncCandidate(
           startCandidate,
-          endCandidate - startCandidate,
+          desiredDurationMs,
           endLimit,
           syncSegments,
           anchorSegments
@@ -9225,17 +9890,13 @@ async function scheduleHabitsForDay(params: {
         if (endCandidate - startCandidate < habitDurationMs) {
           continue;
         }
-      } else if (
-        isSyncHabit &&
-        !hasContinuousAnchorCoverage(
-          startCandidate,
-          endCandidate,
-          anchorSegments
-        )
-      ) {
+      } else if (isSyncHabit) {
+        if (anchorSegments.length === 0) {
+          continue;
+        }
         const anchoredCandidate = findAnchoredSyncCandidate(
           startCandidate,
-          endCandidate - startCandidate,
+          desiredDurationMs,
           endLimit,
           syncSegments,
           anchorSegments
@@ -9362,10 +10023,14 @@ async function scheduleHabitsForDay(params: {
         practiceContextId = null;
       }
 
-      scheduledDurationMs = endCandidate - startCandidate;
-      if (scheduledDurationMs <= 0) {
+      const candidateDurationMs = endCandidate - startCandidate;
+      if (candidateDurationMs <= 0) {
         continue;
       }
+      if (isSyncHabit && candidateDurationMs + 1 < desiredDurationMs) {
+        continue;
+      }
+      scheduledDurationMs = candidateDurationMs;
       if (!clipped && scheduledDurationMs + 1 < desiredDurationMs) {
         clipped = true;
       }
@@ -9385,6 +10050,49 @@ async function scheduleHabitsForDay(params: {
       const energyResolved = window.energy
         ? String(window.energy).toUpperCase()
         : resolvedEnergy;
+
+      if (isSyncHabit) {
+        const draftCandidate = {
+          ...(existingInstance ?? {}),
+          id:
+            existingInstance?.id ??
+            `draft:${habit.id}:${candidateStartUTC}:${candidateEndUTC}`,
+          user_id: userId,
+          source_id: habit.id,
+          source_type: "HABIT",
+          status: "scheduled",
+          start_utc: candidateStartUTC,
+          end_utc: candidateEndUTC,
+          duration_min: durationMinutes,
+          window_id: window.id,
+          energy_resolved: energyResolved,
+        } as ScheduleInstance;
+        const validation = validateSyncInstanceInvariants({
+          candidate: draftCandidate,
+          habit,
+          desiredDurationMs,
+          instances: [...dayInstances, ...placedSoFar],
+          habitTypeById,
+          getWindowEntriesForInstance: getWindowEntriesForSeedInstance,
+          fallbackWindowKey: target.key,
+          fallbackWindow: window,
+        });
+        if (!validation.ok) {
+          logHabitPlacementAudit(habit, "sync_invariant_rejection", {
+            reason: validation.reason,
+            phase: "candidate",
+            day: formatDateKeyInTimeZone(day, zone),
+            dayStart: toAuditIso(dayStart),
+            offset,
+            postAnchorSyncRetry,
+            candidate: scheduleInstanceAuditPayload(draftCandidate),
+            blockerId: "blockerId" in validation ? validation.blockerId : null,
+            anchorId: "anchorId" in validation ? validation.anchorId : null,
+            ...habitPlacementWindowAuditPayload({ target, window }),
+          });
+          continue;
+        }
+      }
 
       if (!isRepeatablePractice) {
         existingInstance = existingByHabitId.get(habit.id) ?? null;
@@ -9466,6 +10174,38 @@ async function scheduleHabitsForDay(params: {
       let instanceId: string | undefined;
 
       if (existingInstance && !needsUpdate) {
+        if (isSyncHabit) {
+          const validation = validateSyncInstanceInvariants({
+            candidate: existingInstance,
+            habit,
+            desiredDurationMs,
+            instances: [...dayInstances, ...placedSoFar],
+            habitTypeById,
+            getWindowEntriesForInstance: getWindowEntriesForSeedInstance,
+            fallbackWindowKey: target.key,
+            fallbackWindow: window,
+          });
+          if (!validation.ok) {
+            logHabitPlacementAudit(habit, "sync_invariant_rejection", {
+              reason: validation.reason,
+              phase: "kept",
+              day: formatDateKeyInTimeZone(day, zone),
+              dayStart: toAuditIso(dayStart),
+              offset,
+              postAnchorSyncRetry,
+              candidate: scheduleInstanceAuditPayload(existingInstance),
+              blockerId: "blockerId" in validation ? validation.blockerId : null,
+              anchorId: "anchorId" in validation ? validation.anchorId : null,
+              ...habitPlacementWindowAuditPayload({ target, window }),
+            });
+            logCancelOnce(`SYNC_INVARIANT_${validation.reason}`, existingInstance);
+            if (await cancelScheduledInstance(existingInstance)) {
+              cleanupCanceledHabitInstance(existingInstance);
+              existingInstance = null;
+            }
+            continue;
+          }
+        }
         decision = "kept";
         instanceId = existingInstance.id;
         persisted = existingInstance;
@@ -9476,24 +10216,26 @@ async function scheduleHabitsForDay(params: {
           continue;
         }
         const placement = await placeItemInWindows({
-        userId,
-        item: {
-          id: habit.id,
-          sourceType: "HABIT",
-          duration_min: durationMinutes,
-          energy: energyResolved,
-          weight: 0,
-          eventName: habit.name || "Habit",
-          practiceContextId:
-            normalizedType === "PRACTICE"
-              ? (practiceContextId ?? null)
-              : undefined,
-        },
-        windows: [
+          userId,
+          item: {
+            id: habit.id,
+            sourceType: "HABIT",
+            duration_min: durationMinutes,
+            energy: energyResolved,
+            weight: 0,
+            eventName: habit.name || "Habit",
+            practiceContextId:
+              normalizedType === "PRACTICE"
+                ? (practiceContextId ?? null)
+                : undefined,
+          },
+          windows: [
             {
               id: window.id,
-              startLocal: target.startLocal,
-              endLocal: target.endLocal,
+              startLocal: isSyncHabit
+                ? new Date(startCandidate)
+                : target.startLocal,
+              endLocal: isSyncHabit ? new Date(endCandidate) : target.endLocal,
               availableStartLocal: new Date(startCandidate),
               dayTypeTimeBlockId:
                 (window as any).dayTypeTimeBlockId ??
@@ -9503,13 +10245,13 @@ async function scheduleHabitsForDay(params: {
               key: target.key,
               fromPrevDay: window.fromPrevDay ?? false,
             },
-        ],
-        date: day,
-        timeZone: zone,
-        client,
-        maxGapCache,
-        blockerCache,
-        reuseInstanceId: existingInstance?.id,
+          ],
+          date: day,
+          timeZone: zone,
+          client,
+          maxGapCache,
+          blockerCache,
+          reuseInstanceId: existingInstance?.id,
           existingInstances: placedSoFar,
           allowHabitOverlap: allowsHabitOverlap,
           habitTypeById,
@@ -9610,6 +10352,40 @@ async function scheduleHabitsForDay(params: {
         }
 
         persisted = placement.data;
+        if (isSyncHabit) {
+          const validation = validateSyncInstanceInvariants({
+            candidate: persisted,
+            habit,
+            desiredDurationMs,
+            instances: [...dayInstances, ...placedSoFar],
+            habitTypeById,
+            getWindowEntriesForInstance: getWindowEntriesForSeedInstance,
+            fallbackWindowKey: target.key,
+            fallbackWindow: window,
+          });
+          if (!validation.ok) {
+            logHabitPlacementAudit(habit, "sync_invariant_rejection", {
+              reason: validation.reason,
+              phase: "persisted",
+              day: formatDateKeyInTimeZone(day, zone),
+              dayStart: toAuditIso(dayStart),
+              offset,
+              postAnchorSyncRetry,
+              candidate: scheduleInstanceAuditPayload(persisted),
+              blockerId: "blockerId" in validation ? validation.blockerId : null,
+              anchorId: "anchorId" in validation ? validation.anchorId : null,
+              ...habitPlacementWindowAuditPayload({ target, window }),
+            });
+            logCancelOnce(`SYNC_INVARIANT_${validation.reason}`, persisted);
+            await cancelScheduledInstance(persisted);
+            if (existingInstance?.id === persisted.id) {
+              cleanupCanceledHabitInstance(existingInstance);
+              existingInstance = null;
+            }
+            existingByHabitId.delete(habit.id);
+            continue;
+          }
+        }
         if (persisted?.id) {
           createdThisRun.add(persisted.id);
         }
@@ -9664,7 +10440,10 @@ async function scheduleHabitsForDay(params: {
 
       addAnchorStart(anchorStartsByWindowKey, target.key, startDate.getTime());
       if (isSyncHabit) {
-        addSyncUsage(target.key, startDate.getTime(), endDate.getTime());
+        const startMs = startDate.getTime();
+        const endMs = endDate.getTime();
+        addSyncUsage(target.key, startMs, endMs);
+        claimSyncAnchorCoverage(target.key, startMs, endMs);
       }
       upsertInstance(dayInstances, persisted);
       let availabilitySnapshot: { front: Date; back: Date } | null = null;
@@ -10444,7 +11223,10 @@ export async function fetchCompatibleWindowsForItem(
     );
     const windowHasLocation = Boolean(windowLocationId || windowLocationValue);
     const attemptHasLocation = Boolean(desiredLocationId || desiredLocationValue);
+    const blockRequiresExactLocation =
+      !constraintItem.isProject && windowLocationId !== null;
     const applyLocationGate =
+      blockRequiresExactLocation ||
       shouldEnforceLocation ||
       options?.hasExplicitLocationContext === true ||
       attemptHasLocation;
@@ -10454,7 +11236,7 @@ export async function fetchCompatibleWindowsForItem(
       if (options?.horizonEnd) afterLocation++;
 
       if (windowLocationId !== null) {
-        if (!attemptHasLocation) {
+        if (!desiredLocationId) {
           recordStage("location match", false, "window requires location context");
           if (!shouldEnforceLocation) {
             options?.locationDebugContext?.acceptedWithWindowLocationButNullItemLocation?.();
@@ -10463,14 +11245,7 @@ export async function fetchCompatibleWindowsForItem(
           addFilterRejection(filterCounters, "LOCATION_MISMATCH");
           continue;
         }
-        const idsBothPresent = Boolean(desiredLocationId && windowLocationId);
-        const idsMatch = idsBothPresent && desiredLocationId === windowLocationId;
-        const valueFallbackMatches =
-          !idsBothPresent &&
-          Boolean(
-            desiredLocationValue && windowLocationValue === desiredLocationValue
-          );
-        if (!idsMatch && !valueFallbackMatches) {
+        if (desiredLocationId !== windowLocationId) {
           recordStage("location match", false, "window location id mismatch");
           options?.locationDebugContext?.rejectedByLocation?.();
           addFilterRejection(filterCounters, "LOCATION_MISMATCH");
