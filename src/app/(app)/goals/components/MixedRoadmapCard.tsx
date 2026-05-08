@@ -860,13 +860,13 @@ function MixedRoadmapCardImpl({
               >
                 {roadmap.title}
               </p>
-              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-white/55 sm:gap-2 sm:text-[11px]">
-                <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 font-medium sm:px-2.5 sm:py-1">
-                  {campaignCount} campaign{campaignCount === 1 ? "" : "s"}
+              <div className="grid grid-cols-2 gap-2 text-[0.58rem] text-white/55 sm:text-[0.68rem]">
+                <span className="min-w-0 rounded-full border border-white/10 bg-white/[0.03] px-1.5 py-0.5 text-center font-medium uppercase tracking-[0.08em] sm:px-2 sm:py-1 sm:tracking-[0.1em]">
+                  {campaignCount} CAMPAIGN{campaignCount === 1 ? "" : "S"}
                 </span>
-                <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 font-medium sm:px-2.5 sm:py-1">
-                  {standaloneGoalCount} standalone goal
-                  {standaloneGoalCount === 1 ? "" : "s"}
+                <span className="min-w-0 rounded-full border border-white/10 bg-white/[0.03] px-1.5 py-0.5 text-center font-medium uppercase tracking-[0.08em] sm:px-2 sm:py-1 sm:tracking-[0.1em]">
+                  {standaloneGoalCount} GOAL
+                  {standaloneGoalCount === 1 ? "" : "S"}
                 </span>
               </div>
             </div>

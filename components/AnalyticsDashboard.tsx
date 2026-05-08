@@ -2071,9 +2071,6 @@ function OverviewDiagnosticsSection({
           <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-400/85">
             PROGRESS TREND
           </div>
-          <h2 className="mt-4 max-w-[34rem] text-[1.35rem] font-medium leading-[1.42] text-zinc-100 sm:mt-3 sm:text-2xl">
-            Range-based XP and usable-time conversion diagnostics.
-          </h2>
           <div className="mt-2">
             <OverviewPanelStatus
               isRefreshing={isRefreshing}

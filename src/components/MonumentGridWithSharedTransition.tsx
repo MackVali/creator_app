@@ -142,7 +142,7 @@ export function MonumentGridWithSharedTransition({
                 size="icon"
                 aria-label="Close detail"
                 onClick={() => setActiveId(null)}
-                className="absolute right-4 top-4 z-10"
+                className="absolute left-4 top-4 z-10"
               >
                 <X className="h-4 w-4" />
               </Button>
