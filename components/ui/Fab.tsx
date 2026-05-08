@@ -12418,7 +12418,7 @@ function FabNexus({
 
   return (
     <div
-      className="flex h-full min-h-0 w-full flex-col overflow-hidden text-white"
+      className="flex h-[min(78vh,640px)] min-h-[min(420px,78vh)] w-full flex-col overflow-hidden text-white"
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
       <div className="shrink-0 px-4 pt-4">
