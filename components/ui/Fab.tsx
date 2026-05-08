@@ -299,6 +299,7 @@ const FAB_ADVANCED_INPUT_CLASS =
   "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white placeholder:text-white/35 focus:border-blue-400/60 focus-visible:ring-0";
 const FAB_ADVANCED_SELECT_TRIGGER_CLASS =
   "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white";
+const FAB_KEYBOARD_SETTLE_MS = 280;
 
 const shouldIgnoreFabPageSwipe = (target: EventTarget | null): boolean => {
   if (typeof Element === "undefined" || !(target instanceof Element)) {
@@ -1682,6 +1683,8 @@ export function Fab({
   const taskNameInputRef = useRef<HTMLInputElement | null>(null);
   const habitNameInputRef = useRef<HTMLInputElement | null>(null);
   const fabInputBlurTimeoutRef = useRef<number | null>(null);
+  const fabKeyboardSettleTimeoutRef = useRef<number | null>(null);
+  const wasFabKeyboardActiveRawRef = useRef(false);
   const [availableTags, setAvailableTags] = useState<FabTag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [tagInputValue, setTagInputValue] = useState("");
@@ -3893,19 +3896,59 @@ export function Fab({
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
   const [isFabInputFocused, setIsFabInputFocused] = useState(false);
+  const [isFabKeyboardSettling, setIsFabKeyboardSettling] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const isKeyboardVisible = useMemo(() => {
     if (!expanded) return false;
-    if (keyboardLift <= 12) return false;
     if (stableViewportHeight && viewportHeight) {
       const shrink = stableViewportHeight - viewportHeight;
-      return shrink > 80;
+      if (shrink > 80) return true;
     }
     return keyboardLift > 24;
   }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
-  const isFabKeyboardActive =
+  const isFabKeyboardActiveRaw =
     expanded && (isKeyboardVisible || (isMobileViewport && isFabInputFocused));
-  const shouldHideOverhangButtons = expanded && isFabKeyboardActive;
+  const shouldUseAttachedFabControls =
+    expanded && (isFabKeyboardActiveRaw || isFabKeyboardSettling);
+  const shouldHideOverhangButtons = expanded && shouldUseAttachedFabControls;
+
+  useEffect(() => {
+    if (fabKeyboardSettleTimeoutRef.current !== null) {
+      window.clearTimeout(fabKeyboardSettleTimeoutRef.current);
+      fabKeyboardSettleTimeoutRef.current = null;
+    }
+
+    if (!expanded) {
+      wasFabKeyboardActiveRawRef.current = false;
+      setIsFabKeyboardSettling(false);
+      return;
+    }
+
+    if (isFabKeyboardActiveRaw) {
+      wasFabKeyboardActiveRawRef.current = true;
+      setIsFabKeyboardSettling(false);
+      return;
+    }
+
+    if (!wasFabKeyboardActiveRawRef.current) {
+      setIsFabKeyboardSettling(false);
+      return;
+    }
+
+    setIsFabKeyboardSettling(true);
+    fabKeyboardSettleTimeoutRef.current = window.setTimeout(() => {
+      fabKeyboardSettleTimeoutRef.current = null;
+      wasFabKeyboardActiveRawRef.current = false;
+      setIsFabKeyboardSettling(false);
+    }, FAB_KEYBOARD_SETTLE_MS);
+
+    return () => {
+      if (fabKeyboardSettleTimeoutRef.current !== null) {
+        window.clearTimeout(fabKeyboardSettleTimeoutRef.current);
+        fabKeyboardSettleTimeoutRef.current = null;
+      }
+    };
+  }, [expanded, isFabKeyboardActiveRaw]);
 
   useEffect(() => {
     setActiveCreationMode("main");
@@ -4113,12 +4156,15 @@ export function Fab({
     };
     updateLift();
     const viewport = window.visualViewport;
-    viewport?.addEventListener("resize", updateLift);
-    viewport?.addEventListener("scroll", updateLift);
+    const viewportEvents = ["resize", "scroll", "geometrychange"];
+    viewportEvents.forEach((eventName) => {
+      viewport?.addEventListener(eventName, updateLift);
+    });
     window.addEventListener("orientationchange", updateLift);
     return () => {
-      viewport?.removeEventListener("resize", updateLift);
-      viewport?.removeEventListener("scroll", updateLift);
+      viewportEvents.forEach((eventName) => {
+        viewport?.removeEventListener(eventName, updateLift);
+      });
       window.removeEventListener("orientationchange", updateLift);
     };
   }, [expanded, stableSafeBottom]);
@@ -4222,7 +4268,7 @@ export function Fab({
     const win = window as typeof window & { [key: string]: Set<string> };
     win[key] ??= new Set<string>();
     const owners = win[key];
-    if (isFabKeyboardActive) {
+    if (shouldUseAttachedFabControls) {
       owners.add(fabKeyboardOwnerId);
     } else {
       owners.delete(fabKeyboardOwnerId);
@@ -4232,7 +4278,7 @@ export function Fab({
       owners.delete(fabKeyboardOwnerId);
       document.body.classList.toggle("fab-keyboard-active", owners.size > 0);
     };
-  }, [fabKeyboardOwnerId, isFabKeyboardActive]);
+  }, [fabKeyboardOwnerId, shouldUseAttachedFabControls]);
 
   useEffect(() => {
     if (!showGoalFilters) return;
@@ -6194,12 +6240,12 @@ export function Fab({
               style={{
                 paddingBottom: shouldUseCenteredEditModal
                   ? undefined
-                  : isFabKeyboardActive
+                  : shouldUseAttachedFabControls
                     ? "0.5rem"
                     : `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
                 scrollPaddingBottom: shouldUseCenteredEditModal
                   ? undefined
-                  : isFabKeyboardActive
+                  : shouldUseAttachedFabControls
                     ? "1rem"
                     : `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
               }}
@@ -10137,7 +10183,7 @@ export function Fab({
         : "58vh"
     : undefined;
   const keyboardMaxHeightExpanded =
-    expanded && isFabKeyboardActive
+    expanded && shouldUseAttachedFabControls
       ? effectiveViewportHeight
         ? Math.round(
             Math.max(1, effectiveViewportHeight - 16 - stableSafeBottom),
@@ -10152,7 +10198,7 @@ export function Fab({
     : undefined;
   const minHeightExpanded =
     expanded &&
-    isFabKeyboardActive &&
+    shouldUseAttachedFabControls &&
     typeof baseMinHeightExpanded === "number" &&
     typeof maxHeightExpanded === "number"
       ? Math.min(baseMinHeightExpanded, maxHeightExpanded)
@@ -10350,7 +10396,9 @@ export function Fab({
                 !shouldUseCenteredEditModal && menuClassName,
               )}
               style={
-                expanded && isFabKeyboardActive && !shouldUseCenteredEditModal
+                expanded &&
+                  shouldUseAttachedFabControls &&
+                  !shouldUseCenteredEditModal
                   ? {
                       bottom: Math.round(keyboardLift + stableSafeBottom + 8),
                       marginBottom: 0,
@@ -10375,7 +10423,8 @@ export function Fab({
                     ? "bg-[var(--surface-elevated)]"
                     : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
                   expanded &&
-                    (shouldUseCenteredEditModal || isFabKeyboardActive) &&
+                    (shouldUseCenteredEditModal ||
+                      shouldUseAttachedFabControls) &&
                     "flex flex-col overflow-hidden",
                   expanded
                     ? isGoalCreationExpanded
@@ -10422,7 +10471,9 @@ export function Fab({
                   maxWidth: expanded ? undefined : (menuWidth ?? undefined),
                   touchAction: expanded ? "manipulation" : undefined,
                   overflowY:
-                    expanded && !shouldUseCenteredEditModal && !isFabKeyboardActive
+                    expanded &&
+                    !shouldUseCenteredEditModal &&
+                    !shouldUseAttachedFabControls
                       ? "auto"
                       : "hidden",
                   overflowX: "hidden",
@@ -10458,7 +10509,8 @@ export function Fab({
                 <>
                   <div
                     className={cn(
-                      (shouldUseCenteredEditModal || isFabKeyboardActive) &&
+                      (shouldUseCenteredEditModal ||
+                        shouldUseAttachedFabControls) &&
                         expanded
                         ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
                         : null,
@@ -10564,7 +10616,7 @@ export function Fab({
                     renderAttachedCreationControls()
                   ) : null}
                   {expanded &&
-                  isFabKeyboardActive &&
+                  shouldUseAttachedFabControls &&
                   !shouldUseCenteredEditModal ? (
                     renderAttachedCreationControls()
                   ) : null}
@@ -10725,7 +10777,7 @@ export function Fab({
           className={cn(
             "relative flex h-14 w-14 items-center justify-center overflow-visible rounded-full text-white shadow-lg transition hover:scale-110",
             isOpen ? "rotate-45" : "",
-            isFabKeyboardActive ? "pointer-events-none opacity-0" : "",
+            shouldUseAttachedFabControls ? "pointer-events-none opacity-0" : "",
           )}
           onTouchStart={handleFabButtonTouchStart}
           onTouchEnd={handleFabButtonTouchEnd}
