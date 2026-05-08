@@ -150,6 +150,11 @@ function DraggableGoalCard({
         whileTap: { scale: 0.97, y: 1 },
         transition: cardSpringTransition,
       };
+  const handleGoalEdit = useCallback(() => {
+    if (!onGoalEdit) return;
+    onGoalEdit(goal);
+    onOpenChange?.(false);
+  }, [goal, onGoalEdit, onOpenChange]);
 
   return (
     <div
@@ -189,7 +194,7 @@ function DraggableGoalCard({
             variant="default"
             open={true}
             onOpenChange={onOpenChange}
-            onEdit={onGoalEdit ? () => onGoalEdit(goal) : undefined}
+            onEdit={onGoalEdit ? handleGoalEdit : undefined}
             onToggleActive={
               onGoalToggleActive ? () => onGoalToggleActive(goal) : undefined
             }
@@ -678,6 +683,12 @@ function CompactGoalsOverlay({
     };
   }, []);
 
+  const handleSelectedGoalEdit = useCallback(() => {
+    if (!selectedGoal || !onGoalEdit) return;
+    onGoalEdit(selectedGoal);
+    setOpenGoalId(null);
+  }, [onGoalEdit, selectedGoal]);
+
   if (typeof document === "undefined" || !mounted) return null;
 
   const regionId = `roadmap-${roadmap.id}`;
@@ -735,7 +746,7 @@ function CompactGoalsOverlay({
           onOpenChange={(isOpen) => {
             if (!isOpen) setOpenGoalId(null);
           }}
-          onEdit={onGoalEdit ? () => onGoalEdit(selectedGoal) : undefined}
+          onEdit={onGoalEdit ? handleSelectedGoalEdit : undefined}
           onToggleActive={
             onGoalToggleActive
               ? () => onGoalToggleActive(selectedGoal)

@@ -875,6 +875,8 @@ export function MonumentGoalsList({
         title: goal.title,
         originRect: getGoalEditOriginRect(goal.id),
       });
+      setOpenGoalId(null);
+      setRoadmapOpenGoal(null);
     },
     [getGoalEditOriginRect]
   );
@@ -887,6 +889,8 @@ export function MonumentGoalsList({
         title: goal.title,
         originRect: getGoalEditOriginRect(goal.id),
       });
+      setOpenGoalId(null);
+      setRoadmapOpenGoal(null);
     },
     [getGoalEditOriginRect]
   );

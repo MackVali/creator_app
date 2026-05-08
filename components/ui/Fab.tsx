@@ -4031,7 +4031,10 @@ export function Fab({
     expanded && (isKeyboardVisible || (isMobileViewport && isFabInputFocused));
   const shouldUseAttachedFabControls =
     expanded && (isFabKeyboardActiveRaw || isFabKeyboardSettling);
-  const shouldHideOverhangButtons = expanded && shouldUseAttachedFabControls;
+  const shouldAttachCreationControls =
+    expanded &&
+    (shouldUseAttachedFabControls || (isMobileViewport && selected !== null));
+  const shouldHideOverhangButtons = expanded && shouldAttachCreationControls;
 
   useEffect(() => {
     if (fabKeyboardSettleTimeoutRef.current !== null) {
@@ -6395,12 +6398,12 @@ export function Fab({
               style={{
                 paddingBottom: shouldUseCenteredEditModal
                   ? undefined
-                  : shouldUseAttachedFabControls
+                  : shouldAttachCreationControls
                     ? "0.5rem"
                     : `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
                 scrollPaddingBottom: shouldUseCenteredEditModal
                   ? undefined
-                  : shouldUseAttachedFabControls
+                  : shouldAttachCreationControls
                     ? "1rem"
                     : `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
               }}
@@ -10538,10 +10541,12 @@ export function Fab({
         }
       : undefined;
   const shouldRenderFabPanel = isOpen || expanded;
+  const shouldRenderAttachedCreationControls =
+    expanded && (shouldUseCenteredEditModal || shouldAttachCreationControls);
   const renderAttachedCreationControls = () => (
     <div
       data-fab-keyboard-controls
-      className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm sm:px-5"
+      className="relative z-10 mt-auto flex flex-[0_0_auto] flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm sm:px-5"
     >
       <div className="flex items-center gap-2">
         {selected && activeCreationModes.length > 1
@@ -10668,7 +10673,7 @@ export function Fab({
                     : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
                   expanded &&
                     (shouldUseCenteredEditModal ||
-                      shouldUseAttachedFabControls) &&
+                      shouldAttachCreationControls) &&
                     "flex flex-col overflow-hidden",
                   expanded
                     ? isGoalCreationExpanded
@@ -10717,7 +10722,7 @@ export function Fab({
                   overflowY:
                     expanded &&
                     !shouldUseCenteredEditModal &&
-                    !shouldUseAttachedFabControls
+                    !shouldAttachCreationControls
                       ? "auto"
                       : "hidden",
                   overflowX: "hidden",
@@ -10752,11 +10757,12 @@ export function Fab({
               >
                 <>
                   <div
+                    data-fab-scroll-body={
+                      shouldRenderAttachedCreationControls ? "" : undefined
+                    }
                     className={cn(
-                      (shouldUseCenteredEditModal ||
-                        shouldUseAttachedFabControls) &&
-                        expanded
-                        ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                      shouldRenderAttachedCreationControls
+                        ? "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
                         : null,
                     )}
                   >
@@ -10856,12 +10862,7 @@ export function Fab({
                       </div>
                     </motion.div>
                   </div>
-                  {expanded && shouldUseCenteredEditModal ? (
-                    renderAttachedCreationControls()
-                  ) : null}
-                  {expanded &&
-                  shouldUseAttachedFabControls &&
-                  !shouldUseCenteredEditModal ? (
+                  {shouldRenderAttachedCreationControls ? (
                     renderAttachedCreationControls()
                   ) : null}
                 </>
@@ -11021,7 +11022,7 @@ export function Fab({
           className={cn(
             "relative flex h-14 w-14 items-center justify-center overflow-visible rounded-full text-white shadow-lg transition hover:scale-110",
             isOpen ? "rotate-45" : "",
-            shouldUseAttachedFabControls ? "pointer-events-none opacity-0" : "",
+            shouldAttachCreationControls ? "pointer-events-none opacity-0" : "",
           )}
           onTouchStart={handleFabButtonTouchStart}
           onTouchEnd={handleFabButtonTouchEnd}
