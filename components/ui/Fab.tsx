@@ -13,7 +13,7 @@ import {
   type RefObject,
   type UIEvent,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   motion,
@@ -330,11 +330,23 @@ const FAB_ADVANCED_INPUT_CLASS =
 const FAB_ADVANCED_SELECT_TRIGGER_CLASS =
   "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white";
 const FAB_KEYBOARD_SETTLE_MS = 280;
+const FAB_KEYBOARD_MODAL_GAP = 10;
+const FAB_MOBILE_FOCUS_KEYBOARD_TIMEOUT_MS = 700;
 const FAB_SELECTION_CONFIRM_MS = 80;
 const FAB_SELECTION_EXIT_MS = 140;
 const FAB_CREATION_ENTER_MS = 220;
 const FAB_CREATION_FOCUS_DELAY_MS =
   FAB_SELECTION_EXIT_MS + FAB_CREATION_ENTER_MS + 40;
+
+const getVisualViewportBottomInset = () => {
+  if (typeof window === "undefined") return 0;
+  const viewport = window.visualViewport;
+  if (!viewport) return 0;
+  const viewportTop =
+    viewport.offsetTop ??
+    Math.max(0, (viewport.pageTop ?? window.scrollY) - window.scrollY);
+  return Math.max(0, window.innerHeight - (viewportTop + viewport.height));
+};
 
 const shouldIgnoreFabPageSwipe = (target: EventTarget | null): boolean => {
   if (typeof Element === "undefined" || !(target instanceof Element)) {
@@ -1747,6 +1759,11 @@ export function Fab({
       window.clearTimeout(creationSelectionTimeoutRef.current);
       creationSelectionTimeoutRef.current = null;
     }
+    if (mobileCreationFocusTimeoutRef.current !== null) {
+      window.clearTimeout(mobileCreationFocusTimeoutRef.current);
+      mobileCreationFocusTimeoutRef.current = null;
+    }
+    mobileCreationFocusTypeRef.current = null;
     setPressedCreationType(null);
     setCreationSpawnOrigin(null);
     setCreationRevealGeometry(null);
@@ -1769,6 +1786,8 @@ export function Fab({
   const taskNameInputRef = useRef<HTMLInputElement | null>(null);
   const habitNameInputRef = useRef<HTMLInputElement | null>(null);
   const creationSelectionTimeoutRef = useRef<number | null>(null);
+  const mobileCreationFocusTimeoutRef = useRef<number | null>(null);
+  const mobileCreationFocusTypeRef = useRef<CreationType | null>(null);
   const fabInputBlurTimeoutRef = useRef<number | null>(null);
   const fabKeyboardSettleTimeoutRef = useRef<number | null>(null);
   const wasFabKeyboardActiveRawRef = useRef(false);
@@ -4062,9 +4081,12 @@ export function Fab({
   const [stableViewportHeight, setStableViewportHeight] = useState<
     number | null
   >(null);
+  const stableViewportHeightRef = useRef<number | null>(null);
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
+  const [visualViewportBottomInset, setVisualViewportBottomInset] =
+    useState(0);
   const [mobileFabPanelHeight, setMobileFabPanelHeight] = useState<
     number | null
   >(null);
@@ -4079,8 +4101,15 @@ export function Fab({
       const shrink = stableViewportHeight - viewportHeight;
       if (shrink > 80) return true;
     }
+    if (visualViewportBottomInset > 80) return true;
     return keyboardLift > 24;
-  }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
+  }, [
+    expanded,
+    keyboardLift,
+    stableViewportHeight,
+    viewportHeight,
+    visualViewportBottomInset,
+  ]);
   const isFabKeyboardActiveRaw =
     expanded && (isKeyboardVisible || (isMobileViewport && isFabInputFocused));
   const shouldUseAttachedFabControls =
@@ -4096,6 +4125,10 @@ export function Fab({
   const shouldUseScrollableFabBody =
     shouldUseKeyboardConstrainedFabSizing || shouldUseStableMobileFabPanel;
   const shouldHideOverhangButtons = expanded && shouldAttachCreationControls;
+
+  useEffect(() => {
+    stableViewportHeightRef.current = stableViewportHeight;
+  }, [stableViewportHeight]);
 
   useEffect(() => {
     if (fabKeyboardSettleTimeoutRef.current !== null) {
@@ -4145,8 +4178,73 @@ export function Fab({
         window.clearTimeout(creationSelectionTimeoutRef.current);
         creationSelectionTimeoutRef.current = null;
       }
+      if (mobileCreationFocusTimeoutRef.current !== null) {
+        window.clearTimeout(mobileCreationFocusTimeoutRef.current);
+        mobileCreationFocusTimeoutRef.current = null;
+      }
     };
   }, []);
+
+  const getCreationNameInput = useCallback((type: CreationType | null) => {
+    switch (type) {
+      case "GOAL":
+        return goalNameInputRef.current;
+      case "PROJECT":
+        return projectNameInputRef.current;
+      case "TASK":
+        return taskNameInputRef.current;
+      case "HABIT":
+        return habitNameInputRef.current;
+      default:
+        return null;
+    }
+  }, []);
+
+  const focusCreationNameInput = useCallback(
+    (
+      type: CreationType | null,
+      opts?: { blurIfMobileKeyboardBlocked?: boolean },
+    ) => {
+      const input = getCreationNameInput(type);
+      if (!input || input.disabled) return false;
+
+      input.focus({ preventScroll: true });
+      const didFocus = document.activeElement === input;
+
+      if (
+        didFocus &&
+        opts?.blurIfMobileKeyboardBlocked &&
+        typeof window !== "undefined" &&
+        window.visualViewport
+      ) {
+        if (mobileCreationFocusTimeoutRef.current !== null) {
+          window.clearTimeout(mobileCreationFocusTimeoutRef.current);
+        }
+        mobileCreationFocusTypeRef.current = type;
+        mobileCreationFocusTimeoutRef.current = window.setTimeout(() => {
+          mobileCreationFocusTimeoutRef.current = null;
+          const stableHeight = stableViewportHeightRef.current;
+          const viewportHeightLoss =
+            stableHeight && window.visualViewport
+              ? stableHeight - window.visualViewport.height
+              : 0;
+          if (
+            mobileCreationFocusTypeRef.current !== type ||
+            document.activeElement !== input ||
+            getVisualViewportBottomInset() > 80 ||
+            viewportHeightLoss > 80
+          ) {
+            return;
+          }
+          input.blur();
+          mobileCreationFocusTypeRef.current = null;
+        }, FAB_MOBILE_FOCUS_KEYBOARD_TIMEOUT_MS);
+      }
+
+      return didFocus;
+    },
+    [getCreationNameInput],
+  );
 
   useEffect(() => {
     if (
@@ -4159,35 +4257,14 @@ export function Fab({
       return;
     }
 
-    const getNameInput = () => {
-      switch (pendingCreationNameFocus) {
-        case "GOAL":
-          return goalNameInputRef.current;
-        case "PROJECT":
-          return projectNameInputRef.current;
-        case "TASK":
-          return taskNameInputRef.current;
-        case "HABIT":
-          return habitNameInputRef.current;
-        default:
-          return null;
-      }
-    };
-
     let cancelled = false;
     let fallbackTimeout: number | null = null;
-    const focusNameInput = () => {
-      const input = getNameInput();
-      if (!input || input.disabled) return false;
-      input.focus({ preventScroll: true });
-      return document.activeElement === input;
-    };
 
     const animationFrame = window.requestAnimationFrame(() => {
       if (cancelled) return;
       fallbackTimeout = window.setTimeout(() => {
         if (cancelled) return;
-        focusNameInput();
+        focusCreationNameInput(pendingCreationNameFocus);
         setPendingCreationNameFocus(null);
       }, prefersReducedMotion ? 80 : FAB_CREATION_FOCUS_DELAY_MS);
     });
@@ -4203,6 +4280,7 @@ export function Fab({
     activeCreationMode,
     editTarget,
     expanded,
+    focusCreationNameInput,
     pendingCreationNameFocus,
     prefersReducedMotion,
     selected,
@@ -4326,6 +4404,7 @@ export function Fab({
   useEffect(() => {
     if (!expanded) {
       setKeyboardLift(0);
+      setVisualViewportBottomInset(0);
       setIsFabInputFocused(false);
       return;
     }
@@ -4340,9 +4419,9 @@ export function Fab({
       if (viewportH) {
         setViewportHeight(viewportH);
       }
-      const heightLoss = Math.max(0, window.innerHeight - viewport.height);
-      const offsetTop = viewport.offsetTop ?? 0;
-      const lift = Math.max(0, heightLoss - offsetTop - stableSafeBottom);
+      const bottomInset = getVisualViewportBottomInset();
+      const lift = Math.max(0, bottomInset - stableSafeBottom);
+      setVisualViewportBottomInset(bottomInset);
       setKeyboardLift(lift);
     };
     updateLift();
@@ -8299,6 +8378,14 @@ export function Fab({
     eventType: CreationType,
     triggerElement?: HTMLElement | null,
   ) => {
+    const shouldAttemptNameFocus = !editTarget;
+    const shouldFocusImmediatelyForMobile =
+      shouldAttemptNameFocus &&
+      (isMobileViewport ||
+        (typeof window !== "undefined" &&
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(max-width: 767px), (pointer: coarse)")
+            .matches));
     // Ensure any in-progress drag state cannot leave the neighbor overlay visible.
     isDraggingRef.current = false;
     dragTargetPageRef.current = null;
@@ -8311,11 +8398,25 @@ export function Fab({
     pageX.set(0);
 
     if (expanded) {
-      setPressedCreationType(null);
-      setCreationSpawnOrigin(null);
-      setCreationRevealGeometry(null);
-      setPendingCreationNameFocus(editTarget ? null : eventType);
-      setSelected(eventType);
+      const updateSelection = () => {
+        setPressedCreationType(null);
+        setCreationSpawnOrigin(null);
+        setCreationRevealGeometry(null);
+        setPendingCreationNameFocus(
+          shouldAttemptNameFocus && !shouldFocusImmediatelyForMobile
+            ? eventType
+            : null,
+        );
+        setSelected(eventType);
+      };
+      if (shouldFocusImmediatelyForMobile) {
+        flushSync(updateSelection);
+        focusCreationNameInput(eventType, {
+          blurIfMobileKeyboardBlocked: true,
+        });
+      } else {
+        updateSelection();
+      }
       return;
     }
 
@@ -8328,21 +8429,35 @@ export function Fab({
       creationSelectionTimeoutRef.current = null;
       setPressedCreationType(null);
       setCreationRevealGeometry(null);
-      setPendingCreationNameFocus(editTarget ? null : eventType);
+      setPendingCreationNameFocus(
+        shouldAttemptNameFocus && !shouldFocusImmediatelyForMobile
+          ? eventType
+          : null,
+      );
       setExpanded(true);
       setSelected(eventType);
     };
 
     const triggerRect = getFabElementRect(triggerElement ?? null);
-    setCreationSpawnOrigin(
+    const nextCreationSpawnOrigin =
       triggerRect && !editTarget
         ? {
             type: eventType,
             rect: triggerRect,
             nonce: Date.now(),
           }
-        : null,
-    );
+        : null;
+    if (shouldFocusImmediatelyForMobile) {
+      flushSync(() => {
+        setCreationSpawnOrigin(nextCreationSpawnOrigin);
+        commitSelection();
+      });
+      focusCreationNameInput(eventType, {
+        blurIfMobileKeyboardBlocked: true,
+      });
+      return;
+    }
+    setCreationSpawnOrigin(nextCreationSpawnOrigin);
     setPressedCreationType(eventType);
     if (prefersReducedMotion) {
       commitSelection();
@@ -10475,6 +10590,11 @@ export function Fab({
       window.clearTimeout(creationSelectionTimeoutRef.current);
       creationSelectionTimeoutRef.current = null;
     }
+    if (mobileCreationFocusTimeoutRef.current !== null) {
+      window.clearTimeout(mobileCreationFocusTimeoutRef.current);
+      mobileCreationFocusTimeoutRef.current = null;
+    }
+    mobileCreationFocusTypeRef.current = null;
     setPressedCreationType(null);
     setCreationSpawnOrigin(null);
     setCreationRevealGeometry(null);
@@ -10912,6 +11032,10 @@ export function Fab({
   const shouldRenderFabPanel = isOpen || expanded;
   const shouldRenderAttachedCreationControls =
     expanded && (shouldUseCenteredEditModal || shouldAttachCreationControls);
+  const attachedCreationPanelBottom =
+    expanded && isKeyboardVisible
+      ? Math.round(visualViewportBottomInset + FAB_KEYBOARD_MODAL_GAP)
+      : Math.round(stableSafeBottom + 8);
   const renderAttachedCreationControls = () => (
     <div
       ref={attachedCreationControlsRef}
@@ -11019,7 +11143,7 @@ export function Fab({
                   shouldAttachCreationControls &&
                   !shouldUseCenteredEditModal
                   ? {
-                      bottom: Math.round(keyboardLift + stableSafeBottom + 8),
+                      bottom: attachedCreationPanelBottom,
                       marginBottom: 0,
                     }
                   : undefined
