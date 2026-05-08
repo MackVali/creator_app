@@ -80,7 +80,9 @@ import { enforceHabitLimit } from "@/lib/habits/enforceHabitLimit";
 import { useProjectedGlobalRank } from "@/lib/hooks/useProjectedGlobalRank";
 import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
 import {
+  addCampaignToRoadmap,
   addGoalToCampaign,
+  createCampaign,
   type CampaignSchedulingState,
 } from "@/lib/queries/roadmaps";
 import { isValidUuid } from "@/lib/location-metadata";
@@ -203,6 +205,12 @@ type FabGoalCampaignRow = {
 type FabTagRelationRow = {
   tag_id: string | null;
 };
+type CreatorEntitySavedEventDetail = {
+  entityType: CreationType;
+  entityId: string;
+  action: "created" | "updated";
+  monumentId?: string | null;
+};
 export type FabEditTarget = {
   entityType: CreationType;
   entityId: string;
@@ -307,10 +315,138 @@ type GoalCampaignOption = {
   id: string;
   name: string;
   emoji: string | null;
+  roadmap_id: string | null;
   primary_monument_id: string | null;
   scheduling_state: CampaignSchedulingState;
   position: number | null;
 };
+
+type GoalCampaignCreateRowProps = {
+  active: boolean;
+  value: string;
+  emoji: string;
+  error: string | null;
+  loading: boolean;
+  onStart: () => void;
+  onChange: (value: string) => void;
+  onEmojiChange: (value: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+};
+
+function GoalCampaignCreateRow({
+  active,
+  value,
+  emoji,
+  error,
+  loading,
+  onStart,
+  onChange,
+  onEmojiChange,
+  onSubmit,
+  onCancel,
+}: GoalCampaignCreateRowProps) {
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const trimmedValue = value.trim();
+  const handleFieldKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+    }
+  };
+
+  React.useEffect(() => {
+    if (!active) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [active]);
+
+  if (!active) {
+    return (
+      <button
+        type="button"
+        className="flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-white transition hover:bg-white/10"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onStart();
+        }}
+      >
+        <Plus className="h-4 w-4" aria-hidden="true" />
+        <span>Create campaign</span>
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="space-y-1.5 rounded-lg border border-white/10 bg-white/[0.04] p-2"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onSubmit();
+        }}
+      >
+        <Input
+          value={emoji}
+          onChange={(event) => onEmojiChange(event.target.value)}
+          onKeyDown={handleFieldKeyDown}
+          maxLength={8}
+          aria-label="Campaign emoji"
+          disabled={loading}
+          className="h-9 w-11 shrink-0 rounded-lg border-white/10 bg-black/30 px-1 text-center text-lg focus:border-blue-400/60 focus-visible:ring-0"
+        />
+        <Input
+          ref={inputRef}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={handleFieldKeyDown}
+          placeholder="Campaign name"
+          disabled={loading}
+          className="h-9 min-w-0 flex-1 rounded-lg border-white/10 bg-black/30 px-2.5 text-xs focus:border-blue-400/60 focus-visible:ring-0"
+        />
+        <Button
+          type="submit"
+          size="icon"
+          disabled={loading || trimmedValue.length === 0}
+          className="h-9 w-9 rounded-lg border border-white/10 bg-white/10 text-white hover:bg-white/15 disabled:opacity-50"
+          aria-label="Create campaign"
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Check className="h-4 w-4" aria-hidden="true" />
+          )}
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          disabled={loading}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onCancel();
+          }}
+          className="h-9 w-9 rounded-lg border border-white/10 bg-transparent text-white/75 hover:bg-white/10 hover:text-white disabled:opacity-50"
+          aria-label="Cancel campaign creation"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </form>
+      {error ? <p className="px-1 text-xs text-red-300">{error}</p> : null}
+    </div>
+  );
+}
 
 const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
 
@@ -454,6 +590,7 @@ const normalizeFabPriority = (value?: string | null) => {
 const normalizeFabEnergy = (value?: string | null) => normalizeFlameLevel(value);
 
 const collapseWhitespace = (value: string) => value.trim().replace(/\s+/g, " ");
+const FAB_DEFAULT_CAMPAIGN_EMOJI = "🎯";
 
 const normalizeTagName = (value: string) =>
   collapseWhitespace(value).toLowerCase();
@@ -530,6 +667,20 @@ const getFabElementRect = (
     width: rect.width,
     height: rect.height,
   };
+};
+
+const dispatchCreatorEntitySaved = (
+  detail: CreatorEntitySavedEventDetail,
+) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("creator:entity-saved", {
+      detail,
+    }),
+  );
 };
 
 const DRAFT_PROPOSAL_TYPES: AiIntent["type"][] = [
@@ -2890,6 +3041,16 @@ export function Fab({
   const [goalCampaignId, setGoalCampaignId] = useState<string | null>(null);
   const [goalCampaigns, setGoalCampaigns] = useState<GoalCampaignOption[]>([]);
   const [goalCampaignsLoading, setGoalCampaignsLoading] = useState(false);
+  const [isCreatingGoalCampaignInline, setIsCreatingGoalCampaignInline] =
+    useState(false);
+  const [goalInlineCampaignName, setGoalInlineCampaignName] = useState("");
+  const [goalInlineCampaignEmoji, setGoalInlineCampaignEmoji] = useState(
+    FAB_DEFAULT_CAMPAIGN_EMOJI,
+  );
+  const [goalCampaignCreateError, setGoalCampaignCreateError] = useState<
+    string | null
+  >(null);
+  const [goalCampaignCreating, setGoalCampaignCreating] = useState(false);
   const [monuments, setMonuments] = useState<Monument[]>([]);
   const [monumentsLoading, setMonumentsLoading] = useState(false);
   const [goalDraftProjects, setGoalDraftProjects] = useState<
@@ -2981,6 +3142,11 @@ export function Fab({
     setGoalWhy("");
     setGoalDue(null);
     setGoalCampaignId(null);
+    setIsCreatingGoalCampaignInline(false);
+    setGoalInlineCampaignName("");
+    setGoalInlineCampaignEmoji(FAB_DEFAULT_CAMPAIGN_EMOJI);
+    setGoalCampaignCreateError(null);
+    setGoalCampaignCreating(false);
   }, []);
   const resetHabitFormDraft = useCallback(() => {
     setHabitName("");
@@ -4779,6 +4945,11 @@ export function Fab({
     setGoalWhy("");
     setGoalDue(null);
     setGoalCampaignId(null);
+    setIsCreatingGoalCampaignInline(false);
+    setGoalInlineCampaignName("");
+    setGoalInlineCampaignEmoji(FAB_DEFAULT_CAMPAIGN_EMOJI);
+    setGoalCampaignCreateError(null);
+    setGoalCampaignCreating(false);
 
     setTaskName("");
     setTaskStage("PRODUCE");
@@ -6740,15 +6911,44 @@ export function Fab({
                       </Label>
                       <Select
                         value={goalCampaignId ?? ""}
-                        onValueChange={(value) =>
-                          setGoalCampaignId(value.trim().length > 0 ? value : null)
-                        }
+                        onValueChange={(value) => {
+                          resetGoalCampaignInlineCreation();
+                          setGoalCampaignId(
+                            value.trim().length > 0 ? value : null,
+                          );
+                        }}
                         triggerClassName="h-12 rounded-md bg-black text-left text-sm md:h-14"
                         contentWrapperClassName="min-w-[260px] sm:min-w-[320px]"
                         placeholder="No campaign"
                       >
                         <SelectContent>
                           <SelectItem value="">No campaign</SelectItem>
+                          <GoalCampaignCreateRow
+                            active={isCreatingGoalCampaignInline}
+                            value={goalInlineCampaignName}
+                            emoji={goalInlineCampaignEmoji}
+                            error={goalCampaignCreateError}
+                            loading={goalCampaignCreating}
+                            onStart={() => {
+                              setIsCreatingGoalCampaignInline(true);
+                              setGoalInlineCampaignEmoji((current) =>
+                                current.trim() || FAB_DEFAULT_CAMPAIGN_EMOJI,
+                              );
+                              setGoalCampaignCreateError(null);
+                            }}
+                            onChange={(value) => {
+                              setGoalInlineCampaignName(value);
+                              setGoalCampaignCreateError(null);
+                            }}
+                            onEmojiChange={(value) => {
+                              setGoalInlineCampaignEmoji(value);
+                              setGoalCampaignCreateError(null);
+                            }}
+                            onSubmit={() => {
+                              void handleCreateGoalCampaignInline();
+                            }}
+                            onCancel={resetGoalCampaignInlineCreation}
+                          />
                           {goalCampaignsLoading ? (
                             <SelectItem value="__loading" disabled>
                               Loading campaigns…
@@ -6758,7 +6958,7 @@ export function Fab({
                               <SelectItem key={campaign.id} value={campaign.id}>
                                 <div className="flex min-w-0 items-center gap-2">
                                   <span className="text-base">
-                                    {campaign.emoji ?? "🎯"}
+                                    {campaign.emoji ?? FAB_DEFAULT_CAMPAIGN_EMOJI}
                                   </span>
                                   <span className="truncate">{campaign.name}</span>
                                 </div>
@@ -9186,7 +9386,7 @@ export function Fab({
         const { data, error } = await supabase
           .from("campaigns")
           .select(
-            "id, name, emoji, primary_monument_id, scheduling_state, position",
+            "id, name, emoji, roadmap_id, primary_monument_id, scheduling_state, position",
           )
           .eq("user_id", user.id)
           .order("position", { ascending: true, nullsFirst: false })
@@ -9239,6 +9439,192 @@ export function Fab({
         : null,
     );
   }, [goalCampaigns]);
+
+  useEffect(() => {
+    setGoalCampaignCreateError(null);
+  }, [goalMonumentId]);
+
+  const resetGoalCampaignInlineCreation = useCallback(() => {
+    setIsCreatingGoalCampaignInline(false);
+    setGoalInlineCampaignName("");
+    setGoalInlineCampaignEmoji(FAB_DEFAULT_CAMPAIGN_EMOJI);
+    setGoalCampaignCreateError(null);
+    setGoalCampaignCreating(false);
+  }, []);
+
+  const handleCreateGoalCampaignInline = useCallback(async () => {
+    if (goalCampaignCreating) {
+      return;
+    }
+
+    const campaignName = collapseWhitespace(goalInlineCampaignName);
+    const campaignEmoji =
+      goalInlineCampaignEmoji.trim() || FAB_DEFAULT_CAMPAIGN_EMOJI;
+    if (!campaignName) {
+      setGoalCampaignCreateError("Name the campaign first.");
+      return;
+    }
+    if (!goalMonumentId || !isValidUuid(goalMonumentId)) {
+      setGoalCampaignCreateError("Link a monument before creating a campaign.");
+      return;
+    }
+
+    try {
+      setGoalCampaignCreating(true);
+      setGoalCampaignCreateError(null);
+
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        throw new Error("Supabase client not available");
+      }
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) {
+        throw new Error("Sign in before creating a campaign.");
+      }
+
+      const { data: existingRoadmap, error: roadmapError } = await supabase
+        .from("roadmaps")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("monument_id", goalMonumentId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (roadmapError) throw roadmapError;
+
+      let roadmapId =
+        typeof existingRoadmap?.id === "string" ? existingRoadmap.id : null;
+      if (!roadmapId) {
+        const monument = monuments.find((item) => item.id === goalMonumentId);
+        const { data: createdRoadmap, error: createRoadmapError } =
+          await supabase
+            .from("roadmaps")
+            .insert({
+              user_id: user.id,
+              monument_id: goalMonumentId,
+              title: monument?.title
+                ? `${monument.title} Roadmap`
+                : "True Roadmap",
+              emoji: monument?.emoji ?? null,
+            })
+            .select("id")
+            .single();
+        if (createRoadmapError) throw createRoadmapError;
+        roadmapId =
+          typeof createdRoadmap?.id === "string" ? createdRoadmap.id : null;
+      }
+
+      if (!roadmapId) {
+        throw new Error("Unable to resolve the monument roadmap.");
+      }
+
+      const { data: contextCampaignRows, error: contextCampaignsError } =
+        await supabase
+          .from("campaigns")
+          .select(
+            "id, name, emoji, roadmap_id, primary_monument_id, scheduling_state, position",
+          )
+          .eq("user_id", user.id)
+          .or(
+            `roadmap_id.eq.${roadmapId},primary_monument_id.eq.${goalMonumentId}`,
+          );
+      if (contextCampaignsError) throw contextCampaignsError;
+
+      const contextCampaigns =
+        (contextCampaignRows ?? []) as GoalCampaignOption[];
+      const normalizedCampaignName = campaignName.toLocaleLowerCase();
+      const duplicateCampaign = [...contextCampaigns, ...goalCampaigns].find(
+        (campaign) => {
+          const belongsToCurrentContext =
+            campaign.roadmap_id === roadmapId ||
+            campaign.primary_monument_id === goalMonumentId;
+          return (
+            belongsToCurrentContext &&
+            collapseWhitespace(campaign.name).toLocaleLowerCase() ===
+              normalizedCampaignName
+          );
+        },
+      );
+      if (duplicateCampaign) {
+        setGoalCampaigns((current) =>
+          current.some((item) => item.id === duplicateCampaign.id)
+            ? current
+            : [...current, duplicateCampaign],
+        );
+        setGoalCampaignId(duplicateCampaign.id);
+        resetGoalCampaignInlineCreation();
+        return;
+      }
+
+      const { data: roadmapItemRows, error: roadmapItemsError } =
+        await supabase
+          .from("roadmap_items")
+          .select("position")
+          .eq("user_id", user.id)
+          .eq("roadmap_id", roadmapId)
+          .order("position", { ascending: false })
+          .limit(1);
+      if (roadmapItemsError) throw roadmapItemsError;
+      const lastPosition = Number(roadmapItemRows?.[0]?.position ?? 0);
+      const nextPosition =
+        Number.isFinite(lastPosition) && lastPosition > 0
+          ? lastPosition + 1
+          : 1;
+
+      const campaign = await createCampaign(user.id, {
+        roadmapId,
+        primaryMonumentId: goalMonumentId,
+        name: campaignName,
+        emoji: campaignEmoji,
+        schedulingState: "ACTIVE",
+        position: nextPosition,
+      });
+      await addCampaignToRoadmap(user.id, {
+        roadmapId,
+        campaignId: campaign.id,
+        position: nextPosition,
+      });
+
+      const newOption: GoalCampaignOption = {
+        id: campaign.id,
+        name: campaign.name,
+        emoji: campaign.emoji,
+        roadmap_id: roadmapId,
+        primary_monument_id: campaign.primary_monument_id,
+        scheduling_state: campaign.scheduling_state,
+        position: campaign.position,
+      };
+      setGoalCampaigns((current) =>
+        current.some((item) => item.id === newOption.id)
+          ? current
+          : [...current, newOption],
+      );
+      setGoalCampaignId(campaign.id);
+      resetGoalCampaignInlineCreation();
+    } catch (error) {
+      console.error("Failed to create campaign from FAB", error);
+      setGoalCampaignCreateError(
+        error instanceof Error
+          ? error.message
+          : "Campaign could not be created.",
+      );
+    } finally {
+      setGoalCampaignCreating(false);
+    }
+  }, [
+    goalCampaignCreating,
+    goalCampaigns,
+    goalInlineCampaignEmoji,
+    goalInlineCampaignName,
+    goalMonumentId,
+    monuments,
+    resetGoalCampaignInlineCreation,
+  ]);
 
   useEffect(() => {
     const shouldLoadSkills =
@@ -10121,6 +10507,12 @@ export function Fab({
             console.error("Failed to update tags after goal edit", error);
           }
 
+          dispatchCreatorEntitySaved({
+            entityType: "GOAL",
+            entityId: activeEditTarget.entityId,
+            action: "updated",
+            monumentId: goalMonumentId || null,
+          });
           resetFabFormState();
           setExpanded(false);
           setSelected(null);
@@ -10404,6 +10796,14 @@ export function Fab({
             childDraftFailureMessage =
               childErrors[0] ?? "Some draft tasks could not be saved.";
           }
+        }
+        if (createdEntityId) {
+          dispatchCreatorEntitySaved({
+            entityType: createdType,
+            entityId: createdEntityId,
+            action: "created",
+            monumentId: createdType === "GOAL" ? goalMonumentId || null : null,
+          });
         }
         resetFabFormState();
         setExpanded(false);
