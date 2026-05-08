@@ -12308,10 +12308,10 @@ function FabNexus({
 
   return (
     <div
-      className="flex h-full w-full flex-col text-white"
+      className="flex h-full min-h-0 w-full flex-col overflow-hidden text-white"
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
-      <div className="px-4 pt-4">
+      <div className="shrink-0 px-4 pt-4">
         <div className="relative h-10">
           <span className="pointer-events-none absolute left-3 inset-y-0 flex items-center">
             <Search className="h-4 w-4 text-white/30" />
@@ -12338,7 +12338,7 @@ function FabNexus({
         </div>
       </div>
       {showToolbar && showControls ? (
-        <div className="px-4 pt-3">
+        <div className="shrink-0 px-4 pt-3">
           <div className="flex flex-wrap items-center gap-2">
             <Select
               value={filterMonumentId ?? ""}
@@ -12426,7 +12426,7 @@ function FabNexus({
         </div>
       ) : null}
       <div
-        className="flex-1 overflow-y-auto px-4 pb-4 pr-5 pt-3"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pr-5 pt-3"
         data-fab-nexus-scroll="true"
         onScroll={handleScroll}
       >

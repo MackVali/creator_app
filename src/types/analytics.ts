@@ -159,6 +159,22 @@ export type AnalyticsOverviewDailyPoint = {
   efficiencyRate: number;
 };
 
+export type AnalyticsOverviewComparisonTrend = "up" | "down" | "flat" | "new";
+
+export type AnalyticsOverviewComparisonMetric = {
+  current: number;
+  previous: number;
+  percentChange: number | null;
+  trend: AnalyticsOverviewComparisonTrend;
+};
+
+export type AnalyticsOverviewComparison = {
+  xp: AnalyticsOverviewComparisonMetric;
+  avgPerDay: AnalyticsOverviewComparisonMetric;
+  completed: AnalyticsOverviewComparisonMetric;
+  efficiency: AnalyticsOverviewComparisonMetric;
+};
+
 export type AnalyticsOverviewEfficiencyDebugSource = {
   sourceKind: "window" | "time_block" | "day_type_time_block";
   sourceId: string;
@@ -322,6 +338,7 @@ export type AnalyticsResponse = {
   unscheduledPressure: AnalyticsUnscheduledPressure;
   todaySummary: AnalyticsTodaySummary;
   overviewDaily: AnalyticsOverviewDailyPoint[];
+  overviewComparison: AnalyticsOverviewComparison;
   windows: AnalyticsWindowsSummary;
   activity: AnalyticsActivityEvent[];
   habit: AnalyticsHabitSummary;

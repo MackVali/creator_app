@@ -29,14 +29,18 @@ interface MonumentDetailProps {
   notes: MonumentNote[];
 }
 
+type MonumentView = "goals" | "roadmap";
+
 export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
   const { id } = monument;
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [monumentView, setMonumentView] = useState<MonumentView>("roadmap");
   const [goalSection, setGoalSection] = useState<"active" | "completed">(
     "active"
   );
 
   useEffect(() => {
+    setMonumentView("roadmap");
     setGoalSection("active");
   }, [id]);
 
@@ -174,17 +178,44 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
             )}
           >
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
-            <header className="relative">
+            <header className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="space-y-1">
                 <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
                   Monument Roadmap
                 </h2>
+              </div>
+              <div
+                className="inline-flex w-full rounded-lg border border-white/10 bg-white/[0.04] p-1 sm:w-auto"
+                aria-label="Monument view"
+              >
+                {(
+                  [
+                    { value: "roadmap", label: "True Roadmap" },
+                    { value: "goals", label: "Goals Grid" },
+                  ] as const
+                ).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setMonumentView(option.value)}
+                    className={cn(
+                      "min-h-8 flex-1 rounded-md px-3 py-1.5 text-[11px] font-semibold transition sm:flex-none",
+                      monumentView === option.value
+                        ? "bg-[#3B3F49] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                        : "text-[#A7B0BD] hover:text-white"
+                    )}
+                    aria-pressed={monumentView === option.value}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </header>
             <div className="relative mt-3 overflow-visible sm:mt-4">
               <MonumentGoalsList
                 monumentId={id}
                 monumentEmoji={monument.emoji}
+                monumentView={monumentView}
                 goalSection={goalSection}
                 onGoalSectionChange={setGoalSection}
               />

@@ -34,6 +34,7 @@ import {
 interface MixedRoadmapCardProps {
   roadmap: RoadmapWithItems;
   variant?: "default" | "compact";
+  defaultOpen?: boolean;
   onClick?: () => void;
   onGoalOpen?: (goalId: string) => void;
   onReorderSaved?: () => void | Promise<void>;
@@ -194,6 +195,26 @@ function isLegacyFallbackGoalItem(item: RoadmapMixedItem): boolean {
     item.item_type === "GOAL" &&
     item.id.startsWith("legacy-goal-") &&
     Boolean(item.goal?.id)
+  );
+}
+
+function getNestedCampaignGoalIds(items: RoadmapMixedItem[]): Set<string> {
+  return new Set(
+    items.flatMap((item) => item.campaign?.goals.map((goal) => goal.id) ?? [])
+  );
+}
+
+function isStandaloneGoalItem(
+  item: RoadmapMixedItem,
+  nestedCampaignGoalIds: Set<string>
+): boolean {
+  if (item.item_type !== "GOAL" || !item.goal) {
+    return false;
+  }
+
+  return (
+    !item.campaign &&
+    !nestedCampaignGoalIds.has(item.goal.id)
   );
 }
 
@@ -587,11 +608,12 @@ function preventTouchScrollWhileDragging(event: TouchEvent) {
 function MixedRoadmapCardImpl({
   roadmap,
   variant = "default",
+  defaultOpen = false,
   onClick,
   onGoalOpen,
   onReorderSaved,
 }: MixedRoadmapCardProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [orderedItems, setOrderedItems] = useState<RoadmapMixedItem[]>(() =>
     buildOrderedItems(roadmap.items)
   );
@@ -601,6 +623,10 @@ function MixedRoadmapCardImpl({
   useEffect(() => {
     setOrderedItems(buildOrderedItems(roadmap.items));
   }, [roadmap.items]);
+
+  useEffect(() => {
+    setIsOpen(defaultOpen);
+  }, [defaultOpen, roadmap.id]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -659,9 +685,21 @@ function MixedRoadmapCardImpl({
     [orderedItems]
   );
 
+  const topLevelItems = useMemo(() => {
+    const nestedCampaignGoalIds = getNestedCampaignGoalIds(orderedItems);
+
+    return orderedItems.filter((item) => {
+      if (item.item_type !== "GOAL") {
+        return true;
+      }
+
+      return isStandaloneGoalItem(item, nestedCampaignGoalIds);
+    });
+  }, [orderedItems]);
+
   const standaloneGoalCount = useMemo(
-    () => orderedItems.filter((item) => item.item_type === "GOAL").length,
-    [orderedItems]
+    () => topLevelItems.filter((item) => item.item_type === "GOAL").length,
+    [topLevelItems]
   );
 
   const isCompact = variant === "compact";
@@ -854,7 +892,7 @@ function MixedRoadmapCardImpl({
             ) : null}
           </div>
 
-          {orderedItems.length === 0 ? (
+          {topLevelItems.length === 0 ? (
             <p className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-3 py-4 text-sm text-white/55 sm:px-4 sm:py-5">
               No roadmap items yet.
             </p>
@@ -870,11 +908,11 @@ function MixedRoadmapCardImpl({
               onDragCancel={handleAnyDragCancel}
             >
               <SortableContext
-                items={orderedItems.map((item) => item.id)}
+                items={topLevelItems.map((item) => item.id)}
                 strategy={verticalListSortingStrategy}
               >
                 <div className="space-y-2 sm:space-y-2.5">
-                  {orderedItems.map((item) => (
+                  {topLevelItems.map((item) => (
                     <SortableMixedRoadmapItemRow
                       key={item.id}
                       item={item}
