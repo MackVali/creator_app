@@ -1634,6 +1634,8 @@ export function Fab({
   }, [aiThread]);
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<CreationType | null>(null);
+  const [pendingCreationNameFocus, setPendingCreationNameFocus] =
+    useState<CreationType | null>(null);
   const [activeCreationMode, setActiveCreationMode] =
     useState<CreationFormMode>("main");
   const [editHydrating, setEditHydrating] = useState(false);
@@ -1643,6 +1645,7 @@ export function Fab({
     }
 
     setSelected(editTarget.entityType);
+    setPendingCreationNameFocus(null);
     setActiveCreationMode("main");
     setExpanded(true);
     setIsOpen(false);
@@ -1657,6 +1660,7 @@ export function Fab({
   const closeExpandedPanel = useCallback(() => {
     setExpanded(false);
     setSelected(null);
+    setPendingCreationNameFocus(null);
     setIsOpen(false);
     if (editTarget) {
       onEditClose?.();
@@ -1666,6 +1670,10 @@ export function Fab({
     Partial<Record<CreationType, number>>
   >({});
   const expandedCreationBodyRef = useRef<HTMLDivElement | null>(null);
+  const goalNameInputRef = useRef<HTMLInputElement | null>(null);
+  const projectNameInputRef = useRef<HTMLInputElement | null>(null);
+  const taskNameInputRef = useRef<HTMLInputElement | null>(null);
+  const habitNameInputRef = useRef<HTMLInputElement | null>(null);
   const [availableTags, setAvailableTags] = useState<FabTag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [tagInputValue, setTagInputValue] = useState("");
@@ -3892,6 +3900,69 @@ export function Fab({
     setActiveCreationMode("main");
   }, [expanded, selected]);
 
+  useEffect(() => {
+    if (
+      !expanded ||
+      !pendingCreationNameFocus ||
+      selected !== pendingCreationNameFocus ||
+      activeCreationMode !== "main" ||
+      editTarget
+    ) {
+      return;
+    }
+
+    const getNameInput = () => {
+      switch (pendingCreationNameFocus) {
+        case "GOAL":
+          return goalNameInputRef.current;
+        case "PROJECT":
+          return projectNameInputRef.current;
+        case "TASK":
+          return taskNameInputRef.current;
+        case "HABIT":
+          return habitNameInputRef.current;
+        default:
+          return null;
+      }
+    };
+
+    let cancelled = false;
+    let fallbackTimeout: number | null = null;
+    const focusNameInput = () => {
+      const input = getNameInput();
+      if (!input || input.disabled) return false;
+      input.focus({ preventScroll: true });
+      return document.activeElement === input;
+    };
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      if (cancelled) return;
+      if (focusNameInput()) {
+        setPendingCreationNameFocus(null);
+        return;
+      }
+      fallbackTimeout = window.setTimeout(() => {
+        if (cancelled) return;
+        focusNameInput();
+        setPendingCreationNameFocus(null);
+      }, 80);
+    });
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(animationFrame);
+      if (fallbackTimeout !== null) {
+        window.clearTimeout(fallbackTimeout);
+      }
+    };
+  }, [
+    activeCreationMode,
+    editTarget,
+    expanded,
+    pendingCreationNameFocus,
+    selected,
+  ]);
+
   const previousSelectedRef = useRef<CreationType | null>(null);
   useEffect(() => {
     const selectedChanged = previousSelectedRef.current !== selected;
@@ -6057,18 +6128,15 @@ export function Fab({
                   : `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
               }}
             >
-              {selected && activeCreationMode === "main" ? (
-                <div className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                  <span>
-                    {editTarget?.entityType === selected ? "Edit " : "Add "}
-                    {selected.charAt(0) + selected.slice(1).toLowerCase()}
+              {selected &&
+              activeCreationMode === "main" &&
+              editTarget?.entityType === selected &&
+              editHydrating ? (
+                <div className="flex items-center justify-end text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                  <span className="inline-flex items-center gap-1.5 text-white/70">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Loading…
                   </span>
-                  {editTarget?.entityType === selected && editHydrating ? (
-                    <span className="inline-flex items-center gap-1.5 text-white/70">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Loading…
-                    </span>
-                  ) : null}
                 </div>
               ) : null}
               {selected === "GOAL" && activeCreationMode === "main" && (
@@ -6125,6 +6193,8 @@ export function Fab({
                       </Label>
                       <Input
                         id="goal-name"
+                        ref={goalNameInputRef}
+                        autoFocus={pendingCreationNameFocus === "GOAL"}
                         value={goalName}
                         onChange={(e) =>
                           setGoalName(e.target.value.toUpperCase())
@@ -6479,6 +6549,8 @@ export function Fab({
                       </Label>
                       <Input
                         id="main-project-name"
+                        ref={projectNameInputRef}
+                        autoFocus={pendingCreationNameFocus === "PROJECT"}
                         value={projectName}
                         onChange={(e) =>
                           setProjectName(e.target.value.toUpperCase())
@@ -6918,6 +6990,8 @@ export function Fab({
                       </Label>
                       <Input
                         id="main-task-name"
+                        ref={taskNameInputRef}
+                        autoFocus={pendingCreationNameFocus === "TASK"}
                         value={taskName}
                         onChange={(e) =>
                           setTaskName(e.target.value.toUpperCase())
@@ -7274,6 +7348,8 @@ export function Fab({
                       </Label>
                       <Input
                         id="habit-name"
+                        ref={habitNameInputRef}
+                        autoFocus={pendingCreationNameFocus === "HABIT"}
                         value={habitName}
                         onChange={(e) =>
                           setHabitName(e.target.value.toUpperCase())
@@ -7819,9 +7895,11 @@ export function Fab({
     pageX.set(0);
 
     if (expanded) {
+      setPendingCreationNameFocus(editTarget ? null : eventType);
       setSelected(eventType);
       return;
     }
+    setPendingCreationNameFocus(editTarget ? null : eventType);
     setExpanded(true);
     setSelected(eventType);
   };
