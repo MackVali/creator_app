@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -405,6 +406,40 @@ export function MonumentGoalsList({
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
     null
   );
+  const deferredGoalCloseFrameRef = useRef<number | null>(null);
+
+  const closeGoalDetailAfterFabOpen = useCallback(() => {
+    const closeGoalDetail = () => {
+      deferredGoalCloseFrameRef.current = null;
+      setOpenGoalId(null);
+      setRoadmapOpenGoal(null);
+    };
+
+    if (typeof window === "undefined") {
+      closeGoalDetail();
+      return;
+    }
+
+    if (deferredGoalCloseFrameRef.current !== null) {
+      window.cancelAnimationFrame(deferredGoalCloseFrameRef.current);
+    }
+
+    deferredGoalCloseFrameRef.current = window.requestAnimationFrame(() => {
+      deferredGoalCloseFrameRef.current =
+        window.requestAnimationFrame(closeGoalDetail);
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (
+        typeof window !== "undefined" &&
+        deferredGoalCloseFrameRef.current !== null
+      ) {
+        window.cancelAnimationFrame(deferredGoalCloseFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setOpenGoalId(null);
@@ -875,10 +910,9 @@ export function MonumentGoalsList({
         title: goal.title,
         originRect: getGoalEditOriginRect(goal.id),
       });
-      setOpenGoalId(null);
-      setRoadmapOpenGoal(null);
+      closeGoalDetailAfterFabOpen();
     },
-    [getGoalEditOriginRect]
+    [closeGoalDetailAfterFabOpen, getGoalEditOriginRect]
   );
 
   const handleRoadmapGoalEdit = useCallback(
@@ -889,10 +923,9 @@ export function MonumentGoalsList({
         title: goal.title,
         originRect: getGoalEditOriginRect(goal.id),
       });
-      setOpenGoalId(null);
-      setRoadmapOpenGoal(null);
+      closeGoalDetailAfterFabOpen();
     },
-    [getGoalEditOriginRect]
+    [closeGoalDetailAfterFabOpen, getGoalEditOriginRect]
   );
 
   const handleRoadmapGoalOpen = useCallback(

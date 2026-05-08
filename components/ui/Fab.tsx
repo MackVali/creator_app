@@ -174,6 +174,17 @@ type FabEditOriginRect = {
   width: number;
   height: number;
 };
+type FabCreationSpawnOrigin = {
+  type: CreationType;
+  rect: FabEditOriginRect;
+  nonce: number;
+};
+type FabCreationRevealGeometry = {
+  x: number;
+  y: number;
+  radius: number;
+  nonce: number;
+};
 type FabGoalEditRow = {
   id: string;
   name: string | null;
@@ -319,6 +330,11 @@ const FAB_ADVANCED_INPUT_CLASS =
 const FAB_ADVANCED_SELECT_TRIGGER_CLASS =
   "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white";
 const FAB_KEYBOARD_SETTLE_MS = 280;
+const FAB_SELECTION_CONFIRM_MS = 80;
+const FAB_SELECTION_EXIT_MS = 140;
+const FAB_CREATION_ENTER_MS = 220;
+const FAB_CREATION_FOCUS_DELAY_MS =
+  FAB_SELECTION_EXIT_MS + FAB_CREATION_ENTER_MS + 40;
 
 const shouldIgnoreFabPageSwipe = (target: EventTarget | null): boolean => {
   if (typeof Element === "undefined" || !(target instanceof Element)) {
@@ -486,6 +502,19 @@ const CREATION_MODE_OPTIONS: Record<CreationType, CreationModeOption[]> = {
 
 const getCreationModesForType = (type: CreationType | null) =>
   type ? CREATION_MODE_OPTIONS[type] : [];
+
+const getFabElementRect = (
+  element: HTMLElement | null,
+): FabEditOriginRect | null => {
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+  };
+};
 
 const DRAFT_PROPOSAL_TYPES: AiIntent["type"][] = [
   "DRAFT_CREATE_GOAL",
@@ -1680,6 +1709,12 @@ export function Fab({
   }, [aiThread]);
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<CreationType | null>(null);
+  const [pressedCreationType, setPressedCreationType] =
+    useState<CreationType | null>(null);
+  const [creationSpawnOrigin, setCreationSpawnOrigin] =
+    useState<FabCreationSpawnOrigin | null>(null);
+  const [creationRevealGeometry, setCreationRevealGeometry] =
+    useState<FabCreationRevealGeometry | null>(null);
   const [pendingCreationNameFocus, setPendingCreationNameFocus] =
     useState<CreationType | null>(null);
   const [activeCreationMode, setActiveCreationMode] =
@@ -1691,6 +1726,9 @@ export function Fab({
     }
 
     setSelected(editTarget.entityType);
+    setPressedCreationType(null);
+    setCreationSpawnOrigin(null);
+    setCreationRevealGeometry(null);
     setPendingCreationNameFocus(null);
     setActiveCreationMode("main");
     setExpanded(true);
@@ -1705,6 +1743,13 @@ export function Fab({
     setEditHydrating(Boolean(shouldHydrateEditTarget && editTarget?.entityId));
   }, [editTarget?.entityId, editTarget?.entityType]);
   const closeExpandedPanel = useCallback(() => {
+    if (creationSelectionTimeoutRef.current !== null) {
+      window.clearTimeout(creationSelectionTimeoutRef.current);
+      creationSelectionTimeoutRef.current = null;
+    }
+    setPressedCreationType(null);
+    setCreationSpawnOrigin(null);
+    setCreationRevealGeometry(null);
     setExpanded(false);
     setSelected(null);
     setPendingCreationNameFocus(null);
@@ -1717,10 +1762,13 @@ export function Fab({
     Partial<Record<CreationType, number>>
   >({});
   const expandedCreationBodyRef = useRef<HTMLDivElement | null>(null);
+  const attachedCreationControlsRef = useRef<HTMLDivElement | null>(null);
+  const creationRevealWrapperRef = useRef<HTMLDivElement | null>(null);
   const goalNameInputRef = useRef<HTMLInputElement | null>(null);
   const projectNameInputRef = useRef<HTMLInputElement | null>(null);
   const taskNameInputRef = useRef<HTMLInputElement | null>(null);
   const habitNameInputRef = useRef<HTMLInputElement | null>(null);
+  const creationSelectionTimeoutRef = useRef<number | null>(null);
   const fabInputBlurTimeoutRef = useRef<number | null>(null);
   const fabKeyboardSettleTimeoutRef = useRef<number | null>(null);
   const wasFabKeyboardActiveRawRef = useRef(false);
@@ -2021,6 +2069,7 @@ export function Fab({
   const startTimeInputId = useId();
   const endTimeInputId = useId();
   const fabKeyboardOwnerId = useId();
+  const fabPanelChromeOwnerId = useId();
   const PROJECT_STAGE_OPTIONS_LOCAL = [
     { value: "RESEARCH", label: "RESEARCH" },
     { value: "TEST", label: "TEST" },
@@ -4016,9 +4065,14 @@ export function Fab({
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
+  const [mobileFabPanelHeight, setMobileFabPanelHeight] = useState<
+    number | null
+  >(null);
   const [isFabInputFocused, setIsFabInputFocused] = useState(false);
   const [isFabKeyboardSettling, setIsFabKeyboardSettling] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [attachedCreationControlsHeight, setAttachedCreationControlsHeight] =
+    useState<number | null>(null);
   const isKeyboardVisible = useMemo(() => {
     if (!expanded) return false;
     if (stableViewportHeight && viewportHeight) {
@@ -4031,9 +4085,16 @@ export function Fab({
     expanded && (isKeyboardVisible || (isMobileViewport && isFabInputFocused));
   const shouldUseAttachedFabControls =
     expanded && (isFabKeyboardActiveRaw || isFabKeyboardSettling);
+  const shouldUseKeyboardConstrainedFabSizing =
+    expanded && (isKeyboardVisible || isFabKeyboardSettling);
   const shouldAttachCreationControls =
     expanded &&
     (shouldUseAttachedFabControls || (isMobileViewport && selected !== null));
+  const shouldSuppressMobileFabChrome =
+    expanded && isMobileViewport && selected !== null;
+  const shouldUseStableMobileFabPanel = shouldSuppressMobileFabChrome;
+  const shouldUseScrollableFabBody =
+    shouldUseKeyboardConstrainedFabSizing || shouldUseStableMobileFabPanel;
   const shouldHideOverhangButtons = expanded && shouldAttachCreationControls;
 
   useEffect(() => {
@@ -4079,6 +4140,15 @@ export function Fab({
   }, [expanded, selected]);
 
   useEffect(() => {
+    return () => {
+      if (creationSelectionTimeoutRef.current !== null) {
+        window.clearTimeout(creationSelectionTimeoutRef.current);
+        creationSelectionTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (
       !expanded ||
       !pendingCreationNameFocus ||
@@ -4115,15 +4185,11 @@ export function Fab({
 
     const animationFrame = window.requestAnimationFrame(() => {
       if (cancelled) return;
-      if (focusNameInput()) {
-        setPendingCreationNameFocus(null);
-        return;
-      }
       fallbackTimeout = window.setTimeout(() => {
         if (cancelled) return;
         focusNameInput();
         setPendingCreationNameFocus(null);
-      }, 80);
+      }, prefersReducedMotion ? 80 : FAB_CREATION_FOCUS_DELAY_MS);
     });
 
     return () => {
@@ -4138,6 +4204,7 @@ export function Fab({
     editTarget,
     expanded,
     pendingCreationNameFocus,
+    prefersReducedMotion,
     selected,
   ]);
 
@@ -4403,6 +4470,26 @@ export function Fab({
       document.body.classList.toggle("fab-keyboard-active", owners.size > 0);
     };
   }, [fabKeyboardOwnerId, shouldUseAttachedFabControls]);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || typeof window === "undefined") {
+      return;
+    }
+    const key = "__CREATOR_FAB_PANEL_ACTIVE_OWNERS__";
+    const win = window as typeof window & { [key: string]: Set<string> };
+    win[key] ??= new Set<string>();
+    const owners = win[key];
+    if (shouldSuppressMobileFabChrome) {
+      owners.add(fabPanelChromeOwnerId);
+    } else {
+      owners.delete(fabPanelChromeOwnerId);
+    }
+    document.body.classList.toggle("fab-panel-active", owners.size > 0);
+    return () => {
+      owners.delete(fabPanelChromeOwnerId);
+      document.body.classList.toggle("fab-panel-active", owners.size > 0);
+    };
+  }, [fabPanelChromeOwnerId, shouldSuppressMobileFabChrome]);
 
   useEffect(() => {
     if (!showGoalFilters) return;
@@ -6360,32 +6447,83 @@ export function Fab({
     <div
       className={cn(
         "flex w-full flex-col",
-        expanded ? "min-h-full p-0" : "px-4 py-2",
+        expanded ? "min-h-full p-0" : "",
       )}
     >
-      {!expanded &&
-        primary.map((event) => (
-          <motion.button
-            key={event.label}
-            variants={itemVariants}
-            onClick={() => handleEventClick(event.eventType)}
-            className={cn(
-              "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
-              itemAlignmentClass,
-              event.color,
-            )}
-          >
-            <span className="text-sm opacity-80">add</span>{" "}
-            <span className="text-lg font-bold">{event.label}</span>
-          </motion.button>
-        ))}
-      <AnimatePresence>
-        {expanded ? (
-          <motion.div
-            key="fab-expanded-placeholder"
-            className="relative mt-0 bg-black/80"
-            aria-label="Expanded placeholder"
-          >
+      <div className="grid w-full">
+        <AnimatePresence initial={false}>
+          {!expanded ? (
+            <motion.div
+              key="fab-add-event-selection"
+              className="col-start-1 row-start-1 flex w-full flex-col px-4 py-2"
+              initial={false}
+              animate={{ opacity: 1, y: 0 }}
+              exit={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : {
+                      opacity: 0,
+                      transition: {
+                        type: "tween",
+                        ease: "easeIn",
+                        duration: 0.08,
+                      },
+                    }
+              }
+              transition={{
+                type: "tween",
+                ease: "easeOut",
+                duration: prefersReducedMotion ? 0.08 : 0.12,
+              }}
+            >
+              {primary.map((event) => {
+                const isPressed = pressedCreationType === event.eventType;
+                return (
+                  <motion.button
+                    key={event.label}
+                    variants={itemVariants}
+                    onClick={(clickEvent) =>
+                      handleEventClick(
+                        event.eventType,
+                        clickEvent.currentTarget,
+                      )
+                    }
+                    animate={{
+                      backgroundColor: isPressed
+                        ? "rgba(255,255,255,0.12)"
+                        : "rgba(255,255,255,0)",
+                    }}
+                    whileTap={
+                      prefersReducedMotion ? undefined : { y: 1, opacity: 0.9 }
+                    }
+                    transition={{
+                      type: "tween",
+                      ease: "easeOut",
+                      duration: 0.1,
+                    }}
+                    className={cn(
+                      "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
+                      itemAlignmentClass,
+                      event.color,
+                      isPressed && "text-white",
+                    )}
+                  >
+                    <span className="text-sm opacity-80">add</span>{" "}
+                    <span className="text-lg font-bold">{event.label}</span>
+                  </motion.button>
+                );
+              })}
+            </motion.div>
+          ) : (
+            <motion.div
+              key={`fab-creation-${selected ?? "none"}`}
+              className="relative col-start-1 row-start-1 mt-0 bg-black/80"
+              aria-label="Expanded placeholder"
+              initial={false}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0 }}
+            >
             <div
               ref={expandedCreationBodyRef}
               className={cn(
@@ -6474,7 +6612,6 @@ export function Fab({
                       <Input
                         id="goal-name"
                         ref={goalNameInputRef}
-                        autoFocus={pendingCreationNameFocus === "GOAL"}
                         value={goalName}
                         onChange={(e) =>
                           setGoalName(e.target.value.toUpperCase())
@@ -6830,7 +6967,6 @@ export function Fab({
                       <Input
                         id="main-project-name"
                         ref={projectNameInputRef}
-                        autoFocus={pendingCreationNameFocus === "PROJECT"}
                         value={projectName}
                         onChange={(e) =>
                           setProjectName(e.target.value.toUpperCase())
@@ -7271,7 +7407,6 @@ export function Fab({
                       <Input
                         id="main-task-name"
                         ref={taskNameInputRef}
-                        autoFocus={pendingCreationNameFocus === "TASK"}
                         value={taskName}
                         onChange={(e) =>
                           setTaskName(e.target.value.toUpperCase())
@@ -7629,7 +7764,6 @@ export function Fab({
                       <Input
                         id="habit-name"
                         ref={habitNameInputRef}
-                        autoFocus={pendingCreationNameFocus === "HABIT"}
                         value={habitName}
                         onChange={(e) =>
                           setHabitName(e.target.value.toUpperCase())
@@ -8098,8 +8232,9 @@ export function Fab({
               <p className="text-xs text-red-300">{saveError}</p>
             ) : null}
           </motion.div>
-        ) : null}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 
@@ -8161,7 +8296,8 @@ export function Fab({
   };
 
   const handleEventClick = (
-    eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT",
+    eventType: CreationType,
+    triggerElement?: HTMLElement | null,
   ) => {
     // Ensure any in-progress drag state cannot leave the neighbor overlay visible.
     isDraggingRef.current = false;
@@ -8175,13 +8311,47 @@ export function Fab({
     pageX.set(0);
 
     if (expanded) {
+      setPressedCreationType(null);
+      setCreationSpawnOrigin(null);
+      setCreationRevealGeometry(null);
       setPendingCreationNameFocus(editTarget ? null : eventType);
       setSelected(eventType);
       return;
     }
-    setPendingCreationNameFocus(editTarget ? null : eventType);
-    setExpanded(true);
-    setSelected(eventType);
+
+    if (creationSelectionTimeoutRef.current !== null) {
+      window.clearTimeout(creationSelectionTimeoutRef.current);
+      creationSelectionTimeoutRef.current = null;
+    }
+
+    const commitSelection = () => {
+      creationSelectionTimeoutRef.current = null;
+      setPressedCreationType(null);
+      setCreationRevealGeometry(null);
+      setPendingCreationNameFocus(editTarget ? null : eventType);
+      setExpanded(true);
+      setSelected(eventType);
+    };
+
+    const triggerRect = getFabElementRect(triggerElement ?? null);
+    setCreationSpawnOrigin(
+      triggerRect && !editTarget
+        ? {
+            type: eventType,
+            rect: triggerRect,
+            nonce: Date.now(),
+          }
+        : null,
+    );
+    setPressedCreationType(eventType);
+    if (prefersReducedMotion) {
+      commitSelection();
+      return;
+    }
+    creationSelectionTimeoutRef.current = window.setTimeout(
+      commitSelection,
+      FAB_SELECTION_CONFIRM_MS,
+    );
   };
 
   const handleExtraClick = (label: string) => {
@@ -8199,6 +8369,9 @@ export function Fab({
 
   const handleFabButtonClick = () => {
     if (!isOpen) {
+      setPressedCreationType(null);
+      setCreationSpawnOrigin(null);
+      setCreationRevealGeometry(null);
       setIsOpen(true);
       return;
     }
@@ -10298,6 +10471,13 @@ export function Fab({
 
   useEffect(() => {
     if (isOpen) return;
+    if (creationSelectionTimeoutRef.current !== null) {
+      window.clearTimeout(creationSelectionTimeoutRef.current);
+      creationSelectionTimeoutRef.current = null;
+    }
+    setPressedCreationType(null);
+    setCreationSpawnOrigin(null);
+    setCreationRevealGeometry(null);
     setExpanded(false);
     setSelected(null);
     if (aiOpen) {
@@ -10418,6 +10598,74 @@ export function Fab({
           creationMainShellHeights[selected] ?? 0,
         )
       : null;
+  useLayoutEffect(() => {
+    const node = attachedCreationControlsRef.current;
+    if (!expanded || !node) {
+      setAttachedCreationControlsHeight(null);
+      return;
+    }
+
+    const updateHeight = () => {
+      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
+      if (!Number.isFinite(nextHeight) || nextHeight <= 0) return;
+      setAttachedCreationControlsHeight((current) =>
+        current === nextHeight ? current : nextHeight,
+      );
+    };
+
+    updateHeight();
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      updateHeight();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [activeCreationMode, expanded, selected, shouldAttachCreationControls]);
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    if (
+      !shouldUseStableMobileFabPanel ||
+      selectedCreationTypeMinHeight === null
+    ) {
+      setMobileFabPanelHeight(null);
+      return;
+    }
+
+    const measuredSafeBottom =
+      stableSafeBottom ||
+      Number.parseFloat(
+        getComputedStyle(document.documentElement)
+          .getPropertyValue("--sat-safe-bottom")
+          .trim() || "0",
+      ) ||
+      0;
+    const viewport = window.visualViewport;
+    const nonKeyboardViewportHeight = Math.max(
+      window.innerHeight || 0,
+      viewport?.height ?? 0,
+      stableViewportHeight ?? 0,
+    );
+    const heightCap = Math.round(
+      Math.max(1, nonKeyboardViewportHeight * 0.9 - 8 - measuredSafeBottom),
+    );
+    const footerHeight = attachedCreationControlsHeight ?? 64;
+    const contentHeight =
+      selectedCreationShellHeight ?? selectedCreationTypeMinHeight;
+    const desiredHeight = Math.ceil(contentHeight + footerHeight + 2);
+    const nextHeight = Math.min(heightCap, desiredHeight);
+
+    setMobileFabPanelHeight((current) =>
+      current === nextHeight ? current : nextHeight,
+    );
+  }, [
+    attachedCreationControlsHeight,
+    selectedCreationShellHeight,
+    selectedCreationTypeMinHeight,
+    shouldUseStableMobileFabPanel,
+    stableSafeBottom,
+    stableViewportHeight,
+  ]);
   const secondaryCreationPanelMinHeight =
     expanded && isContentSizedCreationExpanded && activeCreationMode !== "main"
       ? selectedCreationShellHeight ?? selectedCreationTypeMinHeight
@@ -10430,26 +10678,147 @@ export function Fab({
         : "58vh"
     : undefined;
   const keyboardMaxHeightExpanded =
-    expanded && shouldUseAttachedFabControls
+    expanded && shouldUseKeyboardConstrainedFabSizing
       ? effectiveViewportHeight
         ? Math.round(
             Math.max(1, effectiveViewportHeight - 16 - stableSafeBottom),
           )
         : "calc(100dvh - env(safe-area-inset-bottom, 0px) - 16px)"
       : undefined;
+  const normalMaxHeightExpanded =
+    expanded && !shouldUseKeyboardConstrainedFabSizing
+      ? stableViewportHeight
+        ? Math.round(stableViewportHeight * 0.9 - 8 - stableSafeBottom)
+        : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"
+      : undefined;
   const maxHeightExpanded = expanded
-    ? (keyboardMaxHeightExpanded ??
-      (effectiveViewportHeight
-        ? Math.round(effectiveViewportHeight * 0.9 - 8 - stableSafeBottom)
-        : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"))
+    ? (keyboardMaxHeightExpanded ?? normalMaxHeightExpanded)
     : undefined;
   const minHeightExpanded =
     expanded &&
-    shouldUseAttachedFabControls &&
+    shouldUseKeyboardConstrainedFabSizing &&
     typeof baseMinHeightExpanded === "number" &&
     typeof maxHeightExpanded === "number"
       ? Math.min(baseMinHeightExpanded, maxHeightExpanded)
       : baseMinHeightExpanded;
+  const fallbackMobileFabPanelHeightExpanded =
+    selectedCreationTypeMinHeight !== null
+      ? Math.ceil(
+          (selectedCreationShellHeight ?? selectedCreationTypeMinHeight) +
+            (attachedCreationControlsHeight ?? 64) +
+            2,
+        )
+      : undefined;
+  const stableMobileFabPanelHeightExpanded =
+    expanded && shouldUseStableMobileFabPanel
+      ? (mobileFabPanelHeight ??
+        (fallbackMobileFabPanelHeightExpanded !== undefined &&
+        stableViewportHeight
+          ? Math.min(
+              fallbackMobileFabPanelHeightExpanded,
+              Math.round(stableViewportHeight * 0.9 - 8 - stableSafeBottom),
+            )
+          : fallbackMobileFabPanelHeightExpanded))
+      : undefined;
+  const availableMobileFabPanelHeightExpanded =
+    expanded && shouldUseStableMobileFabPanel && effectiveViewportHeight
+      ? Math.round(
+          Math.max(1, effectiveViewportHeight - 16 - stableSafeBottom),
+        )
+      : undefined;
+  const currentMobileFabPanelHeightExpanded =
+    stableMobileFabPanelHeightExpanded !== undefined
+      ? shouldUseKeyboardConstrainedFabSizing &&
+        availableMobileFabPanelHeightExpanded !== undefined
+        ? Math.min(
+            stableMobileFabPanelHeightExpanded,
+            availableMobileFabPanelHeightExpanded,
+          )
+        : stableMobileFabPanelHeightExpanded
+      : undefined;
+  const panelMinHeightExpanded =
+    currentMobileFabPanelHeightExpanded ?? minHeightExpanded;
+  const panelMaxHeightExpanded =
+    currentMobileFabPanelHeightExpanded ?? maxHeightExpanded;
+  const panelHeightExpanded = currentMobileFabPanelHeightExpanded;
+  const panelSizeTransition = "border-color 0.1s linear, transform 0.2s ease";
+  const shouldUseCreationSpawnReveal =
+    expanded &&
+    !prefersReducedMotion &&
+    !editTarget &&
+    selected !== null &&
+    creationSpawnOrigin !== null &&
+    creationSpawnOrigin.type === selected;
+  const isCreationRevealReady =
+    shouldUseCreationSpawnReveal &&
+    creationSpawnOrigin !== null &&
+    creationRevealGeometry?.nonce === creationSpawnOrigin.nonce;
+  useLayoutEffect(() => {
+    if (!shouldUseCreationSpawnReveal || !creationSpawnOrigin) {
+      setCreationRevealGeometry(null);
+      return;
+    }
+
+    const wrapper = creationRevealWrapperRef.current;
+    if (!wrapper) return;
+
+    const updateRevealGeometry = () => {
+      const modalRect = wrapper.getBoundingClientRect();
+      if (modalRect.width <= 0 || modalRect.height <= 0) return;
+
+      const originCenterX =
+        creationSpawnOrigin.rect.left + creationSpawnOrigin.rect.width / 2;
+      const originCenterY =
+        creationSpawnOrigin.rect.top + creationSpawnOrigin.rect.height / 2;
+      const x = originCenterX - modalRect.left;
+      const y = originCenterY - modalRect.top;
+      const radius =
+        Math.ceil(
+          Math.max(
+            Math.hypot(x, y),
+            Math.hypot(modalRect.width - x, y),
+            Math.hypot(x, modalRect.height - y),
+            Math.hypot(modalRect.width - x, modalRect.height - y),
+          ),
+        ) + 48;
+
+      setCreationRevealGeometry((current) =>
+        current &&
+        current.nonce === creationSpawnOrigin.nonce &&
+        current.x === x &&
+        current.y === y &&
+        current.radius === radius
+          ? current
+          : {
+              x,
+              y,
+              radius,
+              nonce: creationSpawnOrigin.nonce,
+            },
+      );
+    };
+
+    updateRevealGeometry();
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(updateRevealGeometry);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, [
+    activeCreationMode,
+    creationSpawnOrigin,
+    isCreationRevealReady,
+    panelHeightExpanded,
+    panelMaxHeightExpanded,
+    panelMinHeightExpanded,
+    selected,
+    shouldUseCreationSpawnReveal,
+  ]);
+  const creationRevealOriginX = creationRevealGeometry?.x ?? 0;
+  const creationRevealOriginY = creationRevealGeometry?.y ?? 0;
+  const creationRevealClipStart = `circle(0px at ${creationRevealOriginX}px ${creationRevealOriginY}px)`;
+  const creationRevealClipEnd =
+    `circle(${creationRevealGeometry?.radius ?? 0}px at ${creationRevealOriginX}px ${creationRevealOriginY}px)`;
   const editPresentationOriginRect = editTarget?.originRect ?? null;
   const shouldUseCenteredEditModal =
     expanded && Boolean(editPresentationOriginRect);
@@ -10545,6 +10914,7 @@ export function Fab({
     expanded && (shouldUseCenteredEditModal || shouldAttachCreationControls);
   const renderAttachedCreationControls = () => (
     <div
+      ref={attachedCreationControlsRef}
       data-fab-keyboard-controls
       className="relative z-10 mt-auto flex flex-[0_0_auto] flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm sm:px-5"
     >
@@ -10646,7 +11016,7 @@ export function Fab({
               )}
               style={
                 expanded &&
-                  shouldUseAttachedFabControls &&
+                  shouldAttachCreationControls &&
                   !shouldUseCenteredEditModal
                   ? {
                       bottom: Math.round(keyboardLift + stableSafeBottom + 8),
@@ -10656,113 +11026,183 @@ export function Fab({
               }
             >
               <motion.div
-                data-fab-overlay
-                ref={(node) => {
-                  menuRef.current = node;
-                  panelRef.current = node;
-                }}
-                layoutId={
-                  shouldUseCenteredEditModal
-                    ? (editTarget?.layoutId ?? undefined)
-                    : undefined
+                ref={creationRevealWrapperRef}
+                key={
+                  shouldUseCreationSpawnReveal && creationSpawnOrigin
+                    ? isCreationRevealReady
+                      ? `fab-creation-spawn-${creationSpawnOrigin.nonce}`
+                      : `fab-creation-spawn-measure-${creationSpawnOrigin.nonce}`
+                    : "fab-panel-frame"
                 }
-                className={cn(
-                  "border rounded-lg shadow-2xl",
-                  expanded
-                    ? "bg-[var(--surface-elevated)]"
-                    : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
-                  expanded &&
-                    (shouldUseCenteredEditModal ||
-                      shouldAttachCreationControls) &&
-                    "flex flex-col overflow-hidden",
-                  expanded
-                    ? isGoalCreationExpanded
-                      ? "w-[calc(100vw-1.5rem)] max-w-[30rem]"
-                      : isProjectCreationExpanded
-                        ? "w-[calc(100vw-2rem)] max-w-[28rem]"
-                        : isTaskCreationExpanded
-                          ? "w-[calc(100vw-1.5rem)] max-w-[31rem]"
-                          : isHabitCreationExpanded
-                            ? "w-[calc(100vw-1.5rem)] max-w-[29rem]"
-                      : "w-[92vw] max-w-[920px]"
-                    : "min-w-[200px]",
-                )}
-                layout={!expanded && !shouldUseCenteredEditModal}
-                onTouchStart={(event) => event.stopPropagation()}
-                onTouchMove={(event) => {
-                  if (!expanded) {
-                    event.stopPropagation();
-                  }
-                }}
-                onPointerDown={(event) => {
-                  if (!expanded) {
-                    event.stopPropagation();
-                  }
-                }}
-                onPointerDownCapture={handleExpandedPointerDownCapture}
+                className="relative"
                 style={{
-                  boxShadow: MENU_BOX_SHADOW,
-                  borderColor: isBlendingGradient
-                    ? blendedBorderColor
-                    : staticBorderColor,
-                  transition: "border-color 0.1s linear, transform 0.2s ease",
-                  transformOrigin:
-                    shouldUseCenteredEditModal
-                      ? "center center"
-                      : menuVariant === "timeline"
-                      ? "bottom right"
-                      : "bottom center",
-                  minHeight: expanded ? minHeightExpanded : menuContainerHeight,
-                  maxHeight: expanded ? maxHeightExpanded : menuContainerHeight,
-                  height: expanded ? undefined : menuContainerHeight,
-                  minWidth: expanded ? undefined : (menuWidth ?? undefined),
-                  width: expanded ? undefined : (menuWidth ?? undefined),
-                  maxWidth: expanded ? undefined : (menuWidth ?? undefined),
-                  touchAction: expanded ? "manipulation" : undefined,
-                  overflowY:
-                    expanded &&
-                    !shouldUseCenteredEditModal &&
-                    !shouldAttachCreationControls
-                      ? "auto"
-                      : "hidden",
-                  overflowX: "hidden",
-                  overscrollBehavior: expanded ? "contain" : undefined,
+                  borderRadius: "0.5rem",
+                  transformOrigin: `${creationRevealOriginX}px ${creationRevealOriginY}px`,
+                  willChange: shouldUseCreationSpawnReveal
+                    ? "clip-path, opacity"
+                    : undefined,
+                  pointerEvents:
+                    shouldUseCreationSpawnReveal && !isCreationRevealReady
+                      ? "none"
+                      : undefined,
                 }}
                 initial={
-                  centeredEditModalAnimation?.initial ?? { opacity: 0, y: 8 }
+                  shouldUseCreationSpawnReveal
+                    ? { opacity: 0, clipPath: creationRevealClipStart }
+                    : false
                 }
                 animate={
-                  centeredEditModalAnimation?.animate ?? {
-                    opacity: 1,
-                    y: 0,
-                    transition: {
-                      type: "tween",
-                      ease: "easeOut",
-                      duration: 0.2,
-                    },
-                  }
+                  shouldUseCreationSpawnReveal
+                    ? isCreationRevealReady
+                      ? {
+                          opacity: 1,
+                          clipPath: creationRevealClipEnd,
+                          transition: {
+                            type: "tween",
+                            ease: [0.16, 1, 0.3, 1],
+                            duration: FAB_CREATION_ENTER_MS / 1000,
+                          },
+                        }
+                      : { opacity: 0, clipPath: creationRevealClipStart }
+                    : { opacity: 1 }
                 }
                 exit={
-                  centeredEditModalAnimation?.exit ?? {
-                    opacity: 0,
-                    y: 8,
-                    transition: {
-                      type: "tween",
-                      ease: "easeIn",
-                      duration: 0.2,
-                    },
-                  }
+                  shouldUseCreationSpawnReveal
+                    ? {
+                        opacity: 0,
+                        transition: {
+                          type: "tween",
+                          ease: "easeIn",
+                          duration: 0.16,
+                        },
+                      }
+                    : undefined
                 }
-                onWheel={handleMenuWheel}
               >
-                <>
+                <motion.div
+                  data-fab-overlay
+                  ref={(node) => {
+                    menuRef.current = node;
+                    panelRef.current = node;
+                  }}
+                  layoutId={
+                    shouldUseCenteredEditModal
+                      ? (editTarget?.layoutId ?? undefined)
+                      : undefined
+                  }
+                  className={cn(
+                    "border rounded-lg shadow-2xl",
+                    expanded
+                      ? "bg-[var(--surface-elevated)]"
+                      : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
+                    expanded &&
+                      (shouldUseCenteredEditModal ||
+                        shouldAttachCreationControls) &&
+                      "flex flex-col overflow-hidden",
+                    expanded
+                      ? isGoalCreationExpanded
+                        ? "w-[calc(100vw-1.5rem)] max-w-[30rem]"
+                        : isProjectCreationExpanded
+                          ? "w-[calc(100vw-2rem)] max-w-[28rem]"
+                          : isTaskCreationExpanded
+                            ? "w-[calc(100vw-1.5rem)] max-w-[31rem]"
+                            : isHabitCreationExpanded
+                              ? "w-[calc(100vw-1.5rem)] max-w-[29rem]"
+                              : "w-[92vw] max-w-[920px]"
+                      : "min-w-[200px]",
+                  )}
+                  layout={!expanded && !shouldUseCenteredEditModal}
+                  onTouchStart={(event) => event.stopPropagation()}
+                  onTouchMove={(event) => {
+                    if (!expanded) {
+                      event.stopPropagation();
+                    }
+                  }}
+                  onPointerDown={(event) => {
+                    if (!expanded) {
+                      event.stopPropagation();
+                    }
+                  }}
+                  onPointerDownCapture={handleExpandedPointerDownCapture}
+                  style={{
+                    boxShadow: MENU_BOX_SHADOW,
+                    borderColor: isBlendingGradient
+                      ? blendedBorderColor
+                      : staticBorderColor,
+                    transition: panelSizeTransition,
+                    transformOrigin:
+                      shouldUseCenteredEditModal
+                        ? "center center"
+                        : menuVariant === "timeline"
+                          ? "bottom right"
+                          : "bottom center",
+                    minHeight: expanded
+                      ? panelMinHeightExpanded
+                      : menuContainerHeight,
+                    maxHeight: expanded
+                      ? panelMaxHeightExpanded
+                      : menuContainerHeight,
+                    height: expanded
+                      ? panelHeightExpanded
+                      : menuContainerHeight,
+                    minWidth: expanded ? undefined : (menuWidth ?? undefined),
+                    width: expanded ? undefined : (menuWidth ?? undefined),
+                    maxWidth: expanded ? undefined : (menuWidth ?? undefined),
+                    touchAction: expanded ? "manipulation" : undefined,
+                    overflowY:
+                      expanded &&
+                      !shouldUseCenteredEditModal &&
+                      !shouldAttachCreationControls
+                        ? "auto"
+                        : "hidden",
+                    overflowX: "hidden",
+                    overscrollBehavior: expanded ? "contain" : undefined,
+                  }}
+                  initial={
+                    shouldUseCreationSpawnReveal
+                      ? false
+                      : (centeredEditModalAnimation?.initial ?? {
+                          opacity: 0,
+                          y: 8,
+                        })
+                  }
+                  animate={
+                    shouldUseCreationSpawnReveal
+                      ? { opacity: 1, y: 0 }
+                      : (centeredEditModalAnimation?.animate ?? {
+                          opacity: 1,
+                          y: 0,
+                          transition: {
+                            type: "tween",
+                            ease: "easeOut",
+                            duration: 0.2,
+                          },
+                        })
+                  }
+                  exit={
+                    shouldUseCreationSpawnReveal
+                      ? { opacity: 1 }
+                      : (centeredEditModalAnimation?.exit ?? {
+                          opacity: 0,
+                          y: 8,
+                          transition: {
+                            type: "tween",
+                            ease: "easeIn",
+                            duration: 0.2,
+                          },
+                        })
+                  }
+                  onWheel={handleMenuWheel}
+                >
                   <div
                     data-fab-scroll-body={
-                      shouldRenderAttachedCreationControls ? "" : undefined
+                      shouldUseScrollableFabBody ? "" : undefined
                     }
                     className={cn(
-                      shouldRenderAttachedCreationControls
+                      shouldUseScrollableFabBody
                         ? "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
+                        : shouldRenderAttachedCreationControls
+                          ? "flex-none overflow-visible"
                         : null,
                     )}
                   >
@@ -10865,7 +11305,7 @@ export function Fab({
                   {shouldRenderAttachedCreationControls ? (
                     renderAttachedCreationControls()
                   ) : null}
-                </>
+                </motion.div>
               </motion.div>
               {shouldRenderTimelineOverlayButton && (
                 <motion.button

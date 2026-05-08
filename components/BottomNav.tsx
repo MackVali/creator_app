@@ -44,6 +44,17 @@ export default function BottomNav() {
           box-shadow: 0 16px 30px rgba(0, 0, 0, 0.65) !important;
           filter: none !important;
         }
+        :global(body.fab-panel-active [data-bottom-nav-bar]),
+        :global(body.fab-panel-active [data-bottom-nav] [data-tour="fab"]) {
+          opacity: 0;
+          pointer-events: none;
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          :global(body.fab-panel-active [data-bottom-nav-bar]),
+          :global(body.fab-panel-active [data-bottom-nav] [data-tour="fab"]) {
+            transition: opacity 0.12s ease;
+          }
+        }
       `}</style>
     </>
   );

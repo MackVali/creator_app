@@ -73,6 +73,17 @@ const shellContentMotion = {
   },
 } as const;
 
+const closeGoalDetailAfterFabOpen = (closeGoalDetail: () => void) => {
+  if (typeof window === "undefined") {
+    closeGoalDetail();
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(closeGoalDetail);
+  });
+};
+
 function DraggableGoalCard({
   goal,
   index,
@@ -153,7 +164,7 @@ function DraggableGoalCard({
   const handleGoalEdit = useCallback(() => {
     if (!onGoalEdit) return;
     onGoalEdit(goal);
-    onOpenChange?.(false);
+    closeGoalDetailAfterFabOpen(() => onOpenChange?.(false));
   }, [goal, onGoalEdit, onOpenChange]);
 
   return (
@@ -686,7 +697,7 @@ function CompactGoalsOverlay({
   const handleSelectedGoalEdit = useCallback(() => {
     if (!selectedGoal || !onGoalEdit) return;
     onGoalEdit(selectedGoal);
-    setOpenGoalId(null);
+    closeGoalDetailAfterFabOpen(() => setOpenGoalId(null));
   }, [onGoalEdit, selectedGoal]);
 
   if (typeof document === "undefined" || !mounted) return null;
