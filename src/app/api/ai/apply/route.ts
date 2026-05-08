@@ -44,6 +44,33 @@ const DRAFT_CREATE_TASK_SCHEMA = BASE_INTENT_SCHEMA.extend({
   }),
 });
 
+const HABIT_TYPES = ["HABIT", "CHORE", "PRACTICE", "SYNC"] as const;
+const HABIT_RECURRENCES = ["daily", "weekly", "monthly"] as const;
+const HABIT_RECURRENCE_MODES = ["DAILY", "WEEKLY", "INTERVAL"] as const;
+const HABIT_ENERGY_LEVELS = [
+  "NO",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "ULTRA",
+  "EXTREME",
+] as const;
+
+const DRAFT_CREATE_HABIT_SCHEMA = BASE_INTENT_SCHEMA.extend({
+  type: z.literal("DRAFT_CREATE_HABIT"),
+  draft: z.object({
+    name: z.string(),
+    habit_type: z.enum(HABIT_TYPES).optional(),
+    duration_minutes: z.coerce.number().int().positive().optional(),
+    recurrence: z.enum(HABIT_RECURRENCES).optional(),
+    recurrence_mode: z.enum(HABIT_RECURRENCE_MODES).optional(),
+    energy: z.enum(HABIT_ENERGY_LEVELS).optional(),
+    goalId: z.string().optional(),
+    skillId: z.string().optional(),
+    locationContextId: z.string().optional(),
+  }),
+});
+
 const SUGGEST_SCHEDULE_CHANGE_SCHEMA = BASE_INTENT_SCHEMA.extend({
   type: z.literal("SUGGEST_SCHEDULE_CHANGE"),
   suggestion: z.object({
@@ -172,6 +199,7 @@ const AI_INTENT_SCHEMA = z.discriminatedUnion("type", [
   DRAFT_CREATE_GOAL_SCHEMA,
   DRAFT_CREATE_PROJECT_SCHEMA,
   DRAFT_CREATE_TASK_SCHEMA,
+  DRAFT_CREATE_HABIT_SCHEMA,
   SUGGEST_SCHEDULE_CHANGE_SCHEMA,
   NEEDS_CLARIFICATION_SCHEMA,
   DRAFT_SCHEDULER_INPUT_OPS_SCHEMA,
@@ -190,6 +218,7 @@ const allowDraftCreation = new Set<AiIntent["type"]>([
   "DRAFT_CREATE_GOAL",
   "DRAFT_CREATE_PROJECT",
   "DRAFT_CREATE_TASK",
+  "DRAFT_CREATE_HABIT",
   "DRAFT_SCHEDULER_INPUT_OPS",
 ]);
 
@@ -433,6 +462,42 @@ const validateProjectOwnership = async (
   return Boolean(data?.id);
 };
 
+const validateSkillOwnership = async (
+  supabase: SupabaseClient,
+  userId: string,
+  skillId: string
+) => {
+  const { data, error } = await supabase
+    .from("skills")
+    .select("id")
+    .eq("id", skillId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.error("Skill override lookup failed", error);
+    return false;
+  }
+  return Boolean(data?.id);
+};
+
+const validateLocationContextOwnership = async (
+  supabase: SupabaseClient,
+  userId: string,
+  locationContextId: string
+) => {
+  const { data, error } = await supabase
+    .from("location_contexts")
+    .select("id")
+    .eq("id", locationContextId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.error("Location context lookup failed", error);
+    return false;
+  }
+  return Boolean(data?.id);
+};
+
 export async function POST(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
   if (!supabase) {
@@ -486,7 +551,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Draft creation scope only supports DRAFT_CREATE_GOAL/PROJECT/TASK/DRAFT_SCHEDULER_INPUT_OPS intents",
+          "Draft creation scope only supports DRAFT_CREATE_GOAL/PROJECT/TASK/HABIT/DRAFT_SCHEDULER_INPUT_OPS intents",
       },
       { status: 400 }
     );
@@ -712,6 +777,97 @@ const derivePreviewCandidates = async (
         const createdIds = data?.id ? [data.id] : [];
         const appliedResult = { type: intent.type, ids: createdIds };
         const message = "Task creation confirmed";
+        if (idempotencyKey) {
+          await recordAppliedAction(
+            supabase,
+            user.id,
+            idempotencyKey,
+            intent.type,
+            createdIds,
+            message
+          );
+        }
+        return NextResponse.json({ ok: true, applied: appliedResult, message });
+      }
+      case "DRAFT_CREATE_HABIT": {
+        const warnings: string[] = [];
+        const trimmedName = intent.draft.name.trim();
+        if (!trimmedName) {
+          return NextResponse.json(
+            { error: "Habit name is required" },
+            { status: 400 }
+          );
+        }
+        if (trimmedName !== intent.draft.name) {
+          warnings.push("Habit name was trimmed for validation.");
+        }
+
+        const goalId = intent.draft.goalId?.trim() || null;
+        const skillId = intent.draft.skillId?.trim() || null;
+        const locationContextId =
+          intent.draft.locationContextId?.trim() || null;
+
+        if (
+          goalId &&
+          !(await validateGoalOwnership(supabase, user.id, goalId))
+        ) {
+          return NextResponse.json(
+            { error: "Invalid or unauthorized goal link" },
+            { status: 400 }
+          );
+        }
+        if (
+          skillId &&
+          !(await validateSkillOwnership(supabase, user.id, skillId))
+        ) {
+          return NextResponse.json(
+            { error: "Invalid or unauthorized skill link" },
+            { status: 400 }
+          );
+        }
+        if (
+          locationContextId &&
+          !(await validateLocationContextOwnership(
+            supabase,
+            user.id,
+            locationContextId
+          ))
+        ) {
+          return NextResponse.json(
+            { error: "Invalid or unauthorized location context link" },
+            { status: 400 }
+          );
+        }
+
+        if (isDryRun) {
+          return dryRunResponse({ warnings });
+        }
+
+        const { data, error } = await supabase
+          .from("habits")
+          .insert({
+            user_id: user.id,
+            name: trimmedName,
+            habit_type: intent.draft.habit_type ?? "HABIT",
+            recurrence: intent.draft.recurrence ?? "daily",
+            duration_minutes: intent.draft.duration_minutes ?? 30,
+            energy: intent.draft.energy ?? "MEDIUM",
+            goal_id: goalId,
+            skill_id: skillId,
+            location_context_id: locationContextId,
+          })
+          .select("id")
+          .single();
+        if (error) {
+          console.error("Failed to insert habit", error);
+          return NextResponse.json(
+            { error: "Unable to create habit" },
+            { status: 500 }
+          );
+        }
+        const createdIds = data?.id ? [data.id] : [];
+        const appliedResult = { type: intent.type, ids: createdIds };
+        const message = "Habit creation confirmed";
         if (idempotencyKey) {
           await recordAppliedAction(
             supabase,

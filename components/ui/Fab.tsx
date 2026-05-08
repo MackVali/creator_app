@@ -453,6 +453,7 @@ const DRAFT_PROPOSAL_TYPES: AiIntent["type"][] = [
   "DRAFT_CREATE_GOAL",
   "DRAFT_CREATE_PROJECT",
   "DRAFT_CREATE_TASK",
+  "DRAFT_CREATE_HABIT",
 ];
 
 const PROPOSAL_CARD_TYPES: AiIntent["type"][] = [
@@ -525,6 +526,12 @@ const buildInitialProposalFormValues = (
     values.goal_id ??= "";
     values.skill_ids ??= "";
     values.stage ??= "";
+  }
+  if (intentType === "DRAFT_CREATE_HABIT") {
+    values.habit_type ||= "HABIT";
+    values.duration_minutes ||= "30";
+    values.recurrence ||= "daily";
+    values.energy ||= "MEDIUM";
   }
   return values;
 };
@@ -1674,6 +1681,7 @@ export function Fab({
   const projectNameInputRef = useRef<HTMLInputElement | null>(null);
   const taskNameInputRef = useRef<HTMLInputElement | null>(null);
   const habitNameInputRef = useRef<HTMLInputElement | null>(null);
+  const fabInputBlurTimeoutRef = useRef<number | null>(null);
   const [availableTags, setAvailableTags] = useState<FabTag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [tagInputValue, setTagInputValue] = useState("");
@@ -1970,6 +1978,7 @@ export function Fab({
   );
   const startTimeInputId = useId();
   const endTimeInputId = useId();
+  const fabKeyboardOwnerId = useId();
   const PROJECT_STAGE_OPTIONS_LOCAL = [
     { value: "RESEARCH", label: "RESEARCH" },
     { value: "TEST", label: "TEST" },
@@ -3883,7 +3892,8 @@ export function Fab({
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
-  const [isTextInputFocused, setIsTextInputFocused] = useState(false);
+  const [isFabInputFocused, setIsFabInputFocused] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const isKeyboardVisible = useMemo(() => {
     if (!expanded) return false;
     if (keyboardLift <= 12) return false;
@@ -3893,8 +3903,9 @@ export function Fab({
     }
     return keyboardLift > 24;
   }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
-  const shouldHideOverhangButtons =
-    expanded && (isKeyboardVisible || isTextInputFocused);
+  const isFabKeyboardActive =
+    expanded && (isKeyboardVisible || (isMobileViewport && isFabInputFocused));
+  const shouldHideOverhangButtons = expanded && isFabKeyboardActive;
 
   useEffect(() => {
     setActiveCreationMode("main");
@@ -4081,7 +4092,7 @@ export function Fab({
   useEffect(() => {
     if (!expanded) {
       setKeyboardLift(0);
-      setIsTextInputFocused(false);
+      setIsFabInputFocused(false);
       return;
     }
     const updateLift = () => {
@@ -4113,37 +4124,78 @@ export function Fab({
   }, [expanded, stableSafeBottom]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(max-width: 767px), (pointer: coarse)");
+    const update = () => setIsMobileViewport(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
     if (!expanded) {
-      setIsTextInputFocused(false);
+      if (fabInputBlurTimeoutRef.current !== null) {
+        window.clearTimeout(fabInputBlurTimeoutRef.current);
+        fabInputBlurTimeoutRef.current = null;
+      }
+      setIsFabInputFocused(false);
       return;
     }
     const isTextEntryElement = (el: Element | null) => {
       if (!el) return false;
-      const tag = el.tagName.toLowerCase();
       const editable = (el as HTMLElement).isContentEditable;
+      if (editable) return true;
+      if (el instanceof HTMLTextAreaElement) return true;
+      if (el instanceof HTMLInputElement) {
+        return !["button", "submit", "reset", "checkbox", "radio"].includes(
+          el.type,
+        );
+      }
+      return false;
+    };
+    const isFocusedInsideFabPanel = () => {
+      const activeElement = document.activeElement;
       return (
-        editable ||
-        tag === "input" ||
-        tag === "textarea" ||
-        tag === "select" ||
-        el instanceof HTMLTextAreaElement ||
-        (el instanceof HTMLInputElement &&
-          el.type !== "button" &&
-          el.type !== "submit" &&
-          el.type !== "reset")
+        Boolean(activeElement) &&
+        Boolean(panelRef.current?.contains(activeElement)) &&
+        isTextEntryElement(activeElement)
       );
     };
+    const setFocusedWithDelay = (focused: boolean) => {
+      if (fabInputBlurTimeoutRef.current !== null) {
+        window.clearTimeout(fabInputBlurTimeoutRef.current);
+        fabInputBlurTimeoutRef.current = null;
+      }
+      if (focused) {
+        setIsFabInputFocused(true);
+        return;
+      }
+      fabInputBlurTimeoutRef.current = window.setTimeout(() => {
+        fabInputBlurTimeoutRef.current = null;
+        setIsFabInputFocused(isFocusedInsideFabPanel());
+      }, 90);
+    };
     const handleFocusIn = (event: FocusEvent) => {
-      setIsTextInputFocused(isTextEntryElement(event.target as Element));
+      const target = event.target as Element | null;
+      setFocusedWithDelay(
+        Boolean(target) &&
+          Boolean(panelRef.current?.contains(target)) &&
+          isTextEntryElement(target),
+      );
     };
     const handleFocusOut = () => {
-      setIsTextInputFocused(isTextEntryElement(document.activeElement));
+      setFocusedWithDelay(false);
     };
+    setIsFabInputFocused(isFocusedInsideFabPanel());
     document.addEventListener("focusin", handleFocusIn, true);
     document.addEventListener("focusout", handleFocusOut, true);
     return () => {
       document.removeEventListener("focusin", handleFocusIn, true);
       document.removeEventListener("focusout", handleFocusOut, true);
+      if (fabInputBlurTimeoutRef.current !== null) {
+        window.clearTimeout(fabInputBlurTimeoutRef.current);
+        fabInputBlurTimeoutRef.current = null;
+      }
     };
   }, [expanded]);
 
@@ -4161,6 +4213,26 @@ export function Fab({
       setShowSkillFilters(false);
     }
   }, [expanded]);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || typeof window === "undefined") {
+      return;
+    }
+    const key = "__CREATOR_FAB_KEYBOARD_ACTIVE_OWNERS__";
+    const win = window as typeof window & { [key: string]: Set<string> };
+    win[key] ??= new Set<string>();
+    const owners = win[key];
+    if (isFabKeyboardActive) {
+      owners.add(fabKeyboardOwnerId);
+    } else {
+      owners.delete(fabKeyboardOwnerId);
+    }
+    document.body.classList.toggle("fab-keyboard-active", owners.size > 0);
+    return () => {
+      owners.delete(fabKeyboardOwnerId);
+      document.body.classList.toggle("fab-keyboard-active", owners.size > 0);
+    };
+  }, [fabKeyboardOwnerId, isFabKeyboardActive]);
 
   useEffect(() => {
     if (!showGoalFilters) return;
@@ -6122,10 +6194,14 @@ export function Fab({
               style={{
                 paddingBottom: shouldUseCenteredEditModal
                   ? undefined
-                  : `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
+                  : isFabKeyboardActive
+                    ? "0.5rem"
+                    : `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
                 scrollPaddingBottom: shouldUseCenteredEditModal
                   ? undefined
-                  : `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
+                  : isFabKeyboardActive
+                    ? "1rem"
+                    : `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
               }}
             >
               {selected &&
@@ -8171,7 +8247,7 @@ export function Fab({
     return candidate as AiSchedulerOp[];
   };
 
-  const handleSaveProposalEdits = (message: AiThreadProposalMessage) => {
+  const handleSaveProposalEdits = async (message: AiThreadProposalMessage) => {
     const finalDraft = getDraftValuesForMessage(message);
     const overrideOpsCandidate = message.overrides?.schedulerOps;
     const overrideOpsFromMessage = Array.isArray(overrideOpsCandidate)
@@ -8199,6 +8275,65 @@ export function Fab({
         };
       }),
     );
+
+    const intentPayload: Record<string, unknown> = {
+      ...message.ai.intent,
+      draft: finalDraft,
+    };
+    const intentOps = normalizeSchedulerOps(message.ai.intent.ops);
+    const ops = overrideOps ?? intentOps;
+    if (ops.length > 0) {
+      intentPayload.ops = ops;
+    }
+
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const response = await fetch("/api/ai/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: message.ai.scope,
+          intent: intentPayload,
+          idempotency_key: message.id,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          payload?.message ?? payload?.error ?? "Failed to apply proposal",
+        );
+      }
+      const appliedMessage =
+        typeof payload?.message === "string"
+          ? payload.message
+          : "Proposal applied";
+      toast.success("AI proposal applied", appliedMessage);
+      setAiThread((prev) => [
+        ...prev.filter((entry) => entry.id !== message.id),
+        {
+          id: createThreadMessageId(),
+          role: "assistant",
+          kind: "text",
+          content: appliedMessage,
+          ts: Date.now(),
+        },
+      ]);
+      setProposalFormState((prev) => {
+        const updated = { ...prev };
+        delete updated[message.id];
+        return updated;
+      });
+      router.refresh();
+    } catch (error) {
+      console.error("AI proposal apply error", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to apply proposal";
+      setAiError(errorMessage);
+      toast.error("Unable to apply proposal", errorMessage);
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const handleSendEditedProposal = (message: AiThreadProposalMessage) => {
@@ -9994,18 +10129,34 @@ export function Fab({
     expanded && isContentSizedCreationExpanded && activeCreationMode !== "main"
       ? selectedCreationShellHeight ?? selectedCreationTypeMinHeight
       : undefined;
-  const minHeightExpanded = expanded
+  const baseMinHeightExpanded = expanded
     ? selectedCreationTypeMinHeight !== null
       ? selectedCreationTypeMinHeight
       : effectiveViewportHeight
         ? Math.round(effectiveViewportHeight * 0.58)
         : "58vh"
     : undefined;
+  const keyboardMaxHeightExpanded =
+    expanded && isFabKeyboardActive
+      ? effectiveViewportHeight
+        ? Math.round(
+            Math.max(1, effectiveViewportHeight - 16 - stableSafeBottom),
+          )
+        : "calc(100dvh - env(safe-area-inset-bottom, 0px) - 16px)"
+      : undefined;
   const maxHeightExpanded = expanded
-    ? effectiveViewportHeight
-      ? Math.round(effectiveViewportHeight * 0.9 - 8 - stableSafeBottom)
-      : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"
+    ? (keyboardMaxHeightExpanded ??
+      (effectiveViewportHeight
+        ? Math.round(effectiveViewportHeight * 0.9 - 8 - stableSafeBottom)
+        : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"))
     : undefined;
+  const minHeightExpanded =
+    expanded &&
+    isFabKeyboardActive &&
+    typeof baseMinHeightExpanded === "number" &&
+    typeof maxHeightExpanded === "number"
+      ? Math.min(baseMinHeightExpanded, maxHeightExpanded)
+      : baseMinHeightExpanded;
   const editPresentationOriginRect = editTarget?.originRect ?? null;
   const shouldUseCenteredEditModal =
     expanded && Boolean(editPresentationOriginRect);
@@ -10097,6 +10248,72 @@ export function Fab({
         }
       : undefined;
   const shouldRenderFabPanel = isOpen || expanded;
+  const renderAttachedCreationControls = () => (
+    <div
+      data-fab-keyboard-controls
+      className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm sm:px-5"
+    >
+      <div className="flex items-center gap-2">
+        {selected && activeCreationModes.length > 1
+          ? activeCreationModes.map((mode) => {
+              const isActive = activeCreationMode === mode.id;
+              const Icon = mode.icon;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setActiveCreationMode(mode.id)}
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-lg border backdrop-blur-xl transition duration-150",
+                    isActive
+                      ? "border-white/18 bg-[linear-gradient(180deg,rgba(34,38,43,0.96),rgba(64,68,76,0.9))] text-white shadow-[0_10px_18px_rgba(0,0,0,0.28),inset_0_2px_4px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.08)] translate-y-[1px]"
+                      : "border-white/10 bg-[linear-gradient(180deg,rgba(104,110,120,0.34),rgba(54,58,66,0.3))] text-white/68 shadow-[0_10px_18px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.14)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(118,124,134,0.38),rgba(60,64,72,0.34))] hover:text-white/86",
+                  )}
+                  aria-pressed={isActive}
+                  aria-label={mode.label}
+                  title={mode.label}
+                >
+                  <Icon className="h-4 w-4" />
+                </button>
+              );
+            })
+          : null}
+      </div>
+      <div className="flex items-center gap-3">
+        <Button
+          type="button"
+          aria-label="Discard"
+          variant="cancelSquare"
+          size="iconSquare"
+          className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation"
+          {...overhangCancelTapHandlers}
+        >
+          <X
+            className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+            aria-hidden="true"
+          />
+        </Button>
+
+        <Button
+          type="button"
+          aria-label="Save"
+          variant="confirmSquare"
+          size="iconSquare"
+          disabled={isSaveDisabled}
+          className={cn(
+            "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation bg-white/10 text-white transition hover:bg-white/20",
+            isSaveDisabled ? "opacity-50" : "",
+          )}
+          {...overhangSaveTapHandlers}
+        >
+          <Check
+            className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+            aria-hidden="true"
+          />
+        </Button>
+      </div>
+    </div>
+  );
 
   const fabContent = (
     <div
@@ -10132,6 +10349,14 @@ export function Fab({
                   (expanded ? "fixed" : "absolute"),
                 !shouldUseCenteredEditModal && menuClassName,
               )}
+              style={
+                expanded && isFabKeyboardActive && !shouldUseCenteredEditModal
+                  ? {
+                      bottom: Math.round(keyboardLift + stableSafeBottom + 8),
+                      marginBottom: 0,
+                    }
+                  : undefined
+              }
             >
               <motion.div
                 data-fab-overlay
@@ -10149,7 +10374,9 @@ export function Fab({
                   expanded
                     ? "bg-[var(--surface-elevated)]"
                     : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
-                  shouldUseCenteredEditModal && "flex flex-col overflow-hidden",
+                  expanded &&
+                    (shouldUseCenteredEditModal || isFabKeyboardActive) &&
+                    "flex flex-col overflow-hidden",
                   expanded
                     ? isGoalCreationExpanded
                       ? "w-[calc(100vw-1.5rem)] max-w-[30rem]"
@@ -10195,7 +10422,9 @@ export function Fab({
                   maxWidth: expanded ? undefined : (menuWidth ?? undefined),
                   touchAction: expanded ? "manipulation" : undefined,
                   overflowY:
-                    expanded && !shouldUseCenteredEditModal ? "auto" : "hidden",
+                    expanded && !shouldUseCenteredEditModal && !isFabKeyboardActive
+                      ? "auto"
+                      : "hidden",
                   overflowX: "hidden",
                   overscrollBehavior: expanded ? "contain" : undefined,
                 }}
@@ -10229,7 +10458,8 @@ export function Fab({
                 <>
                   <div
                     className={cn(
-                      shouldUseCenteredEditModal && expanded
+                      (shouldUseCenteredEditModal || isFabKeyboardActive) &&
+                        expanded
                         ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
                         : null,
                     )}
@@ -10330,70 +10560,13 @@ export function Fab({
                       </div>
                     </motion.div>
                   </div>
+                  {expanded && shouldUseCenteredEditModal ? (
+                    renderAttachedCreationControls()
+                  ) : null}
                   {expanded &&
-                  !shouldHideOverhangButtons &&
-                  shouldUseCenteredEditModal ? (
-                    <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm sm:px-5">
-                      <div className="flex items-center gap-2">
-                        {selected && activeCreationModes.length > 1
-                          ? activeCreationModes.map((mode) => {
-                              const isActive = activeCreationMode === mode.id;
-                              const Icon = mode.icon;
-                              return (
-                                <button
-                                  key={mode.id}
-                                  type="button"
-                                  onClick={() => setActiveCreationMode(mode.id)}
-                                  className={cn(
-                                    "flex h-9 w-9 items-center justify-center rounded-lg border backdrop-blur-xl transition duration-150",
-                                    isActive
-                                      ? "border-white/18 bg-[linear-gradient(180deg,rgba(34,38,43,0.96),rgba(64,68,76,0.9))] text-white shadow-[0_10px_18px_rgba(0,0,0,0.28),inset_0_2px_4px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.08)] translate-y-[1px]"
-                                      : "border-white/10 bg-[linear-gradient(180deg,rgba(104,110,120,0.34),rgba(54,58,66,0.3))] text-white/68 shadow-[0_10px_18px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.14)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(118,124,134,0.38),rgba(60,64,72,0.34))] hover:text-white/86",
-                                  )}
-                                  aria-pressed={isActive}
-                                  aria-label={mode.label}
-                                  title={mode.label}
-                                >
-                                  <Icon className="h-4 w-4" />
-                                </button>
-                              );
-                            })
-                          : null}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Button
-                          type="button"
-                          aria-label="Discard"
-                          variant="cancelSquare"
-                          size="iconSquare"
-                          className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation"
-                          {...overhangCancelTapHandlers}
-                        >
-                          <X
-                            className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
-                            aria-hidden="true"
-                          />
-                        </Button>
-
-                        <Button
-                          type="button"
-                          aria-label="Save"
-                          variant="confirmSquare"
-                          size="iconSquare"
-                          disabled={isSaveDisabled}
-                          className={cn(
-                            "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation bg-white/10 text-white transition hover:bg-white/20",
-                            isSaveDisabled ? "opacity-50" : "",
-                          )}
-                          {...overhangSaveTapHandlers}
-                        >
-                          <Check
-                            className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
-                            aria-hidden="true"
-                          />
-                        </Button>
-                      </div>
-                    </div>
+                  isFabKeyboardActive &&
+                  !shouldUseCenteredEditModal ? (
+                    renderAttachedCreationControls()
                   ) : null}
                 </>
               </motion.div>
@@ -10549,9 +10722,11 @@ export function Fab({
           ref={buttonRef}
           onClick={handleFabButtonClick}
           aria-label={isOpen ? "Open ILAV" : "Add new item"}
-          className={`relative flex items-center justify-center h-14 w-14 rounded-full text-white shadow-lg hover:scale-110 transition overflow-visible ${
-            isOpen ? "rotate-45" : ""
-          }`}
+          className={cn(
+            "relative flex h-14 w-14 items-center justify-center overflow-visible rounded-full text-white shadow-lg transition hover:scale-110",
+            isOpen ? "rotate-45" : "",
+            isFabKeyboardActive ? "pointer-events-none opacity-0" : "",
+          )}
           onTouchStart={handleFabButtonTouchStart}
           onTouchEnd={handleFabButtonTouchEnd}
           onTouchCancel={handleFabButtonTouchCancel}
@@ -11422,6 +11597,7 @@ function ProposalTimelineCard({
 
   const isGoalDraft = message.ai.intent.type === "DRAFT_CREATE_GOAL";
   const isProjectDraft = message.ai.intent.type === "DRAFT_CREATE_PROJECT";
+  const isHabitDraft = message.ai.intent.type === "DRAFT_CREATE_HABIT";
   const isSchedulerDraft =
     message.ai.intent.type === "DRAFT_SCHEDULER_INPUT_OPS";
 
@@ -11442,6 +11618,20 @@ function ProposalTimelineCard({
   if (isProjectDraft) {
     return (
       <ProjectProposalForm
+        message={message}
+        fieldKeys={fieldKeys}
+        getFieldValue={getFieldValue}
+        onFieldChange={onFieldChange}
+        onSave={onSave}
+        onSend={onSend}
+        isSending={isSending}
+      />
+    );
+  }
+
+  if (isHabitDraft) {
+    return (
+      <HabitProposalForm
         message={message}
         fieldKeys={fieldKeys}
         getFieldValue={getFieldValue}
@@ -11812,6 +12002,28 @@ const PROJECT_PROPOSAL_STAGE_OPTIONS = [
   { value: "RELEASE", label: "Release" },
 ];
 
+const HABIT_PROPOSAL_TYPE_OPTIONS = [
+  { value: "HABIT", label: "Habit" },
+  { value: "CHORE", label: "Chore" },
+  { value: "PRACTICE", label: "Practice" },
+  { value: "SYNC", label: "Sync" },
+];
+
+const HABIT_PROPOSAL_RECURRENCE_OPTIONS = [
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+];
+
+const HABIT_PROPOSAL_ENERGY_OPTIONS = [
+  { value: "NO", label: "No" },
+  { value: "LOW", label: "Low" },
+  { value: "MEDIUM", label: "Medium" },
+  { value: "HIGH", label: "High" },
+  { value: "ULTRA", label: "Ultra" },
+  { value: "EXTREME", label: "Extreme" },
+];
+
 type ProjectProposalFormProps = {
   message: AiThreadProposalMessage;
   fieldKeys: string[];
@@ -11972,6 +12184,184 @@ function ProjectProposalForm({
                 disabled={isSending}
                 aria-label="Save project"
                 title="Save project"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type HabitProposalFormProps = {
+  message: AiThreadProposalMessage;
+  fieldKeys: string[];
+  getFieldValue: (key: string) => string;
+  onFieldChange: (field: string, value: string) => void;
+  onSave: (message: AiThreadProposalMessage) => void;
+  onSend: (message: AiThreadProposalMessage) => void;
+  isSending: boolean;
+};
+
+function HabitProposalForm({
+  message,
+  fieldKeys,
+  getFieldValue,
+  onFieldChange,
+  onSave,
+  onSend,
+  isSending,
+}: HabitProposalFormProps) {
+  const labelClassName =
+    "text-[10px] font-semibold uppercase tracking-[0.35em] text-white/60";
+  const inputClassName =
+    "h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-[12px] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0";
+  const optionalLinkKeys = fieldKeys.filter((key) =>
+    ["goalId", "skillId", "locationContextId"].includes(key),
+  );
+  const energyLevel =
+    (getFieldValue("energy") as FlameEmberProps["level"]) || "MEDIUM";
+
+  return (
+    <div className="mx-auto w-full max-w-[520px]">
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-white/10 to-black/80 p-3 sm:p-4 text-white">
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <Label className={labelClassName}>Name</Label>
+            <div className="flex gap-2">
+              <Input
+                value={getFieldValue("name")}
+                onChange={(event) => onFieldChange("name", event.target.value)}
+                placeholder="Name this habit"
+                className={`${inputClassName} flex-1`}
+              />
+              <button
+                type="button"
+                className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] p-2 text-[11px] text-white shadow-[inset_0_1px_4px_rgba(255,255,255,0.08)] transition hover:border-white/30 hover:bg-white/10"
+                aria-label="Habit energy"
+              >
+                <FlameEmber
+                  level={energyLevel}
+                  size="sm"
+                  className="pointer-events-none"
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1 min-w-0">
+              <Label className={labelClassName}>Type</Label>
+              <Select
+                value={getFieldValue("habit_type")}
+                onValueChange={(value) => onFieldChange("habit_type", value)}
+              >
+                <SelectTrigger className={inputClassName}>
+                  <SelectValue placeholder="Choose type" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#050507] border border-white/10">
+                  {HABIT_PROPOSAL_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 min-w-0">
+              <Label className={labelClassName}>Duration</Label>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                value={getFieldValue("duration_minutes")}
+                onChange={(event) =>
+                  onFieldChange("duration_minutes", event.target.value)
+                }
+                className={inputClassName}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1 min-w-0">
+              <Label className={labelClassName}>Recurrence</Label>
+              <Select
+                value={getFieldValue("recurrence")}
+                onValueChange={(value) => onFieldChange("recurrence", value)}
+              >
+                <SelectTrigger className={inputClassName}>
+                  <SelectValue placeholder="Choose recurrence" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#050507] border border-white/10">
+                  {HABIT_PROPOSAL_RECURRENCE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 min-w-0">
+              <Label className={labelClassName}>Energy</Label>
+              <Select
+                value={getFieldValue("energy")}
+                onValueChange={(value) => onFieldChange("energy", value)}
+              >
+                <SelectTrigger className={inputClassName}>
+                  <SelectValue placeholder="Choose energy" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#050507] border border-white/10">
+                  {HABIT_PROPOSAL_ENERGY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {optionalLinkKeys.length > 0 ? (
+            <div className="grid grid-cols-1 gap-2">
+              {optionalLinkKeys.map((key) => (
+                <div key={key} className="space-y-1">
+                  <Label className={labelClassName}>
+                    {humanizeFieldLabel(key)}
+                  </Label>
+                  <Input
+                    value={getFieldValue(key)}
+                    onChange={(event) =>
+                      onFieldChange(key, event.target.value)
+                    }
+                    className={inputClassName}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="mt-1 border-t border-white/10 pt-3">
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => onSend(message)}
+                disabled={isSending}
+                aria-label="Request refinement"
+                title="Request refinement"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ef4444] text-white shadow-[0_8px_20px_rgba(239,68,68,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onSave(message)}
+                disabled={isSending}
+                aria-label="Save habit"
+                title="Save habit"
                 className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Check className="h-4 w-4" />

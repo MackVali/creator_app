@@ -24,12 +24,17 @@ export default function BottomNav() {
     <>
       <div className="fixed bottom-0 left-0 right-0 z-50" data-bottom-nav>
         <div className="relative">
-          <BottomBarNav
-            items={items}
-            currentPath={pathname}
-            onNavigate={(href) => router.push(href)}
-          />
-          <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-6">
+          <div data-bottom-nav-bar>
+            <BottomBarNav
+              items={items}
+              currentPath={pathname}
+              onNavigate={(href) => router.push(href)}
+            />
+          </div>
+          <div
+            className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-6"
+            data-bottom-nav-fab-launcher
+          >
             <Fab />
           </div>
         </div>

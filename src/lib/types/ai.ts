@@ -91,6 +91,20 @@ export type AiIntent =
       draft: { name: string; projectId?: string };
     } & BaseIntent)
   | ({
+      type: "DRAFT_CREATE_HABIT";
+      draft: {
+        name: string;
+        habit_type?: "HABIT" | "CHORE" | "PRACTICE" | "SYNC";
+        duration_minutes?: number;
+        recurrence?: "daily" | "weekly" | "monthly";
+        recurrence_mode?: "DAILY" | "WEEKLY" | "INTERVAL";
+        energy?: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME";
+        goalId?: string;
+        skillId?: string;
+        locationContextId?: string;
+      };
+    } & BaseIntent)
+  | ({
       type: "SUGGEST_SCHEDULE_CHANGE";
       suggestion: { summary: string };
     } & BaseIntent)
