@@ -379,11 +379,13 @@ async function fetchTrueRoadmapsForMonument(
 export function MonumentGoalsList({
   monumentId,
   monumentEmoji,
+  monumentView = "goals",
   goalSection = "active",
   onGoalSectionChange,
 }: {
   monumentId: string;
   monumentEmoji?: string | null;
+  monumentView?: "goals" | "roadmap";
   goalSection?: "active" | "completed";
   onGoalSectionChange?: (section: "active" | "completed") => void;
 }) {
@@ -1192,12 +1194,64 @@ export function MonumentGoalsList({
 
     const hasTrueRoadmaps = monumentRoadmapsWithItems.length > 0;
 
-    // If there is no roadmap content and no standalone/library goals, show empty state
-    if (
-      !hasTrueRoadmaps &&
-      filteredRoadmaps.length === 0 &&
-      filteredStandaloneGoals.length === 0
-    ) {
+    if (monumentView === "roadmap") {
+      if (!hasTrueRoadmaps) {
+        return (
+          <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+            No true roadmap linked to this monument yet.
+          </Card>
+        );
+      }
+
+      return (
+        <div className="space-y-3.5 sm:space-y-4">
+          {monumentRoadmapsWithItems.map((roadmap) => (
+            <MixedRoadmapCard
+              key={roadmap.id}
+              roadmap={roadmap}
+              variant="compact"
+              defaultOpen
+              onGoalOpen={handleRoadmapGoalOpen}
+              onReorderSaved={refreshTrueRoadmaps}
+            />
+          ))}
+          {roadmapOpenGoal && openGoalId === roadmapOpenGoal.id ? (
+            <div className="goal-card-wrapper">
+              <GoalCard
+                goal={roadmapOpenGoal}
+                showWeight={false}
+                showCreatedAt={false}
+                showEmojiPrefix={false}
+                variant="compact"
+                monumentContext
+                onEdit={() => handleGoalEdit(roadmapOpenGoal)}
+                onProjectUpdated={(projectId, updates) =>
+                  handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
+                }
+                onProjectDeleted={(projectId) =>
+                  handleProjectDeleted(roadmapOpenGoal.id, projectId)
+                }
+                onProjectEditOpen={(target, project, origin) =>
+                  handleProjectEditOpen(
+                    target,
+                    project.id,
+                    roadmapOpenGoal.id,
+                    origin
+                  )
+                }
+                open={openGoalId === roadmapOpenGoal.id}
+                onOpenChange={(isOpen) => {
+                  handleGoalOpenChange(roadmapOpenGoal.id, isOpen);
+                  if (!isOpen) setRoadmapOpenGoal(null);
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (filteredRoadmaps.length === 0 && filteredStandaloneGoals.length === 0) {
       return (
         <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
           {goalSection === "completed"
@@ -1207,147 +1261,95 @@ export function MonumentGoalsList({
       );
     }
 
-    const hasLegacyLibrary =
-      filteredRoadmaps.length > 0 || filteredStandaloneGoals.length > 0;
-
     return (
-      <div className="space-y-5 sm:space-y-6">
-        {hasTrueRoadmaps ? (
-          <div className="space-y-3.5 sm:space-y-4">
-            {monumentRoadmapsWithItems.map((roadmap) => (
-              <MixedRoadmapCard
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
+              Goal Library
+            </p>
+          </div>
+          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-1">
+            <button
+              type="button"
+              onClick={() => onGoalSectionChange?.("active")}
+              className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
+                goalSection === "active"
+                  ? "bg-[#3B3F49] text-white"
+                  : "text-[#A7B0BD] hover:text-white"
+              }`}
+              aria-pressed={goalSection === "active"}
+            >
+              Active
+            </button>
+            <button
+              type="button"
+              onClick={() => onGoalSectionChange?.("completed")}
+              className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
+                goalSection === "completed"
+                  ? "bg-[#3B3F49] text-white"
+                  : "text-[#A7B0BD] hover:text-white"
+              }`}
+              aria-pressed={goalSection === "completed"}
+            >
+              Completed
+            </button>
+          </div>
+        </div>
+        <div className={GOAL_GRID_CLASS}>
+          {filteredRoadmaps.map(({ roadmap, goals: roadmapGoalsList, goalCount }) => {
+            return (
+              <div
                 key={roadmap.id}
-                roadmap={roadmap}
-                variant="compact"
-                onGoalOpen={handleRoadmapGoalOpen}
-                onReorderSaved={refreshTrueRoadmaps}
-              />
-            ))}
-            {roadmapOpenGoal && openGoalId === roadmapOpenGoal.id ? (
-              <div className="goal-card-wrapper">
-                <GoalCard
-                  goal={roadmapOpenGoal}
-                  showWeight={false}
-                  showCreatedAt={false}
-                  showEmojiPrefix={false}
+                className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
+              >
+                <RoadmapCard
+                  roadmap={roadmap}
+                  goalCount={goalCount}
+                  goals={roadmapGoalsList}
                   variant="compact"
+                  onGoalEdit={handleRoadmapGoalEdit}
+                  onProjectEditOpen={handleProjectEditOpen}
                   monumentContext
-                  onEdit={() => handleGoalEdit(roadmapOpenGoal)}
-                  onProjectUpdated={(projectId, updates) =>
-                    handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
-                  }
-                  onProjectDeleted={(projectId) =>
-                    handleProjectDeleted(roadmapOpenGoal.id, projectId)
-                  }
-                  onProjectEditOpen={(target, project, origin) =>
-                    handleProjectEditOpen(
-                      target,
-                      project.id,
-                      roadmapOpenGoal.id,
-                      origin
-                    )
-                  }
-                  open={openGoalId === roadmapOpenGoal.id}
-                  onOpenChange={(isOpen) => {
-                    handleGoalOpenChange(roadmapOpenGoal.id, isOpen);
-                    if (!isOpen) setRoadmapOpenGoal(null);
-                  }}
                 />
               </div>
-            ) : null}
-          </div>
-        ) : null}
+            );
+          })}
 
-        {hasLegacyLibrary ? (
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
-                  Goal Library
-                </p>
-              </div>
-              <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-1">
-                <button
-                  type="button"
-                  onClick={() => onGoalSectionChange?.("active")}
-                  className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
-                    goalSection === "active"
-                      ? "bg-[#3B3F49] text-white"
-                      : "text-[#A7B0BD] hover:text-white"
-                  }`}
-                  aria-pressed={goalSection === "active"}
-                >
-                  Active
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onGoalSectionChange?.("completed")}
-                  className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
-                    goalSection === "completed"
-                      ? "bg-[#3B3F49] text-white"
-                      : "text-[#A7B0BD] hover:text-white"
-                  }`}
-                  aria-pressed={goalSection === "completed"}
-                >
-                  Completed
-                </button>
-              </div>
+          {filteredStandaloneGoals.map((goal) => (
+            <div
+              key={goal.id}
+              className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
+            >
+              <GoalCard
+                goal={goal}
+                showWeight={false}
+                showCreatedAt={false}
+                showEmojiPrefix={false}
+                variant="compact"
+                monumentContext
+                onEdit={() => handleGoalEdit(goal)}
+                onProjectUpdated={(projectId, updates) =>
+                  handleProjectUpdated(goal.id, projectId, updates)
+                }
+                onProjectDeleted={(projectId) =>
+                  handleProjectDeleted(goal.id, projectId)
+                }
+                onProjectEditOpen={(target, project, origin) =>
+                  handleProjectEditOpen(target, project.id, goal.id, origin)
+                }
+                open={openGoalId === goal.id}
+                onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
+              />
             </div>
-            <div className={GOAL_GRID_CLASS}>
-              {filteredRoadmaps.map(({ roadmap, goals: roadmapGoalsList, goalCount }) => {
-                return (
-                  <div
-                    key={roadmap.id}
-                    className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
-                  >
-                    <RoadmapCard
-                      roadmap={roadmap}
-                      goalCount={goalCount}
-                      goals={roadmapGoalsList}
-                      variant="compact"
-                      onGoalEdit={handleRoadmapGoalEdit}
-                      onProjectEditOpen={handleProjectEditOpen}
-                      monumentContext
-                    />
-                  </div>
-                );
-              })}
-
-              {filteredStandaloneGoals.map((goal) => (
-                <div
-                  key={goal.id}
-                  className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
-                >
-                  <GoalCard
-                    goal={goal}
-                    showWeight={false}
-                    showCreatedAt={false}
-                    showEmojiPrefix={false}
-                    variant="compact"
-                    monumentContext
-                    onEdit={() => handleGoalEdit(goal)}
-                    onProjectUpdated={(projectId, updates) =>
-                      handleProjectUpdated(goal.id, projectId, updates)
-                    }
-                    onProjectDeleted={(projectId) =>
-                      handleProjectDeleted(goal.id, projectId)
-                    }
-                    onProjectEditOpen={(target, project, origin) =>
-                      handleProjectEditOpen(target, project.id, goal.id, origin)
-                    }
-                    open={openGoalId === goal.id}
-                    onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-      </div>
+          ))}
+        </div>
+      </section>
     );
   }, [
     loading,
     goals,
+    monumentView,
     monumentRoadmapsWithItems,
     roadmaps,
     roadmapGoals,

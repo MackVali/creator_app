@@ -28,6 +28,9 @@ import type {
   AnalyticsKpi,
   AnalyticsKpiId,
   AnalyticsMonument,
+  AnalyticsOverviewComparison,
+  AnalyticsOverviewComparisonMetric,
+  AnalyticsOverviewComparisonTrend,
   AnalyticsOverviewDailyPoint,
   AnalyticsOverviewEfficiencyDebug,
   AnalyticsOverviewEfficiencyCompletedDebug,
@@ -426,9 +429,8 @@ export async function GET(request: NextRequest) {
 
   const habitHistoryStart = startOfDay(addDays(end, -365));
   const habitCompletionStart = habitHistoryStart.toISOString().slice(0, 10);
-  const overviewStartDateKey = formatProductivityDayKey(start, timeZone);
-  const overviewEndDateKey =
-    range === "1d" ? overviewStartDateKey : formatProductivityDayKey(end, timeZone);
+  const overviewStartDateKey = formatProductivityDayKey(previousStart, timeZone);
+  const overviewEndDateKey = formatProductivityDayKey(end, timeZone);
 
   const [
     xpEventsRes,
@@ -602,7 +604,7 @@ export async function GET(request: NextRequest) {
         "id, source_type, status, window_id, day_type_time_block_id, time_block_id, start_utc, end_utc, duration_min, completed_at"
       )
       .eq("user_id", user.id)
-      .gt("end_utc", start.toISOString())
+      .gt("end_utc", previousStart.toISOString())
       .lt("start_utc", rangeEndExclusiveIso)
       .order("start_utc", { ascending: false }),
     supabase
@@ -611,7 +613,7 @@ export async function GET(request: NextRequest) {
         "id, schedule_instance_id, source_id, source_type, observed_status, scheduled_start_utc, scheduled_end_utc, day_start_utc, day_end_utc, duration_min, time_block_id, day_type_time_block_id, window_id"
       )
       .eq("user_id", user.id)
-      .gte("day_start_utc", start.toISOString())
+      .gte("day_start_utc", previousStart.toISOString())
       .lte("day_start_utc", end.toISOString())
       .order("scheduled_start_utc", { ascending: false }),
     supabase
@@ -697,11 +699,26 @@ export async function GET(request: NextRequest) {
   const habitCompletions = normalizeHabitCompletionRows(
     habitCompletionRes.data ?? []
   );
-  const scheduleSummaryInstances = normalizeScheduleInstanceRows(
+  const overviewScheduleInstances = normalizeScheduleInstanceRows(
     (scheduleSummaryInstancesRes.data ?? []) as RawScheduleInstanceRow[]
   );
-  let scheduleSummaryObservedInstances = normalizeObservedScheduleAnalyticsRows(
+  const scheduleSummaryInstances = filterScheduleInstancesForRange(
+    overviewScheduleInstances,
+    start,
+    end
+  );
+  let overviewObservedInstances = normalizeObservedScheduleAnalyticsRows(
     (scheduleSummaryObservedRes.data ?? []) as RawObservedScheduleAnalyticsRow[]
+  );
+  let currentOverviewObservedInstances = filterObservedInstancesForRange(
+    overviewObservedInstances,
+    start,
+    end
+  );
+  let scheduleSummaryObservedInstances = filterObservedInstancesByDayStartForRange(
+    overviewObservedInstances,
+    start,
+    end
   );
   let todayObservedInstances = normalizeObservedScheduleAnalyticsRows(
     (todaySummaryObservedRes.data ?? []) as RawObservedScheduleAnalyticsRow[]
@@ -791,7 +808,7 @@ export async function GET(request: NextRequest) {
           "id, schedule_instance_id, source_id, source_type, observed_status, scheduled_start_utc, scheduled_end_utc, day_start_utc, day_end_utc, duration_min, time_block_id, day_type_time_block_id, window_id"
         )
         .eq("user_id", user.id)
-        .gte("day_start_utc", start.toISOString())
+        .gte("day_start_utc", previousStart.toISOString())
         .lte("day_start_utc", end.toISOString())
         .order("scheduled_start_utc", { ascending: false }),
       supabase
@@ -805,8 +822,18 @@ export async function GET(request: NextRequest) {
     ]);
 
     if (!refreshedScheduleSummaryObservedRes.error) {
-      scheduleSummaryObservedInstances = normalizeObservedScheduleAnalyticsRows(
+      overviewObservedInstances = normalizeObservedScheduleAnalyticsRows(
         (refreshedScheduleSummaryObservedRes.data ?? []) as RawObservedScheduleAnalyticsRow[]
+      );
+      currentOverviewObservedInstances = filterObservedInstancesForRange(
+        overviewObservedInstances,
+        start,
+        end
+      );
+      scheduleSummaryObservedInstances = filterObservedInstancesByDayStartForRange(
+        overviewObservedInstances,
+        start,
+        end
       );
     }
 
@@ -853,9 +880,19 @@ export async function GET(request: NextRequest) {
     previousEnd,
     (event) => parseDate(event.created_at)
   );
+  const previousOverviewObservedInstances = filterObservedInstancesForRange(
+    overviewObservedInstances,
+    previousStart,
+    previousEnd
+  );
+  const previousOverviewScheduleInstances = filterScheduleInstancesForRange(
+    overviewScheduleInstances,
+    previousStart,
+    previousEnd
+  );
   const overviewDailyResult = await buildOverviewDailySeries({
     xpEvents: xpSplit.current,
-    observedInstances: scheduleSummaryObservedInstances,
+    observedInstances: currentOverviewObservedInstances,
     scheduleInstances: scheduleSummaryInstances,
     start,
     end,
@@ -865,6 +902,22 @@ export async function GET(request: NextRequest) {
     usableScheduleSource: overviewUsableScheduleSource,
   });
   const overviewDaily = overviewDailyResult.overviewDaily;
+  const previousOverviewDailyResult = await buildOverviewDailySeries({
+    xpEvents: xpSplit.previous,
+    observedInstances: previousOverviewObservedInstances,
+    scheduleInstances: previousOverviewScheduleInstances,
+    start: previousStart,
+    end: previousEnd,
+    now: analyticsNow,
+    range,
+    timeZone,
+    usableScheduleSource: overviewUsableScheduleSource,
+  });
+  const overviewComparison = buildOverviewComparison({
+    current: overviewDaily,
+    previous: previousOverviewDailyResult.overviewDaily,
+    range,
+  });
 
   const periodSkillXp = buildPeriodSkillXp(xpSplit.current);
   const previousPeriodSkillXp = buildPeriodSkillXp(xpSplit.previous);
@@ -1343,6 +1396,7 @@ export async function GET(request: NextRequest) {
     unscheduledPressure,
     todaySummary,
     overviewDaily,
+    overviewComparison,
     windows: windowSummary,
     activity: activityEvents,
     habit: habitSummary,
@@ -1965,6 +2019,179 @@ async function buildOverviewDailySeries({
     overviewEfficiencyDebugPerDay,
     overviewEfficiencyCompletedDebug: completedDebug,
   };
+}
+
+type OverviewComparisonSummary = {
+  xp: number;
+  avgPerPoint: number;
+  completed: number;
+  efficiency: number;
+};
+
+function filterObservedInstancesForRange(
+  instances: NormalizedObservedScheduleAnalyticsRow[],
+  start: Date,
+  end: Date
+) {
+  const endExclusive = new Date(end.getTime() + 1);
+
+  return instances.filter((instance) => {
+    const anchor = parseDate(instance.dayStartUtc ?? instance.startUtc);
+    if (isWithinRange(anchor, start, end)) {
+      return true;
+    }
+
+    const intervalStart = parseDate(instance.startUtc);
+    const intervalEnd = parseDate(instance.endUtc);
+    return (
+      !!intervalStart &&
+      !!intervalEnd &&
+      intervalEnd.getTime() > start.getTime() &&
+      intervalStart.getTime() < endExclusive.getTime()
+    );
+  });
+}
+
+function filterObservedInstancesByDayStartForRange(
+  instances: NormalizedObservedScheduleAnalyticsRow[],
+  start: Date,
+  end: Date
+) {
+  return instances.filter((instance) =>
+    isWithinRange(parseDate(instance.dayStartUtc), start, end)
+  );
+}
+
+function filterScheduleInstancesForRange(
+  instances: NormalizedScheduleInstanceRow[],
+  start: Date,
+  end: Date
+) {
+  const endExclusive = new Date(end.getTime() + 1);
+
+  return instances.filter((instance) => {
+    const intervalStart = parseDate(instance.startUtc);
+    const intervalEnd = parseDate(instance.endUtc);
+    return (
+      !!intervalStart &&
+      !!intervalEnd &&
+      intervalEnd.getTime() > start.getTime() &&
+      intervalStart.getTime() < endExclusive.getTime()
+    );
+  });
+}
+
+function buildOverviewComparison({
+  current,
+  previous,
+}: {
+  current: AnalyticsOverviewDailyPoint[];
+  previous: AnalyticsOverviewDailyPoint[];
+  range: AnalyticsRange;
+}): AnalyticsOverviewComparison {
+  const currentSummary = summarizeOverviewComparisonPoints(current);
+  const previousSummary = summarizeOverviewComparisonPoints(previous);
+
+  return {
+    xp: makeOverviewComparisonMetric(
+      currentSummary.xp,
+      previousSummary.xp
+    ),
+    avgPerDay: makeOverviewComparisonMetric(
+      currentSummary.avgPerPoint,
+      previousSummary.avgPerPoint
+    ),
+    completed: makeOverviewComparisonMetric(
+      currentSummary.completed,
+      previousSummary.completed
+    ),
+    efficiency: makeOverviewComparisonMetric(
+      currentSummary.efficiency,
+      previousSummary.efficiency
+    ),
+  };
+}
+
+function summarizeOverviewComparisonPoints(
+  points: AnalyticsOverviewDailyPoint[]
+): OverviewComparisonSummary {
+  const xp = points.reduce((sum, point) => sum + point.xpGained, 0);
+  const completed = points.reduce(
+    (sum, point) => sum + point.completedEvents,
+    0
+  );
+  const completedMinutes = points.reduce(
+    (sum, point) => sum + point.completedMinutes,
+    0
+  );
+  const usableWindowMinutes = points.reduce(
+    (sum, point) => sum + point.usableWindowMinutes,
+    0
+  );
+  const efficiency =
+    usableWindowMinutes > 0
+      ? clampPercent(
+          Math.round((completedMinutes / usableWindowMinutes) * 100)
+        )
+      : 0;
+
+  return {
+    xp,
+    avgPerPoint: points.length > 0 ? xp / points.length : 0,
+    completed,
+    efficiency,
+  };
+}
+
+function makeOverviewComparisonMetric(
+  current: number,
+  previous: number
+): AnalyticsOverviewComparisonMetric {
+  const { percentChange, trend } = calculateOverviewComparisonChange(
+    current,
+    previous
+  );
+
+  return {
+    current: normalizeComparisonValue(current),
+    previous: normalizeComparisonValue(previous),
+    percentChange,
+    trend,
+  };
+}
+
+function calculateOverviewComparisonChange(
+  current: number,
+  previous: number
+): {
+  percentChange: number | null;
+  trend: AnalyticsOverviewComparisonTrend;
+} {
+  if (previous === 0 && current === 0) {
+    return { percentChange: 0, trend: "flat" };
+  }
+
+  if (previous === 0 && current > 0) {
+    return { percentChange: null, trend: "new" };
+  }
+
+  if (previous > 0 && current === 0) {
+    return { percentChange: -100, trend: "down" };
+  }
+
+  const percentChange = Math.round(((current - previous) / previous) * 100);
+  if (percentChange === 0) {
+    return { percentChange, trend: "flat" };
+  }
+
+  return {
+    percentChange,
+    trend: percentChange > 0 ? "up" : "down",
+  };
+}
+
+function normalizeComparisonValue(value: number) {
+  return Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
 }
 
 function addOverviewCompletedMinutes({

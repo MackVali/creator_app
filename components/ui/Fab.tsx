@@ -300,6 +300,33 @@ const FAB_ADVANCED_INPUT_CLASS =
 const FAB_ADVANCED_SELECT_TRIGGER_CLASS =
   "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white";
 
+const shouldIgnoreFabPageSwipe = (target: EventTarget | null): boolean => {
+  if (typeof Element === "undefined" || !(target instanceof Element)) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest(
+      [
+        "input",
+        "textarea",
+        "select",
+        '[contenteditable="true"]',
+        "[data-radix-select-trigger]",
+        "[data-radix-select-content]",
+        '[data-fab-swipe-ignore="true"]',
+        '[data-state="open"][data-slot="dropdown-menu-content"]',
+        '[data-state="open"][data-slot="dropdown-menu-sub-content"]',
+        '[data-state="open"][data-slot="popover-content"]',
+        '[data-state="open"][data-slot="select-content"]',
+        '[data-state="open"][role="menu"]',
+        '[data-state="open"][role="listbox"]',
+        '[data-state="open"][role="dialog"]',
+      ].join(","),
+    ),
+  );
+};
+
 const HABIT_DAYLIGHT_ADVANCED_OPTIONS = [
   { value: "ALL_DAY", label: "All day" },
   { value: "DAY", label: "Daylight" },
@@ -3539,6 +3566,17 @@ export function Fab({
   const [dragTargetPage, setDragTargetPage] = useState<number | null>(null);
   const [dragDirection, setDragDirection] = useState<1 | -1 | null>(null);
   const [, setIsAnimatingPageChange] = useState(false);
+  const isDraggingRef = useRef(false);
+  const dragTargetPageRef = useRef<number | null>(null);
+  const dragDirectionRef = useRef<1 | -1 | null>(null);
+  const pageDragAxisRef = useRef<"horizontal" | "vertical" | null>(null);
+  const pendingFabSwipeRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    fromNexusScroll: true;
+    event: PointerEvent;
+  } | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
@@ -3810,7 +3848,9 @@ export function Fab({
   const limitModalCtaLabel = isPlus ? "Manage subscription" : "Upgrade to CREATOR PLUS";
   const VERTICAL_WHEEL_TRIGGER = 20;
   const DRAG_THRESHOLD_PX = 80;
-  const EDGE_SWIPE_ZONE_RATIO = 0.12;
+  const PAGE_DRAG_AXIS_THRESHOLD_PX = 8;
+  const PAGE_DRAG_HORIZONTAL_DOMINANCE = 1.25;
+  const PAGE_DRAG_VERTICAL_DOMINANCE = 1.15;
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
   const overhangPos = useOverhangLT(panelRef, [expanded, selected], {
     listenVisualViewport: !expanded,
@@ -7730,7 +7770,7 @@ export function Fab({
     <FabNexus
       query={searchQuery}
       onQueryChange={setSearchQuery}
-      results={searchResults}
+      results={overlayPickerResults}
       isSearching={isSearching}
       isLoadingMore={isLoadingMore}
       error={searchError}
@@ -7739,6 +7779,17 @@ export function Fab({
       onSelectResult={handleOpenReschedule}
       inputRef={nexusInputRef}
       onManualPlaceResult={handleManualPlacement}
+      filterMonumentId={overlayFilterMonumentId}
+      onFilterMonumentChange={setOverlayFilterMonumentId}
+      filterSkillId={overlayFilterSkillId}
+      onFilterSkillChange={setOverlayFilterSkillId}
+      filterEventType={overlayFilterEventType}
+      onFilterEventTypeChange={setOverlayFilterEventType}
+      sortMode={overlaySortMode}
+      onSortModeChange={setOverlaySortMode}
+      availableMonuments={monuments}
+      availableSkills={skills}
+      showToolbar
     />
   );
 
@@ -7757,9 +7808,14 @@ export function Fab({
     eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT",
   ) => {
     // Ensure any in-progress drag state cannot leave the neighbor overlay visible.
+    isDraggingRef.current = false;
+    dragTargetPageRef.current = null;
+    dragDirectionRef.current = null;
+    pageDragAxisRef.current = null;
     setIsDragging(false);
     setDragTargetPage(null);
     setDragDirection(null);
+    setIsAnimatingPageChange(false);
     pageX.set(0);
 
     if (expanded) {
@@ -8585,35 +8641,46 @@ export function Fab({
     [pageCount],
   );
 
+  const resetPageDragState = useCallback(() => {
+    pendingFabSwipeRef.current = null;
+    isDraggingRef.current = false;
+    dragTargetPageRef.current = null;
+    dragDirectionRef.current = null;
+    pageDragAxisRef.current = null;
+    setIsDragging(false);
+    setDragTargetPage(null);
+    setDragDirection(null);
+    setIsAnimatingPageChange(false);
+    pageX.set(0);
+  }, [pageX]);
+
   const animateToPage = useCallback(
     async (
       targetPage: number,
       options?: { fromDrag?: boolean; direction?: 1 | -1 },
     ) => {
       if (targetPage === activeFabPage) {
-        pageX.set(0);
-        setDragTargetPage(null);
-        setDragDirection(null);
-        setIsAnimatingPageChange(false);
+        resetPageDragState();
         return;
       }
       const width = stageWidth > 0 ? stageWidth : 280;
       const resolvedDirection =
         options?.direction ??
         (targetPage === getNextIndex(activeFabPage) ? 1 : -1);
-      if (dragTargetPage === null) {
-        setDragTargetPage(targetPage);
-      }
+      dragTargetPageRef.current = null;
+      dragDirectionRef.current = null;
+      pageDragAxisRef.current = "horizontal";
+      dragTargetPageRef.current = targetPage;
+      dragDirectionRef.current = resolvedDirection;
+      setDragTargetPage(targetPage);
+      setDragDirection(resolvedDirection);
       setIsAnimatingPageChange(true);
       if (!options?.fromDrag) {
         pageX.set(0);
       }
       if (prefersReducedMotion) {
         setActiveFabPage(targetPage);
-        pageX.set(0);
-        setDragTargetPage(null);
-        setDragDirection(null);
-        setIsAnimatingPageChange(false);
+        resetPageDragState();
         return;
       }
       const controls = animate(
@@ -8630,42 +8697,36 @@ export function Fab({
         // Ignore interruptions
       }
       setActiveFabPage(targetPage);
-      pageX.set(0);
-      setDragTargetPage(null);
-      setDragDirection(null);
-      setIsAnimatingPageChange(false);
+      resetPageDragState();
       if (options?.fromDrag && typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("tour:fab-swiped"));
       }
     },
     [
       activeFabPage,
-      dragTargetPage,
       getNextIndex,
       pageX,
       prefersReducedMotion,
+      resetPageDragState,
       stageWidth,
     ],
   );
 
   const handlePageDragStart = useCallback(() => {
-    if (!isOpen || stageWidth <= 0) {
+    if (!isOpen) {
+      resetPageDragState();
       return;
     }
+    isDraggingRef.current = true;
+    dragTargetPageRef.current = null;
+    dragDirectionRef.current = null;
+    pageDragAxisRef.current = null;
     setIsDragging(true);
+    setDragTargetPage(null);
     setDragDirection(null);
     setIsAnimatingPageChange(false);
-  }, [isOpen, stageWidth]);
-
-  const isPointerInEdgeZone = useCallback((clientX: number) => {
-    const rect = stageRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0) {
-      return true;
-    }
-    const edgeZone = rect.width * EDGE_SWIPE_ZONE_RATIO;
-    const offsetX = clientX - rect.left;
-    return offsetX <= edgeZone || offsetX >= rect.width - edgeZone;
-  }, []);
+    pageX.set(0);
+  }, [isOpen, pageX, resetPageDragState]);
 
   const handlePagePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -8673,20 +8734,111 @@ export function Fab({
       if (event.pointerType === "mouse" && event.button !== 0) {
         return;
       }
-      const isNexusPageActive = pages[activeFabPage] === "nexus";
-      if (isNexusPageActive && !isPointerInEdgeZone(event.clientX)) {
+      if (shouldIgnoreFabPageSwipe(event.target)) {
+        return;
+      }
+      if (
+        typeof Element !== "undefined" &&
+        event.target instanceof Element &&
+        event.target.closest('[data-fab-nexus-scroll="true"]')
+      ) {
+        pendingFabSwipeRef.current = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          fromNexusScroll: true,
+          event: event.nativeEvent,
+        };
         return;
       }
       pageDragControls.start(event);
     },
-    [activeFabPage, isOpen, isPointerInEdgeZone, pageDragControls, pages],
+    [isOpen, pageDragControls],
+  );
+
+  const handlePagePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const pending = pendingFabSwipeRef.current;
+      if (!pending || pending.pointerId !== event.pointerId) {
+        return;
+      }
+      const dx = event.clientX - pending.startX;
+      const dy = event.clientY - pending.startY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+
+      if (absY > 6 && absY > absX * 1.1) {
+        pendingFabSwipeRef.current = null;
+        return;
+      }
+
+      if (absX > 12 && absX > absY * 1.35) {
+        if (
+          typeof document !== "undefined" &&
+          document.activeElement === nexusInputRef.current
+        ) {
+          nexusInputRef.current?.blur();
+        }
+        pageDragControls.start(pending.event);
+        pendingFabSwipeRef.current = null;
+      }
+    },
+    [pageDragControls],
+  );
+
+  const clearPendingFabSwipe = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const pending = pendingFabSwipeRef.current;
+      if (!pending || pending.pointerId === event.pointerId) {
+        pendingFabSwipeRef.current = null;
+      }
+    },
+    [],
   );
 
   const handlePageDrag = useCallback(
     (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-      if (!isDragging) {
+      if (!isDraggingRef.current) {
         return;
       }
+      const absX = Math.abs(info.offset.x);
+      const absY = Math.abs(info.offset.y);
+
+      if (pageDragAxisRef.current === null) {
+        if (
+          absX < PAGE_DRAG_AXIS_THRESHOLD_PX &&
+          absY < PAGE_DRAG_AXIS_THRESHOLD_PX
+        ) {
+          pageX.set(0);
+          return;
+        }
+        if (absX >= absY * PAGE_DRAG_HORIZONTAL_DOMINANCE) {
+          pageDragAxisRef.current = "horizontal";
+          if (
+            typeof document !== "undefined" &&
+            document.activeElement === nexusInputRef.current
+          ) {
+            nexusInputRef.current?.blur();
+          }
+        } else if (absY >= absX * PAGE_DRAG_VERTICAL_DOMINANCE) {
+          pageDragAxisRef.current = "vertical";
+          dragTargetPageRef.current = null;
+          dragDirectionRef.current = null;
+          setDragTargetPage(null);
+          setDragDirection(null);
+          pageX.set(0);
+          return;
+        } else {
+          pageX.set(0);
+          return;
+        }
+      }
+
+      if (pageDragAxisRef.current === "vertical") {
+        pageX.set(0);
+        return;
+      }
+
       const limit = stageWidth > 0 ? stageWidth : DRAG_THRESHOLD_PX;
       const nextX = Math.max(-limit, Math.min(limit, info.offset.x));
       pageX.set(nextX);
@@ -8699,22 +8851,28 @@ export function Fab({
         nextTarget = getPrevIndex(activeFabPage);
         nextDirection = -1;
       }
-      if (nextTarget !== dragTargetPage) {
+      if (nextTarget !== dragTargetPageRef.current) {
+        dragTargetPageRef.current = nextTarget;
         setDragTargetPage(nextTarget);
       }
-      if (nextDirection !== null && nextDirection !== dragDirection) {
+      if (nextDirection !== null && nextDirection !== dragDirectionRef.current) {
+        dragDirectionRef.current = nextDirection;
         setDragDirection(nextDirection);
-      } else if (nextDirection === null && dragDirection !== null) {
+      } else if (
+        nextDirection === null &&
+        dragDirectionRef.current !== null
+      ) {
+        dragDirectionRef.current = null;
         setDragDirection(null);
       }
     },
     [
       activeFabPage,
-      dragDirection,
-      dragTargetPage,
       getNextIndex,
       getPrevIndex,
-      isDragging,
+      PAGE_DRAG_AXIS_THRESHOLD_PX,
+      PAGE_DRAG_HORIZONTAL_DOMINANCE,
+      PAGE_DRAG_VERTICAL_DOMINANCE,
       pageX,
       stageWidth,
     ],
@@ -8722,44 +8880,46 @@ export function Fab({
 
   const handlePageDragEnd = useCallback(
     async (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-      if (!isDragging) {
-        setDragTargetPage(null);
-        setDragDirection(null);
+      if (!isDraggingRef.current) {
+        resetPageDragState();
         return;
       }
+      const target = dragTargetPageRef.current;
+      const direction = dragDirectionRef.current;
+      const axis = pageDragAxisRef.current;
       setIsDragging(false);
-      const target = dragTargetPage;
       const width = stageWidth > 0 ? stageWidth : 0;
       const threshold = width > 0 ? width * 0.33 : 120;
       const distance = Math.abs(pageX.get());
       const shouldCommit =
+        axis === "horizontal" &&
         target !== null &&
         (distance > threshold || Math.abs(info.velocity.x) > 600);
-      if (shouldCommit && target !== null) {
-        const direction = dragDirection ?? (pageX.get() < 0 ? 1 : -1);
-        await animateToPage(target, { fromDrag: true, direction });
-        return;
-      }
-      setIsAnimatingPageChange(true);
       try {
-        await animate(pageX, 0, {
-          duration: 0.2,
-          ease: "easeOut",
-        }).finished;
-      } catch {
-        // Ignore interruptions
+        if (shouldCommit && target !== null) {
+          await animateToPage(target, {
+            fromDrag: true,
+            direction: direction ?? (pageX.get() < 0 ? 1 : -1),
+          });
+          return;
+        }
+        setIsAnimatingPageChange(true);
+        try {
+          await animate(pageX, 0, {
+            duration: 0.2,
+            ease: "easeOut",
+          }).finished;
+        } catch {
+          // Ignore interruptions
+        }
+      } finally {
+        resetPageDragState();
       }
-      pageX.set(0);
-      setDragTargetPage(null);
-      setDragDirection(null);
-      setIsAnimatingPageChange(false);
     },
     [
       animateToPage,
-      dragDirection,
-      dragTargetPage,
-      isDragging,
       pageX,
+      resetPageDragState,
       stageWidth,
     ],
   );
@@ -8774,17 +8934,13 @@ export function Fab({
   useEffect(() => {
     if (!isOpen) {
       setActiveFabPage(0);
-      setDragTargetPage(null);
-      setDragDirection(null);
-      setIsDragging(false);
-      setIsAnimatingPageChange(false);
+      resetPageDragState();
       if (
         typeof document !== "undefined" &&
         document.activeElement === nexusInputRef.current
       ) {
         nexusInputRef.current?.blur();
       }
-      pageX.set(0);
       resetSearchState();
       resetFabFormState();
       setRescheduleTarget(null);
@@ -8792,7 +8948,7 @@ export function Fab({
       setIsDeletingEvent(false);
       searchAbortRef.current?.abort();
     }
-  }, [isOpen, pageX, resetSearchState, resetFabFormState]);
+  }, [isOpen, resetPageDragState, resetSearchState, resetFabFormState]);
 
   useEffect(() => {
     return () => {
@@ -10016,6 +10172,15 @@ export function Fab({
                           style={{ x: pageX }}
                           onPointerDown={
                             !expanded ? handlePagePointerDown : undefined
+                          }
+                          onPointerMove={
+                            !expanded ? handlePagePointerMove : undefined
+                          }
+                          onPointerUp={
+                            !expanded ? clearPendingFabSwipe : undefined
+                          }
+                          onPointerCancel={
+                            !expanded ? clearPendingFabSwipe : undefined
                           }
                           onDragStart={handlePageDragStart}
                           onDrag={handlePageDrag}
@@ -12230,7 +12395,9 @@ function FabNexus({
     result: FabSearchResult;
   } | null>(null);
   const suppressClickRef = useRef(false);
-  const DRAG_THRESHOLD_PX = 6;
+  const RESULT_CARD_DRAG_THRESHOLD_PX = 12;
+  const RESULT_CARD_PAGE_SWIPE_DOMINANCE = 1.25;
+  const RESULT_CARD_VERTICAL_SCROLL_DOMINANCE = 1.15;
   const hasResults = results.length > 0;
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (!hasMore || isLoadingMore) return;
@@ -12250,6 +12417,11 @@ function FabNexus({
   const handleSortChange = onSortModeChange ?? (() => {});
   const sortValue = sortMode ?? "scheduled";
   const eventTypeValue = filterEventType ?? "ALL";
+  const hasActiveFilter =
+    query.trim().length > 0 ||
+    Boolean(filterMonumentId) ||
+    Boolean(filterSkillId) ||
+    eventTypeValue !== "ALL";
   const toolbarSelectClass =
     "h-9 min-w-[120px] rounded-2xl border border-white/10 bg-black/50 px-3 text-[11px] font-semibold text-white/80 focus-visible:border-white/30 focus-visible:ring-0";
   const toolbarContentClass = "bg-black/90 text-white";
@@ -12275,6 +12447,15 @@ function FabNexus({
     formatDateTime(value, { dateStyle: "medium", timeStyle: undefined });
   const formatTimePart = (value: string | null): string | null =>
     formatDateTime(value, { timeStyle: "short" });
+
+  const suppressTransientClick = () => {
+    suppressClickRef.current = true;
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 350);
+    }
+  };
 
   const getStatusText = (result: FabSearchResult): React.ReactNode => {
     if (result.type === "PROJECT" && result.isCompleted) {
@@ -12308,10 +12489,10 @@ function FabNexus({
 
   return (
     <div
-      className="flex h-full w-full flex-col text-white"
+      className="flex h-[min(78vh,640px)] min-h-[min(420px,78vh)] w-full flex-col overflow-hidden text-white"
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
-      <div className="px-4 pt-4">
+      <div className="shrink-0 px-4 pt-4">
         <div className="relative h-10">
           <span className="pointer-events-none absolute left-3 inset-y-0 flex items-center">
             <Search className="h-4 w-4 text-white/30" />
@@ -12338,7 +12519,7 @@ function FabNexus({
         </div>
       </div>
       {showToolbar && showControls ? (
-        <div className="px-4 pt-3">
+        <div className="shrink-0 px-4 pt-3">
           <div className="flex flex-wrap items-center gap-2">
             <Select
               value={filterMonumentId ?? ""}
@@ -12403,7 +12584,12 @@ function FabNexus({
                 <SelectItem value="HABIT">Habits</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={sortValue} onValueChange={handleSortChange}>
+            <Select
+              value={sortValue}
+              onValueChange={(value) =>
+                handleSortChange(value as OverlaySortMode)
+              }
+            >
               <SelectTrigger
                 aria-label="Sort overlay results"
                 className={toolbarSelectClass}
@@ -12426,15 +12612,16 @@ function FabNexus({
         </div>
       ) : null}
       <div
-        className="flex-1 overflow-y-auto px-4 pb-4 pr-5 pt-3"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pr-5 pt-3"
         data-fab-nexus-scroll="true"
+        style={{ touchAction: "pan-y" }}
         onScroll={handleScroll}
       >
-        {isSearching ? (
+        {isSearching && !hasResults ? (
           <div className="flex h-32 items-center justify-center text-white/60">
             <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
           </div>
-        ) : error ? (
+        ) : error && !hasResults ? (
           <div className="rounded-xl border border-red-500/20 bg-red-900/40 px-4 py-4 text-center text-sm text-red-100">
             {error}
           </div>
@@ -12445,11 +12632,6 @@ function FabNexus({
                 result.type === "PROJECT" && result.isCompleted;
               const isDisabled = isCompletedProject;
               const statusText = getStatusText(result);
-              const goalLabel =
-                result.type === "PROJECT" && result.goalName
-                  ? result.goalName.trim()
-                  : null;
-              const energyLevel = normalizeFlameLevel(result.energy);
               const cardClassName = cn(
                 "relative flex flex-col gap-1 rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
                 isCompletedProject
@@ -12462,6 +12644,12 @@ function FabNexus({
                 "text-[7px] md:text-[9px] uppercase tracking-[0.18em] text-white/70";
               const statusLabelClass =
                 "text-[7px] md:text-[8px] uppercase tracking-[0.14em] text-white/60 break-words leading-tight";
+              const releaseCardPointer = (event: React.PointerEvent) => {
+                const target = event.currentTarget as HTMLElement;
+                if (target.hasPointerCapture?.(event.pointerId)) {
+                  target.releasePointerCapture(event.pointerId);
+                }
+              };
 
               const beginDrag = (
                 event: React.PointerEvent,
@@ -12469,16 +12657,14 @@ function FabNexus({
               ) => {
                 if (!onManualPlaceResult) return;
                 if (!res.scheduleInstanceId) return;
-                (event.currentTarget as HTMLElement)?.releasePointerCapture?.(
-                  event.pointerId,
-                );
+                releaseCardPointer(event);
                 onManualPlaceResult(res, {
                   clientX: event.clientX,
                   clientY: event.clientY,
                   pointerId: event.pointerId ?? null,
-                  pointerType: (event as any)?.pointerType ?? null,
+                  pointerType: event.pointerType ?? null,
                 });
-                suppressClickRef.current = true;
+                suppressTransientClick();
               };
 
               const handlePointerDown = (event: React.PointerEvent) => {
@@ -12492,9 +12678,6 @@ function FabNexus({
                   dragging: false,
                   result,
                 };
-                (event.currentTarget as HTMLElement).setPointerCapture?.(
-                  event.pointerId,
-                );
               };
 
               const handlePointerMove = (event: React.PointerEvent) => {
@@ -12511,12 +12694,43 @@ function FabNexus({
                 }
                 const dx = event.clientX - state.startX;
                 const dy = event.clientY - state.startY;
-                const dist = Math.hypot(dx, dy);
-                if (dist > DRAG_THRESHOLD_PX) {
-                  state.dragging = true;
-                  beginDrag(event, state.result);
-                  event.preventDefault();
+                const absX = Math.abs(dx);
+                const absY = Math.abs(dy);
+
+                if (absY > 6 && absY > absX * 1.1) {
+                  dragStateRef.current = null;
+                  suppressTransientClick();
+                  releaseCardPointer(event);
+                  return;
                 }
+
+                if (
+                  absX > RESULT_CARD_DRAG_THRESHOLD_PX &&
+                  absX > absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE
+                ) {
+                  dragStateRef.current = null;
+                  suppressTransientClick();
+                  releaseCardPointer(event);
+                  return;
+                }
+
+                if (
+                  absX < RESULT_CARD_DRAG_THRESHOLD_PX &&
+                  absY < RESULT_CARD_DRAG_THRESHOLD_PX
+                ) {
+                  return;
+                }
+
+                if (absY > absX * RESULT_CARD_VERTICAL_SCROLL_DOMINANCE) {
+                  dragStateRef.current = null;
+                  suppressTransientClick();
+                  releaseCardPointer(event);
+                  return;
+                }
+
+                state.dragging = true;
+                beginDrag(event, state.result);
+                event.preventDefault();
               };
 
               const handlePointerUp = (event: React.PointerEvent) => {
@@ -12529,9 +12743,7 @@ function FabNexus({
                   return;
                 const wasDragging = state.dragging;
                 dragStateRef.current = null;
-                (event.currentTarget as HTMLElement).releasePointerCapture?.(
-                  event.pointerId,
-                );
+                releaseCardPointer(event);
                 if (wasDragging) {
                   event.preventDefault();
                   return;
@@ -12565,6 +12777,7 @@ function FabNexus({
                 <button
                   key={`${result.type}-${result.id}`}
                   type="button"
+                  data-fab-nexus-result-card="true"
                   onClick={handleClick}
                   onPointerDown={handlePointerDown}
                   onPointerMove={handlePointerMove}
@@ -12614,7 +12827,9 @@ function FabNexus({
           </div>
         ) : (
           <div className="rounded-xl border border-white/10 bg-black/50 px-4 py-6 text-center text-sm text-white/60">
-            Start typing to search every project and habit.
+            {hasActiveFilter
+              ? "No projects or habits match this search."
+              : "Start typing to search every project and habit."}
           </div>
         )}
       </div>

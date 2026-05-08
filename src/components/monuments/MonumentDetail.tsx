@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, BatteryCharging, Flame, MoreHorizontal } from "lucide-react";
+import { BatteryCharging, Flame, MoreHorizontal } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import ActivityPanel from "./ActivityPanel";
 import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
@@ -29,14 +27,18 @@ interface MonumentDetailProps {
   notes: MonumentNote[];
 }
 
+type MonumentView = "goals" | "roadmap";
+
 export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
   const { id } = monument;
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [monumentView, setMonumentView] = useState<MonumentView>("roadmap");
   const [goalSection, setGoalSection] = useState<"active" | "completed">(
     "active"
   );
 
   useEffect(() => {
+    setMonumentView("roadmap");
     setGoalSection("active");
   }, [id]);
 
@@ -75,18 +77,6 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
         onSaved={() => setEditDialogOpen(false)}
       />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="w-fit gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-medium text-white/70 backdrop-blur transition hover:border-white/20 hover:bg-white/10 hover:text-white"
-        >
-          <Link href="/monuments">
-            <ArrowLeft className="size-4" aria-hidden="true" />
-            Back to monuments
-          </Link>
-        </Button>
-
         <section
           className={cn(
             containerShell,
@@ -174,17 +164,39 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
             )}
           >
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
-            <header className="relative">
-              <div className="space-y-1">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
-                  Monument Roadmap
-                </h2>
+            <header className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div
+                className="inline-flex w-full rounded-lg border border-white/10 bg-[#050506]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur sm:w-auto"
+                aria-label="Monument view"
+              >
+                {(
+                  [
+                    { value: "roadmap", label: "ROADMAP" },
+                    { value: "goals", label: "GOAL GRID" },
+                  ] as const
+                ).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setMonumentView(option.value)}
+                    className={cn(
+                      "min-h-8 flex-1 rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-[0.12em] transition sm:flex-none",
+                      monumentView === option.value
+                        ? "bg-zinc-800/90 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_8px_18px_rgba(0,0,0,0.25)]"
+                        : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-200"
+                    )}
+                    aria-pressed={monumentView === option.value}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </header>
             <div className="relative mt-3 overflow-visible sm:mt-4">
               <MonumentGoalsList
                 monumentId={id}
                 monumentEmoji={monument.emoji}
+                monumentView={monumentView}
                 goalSection={goalSection}
                 onGoalSectionChange={setGoalSection}
               />

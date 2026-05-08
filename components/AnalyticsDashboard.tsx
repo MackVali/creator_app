@@ -5,14 +5,22 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentType,
   type PointerEvent,
   type ReactNode,
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { CheckSquare, FolderKanban, Flame, ArrowLeft } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarDays,
+  CheckSquare,
+  FolderKanban,
+  Flame,
+  Info,
+} from "lucide-react";
 import type {
+  AnalyticsOverviewComparison,
+  AnalyticsOverviewComparisonMetric,
   AnalyticsOverviewDailyPoint,
   AnalyticsRange,
   AnalyticsResponse,
@@ -415,9 +423,7 @@ export default function AnalyticsDashboard({
   if (activeView === "overview") {
     activeContent = (
       <div className="space-y-4 xl:space-y-5">
-        <SectionCard
-          className="rounded-[22px]"
-        >
+        <SectionCard className="rounded-[24px] border-zinc-800/90 bg-[radial-gradient(circle_at_top_left,rgba(63,63,70,0.18),transparent_34%),linear-gradient(145deg,rgba(9,9,11,0.96),rgba(24,24,27,0.88))] p-4 shadow-[0_22px_54px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.04)] sm:rounded-[28px] sm:p-5 lg:p-6">
           {!hasAnalyticsData && loading ? (
             <Skeleton className="h-64" />
           ) : !hasAnalyticsData && error ? (
@@ -438,6 +444,7 @@ export default function AnalyticsDashboard({
           ) : (
             <OverviewDiagnosticsSection
               points={overviewTrend}
+              comparison={analytics?.overviewComparison}
               range={analytics?.range ?? selectedRange}
               selectedRange={selectedRange}
               isRefreshing={analyticsRefreshing}
@@ -1996,12 +2003,14 @@ function safeDate(value: string | null | undefined) {
 
 function OverviewDiagnosticsSection({
   points,
+  comparison,
   range,
   selectedRange,
   isRefreshing,
   statusMessage,
 }: {
   points: AnalyticsOverviewDailyPoint[];
+  comparison?: AnalyticsOverviewComparison;
   range: AnalyticsRange;
   selectedRange: AnalyticsRange;
   isRefreshing: boolean;
@@ -2053,52 +2062,63 @@ function OverviewDiagnosticsSection({
   return (
     <div
       className={classNames(
-        "space-y-3 transition-opacity duration-200 sm:space-y-4",
+        "space-y-4 transition-opacity duration-200 sm:space-y-5",
         isRefreshing && "opacity-80"
       )}
     >
-      <div className="flex flex-col gap-2.5 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-600">
-            Progress Trend
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-400/85">
+            PROGRESS TREND
           </div>
-          <OverviewPanelStatus
-            isRefreshing={isRefreshing}
-            message={statusMessage}
-          />
+          <div className="mt-2">
+            <OverviewPanelStatus
+              isRefreshing={isRefreshing}
+              message={statusMessage}
+            />
+          </div>
         </div>
-        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-          {formatAnalyticsRangeLabel(selectedRange)}
+        <div className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-zinc-700/70 bg-zinc-800/45 px-3 text-sm font-semibold text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:h-11 sm:px-4 sm:text-base">
+          <CalendarDays className="h-4 w-4 text-zinc-300" aria-hidden="true" />
+          <span>{formatAnalyticsRangeLabel(selectedRange)}</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 overflow-hidden rounded-xl border border-zinc-800/90 bg-zinc-950/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+        vs previous cycle
+      </div>
+
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
         <OverviewKpiRailItem
           label="XP"
           value={formatCompactNumber(totalXp)}
+          comparison={comparison?.xp}
           sublabel={formatRangeSummary(range, points.length)}
           tone="green"
         />
         <OverviewKpiRailItem
-          label={averageLabel}
+          label={averageLabel.toUpperCase()}
           value={formatAverageXp(averageValue)}
+          comparison={comparison?.avgPerDay}
           sublabel={`Peak ${formatCompactNumber(peakXp)} XP`}
         />
         <OverviewKpiRailItem
-          label="Completed"
+          label="COMPLETED"
           value={formatCompactNumber(completedEvents)}
+          comparison={comparison?.completed}
           sublabel={`${formatCompactNumber(completedProjects)}P · ${formatCompactNumber(completedTasks)}T · ${formatCompactNumber(completedHabits)}H`}
           tone="green"
         />
         <OverviewKpiRailItem
-          label="Efficiency"
+          label="EFFICIENCY"
           value={`${rangeEfficiencyRate}%`}
+          comparison={comparison?.efficiency}
           sublabel={`${totalCompletedMinutes}m / ${totalUsableWindowMinutes}m`}
-          tone="amber"
+          tone="green"
         />
       </div>
 
-      <div className="overflow-hidden rounded-[18px] border border-zinc-800 bg-zinc-950/85 sm:rounded-[22px]">
+      <div className="overflow-hidden rounded-[20px] border border-zinc-700/50 bg-[linear-gradient(145deg,rgba(9,9,11,0.9),rgba(24,24,27,0.72))] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] sm:rounded-[22px]">
         <OverviewLineChart points={points} range={range} />
       </div>
     </div>
@@ -2187,23 +2207,25 @@ function AnalyticsRangeSelector({
 function OverviewKpiRailItem({
   label,
   value,
+  comparison,
   sublabel,
   tone = "default",
 }: {
   label: string;
   value: string;
+  comparison?: AnalyticsOverviewComparisonMetric;
   sublabel: string;
   tone?: "default" | "green" | "amber";
 }) {
   const accentClass =
     tone === "green"
-      ? "before:bg-emerald-400/70"
+      ? "before:bg-emerald-400/80"
       : tone === "amber"
         ? "before:bg-amber-400/75"
-        : "before:bg-zinc-700";
+        : "before:bg-emerald-400/70";
   const valueClass =
     tone === "green"
-      ? "text-emerald-100"
+      ? "text-zinc-50"
       : tone === "amber"
         ? "text-amber-100"
         : "text-zinc-50";
@@ -2211,26 +2233,74 @@ function OverviewKpiRailItem({
   return (
     <div
       className={classNames(
-        "relative min-w-0 border-l border-zinc-800/80 px-2 py-1.5 first:border-l-0 before:absolute before:inset-y-2 before:left-0 before:w-px sm:px-3 sm:py-2",
+        "relative min-h-[104px] min-w-0 overflow-hidden rounded-2xl border border-zinc-700/45 bg-[linear-gradient(135deg,rgba(39,39,42,0.68),rgba(9,9,11,0.78))] p-3 pl-3.5 shadow-[0_14px_28px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.035)] before:absolute before:inset-y-4 before:left-0 before:w-0.5 before:rounded-full sm:min-h-[112px] sm:p-4 sm:pl-4",
         accentClass
       )}
     >
-      <div className="truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px]">
-        {label}
-      </div>
-      <div
-        className={classNames(
-          "mt-0.5 truncate text-sm font-semibold leading-tight tabular-nums sm:text-base",
-          valueClass
-        )}
-      >
-        {value}
-      </div>
-      <div className="truncate text-[10px] leading-tight text-zinc-500 sm:text-[11px]">
-        {sublabel}
+      <div className="min-w-0">
+        <div className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400 sm:text-[11px]">
+          {label}
+        </div>
+        <div className="mt-2 flex min-w-0 items-baseline gap-2">
+          <div
+            className={classNames(
+              "min-w-0 truncate text-[2rem] font-semibold leading-none tabular-nums sm:text-[2.35rem]",
+              valueClass
+            )}
+          >
+            {value}
+          </div>
+          {comparison ? (
+            <div
+              className={classNames(
+                "shrink-0 text-[11px] font-semibold leading-none tabular-nums sm:text-xs",
+                getOverviewComparisonClass(comparison.trend)
+              )}
+            >
+              {formatOverviewComparisonDelta(comparison)}
+            </div>
+          ) : null}
+        </div>
+        <div className="mt-2 truncate text-xs leading-tight text-zinc-500 sm:text-sm">
+          {sublabel}
+        </div>
       </div>
     </div>
   );
+}
+
+function formatOverviewComparisonDelta(
+  comparison: AnalyticsOverviewComparisonMetric
+) {
+  if (comparison.trend === "new") {
+    return "new";
+  }
+
+  if (comparison.trend === "flat" || comparison.percentChange === 0) {
+    return "flat";
+  }
+
+  if (comparison.percentChange == null) {
+    return "flat";
+  }
+
+  return comparison.percentChange > 0
+    ? `+${comparison.percentChange}%`
+    : `${comparison.percentChange}%`;
+}
+
+function getOverviewComparisonClass(
+  trend: AnalyticsOverviewComparisonMetric["trend"]
+) {
+  if (trend === "up" || trend === "new") {
+    return "text-emerald-300/80";
+  }
+
+  if (trend === "down") {
+    return "text-rose-300/80";
+  }
+
+  return "text-zinc-500";
 }
 
 function OverviewLineChart({
@@ -2262,15 +2332,15 @@ function OverviewLineChart({
   }, [points, range]);
 
   const width = 720;
-  const height = 260;
-  const padding = { top: 12, right: 12, bottom: 34, left: 36 };
+  const height = 330;
+  const padding = { top: 16, right: 12, bottom: 56, left: 38 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  const contextHeight = 46;
+  const contextHeight = 58;
   const trendHeight = chartHeight - contextHeight;
   const trendBaselineY = padding.top + trendHeight;
-  const contextTopY = trendBaselineY + 10;
-  const contextBottomY = padding.top + chartHeight - 5;
+  const contextTopY = trendBaselineY + 12;
+  const contextBottomY = padding.top + chartHeight - 8;
   const values = points.map((point) => point.xpGained);
   const rawMaxValue = values.length > 0 ? Math.max(...values) : 0;
   const yMax = getTrendYAxisMax(rawMaxValue);
@@ -2360,21 +2430,38 @@ function OverviewLineChart({
   };
 
   return (
-    <div className="space-y-0">
-      <div className="space-y-2 px-3 py-2.5 sm:px-4 sm:py-3">
+    <div className="px-3 py-3.5 sm:px-4 sm:py-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm font-medium text-zinc-100 sm:text-base">
+          XP over time
+        </div>
+        <div className="flex shrink-0 items-center gap-3 text-xs text-zinc-400 sm:text-sm">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-0.5 w-5 rounded-full bg-emerald-300/85 shadow-[0_0_10px_rgba(52,211,153,0.24)]" />
+            Daily XP
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-500/35" />
+            Events
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
         <div className="relative" data-overview-line-chart>
           <svg
             viewBox={`0 0 ${width} ${height}`}
-            className="h-[160px] w-full sm:h-[210px] md:h-[248px] lg:h-[270px]"
+            preserveAspectRatio="none"
+            className="h-[310px] w-full sm:h-[250px] md:h-[270px]"
           >
             <defs>
               <linearGradient id="overviewDailyArea" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="rgba(16,185,129,0.22)" />
+                <stop offset="0%" stopColor="rgba(16,185,129,0.16)" />
                 <stop offset="100%" stopColor="rgba(16,185,129,0.01)" />
               </linearGradient>
               <linearGradient id="overviewDailyLine" x1="0" x2="1" y1="0" y2="0">
-                <stop offset="0%" stopColor="#10b981" />
-                <stop offset="100%" stopColor="#34d399" />
+                <stop offset="0%" stopColor="#34d399" />
+                <stop offset="100%" stopColor="#6ee7b7" />
               </linearGradient>
             </defs>
 
@@ -2388,13 +2475,14 @@ function OverviewLineChart({
                     x2={padding.left + chartWidth}
                     y1={y}
                     y2={y}
-                    stroke="rgba(63,63,70,0.42)"
+                    stroke="rgba(82,82,91,0.3)"
+                    strokeDasharray="3 6"
                   />
                   <text
                     x={padding.left - 10}
                     y={y + 5}
                     textAnchor="end"
-                    fill="rgba(161,161,170,0.82)"
+                    fill="rgba(161,161,170,0.76)"
                     fontSize="11"
                   >
                     {formatCompactNumber(value)}
@@ -2408,7 +2496,8 @@ function OverviewLineChart({
               x2={padding.left + chartWidth}
               y1={trendBaselineY}
               y2={trendBaselineY}
-              stroke="rgba(82,82,91,0.6)"
+              stroke="rgba(82,82,91,0.34)"
+              strokeDasharray="3 6"
             />
 
             <line
@@ -2416,7 +2505,8 @@ function OverviewLineChart({
               x2={padding.left + chartWidth}
               y1={contextTopY}
               y2={contextTopY}
-              stroke="rgba(63,63,70,0.34)"
+              stroke="rgba(63,63,70,0.28)"
+              strokeDasharray="3 6"
             />
 
             {points.map((point, index) => {
@@ -2452,7 +2542,7 @@ function OverviewLineChart({
                       width={efficiencyWidth}
                       height={3}
                       rx={1.5}
-                      fill="rgba(245,158,11,0.62)"
+                      fill="rgba(245,158,11,0.45)"
                     />
                   ) : null}
                   {barHeight > 0 ? (
@@ -2462,7 +2552,7 @@ function OverviewLineChart({
                       width={completionBarWidth}
                       height={barHeight}
                       rx={Math.min(2, completionBarWidth / 2)}
-                      fill="rgba(16,185,129,0.24)"
+                      fill="rgba(52,211,153,0.24)"
                     />
                   ) : null}
                 </g>
@@ -2476,7 +2566,7 @@ function OverviewLineChart({
                   d={linePath}
                   fill="none"
                   stroke="url(#overviewDailyLine)"
-                  strokeWidth={2.5}
+                  strokeWidth={2.25}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
@@ -2486,7 +2576,7 @@ function OverviewLineChart({
                     x2={svgPoints[activeIndex]?.x ?? 0}
                     y1={padding.top}
                     y2={contextBottomY}
-                    stroke="rgba(113,113,122,0.45)"
+                    stroke="rgba(113,113,122,0.38)"
                     strokeDasharray="3 5"
                   />
                 ) : null}
@@ -2498,8 +2588,8 @@ function OverviewLineChart({
                       <circle
                         cx={x}
                         cy={y}
-                        r={isActive ? 4 : 2.5}
-                        fill={isActive ? "#d1fae5" : "#34d399"}
+                        r={isActive ? 3.8 : 2.3}
+                        fill={isActive ? "#d1fae5" : "#6ee7b7"}
                         stroke="rgba(9,9,11,0.95)"
                         strokeWidth={isActive ? 1.5 : 1}
                       />
@@ -2533,7 +2623,7 @@ function OverviewLineChart({
               <text
                 key={`${label.label}-${index}`}
                 x={label.x}
-                y={height - 18}
+                y={height - 34}
                 textAnchor="middle"
                 fill="rgba(161,161,170,0.9)"
                 fontSize="11"
@@ -2646,6 +2736,10 @@ function OverviewLineChart({
               </div>
             </div>
           ) : null}
+        </div>
+        <div className="flex items-center gap-2 border-t border-white/[0.06] pt-2.5 text-xs text-zinc-500">
+          <Info className="h-3.5 w-3.5 shrink-0 text-zinc-500" aria-hidden="true" />
+          <span>All times shown in your local time zone</span>
         </div>
       </div>
     </div>
@@ -3644,13 +3738,15 @@ function SectionCard({
   className,
   id,
 }: {
-  title: string;
+  title?: string;
   description?: string;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
   id?: string;
 }) {
+  const hasHeader = Boolean(title || description || action);
+
   return (
     <section
       id={id}
@@ -3659,16 +3755,24 @@ function SectionCard({
         className
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-2.5 sm:gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-white sm:text-lg">{title}</h2>
-          {description ? (
-            <p className="mt-1 text-xs text-zinc-400 sm:text-sm">{description}</p>
-          ) : null}
+      {hasHeader ? (
+        <div className="flex flex-wrap items-start justify-between gap-2.5 sm:gap-3">
+          <div>
+            {title ? (
+              <h2 className="text-sm font-semibold text-white sm:text-lg">
+                {title}
+              </h2>
+            ) : null}
+            {description ? (
+              <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+                {description}
+              </p>
+            ) : null}
+          </div>
+          {action}
         </div>
-        {action}
-      </div>
-      <div className="mt-3 sm:mt-4">{children}</div>
+      ) : null}
+      <div className={hasHeader ? "mt-3 sm:mt-4" : undefined}>{children}</div>
     </section>
   );
 }
