@@ -62,6 +62,13 @@ const createEmptyDraftPayload = () => ({
   priority: null,
   projectId: null,
   goalId: null,
+  habit_type: null,
+  duration_minutes: null,
+  recurrence: null,
+  recurrence_mode: null,
+  energy: null,
+  skillId: null,
+  locationContextId: null,
 });
 
 const createIntentExtras = () => ({
@@ -644,7 +651,7 @@ const findLastAssistantMessage = (thread?: AiThreadPayload[]): string | null => 
 
 const assistantMessageMentionsKind = (
   message: string,
-  kind: "goal" | "project" | "task"
+  kind: "goal" | "project" | "task" | "habit"
 ): boolean => {
   const lower = message.toLowerCase();
   if (!lower.includes("needs a name")) return false;
@@ -654,11 +661,14 @@ const assistantMessageMentionsKind = (
   if (kind === "project") {
     return lower.includes("project creation") || lower.includes("project");
   }
-  return lower.includes("task creation") || lower.includes("task");
+  if (kind === "task") {
+    return lower.includes("task creation") || lower.includes("task");
+  }
+  return lower.includes("habit creation") || lower.includes("habit");
 };
 
 const createNameOnlyDraftResponse = (
-  kind: "goal" | "project" | "task",
+  kind: "goal" | "project" | "task" | "habit",
   name: string,
   scope: AiScope,
   snapshot?: unknown
@@ -683,7 +693,7 @@ const createNameOnlyDraftResponse = (
       draft
     );
     followUps = ["Review the project", "Confirm to create it"];
-  } else {
+  } else if (kind === "task") {
     intent = createDraftIntent(
       "DRAFT_CREATE_TASK",
       "Autopilot task draft",
@@ -691,6 +701,21 @@ const createNameOnlyDraftResponse = (
       draft
     );
     followUps = ["Review the task", "Confirm to create it"];
+  } else {
+    intent = createDraftIntent(
+      "DRAFT_CREATE_HABIT",
+      "Autopilot habit draft",
+      `Preparing to create the habit "${name}".`,
+      {
+        ...draft,
+        habit_type: "HABIT",
+        duration_minutes: 30,
+        recurrence: "daily",
+        recurrence_mode: "INTERVAL",
+        energy: "MEDIUM",
+      }
+    );
+    followUps = ["Review the habit", "Confirm to create it"];
   }
 
   return buildResponse(
@@ -724,6 +749,9 @@ const attemptNameOnlyFollowUp = (
   if (assistantMessageMentionsKind(lastAssistant, "task")) {
     return createNameOnlyDraftResponse("task", trimmed, scope, snapshot);
   }
+  if (assistantMessageMentionsKind(lastAssistant, "habit")) {
+    return createNameOnlyDraftResponse("habit", trimmed, scope, snapshot);
+  }
 
   return null;
 };
@@ -739,6 +767,12 @@ const matchesProjectIntent = (text: string) =>
 const matchesTaskIntent = (text: string) =>
   /(?:create|help me create|add)(?: a| an)? task/.test(text) ||
   text.startsWith("create task");
+
+const matchesHabitIntent = (text: string) =>
+  /(?:create|help me create|add|draft)(?: a| an)? (?:habit|chore|practice|routine|sync habit)/.test(
+    text
+  ) ||
+  text.startsWith("create habit");
 
 const matchesDayTypeIntent = (text: string) =>
   text.includes("day type") || text.includes("set day type");
@@ -1628,6 +1662,87 @@ export function runAutopilotIntent({
   });
   if (dayTypeCreationResponse) {
     return dayTypeCreationResponse;
+  }
+
+  const habitName =
+    extractNameAfterKeyword(trimmedPrompt, "create habit") ||
+    extractNameAfterKeyword(trimmedPrompt, "create a habit") ||
+    extractNameAfterKeyword(trimmedPrompt, "create chore") ||
+    extractNameAfterKeyword(trimmedPrompt, "create a chore") ||
+    extractNameAfterKeyword(trimmedPrompt, "create practice") ||
+    extractNameAfterKeyword(trimmedPrompt, "create a practice") ||
+    extractNameAfterKeyword(trimmedPrompt, "create routine") ||
+    extractNameAfterKeyword(trimmedPrompt, "create a routine") ||
+    extractNameAfterKeyword(trimmedPrompt, "create sync habit") ||
+    extractNameAfterKeyword(trimmedPrompt, "create a sync habit") ||
+    extractNameAfterKeyword(trimmedPrompt, "add habit") ||
+    extractNameAfterKeyword(trimmedPrompt, "add a habit");
+  if (matchesHabitIntent(normalized)) {
+    if (scope === "read_only") {
+      const followUps = [
+        "Switch scope to Draft Creation",
+        habitName ? `Create a new habit: ${habitName}` : "Create a new habit",
+      ];
+      return createScopeClarificationResponse(
+        "create a habit",
+        "draft_creation",
+        scope,
+        snapshot,
+        followUps
+      );
+    }
+    if (!habitName) {
+      const intent = createClarificationIntent(
+        "Need a habit name",
+        "I caught that you want to create a habit but didn’t catch the name.",
+        ["habit_name"],
+        [
+          "What do you want to name the habit?",
+          "Should it be a habit, chore, practice, or sync habit? (optional)",
+          "How long should it take? (optional)",
+        ]
+      );
+      return buildResponse(
+        scope,
+        intent,
+        "Habit creation needs a name before I can draft it.",
+        ["Share the habit name"],
+        snapshot
+      );
+    }
+    const habitType = normalized.includes("chore")
+      ? "CHORE"
+      : normalized.includes("practice")
+        ? "PRACTICE"
+        : normalized.includes("sync")
+          ? "SYNC"
+          : "HABIT";
+    const draft = {
+      name: habitName,
+      priority: null,
+      projectId: null,
+      goalId: null,
+      habit_type: habitType,
+      duration_minutes: 30,
+      recurrence: "daily",
+      recurrence_mode: "INTERVAL",
+      energy: "MEDIUM",
+      skillId: null,
+      locationContextId: null,
+    };
+    const intent = createDraftIntent(
+      "DRAFT_CREATE_HABIT",
+      "Autopilot habit draft",
+      `Preparing to create the habit "${habitName}".`,
+      draft
+    );
+    return buildResponse(
+      scope,
+      intent,
+      `Draft habit "${habitName}" is ready for confirmation.`,
+      ["Review the habit", "Confirm to create it"],
+      snapshot
+    );
   }
 
   const goalName =

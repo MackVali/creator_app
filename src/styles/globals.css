@@ -148,6 +148,12 @@ body.modal-open [data-bottom-nav] {
   display: none !important;
 }
 
+body.fab-keyboard-active [data-bottom-nav-bar],
+body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
 @keyframes steel-shimmer {
   0% {
     background-position: 0% 50%;

@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -14,11 +15,6 @@ import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import MixedRoadmapCard from "@/app/(app)/goals/components/MixedRoadmapCard";
 import { RoadmapCard } from "@/app/(app)/goals/components/RoadmapCard";
 import type { ProjectCardMorphOrigin } from "@/app/(app)/goals/components/ProjectRow";
-
-import {
-  GoalDrawer,
-  type GoalUpdateContext,
-} from "@/app/(app)/goals/components/GoalDrawer";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,9 +26,6 @@ import {
   type ProjectLite,
 } from "@/lib/scheduler/weight";
 import { getSkillsForUser } from "@/lib/queries/skills";
-import { getMonumentsForUser } from "@/lib/queries/monuments";
-import { persistGoalUpdate } from "@/lib/goals/persistGoalUpdate";
-import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 import {
   listRoadmaps,
   listRoadmapsWithItems,
@@ -409,19 +402,44 @@ export function MonumentGoalsList({
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [roadmapOpenGoal, setRoadmapOpenGoal] = useState<Goal | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [monuments, setMonuments] = useState<
-    { id: string; title: string; emoji: string | null }[]
-  >([]);
-  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [roadmapEditingGoal, setRoadmapEditingGoal] = useState<Goal | null>(
-    null
-  );
-  const [roadmapDrawerOpen, setRoadmapDrawerOpen] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
     null
   );
+  const deferredGoalCloseFrameRef = useRef<number | null>(null);
+
+  const closeGoalDetailAfterFabOpen = useCallback(() => {
+    const closeGoalDetail = () => {
+      deferredGoalCloseFrameRef.current = null;
+      setOpenGoalId(null);
+      setRoadmapOpenGoal(null);
+    };
+
+    if (typeof window === "undefined") {
+      closeGoalDetail();
+      return;
+    }
+
+    if (deferredGoalCloseFrameRef.current !== null) {
+      window.cancelAnimationFrame(deferredGoalCloseFrameRef.current);
+    }
+
+    deferredGoalCloseFrameRef.current = window.requestAnimationFrame(() => {
+      deferredGoalCloseFrameRef.current =
+        window.requestAnimationFrame(closeGoalDetail);
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (
+        typeof window !== "undefined" &&
+        deferredGoalCloseFrameRef.current !== null
+      ) {
+        window.cancelAnimationFrame(deferredGoalCloseFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setOpenGoalId(null);
@@ -445,40 +463,6 @@ export function MonumentGoalsList({
         ...goal,
         weight: typeof goal.weight === "number" ? goal.weight : 0,
       };
-    }
-  }, []);
-
-  const fetchGoalForEditing = useCallback(async (goal: Goal) => {
-    const supabase = getSupabaseBrowser();
-    if (!supabase) return goal;
-    try {
-      const { data, error } = await supabase
-        .from("goals")
-        .select("priority, energy, monument_id, due_date, why, active, status")
-        .eq("id", goal.id)
-        .single();
-      if (error || !data) {
-        return goal;
-      }
-      const priorityCode =
-        typeof data.priority === "string" ? data.priority.toUpperCase() : null;
-      const energyCode =
-        typeof data.energy === "string" ? data.energy.toUpperCase() : null;
-      return {
-        ...goal,
-        priority: priorityCode ? mapPriority(priorityCode) : goal.priority,
-        priorityCode: priorityCode ?? goal.priorityCode ?? null,
-        energy: energyCode ? mapEnergy(energyCode) : goal.energy,
-        energyCode: energyCode ?? goal.energyCode ?? null,
-        monumentId: data.monument_id ?? goal.monumentId ?? null,
-        dueDate: data.due_date ?? goal.dueDate,
-        why: data.why ?? goal.why,
-        active: typeof data.active === "boolean" ? data.active : goal.active,
-        status: normalizeGoalStatus(data.status, data.active ?? goal.active),
-      };
-    } catch (err) {
-      console.error("Failed to fetch goal for editing", err);
-      return goal;
     }
   }, []);
 
@@ -729,11 +713,10 @@ export function MonumentGoalsList({
         }
         setUserId(user.id);
 
-        const [rows, skills, userMonuments, trueMonumentRoadmaps] =
+        const [rows, skills, trueMonumentRoadmaps] =
           await Promise.all([
             fetchGoalsWithRelationsForMonument(monumentId, user.id),
             getSkillsForUser(user.id).catch(() => []),
-            getMonumentsForUser(user.id).catch(() => []),
             fetchTrueRoadmapsForMonument(user.id, monumentId),
           ]);
 
@@ -779,14 +762,6 @@ export function MonumentGoalsList({
             console.error("Error fetching roadmaps for monument:", err);
           }
         }
-
-        setMonuments(
-          userMonuments.map((monument) => ({
-            id: monument.id,
-            title: monument.title,
-            emoji: monument.emoji ?? null,
-          }))
-        );
 
         // Filter out goals with valid roadmap_id if roadmaps exist
         // Only hide goals with a valid roadmap_id (non-null, non-undefined, non-empty string)
@@ -841,7 +816,7 @@ export function MonumentGoalsList({
             goal.id === goalId
               ? {
                   ...goal,
-                  status: goalStatusToStatus(statusRow.status),
+                  status: normalizeGoalStatus(statusRow.status),
                   updatedAt: statusRow.updatedAt ?? goal.updatedAt,
                 }
               : goal
@@ -912,34 +887,45 @@ export function MonumentGoalsList({
     []
   );
 
+  const getGoalEditOriginRect = useCallback((goalId: string) => {
+    if (typeof document === "undefined") return null;
+    const element = document.querySelector<HTMLElement>(
+      `[data-monument-goal-card-id="${goalId}"]`
+    );
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    return {
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+    };
+  }, []);
+
   const handleGoalEdit = useCallback(
     (goal: Goal) => {
-      console.log("🎯 handleGoalEdit called with goal:", goal.id, goal.title);
-      setEditingGoal(null);
-      void fetchGoalForEditing(goal).then((fresh) => {
-        console.log("🎯 Setting editingGoal and opening drawer");
-        setEditingGoal(fresh);
-        setDrawerOpen(true);
+      setFabEditTarget({
+        entityType: "GOAL",
+        entityId: goal.id,
+        title: goal.title,
+        originRect: getGoalEditOriginRect(goal.id),
       });
+      closeGoalDetailAfterFabOpen();
     },
-    [fetchGoalForEditing]
+    [closeGoalDetailAfterFabOpen, getGoalEditOriginRect]
   );
 
   const handleRoadmapGoalEdit = useCallback(
     (goal: Goal) => {
-      console.log(
-        "🎯 handleRoadmapGoalEdit called with goal:",
-        goal.id,
-        goal.title
-      );
-      setRoadmapEditingGoal(null);
-      void fetchGoalForEditing(goal).then((fresh) => {
-        console.log("🎯 Setting roadmap editingGoal and opening drawer");
-        setRoadmapEditingGoal(fresh);
-        setRoadmapDrawerOpen(true);
+      setFabEditTarget({
+        entityType: "GOAL",
+        entityId: goal.id,
+        title: goal.title,
+        originRect: getGoalEditOriginRect(goal.id),
       });
+      closeGoalDetailAfterFabOpen();
     },
-    [fetchGoalForEditing]
+    [closeGoalDetailAfterFabOpen, getGoalEditOriginRect]
   );
 
   const handleRoadmapGoalOpen = useCallback(
@@ -1094,63 +1080,6 @@ export function MonumentGoalsList({
     []
   );
 
-  const handleGoalUpdated = useCallback(
-    async (updatedGoal: Goal, context: GoalUpdateContext) => {
-      setGoals((prev) =>
-        prev.map((goal) =>
-          goal.id === updatedGoal.id ? decorate(updatedGoal) : goal
-        )
-      );
-
-      const supabase = getSupabaseBrowser();
-      if (!supabase) return;
-      try {
-        await persistGoalUpdate({
-          supabase,
-          goal: updatedGoal,
-          context,
-          userId,
-          onUserResolved: setUserId,
-        });
-        setRefreshVersion((current) => current + 1);
-      } catch (err) {
-        console.error("Error updating goal from monument detail:", err);
-      }
-    },
-    [decorate, userId]
-  );
-
-  const handleGoalDeleted = useCallback(
-    async (goal: Goal) => {
-      const supabase = getSupabaseBrowser();
-      if (!supabase) return;
-      try {
-        let targetUserId = userId;
-        if (!targetUserId) {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
-          if (!user?.id) {
-            return;
-          }
-          targetUserId = user.id;
-          setUserId(user.id);
-        }
-        await deleteGoalCascade({
-          supabase,
-          goalId: goal.id,
-          userId: targetUserId,
-        });
-        setGoals((prev) => prev.filter((item) => item.id !== goal.id));
-        setEditingGoal((current) => (current?.id === goal.id ? null : current));
-        setDrawerOpen(false);
-      } catch (err) {
-        console.error("Error deleting goal from monument detail:", err);
-      }
-    },
-    [userId, setUserId, setGoals, setEditingGoal, setDrawerOpen]
-  );
-
   useEffect(() => {
     if (!openGoalId) {
       setRoadmapOpenGoal(null);
@@ -1226,7 +1155,10 @@ export function MonumentGoalsList({
             />
           ))}
           {roadmapOpenGoal && openGoalId === roadmapOpenGoal.id ? (
-            <div className="goal-card-wrapper">
+            <div
+              className="goal-card-wrapper"
+              data-monument-goal-card-id={roadmapOpenGoal.id}
+            >
               <GoalCard
                 goal={roadmapOpenGoal}
                 showWeight={false}
@@ -1329,6 +1261,7 @@ export function MonumentGoalsList({
           {filteredStandaloneGoals.map((goal) => (
             <div
               key={goal.id}
+              data-monument-goal-card-id={goal.id}
               className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
             >
               <GoalCard
@@ -1384,6 +1317,7 @@ export function MonumentGoalsList({
       <Fab
         editTarget={fabEditTarget}
         onEditClose={() => setFabEditTarget(null)}
+        onEditSaved={() => setRefreshVersion((current) => current + 1)}
         hideLauncher
         portalToBody
       />
@@ -1441,39 +1375,6 @@ export function MonumentGoalsList({
           }
         }
       `}</style>
-      <GoalDrawer
-        key={
-          editingGoal?.id ?? (drawerOpen ? "goal-editor" : "goal-editor-closed")
-        }
-        open={drawerOpen}
-        onClose={() => {
-          setDrawerOpen(false);
-          setEditingGoal(null);
-        }}
-        onAdd={() => {}}
-        initialGoal={editingGoal}
-        monuments={monuments}
-        onUpdate={handleGoalUpdated}
-        onDelete={handleGoalDeleted}
-      />
-      <GoalDrawer
-        key={
-          roadmapEditingGoal?.id ??
-          (roadmapDrawerOpen
-            ? "roadmap-goal-editor"
-            : "roadmap-goal-editor-closed")
-        }
-        open={roadmapDrawerOpen}
-        onClose={() => {
-          setRoadmapDrawerOpen(false);
-          setRoadmapEditingGoal(null);
-        }}
-        onAdd={() => {}}
-        initialGoal={roadmapEditingGoal}
-        monuments={monuments}
-        onUpdate={handleGoalUpdated}
-        onDelete={handleGoalDeleted}
-      />
     </div>
   );
 }

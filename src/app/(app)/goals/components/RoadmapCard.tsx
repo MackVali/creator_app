@@ -73,6 +73,17 @@ const shellContentMotion = {
   },
 } as const;
 
+const closeGoalDetailAfterFabOpen = (closeGoalDetail: () => void) => {
+  if (typeof window === "undefined") {
+    closeGoalDetail();
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(closeGoalDetail);
+  });
+};
+
 function DraggableGoalCard({
   goal,
   index,
@@ -150,6 +161,11 @@ function DraggableGoalCard({
         whileTap: { scale: 0.97, y: 1 },
         transition: cardSpringTransition,
       };
+  const handleGoalEdit = useCallback(() => {
+    if (!onGoalEdit) return;
+    onGoalEdit(goal);
+    closeGoalDetailAfterFabOpen(() => onOpenChange?.(false));
+  }, [goal, onGoalEdit, onOpenChange]);
 
   return (
     <div
@@ -189,7 +205,7 @@ function DraggableGoalCard({
             variant="default"
             open={true}
             onOpenChange={onOpenChange}
-            onEdit={onGoalEdit ? () => onGoalEdit(goal) : undefined}
+            onEdit={onGoalEdit ? handleGoalEdit : undefined}
             onToggleActive={
               onGoalToggleActive ? () => onGoalToggleActive(goal) : undefined
             }
@@ -678,6 +694,12 @@ function CompactGoalsOverlay({
     };
   }, []);
 
+  const handleSelectedGoalEdit = useCallback(() => {
+    if (!selectedGoal || !onGoalEdit) return;
+    onGoalEdit(selectedGoal);
+    closeGoalDetailAfterFabOpen(() => setOpenGoalId(null));
+  }, [onGoalEdit, selectedGoal]);
+
   if (typeof document === "undefined" || !mounted) return null;
 
   const regionId = `roadmap-${roadmap.id}`;
@@ -735,7 +757,7 @@ function CompactGoalsOverlay({
           onOpenChange={(isOpen) => {
             if (!isOpen) setOpenGoalId(null);
           }}
-          onEdit={onGoalEdit ? () => onGoalEdit(selectedGoal) : undefined}
+          onEdit={onGoalEdit ? handleSelectedGoalEdit : undefined}
           onToggleActive={
             onGoalToggleActive
               ? () => onGoalToggleActive(selectedGoal)

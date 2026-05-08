@@ -13,7 +13,7 @@ import {
   type RefObject,
   type UIEvent,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   motion,
@@ -162,6 +162,7 @@ interface FabProps extends HTMLAttributes<HTMLDivElement> {
   editTarget?: FabEditTarget | null;
   onEditTargetConsumed?: () => void;
   onEditClose?: () => void;
+  onEditSaved?: (target: FabEditTarget) => void;
   hideLauncher?: boolean;
   portalToBody?: boolean;
 }
@@ -172,6 +173,35 @@ type FabEditOriginRect = {
   left: number;
   width: number;
   height: number;
+};
+type FabCreationSpawnOrigin = {
+  type: CreationType;
+  rect: FabEditOriginRect;
+  nonce: number;
+};
+type FabCreationRevealGeometry = {
+  x: number;
+  y: number;
+  radius: number;
+  nonce: number;
+};
+type FabGoalEditRow = {
+  id: string;
+  name: string | null;
+  priority: string | null;
+  energy: string | null;
+  priority_code?: string | null;
+  energy_code?: string | null;
+  why?: string | null;
+  monument_id?: string | null;
+  due_date?: string | null;
+};
+type FabGoalCampaignRow = {
+  campaign_id: string | null;
+  position?: number | null;
+};
+type FabTagRelationRow = {
+  tag_id: string | null;
 };
 export type FabEditTarget = {
   entityType: CreationType;
@@ -299,6 +329,28 @@ const FAB_ADVANCED_INPUT_CLASS =
   "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white placeholder:text-white/35 focus:border-blue-400/60 focus-visible:ring-0";
 const FAB_ADVANCED_SELECT_TRIGGER_CLASS =
   "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white";
+const FAB_KEYBOARD_SETTLE_MS = 280;
+const FAB_KEYBOARD_MODAL_GAP = 10;
+const FAB_KEYBOARD_OFFSET_MAX_RATIO = 0.55;
+const FAB_MOBILE_FOCUS_KEYBOARD_TIMEOUT_MS = 700;
+const FAB_SELECTION_CONFIRM_MS = 80;
+const FAB_SELECTION_EXIT_MS = 140;
+const FAB_CREATION_ENTER_MS = 220;
+const FAB_CREATION_FOCUS_DELAY_MS =
+  FAB_SELECTION_EXIT_MS + FAB_CREATION_ENTER_MS + 40;
+
+const getClampedVisualViewportKeyboardInset = () => {
+  if (typeof window === "undefined") return 0;
+  const viewport = window.visualViewport;
+  if (!viewport) return 0;
+  const viewportHeight = viewport.height || window.innerHeight;
+  const heightLoss = Math.max(0, window.innerHeight - viewportHeight);
+  const maxKeyboardOffset = Math.max(
+    0,
+    window.innerHeight * FAB_KEYBOARD_OFFSET_MAX_RATIO,
+  );
+  return Math.min(heightLoss, maxKeyboardOffset);
+};
 
 const shouldIgnoreFabPageSwipe = (target: EventTarget | null): boolean => {
   if (typeof Element === "undefined" || !(target instanceof Element)) {
@@ -383,6 +435,24 @@ const normalizeFlameLevel = (value?: string | null): FlameLevel => {
     : "MEDIUM";
 };
 
+const FAB_PRIORITY_VALUES = new Set([
+  "NO",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "CRITICAL",
+  "ULTRA-CRITICAL",
+]);
+
+const normalizeFabPriority = (value?: string | null) => {
+  const normalized = String(value ?? "MEDIUM")
+    .trim()
+    .toUpperCase();
+  return FAB_PRIORITY_VALUES.has(normalized) ? normalized : "MEDIUM";
+};
+
+const normalizeFabEnergy = (value?: string | null) => normalizeFlameLevel(value);
+
 const collapseWhitespace = (value: string) => value.trim().replace(/\s+/g, " ");
 
 const normalizeTagName = (value: string) =>
@@ -449,10 +519,24 @@ const CREATION_MODE_OPTIONS: Record<CreationType, CreationModeOption[]> = {
 const getCreationModesForType = (type: CreationType | null) =>
   type ? CREATION_MODE_OPTIONS[type] : [];
 
+const getFabElementRect = (
+  element: HTMLElement | null,
+): FabEditOriginRect | null => {
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+  };
+};
+
 const DRAFT_PROPOSAL_TYPES: AiIntent["type"][] = [
   "DRAFT_CREATE_GOAL",
   "DRAFT_CREATE_PROJECT",
   "DRAFT_CREATE_TASK",
+  "DRAFT_CREATE_HABIT",
 ];
 
 const PROPOSAL_CARD_TYPES: AiIntent["type"][] = [
@@ -525,6 +609,12 @@ const buildInitialProposalFormValues = (
     values.goal_id ??= "";
     values.skill_ids ??= "";
     values.stage ??= "";
+  }
+  if (intentType === "DRAFT_CREATE_HABIT") {
+    values.habit_type ||= "HABIT";
+    values.duration_minutes ||= "30";
+    values.recurrence ||= "daily";
+    values.energy ||= "MEDIUM";
   }
   return values;
 };
@@ -1539,6 +1629,7 @@ export function Fab({
   editTarget = null,
   onEditTargetConsumed,
   onEditClose,
+  onEditSaved,
   hideLauncher = false,
   portalToBody = false,
   ...wrapperProps
@@ -1634,6 +1725,14 @@ export function Fab({
   }, [aiThread]);
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<CreationType | null>(null);
+  const [pressedCreationType, setPressedCreationType] =
+    useState<CreationType | null>(null);
+  const [creationSpawnOrigin, setCreationSpawnOrigin] =
+    useState<FabCreationSpawnOrigin | null>(null);
+  const [creationRevealGeometry, setCreationRevealGeometry] =
+    useState<FabCreationRevealGeometry | null>(null);
+  const [pendingCreationNameFocus, setPendingCreationNameFocus] =
+    useState<CreationType | null>(null);
   const [activeCreationMode, setActiveCreationMode] =
     useState<CreationFormMode>("main");
   const [editHydrating, setEditHydrating] = useState(false);
@@ -1643,20 +1742,38 @@ export function Fab({
     }
 
     setSelected(editTarget.entityType);
+    setPressedCreationType(null);
+    setCreationSpawnOrigin(null);
+    setCreationRevealGeometry(null);
+    setPendingCreationNameFocus(null);
     setActiveCreationMode("main");
     setExpanded(true);
     setIsOpen(false);
   }, [editTarget]);
   useLayoutEffect(() => {
     const shouldHydrateEditTarget =
+      editTarget?.entityType === "GOAL" ||
       editTarget?.entityType === "PROJECT" ||
       editTarget?.entityType === "HABIT" ||
       editTarget?.entityType === "TASK";
     setEditHydrating(Boolean(shouldHydrateEditTarget && editTarget?.entityId));
   }, [editTarget?.entityId, editTarget?.entityType]);
   const closeExpandedPanel = useCallback(() => {
+    if (creationSelectionTimeoutRef.current !== null) {
+      window.clearTimeout(creationSelectionTimeoutRef.current);
+      creationSelectionTimeoutRef.current = null;
+    }
+    if (mobileCreationFocusTimeoutRef.current !== null) {
+      window.clearTimeout(mobileCreationFocusTimeoutRef.current);
+      mobileCreationFocusTimeoutRef.current = null;
+    }
+    mobileCreationFocusTypeRef.current = null;
+    setPressedCreationType(null);
+    setCreationSpawnOrigin(null);
+    setCreationRevealGeometry(null);
     setExpanded(false);
     setSelected(null);
+    setPendingCreationNameFocus(null);
     setIsOpen(false);
     if (editTarget) {
       onEditClose?.();
@@ -1666,6 +1783,18 @@ export function Fab({
     Partial<Record<CreationType, number>>
   >({});
   const expandedCreationBodyRef = useRef<HTMLDivElement | null>(null);
+  const attachedCreationControlsRef = useRef<HTMLDivElement | null>(null);
+  const creationRevealWrapperRef = useRef<HTMLDivElement | null>(null);
+  const goalNameInputRef = useRef<HTMLInputElement | null>(null);
+  const projectNameInputRef = useRef<HTMLInputElement | null>(null);
+  const taskNameInputRef = useRef<HTMLInputElement | null>(null);
+  const habitNameInputRef = useRef<HTMLInputElement | null>(null);
+  const creationSelectionTimeoutRef = useRef<number | null>(null);
+  const mobileCreationFocusTimeoutRef = useRef<number | null>(null);
+  const mobileCreationFocusTypeRef = useRef<CreationType | null>(null);
+  const fabInputBlurTimeoutRef = useRef<number | null>(null);
+  const fabKeyboardSettleTimeoutRef = useRef<number | null>(null);
+  const wasFabKeyboardActiveRawRef = useRef(false);
   const [availableTags, setAvailableTags] = useState<FabTag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [tagInputValue, setTagInputValue] = useState("");
@@ -1962,6 +2091,8 @@ export function Fab({
   );
   const startTimeInputId = useId();
   const endTimeInputId = useId();
+  const fabKeyboardOwnerId = useId();
+  const fabPanelChromeOwnerId = useId();
   const PROJECT_STAGE_OPTIONS_LOCAL = [
     { value: "RESEARCH", label: "RESEARCH" },
     { value: "TEST", label: "TEST" },
@@ -2842,6 +2973,15 @@ export function Fab({
     setShowDurationPicker(false);
     setDurationPosition(null);
   }, []);
+  const resetGoalFormDraft = useCallback(() => {
+    setGoalName("");
+    setGoalMonumentId("");
+    setGoalPriority("MEDIUM");
+    setGoalEnergy("MEDIUM");
+    setGoalWhy("");
+    setGoalDue(null);
+    setGoalCampaignId(null);
+  }, []);
   const resetHabitFormDraft = useCallback(() => {
     setHabitName("");
     setHabitType(defaultHabitType);
@@ -2978,7 +3118,9 @@ export function Fab({
     if (!entityType || !entityId) {
       return;
     }
-    if (entityType === "PROJECT") {
+    if (entityType === "GOAL") {
+      resetGoalFormDraft();
+    } else if (entityType === "PROJECT") {
       resetProjectFormDraft();
     } else if (entityType === "HABIT") {
       resetHabitFormDraft();
@@ -2993,6 +3135,7 @@ export function Fab({
   }, [
     editTarget?.entityId,
     editTarget?.entityType,
+    resetGoalFormDraft,
     resetHabitFormDraft,
     resetProjectFormDraft,
     resetTaskFormDraft,
@@ -3021,6 +3164,7 @@ export function Fab({
     }
     if (
       entityType !== "PROJECT" &&
+      entityType !== "GOAL" &&
       entityType !== "HABIT" &&
       entityType !== "TASK"
     ) {
@@ -3058,7 +3202,76 @@ export function Fab({
           return;
         }
 
-        if (entityType === "PROJECT") {
+        if (entityType === "GOAL") {
+          hydrationBranch = "GOAL";
+          const [
+            { data: goalRowData, error: goalError },
+            { data: tagRowsData, error: tagError },
+            { data: campaignGoalRowsData, error: campaignGoalError },
+          ] = await Promise.all([
+            supabase
+              .from("goals")
+              .select(
+                "id, name, priority, energy, priority_code, energy_code, why, monument_id, due_date",
+              )
+              .eq("id", entityId)
+              .single(),
+            supabase
+              .from("event_tags")
+              .select("tag_id")
+              .eq("user_id", user.id)
+              .eq("entity_type", "GOAL")
+              .eq("entity_id", entityId),
+            supabase
+              .from("campaign_goals")
+              .select("campaign_id")
+              .eq("user_id", user.id)
+              .eq("goal_id", entityId)
+              .order("position", { ascending: true })
+              .limit(1),
+          ]);
+
+          if (goalError) throw goalError;
+          if (tagError) throw tagError;
+          if (campaignGoalError) throw campaignGoalError;
+          if (cancelled) return;
+
+          const goalRow = goalRowData as FabGoalEditRow | null;
+          const tagRows = tagRowsData as FabTagRelationRow[] | null;
+          const campaignGoalRows =
+            campaignGoalRowsData as FabGoalCampaignRow[] | null;
+          const normalizedPriority =
+            typeof goalRow?.priority_code === "string"
+              ? normalizeFabPriority(goalRow.priority_code)
+              : typeof goalRow?.priority === "string"
+                ? normalizeFabPriority(goalRow.priority)
+                : "MEDIUM";
+          const normalizedEnergy =
+            typeof goalRow?.energy_code === "string"
+              ? normalizeFabEnergy(goalRow.energy_code)
+              : typeof goalRow?.energy === "string"
+                ? normalizeFabEnergy(goalRow.energy)
+                : "MEDIUM";
+
+          setGoalName(goalRow?.name ?? "");
+          setGoalPriority(normalizedPriority);
+          setGoalEnergy(normalizedEnergy);
+          setGoalWhy(goalRow?.why ?? "");
+          setGoalMonumentId(goalRow?.monument_id ?? "");
+          setGoalDue(
+            typeof goalRow?.due_date === "string"
+              ? goalRow.due_date.slice(0, 10)
+              : null,
+          );
+          setGoalCampaignId(campaignGoalRows?.[0]?.campaign_id ?? null);
+          setSelectedTagIds(
+            Array.isArray(tagRows)
+              ? tagRows
+                  .map((row) => row.tag_id)
+                  .filter((tagId): tagId is string => Boolean(tagId))
+              : [],
+          );
+        } else if (entityType === "PROJECT") {
           hydrationBranch = "PROJECT";
           const [
             { data: projectRow, error: projectError },
@@ -3872,25 +4085,210 @@ export function Fab({
   const [stableViewportHeight, setStableViewportHeight] = useState<
     number | null
   >(null);
+  const stableViewportHeightRef = useRef<number | null>(null);
   const [stableSafeBottom, setStableSafeBottom] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [keyboardLift, setKeyboardLift] = useState(0);
-  const [isTextInputFocused, setIsTextInputFocused] = useState(false);
+  const [visualViewportKeyboardInset, setVisualViewportKeyboardInset] =
+    useState(0);
+  const [mobileFabPanelHeight, setMobileFabPanelHeight] = useState<
+    number | null
+  >(null);
+  const [isFabInputFocused, setIsFabInputFocused] = useState(false);
+  const [isFabKeyboardSettling, setIsFabKeyboardSettling] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [attachedCreationControlsHeight, setAttachedCreationControlsHeight] =
+    useState<number | null>(null);
   const isKeyboardVisible = useMemo(() => {
     if (!expanded) return false;
-    if (keyboardLift <= 12) return false;
     if (stableViewportHeight && viewportHeight) {
       const shrink = stableViewportHeight - viewportHeight;
-      return shrink > 80;
+      if (shrink > 80) return true;
     }
+    if (visualViewportKeyboardInset > 80) return true;
     return keyboardLift > 24;
-  }, [expanded, keyboardLift, stableViewportHeight, viewportHeight]);
-  const shouldHideOverhangButtons =
-    expanded && (isKeyboardVisible || isTextInputFocused);
+  }, [
+    expanded,
+    keyboardLift,
+    stableViewportHeight,
+    viewportHeight,
+    visualViewportKeyboardInset,
+  ]);
+  const isFabKeyboardActiveRaw =
+    expanded && (isKeyboardVisible || (isMobileViewport && isFabInputFocused));
+  const shouldUseAttachedFabControls =
+    expanded && (isFabKeyboardActiveRaw || isFabKeyboardSettling);
+  const shouldUseKeyboardConstrainedFabSizing =
+    expanded && (isKeyboardVisible || isFabKeyboardSettling);
+  const shouldAttachCreationControls =
+    expanded &&
+    (shouldUseAttachedFabControls || (isMobileViewport && selected !== null));
+  const shouldSuppressMobileFabChrome =
+    expanded && isMobileViewport && selected !== null;
+  const shouldUseStableMobileFabPanel = shouldSuppressMobileFabChrome;
+  const shouldUseScrollableFabBody =
+    shouldUseKeyboardConstrainedFabSizing || shouldUseStableMobileFabPanel;
+  const shouldHideOverhangButtons = expanded && shouldAttachCreationControls;
+
+  useEffect(() => {
+    stableViewportHeightRef.current = stableViewportHeight;
+  }, [stableViewportHeight]);
+
+  useEffect(() => {
+    if (fabKeyboardSettleTimeoutRef.current !== null) {
+      window.clearTimeout(fabKeyboardSettleTimeoutRef.current);
+      fabKeyboardSettleTimeoutRef.current = null;
+    }
+
+    if (!expanded) {
+      wasFabKeyboardActiveRawRef.current = false;
+      setIsFabKeyboardSettling(false);
+      return;
+    }
+
+    if (isFabKeyboardActiveRaw) {
+      wasFabKeyboardActiveRawRef.current = true;
+      setIsFabKeyboardSettling(false);
+      return;
+    }
+
+    if (!wasFabKeyboardActiveRawRef.current) {
+      setIsFabKeyboardSettling(false);
+      return;
+    }
+
+    setIsFabKeyboardSettling(true);
+    fabKeyboardSettleTimeoutRef.current = window.setTimeout(() => {
+      fabKeyboardSettleTimeoutRef.current = null;
+      wasFabKeyboardActiveRawRef.current = false;
+      setIsFabKeyboardSettling(false);
+    }, FAB_KEYBOARD_SETTLE_MS);
+
+    return () => {
+      if (fabKeyboardSettleTimeoutRef.current !== null) {
+        window.clearTimeout(fabKeyboardSettleTimeoutRef.current);
+        fabKeyboardSettleTimeoutRef.current = null;
+      }
+    };
+  }, [expanded, isFabKeyboardActiveRaw]);
 
   useEffect(() => {
     setActiveCreationMode("main");
   }, [expanded, selected]);
+
+  useEffect(() => {
+    return () => {
+      if (creationSelectionTimeoutRef.current !== null) {
+        window.clearTimeout(creationSelectionTimeoutRef.current);
+        creationSelectionTimeoutRef.current = null;
+      }
+      if (mobileCreationFocusTimeoutRef.current !== null) {
+        window.clearTimeout(mobileCreationFocusTimeoutRef.current);
+        mobileCreationFocusTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const getCreationNameInput = useCallback((type: CreationType | null) => {
+    switch (type) {
+      case "GOAL":
+        return goalNameInputRef.current;
+      case "PROJECT":
+        return projectNameInputRef.current;
+      case "TASK":
+        return taskNameInputRef.current;
+      case "HABIT":
+        return habitNameInputRef.current;
+      default:
+        return null;
+    }
+  }, []);
+
+  const focusCreationNameInput = useCallback(
+    (
+      type: CreationType | null,
+      opts?: { blurIfMobileKeyboardBlocked?: boolean },
+    ) => {
+      const input = getCreationNameInput(type);
+      if (!input || input.disabled) return false;
+
+      input.focus({ preventScroll: true });
+      const didFocus = document.activeElement === input;
+
+      if (
+        didFocus &&
+        opts?.blurIfMobileKeyboardBlocked &&
+        typeof window !== "undefined" &&
+        window.visualViewport
+      ) {
+        if (mobileCreationFocusTimeoutRef.current !== null) {
+          window.clearTimeout(mobileCreationFocusTimeoutRef.current);
+        }
+        mobileCreationFocusTypeRef.current = type;
+        mobileCreationFocusTimeoutRef.current = window.setTimeout(() => {
+          mobileCreationFocusTimeoutRef.current = null;
+          const stableHeight = stableViewportHeightRef.current;
+          const viewportHeightLoss =
+            stableHeight && window.visualViewport
+              ? stableHeight - window.visualViewport.height
+              : 0;
+          if (
+            mobileCreationFocusTypeRef.current !== type ||
+            document.activeElement !== input ||
+            getClampedVisualViewportKeyboardInset() > 80 ||
+            viewportHeightLoss > 80
+          ) {
+            return;
+          }
+          input.blur();
+          mobileCreationFocusTypeRef.current = null;
+        }, FAB_MOBILE_FOCUS_KEYBOARD_TIMEOUT_MS);
+      }
+
+      return didFocus;
+    },
+    [getCreationNameInput],
+  );
+
+  useEffect(() => {
+    if (
+      !expanded ||
+      !pendingCreationNameFocus ||
+      selected !== pendingCreationNameFocus ||
+      activeCreationMode !== "main" ||
+      editTarget
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let fallbackTimeout: number | null = null;
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      if (cancelled) return;
+      fallbackTimeout = window.setTimeout(() => {
+        if (cancelled) return;
+        focusCreationNameInput(pendingCreationNameFocus);
+        setPendingCreationNameFocus(null);
+      }, prefersReducedMotion ? 80 : FAB_CREATION_FOCUS_DELAY_MS);
+    });
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(animationFrame);
+      if (fallbackTimeout !== null) {
+        window.clearTimeout(fallbackTimeout);
+      }
+    };
+  }, [
+    activeCreationMode,
+    editTarget,
+    expanded,
+    focusCreationNameInput,
+    pendingCreationNameFocus,
+    prefersReducedMotion,
+    selected,
+  ]);
 
   const previousSelectedRef = useRef<CreationType | null>(null);
   useEffect(() => {
@@ -4010,7 +4408,8 @@ export function Fab({
   useEffect(() => {
     if (!expanded) {
       setKeyboardLift(0);
-      setIsTextInputFocused(false);
+      setVisualViewportKeyboardInset(0);
+      setIsFabInputFocused(false);
       return;
     }
     const updateLift = () => {
@@ -4024,55 +4423,99 @@ export function Fab({
       if (viewportH) {
         setViewportHeight(viewportH);
       }
-      const heightLoss = Math.max(0, window.innerHeight - viewport.height);
-      const offsetTop = viewport.offsetTop ?? 0;
-      const lift = Math.max(0, heightLoss - offsetTop - stableSafeBottom);
+      const keyboardInset = getClampedVisualViewportKeyboardInset();
+      const lift = Math.max(0, keyboardInset - stableSafeBottom);
+      setVisualViewportKeyboardInset(keyboardInset);
       setKeyboardLift(lift);
     };
     updateLift();
     const viewport = window.visualViewport;
-    viewport?.addEventListener("resize", updateLift);
-    viewport?.addEventListener("scroll", updateLift);
+    const viewportEvents = ["resize", "scroll", "geometrychange"];
+    viewportEvents.forEach((eventName) => {
+      viewport?.addEventListener(eventName, updateLift);
+    });
     window.addEventListener("orientationchange", updateLift);
     return () => {
-      viewport?.removeEventListener("resize", updateLift);
-      viewport?.removeEventListener("scroll", updateLift);
+      viewportEvents.forEach((eventName) => {
+        viewport?.removeEventListener(eventName, updateLift);
+      });
       window.removeEventListener("orientationchange", updateLift);
     };
   }, [expanded, stableSafeBottom]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(max-width: 767px), (pointer: coarse)");
+    const update = () => setIsMobileViewport(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
     if (!expanded) {
-      setIsTextInputFocused(false);
+      if (fabInputBlurTimeoutRef.current !== null) {
+        window.clearTimeout(fabInputBlurTimeoutRef.current);
+        fabInputBlurTimeoutRef.current = null;
+      }
+      setIsFabInputFocused(false);
       return;
     }
     const isTextEntryElement = (el: Element | null) => {
       if (!el) return false;
-      const tag = el.tagName.toLowerCase();
       const editable = (el as HTMLElement).isContentEditable;
+      if (editable) return true;
+      if (el instanceof HTMLTextAreaElement) return true;
+      if (el instanceof HTMLInputElement) {
+        return !["button", "submit", "reset", "checkbox", "radio"].includes(
+          el.type,
+        );
+      }
+      return false;
+    };
+    const isFocusedInsideFabPanel = () => {
+      const activeElement = document.activeElement;
       return (
-        editable ||
-        tag === "input" ||
-        tag === "textarea" ||
-        tag === "select" ||
-        el instanceof HTMLTextAreaElement ||
-        (el instanceof HTMLInputElement &&
-          el.type !== "button" &&
-          el.type !== "submit" &&
-          el.type !== "reset")
+        Boolean(activeElement) &&
+        Boolean(panelRef.current?.contains(activeElement)) &&
+        isTextEntryElement(activeElement)
       );
     };
+    const setFocusedWithDelay = (focused: boolean) => {
+      if (fabInputBlurTimeoutRef.current !== null) {
+        window.clearTimeout(fabInputBlurTimeoutRef.current);
+        fabInputBlurTimeoutRef.current = null;
+      }
+      if (focused) {
+        setIsFabInputFocused(true);
+        return;
+      }
+      fabInputBlurTimeoutRef.current = window.setTimeout(() => {
+        fabInputBlurTimeoutRef.current = null;
+        setIsFabInputFocused(isFocusedInsideFabPanel());
+      }, 90);
+    };
     const handleFocusIn = (event: FocusEvent) => {
-      setIsTextInputFocused(isTextEntryElement(event.target as Element));
+      const target = event.target as Element | null;
+      setFocusedWithDelay(
+        Boolean(target) &&
+          Boolean(panelRef.current?.contains(target)) &&
+          isTextEntryElement(target),
+      );
     };
     const handleFocusOut = () => {
-      setIsTextInputFocused(isTextEntryElement(document.activeElement));
+      setFocusedWithDelay(false);
     };
+    setIsFabInputFocused(isFocusedInsideFabPanel());
     document.addEventListener("focusin", handleFocusIn, true);
     document.addEventListener("focusout", handleFocusOut, true);
     return () => {
       document.removeEventListener("focusin", handleFocusIn, true);
       document.removeEventListener("focusout", handleFocusOut, true);
+      if (fabInputBlurTimeoutRef.current !== null) {
+        window.clearTimeout(fabInputBlurTimeoutRef.current);
+        fabInputBlurTimeoutRef.current = null;
+      }
     };
   }, [expanded]);
 
@@ -4090,6 +4533,46 @@ export function Fab({
       setShowSkillFilters(false);
     }
   }, [expanded]);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || typeof window === "undefined") {
+      return;
+    }
+    const key = "__CREATOR_FAB_KEYBOARD_ACTIVE_OWNERS__";
+    const win = window as typeof window & { [key: string]: Set<string> };
+    win[key] ??= new Set<string>();
+    const owners = win[key];
+    if (shouldUseAttachedFabControls) {
+      owners.add(fabKeyboardOwnerId);
+    } else {
+      owners.delete(fabKeyboardOwnerId);
+    }
+    document.body.classList.toggle("fab-keyboard-active", owners.size > 0);
+    return () => {
+      owners.delete(fabKeyboardOwnerId);
+      document.body.classList.toggle("fab-keyboard-active", owners.size > 0);
+    };
+  }, [fabKeyboardOwnerId, shouldUseAttachedFabControls]);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || typeof window === "undefined") {
+      return;
+    }
+    const key = "__CREATOR_FAB_PANEL_ACTIVE_OWNERS__";
+    const win = window as typeof window & { [key: string]: Set<string> };
+    win[key] ??= new Set<string>();
+    const owners = win[key];
+    if (shouldSuppressMobileFabChrome) {
+      owners.add(fabPanelChromeOwnerId);
+    } else {
+      owners.delete(fabPanelChromeOwnerId);
+    }
+    document.body.classList.toggle("fab-panel-active", owners.size > 0);
+    return () => {
+      owners.delete(fabPanelChromeOwnerId);
+      document.body.classList.toggle("fab-panel-active", owners.size > 0);
+    };
+  }, [fabPanelChromeOwnerId, shouldSuppressMobileFabChrome]);
 
   useEffect(() => {
     if (!showGoalFilters) return;
@@ -5045,6 +5528,40 @@ export function Fab({
       if (error) throw error;
     },
     [],
+  );
+
+  const replaceSelectedTagsForEntity = useCallback(
+    async ({
+      supabase,
+      userId,
+      entityType,
+      entityId,
+      tagIds,
+    }: {
+      supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>;
+      userId: string;
+      entityType: TagEntityType;
+      entityId: string;
+      tagIds: string[];
+    }) => {
+      if (!entityId) return;
+      const { error: deleteError } = await supabase
+        .from("event_tags")
+        .delete()
+        .eq("user_id", userId)
+        .eq("entity_type", entityType)
+        .eq("entity_id", entityId);
+      if (deleteError) throw deleteError;
+      if (tagIds.length === 0) return;
+      await attachSelectedTagsToEntity({
+        supabase,
+        userId,
+        entityType,
+        entityId,
+        tagIds,
+      });
+    },
+    [attachSelectedTagsToEntity],
   );
 
   const renderTagPickerPanel = ({
@@ -6013,32 +6530,83 @@ export function Fab({
     <div
       className={cn(
         "flex w-full flex-col",
-        expanded ? "min-h-full p-0" : "px-4 py-2",
+        expanded ? "min-h-full p-0" : "",
       )}
     >
-      {!expanded &&
-        primary.map((event) => (
-          <motion.button
-            key={event.label}
-            variants={itemVariants}
-            onClick={() => handleEventClick(event.eventType)}
-            className={cn(
-              "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
-              itemAlignmentClass,
-              event.color,
-            )}
-          >
-            <span className="text-sm opacity-80">add</span>{" "}
-            <span className="text-lg font-bold">{event.label}</span>
-          </motion.button>
-        ))}
-      <AnimatePresence>
-        {expanded ? (
-          <motion.div
-            key="fab-expanded-placeholder"
-            className="relative mt-0 bg-black/80"
-            aria-label="Expanded placeholder"
-          >
+      <div className="grid w-full">
+        <AnimatePresence initial={false}>
+          {!expanded ? (
+            <motion.div
+              key="fab-add-event-selection"
+              className="col-start-1 row-start-1 flex w-full flex-col px-4 py-2"
+              initial={false}
+              animate={{ opacity: 1, y: 0 }}
+              exit={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : {
+                      opacity: 0,
+                      transition: {
+                        type: "tween",
+                        ease: "easeIn",
+                        duration: 0.08,
+                      },
+                    }
+              }
+              transition={{
+                type: "tween",
+                ease: "easeOut",
+                duration: prefersReducedMotion ? 0.08 : 0.12,
+              }}
+            >
+              {primary.map((event) => {
+                const isPressed = pressedCreationType === event.eventType;
+                return (
+                  <motion.button
+                    key={event.label}
+                    variants={itemVariants}
+                    onClick={(clickEvent) =>
+                      handleEventClick(
+                        event.eventType,
+                        clickEvent.currentTarget,
+                      )
+                    }
+                    animate={{
+                      backgroundColor: isPressed
+                        ? "rgba(255,255,255,0.12)"
+                        : "rgba(255,255,255,0)",
+                    }}
+                    whileTap={
+                      prefersReducedMotion ? undefined : { y: 1, opacity: 0.9 }
+                    }
+                    transition={{
+                      type: "tween",
+                      ease: "easeOut",
+                      duration: 0.1,
+                    }}
+                    className={cn(
+                      "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
+                      itemAlignmentClass,
+                      event.color,
+                      isPressed && "text-white",
+                    )}
+                  >
+                    <span className="text-sm opacity-80">add</span>{" "}
+                    <span className="text-lg font-bold">{event.label}</span>
+                  </motion.button>
+                );
+              })}
+            </motion.div>
+          ) : (
+            <motion.div
+              key={`fab-creation-${selected ?? "none"}`}
+              className="relative col-start-1 row-start-1 mt-0 bg-black/80"
+              aria-label="Expanded placeholder"
+              initial={false}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0 }}
+            >
             <div
               ref={expandedCreationBodyRef}
               className={cn(
@@ -6051,24 +6619,25 @@ export function Fab({
               style={{
                 paddingBottom: shouldUseCenteredEditModal
                   ? undefined
-                  : `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
+                  : shouldAttachCreationControls
+                    ? "0.5rem"
+                    : `calc(0.5rem + env(safe-area-inset-bottom, 0px) + ${keyboardLift}px)`,
                 scrollPaddingBottom: shouldUseCenteredEditModal
                   ? undefined
-                  : `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
+                  : shouldAttachCreationControls
+                    ? "1rem"
+                    : `calc(env(safe-area-inset-bottom, 0px) + ${keyboardLift + 16}px)`,
               }}
             >
-              {selected && activeCreationMode === "main" ? (
-                <div className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
-                  <span>
-                    {editTarget?.entityType === selected ? "Edit " : "Add "}
-                    {selected.charAt(0) + selected.slice(1).toLowerCase()}
+              {selected &&
+              activeCreationMode === "main" &&
+              editTarget?.entityType === selected &&
+              editHydrating ? (
+                <div className="flex items-center justify-end text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500 drop-shadow-[0_0_6px_rgba(255,255,255,0.04)]">
+                  <span className="inline-flex items-center gap-1.5 text-white/70">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Loading…
                   </span>
-                  {editTarget?.entityType === selected && editHydrating ? (
-                    <span className="inline-flex items-center gap-1.5 text-white/70">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Loading…
-                    </span>
-                  ) : null}
                 </div>
               ) : null}
               {selected === "GOAL" && activeCreationMode === "main" && (
@@ -6125,6 +6694,7 @@ export function Fab({
                       </Label>
                       <Input
                         id="goal-name"
+                        ref={goalNameInputRef}
                         value={goalName}
                         onChange={(e) =>
                           setGoalName(e.target.value.toUpperCase())
@@ -6479,6 +7049,7 @@ export function Fab({
                       </Label>
                       <Input
                         id="main-project-name"
+                        ref={projectNameInputRef}
                         value={projectName}
                         onChange={(e) =>
                           setProjectName(e.target.value.toUpperCase())
@@ -6918,6 +7489,7 @@ export function Fab({
                       </Label>
                       <Input
                         id="main-task-name"
+                        ref={taskNameInputRef}
                         value={taskName}
                         onChange={(e) =>
                           setTaskName(e.target.value.toUpperCase())
@@ -7274,6 +7846,7 @@ export function Fab({
                       </Label>
                       <Input
                         id="habit-name"
+                        ref={habitNameInputRef}
                         value={habitName}
                         onChange={(e) =>
                           setHabitName(e.target.value.toUpperCase())
@@ -7742,8 +8315,9 @@ export function Fab({
               <p className="text-xs text-red-300">{saveError}</p>
             ) : null}
           </motion.div>
-        ) : null}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 
@@ -7805,8 +8379,17 @@ export function Fab({
   };
 
   const handleEventClick = (
-    eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT",
+    eventType: CreationType,
+    triggerElement?: HTMLElement | null,
   ) => {
+    const shouldAttemptNameFocus = !editTarget;
+    const shouldFocusImmediatelyForMobile =
+      shouldAttemptNameFocus &&
+      (isMobileViewport ||
+        (typeof window !== "undefined" &&
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(max-width: 767px), (pointer: coarse)")
+            .matches));
     // Ensure any in-progress drag state cannot leave the neighbor overlay visible.
     isDraggingRef.current = false;
     dragTargetPageRef.current = null;
@@ -7819,11 +8402,75 @@ export function Fab({
     pageX.set(0);
 
     if (expanded) {
-      setSelected(eventType);
+      const updateSelection = () => {
+        setPressedCreationType(null);
+        setCreationSpawnOrigin(null);
+        setCreationRevealGeometry(null);
+        setPendingCreationNameFocus(
+          shouldAttemptNameFocus && !shouldFocusImmediatelyForMobile
+            ? eventType
+            : null,
+        );
+        setSelected(eventType);
+      };
+      if (shouldFocusImmediatelyForMobile) {
+        flushSync(updateSelection);
+        focusCreationNameInput(eventType, {
+          blurIfMobileKeyboardBlocked: true,
+        });
+      } else {
+        updateSelection();
+      }
       return;
     }
-    setExpanded(true);
-    setSelected(eventType);
+
+    if (creationSelectionTimeoutRef.current !== null) {
+      window.clearTimeout(creationSelectionTimeoutRef.current);
+      creationSelectionTimeoutRef.current = null;
+    }
+
+    const commitSelection = () => {
+      creationSelectionTimeoutRef.current = null;
+      setPressedCreationType(null);
+      setCreationRevealGeometry(null);
+      setPendingCreationNameFocus(
+        shouldAttemptNameFocus && !shouldFocusImmediatelyForMobile
+          ? eventType
+          : null,
+      );
+      setExpanded(true);
+      setSelected(eventType);
+    };
+
+    const triggerRect = getFabElementRect(triggerElement ?? null);
+    const nextCreationSpawnOrigin =
+      triggerRect && !editTarget
+        ? {
+            type: eventType,
+            rect: triggerRect,
+            nonce: Date.now(),
+          }
+        : null;
+    if (shouldFocusImmediatelyForMobile) {
+      flushSync(() => {
+        setCreationSpawnOrigin(nextCreationSpawnOrigin);
+        commitSelection();
+      });
+      focusCreationNameInput(eventType, {
+        blurIfMobileKeyboardBlocked: true,
+      });
+      return;
+    }
+    setCreationSpawnOrigin(nextCreationSpawnOrigin);
+    setPressedCreationType(eventType);
+    if (prefersReducedMotion) {
+      commitSelection();
+      return;
+    }
+    creationSelectionTimeoutRef.current = window.setTimeout(
+      commitSelection,
+      FAB_SELECTION_CONFIRM_MS,
+    );
   };
 
   const handleExtraClick = (label: string) => {
@@ -7841,6 +8488,9 @@ export function Fab({
 
   const handleFabButtonClick = () => {
     if (!isOpen) {
+      setPressedCreationType(null);
+      setCreationSpawnOrigin(null);
+      setCreationRevealGeometry(null);
       setIsOpen(true);
       return;
     }
@@ -8093,7 +8743,7 @@ export function Fab({
     return candidate as AiSchedulerOp[];
   };
 
-  const handleSaveProposalEdits = (message: AiThreadProposalMessage) => {
+  const handleSaveProposalEdits = async (message: AiThreadProposalMessage) => {
     const finalDraft = getDraftValuesForMessage(message);
     const overrideOpsCandidate = message.overrides?.schedulerOps;
     const overrideOpsFromMessage = Array.isArray(overrideOpsCandidate)
@@ -8121,6 +8771,65 @@ export function Fab({
         };
       }),
     );
+
+    const intentPayload: Record<string, unknown> = {
+      ...message.ai.intent,
+      draft: finalDraft,
+    };
+    const intentOps = normalizeSchedulerOps(message.ai.intent.ops);
+    const ops = overrideOps ?? intentOps;
+    if (ops.length > 0) {
+      intentPayload.ops = ops;
+    }
+
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const response = await fetch("/api/ai/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: message.ai.scope,
+          intent: intentPayload,
+          idempotency_key: message.id,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          payload?.message ?? payload?.error ?? "Failed to apply proposal",
+        );
+      }
+      const appliedMessage =
+        typeof payload?.message === "string"
+          ? payload.message
+          : "Proposal applied";
+      toast.success("AI proposal applied", appliedMessage);
+      setAiThread((prev) => [
+        ...prev.filter((entry) => entry.id !== message.id),
+        {
+          id: createThreadMessageId(),
+          role: "assistant",
+          kind: "text",
+          content: appliedMessage,
+          ts: Date.now(),
+        },
+      ]);
+      setProposalFormState((prev) => {
+        const updated = { ...prev };
+        delete updated[message.id];
+        return updated;
+      });
+      router.refresh();
+    } catch (error) {
+      console.error("AI proposal apply error", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to apply proposal";
+      setAiError(errorMessage);
+      toast.error("Unable to apply proposal", errorMessage);
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const handleSendEditedProposal = (message: AiThreadProposalMessage) => {
@@ -9245,6 +9954,10 @@ export function Fab({
   const handleFabSave = useCallback(async () => {
     if (fabSavePendingRef.current || isSavingFab || !selected) return;
     const createdType = selected;
+    const activeEditTarget =
+      editTarget?.entityType === selected && editTarget.entityId
+        ? editTarget
+        : null;
     const selectedTagIdsSnapshot = [...selectedTagIds];
     fabSavePendingRef.current = true;
     try {
@@ -9342,6 +10055,87 @@ export function Fab({
         let createdEntityId: string | null = null;
         let tagAttachmentFailed = false;
         let childDraftFailureMessage: string | null = null;
+
+        if (selected === "GOAL" && activeEditTarget?.entityType === "GOAL") {
+          const { error } = await supabase
+            .from("goals")
+            .update({
+              name: trimmedName,
+              priority: goalPriority,
+              priority_code: goalPriority,
+              energy: goalEnergy,
+              energy_code: goalEnergy,
+              why: goalWhy?.trim() || null,
+              monument_id: goalMonumentId || null,
+              due_date: goalDue ?? null,
+            })
+            .eq("id", activeEditTarget.entityId)
+            .eq("user_id", user.id);
+          if (error) throwIfLimitError(error);
+
+          const { error: rankError } = await supabase.rpc(
+            "recalculate_goal_global_rank",
+          );
+          if (rankError) throwIfLimitError(rankError);
+
+          const { error: campaignDeleteError } = await supabase
+            .from("campaign_goals")
+            .delete()
+            .eq("user_id", user.id)
+            .eq("goal_id", activeEditTarget.entityId);
+          if (campaignDeleteError) throwIfLimitError(campaignDeleteError);
+
+          if (goalCampaignId) {
+            const { data: campaignGoalRowsData, error: campaignGoalError } =
+              await supabase
+                .from("campaign_goals")
+                .select("position")
+                .eq("campaign_id", goalCampaignId)
+                .order("position", { ascending: false })
+                .limit(1);
+            if (campaignGoalError) throwIfLimitError(campaignGoalError);
+            const campaignGoalRows =
+              campaignGoalRowsData as FabGoalCampaignRow[] | null;
+            const lastPosition = Number(campaignGoalRows?.[0]?.position ?? 0);
+            const nextPosition =
+              Number.isFinite(lastPosition) && lastPosition > 0
+                ? lastPosition + 1
+                : 1;
+            await addGoalToCampaign(user.id, {
+              campaignId: goalCampaignId,
+              goalId: activeEditTarget.entityId,
+              position: nextPosition,
+            });
+          }
+
+          try {
+            await replaceSelectedTagsForEntity({
+              supabase,
+              userId: user.id,
+              entityType: "GOAL",
+              entityId: activeEditTarget.entityId,
+              tagIds: selectedTagIdsSnapshot,
+            });
+          } catch (error) {
+            tagAttachmentFailed = true;
+            console.error("Failed to update tags after goal edit", error);
+          }
+
+          resetFabFormState();
+          setExpanded(false);
+          setSelected(null);
+          setIsOpen(false);
+          onEditSaved?.(activeEditTarget);
+          onEditClose?.();
+          toast.success("Goal updated");
+          if (tagAttachmentFailed) {
+            toast.error(
+              "Tags not updated",
+              "The goal was saved, but selected tags could not be updated.",
+            );
+          }
+          return;
+        }
 
         if (selected === "GOAL") {
           const { data: goalData, error } = await supabase
@@ -9669,6 +10463,7 @@ export function Fab({
     habitWindowEdgePreference,
     habitWhy,
     habitName,
+    editTarget,
     isCreatingHabitRoutineInline,
     isSavingFab,
     goalCampaignId,
@@ -9691,6 +10486,7 @@ export function Fab({
     projectStage,
     projectWhy,
     projectDraftTasks,
+    replaceSelectedTagsForEntity,
     selectedTagIds,
     selected,
     taskName,
@@ -9699,6 +10495,8 @@ export function Fab({
     taskSkillId,
     taskStage,
     attachSelectedTagsToEntity,
+    onEditClose,
+    onEditSaved,
     resetFabFormState,
     toast,
   ]);
@@ -9792,6 +10590,18 @@ export function Fab({
 
   useEffect(() => {
     if (isOpen) return;
+    if (creationSelectionTimeoutRef.current !== null) {
+      window.clearTimeout(creationSelectionTimeoutRef.current);
+      creationSelectionTimeoutRef.current = null;
+    }
+    if (mobileCreationFocusTimeoutRef.current !== null) {
+      window.clearTimeout(mobileCreationFocusTimeoutRef.current);
+      mobileCreationFocusTimeoutRef.current = null;
+    }
+    mobileCreationFocusTypeRef.current = null;
+    setPressedCreationType(null);
+    setCreationSpawnOrigin(null);
+    setCreationRevealGeometry(null);
     setExpanded(false);
     setSelected(null);
     if (aiOpen) {
@@ -9912,22 +10722,227 @@ export function Fab({
           creationMainShellHeights[selected] ?? 0,
         )
       : null;
+  useLayoutEffect(() => {
+    const node = attachedCreationControlsRef.current;
+    if (!expanded || !node) {
+      setAttachedCreationControlsHeight(null);
+      return;
+    }
+
+    const updateHeight = () => {
+      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
+      if (!Number.isFinite(nextHeight) || nextHeight <= 0) return;
+      setAttachedCreationControlsHeight((current) =>
+        current === nextHeight ? current : nextHeight,
+      );
+    };
+
+    updateHeight();
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      updateHeight();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [activeCreationMode, expanded, selected, shouldAttachCreationControls]);
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    if (
+      !shouldUseStableMobileFabPanel ||
+      selectedCreationTypeMinHeight === null
+    ) {
+      setMobileFabPanelHeight(null);
+      return;
+    }
+
+    const measuredSafeBottom =
+      stableSafeBottom ||
+      Number.parseFloat(
+        getComputedStyle(document.documentElement)
+          .getPropertyValue("--sat-safe-bottom")
+          .trim() || "0",
+      ) ||
+      0;
+    const viewport = window.visualViewport;
+    const nonKeyboardViewportHeight = Math.max(
+      window.innerHeight || 0,
+      viewport?.height ?? 0,
+      stableViewportHeight ?? 0,
+    );
+    const heightCap = Math.round(
+      Math.max(1, nonKeyboardViewportHeight * 0.9 - 8 - measuredSafeBottom),
+    );
+    const footerHeight = attachedCreationControlsHeight ?? 64;
+    const contentHeight =
+      selectedCreationShellHeight ?? selectedCreationTypeMinHeight;
+    const desiredHeight = Math.ceil(contentHeight + footerHeight + 2);
+    const nextHeight = Math.min(heightCap, desiredHeight);
+
+    setMobileFabPanelHeight((current) =>
+      current === nextHeight ? current : nextHeight,
+    );
+  }, [
+    attachedCreationControlsHeight,
+    selectedCreationShellHeight,
+    selectedCreationTypeMinHeight,
+    shouldUseStableMobileFabPanel,
+    stableSafeBottom,
+    stableViewportHeight,
+  ]);
   const secondaryCreationPanelMinHeight =
     expanded && isContentSizedCreationExpanded && activeCreationMode !== "main"
       ? selectedCreationShellHeight ?? selectedCreationTypeMinHeight
       : undefined;
-  const minHeightExpanded = expanded
+  const baseMinHeightExpanded = expanded
     ? selectedCreationTypeMinHeight !== null
       ? selectedCreationTypeMinHeight
       : effectiveViewportHeight
         ? Math.round(effectiveViewportHeight * 0.58)
         : "58vh"
     : undefined;
+  const keyboardMaxHeightExpanded =
+    expanded && shouldUseKeyboardConstrainedFabSizing
+      ? effectiveViewportHeight
+        ? Math.round(
+            Math.max(1, effectiveViewportHeight - 16 - stableSafeBottom),
+          )
+        : "calc(100dvh - env(safe-area-inset-bottom, 0px) - 16px)"
+      : undefined;
+  const normalMaxHeightExpanded =
+    expanded && !shouldUseKeyboardConstrainedFabSizing
+      ? stableViewportHeight
+        ? Math.round(stableViewportHeight * 0.9 - 8 - stableSafeBottom)
+        : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"
+      : undefined;
   const maxHeightExpanded = expanded
-    ? effectiveViewportHeight
-      ? Math.round(effectiveViewportHeight * 0.9 - 8 - stableSafeBottom)
-      : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"
+    ? (keyboardMaxHeightExpanded ?? normalMaxHeightExpanded)
     : undefined;
+  const minHeightExpanded =
+    expanded &&
+    shouldUseKeyboardConstrainedFabSizing &&
+    typeof baseMinHeightExpanded === "number" &&
+    typeof maxHeightExpanded === "number"
+      ? Math.min(baseMinHeightExpanded, maxHeightExpanded)
+      : baseMinHeightExpanded;
+  const fallbackMobileFabPanelHeightExpanded =
+    selectedCreationTypeMinHeight !== null
+      ? Math.ceil(
+          (selectedCreationShellHeight ?? selectedCreationTypeMinHeight) +
+            (attachedCreationControlsHeight ?? 64) +
+            2,
+        )
+      : undefined;
+  const stableMobileFabPanelHeightExpanded =
+    expanded && shouldUseStableMobileFabPanel
+      ? (mobileFabPanelHeight ??
+        (fallbackMobileFabPanelHeightExpanded !== undefined &&
+        stableViewportHeight
+          ? Math.min(
+              fallbackMobileFabPanelHeightExpanded,
+              Math.round(stableViewportHeight * 0.9 - 8 - stableSafeBottom),
+            )
+          : fallbackMobileFabPanelHeightExpanded))
+      : undefined;
+  const availableMobileFabPanelHeightExpanded =
+    expanded && shouldUseStableMobileFabPanel && effectiveViewportHeight
+      ? Math.round(
+          Math.max(1, effectiveViewportHeight - 16 - stableSafeBottom),
+        )
+      : undefined;
+  const currentMobileFabPanelHeightExpanded =
+    stableMobileFabPanelHeightExpanded !== undefined
+      ? shouldUseKeyboardConstrainedFabSizing &&
+        availableMobileFabPanelHeightExpanded !== undefined
+        ? Math.min(
+            stableMobileFabPanelHeightExpanded,
+            availableMobileFabPanelHeightExpanded,
+          )
+        : stableMobileFabPanelHeightExpanded
+      : undefined;
+  const panelMinHeightExpanded =
+    currentMobileFabPanelHeightExpanded ?? minHeightExpanded;
+  const panelMaxHeightExpanded =
+    currentMobileFabPanelHeightExpanded ?? maxHeightExpanded;
+  const panelHeightExpanded = currentMobileFabPanelHeightExpanded;
+  const panelSizeTransition = "border-color 0.1s linear, transform 0.2s ease";
+  const shouldUseCreationSpawnReveal =
+    expanded &&
+    !prefersReducedMotion &&
+    !editTarget &&
+    selected !== null &&
+    creationSpawnOrigin !== null &&
+    creationSpawnOrigin.type === selected;
+  const isCreationRevealReady =
+    shouldUseCreationSpawnReveal &&
+    creationSpawnOrigin !== null &&
+    creationRevealGeometry?.nonce === creationSpawnOrigin.nonce;
+  useLayoutEffect(() => {
+    if (!shouldUseCreationSpawnReveal || !creationSpawnOrigin) {
+      setCreationRevealGeometry(null);
+      return;
+    }
+
+    const wrapper = creationRevealWrapperRef.current;
+    if (!wrapper) return;
+
+    const updateRevealGeometry = () => {
+      const modalRect = wrapper.getBoundingClientRect();
+      if (modalRect.width <= 0 || modalRect.height <= 0) return;
+
+      const originCenterX =
+        creationSpawnOrigin.rect.left + creationSpawnOrigin.rect.width / 2;
+      const originCenterY =
+        creationSpawnOrigin.rect.top + creationSpawnOrigin.rect.height / 2;
+      const x = originCenterX - modalRect.left;
+      const y = originCenterY - modalRect.top;
+      const radius =
+        Math.ceil(
+          Math.max(
+            Math.hypot(x, y),
+            Math.hypot(modalRect.width - x, y),
+            Math.hypot(x, modalRect.height - y),
+            Math.hypot(modalRect.width - x, modalRect.height - y),
+          ),
+        ) + 48;
+
+      setCreationRevealGeometry((current) =>
+        current &&
+        current.nonce === creationSpawnOrigin.nonce &&
+        current.x === x &&
+        current.y === y &&
+        current.radius === radius
+          ? current
+          : {
+              x,
+              y,
+              radius,
+              nonce: creationSpawnOrigin.nonce,
+            },
+      );
+    };
+
+    updateRevealGeometry();
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(updateRevealGeometry);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, [
+    activeCreationMode,
+    creationSpawnOrigin,
+    isCreationRevealReady,
+    panelHeightExpanded,
+    panelMaxHeightExpanded,
+    panelMinHeightExpanded,
+    selected,
+    shouldUseCreationSpawnReveal,
+  ]);
+  const creationRevealOriginX = creationRevealGeometry?.x ?? 0;
+  const creationRevealOriginY = creationRevealGeometry?.y ?? 0;
+  const creationRevealClipStart = `circle(0px at ${creationRevealOriginX}px ${creationRevealOriginY}px)`;
+  const creationRevealClipEnd =
+    `circle(${creationRevealGeometry?.radius ?? 0}px at ${creationRevealOriginX}px ${creationRevealOriginY}px)`;
   const editPresentationOriginRect = editTarget?.originRect ?? null;
   const shouldUseCenteredEditModal =
     expanded && Boolean(editPresentationOriginRect);
@@ -10019,6 +11034,79 @@ export function Fab({
         }
       : undefined;
   const shouldRenderFabPanel = isOpen || expanded;
+  const shouldRenderAttachedCreationControls =
+    expanded && (shouldUseCenteredEditModal || shouldAttachCreationControls);
+  const attachedCreationPanelBottom =
+    expanded && isKeyboardVisible
+      ? Math.round(stableSafeBottom + FAB_KEYBOARD_MODAL_GAP)
+      : Math.round(stableSafeBottom + 8);
+  const renderAttachedCreationControls = () => (
+    <div
+      ref={attachedCreationControlsRef}
+      data-fab-keyboard-controls
+      className="relative z-10 mt-auto flex flex-[0_0_auto] flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm sm:px-5"
+    >
+      <div className="flex items-center gap-2">
+        {selected && activeCreationModes.length > 1
+          ? activeCreationModes.map((mode) => {
+              const isActive = activeCreationMode === mode.id;
+              const Icon = mode.icon;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setActiveCreationMode(mode.id)}
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-lg border backdrop-blur-xl transition duration-150",
+                    isActive
+                      ? "border-white/18 bg-[linear-gradient(180deg,rgba(34,38,43,0.96),rgba(64,68,76,0.9))] text-white shadow-[0_10px_18px_rgba(0,0,0,0.28),inset_0_2px_4px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.08)] translate-y-[1px]"
+                      : "border-white/10 bg-[linear-gradient(180deg,rgba(104,110,120,0.34),rgba(54,58,66,0.3))] text-white/68 shadow-[0_10px_18px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.14)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(118,124,134,0.38),rgba(60,64,72,0.34))] hover:text-white/86",
+                  )}
+                  aria-pressed={isActive}
+                  aria-label={mode.label}
+                  title={mode.label}
+                >
+                  <Icon className="h-4 w-4" />
+                </button>
+              );
+            })
+          : null}
+      </div>
+      <div className="flex items-center gap-3">
+        <Button
+          type="button"
+          aria-label="Discard"
+          variant="cancelSquare"
+          size="iconSquare"
+          className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation"
+          {...overhangCancelTapHandlers}
+        >
+          <X
+            className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+            aria-hidden="true"
+          />
+        </Button>
+
+        <Button
+          type="button"
+          aria-label="Save"
+          variant="confirmSquare"
+          size="iconSquare"
+          disabled={isSaveDisabled}
+          className={cn(
+            "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation bg-white/10 text-white transition hover:bg-white/20",
+            isSaveDisabled ? "opacity-50" : "",
+          )}
+          {...overhangSaveTapHandlers}
+        >
+          <Check
+            className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+            aria-hidden="true"
+          />
+        </Button>
+      </div>
+    </div>
+  );
 
   const fabContent = (
     <div
@@ -10054,105 +11142,195 @@ export function Fab({
                   (expanded ? "fixed" : "absolute"),
                 !shouldUseCenteredEditModal && menuClassName,
               )}
+              style={
+                expanded &&
+                  shouldAttachCreationControls &&
+                  !shouldUseCenteredEditModal
+                  ? {
+                      bottom: attachedCreationPanelBottom,
+                      marginBottom: 0,
+                    }
+                  : undefined
+              }
             >
               <motion.div
-                data-fab-overlay
-                ref={(node) => {
-                  menuRef.current = node;
-                  panelRef.current = node;
-                }}
-                layoutId={
-                  shouldUseCenteredEditModal
-                    ? (editTarget?.layoutId ?? undefined)
-                    : undefined
+                ref={creationRevealWrapperRef}
+                key={
+                  shouldUseCreationSpawnReveal && creationSpawnOrigin
+                    ? isCreationRevealReady
+                      ? `fab-creation-spawn-${creationSpawnOrigin.nonce}`
+                      : `fab-creation-spawn-measure-${creationSpawnOrigin.nonce}`
+                    : "fab-panel-frame"
                 }
-                className={cn(
-                  "border rounded-lg shadow-2xl",
-                  expanded
-                    ? "bg-[var(--surface-elevated)]"
-                    : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
-                  shouldUseCenteredEditModal && "flex flex-col overflow-hidden",
-                  expanded
-                    ? isGoalCreationExpanded
-                      ? "w-[calc(100vw-1.5rem)] max-w-[30rem]"
-                      : isProjectCreationExpanded
-                        ? "w-[calc(100vw-2rem)] max-w-[28rem]"
-                        : isTaskCreationExpanded
-                          ? "w-[calc(100vw-1.5rem)] max-w-[31rem]"
-                          : isHabitCreationExpanded
-                            ? "w-[calc(100vw-1.5rem)] max-w-[29rem]"
-                      : "w-[92vw] max-w-[920px]"
-                    : "min-w-[200px]",
-                )}
-                layout={!expanded && !shouldUseCenteredEditModal}
-                onTouchStart={(event) => event.stopPropagation()}
-                onTouchMove={(event) => {
-                  if (!expanded) {
-                    event.stopPropagation();
-                  }
-                }}
-                onPointerDown={(event) => {
-                  if (!expanded) {
-                    event.stopPropagation();
-                  }
-                }}
-                onPointerDownCapture={handleExpandedPointerDownCapture}
+                className="relative"
                 style={{
-                  boxShadow: MENU_BOX_SHADOW,
-                  borderColor: isBlendingGradient
-                    ? blendedBorderColor
-                    : staticBorderColor,
-                  transition: "border-color 0.1s linear, transform 0.2s ease",
-                  transformOrigin:
-                    shouldUseCenteredEditModal
-                      ? "center center"
-                      : menuVariant === "timeline"
-                      ? "bottom right"
-                      : "bottom center",
-                  minHeight: expanded ? minHeightExpanded : menuContainerHeight,
-                  maxHeight: expanded ? maxHeightExpanded : menuContainerHeight,
-                  height: expanded ? undefined : menuContainerHeight,
-                  minWidth: expanded ? undefined : (menuWidth ?? undefined),
-                  width: expanded ? undefined : (menuWidth ?? undefined),
-                  maxWidth: expanded ? undefined : (menuWidth ?? undefined),
-                  touchAction: expanded ? "manipulation" : undefined,
-                  overflowY:
-                    expanded && !shouldUseCenteredEditModal ? "auto" : "hidden",
-                  overflowX: "hidden",
-                  overscrollBehavior: expanded ? "contain" : undefined,
+                  borderRadius: "0.5rem",
+                  transformOrigin: `${creationRevealOriginX}px ${creationRevealOriginY}px`,
+                  willChange: shouldUseCreationSpawnReveal
+                    ? "clip-path, opacity"
+                    : undefined,
+                  pointerEvents:
+                    shouldUseCreationSpawnReveal && !isCreationRevealReady
+                      ? "none"
+                      : undefined,
                 }}
                 initial={
-                  centeredEditModalAnimation?.initial ?? { opacity: 0, y: 8 }
+                  shouldUseCreationSpawnReveal
+                    ? { opacity: 0, clipPath: creationRevealClipStart }
+                    : false
                 }
                 animate={
-                  centeredEditModalAnimation?.animate ?? {
-                    opacity: 1,
-                    y: 0,
-                    transition: {
-                      type: "tween",
-                      ease: "easeOut",
-                      duration: 0.2,
-                    },
-                  }
+                  shouldUseCreationSpawnReveal
+                    ? isCreationRevealReady
+                      ? {
+                          opacity: 1,
+                          clipPath: creationRevealClipEnd,
+                          transition: {
+                            type: "tween",
+                            ease: [0.16, 1, 0.3, 1],
+                            duration: FAB_CREATION_ENTER_MS / 1000,
+                          },
+                        }
+                      : { opacity: 0, clipPath: creationRevealClipStart }
+                    : { opacity: 1 }
                 }
                 exit={
-                  centeredEditModalAnimation?.exit ?? {
-                    opacity: 0,
-                    y: 8,
-                    transition: {
-                      type: "tween",
-                      ease: "easeIn",
-                      duration: 0.2,
-                    },
-                  }
+                  shouldUseCreationSpawnReveal
+                    ? {
+                        opacity: 0,
+                        transition: {
+                          type: "tween",
+                          ease: "easeIn",
+                          duration: 0.16,
+                        },
+                      }
+                    : undefined
                 }
-                onWheel={handleMenuWheel}
               >
-                <>
+                <motion.div
+                  data-fab-overlay
+                  ref={(node) => {
+                    menuRef.current = node;
+                    panelRef.current = node;
+                  }}
+                  layoutId={
+                    shouldUseCenteredEditModal
+                      ? (editTarget?.layoutId ?? undefined)
+                      : undefined
+                  }
+                  className={cn(
+                    "border rounded-lg shadow-2xl",
+                    expanded
+                      ? "bg-[var(--surface-elevated)]"
+                      : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
+                    expanded &&
+                      (shouldUseCenteredEditModal ||
+                        shouldAttachCreationControls) &&
+                      "flex flex-col overflow-hidden",
+                    expanded
+                      ? isGoalCreationExpanded
+                        ? "w-[calc(100vw-1.5rem)] max-w-[30rem]"
+                        : isProjectCreationExpanded
+                          ? "w-[calc(100vw-2rem)] max-w-[28rem]"
+                          : isTaskCreationExpanded
+                            ? "w-[calc(100vw-1.5rem)] max-w-[31rem]"
+                            : isHabitCreationExpanded
+                              ? "w-[calc(100vw-1.5rem)] max-w-[29rem]"
+                              : "w-[92vw] max-w-[920px]"
+                      : "min-w-[200px]",
+                  )}
+                  layout={!expanded && !shouldUseCenteredEditModal}
+                  onTouchStart={(event) => event.stopPropagation()}
+                  onTouchMove={(event) => {
+                    if (!expanded) {
+                      event.stopPropagation();
+                    }
+                  }}
+                  onPointerDown={(event) => {
+                    if (!expanded) {
+                      event.stopPropagation();
+                    }
+                  }}
+                  onPointerDownCapture={handleExpandedPointerDownCapture}
+                  style={{
+                    boxShadow: MENU_BOX_SHADOW,
+                    borderColor: isBlendingGradient
+                      ? blendedBorderColor
+                      : staticBorderColor,
+                    transition: panelSizeTransition,
+                    transformOrigin:
+                      shouldUseCenteredEditModal
+                        ? "center center"
+                        : menuVariant === "timeline"
+                          ? "bottom right"
+                          : "bottom center",
+                    minHeight: expanded
+                      ? panelMinHeightExpanded
+                      : menuContainerHeight,
+                    maxHeight: expanded
+                      ? panelMaxHeightExpanded
+                      : menuContainerHeight,
+                    height: expanded
+                      ? panelHeightExpanded
+                      : menuContainerHeight,
+                    minWidth: expanded ? undefined : (menuWidth ?? undefined),
+                    width: expanded ? undefined : (menuWidth ?? undefined),
+                    maxWidth: expanded ? undefined : (menuWidth ?? undefined),
+                    touchAction: expanded ? "manipulation" : undefined,
+                    overflowY:
+                      expanded &&
+                      !shouldUseCenteredEditModal &&
+                      !shouldAttachCreationControls
+                        ? "auto"
+                        : "hidden",
+                    overflowX: "hidden",
+                    overscrollBehavior: expanded ? "contain" : undefined,
+                  }}
+                  initial={
+                    shouldUseCreationSpawnReveal
+                      ? false
+                      : (centeredEditModalAnimation?.initial ?? {
+                          opacity: 0,
+                          y: 8,
+                        })
+                  }
+                  animate={
+                    shouldUseCreationSpawnReveal
+                      ? { opacity: 1, y: 0 }
+                      : (centeredEditModalAnimation?.animate ?? {
+                          opacity: 1,
+                          y: 0,
+                          transition: {
+                            type: "tween",
+                            ease: "easeOut",
+                            duration: 0.2,
+                          },
+                        })
+                  }
+                  exit={
+                    shouldUseCreationSpawnReveal
+                      ? { opacity: 1 }
+                      : (centeredEditModalAnimation?.exit ?? {
+                          opacity: 0,
+                          y: 8,
+                          transition: {
+                            type: "tween",
+                            ease: "easeIn",
+                            duration: 0.2,
+                          },
+                        })
+                  }
+                  onWheel={handleMenuWheel}
+                >
                   <div
+                    data-fab-scroll-body={
+                      shouldUseScrollableFabBody ? "" : undefined
+                    }
                     className={cn(
-                      shouldUseCenteredEditModal && expanded
-                        ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                      shouldUseScrollableFabBody
+                        ? "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
+                        : shouldRenderAttachedCreationControls
+                          ? "flex-none overflow-visible"
                         : null,
                     )}
                   >
@@ -10252,72 +11430,10 @@ export function Fab({
                       </div>
                     </motion.div>
                   </div>
-                  {expanded &&
-                  !shouldHideOverhangButtons &&
-                  shouldUseCenteredEditModal ? (
-                    <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-4 py-3 backdrop-blur-sm sm:px-5">
-                      <div className="flex items-center gap-2">
-                        {selected && activeCreationModes.length > 1
-                          ? activeCreationModes.map((mode) => {
-                              const isActive = activeCreationMode === mode.id;
-                              const Icon = mode.icon;
-                              return (
-                                <button
-                                  key={mode.id}
-                                  type="button"
-                                  onClick={() => setActiveCreationMode(mode.id)}
-                                  className={cn(
-                                    "flex h-9 w-9 items-center justify-center rounded-lg border backdrop-blur-xl transition duration-150",
-                                    isActive
-                                      ? "border-white/18 bg-[linear-gradient(180deg,rgba(34,38,43,0.96),rgba(64,68,76,0.9))] text-white shadow-[0_10px_18px_rgba(0,0,0,0.28),inset_0_2px_4px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.08)] translate-y-[1px]"
-                                      : "border-white/10 bg-[linear-gradient(180deg,rgba(104,110,120,0.34),rgba(54,58,66,0.3))] text-white/68 shadow-[0_10px_18px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.14)] hover:border-white/16 hover:bg-[linear-gradient(180deg,rgba(118,124,134,0.38),rgba(60,64,72,0.34))] hover:text-white/86",
-                                  )}
-                                  aria-pressed={isActive}
-                                  aria-label={mode.label}
-                                  title={mode.label}
-                                >
-                                  <Icon className="h-4 w-4" />
-                                </button>
-                              );
-                            })
-                          : null}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Button
-                          type="button"
-                          aria-label="Discard"
-                          variant="cancelSquare"
-                          size="iconSquare"
-                          className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation"
-                          {...overhangCancelTapHandlers}
-                        >
-                          <X
-                            className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
-                            aria-hidden="true"
-                          />
-                        </Button>
-
-                        <Button
-                          type="button"
-                          aria-label="Save"
-                          variant="confirmSquare"
-                          size="iconSquare"
-                          disabled={isSaveDisabled}
-                          className={cn(
-                            "drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation bg-white/10 text-white transition hover:bg-white/20",
-                            isSaveDisabled ? "opacity-50" : "",
-                          )}
-                          {...overhangSaveTapHandlers}
-                        >
-                          <Check
-                            className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
-                            aria-hidden="true"
-                          />
-                        </Button>
-                      </div>
-                    </div>
+                  {shouldRenderAttachedCreationControls ? (
+                    renderAttachedCreationControls()
                   ) : null}
-                </>
+                </motion.div>
               </motion.div>
               {shouldRenderTimelineOverlayButton && (
                 <motion.button
@@ -10471,9 +11587,11 @@ export function Fab({
           ref={buttonRef}
           onClick={handleFabButtonClick}
           aria-label={isOpen ? "Open ILAV" : "Add new item"}
-          className={`relative flex items-center justify-center h-14 w-14 rounded-full text-white shadow-lg hover:scale-110 transition overflow-visible ${
-            isOpen ? "rotate-45" : ""
-          }`}
+          className={cn(
+            "relative flex h-14 w-14 items-center justify-center overflow-visible rounded-full text-white shadow-lg transition hover:scale-110",
+            isOpen ? "rotate-45" : "",
+            shouldAttachCreationControls ? "pointer-events-none opacity-0" : "",
+          )}
           onTouchStart={handleFabButtonTouchStart}
           onTouchEnd={handleFabButtonTouchEnd}
           onTouchCancel={handleFabButtonTouchCancel}
@@ -11344,6 +12462,7 @@ function ProposalTimelineCard({
 
   const isGoalDraft = message.ai.intent.type === "DRAFT_CREATE_GOAL";
   const isProjectDraft = message.ai.intent.type === "DRAFT_CREATE_PROJECT";
+  const isHabitDraft = message.ai.intent.type === "DRAFT_CREATE_HABIT";
   const isSchedulerDraft =
     message.ai.intent.type === "DRAFT_SCHEDULER_INPUT_OPS";
 
@@ -11364,6 +12483,20 @@ function ProposalTimelineCard({
   if (isProjectDraft) {
     return (
       <ProjectProposalForm
+        message={message}
+        fieldKeys={fieldKeys}
+        getFieldValue={getFieldValue}
+        onFieldChange={onFieldChange}
+        onSave={onSave}
+        onSend={onSend}
+        isSending={isSending}
+      />
+    );
+  }
+
+  if (isHabitDraft) {
+    return (
+      <HabitProposalForm
         message={message}
         fieldKeys={fieldKeys}
         getFieldValue={getFieldValue}
@@ -11734,6 +12867,28 @@ const PROJECT_PROPOSAL_STAGE_OPTIONS = [
   { value: "RELEASE", label: "Release" },
 ];
 
+const HABIT_PROPOSAL_TYPE_OPTIONS = [
+  { value: "HABIT", label: "Habit" },
+  { value: "CHORE", label: "Chore" },
+  { value: "PRACTICE", label: "Practice" },
+  { value: "SYNC", label: "Sync" },
+];
+
+const HABIT_PROPOSAL_RECURRENCE_OPTIONS = [
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+];
+
+const HABIT_PROPOSAL_ENERGY_OPTIONS = [
+  { value: "NO", label: "No" },
+  { value: "LOW", label: "Low" },
+  { value: "MEDIUM", label: "Medium" },
+  { value: "HIGH", label: "High" },
+  { value: "ULTRA", label: "Ultra" },
+  { value: "EXTREME", label: "Extreme" },
+];
+
 type ProjectProposalFormProps = {
   message: AiThreadProposalMessage;
   fieldKeys: string[];
@@ -11894,6 +13049,184 @@ function ProjectProposalForm({
                 disabled={isSending}
                 aria-label="Save project"
                 title="Save project"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type HabitProposalFormProps = {
+  message: AiThreadProposalMessage;
+  fieldKeys: string[];
+  getFieldValue: (key: string) => string;
+  onFieldChange: (field: string, value: string) => void;
+  onSave: (message: AiThreadProposalMessage) => void;
+  onSend: (message: AiThreadProposalMessage) => void;
+  isSending: boolean;
+};
+
+function HabitProposalForm({
+  message,
+  fieldKeys,
+  getFieldValue,
+  onFieldChange,
+  onSave,
+  onSend,
+  isSending,
+}: HabitProposalFormProps) {
+  const labelClassName =
+    "text-[10px] font-semibold uppercase tracking-[0.35em] text-white/60";
+  const inputClassName =
+    "h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-[12px] text-white placeholder:text-white/60 focus:border-blue-400/60 focus-visible:ring-0";
+  const optionalLinkKeys = fieldKeys.filter((key) =>
+    ["goalId", "skillId", "locationContextId"].includes(key),
+  );
+  const energyLevel =
+    (getFieldValue("energy") as FlameEmberProps["level"]) || "MEDIUM";
+
+  return (
+    <div className="mx-auto w-full max-w-[520px]">
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 via-white/10 to-black/80 p-3 sm:p-4 text-white">
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <Label className={labelClassName}>Name</Label>
+            <div className="flex gap-2">
+              <Input
+                value={getFieldValue("name")}
+                onChange={(event) => onFieldChange("name", event.target.value)}
+                placeholder="Name this habit"
+                className={`${inputClassName} flex-1`}
+              />
+              <button
+                type="button"
+                className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] p-2 text-[11px] text-white shadow-[inset_0_1px_4px_rgba(255,255,255,0.08)] transition hover:border-white/30 hover:bg-white/10"
+                aria-label="Habit energy"
+              >
+                <FlameEmber
+                  level={energyLevel}
+                  size="sm"
+                  className="pointer-events-none"
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1 min-w-0">
+              <Label className={labelClassName}>Type</Label>
+              <Select
+                value={getFieldValue("habit_type")}
+                onValueChange={(value) => onFieldChange("habit_type", value)}
+              >
+                <SelectTrigger className={inputClassName}>
+                  <SelectValue placeholder="Choose type" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#050507] border border-white/10">
+                  {HABIT_PROPOSAL_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 min-w-0">
+              <Label className={labelClassName}>Duration</Label>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                value={getFieldValue("duration_minutes")}
+                onChange={(event) =>
+                  onFieldChange("duration_minutes", event.target.value)
+                }
+                className={inputClassName}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1 min-w-0">
+              <Label className={labelClassName}>Recurrence</Label>
+              <Select
+                value={getFieldValue("recurrence")}
+                onValueChange={(value) => onFieldChange("recurrence", value)}
+              >
+                <SelectTrigger className={inputClassName}>
+                  <SelectValue placeholder="Choose recurrence" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#050507] border border-white/10">
+                  {HABIT_PROPOSAL_RECURRENCE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 min-w-0">
+              <Label className={labelClassName}>Energy</Label>
+              <Select
+                value={getFieldValue("energy")}
+                onValueChange={(value) => onFieldChange("energy", value)}
+              >
+                <SelectTrigger className={inputClassName}>
+                  <SelectValue placeholder="Choose energy" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#050507] border border-white/10">
+                  {HABIT_PROPOSAL_ENERGY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {optionalLinkKeys.length > 0 ? (
+            <div className="grid grid-cols-1 gap-2">
+              {optionalLinkKeys.map((key) => (
+                <div key={key} className="space-y-1">
+                  <Label className={labelClassName}>
+                    {humanizeFieldLabel(key)}
+                  </Label>
+                  <Input
+                    value={getFieldValue(key)}
+                    onChange={(event) =>
+                      onFieldChange(key, event.target.value)
+                    }
+                    className={inputClassName}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="mt-1 border-t border-white/10 pt-3">
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => onSend(message)}
+                disabled={isSending}
+                aria-label="Request refinement"
+                title="Request refinement"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ef4444] text-white shadow-[0_8px_20px_rgba(239,68,68,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onSave(message)}
+                disabled={isSending}
+                aria-label="Save habit"
+                title="Save habit"
                 className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-[0_8px_20px_rgba(16,185,129,0.35)] transition disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Check className="h-4 w-4" />
