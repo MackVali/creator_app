@@ -3570,6 +3570,13 @@ export function Fab({
   const dragTargetPageRef = useRef<number | null>(null);
   const dragDirectionRef = useRef<1 | -1 | null>(null);
   const pageDragAxisRef = useRef<"horizontal" | "vertical" | null>(null);
+  const pendingFabSwipeRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    fromNexusScroll: true;
+    event: PointerEvent;
+  } | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
@@ -8635,6 +8642,7 @@ export function Fab({
   );
 
   const resetPageDragState = useCallback(() => {
+    pendingFabSwipeRef.current = null;
     isDraggingRef.current = false;
     dragTargetPageRef.current = null;
     dragDirectionRef.current = null;
@@ -8729,9 +8737,63 @@ export function Fab({
       if (shouldIgnoreFabPageSwipe(event.target)) {
         return;
       }
+      if (
+        typeof Element !== "undefined" &&
+        event.target instanceof Element &&
+        event.target.closest('[data-fab-nexus-scroll="true"]')
+      ) {
+        pendingFabSwipeRef.current = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          fromNexusScroll: true,
+          event: event.nativeEvent,
+        };
+        return;
+      }
       pageDragControls.start(event);
     },
     [isOpen, pageDragControls],
+  );
+
+  const handlePagePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const pending = pendingFabSwipeRef.current;
+      if (!pending || pending.pointerId !== event.pointerId) {
+        return;
+      }
+      const dx = event.clientX - pending.startX;
+      const dy = event.clientY - pending.startY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+
+      if (absY > 6 && absY > absX * 1.1) {
+        pendingFabSwipeRef.current = null;
+        return;
+      }
+
+      if (absX > 12 && absX > absY * 1.35) {
+        if (
+          typeof document !== "undefined" &&
+          document.activeElement === nexusInputRef.current
+        ) {
+          nexusInputRef.current?.blur();
+        }
+        pageDragControls.start(pending.event);
+        pendingFabSwipeRef.current = null;
+      }
+    },
+    [pageDragControls],
+  );
+
+  const clearPendingFabSwipe = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const pending = pendingFabSwipeRef.current;
+      if (!pending || pending.pointerId === event.pointerId) {
+        pendingFabSwipeRef.current = null;
+      }
+    },
+    [],
   );
 
   const handlePageDrag = useCallback(
@@ -10110,6 +10172,15 @@ export function Fab({
                           style={{ x: pageX }}
                           onPointerDown={
                             !expanded ? handlePagePointerDown : undefined
+                          }
+                          onPointerMove={
+                            !expanded ? handlePagePointerMove : undefined
+                          }
+                          onPointerUp={
+                            !expanded ? clearPendingFabSwipe : undefined
+                          }
+                          onPointerCancel={
+                            !expanded ? clearPendingFabSwipe : undefined
                           }
                           onDragStart={handlePageDragStart}
                           onDrag={handlePageDrag}
@@ -12543,6 +12614,7 @@ function FabNexus({
       <div
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pr-5 pt-3"
         data-fab-nexus-scroll="true"
+        style={{ touchAction: "pan-y" }}
         onScroll={handleScroll}
       >
         {isSearching && !hasResults ? (
@@ -12572,6 +12644,12 @@ function FabNexus({
                 "text-[7px] md:text-[9px] uppercase tracking-[0.18em] text-white/70";
               const statusLabelClass =
                 "text-[7px] md:text-[8px] uppercase tracking-[0.14em] text-white/60 break-words leading-tight";
+              const releaseCardPointer = (event: React.PointerEvent) => {
+                const target = event.currentTarget as HTMLElement;
+                if (target.hasPointerCapture?.(event.pointerId)) {
+                  target.releasePointerCapture(event.pointerId);
+                }
+              };
 
               const beginDrag = (
                 event: React.PointerEvent,
@@ -12579,9 +12657,7 @@ function FabNexus({
               ) => {
                 if (!onManualPlaceResult) return;
                 if (!res.scheduleInstanceId) return;
-                (event.currentTarget as HTMLElement)?.releasePointerCapture?.(
-                  event.pointerId,
-                );
+                releaseCardPointer(event);
                 onManualPlaceResult(res, {
                   clientX: event.clientX,
                   clientY: event.clientY,
@@ -12602,9 +12678,6 @@ function FabNexus({
                   dragging: false,
                   result,
                 };
-                (event.currentTarget as HTMLElement).setPointerCapture?.(
-                  event.pointerId,
-                );
               };
 
               const handlePointerMove = (event: React.PointerEvent) => {
@@ -12623,6 +12696,24 @@ function FabNexus({
                 const dy = event.clientY - state.startY;
                 const absX = Math.abs(dx);
                 const absY = Math.abs(dy);
+
+                if (absY > 6 && absY > absX * 1.1) {
+                  dragStateRef.current = null;
+                  suppressTransientClick();
+                  releaseCardPointer(event);
+                  return;
+                }
+
+                if (
+                  absX > RESULT_CARD_DRAG_THRESHOLD_PX &&
+                  absX > absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE
+                ) {
+                  dragStateRef.current = null;
+                  suppressTransientClick();
+                  releaseCardPointer(event);
+                  return;
+                }
+
                 if (
                   absX < RESULT_CARD_DRAG_THRESHOLD_PX &&
                   absY < RESULT_CARD_DRAG_THRESHOLD_PX
@@ -12630,21 +12721,10 @@ function FabNexus({
                   return;
                 }
 
-                if (absX >= absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE) {
+                if (absY > absX * RESULT_CARD_VERTICAL_SCROLL_DOMINANCE) {
                   dragStateRef.current = null;
                   suppressTransientClick();
-                  (event.currentTarget as HTMLElement).releasePointerCapture?.(
-                    event.pointerId,
-                  );
-                  return;
-                }
-
-                if (absY >= absX * RESULT_CARD_VERTICAL_SCROLL_DOMINANCE) {
-                  dragStateRef.current = null;
-                  suppressTransientClick();
-                  (event.currentTarget as HTMLElement).releasePointerCapture?.(
-                    event.pointerId,
-                  );
+                  releaseCardPointer(event);
                   return;
                 }
 
@@ -12663,9 +12743,7 @@ function FabNexus({
                   return;
                 const wasDragging = state.dragging;
                 dragStateRef.current = null;
-                (event.currentTarget as HTMLElement).releasePointerCapture?.(
-                  event.pointerId,
-                );
+                releaseCardPointer(event);
                 if (wasDragging) {
                   event.preventDefault();
                   return;
