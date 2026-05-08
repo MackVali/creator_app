@@ -12308,7 +12308,7 @@ function FabNexus({
 
   return (
     <div
-      className="flex h-full w-full flex-col text-white"
+      className="flex h-full min-h-0 w-full flex-col text-white"
       style={{ backgroundColor: "rgba(0,0,0,0.75)" }}
     >
       <div className="px-4 pt-4">
@@ -12426,7 +12426,7 @@ function FabNexus({
         </div>
       ) : null}
       <div
-        className="flex-1 overflow-y-auto px-4 pb-4 pr-5 pt-3"
+        className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pr-5 pt-3"
         data-fab-nexus-scroll="true"
         onScroll={handleScroll}
       >
