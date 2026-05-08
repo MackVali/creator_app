@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BatteryCharging, Flame, MoreHorizontal } from "lucide-react";
+import Link from "next/link";
+import { BatteryCharging, Flame, MoreHorizontal, Plus } from "lucide-react";
 
 import ActivityPanel from "./ActivityPanel";
 import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
@@ -29,16 +30,40 @@ interface MonumentDetailProps {
 
 type MonumentView = "goals" | "roadmap";
 
+function MonumentRoadmapEmptyState() {
+  return (
+    <div className="rounded-2xl border border-white/[0.08] bg-[#080A0F] px-4 py-3 shadow-[0_12px_34px_rgba(0,0,0,0.34)] sm:px-5 sm:py-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-white">
+            Start this roadmap
+          </h2>
+          <p className="mt-1 max-w-sm text-xs leading-5 text-[#A7B0BD]">
+            Add the first goal to give this monument a clear next step.
+          </p>
+        </div>
+        <Link
+          href="/goals"
+          className="inline-flex min-h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/[0.11] sm:w-auto"
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+          Add Goal
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
   const { id } = monument;
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [monumentView, setMonumentView] = useState<MonumentView>("roadmap");
+  const [monumentView, setMonumentView] = useState<MonumentView>("goals");
   const [goalSection, setGoalSection] = useState<"active" | "completed">(
     "active"
   );
 
   useEffect(() => {
-    setMonumentView("roadmap");
+    setMonumentView("goals");
     setGoalSection("active");
   }, [id]);
 
@@ -171,8 +196,8 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
               >
                 {(
                   [
-                    { value: "roadmap", label: "ROADMAP" },
                     { value: "goals", label: "GOAL GRID" },
+                    { value: "roadmap", label: "ROADMAP" },
                   ] as const
                 ).map((option) => (
                   <button
@@ -199,6 +224,7 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
                 monumentView={monumentView}
                 goalSection={goalSection}
                 onGoalSectionChange={setGoalSection}
+                roadmapEmptyState={<MonumentRoadmapEmptyState />}
               />
             </div>
           </section>

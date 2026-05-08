@@ -11223,8 +11223,7 @@ export async function fetchCompatibleWindowsForItem(
     );
     const windowHasLocation = Boolean(windowLocationId || windowLocationValue);
     const attemptHasLocation = Boolean(desiredLocationId || desiredLocationValue);
-    const blockRequiresExactLocation =
-      !constraintItem.isProject && windowLocationId !== null;
+    const blockRequiresExactLocation = windowLocationId !== null;
     const applyLocationGate =
       blockRequiresExactLocation ||
       shouldEnforceLocation ||
