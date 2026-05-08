@@ -27,6 +27,7 @@ import {
 } from "@/lib/scheduler/weight";
 import { getSkillsForUser } from "@/lib/queries/skills";
 import {
+  ensureMonumentGoalsInTrueRoadmap,
   listRoadmaps,
   listRoadmapsWithItems,
   type Roadmap,
@@ -361,8 +362,15 @@ async function fetchGoalWithRelationsById(goalId: string) {
 
 async function fetchTrueRoadmapsForMonument(
   userId: string,
-  monumentId: string
+  monumentId: string,
+  options: { reconcile?: boolean } = {}
 ): Promise<RoadmapWithItems[]> {
+  if (options.reconcile) {
+    await ensureMonumentGoalsInTrueRoadmap(userId, monumentId).catch((err) => {
+      console.error("Error reconciling true monument roadmap:", err);
+    });
+  }
+
   const allRoadmapsWithItems = await listRoadmapsWithItems(userId).catch(
     (err) => {
       console.error("Error fetching true monument roadmaps:", err);
@@ -689,10 +697,37 @@ export function MonumentGoalsList({
     setUserId(user.id);
     const trueMonumentRoadmaps = await fetchTrueRoadmapsForMonument(
       user.id,
-      monumentId
+      monumentId,
+      { reconcile: true }
     );
     setMonumentRoadmapsWithItems(trueMonumentRoadmaps);
   }, [monumentId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleCreatorEntitySaved = (event: Event) => {
+      const detail = (event as CustomEvent<{ entityType?: string }>).detail;
+      if (detail?.entityType !== "GOAL") {
+        return;
+      }
+
+      setRefreshVersion((current) => current + 1);
+    };
+
+    window.addEventListener(
+      "creator:entity-saved",
+      handleCreatorEntitySaved
+    );
+    return () => {
+      window.removeEventListener(
+        "creator:entity-saved",
+        handleCreatorEntitySaved
+      );
+    };
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -717,7 +752,9 @@ export function MonumentGoalsList({
           await Promise.all([
             fetchGoalsWithRelationsForMonument(monumentId, user.id),
             getSkillsForUser(user.id).catch(() => []),
-            fetchTrueRoadmapsForMonument(user.id, monumentId),
+            fetchTrueRoadmapsForMonument(user.id, monumentId, {
+              reconcile: true,
+            }),
           ]);
 
         setMonumentRoadmapsWithItems(trueMonumentRoadmaps);

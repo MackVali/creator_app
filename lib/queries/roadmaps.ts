@@ -1,4 +1,7 @@
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { findMissingMonumentRoadmapGoalIds } from "./roadmap-reconciliation";
+
+export { findMissingMonumentRoadmapGoalIds } from "./roadmap-reconciliation";
 
 export interface RoadmapGoal {
   id: string;
@@ -77,6 +80,11 @@ export interface CampaignGoalRecord {
   campaign_id: string;
   goal_id: string;
   position: number;
+}
+
+export interface MonumentRoadmapReconciliationResult {
+  roadmapId: string | null;
+  insertedCount: number;
 }
 
 type RoadmapGoalRow = {
@@ -698,6 +706,193 @@ export async function createTopLevelGoalRoadmapItem(input: {
   const userId = await requireCurrentUserId();
 
   return addGoalToRoadmapItems(userId, input);
+}
+
+function normalizeMonumentRoadmapReconciliationResult(
+  data: unknown
+): MonumentRoadmapReconciliationResult {
+  const row = Array.isArray(data) ? data[0] : data;
+  const record =
+    row && typeof row === "object"
+      ? (row as { roadmap_id?: unknown; inserted_count?: unknown })
+      : null;
+  const insertedCount =
+    typeof record?.inserted_count === "number" &&
+    Number.isFinite(record.inserted_count)
+      ? record.inserted_count
+      : 0;
+
+  return {
+    roadmapId:
+      typeof record?.roadmap_id === "string" ? record.roadmap_id : null,
+    insertedCount,
+  };
+}
+
+async function ensureMonumentGoalsInTrueRoadmapFallback(
+  userId: string,
+  monumentId: string
+): Promise<MonumentRoadmapReconciliationResult> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { data: roadmapRow, error: roadmapError } = await supabase
+    .from("roadmaps")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("monument_id", monumentId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (roadmapError) {
+    throw roadmapError;
+  }
+
+  const roadmapId =
+    typeof roadmapRow?.id === "string" && roadmapRow.id.length > 0
+      ? roadmapRow.id
+      : null;
+  if (!roadmapId) {
+    return { roadmapId: null, insertedCount: 0 };
+  }
+
+  const [
+    { data: goalRows, error: goalsError },
+    { data: roadmapItemRows, error: roadmapItemsError },
+  ] = await Promise.all([
+    supabase
+      .from("goals")
+      .select("id, created_at")
+      .eq("user_id", userId)
+      .eq("monument_id", monumentId)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true }),
+    supabase
+      .from("roadmap_items")
+      .select("id, item_type, campaign_id, goal_id, position")
+      .eq("user_id", userId)
+      .eq("roadmap_id", roadmapId)
+      .order("position", { ascending: true }),
+  ]);
+
+  if (goalsError) {
+    throw goalsError;
+  }
+  if (roadmapItemsError) {
+    throw roadmapItemsError;
+  }
+
+  const roadmapItems = roadmapItemRows ?? [];
+  const campaignIds = Array.from(
+    new Set(
+      roadmapItems
+        .map((item) =>
+          typeof item.campaign_id === "string" && item.campaign_id.length > 0
+            ? item.campaign_id
+            : null
+        )
+        .filter((campaignId): campaignId is string => campaignId !== null)
+    )
+  );
+  const { data: campaignGoalRows, error: campaignGoalsError } =
+    campaignIds.length > 0
+      ? await supabase
+          .from("campaign_goals")
+          .select("goal_id")
+          .eq("user_id", userId)
+          .in("campaign_id", campaignIds)
+      : { data: [], error: null };
+
+  if (campaignGoalsError) {
+    throw campaignGoalsError;
+  }
+
+  const missingGoalIds = findMissingMonumentRoadmapGoalIds({
+    monumentGoalIds: (goalRows ?? [])
+      .map((goal) => goal.id)
+      .filter((goalId): goalId is string => Boolean(goalId)),
+    roadmapGoalItemIds: roadmapItems
+      .map((item) =>
+        item.item_type === "GOAL" &&
+        typeof item.goal_id === "string" &&
+        item.goal_id.length > 0
+          ? item.goal_id
+          : null
+      )
+      .filter((goalId): goalId is string => goalId !== null),
+    campaignGoalIds: (campaignGoalRows ?? [])
+      .map((campaignGoal) => campaignGoal.goal_id)
+      .filter((goalId): goalId is string => Boolean(goalId)),
+  });
+
+  if (missingGoalIds.length === 0) {
+    return { roadmapId, insertedCount: 0 };
+  }
+
+  const maxPosition = roadmapItems.reduce((max, item) => {
+    const position =
+      typeof item.position === "number" && Number.isFinite(item.position)
+        ? item.position
+        : 0;
+    return Math.max(max, position);
+  }, 0);
+
+  const { error: insertError } = await supabase.from("roadmap_items").insert(
+    missingGoalIds.map((goalId, index) => ({
+      user_id: userId,
+      roadmap_id: roadmapId,
+      item_type: "GOAL",
+      campaign_id: null,
+      goal_id: goalId,
+      position: maxPosition + index + 1,
+    }))
+  );
+
+  if (insertError) {
+    throw insertError;
+  }
+
+  const { error: rankError } = await supabase.rpc(
+    "recalculate_goal_global_rank"
+  );
+  if (rankError) {
+    console.warn(
+      "Unable to recalculate goal global rank after roadmap reconciliation:",
+      rankError
+    );
+  }
+
+  return { roadmapId, insertedCount: missingGoalIds.length };
+}
+
+export async function ensureMonumentGoalsInTrueRoadmap(
+  userId: string,
+  monumentId: string
+): Promise<MonumentRoadmapReconciliationResult> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { data, error } = await supabase.rpc(
+    "ensure_monument_true_roadmap_items",
+    {
+      p_monument_id: monumentId,
+    }
+  );
+
+  if (!error) {
+    return normalizeMonumentRoadmapReconciliationResult(data);
+  }
+
+  console.warn(
+    "True roadmap reconciliation RPC failed; falling back to client reconciliation:",
+    error
+  );
+  return ensureMonumentGoalsInTrueRoadmapFallback(userId, monumentId);
 }
 
 export async function addGoalToCampaign(
