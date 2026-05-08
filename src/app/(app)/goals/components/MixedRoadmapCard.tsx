@@ -860,7 +860,7 @@ function MixedRoadmapCardImpl({
               >
                 {roadmap.title}
               </p>
-              <div className="grid grid-cols-2 gap-2 text-[0.58rem] text-white/55 sm:text-[0.68rem]">
+              <div className="hidden grid-cols-2 gap-2 text-[0.58rem] text-white/55 sm:grid sm:text-[0.68rem]">
                 <span className="min-w-0 rounded-full border border-white/10 bg-white/[0.03] px-1.5 py-0.5 text-center font-medium uppercase tracking-[0.08em] sm:px-2 sm:py-1 sm:tracking-[0.1em]">
                   {campaignCount} CAMPAIGN{campaignCount === 1 ? "" : "S"}
                 </span>

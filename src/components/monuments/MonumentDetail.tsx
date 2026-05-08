@@ -165,11 +165,6 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
           >
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
             <header className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
-                  Monument Roadmap
-                </h2>
-              </div>
               <div
                 className="inline-flex w-full rounded-lg border border-white/10 bg-[#050506]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur sm:w-auto"
                 aria-label="Monument view"

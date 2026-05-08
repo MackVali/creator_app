@@ -300,42 +300,31 @@ const FAB_ADVANCED_INPUT_CLASS =
 const FAB_ADVANCED_SELECT_TRIGGER_CLASS =
   "h-10 rounded-lg border border-white/10 bg-black/30 px-3.5 text-xs text-white";
 
-const isInteractiveFabSwipeTarget = (target: EventTarget | null): boolean => {
+const shouldIgnoreFabPageSwipe = (target: EventTarget | null): boolean => {
   if (typeof Element === "undefined" || !(target instanceof Element)) {
     return false;
   }
 
-  if (
+  return Boolean(
     target.closest(
       [
         "input",
         "textarea",
         "select",
-        "button",
-        '[role="button"]',
+        '[contenteditable="true"]',
         "[data-radix-select-trigger]",
         "[data-radix-select-content]",
-        "[data-fab-swipe-ignore]",
-        "[data-fab-nexus-result-card]",
+        '[data-fab-swipe-ignore="true"]',
+        '[data-state="open"][data-slot="dropdown-menu-content"]',
+        '[data-state="open"][data-slot="dropdown-menu-sub-content"]',
+        '[data-state="open"][data-slot="popover-content"]',
+        '[data-state="open"][data-slot="select-content"]',
+        '[data-state="open"][role="menu"]',
+        '[data-state="open"][role="listbox"]',
+        '[data-state="open"][role="dialog"]',
       ].join(","),
-    )
-  ) {
-    return true;
-  }
-
-  const nexusScroller = target.closest<HTMLElement>(
-    '[data-fab-nexus-scroll="true"]',
+    ),
   );
-  if (nexusScroller) {
-    const isScrollable =
-      nexusScroller.scrollHeight > nexusScroller.clientHeight + 2;
-    const hasResultCards = Boolean(
-      nexusScroller.querySelector('[data-fab-nexus-result-card="true"]'),
-    );
-    return isScrollable && hasResultCards;
-  }
-
-  return false;
 };
 
 const HABIT_DAYLIGHT_ADVANCED_OPTIONS = [
@@ -8716,7 +8705,7 @@ export function Fab({
   );
 
   const handlePageDragStart = useCallback(() => {
-    if (!isOpen || stageWidth <= 0) {
+    if (!isOpen) {
       resetPageDragState();
       return;
     }
@@ -8729,7 +8718,7 @@ export function Fab({
     setDragDirection(null);
     setIsAnimatingPageChange(false);
     pageX.set(0);
-  }, [isOpen, pageX, resetPageDragState, stageWidth]);
+  }, [isOpen, pageX, resetPageDragState]);
 
   const handlePagePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -8737,7 +8726,7 @@ export function Fab({
       if (event.pointerType === "mouse" && event.button !== 0) {
         return;
       }
-      if (isInteractiveFabSwipeTarget(event.target)) {
+      if (shouldIgnoreFabPageSwipe(event.target)) {
         return;
       }
       pageDragControls.start(event);
@@ -12335,7 +12324,9 @@ function FabNexus({
     result: FabSearchResult;
   } | null>(null);
   const suppressClickRef = useRef(false);
-  const DRAG_THRESHOLD_PX = 6;
+  const RESULT_CARD_DRAG_THRESHOLD_PX = 12;
+  const RESULT_CARD_PAGE_SWIPE_DOMINANCE = 1.25;
+  const RESULT_CARD_VERTICAL_SCROLL_DOMINANCE = 1.15;
   const hasResults = results.length > 0;
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (!hasMore || isLoadingMore) return;
@@ -12385,6 +12376,15 @@ function FabNexus({
     formatDateTime(value, { dateStyle: "medium", timeStyle: undefined });
   const formatTimePart = (value: string | null): string | null =>
     formatDateTime(value, { timeStyle: "short" });
+
+  const suppressTransientClick = () => {
+    suppressClickRef.current = true;
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 350);
+    }
+  };
 
   const getStatusText = (result: FabSearchResult): React.ReactNode => {
     if (result.type === "PROJECT" && result.isCompleted) {
@@ -12588,7 +12588,7 @@ function FabNexus({
                   pointerId: event.pointerId ?? null,
                   pointerType: event.pointerType ?? null,
                 });
-                suppressClickRef.current = true;
+                suppressTransientClick();
               };
 
               const handlePointerDown = (event: React.PointerEvent) => {
@@ -12621,12 +12621,36 @@ function FabNexus({
                 }
                 const dx = event.clientX - state.startX;
                 const dy = event.clientY - state.startY;
-                const dist = Math.hypot(dx, dy);
-                if (dist > DRAG_THRESHOLD_PX) {
-                  state.dragging = true;
-                  beginDrag(event, state.result);
-                  event.preventDefault();
+                const absX = Math.abs(dx);
+                const absY = Math.abs(dy);
+                if (
+                  absX < RESULT_CARD_DRAG_THRESHOLD_PX &&
+                  absY < RESULT_CARD_DRAG_THRESHOLD_PX
+                ) {
+                  return;
                 }
+
+                if (absX >= absY * RESULT_CARD_PAGE_SWIPE_DOMINANCE) {
+                  dragStateRef.current = null;
+                  suppressTransientClick();
+                  (event.currentTarget as HTMLElement).releasePointerCapture?.(
+                    event.pointerId,
+                  );
+                  return;
+                }
+
+                if (absY >= absX * RESULT_CARD_VERTICAL_SCROLL_DOMINANCE) {
+                  dragStateRef.current = null;
+                  suppressTransientClick();
+                  (event.currentTarget as HTMLElement).releasePointerCapture?.(
+                    event.pointerId,
+                  );
+                  return;
+                }
+
+                state.dragging = true;
+                beginDrag(event, state.result);
+                event.preventDefault();
               };
 
               const handlePointerUp = (event: React.PointerEvent) => {
