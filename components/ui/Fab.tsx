@@ -162,6 +162,7 @@ interface FabProps extends HTMLAttributes<HTMLDivElement> {
   editTarget?: FabEditTarget | null;
   onEditTargetConsumed?: () => void;
   onEditClose?: () => void;
+  onEditSaved?: (target: FabEditTarget) => void;
   hideLauncher?: boolean;
   portalToBody?: boolean;
 }
@@ -172,6 +173,24 @@ type FabEditOriginRect = {
   left: number;
   width: number;
   height: number;
+};
+type FabGoalEditRow = {
+  id: string;
+  name: string | null;
+  priority: string | null;
+  energy: string | null;
+  priority_code?: string | null;
+  energy_code?: string | null;
+  why?: string | null;
+  monument_id?: string | null;
+  due_date?: string | null;
+};
+type FabGoalCampaignRow = {
+  campaign_id: string | null;
+  position?: number | null;
+};
+type FabTagRelationRow = {
+  tag_id: string | null;
 };
 export type FabEditTarget = {
   entityType: CreationType;
@@ -383,6 +402,24 @@ const normalizeFlameLevel = (value?: string | null): FlameLevel => {
     ? (normalized as FlameLevel)
     : "MEDIUM";
 };
+
+const FAB_PRIORITY_VALUES = new Set([
+  "NO",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "CRITICAL",
+  "ULTRA-CRITICAL",
+]);
+
+const normalizeFabPriority = (value?: string | null) => {
+  const normalized = String(value ?? "MEDIUM")
+    .trim()
+    .toUpperCase();
+  return FAB_PRIORITY_VALUES.has(normalized) ? normalized : "MEDIUM";
+};
+
+const normalizeFabEnergy = (value?: string | null) => normalizeFlameLevel(value);
 
 const collapseWhitespace = (value: string) => value.trim().replace(/\s+/g, " ");
 
@@ -1547,6 +1584,7 @@ export function Fab({
   editTarget = null,
   onEditTargetConsumed,
   onEditClose,
+  onEditSaved,
   hideLauncher = false,
   portalToBody = false,
   ...wrapperProps
@@ -1660,6 +1698,7 @@ export function Fab({
   }, [editTarget]);
   useLayoutEffect(() => {
     const shouldHydrateEditTarget =
+      editTarget?.entityType === "GOAL" ||
       editTarget?.entityType === "PROJECT" ||
       editTarget?.entityType === "HABIT" ||
       editTarget?.entityType === "TASK";
@@ -2862,6 +2901,15 @@ export function Fab({
     setShowDurationPicker(false);
     setDurationPosition(null);
   }, []);
+  const resetGoalFormDraft = useCallback(() => {
+    setGoalName("");
+    setGoalMonumentId("");
+    setGoalPriority("MEDIUM");
+    setGoalEnergy("MEDIUM");
+    setGoalWhy("");
+    setGoalDue(null);
+    setGoalCampaignId(null);
+  }, []);
   const resetHabitFormDraft = useCallback(() => {
     setHabitName("");
     setHabitType(defaultHabitType);
@@ -2998,7 +3046,9 @@ export function Fab({
     if (!entityType || !entityId) {
       return;
     }
-    if (entityType === "PROJECT") {
+    if (entityType === "GOAL") {
+      resetGoalFormDraft();
+    } else if (entityType === "PROJECT") {
       resetProjectFormDraft();
     } else if (entityType === "HABIT") {
       resetHabitFormDraft();
@@ -3013,6 +3063,7 @@ export function Fab({
   }, [
     editTarget?.entityId,
     editTarget?.entityType,
+    resetGoalFormDraft,
     resetHabitFormDraft,
     resetProjectFormDraft,
     resetTaskFormDraft,
@@ -3041,6 +3092,7 @@ export function Fab({
     }
     if (
       entityType !== "PROJECT" &&
+      entityType !== "GOAL" &&
       entityType !== "HABIT" &&
       entityType !== "TASK"
     ) {
@@ -3078,7 +3130,76 @@ export function Fab({
           return;
         }
 
-        if (entityType === "PROJECT") {
+        if (entityType === "GOAL") {
+          hydrationBranch = "GOAL";
+          const [
+            { data: goalRowData, error: goalError },
+            { data: tagRowsData, error: tagError },
+            { data: campaignGoalRowsData, error: campaignGoalError },
+          ] = await Promise.all([
+            supabase
+              .from("goals")
+              .select(
+                "id, name, priority, energy, priority_code, energy_code, why, monument_id, due_date",
+              )
+              .eq("id", entityId)
+              .single(),
+            supabase
+              .from("event_tags")
+              .select("tag_id")
+              .eq("user_id", user.id)
+              .eq("entity_type", "GOAL")
+              .eq("entity_id", entityId),
+            supabase
+              .from("campaign_goals")
+              .select("campaign_id")
+              .eq("user_id", user.id)
+              .eq("goal_id", entityId)
+              .order("position", { ascending: true })
+              .limit(1),
+          ]);
+
+          if (goalError) throw goalError;
+          if (tagError) throw tagError;
+          if (campaignGoalError) throw campaignGoalError;
+          if (cancelled) return;
+
+          const goalRow = goalRowData as FabGoalEditRow | null;
+          const tagRows = tagRowsData as FabTagRelationRow[] | null;
+          const campaignGoalRows =
+            campaignGoalRowsData as FabGoalCampaignRow[] | null;
+          const normalizedPriority =
+            typeof goalRow?.priority_code === "string"
+              ? normalizeFabPriority(goalRow.priority_code)
+              : typeof goalRow?.priority === "string"
+                ? normalizeFabPriority(goalRow.priority)
+                : "MEDIUM";
+          const normalizedEnergy =
+            typeof goalRow?.energy_code === "string"
+              ? normalizeFabEnergy(goalRow.energy_code)
+              : typeof goalRow?.energy === "string"
+                ? normalizeFabEnergy(goalRow.energy)
+                : "MEDIUM";
+
+          setGoalName(goalRow?.name ?? "");
+          setGoalPriority(normalizedPriority);
+          setGoalEnergy(normalizedEnergy);
+          setGoalWhy(goalRow?.why ?? "");
+          setGoalMonumentId(goalRow?.monument_id ?? "");
+          setGoalDue(
+            typeof goalRow?.due_date === "string"
+              ? goalRow.due_date.slice(0, 10)
+              : null,
+          );
+          setGoalCampaignId(campaignGoalRows?.[0]?.campaign_id ?? null);
+          setSelectedTagIds(
+            Array.isArray(tagRows)
+              ? tagRows
+                  .map((row) => row.tag_id)
+                  .filter((tagId): tagId is string => Boolean(tagId))
+              : [],
+          );
+        } else if (entityType === "PROJECT") {
           hydrationBranch = "PROJECT";
           const [
             { data: projectRow, error: projectError },
@@ -5234,6 +5355,40 @@ export function Fab({
       if (error) throw error;
     },
     [],
+  );
+
+  const replaceSelectedTagsForEntity = useCallback(
+    async ({
+      supabase,
+      userId,
+      entityType,
+      entityId,
+      tagIds,
+    }: {
+      supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>;
+      userId: string;
+      entityType: TagEntityType;
+      entityId: string;
+      tagIds: string[];
+    }) => {
+      if (!entityId) return;
+      const { error: deleteError } = await supabase
+        .from("event_tags")
+        .delete()
+        .eq("user_id", userId)
+        .eq("entity_type", entityType)
+        .eq("entity_id", entityId);
+      if (deleteError) throw deleteError;
+      if (tagIds.length === 0) return;
+      await attachSelectedTagsToEntity({
+        supabase,
+        userId,
+        entityType,
+        entityId,
+        tagIds,
+      });
+    },
+    [attachSelectedTagsToEntity],
   );
 
   const renderTagPickerPanel = ({
@@ -9504,6 +9659,10 @@ export function Fab({
   const handleFabSave = useCallback(async () => {
     if (fabSavePendingRef.current || isSavingFab || !selected) return;
     const createdType = selected;
+    const activeEditTarget =
+      editTarget?.entityType === selected && editTarget.entityId
+        ? editTarget
+        : null;
     const selectedTagIdsSnapshot = [...selectedTagIds];
     fabSavePendingRef.current = true;
     try {
@@ -9601,6 +9760,87 @@ export function Fab({
         let createdEntityId: string | null = null;
         let tagAttachmentFailed = false;
         let childDraftFailureMessage: string | null = null;
+
+        if (selected === "GOAL" && activeEditTarget?.entityType === "GOAL") {
+          const { error } = await supabase
+            .from("goals")
+            .update({
+              name: trimmedName,
+              priority: goalPriority,
+              priority_code: goalPriority,
+              energy: goalEnergy,
+              energy_code: goalEnergy,
+              why: goalWhy?.trim() || null,
+              monument_id: goalMonumentId || null,
+              due_date: goalDue ?? null,
+            })
+            .eq("id", activeEditTarget.entityId)
+            .eq("user_id", user.id);
+          if (error) throwIfLimitError(error);
+
+          const { error: rankError } = await supabase.rpc(
+            "recalculate_goal_global_rank",
+          );
+          if (rankError) throwIfLimitError(rankError);
+
+          const { error: campaignDeleteError } = await supabase
+            .from("campaign_goals")
+            .delete()
+            .eq("user_id", user.id)
+            .eq("goal_id", activeEditTarget.entityId);
+          if (campaignDeleteError) throwIfLimitError(campaignDeleteError);
+
+          if (goalCampaignId) {
+            const { data: campaignGoalRowsData, error: campaignGoalError } =
+              await supabase
+                .from("campaign_goals")
+                .select("position")
+                .eq("campaign_id", goalCampaignId)
+                .order("position", { ascending: false })
+                .limit(1);
+            if (campaignGoalError) throwIfLimitError(campaignGoalError);
+            const campaignGoalRows =
+              campaignGoalRowsData as FabGoalCampaignRow[] | null;
+            const lastPosition = Number(campaignGoalRows?.[0]?.position ?? 0);
+            const nextPosition =
+              Number.isFinite(lastPosition) && lastPosition > 0
+                ? lastPosition + 1
+                : 1;
+            await addGoalToCampaign(user.id, {
+              campaignId: goalCampaignId,
+              goalId: activeEditTarget.entityId,
+              position: nextPosition,
+            });
+          }
+
+          try {
+            await replaceSelectedTagsForEntity({
+              supabase,
+              userId: user.id,
+              entityType: "GOAL",
+              entityId: activeEditTarget.entityId,
+              tagIds: selectedTagIdsSnapshot,
+            });
+          } catch (error) {
+            tagAttachmentFailed = true;
+            console.error("Failed to update tags after goal edit", error);
+          }
+
+          resetFabFormState();
+          setExpanded(false);
+          setSelected(null);
+          setIsOpen(false);
+          onEditSaved?.(activeEditTarget);
+          onEditClose?.();
+          toast.success("Goal updated");
+          if (tagAttachmentFailed) {
+            toast.error(
+              "Tags not updated",
+              "The goal was saved, but selected tags could not be updated.",
+            );
+          }
+          return;
+        }
 
         if (selected === "GOAL") {
           const { data: goalData, error } = await supabase
@@ -9928,6 +10168,7 @@ export function Fab({
     habitWindowEdgePreference,
     habitWhy,
     habitName,
+    editTarget,
     isCreatingHabitRoutineInline,
     isSavingFab,
     goalCampaignId,
@@ -9950,6 +10191,7 @@ export function Fab({
     projectStage,
     projectWhy,
     projectDraftTasks,
+    replaceSelectedTagsForEntity,
     selectedTagIds,
     selected,
     taskName,
@@ -9958,6 +10200,8 @@ export function Fab({
     taskSkillId,
     taskStage,
     attachSelectedTagsToEntity,
+    onEditClose,
+    onEditSaved,
     resetFabFormState,
     toast,
   ]);
