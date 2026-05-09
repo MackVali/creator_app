@@ -10,7 +10,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
+          "bg-primary text-primary-foreground border border-white/10 shadow-[0_10px_24px_rgba(0,0,0,0.35),0_4px_10px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.14)] hover:bg-primary/90 hover:-translate-y-px hover:shadow-[0_14px_30px_rgba(0,0,0,0.4),0_6px_14px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.16)] active:translate-y-px active:shadow-[0_6px_14px_rgba(0,0,0,0.35),0_3px_7px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.12)]",
         destructive:
           "bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         confirmSquare:
@@ -32,9 +32,9 @@ const buttonVariants = cva(
             "text-white",
           ].join(" "),
         outline:
-          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50",
+          "border border-white/20 bg-background shadow-[0_8px_20px_rgba(0,0,0,0.3),0_3px_8px_rgba(0,0,0,0.2),inset_0_1px_0_rgba(255,255,255,0.1)] hover:bg-accent hover:text-accent-foreground hover:-translate-y-px active:translate-y-px dark:bg-input/30 dark:border-input dark:hover:bg-input/50",
         secondary:
-          "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
+          "bg-secondary text-secondary-foreground border border-white/10 shadow-[0_8px_20px_rgba(0,0,0,0.3),0_3px_8px_rgba(0,0,0,0.2),inset_0_1px_0_rgba(255,255,255,0.12)] hover:bg-secondary/80 hover:-translate-y-px active:translate-y-px",
         ghost:
           "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         link: "text-primary underline-offset-4 hover:underline",
