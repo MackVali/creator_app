@@ -24,8 +24,11 @@ export type SortOption =
   | "Progress"
   | "Recently Updated"
   | "Weight";
+export type GoalViewFilter = "Active" | "Completed";
 
 interface GoalsUtilityBarProps {
+  view: GoalViewFilter;
+  onView(view: GoalViewFilter): void;
   search: string;
   onSearch(term: string): void;
   energy: EnergyFilter;
@@ -43,6 +46,8 @@ interface GoalsUtilityBarProps {
 }
 
 export function GoalsUtilityBar({
+  view,
+  onView,
   search,
   onSearch,
   energy,
@@ -69,6 +74,26 @@ export function GoalsUtilityBar({
     <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#07050d]/80 p-6 shadow-[0_25px_90px_-60px_rgba(239,68,68,0.75)] backdrop-blur">
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.08),transparent)] opacity-30" />
       <div className="relative flex flex-col gap-5">
+        <div className="inline-flex w-fit rounded-2xl border border-white/10 bg-black/20 p-1">
+          {(["Active", "Completed"] as GoalViewFilter[]).map((option) => {
+            const selected = view === option;
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => onView(option)}
+                className={`rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition sm:text-[11px] ${
+                  selected
+                    ? "bg-white text-[#07050d]"
+                    : "text-white/70 hover:text-white"
+                }`}
+                aria-pressed={selected}
+              >
+                {option}
+              </button>
+            );
+          })}
+        </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs uppercase tracking-[0.3em] text-white/60">Control filters</p>
           <p className="text-xs text-white/50">
