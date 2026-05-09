@@ -130,6 +130,9 @@ export default function CategoryCard({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const dragging = useRef(false);
+  const localSkillsRef = useRef<Skill[]>([...skills]);
+  const isSavingSkillOrderRef = useRef(false);
+  const pendingSkillOrderRef = useRef<Skill[] | null>(null);
 
   const menuControlled = menuOpenProp !== undefined;
   const menuOpen = menuOpenProp ?? menuOpenState;
@@ -157,7 +160,9 @@ export default function CategoryCard({
     setColor(colorOverride || category.color_hex || "#000000");
   }, [category.color_hex, colorOverride]);
   useEffect(() => {
-    setLocalSkills([...skills]);
+    const next = [...skills];
+    localSkillsRef.current = next;
+    setLocalSkills(next);
   }, [skills]);
   useEffect(() => {
     const nextIcon = iconOverride ?? category.icon ?? "";
@@ -178,26 +183,48 @@ export default function CategoryCard({
     }
   }, [editingRestricted, closeMenu]);
 
-  const handleSkillReorder = useCallback(
-    (nextSkills: Skill[]) => {
-      setLocalSkills(nextSkills);
-      if (nextSkills.length === 0) return;
+  const persistSkillOrder = useCallback(async (orderedSkills: Skill[]) => {
+    if (orderedSkills.length === 0) return;
 
-      const updates = nextSkills.map((skill, index) => ({
+    if (isSavingSkillOrderRef.current) {
+      pendingSkillOrderRef.current = orderedSkills;
+      return;
+    }
+
+    isSavingSkillOrderRef.current = true;
+    setIsSavingSkillOrder(true);
+
+    try {
+      const updates = orderedSkills.map((skill, index) => ({
         id: skill.id,
         sort_order: index + 1,
       }));
+      await updateSkillsOrder(updates);
+    } catch (error) {
+      console.error("Failed to save skill order", error);
+    } finally {
+      isSavingSkillOrderRef.current = false;
+      const pendingOrder = pendingSkillOrderRef.current;
+      pendingSkillOrderRef.current = null;
+      if (pendingOrder) {
+        void persistSkillOrder(pendingOrder);
+        return;
+      }
+      setIsSavingSkillOrder(false);
+    }
+  }, []);
 
-      setIsSavingSkillOrder(true);
-      void updateSkillsOrder(updates)
-        .catch((error) => {
-          console.error("Failed to save skill order", error);
-        })
-        .finally(() => {
-          setIsSavingSkillOrder(false);
-        });
+  const handleSkillReorder = useCallback((nextSkills: Skill[]) => {
+    localSkillsRef.current = nextSkills;
+    setLocalSkills(nextSkills);
+  }, []);
+
+  const handleLocalSkillDragEnd = useCallback(
+    (skill: Skill) => {
+      void persistSkillOrder(localSkillsRef.current);
+      onSkillDragEnd?.(skill);
     },
-    []
+    [onSkillDragEnd, persistSkillOrder]
   );
 
   const extractFirstGlyph = (value: string): string => {
@@ -722,7 +749,7 @@ export default function CategoryCard({
                   fillColor={palette.fill}
                   onDragStateChange={onSkillDrag}
                   onDragStart={() => onSkillDragStart?.(s)}
-                  onDragEnd={() => onSkillDragEnd?.(s)}
+                  onDragEnd={() => handleLocalSkillDragEnd(s)}
                 />
               ))
             )}
