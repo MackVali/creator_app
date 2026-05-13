@@ -99,7 +99,7 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState(true);
   const { profile, userId, loading, error, refreshProfile } = useProfile();
   const { user } = useAuth();
-  const { tier, isPlus, is_active, isReady, current_period_end } = useEntitlement();
+  const { isPlus, is_active, isReady, current_period_end } = useEntitlement();
   const [email, setEmail] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
@@ -122,7 +122,7 @@ export default function SettingsPage() {
   }, [baseTimeZones, timezone]);
   const router = useRouter();
 
-  const planLabel = isPlus ? "CREATOR PLUS" : "CREATOR";
+  const planLabel = isPlus ? "CREATOR Pro" : "CREATOR";
   const planStatusLabel = !isReady ? "Loading" : is_active ? "Active" : "Free plan";
   const handlePlanAction = () => router.push("/settings/billing");
   const planRenewalDate = (() => {
@@ -314,7 +314,7 @@ export default function SettingsPage() {
                 </button>
               )}
               <p className="text-sm text-[var(--muted)]">
-                {isPlus ? "Premium active" : "Upgrade to unlock Creator Plus."}
+                {isPlus ? "Premium active" : "Upgrade to unlock CREATOR Pro."}
               </p>
             </div>
           </div>

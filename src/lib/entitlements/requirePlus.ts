@@ -20,7 +20,7 @@ export async function requirePlus(): Promise<NextResponse | null> {
 
   if (error) {
     return NextResponse.json(
-      { error: "CREATOR PLUS required" },
+      { error: "CREATOR Pro required" },
       { status: 403 }
     );
   }
@@ -37,7 +37,7 @@ export async function requirePlus(): Promise<NextResponse | null> {
   }
 
   return NextResponse.json(
-    { error: "CREATOR PLUS required" },
+    { error: "CREATOR Pro required" },
     { status: 403 }
   );
 }

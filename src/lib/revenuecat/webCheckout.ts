@@ -6,6 +6,8 @@ import {
 
 const webApiKey = process.env.NEXT_PUBLIC_REVENUECAT_API_KEY_WEB;
 let configuredUserId: string | null = null;
+const PURCHASES_UNAVAILABLE_MESSAGE =
+  "Purchases are temporarily unavailable. Please try again from the iOS app or contact support.";
 
 type WebOfferings = Awaited<ReturnType<typeof Purchases.getOfferings>>
 type WebCurrentOffering = NonNullable<WebOfferings["current"]>
@@ -20,7 +22,7 @@ export type RevenueCatPurchaseResult = { cancelled: boolean }
 
 async function ensurePurchasesConfigured(userId: string) {
   if (!webApiKey) {
-    throw new Error("NEXT_PUBLIC_REVENUECAT_API_KEY_WEB is required for web checkout");
+    throw new Error(PURCHASES_UNAVAILABLE_MESSAGE);
   }
 
   if (configuredUserId === userId && Purchases.isConfigured()) {

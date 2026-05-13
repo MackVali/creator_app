@@ -43,7 +43,7 @@ export function PaywallModal({
         <Dialog.Content className="fixed left-1/2 top-1/2 z-[260] w-[min(95vw,520px)] -translate-x-1/2 -translate-y-1/2 space-y-6 rounded-[32px] border border-white/10 bg-[#05070c] p-6 text-white shadow-[0_40px_80px_rgba(0,0,0,0.65)] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40">
           <div className="space-y-1 text-center">
             <p className="text-[0.65rem] font-semibold uppercase tracking-[0.4em] text-white/50">
-              Creator Plus
+              CREATOR Pro
             </p>
             <Dialog.Title className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
               {title}

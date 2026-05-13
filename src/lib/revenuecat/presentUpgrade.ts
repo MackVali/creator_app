@@ -61,7 +61,7 @@ export async function purchaseSelectedUpgradePackage(
   ensureNativePlatform();
 
   try {
-    await Purchases.purchasePackage(pkg);
+    await Purchases.purchasePackage({ aPackage: pkg });
     return { cancelled: false };
   } catch (error) {
     if (isCancellation(error)) {
@@ -70,4 +70,10 @@ export async function purchaseSelectedUpgradePackage(
 
     throw new Error(`RevenueCat native checkout failed: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+export async function restorePurchases(): Promise<void> {
+  ensureNativePlatform();
+
+  await Purchases.restorePurchases();
 }

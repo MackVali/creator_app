@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
 
     if (!paidActive) {
       return NextResponse.json(
-        { error: "AI requires CREATOR PLUS", tier: normalizedTier },
+        { error: "AI requires CREATOR Pro", tier: normalizedTier },
         { status: 403 }
       );
     }

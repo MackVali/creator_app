@@ -148,8 +148,8 @@ function energyToDbValue(energy: Goal["energy"]): string {
 
 const DAY_IN_MS = 86_400_000;
 const GOAL_PAYWALL_FEATURES = [
-  "Unlock unlimited active goals and roadmaps with CREATOR PLUS.",
-  "Creator Plus focus tools keep every milestone prioritized.",
+  "Unlock unlimited active goals and roadmaps with CREATOR Pro.",
+  "CREATOR Pro focus tools keep every milestone prioritized.",
   "Faster sync, backups, and priority support to stay on track.",
 ];
 const GOAL_BATCH_SIZE = 6;
@@ -1887,8 +1887,8 @@ export default function GoalsPage() {
         <PaywallModal
           open={paywallOpen}
           onOpenChange={handlePaywallOpenChange}
-          title="Unlock more goals with CREATOR PLUS"
-          description="Free users keep a lean goal list. Upgrade to CREATOR PLUS to lift the limit, expand your roadmap, and keep the momentum flowing."
+          title="Unlock more goals with CREATOR Pro"
+          description="Free users keep a lean goal list. Upgrade to CREATOR Pro to lift the limit, expand your roadmap, and keep the momentum flowing."
           featureList={GOAL_PAYWALL_FEATURES}
           ctaLabel="Go to billing"
           onCta={handlePaywallCta}

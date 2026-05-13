@@ -1,5 +1,6 @@
 "use client";
 
+import { Capacitor } from "@capacitor/core";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -13,16 +14,22 @@ import {
 } from "@/components/ui/card";
 import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
 import { useUpgradeAction } from "@/lib/entitlements/useUpgradeAction";
+import { syncEntitlement } from "@/lib/entitlements/syncEntitlement";
+import { restorePurchases as restoreNativePurchases } from "@/lib/revenuecat/presentUpgrade";
 
 import type { Product as RevenueCatWebProduct } from "@revenuecat/purchases-js";
 import type { PurchasesStoreProduct } from "@revenuecat/purchases-typescript-internal-esm";
 
 const PREMIUM_BENEFITS = [
-  "Unlimited private templates, prompts, and retrospectives.",
-  "Priority chat support plus early access drops and experiments.",
-  "Faster sync, deeper backups, and uninterrupted access on all devices.",
+  "Premium planning tools",
+  "Advanced scheduling",
+  "Progress analytics",
+  "Goal, project, and habit system features",
 ];
-const UPGRADE_PLAN_NAME = "CREATOR PLUS";
+const UPGRADE_PLAN_NAME = "CREATOR Pro";
+const MONTHLY_PLAN_NAME = "CREATOR Pro Monthly";
+const PURCHASES_UNAVAILABLE_MESSAGE =
+  "Purchases are temporarily unavailable. Please try again from the iOS app or contact support.";
 
 type UpgradeActionReturn = ReturnType<typeof useUpgradeAction>;
 type LoadedUpgradePackages = Awaited<
@@ -31,6 +38,11 @@ type LoadedUpgradePackages = Awaited<
 type AvailableUpgradePackage = LoadedUpgradePackages["availablePackages"][number];
 type RevenueCatProduct = RevenueCatWebProduct | PurchasesStoreProduct;
 type PackageLoadState = "idle" | "loading" | "success" | "error";
+type RestoreState = "idle" | "restoring" | "success" | "error";
+
+function getReviewSafeCopy(value: string) {
+  return value.replace(/CREATOR\s+PLUS/gi, UPGRADE_PLAN_NAME);
+}
 
 function formatRenewalDate(value: string | null) {
   if (!value) {
@@ -173,35 +185,52 @@ function getBillingCadenceLabel(pkg: AvailableUpgradePackage) {
   if (rawType.includes("year")) {
     return "Annual";
   }
-  return pkg.identifier ?? "Plan";
+  return "Plan";
 }
 
 function getPlanDescription(pkg: AvailableUpgradePackage) {
   const product = getPackageProduct(pkg);
   if (product?.description) {
-    return product.description;
+    return getReviewSafeCopy(product.description);
   }
 
-  return pkg.identifier ?? "Premium access";
+  return "Premium access";
 }
 
 function getPlanLabel(pkg: AvailableUpgradePackage) {
+  const cadenceLabel = getBillingCadenceLabel(pkg);
+  if (cadenceLabel === "Monthly") {
+    return MONTHLY_PLAN_NAME;
+  }
+  if (cadenceLabel === "Annual") {
+    return `${UPGRADE_PLAN_NAME} Annual`;
+  }
+
   const product = getPackageProduct(pkg);
-  return product?.title ?? UPGRADE_PLAN_NAME;
+  return product?.title ? getReviewSafeCopy(product.title) : UPGRADE_PLAN_NAME;
 }
 
 function BillingPageClient() {
-  const { tier, isPlus, is_active, isReady, current_period_end } = useEntitlement();
+  const {
+    tier,
+    isPlus,
+    is_active,
+    isReady,
+    current_period_end,
+    refreshEntitlement,
+  } = useEntitlement();
   const { state: upgradeState, loadUpgradePackages, purchaseUpgradePackage } =
     useUpgradeAction();
   const { isLaunching, error: upgradeError } = upgradeState;
-  const planLabel = tier || "CREATOR";
+  const isNativePlatform = Capacitor.isNativePlatform();
+  const planLabel = tier === "CREATOR PLUS" ? UPGRADE_PLAN_NAME : getReviewSafeCopy(tier || "CREATOR");
   const statusLabel = !isReady ? "Loading" : is_active ? "Active" : "Free plan";
   const renewalDate = formatRenewalDate(current_period_end);
   const [packages, setPackages] = useState<LoadedUpgradePackages | null>(null);
   const [loadState, setLoadState] = useState<PackageLoadState>("idle");
   const [loadError, setLoadError] = useState<Error | null>(null);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
+  const [restoreState, setRestoreState] = useState<RestoreState>("idle");
 
   useEffect(() => {
     if (isPlus) {
@@ -309,8 +338,26 @@ function BillingPageClient() {
     await purchaseUpgradePackage(selectedPackage);
   }, [purchaseUpgradePackage, selectedPackage]);
 
-  const canPurchase = selectedPackage && loadState === "success";
-  const cadenceForCta = selectedPackage ? getBillingCadenceLabel(selectedPackage) : "plan";
+  const handleRestorePurchases = useCallback(async () => {
+    setRestoreState("restoring");
+
+    if (!isNativePlatform) {
+      setRestoreState("success");
+      return;
+    }
+
+    try {
+      await restoreNativePurchases();
+      await syncEntitlement();
+      await refreshEntitlement();
+      setRestoreState("success");
+    } catch {
+      setRestoreState("error");
+    }
+  }, [isNativePlatform, refreshEntitlement]);
+
+  const canPurchase = Boolean(selectedPackage && loadState === "success");
+  const selectedPlanLabel = selectedPackage ? getPlanLabel(selectedPackage) : UPGRADE_PLAN_NAME;
 
   return (
     <div className="space-y-6">
@@ -354,7 +401,7 @@ function BillingPageClient() {
           {isPlus ? (
             <div className="space-y-4">
               <p className="text-sm text-zinc-300">
-                You're already on {UPGRADE_PLAN_NAME}. Manage your subscription through the
+                You are already on {UPGRADE_PLAN_NAME}. Manage your subscription through the
                 store or web billing portal you used to purchase it.
               </p>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -371,12 +418,20 @@ function BillingPageClient() {
             </div>
           ) : (
             <div className="space-y-6">
+              <div className="space-y-2">
+                <p className="text-xl font-semibold text-zinc-100">{MONTHLY_PLAN_NAME}</p>
+                <p className="text-sm text-zinc-400">
+                  Includes premium planning tools, advanced scheduling, progress analytics,
+                  and goal, project, and habit system features.
+                </p>
+              </div>
+
               {loadState === "loading" && (
                 <p className="text-sm text-zinc-400">Loading plans…</p>
               )}
               {loadError && (
                 <p className="text-sm text-rose-400" role="alert">
-                  {loadError.message}
+                  {PURCHASES_UNAVAILABLE_MESSAGE}
                 </p>
               )}
 
@@ -442,7 +497,21 @@ function BillingPageClient() {
 
               {upgradeError && (
                 <p className="text-sm text-rose-400" role="alert">
-                  {upgradeError.message}
+                  {PURCHASES_UNAVAILABLE_MESSAGE}
+                </p>
+              )}
+
+              {restoreState === "success" && (
+                <p className="text-sm text-emerald-300" role="status">
+                  {isNativePlatform
+                    ? "Purchases restored. Your access will update shortly."
+                    : "Restore or manage purchases from the store or web billing portal you used to subscribe."}
+                </p>
+              )}
+
+              {restoreState === "error" && (
+                <p className="text-sm text-rose-400" role="alert">
+                  {PURCHASES_UNAVAILABLE_MESSAGE}
                 </p>
               )}
 
@@ -451,18 +520,41 @@ function BillingPageClient() {
                   className="w-full sm:w-auto"
                   type="button"
                   onClick={handlePurchase}
-                  disabled={!canPurchase}
-                  isLoading={isLaunching}
+                  disabled={!canPurchase || isLaunching}
                 >
                   {canPurchase
-                    ? `Start ${UPGRADE_PLAN_NAME} ${cadenceForCta.toLowerCase()}`
-                    : "Select a plan"}
+                    ? `Subscribe to ${selectedPlanLabel}`
+                    : "Subscribe / upgrade"}
+                </Button>
+                <Button
+                  className="w-full sm:w-auto"
+                  type="button"
+                  variant="outline"
+                  onClick={handleRestorePurchases}
+                  disabled={restoreState === "restoring" || isLaunching}
+                >
+                  Restore purchases
                 </Button>
                 <Link
                   href="/settings"
                   className="text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
                 >
                   Back to settings
+                </Link>
+              </div>
+
+              <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-zinc-400">
+                <Link
+                  href="https://trycreator.app/legal/privacy"
+                  className="font-medium transition hover:text-zinc-100"
+                >
+                  Privacy Policy
+                </Link>
+                <Link
+                  href="https://trycreator.app/legal/terms"
+                  className="font-medium transition hover:text-zinc-100"
+                >
+                  Terms
                 </Link>
               </div>
             </div>
@@ -473,7 +565,7 @@ function BillingPageClient() {
       <Card className="bg-[#15161A]/60 border-white/5">
         <CardHeader className="gap-1">
           <CardTitle>Premium benefits</CardTitle>
-          <CardDescription>A few highlights you unlock with CREATOR PLUS.</CardDescription>
+          <CardDescription>A few highlights you unlock with {UPGRADE_PLAN_NAME}.</CardDescription>
         </CardHeader>
         <CardContent>
           <ul className="space-y-2 text-sm text-zinc-300">
