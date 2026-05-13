@@ -7,13 +7,11 @@ import {
   getUpgradePackages as getWebUpgradePackages,
   purchaseSelectedUpgradePackage as purchaseSelectedWebUpgradePackage,
   WebUpgradePackage,
-  WebUpgradePackages,
 } from "@/lib/revenuecat/webCheckout";
 import {
   getUpgradePackages as getNativeUpgradePackages,
   purchaseSelectedUpgradePackage as purchaseSelectedNativeUpgradePackage,
   NativeUpgradePackage,
-  NativeUpgradePackages,
 } from "@/lib/revenuecat/presentUpgrade";
 import { syncEntitlement } from "@/lib/entitlements/syncEntitlement";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -47,7 +45,6 @@ const isCancellationError = (error: Error) => {
 };
 
 type UpgradePackage = WebUpgradePackage | NativeUpgradePackage
-type UpgradePackages = WebUpgradePackages | NativeUpgradePackages
 
 export function useUpgradeAction(callbacks?: UpgradeActionCallbacks) {
   const { user } = useAuth();
@@ -58,7 +55,13 @@ export function useUpgradeAction(callbacks?: UpgradeActionCallbacks) {
 
   const loadUpgradePackages = useCallback(async () => {
     if (isNativePlatform) {
-      return await getNativeUpgradePackages();
+      if (!user?.id) {
+        throw new Error(
+          "Unable to load native upgrade packages: authenticated user ID is missing.",
+        );
+      }
+
+      return await getNativeUpgradePackages(user.id);
     }
 
     if (!user?.id) {
@@ -88,14 +91,19 @@ export function useUpgradeAction(callbacks?: UpgradeActionCallbacks) {
 
       try {
         const isNative = isNativePlatform;
-        if (!isNative && !user?.id) {
+        if (!user?.id) {
           throw new Error(
-            "Unable to launch web checkout: authenticated user ID is missing.",
+            isNative
+              ? "Unable to launch native checkout: authenticated user ID is missing."
+              : "Unable to launch web checkout: authenticated user ID is missing.",
           );
         }
 
         const result = isNative
-          ? await purchaseSelectedNativeUpgradePackage(pkg as NativeUpgradePackage)
+          ? await purchaseSelectedNativeUpgradePackage(
+              user.id,
+              pkg as NativeUpgradePackage,
+            )
           : await purchaseSelectedWebUpgradePackage(user.id, pkg as WebUpgradePackage);
 
         if (result.cancelled) {
