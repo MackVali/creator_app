@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
-const REVENUECAT_ENTITLEMENT_IDENTIFIER = "creator_plus";
+const REVENUECAT_ENTITLEMENT_IDENTIFIERS = new Set(["creator_plus", "creator plus"]);
 const REVENUECAT_BASE_URL = "https://api.revenuecat.com/v1";
 
 export const runtime = "nodejs";
@@ -56,10 +56,8 @@ function findEntitlement(
     return null;
   }
 
-  const normalizedIdentifier = REVENUECAT_ENTITLEMENT_IDENTIFIER.toLowerCase();
-
   for (const [key, entitlement] of Object.entries(entitlements)) {
-    if (key.toLowerCase() === normalizedIdentifier) {
+    if (REVENUECAT_ENTITLEMENT_IDENTIFIERS.has(key.trim().toLowerCase())) {
       return entitlement;
     }
   }

@@ -527,8 +527,8 @@ const HABIT_WINDOW_EDGE_ADVANCED_OPTIONS = [
 ] as const;
 
 const LIMIT_MODAL_FEATURES = [
-  "Unlimited goals, projects, and tasks with CREATOR PLUS.",
-  "Creator Plus focus tools keep every milestone prioritized.",
+  "Unlimited goals, projects, and tasks with CREATOR Pro.",
+  "CREATOR Pro focus tools keep every milestone prioritized.",
   "Faster sync, backups, and priority support to stay on track.",
 ];
 
@@ -538,27 +538,27 @@ const LIMIT_MODAL_COPY: Partial<
   GOAL_LIMIT_REACHED: {
     title: "Goal limit reached",
     description:
-      "CREATOR PLUS removes the cap on goals so you can keep building out your roadmap.",
+      "CREATOR Pro removes the cap on goals so you can keep building out your roadmap.",
   },
   PROJECT_LIMIT_REACHED: {
     title: "Project limit reached",
     description:
-      "CREATOR PLUS unlocks more projects across every goal so nothing gets blocked.",
+      "CREATOR Pro unlocks more projects across every goal so nothing gets blocked.",
   },
   PROJECTS_PER_GOAL_LIMIT_REACHED: {
     title: "Project per goal limit reached",
     description:
-      "Upgrade to CREATOR PLUS to add more projects under this goal and keep momentum going.",
+      "Upgrade to CREATOR Pro to add more projects under this goal and keep momentum going.",
   },
   TASK_LIMIT_REACHED: {
     title: "Task limit reached",
     description:
-      "CREATOR PLUS removes the cap on tasks so you can keep executing without stopping.",
+      "CREATOR Pro removes the cap on tasks so you can keep executing without stopping.",
   },
   HABIT_LIMIT_REACHED: {
     title: "Habit limit reached",
     description:
-      "Creator Plus removes the cap on habits so you can keep building your routines.",
+      "CREATOR Pro removes the cap on habits so you can keep building your routines.",
   },
 };
 
@@ -4221,10 +4221,10 @@ export function Fab({
   const limitModalCopy = activeLimitCode
     ? LIMIT_MODAL_COPY[activeLimitCode]
     : null;
-  const limitModalTitle = limitModalCopy?.title ?? "Upgrade to CREATOR PLUS";
+  const limitModalTitle = limitModalCopy?.title ?? "Upgrade to CREATOR Pro";
   const limitModalDescription =
-    limitModalCopy?.description ?? "Upgrade to CREATOR PLUS to add more.";
-  const limitModalCtaLabel = isPlus ? "Manage subscription" : "Upgrade to CREATOR PLUS";
+    limitModalCopy?.description ?? "Upgrade to CREATOR Pro to add more.";
+  const limitModalCtaLabel = isPlus ? "Manage subscription" : "Upgrade to CREATOR Pro";
   const VERTICAL_WHEEL_TRIGGER = 20;
   const DRAG_THRESHOLD_PX = 80;
   const PAGE_DRAG_AXIS_THRESHOLD_PX = 8;

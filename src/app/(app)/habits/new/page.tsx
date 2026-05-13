@@ -686,7 +686,7 @@ export default function NewHabitPage() {
       console.error("Failed to create habit:", err);
       if (err instanceof LimitReachedError) {
         setError(
-          "Free-tier accounts can create up to 20 habits. Upgrade to CREATOR PLUS to drop the limit."
+          "Free-tier accounts can create up to 20 habits. Upgrade to CREATOR Pro to drop the limit."
         );
         return;
       }
