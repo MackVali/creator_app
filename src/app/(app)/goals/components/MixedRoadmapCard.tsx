@@ -1,6 +1,13 @@
 "use client";
 
-import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   DndContext,
   closestCenter,
@@ -11,6 +18,8 @@ import {
   type DragCancelEvent,
   type DragStartEvent,
   type DragEndEvent,
+  type DraggableAttributes,
+  type DraggableSyntheticListeners,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -38,6 +47,7 @@ interface MixedRoadmapCardProps {
   onClick?: () => void;
   onGoalOpen?: (goalId: string) => void;
   onReorderSaved?: () => void | Promise<void>;
+  enableCampaignCollapse?: boolean;
 }
 
 function getCampaignStateClasses(state?: string | null): {
@@ -226,8 +236,8 @@ function DragHandle({
   children,
   gripClassName,
 }: {
-  attributes: Record<string, unknown>;
-  listeners: Record<string, unknown> | undefined;
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
   label: string;
   className?: string;
   children?: ReactNode;
@@ -385,6 +395,9 @@ function MixedRoadmapItemContent({
   onNestedDragEnd,
   onNestedDragCancel,
   onGoalOpen,
+  enableCampaignCollapse,
+  collapsedCampaignIds,
+  onCampaignCollapseToggle,
 }: {
   item: RoadmapMixedItem;
   compact: boolean;
@@ -394,19 +407,27 @@ function MixedRoadmapItemContent({
     event: DragEndEvent
   ) => Promise<void>;
   topLevelHandle: {
-    attributes: Record<string, unknown>;
-    listeners: Record<string, unknown> | undefined;
+    attributes: DraggableAttributes;
+    listeners: DraggableSyntheticListeners;
   };
   isAnyDragging: boolean;
   onNestedDragStart: (event: DragStartEvent) => void;
   onNestedDragEnd: (event: DragEndEvent) => void;
   onNestedDragCancel: (event: DragCancelEvent) => void;
   onGoalOpen?: (goalId: string) => void;
+  enableCampaignCollapse?: boolean;
+  collapsedCampaignIds: Set<string>;
+  onCampaignCollapseToggle?: (campaignId: string) => void;
 }) {
   if (item.item_type === "CAMPAIGN" && item.campaign) {
+    const campaignId = item.campaign.id;
+    const campaignName = item.campaign.name;
     const campaignIdentity =
-      item.campaign.emoji?.trim() || getInitials(item.campaign.name);
+      item.campaign.emoji?.trim() || getInitials(campaignName);
     const goals = sortByPosition(item.campaign.goals);
+    const isCampaignCollapsed =
+      enableCampaignCollapse && collapsedCampaignIds.has(campaignId);
+    const campaignGoalsId = `roadmap-campaign-goals-${campaignId}`;
     const campaignStateClasses = getCampaignStateClasses(
       item.campaign.scheduling_state
     );
@@ -422,29 +443,48 @@ function MixedRoadmapItemContent({
             <DragHandle
               attributes={topLevelHandle.attributes}
               listeners={topLevelHandle.listeners}
-              label={`Reorder campaign ${item.campaign.name}`}
+              label={`Reorder campaign ${campaignName}`}
               className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/14 bg-[linear-gradient(180deg,rgba(96,96,96,0.16)_0%,rgba(56,56,56,0.28)_28%,rgba(32,32,32,0.82)_100%)] text-[11px] font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.04)] transition hover:border-white/24 hover:bg-[linear-gradient(180deg,rgba(108,108,108,0.18)_0%,rgba(62,62,62,0.3)_28%,rgba(36,36,36,0.86)_100%)] hover:text-white sm:h-10 sm:w-10 sm:rounded-2xl sm:text-sm"
             >
               <span aria-hidden>{campaignIdentity}</span>
             </DragHandle>
             <div className="min-w-0 flex-1 space-y-1.5 sm:space-y-2">
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                <span
-                  className={`rounded-full border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] sm:px-2 sm:py-1 sm:text-[10px] sm:tracking-[0.18em] ${campaignStateClasses.badge}`}
-                >
-                  {item.campaign.scheduling_state}
-                </span>
-                <span
-                  className={`rounded-full border px-1.5 py-0.5 text-[9px] font-medium sm:px-2 sm:py-1 sm:text-[10px] ${campaignStateClasses.countBadge}`}
-                >
-                  {goals.length} goal{goals.length === 1 ? "" : "s"}
-                </span>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  <span
+                    className={`rounded-full border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] sm:px-2 sm:py-1 sm:text-[10px] sm:tracking-[0.18em] ${campaignStateClasses.badge}`}
+                  >
+                    {item.campaign.scheduling_state}
+                  </span>
+                  <span
+                    className={`rounded-full border px-1.5 py-0.5 text-[9px] font-medium sm:px-2 sm:py-1 sm:text-[10px] ${campaignStateClasses.countBadge}`}
+                  >
+                    {goals.length} goal{goals.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                {enableCampaignCollapse ? (
+                  <button
+                    type="button"
+                    onClick={() => onCampaignCollapseToggle?.(campaignId)}
+                    className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] p-1.5 text-white/70 transition hover:border-white/18 hover:bg-white/[0.07] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                    aria-expanded={!isCampaignCollapsed}
+                    aria-controls={campaignGoalsId}
+                    aria-label={`${isCampaignCollapsed ? "Expand" : "Collapse"} campaign ${campaignName}`}
+                  >
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 transition-transform ${
+                        isCampaignCollapsed ? "" : "rotate-180"
+                      }`}
+                      aria-hidden
+                    />
+                  </button>
+                ) : null}
               </div>
               <div className="space-y-0.5 sm:space-y-1">
                 <p
                   className={`font-semibold leading-tight ${campaignStateClasses.title} ${compact ? "text-[13px] sm:text-sm" : "text-[14px] sm:text-[15px]"}`}
                 >
-                  {item.campaign.name}
+                  {campaignName}
                 </p>
                 {item.campaign.description ? (
                   <p
@@ -456,11 +496,14 @@ function MixedRoadmapItemContent({
               </div>
             </div>
           </div>
-          {goals.length > 0 ? (
-            <div className="relative overflow-hidden rounded-[16px] border border-white/10 bg-[#030407] px-1 pb-1.5 pt-1 sm:rounded-[18px] sm:px-2 sm:pb-2.5 sm:pt-1.5">
+          {goals.length > 0 && !isCampaignCollapsed ? (
+            <div
+              id={campaignGoalsId}
+              className="relative overflow-hidden rounded-[16px] border border-white/10 bg-[#030407] px-1 pb-1.5 pt-1 sm:rounded-[18px] sm:px-2 sm:pb-2.5 sm:pt-1.5"
+            >
               <div className="pointer-events-none absolute inset-y-3 left-1 w-px bg-white/10 sm:left-2 sm:inset-y-3.5" />
               <CampaignGoalList
-                campaignId={item.campaign.id}
+                campaignId={campaignId}
                 goals={goals}
                 compact={compact}
                 sensors={sensors}
@@ -553,6 +596,9 @@ function SortableMixedRoadmapItemRow({
   onNestedDragEnd,
   onNestedDragCancel,
   onGoalOpen,
+  enableCampaignCollapse,
+  collapsedCampaignIds,
+  onCampaignCollapseToggle,
 }: {
   item: RoadmapMixedItem;
   compact: boolean;
@@ -566,6 +612,9 @@ function SortableMixedRoadmapItemRow({
   onNestedDragEnd: (event: DragEndEvent) => void;
   onNestedDragCancel: (event: DragCancelEvent) => void;
   onGoalOpen?: (goalId: string) => void;
+  enableCampaignCollapse?: boolean;
+  collapsedCampaignIds: Set<string>;
+  onCampaignCollapseToggle?: (campaignId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
@@ -595,6 +644,9 @@ function SortableMixedRoadmapItemRow({
           onNestedDragEnd={onNestedDragEnd}
           onNestedDragCancel={onNestedDragCancel}
           onGoalOpen={onGoalOpen}
+          enableCampaignCollapse={enableCampaignCollapse}
+          collapsedCampaignIds={collapsedCampaignIds}
+          onCampaignCollapseToggle={onCampaignCollapseToggle}
         />
       </div>
     </div>
@@ -612,8 +664,12 @@ function MixedRoadmapCardImpl({
   onClick,
   onGoalOpen,
   onReorderSaved,
+  enableCampaignCollapse = false,
 }: MixedRoadmapCardProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [collapsedCampaignIds, setCollapsedCampaignIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [orderedItems, setOrderedItems] = useState<RoadmapMixedItem[]>(() =>
     buildOrderedItems(roadmap.items)
   );
@@ -645,14 +701,17 @@ function MixedRoadmapCardImpl({
     }
 
     const { body, documentElement } = document;
-    const previousBodyUserSelect = body.style.userSelect;
-    const previousBodyWebkitUserSelect = body.style.webkitUserSelect;
-    const previousBodyWebkitTouchCallout = body.style.webkitTouchCallout;
+    const bodyStyle = body.style as CSSStyleDeclaration & {
+      webkitTouchCallout: string;
+    };
+    const previousBodyUserSelect = bodyStyle.userSelect;
+    const previousBodyWebkitUserSelect = bodyStyle.webkitUserSelect;
+    const previousBodyWebkitTouchCallout = bodyStyle.webkitTouchCallout;
     const previousDocumentOverscrollBehavior = documentElement.style.overscrollBehavior;
 
-    body.style.userSelect = "none";
-    body.style.webkitUserSelect = "none";
-    body.style.webkitTouchCallout = "none";
+    bodyStyle.userSelect = "none";
+    bodyStyle.webkitUserSelect = "none";
+    bodyStyle.webkitTouchCallout = "none";
     documentElement.style.overscrollBehavior = "none";
 
     window.addEventListener("touchmove", preventTouchScrollWhileDragging, {
@@ -660,9 +719,9 @@ function MixedRoadmapCardImpl({
     });
 
     return () => {
-      body.style.userSelect = previousBodyUserSelect;
-      body.style.webkitUserSelect = previousBodyWebkitUserSelect;
-      body.style.webkitTouchCallout = previousBodyWebkitTouchCallout;
+      bodyStyle.userSelect = previousBodyUserSelect;
+      bodyStyle.webkitUserSelect = previousBodyWebkitUserSelect;
+      bodyStyle.webkitTouchCallout = previousBodyWebkitTouchCallout;
       documentElement.style.overscrollBehavior = previousDocumentOverscrollBehavior;
       window.removeEventListener("touchmove", preventTouchScrollWhileDragging);
     };
@@ -679,6 +738,20 @@ function MixedRoadmapCardImpl({
   function handleAnyDragCancel() {
     setActiveDragCount(0);
   }
+
+  const handleCampaignCollapseToggle = useCallback((campaignId: string) => {
+    setCollapsedCampaignIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+
+      if (nextIds.has(campaignId)) {
+        nextIds.delete(campaignId);
+      } else {
+        nextIds.add(campaignId);
+      }
+
+      return nextIds;
+    });
+  }, []);
 
   const campaignCount = useMemo(
     () => orderedItems.filter((item) => item.item_type === "CAMPAIGN").length,
@@ -902,7 +975,7 @@ function MixedRoadmapCardImpl({
               collisionDetection={closestCenter}
               onDragStart={handleAnyDragStart}
               onDragEnd={(event) => {
-                handleAnyDragEnd(event);
+                handleAnyDragEnd();
                 void handleTopLevelDragEnd(event);
               }}
               onDragCancel={handleAnyDragCancel}
@@ -924,6 +997,9 @@ function MixedRoadmapCardImpl({
                       onNestedDragEnd={handleAnyDragEnd}
                       onNestedDragCancel={handleAnyDragCancel}
                       onGoalOpen={onGoalOpen}
+                      enableCampaignCollapse={enableCampaignCollapse}
+                      collapsedCampaignIds={collapsedCampaignIds}
+                      onCampaignCollapseToggle={handleCampaignCollapseToggle}
                     />
                   ))}
                 </div>

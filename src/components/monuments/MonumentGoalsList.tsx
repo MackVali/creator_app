@@ -1189,6 +1189,7 @@ export function MonumentGoalsList({
               defaultOpen
               onGoalOpen={handleRoadmapGoalOpen}
               onReorderSaved={refreshTrueRoadmaps}
+              enableCampaignCollapse
             />
           ))}
           {roadmapOpenGoal && openGoalId === roadmapOpenGoal.id ? (

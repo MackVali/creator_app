@@ -10,6 +10,16 @@
   .touch-manipulation {
     touch-action: manipulation;
   }
+  .safe-page-y {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 1.5rem);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1.5rem);
+  }
+  @media (min-width: 640px) {
+    .safe-page-y {
+      padding-top: calc(env(safe-area-inset-top, 0px) + 2rem);
+      padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 2rem);
+    }
+  }
 }
 
 :root {
