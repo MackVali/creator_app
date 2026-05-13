@@ -1897,7 +1897,7 @@ export default function NewDayTypePage() {
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-[#050507] text-white">
-        <div className="mx-auto max-w-4xl space-y-6 px-3 py-6 sm:px-4 sm:py-8">
+        <div className="safe-page-y mx-auto max-w-4xl space-y-6 px-3 sm:px-4">
           <div className="flex items-center justify-between">
             <Link
               href="/schedule"
