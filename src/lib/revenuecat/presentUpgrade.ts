@@ -4,6 +4,7 @@ import {
   Purchases,
   PurchasesError,
 } from "@revenuecat/purchases-capacitor";
+import { ensureRevenueCatConfigured } from "@/lib/revenuecat/initRevenueCat";
 
 function ensureNativePlatform() {
   if (!Capacitor.isNativePlatform()) {
@@ -34,8 +35,9 @@ function isCancellation(error: unknown) {
   );
 }
 
-export async function getUpgradePackages(): Promise<NativeUpgradePackages> {
+export async function getUpgradePackages(userId: string): Promise<NativeUpgradePackages> {
   ensureNativePlatform();
+  await ensureRevenueCatConfigured(userId);
 
   const offerings = await Purchases.getOfferings();
   const currentOffering = resolveCurrentOffering(offerings);
@@ -56,9 +58,11 @@ export async function getUpgradePackages(): Promise<NativeUpgradePackages> {
 }
 
 export async function purchaseSelectedUpgradePackage(
+  userId: string,
   pkg: NativeUpgradePackage,
 ): Promise<RevenueCatPurchaseResult> {
   ensureNativePlatform();
+  await ensureRevenueCatConfigured(userId);
 
   try {
     await Purchases.purchasePackage({ aPackage: pkg });

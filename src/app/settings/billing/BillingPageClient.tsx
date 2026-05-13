@@ -258,6 +258,11 @@ function BillingPageClient() {
           return;
         }
         const normalizedError = error instanceof Error ? error : new Error("Unable to load plans.");
+        console.error("Unable to load billing plans", {
+          platform: Capacitor.getPlatform(),
+          isNativePlatform,
+          error: normalizedError,
+        });
         setLoadError(normalizedError);
         setLoadState("error");
       }
@@ -266,7 +271,7 @@ function BillingPageClient() {
     return () => {
       isMounted = false;
     };
-  }, [isPlus, loadUpgradePackages]);
+  }, [isNativePlatform, isPlus, loadUpgradePackages]);
 
   const { planOptions, annualPackage, monthlyPackage } = useMemo(() => {
     if (!packages) {

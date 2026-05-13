@@ -8,7 +8,7 @@ export const metadata = {
 export default function BillingPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      <div className="mx-auto flex w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+      <div className="safe-page-y mx-auto flex w-full max-w-5xl flex-col px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-3">
           <Link
             href="/settings"
