@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { useProfile } from "@/lib/hooks/useProfile";
 import type { Profile as ProfileType } from "@/lib/types";
 import { updateProfilePreferences } from "@/lib/db";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
 import {
+  AlertTriangle,
   ArrowLeft,
   Bell,
   ChevronRight,
@@ -23,6 +25,7 @@ import {
   ShoppingBag,
   Shield,
   ShieldCheck,
+  Trash2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -107,6 +110,10 @@ export default function SettingsPage() {
     darkMode: false,
     notifications: false,
   });
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [timezone, setTimezone] = useState<string>(() => getLocalTimeZone());
   const [savingTimezone, setSavingTimezone] = useState(false);
   const baseTimeZones = useMemo(() => getSupportedTimeZones(), []);
@@ -270,6 +277,55 @@ export default function SettingsPage() {
     void refreshProfile();
   };
 
+  const openDeleteDialog = () => {
+    setDeleteDialogOpen(true);
+    setDeleteConfirmation("");
+    setDeleteError(null);
+  };
+
+  const closeDeleteDialog = () => {
+    if (deletingAccount) return;
+    setDeleteDialogOpen(false);
+    setDeleteConfirmation("");
+    setDeleteError(null);
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmation !== "DELETE" || deletingAccount) {
+      return;
+    }
+
+    setDeletingAccount(true);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch("/api/account/delete", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ confirmation: deleteConfirmation }),
+      });
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok || !result?.success) {
+        setDeleteError(result?.error || "We couldn't delete your account. Please try again.");
+        setDeletingAccount(false);
+        return;
+      }
+
+      const supabase = getSupabaseBrowser();
+      await supabase?.auth.signOut().catch(() => undefined);
+      router.replace("/auth");
+      router.refresh();
+    } catch (error) {
+      console.error("Failed to delete account:", error);
+      setDeleteError("We couldn't delete your account. Please try again.");
+      setDeletingAccount(false);
+    }
+  };
+
   const mainContent: ReactNode = loading ? (
     <SettingsLoadingState />
   ) : error ? (
@@ -329,7 +385,7 @@ export default function SettingsPage() {
           onViewProfile={(handle) => router.push(`/profile/${handle}`)}
         />
         <SettingsCard
-          title="Security & access"
+          title="Account & security"
           description="Control where your account is connected and how you sign in."
         >
           <SettingsActionRow
@@ -355,6 +411,12 @@ export default function SettingsPage() {
             title="Two-factor authentication"
             description="Add another layer of protection to your account."
             value="Coming soon"
+          />
+          <SettingsActionRow
+            icon={Trash2}
+            title="Delete account"
+            description="Permanently delete your account and sign out of CREATOR."
+            onClick={openDeleteDialog}
           />
         </SettingsCard>
       </section>
@@ -478,6 +540,71 @@ export default function SettingsPage() {
         </div>
       </header>
       <main className="mx-auto max-w-5xl space-y-12 px-4 pb-16 pt-10">{mainContent}</main>
+      {deleteDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={closeDeleteDialog}
+            aria-hidden="true"
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-account-title"
+            className="relative w-full max-w-md rounded-2xl border border-red-500/30 bg-[#111216] p-6 shadow-2xl"
+          >
+            <div className="flex items-start gap-4">
+              <span className="flex h-11 w-11 flex-none items-center justify-center rounded-full border border-red-500/30 bg-red-500/10 text-red-200">
+                <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 id="delete-account-title" className="text-lg font-semibold text-white">
+                  Delete account
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
+                  This permanently deletes your CREATOR account. This action cannot be
+                  undone.
+                </p>
+              </div>
+            </div>
+            <label className="mt-6 block text-sm font-medium text-white" htmlFor="delete-confirmation">
+              Type DELETE to confirm
+            </label>
+            <input
+              id="delete-confirmation"
+              value={deleteConfirmation}
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+              disabled={deletingAccount}
+              autoCapitalize="characters"
+              autoComplete="off"
+              className="mt-2 w-full rounded-xl border border-white/15 bg-black px-4 py-3 text-sm text-white outline-none transition focus:border-red-300 focus:ring-2 focus:ring-red-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            {deleteError ? (
+              <p className="mt-3 text-sm text-red-300" role="alert">
+                {deleteError}
+              </p>
+            ) : null}
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeDeleteDialog}
+                disabled={deletingAccount}
+                className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirmation !== "DELETE" || deletingAccount}
+                className="inline-flex items-center justify-center rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deletingAccount ? "Deleting..." : "Delete account"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

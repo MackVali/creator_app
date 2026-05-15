@@ -364,8 +364,17 @@ export default function ProfileEditPage() {
   );
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+    try {
+      const file = e.target.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      if (!file.type.startsWith("image/")) {
+        setError("Please choose an image file for your profile photo.");
+        return;
+      }
+
       const heroRect = heroPhotoSurfaceRef.current?.getBoundingClientRect();
       if (heroRect?.width && heroRect?.height) {
         setEditorFrameAspectRatio(heroRect.width / heroRect.height);
@@ -380,8 +389,13 @@ export default function ProfileEditPage() {
       setEditorOffset({ x: 0, y: 0 });
       setEditorImageSize({ width: 0, height: 0 });
       setIsAvatarEditorOpen(true);
+      setError(null);
+    } catch (err) {
+      console.error("Error opening selected profile photo:", err);
+      setError("We couldn't open that photo. Please try choosing another image.");
+    } finally {
+      e.target.value = "";
     }
-    e.target.value = "";
   };
 
   const handleEditorTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
@@ -476,54 +490,60 @@ export default function ProfileEditPage() {
       return;
     }
 
-    const frameRect = avatarEditorFrameRef.current.getBoundingClientRect();
-    const frameWidth = frameRect.width;
-    const frameHeight = frameRect.height;
-    if (!frameWidth || !frameHeight) return;
+    try {
+      const frameRect = avatarEditorFrameRef.current.getBoundingClientRect();
+      const frameWidth = frameRect.width;
+      const frameHeight = frameRect.height;
+      if (!frameWidth || !frameHeight) return;
 
-    const outputWidth = 1200;
-    const outputHeight = Math.round((frameHeight / frameWidth) * outputWidth);
-    const canvas = document.createElement("canvas");
-    canvas.width = outputWidth;
-    canvas.height = outputHeight;
+      const outputWidth = 1200;
+      const outputHeight = Math.round((frameHeight / frameWidth) * outputWidth);
+      const canvas = document.createElement("canvas");
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-    const image = new Image();
-    image.src = pendingAvatarSourceUrl;
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error("Failed to load selected image"));
-    });
+      const image = new Image();
+      image.src = pendingAvatarSourceUrl;
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("Failed to load selected image"));
+      });
 
-    const clampedOffset = clampEditorOffset(editorOffset, editorZoom);
-    const baseContainScale = Math.min(frameWidth / editorImageSize.width, frameHeight / editorImageSize.height);
-    const renderedScale = baseContainScale * editorZoom;
-    const renderedWidth = editorImageSize.width * renderedScale;
-    const renderedHeight = editorImageSize.height * renderedScale;
-    const drawX = (frameWidth - renderedWidth) / 2 + clampedOffset.x;
-    const drawY = (frameHeight - renderedHeight) / 2 + clampedOffset.y;
-    const renderToCanvasScale = outputWidth / frameWidth;
+      const clampedOffset = clampEditorOffset(editorOffset, editorZoom);
+      const baseContainScale = Math.min(frameWidth / editorImageSize.width, frameHeight / editorImageSize.height);
+      const renderedScale = baseContainScale * editorZoom;
+      const renderedWidth = editorImageSize.width * renderedScale;
+      const renderedHeight = editorImageSize.height * renderedScale;
+      const drawX = (frameWidth - renderedWidth) / 2 + clampedOffset.x;
+      const drawY = (frameHeight - renderedHeight) / 2 + clampedOffset.y;
+      const renderToCanvasScale = outputWidth / frameWidth;
 
-    ctx.drawImage(
-      image,
-      drawX * renderToCanvasScale,
-      drawY * renderToCanvasScale,
-      renderedWidth * renderToCanvasScale,
-      renderedHeight * renderToCanvasScale,
-    );
+      ctx.drawImage(
+        image,
+        drawX * renderToCanvasScale,
+        drawY * renderToCanvasScale,
+        renderedWidth * renderToCanvasScale,
+        renderedHeight * renderToCanvasScale,
+      );
 
-    const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob((result) => resolve(result), "image/jpeg", 0.92);
-    });
-    if (!blob) return;
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((result) => resolve(result), "image/jpeg", 0.92);
+      });
+      if (!blob) return;
 
-    const croppedAvatarFile = new File([blob], `avatar-${Date.now()}.jpg`, { type: "image/jpeg" });
-    const croppedAvatarDataUrl = canvas.toDataURL("image/jpeg", 0.92);
-    setAvatarFile(croppedAvatarFile);
-    setAvatarPreview(croppedAvatarDataUrl);
-    handleAvatarEditorCancel();
+      const croppedAvatarFile = new File([blob], `avatar-${Date.now()}.jpg`, { type: "image/jpeg" });
+      const croppedAvatarDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      setAvatarFile(croppedAvatarFile);
+      setAvatarPreview(croppedAvatarDataUrl);
+      setError(null);
+      handleAvatarEditorCancel();
+    } catch (err) {
+      console.error("Error saving edited profile photo:", err);
+      setError("We couldn't save that photo. Please try another image.");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
