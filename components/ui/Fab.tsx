@@ -175,6 +175,10 @@ type FabEditOriginRect = {
   left: number;
   width: number;
   height: number;
+  borderRadius?: string;
+  backgroundColor?: string;
+  backgroundImage?: string;
+  boxShadow?: string;
 };
 type FabCreationSpawnOrigin = {
   type: CreationType;
@@ -202,13 +206,29 @@ type FabGoalCampaignRow = {
   campaign_id: string | null;
   position?: number | null;
 };
+type FabProjectEditRow = {
+  id: string;
+  name: string | null;
+  goal_id: string | null;
+  stage: string | null;
+  duration_min: number | null;
+  priority: string | null;
+  energy: string | null;
+  why: string | null;
+  due_date: string | null;
+};
+type FabProjectScheduleInstanceRow = {
+  id: string;
+  duration_min: number | null;
+  energy_resolved: string | null;
+};
 type FabTagRelationRow = {
   tag_id: string | null;
 };
 type CreatorEntitySavedEventDetail = {
   entityType: CreationType;
   entityId: string;
-  action: "created" | "updated";
+  action: "created" | "updated" | "deleted";
   monumentId?: string | null;
 };
 export type FabEditTarget = {
@@ -251,6 +271,25 @@ type DraftTaskChild = {
   tempId: string;
   name: string;
   stage: string;
+  skillId: string | null;
+  dueDate: string | null;
+};
+
+type EditGoalProjectChild = {
+  id: string;
+  name: string;
+  stage: string | null;
+  priority: string | null;
+  energy: string | null;
+  durationMin: number | null;
+  dueDate: string | null;
+  skillIds: string[];
+};
+
+type EditProjectTaskChild = {
+  id: string;
+  name: string;
+  stage: string | null;
   skillId: string | null;
   dueDate: string | null;
 };
@@ -527,38 +566,38 @@ const HABIT_WINDOW_EDGE_ADVANCED_OPTIONS = [
 ] as const;
 
 const LIMIT_MODAL_FEATURES = [
-  "Unlimited goals, projects, and tasks with CREATOR Pro.",
-  "CREATOR Pro focus tools keep every milestone prioritized.",
-  "Faster sync, backups, and priority support to stay on track.",
+  "More room for goals, projects, tasks, and habits.",
+  "Bigger roadmaps for bigger life systems.",
+  "The full CREATOR Pro planning and execution layer.",
 ];
 
 const LIMIT_MODAL_COPY: Partial<
   Record<LimitErrorCode, { title: string; description: string }>
 > = {
   GOAL_LIMIT_REACHED: {
-    title: "Goal limit reached",
+    title: "Build beyond the free roadmap",
     description:
-      "CREATOR Pro removes the cap on goals so you can keep building out your roadmap.",
+      "The free roadmap is full. CREATOR Pro unlocks the space to keep building without cutting the plan short.",
   },
   PROJECT_LIMIT_REACHED: {
-    title: "Project limit reached",
+    title: "Your execution layer is full",
     description:
-      "CREATOR Pro unlocks more projects across every goal so nothing gets blocked.",
+      "You’ve hit the free project limit. Upgrade to keep building the work behind your bigger goals.",
   },
   PROJECTS_PER_GOAL_LIMIT_REACHED: {
-    title: "Project per goal limit reached",
+    title: "This goal needs more room",
     description:
-      "Upgrade to CREATOR Pro to add more projects under this goal and keep momentum going.",
+      "The free project limit for this goal is full. CREATOR Pro gives you space to break it down properly.",
   },
   TASK_LIMIT_REACHED: {
-    title: "Task limit reached",
+    title: "Your task layer is full",
     description:
-      "CREATOR Pro removes the cap on tasks so you can keep executing without stopping.",
+      "You’ve hit the free task limit. Upgrade to keep adding the details that move the system forward.",
   },
   HABIT_LIMIT_REACHED: {
-    title: "Habit limit reached",
+    title: "Your routine system is full",
     description:
-      "CREATOR Pro removes the cap on habits so you can keep building your routines.",
+      "You’ve hit the free habit limit. CREATOR Pro gives you more room to build the routines that hold everything together.",
   },
 };
 
@@ -1908,7 +1947,7 @@ export function Fab({
       editTarget?.entityType === "HABIT" ||
       editTarget?.entityType === "TASK";
     setEditHydrating(Boolean(shouldHydrateEditTarget && editTarget?.entityId));
-  }, [editTarget?.entityId, editTarget?.entityType]);
+  }, [editTarget?.entityId, editTarget?.entityType, editTarget?.instanceId]);
   const closeExpandedPanel = useCallback(() => {
     if (creationSelectionTimeoutRef.current !== null) {
       window.clearTimeout(creationSelectionTimeoutRef.current);
@@ -3056,6 +3095,9 @@ export function Fab({
   const [goalDraftProjects, setGoalDraftProjects] = useState<
     DraftProjectChild[]
   >([]);
+  const [editGoalProjects, setEditGoalProjects] = useState<
+    EditGoalProjectChild[]
+  >([]);
   const [taskName, setTaskName] = useState("");
   const [taskStage, setTaskStage] = useState("PRODUCE");
   const [taskDuration, setTaskDuration] = useState<string>("");
@@ -3068,6 +3110,9 @@ export function Fab({
   const [projectDraftTasks, setProjectDraftTasks] = useState<DraftTaskChild[]>(
     [],
   );
+  const [editProjectTasks, setEditProjectTasks] = useState<
+    EditProjectTaskChild[]
+  >([]);
   const [habitName, setHabitName] = useState("");
   const [habitType, setHabitType] = useState(defaultHabitType);
   const [habitRecurrence, setHabitRecurrence] = useState(
@@ -3129,6 +3174,7 @@ export function Fab({
     setProjectEnergy("MEDIUM");
     setProjectWhy("");
     setProjectSkillIds([]);
+    setSkillSearch("");
     setProjectGoalId(null);
     setProjectDue("");
     setShowDurationPicker(false);
@@ -3242,7 +3288,9 @@ export function Fab({
   const resetNestedDraftState = useCallback(() => {
     setNestedDraftPanel(null);
     setGoalDraftProjects([]);
+    setEditGoalProjects([]);
     setProjectDraftTasks([]);
+    setEditProjectTasks([]);
     resetNestedProjectDraftForm();
     resetNestedTaskDraftForm();
   }, [resetNestedProjectDraftForm, resetNestedTaskDraftForm]);
@@ -3322,8 +3370,22 @@ export function Fab({
   }, [editTarget?.entityId, editTarget?.entityType, editTarget?.title]);
 
   useEffect(() => {
+    if (editTarget?.entityType !== "GOAL" || !editTarget.entityId) {
+      setEditGoalProjects([]);
+    }
+    if (editTarget?.entityType !== "PROJECT" || !editTarget.entityId) {
+      setEditProjectTasks([]);
+    }
+  }, [editTarget?.entityId, editTarget?.entityType]);
+
+  useEffect(() => {
     const entityType = editTarget?.entityType;
     const entityId = editTarget?.entityId;
+    const instanceId =
+      typeof editTarget?.instanceId === "string" &&
+      editTarget.instanceId.trim().length > 0
+        ? editTarget.instanceId
+        : null;
     if (!entityType || !entityId) {
       setEditHydrating(false);
       return;
@@ -3374,6 +3436,7 @@ export function Fab({
             { data: goalRowData, error: goalError },
             { data: tagRowsData, error: tagError },
             { data: campaignGoalRowsData, error: campaignGoalError },
+            { data: projectRowsData, error: projectRowsError },
           ] = await Promise.all([
             supabase
               .from("goals")
@@ -3395,17 +3458,64 @@ export function Fab({
               .eq("goal_id", entityId)
               .order("position", { ascending: true })
               .limit(1),
+            supabase
+              .from("projects")
+              .select("id, name, stage, priority, energy, duration_min, due_date")
+              .eq("user_id", user.id)
+              .eq("goal_id", entityId)
+              .order("created_at", { ascending: true }),
           ]);
 
           if (goalError) throw goalError;
           if (tagError) throw tagError;
           if (campaignGoalError) throw campaignGoalError;
+          if (projectRowsError) throw projectRowsError;
           if (cancelled) return;
 
           const goalRow = goalRowData as FabGoalEditRow | null;
           const tagRows = tagRowsData as FabTagRelationRow[] | null;
           const campaignGoalRows =
             campaignGoalRowsData as FabGoalCampaignRow[] | null;
+          const projectRows = Array.isArray(projectRowsData)
+            ? (projectRowsData as {
+                id: string;
+                name: string | null;
+                stage: string | null;
+                priority: string | null;
+                energy: string | null;
+                duration_min: number | null;
+                due_date: string | null;
+              }[])
+            : [];
+          const projectIds = projectRows
+            .map((row) => row.id)
+            .filter((projectId): projectId is string => Boolean(projectId));
+          const skillIdsByProjectId = new Map<string, string[]>();
+          if (projectIds.length > 0) {
+            const { data: projectSkillRowsData, error: projectSkillRowsError } =
+              await supabase
+                .from("project_skills")
+                .select("project_id, skill_id")
+                .in("project_id", projectIds);
+            if (projectSkillRowsError) throw projectSkillRowsError;
+            if (cancelled) return;
+            const projectSkillRows = Array.isArray(projectSkillRowsData)
+              ? (projectSkillRowsData as {
+                  project_id?: string | null;
+                  skill_id?: string | null;
+                }[])
+              : [];
+            for (const row of projectSkillRows) {
+              const projectId =
+                typeof row.project_id === "string" ? row.project_id : null;
+              const skillId =
+                typeof row.skill_id === "string" ? row.skill_id : null;
+              if (!projectId || !skillId) continue;
+              const current = skillIdsByProjectId.get(projectId) ?? [];
+              current.push(skillId);
+              skillIdsByProjectId.set(projectId, current);
+            }
+          }
           const normalizedPriority =
             typeof goalRow?.priority_code === "string"
               ? normalizeFabPriority(goalRow.priority_code)
@@ -3429,6 +3539,24 @@ export function Fab({
               ? goalRow.due_date.slice(0, 10)
               : null,
           );
+          setEditGoalProjects(
+            projectRows.map((project) => ({
+              id: project.id,
+              name: project.name ?? "Untitled project",
+              stage: project.stage ?? null,
+              priority: project.priority ?? null,
+              energy: project.energy ?? null,
+              durationMin:
+                typeof project.duration_min === "number"
+                  ? project.duration_min
+                  : null,
+              dueDate:
+                typeof project.due_date === "string"
+                  ? project.due_date.slice(0, 10)
+                  : null,
+              skillIds: skillIdsByProjectId.get(project.id) ?? [],
+            })),
+          );
           setGoalCampaignId(campaignGoalRows?.[0]?.campaign_id ?? null);
           setSelectedTagIds(
             Array.isArray(tagRows)
@@ -3441,6 +3569,7 @@ export function Fab({
           hydrationBranch = "PROJECT";
           const [
             { data: projectRow, error: projectError },
+            { data: instanceRow, error: instanceError },
             { data: skillRows, error: skillError },
             { data: tagRows, error: tagError },
           ] = await Promise.all([
@@ -3450,11 +3579,21 @@ export function Fab({
                 "id, name, goal_id, stage, duration_min, priority, energy, why, due_date",
               )
               .eq("id", entityId)
+              .eq("user_id", user.id)
               .single(),
+            instanceId
+              ? supabase
+                  .from("schedule_instances")
+                  .select("id, duration_min, energy_resolved")
+                  .eq("id", instanceId)
+                  .eq("user_id", user.id)
+                  .maybeSingle()
+              : Promise.resolve({ data: null, error: null }),
             supabase
               .from("project_skills")
               .select("skill_id")
-              .eq("project_id", entityId),
+              .eq("project_id", entityId)
+              .limit(1),
             supabase
               .from("event_tags")
               .select("tag_id")
@@ -3464,38 +3603,80 @@ export function Fab({
           ]);
 
           if (projectError) throw projectError;
+          if (instanceError) throw instanceError;
           if (skillError) throw skillError;
           if (tagError) throw tagError;
           if (cancelled) return;
 
-          setProjectName(projectRow?.name ?? "");
-          setProjectGoalId(projectRow?.goal_id ?? null);
-          setProjectStage(projectRow?.stage ?? "RESEARCH");
+          const projectData = projectRow as FabProjectEditRow | null;
+          const instanceData =
+            instanceRow as FabProjectScheduleInstanceRow | null;
+          const resolvedProjectEnergy =
+            typeof instanceData?.energy_resolved === "string" &&
+            instanceData.energy_resolved.trim().length > 0
+              ? instanceData.energy_resolved
+              : projectData?.energy;
+          const primarySkillId =
+            Array.isArray(skillRows) &&
+            typeof skillRows[0]?.skill_id === "string"
+              ? skillRows[0].skill_id
+              : null;
+
+          setProjectName(projectData?.name ?? "");
+          setProjectGoalId(
+            typeof projectData?.goal_id === "string" &&
+              projectData.goal_id.trim().length > 0
+              ? projectData.goal_id
+              : null,
+          );
+          setProjectStage(projectData?.stage ?? "RESEARCH");
           setProjectDuration(
-            typeof projectRow?.duration_min === "number"
-              ? projectRow.duration_min
-              : "",
+            typeof instanceData?.duration_min === "number"
+              ? instanceData.duration_min
+              : typeof projectData?.duration_min === "number"
+                ? projectData.duration_min
+                : "",
           );
-          setProjectPriority(projectRow?.priority ?? "MEDIUM");
-          setProjectEnergy(projectRow?.energy ?? "MEDIUM");
-          setProjectWhy(projectRow?.why ?? "");
+          setProjectPriority(normalizeFabPriority(projectData?.priority));
+          setProjectEnergy(normalizeFabEnergy(resolvedProjectEnergy));
+          setProjectWhy(projectData?.why ?? "");
           setProjectDue(
-            typeof projectRow?.due_date === "string"
-              ? projectRow.due_date.slice(0, 10)
+            typeof projectData?.due_date === "string"
+              ? projectData.due_date.slice(0, 10)
               : "",
           );
-          setProjectSkillIds(
-            Array.isArray(skillRows)
-              ? skillRows
-                  .map((row) => row.skill_id)
-                  .filter((skillId): skillId is string => Boolean(skillId))
-              : [],
-          );
+          setProjectSkillIds(primarySkillId ? [primarySkillId] : []);
           setSelectedTagIds(
             Array.isArray(tagRows)
               ? tagRows
                   .map((row) => row.tag_id)
                   .filter((tagId): tagId is string => Boolean(tagId))
+              : [],
+          );
+
+          const { data: taskRows, error: taskRowsError } = await supabase
+            .from("tasks")
+            .select("id, name, stage, skill_id, due_date")
+            .eq("user_id", user.id)
+            .eq("project_id", entityId);
+          if (cancelled) return;
+          if (taskRowsError) {
+            console.error("Failed to load project child tasks", taskRowsError);
+            setEditProjectTasks([]);
+            return;
+          }
+          setEditProjectTasks(
+            Array.isArray(taskRows)
+              ? taskRows.map((task) => ({
+                  id: task.id,
+                  name: task.name ?? "Untitled task",
+                  stage: task.stage ?? null,
+                  skillId: task.skill_id ?? null,
+                  dueDate:
+                    typeof task.due_date === "string"
+                      ? task.due_date.slice(0, 10)
+                      : null,
+                }))
               : [],
           );
         } else if (entityType === "HABIT") {
@@ -3708,10 +3889,27 @@ export function Fab({
     defaultHabitType,
     editTarget?.entityId,
     editTarget?.entityType,
+    editTarget?.instanceId,
     resetHabitFormDraft,
     resetProjectFormDraft,
     resetTaskFormDraft,
   ]);
+
+  useEffect(() => {
+    if (editTarget?.entityType !== "PROJECT") return;
+    const primarySkillId = projectSkillIds[0];
+    if (!primarySkillId) {
+      setSkillSearch("");
+      return;
+    }
+    const selectedSkill = findSkillById(primarySkillId);
+    if (!selectedSkill?.name) return;
+    setSkillSearch((current) =>
+      current.trim().length === 0 || current === selectedSkill.name
+        ? selectedSkill.name
+        : current,
+    );
+  }, [editTarget?.entityType, findSkillById, projectSkillIds]);
 
   const handleAddProjectDraftTask = useCallback(() => {
     const trimmedName = draftTaskName.trim();
@@ -3899,7 +4097,10 @@ export function Fab({
           onFocus={() => setIsOpen?.(true)}
           onChange={(e) => setSkillSearch(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={selectedSkill?.name ?? "Search skills…"}
+          placeholder={
+            selectedSkill?.name ??
+            (selectedId && skillsLoading ? "Loading skill…" : "Search skills…")
+          }
           className="h-full flex-1 border-none bg-transparent p-0 text-base font-semibold text-white placeholder:text-white/60 focus-visible:ring-0"
         />
         <div
@@ -3982,6 +4183,7 @@ export function Fab({
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSavingFab, setIsSavingFab] = useState(false);
+  const [isDeletingFabEntity, setIsDeletingFabEntity] = useState(false);
   const [activeLimitCode, setActiveLimitCode] =
     useState<LimitErrorCode | null>(null);
   const fabSavePendingRef = useRef(false);
@@ -4231,9 +4433,21 @@ export function Fab({
   const PAGE_DRAG_HORIZONTAL_DOMINANCE = 1.25;
   const PAGE_DRAG_VERTICAL_DOMINANCE = 1.15;
   const nexusInputRef = useRef<HTMLInputElement | null>(null);
-  const overhangPos = useOverhangLT(panelRef, [expanded, selected], {
-    listenVisualViewport: !expanded,
-  });
+  const editableDeleteTarget =
+    editTarget?.entityType === selected &&
+    (selected === "PROJECT" || selected === "HABIT") &&
+    editTarget.entityId
+      ? editTarget
+      : null;
+  const overhangControlWidth = editableDeleteTarget ? 168 : 108;
+  const overhangPos = useOverhangLT(
+    panelRef,
+    [expanded, selected, overhangControlWidth],
+    {
+      groupWidth: overhangControlWidth,
+      listenVisualViewport: !expanded,
+    },
+  );
   const activeCreationModes = getCreationModesForType(selected);
   const creationModeClusterWidth =
     activeCreationModes.length > 0 ? activeCreationModes.length * 36 + (activeCreationModes.length - 1) * 6 : 0;
@@ -4339,8 +4553,10 @@ export function Fab({
   }, [expanded, isFabKeyboardActiveRaw]);
 
   useEffect(() => {
-    setActiveCreationMode("main");
-  }, [expanded, selected]);
+    if (!editTarget?.entityId || !editTarget?.entityType) {
+      setActiveCreationMode("main");
+    }
+  }, [editTarget?.entityId, editTarget?.entityType, expanded, selected]);
 
   useEffect(() => {
     return () => {
@@ -4448,9 +4664,9 @@ export function Fab({
     };
   }, [
     activeCreationMode,
-    editTarget,
     expanded,
     focusCreationNameInput,
+    editTarget,
     pendingCreationNameFocus,
     prefersReducedMotion,
     selected,
@@ -5884,13 +6100,110 @@ export function Fab({
     </div>
   );
 
+  const associatedEditCardStyle: React.CSSProperties = {
+    boxShadow:
+      "0 18px 38px rgba(8,12,32,0.52), inset 0 1px 0 rgba(255,255,255,0.10)",
+    outline: "1px solid rgba(10, 10, 12, 0.85)",
+    outlineOffset: "-1px",
+    background:
+      "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)",
+  };
+  const associatedEditBlankStyle: React.CSSProperties = {
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06)",
+    outline: "1px solid rgba(10, 10, 12, 0.72)",
+    outlineOffset: "-1px",
+    background:
+      "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.12), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.62) 0%, rgba(22, 22, 26, 0.52) 46%, rgba(88, 90, 104, 0.22) 100%)",
+  };
+  const associatedEditCardClass =
+    "relative flex h-full min-h-0 w-full items-center justify-between gap-3 rounded-[var(--schedule-instance-radius,1.25rem)] border border-black/70 px-3 text-left text-white backdrop-blur-sm transition-[background,box-shadow,border-color,transform] duration-200 hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30";
+  const associatedEditBlankClass =
+    "relative flex h-full min-h-0 w-full items-center justify-center rounded-[var(--schedule-instance-radius,1.25rem)] border border-black/60 px-3 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-white/35 backdrop-blur-sm";
+
   const renderGoalProjectsPanel = () => {
-    const goalProjectListShouldScroll = goalDraftProjects.length > 3;
+    const isEditingGoal = Boolean(
+      editTarget?.entityType === "GOAL" && editTarget.entityId,
+    );
+    const visibleEditProjects = isEditingGoal ? editGoalProjects : null;
+    const visibleProjectCount = visibleEditProjects
+      ? visibleEditProjects.length
+      : goalDraftProjects.length;
+    const goalProjectListShouldScroll = visibleProjectCount > 3;
     const goalProjectCardClass = goalProjectListShouldScroll
-      ? "min-h-[74px]"
-      : "min-h-[88px] h-full";
-    const draftItems =
-      goalDraftProjects.length > 0
+      ? "min-h-[72px]"
+      : "h-full min-h-0";
+    const projectItems = visibleEditProjects
+      ? (() => {
+          const editCards =
+            visibleEditProjects.length > 0
+              ? visibleEditProjects.map((project) => {
+                  const skillNames = project.skillIds
+                    .map((skillId) => findSkillById(skillId)?.name ?? null)
+                    .filter(
+                      (value): value is string =>
+                        typeof value === "string" && value.trim().length > 0,
+                    );
+                  const skillLabel =
+                    skillNames.length > 0
+                      ? skillNames.join(", ")
+                      : project.skillIds.length > 0
+                        ? "Linked skill"
+                        : "No skill";
+                  const metaItems = [
+                    project.stage,
+                    project.priority,
+                    project.energy,
+                    project.durationMin ? `${project.durationMin}m` : null,
+                    project.dueDate,
+                  ].filter(
+                    (value): value is string =>
+                      typeof value === "string" && value.trim().length > 0,
+                  );
+                  return (
+                    <div
+                      key={project.id}
+                      className={associatedEditCardClass}
+                      style={associatedEditCardStyle}
+                    >
+                      <span className="grid min-w-0 gap-1">
+                        <span className="truncate text-xs font-extrabold uppercase tracking-[0.08em] text-white">
+                          {project.name}
+                        </span>
+                        <span className="truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-white/55">
+                          {metaItems.join(" / ")}
+                        </span>
+                        <span className="truncate text-[10px] text-white/62">
+                          {skillLabel}
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })
+              : [
+                  <div
+                    key="goal-project-empty-edit"
+                    className={associatedEditBlankClass}
+                    style={associatedEditBlankStyle}
+                  >
+                    No projects linked yet.
+                  </div>,
+                ];
+          const blankCount = goalProjectListShouldScroll
+            ? 0
+            : Math.max(0, 3 - editCards.length);
+          return [
+            ...editCards,
+            ...Array.from({ length: blankCount }, (_, index) => (
+              <div
+                key={`goal-project-edit-blank-${index}`}
+                aria-hidden="true"
+                className={associatedEditBlankClass}
+                style={associatedEditBlankStyle}
+              />
+            )),
+          ];
+        })()
+      : goalDraftProjects.length > 0
         ? goalDraftProjects.map((project) => {
             const skillLabel =
               project.skillIds
@@ -5957,7 +6270,7 @@ export function Fab({
             </button>
           ));
 
-    if (nestedDraftPanel === "goal-project") {
+    if (nestedDraftPanel === "goal-project" && !isEditingGoal) {
       return (
         <div
           className={cn(
@@ -6266,34 +6579,36 @@ export function Fab({
           <h3 className="truncate text-sm font-semibold leading-none text-white">
             Goal Projects
           </h3>
-          <button
-            type="button"
-            onClick={() => {
-              resetNestedProjectDraftForm();
-              setNestedDraftPanel("goal-project");
-            }}
-            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72 transition hover:border-white/20 hover:text-white"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Add</span>
-          </button>
+          {!isEditingGoal ? (
+            <button
+              type="button"
+              onClick={() => {
+                resetNestedProjectDraftForm();
+                setNestedDraftPanel("goal-project");
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72 transition hover:border-white/20 hover:text-white"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add</span>
+            </button>
+          ) : null}
         </div>
         <div
           className={cn(
-            "pr-1",
+            "h-full min-h-0 pr-1",
             expanded && !goalProjectListShouldScroll && "min-h-0",
             goalProjectListShouldScroll &&
-              "max-h-[264px] overflow-y-auto overscroll-contain",
+              "max-h-full overflow-y-auto overscroll-contain",
           )}
         >
           <div
             className={cn(
-              "grid gap-3",
-              !goalProjectListShouldScroll &&
-                "h-full grid-rows-[repeat(3,minmax(0,1fr))]",
+              goalProjectListShouldScroll
+                ? "grid max-h-full gap-3 auto-rows-[minmax(84px,1fr)]"
+                : "grid h-full grid-rows-3 gap-3",
             )}
           >
-            {draftItems}
+            {projectItems}
           </div>
         </div>
       </div>
@@ -6301,12 +6616,74 @@ export function Fab({
   };
 
   const renderProjectTasksPanel = () => {
-    const projectTaskListShouldScroll = projectDraftTasks.length > 3;
+    const isEditingProject = Boolean(
+      editTarget?.entityType === "PROJECT" && editTarget.entityId,
+    );
+    const visibleEditTasks = isEditingProject ? editProjectTasks : null;
+    const visibleTaskCount = visibleEditTasks
+      ? visibleEditTasks.length
+      : projectDraftTasks.length;
+    const projectTaskListShouldScroll = visibleTaskCount > 3;
     const projectTaskCardClass = projectTaskListShouldScroll
       ? "min-h-[72px]"
-      : "min-h-[84px] h-full";
-    const draftItems =
-      projectDraftTasks.length > 0
+      : "h-full min-h-0";
+    const taskItems = visibleEditTasks
+      ? (() => {
+          const editCards =
+            visibleEditTasks.length > 0
+              ? visibleEditTasks.map((task) => {
+                  const skillLabel = task.skillId
+                    ? (findSkillById(task.skillId)?.name ?? "Linked skill")
+                    : "No skill";
+                  const metaItems = [task.stage, task.dueDate].filter(
+                    (value): value is string =>
+                      typeof value === "string" && value.trim().length > 0,
+                  );
+                  return (
+                    <div
+                      key={task.id}
+                      className={associatedEditCardClass}
+                      style={associatedEditCardStyle}
+                    >
+                      <span className="grid min-w-0 gap-1">
+                        <span className="truncate text-xs font-extrabold uppercase tracking-[0.08em] text-white">
+                          {task.name}
+                        </span>
+                        <span className="truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-white/55">
+                          {metaItems.join(" / ")}
+                        </span>
+                        <span className="truncate text-[10px] text-white/62">
+                          {skillLabel}
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })
+              : [
+                  <div
+                    key="project-task-empty-edit"
+                    className={associatedEditBlankClass}
+                    style={associatedEditBlankStyle}
+                  >
+                    No tasks linked yet.
+                  </div>,
+                ];
+          const blankCount = projectTaskListShouldScroll
+            ? 0
+            : Math.max(0, 3 - editCards.length);
+          return [
+            ...editCards,
+            ...Array.from({ length: blankCount }, (_, index) => (
+              <div
+                key={`project-task-edit-blank-${index}`}
+                aria-hidden="true"
+                className={associatedEditBlankClass}
+                style={associatedEditBlankStyle}
+              />
+            )),
+          ];
+        })()
+      : projectDraftTasks.length > 0
         ? projectDraftTasks.map((task) => (
             <div
               key={task.tempId}
@@ -6358,7 +6735,7 @@ export function Fab({
             </button>
           ));
 
-    if (nestedDraftPanel === "project-task") {
+    if (nestedDraftPanel === "project-task" && !isEditingProject) {
       return (
         <div
           className={cn(
@@ -6663,34 +7040,36 @@ export function Fab({
           <h3 className="truncate text-sm font-semibold leading-none text-white">
             Project Tasks
           </h3>
-          <button
-            type="button"
-            onClick={() => {
-              resetNestedTaskDraftForm();
-              setNestedDraftPanel("project-task");
-            }}
-            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72 transition hover:border-white/20 hover:text-white"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Add</span>
-          </button>
+          {!isEditingProject ? (
+            <button
+              type="button"
+              onClick={() => {
+                resetNestedTaskDraftForm();
+                setNestedDraftPanel("project-task");
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/72 transition hover:border-white/20 hover:text-white"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add</span>
+            </button>
+          ) : null}
         </div>
         <div
           className={cn(
-            "pr-1",
+            "h-full min-h-0 pr-1",
             expanded && !projectTaskListShouldScroll && "min-h-0",
             projectTaskListShouldScroll &&
-              "max-h-[252px] overflow-y-auto overscroll-contain",
+              "max-h-full overflow-y-auto overscroll-contain",
           )}
         >
           <div
             className={cn(
-              "grid gap-3",
-              !projectTaskListShouldScroll &&
-                "h-full grid-rows-[repeat(3,minmax(0,1fr))]",
+              projectTaskListShouldScroll
+                ? "grid max-h-full gap-3 auto-rows-[minmax(84px,1fr)]"
+                : "grid h-full grid-rows-3 gap-3",
             )}
           >
-            {draftItems}
+            {taskItems}
           </div>
         </div>
       </div>
@@ -7007,7 +7386,10 @@ export function Fab({
                           <span>
                             {projectGoalId
                               ? (goals.find((g) => g.id === projectGoalId)
-                                  ?.name ?? "Link to existing GOAL +")
+                                  ?.name ??
+                                (goalsLoading
+                                  ? "Loading goal…"
+                                  : "Link to existing GOAL +"))
                               : "Link to existing GOAL +"}
                           </span>
                         }
@@ -10287,7 +10669,8 @@ export function Fab({
   ]);
 
   const isSaveDisabled = useMemo(() => {
-    if (isSavingFab || editHydrating || !selected) return true;
+    if (isSavingFab || isDeletingFabEntity || editHydrating || !selected)
+      return true;
     if (selected === "GOAL") {
       if (goalName.trim().length === 0) return true;
       if (!goalMonumentId) return true;
@@ -10327,6 +10710,7 @@ export function Fab({
     habitSkillId,
     habitType,
     editHydrating,
+    isDeletingFabEntity,
     isSavingFab,
     projectGoalId,
     projectName,
@@ -10338,7 +10722,13 @@ export function Fab({
   ]);
 
   const handleFabSave = useCallback(async () => {
-    if (fabSavePendingRef.current || isSavingFab || !selected) return;
+    if (
+      fabSavePendingRef.current ||
+      isSavingFab ||
+      isDeletingFabEntity ||
+      !selected
+    )
+      return;
     const createdType = selected;
     const activeEditTarget =
       editTarget?.entityType === selected && editTarget.entityId
@@ -10524,6 +10914,231 @@ export function Fab({
             toast.error(
               "Tags not updated",
               "The goal was saved, but selected tags could not be updated.",
+            );
+          }
+          return;
+        }
+
+        if (
+          selected === "PROJECT" &&
+          activeEditTarget?.entityType === "PROJECT"
+        ) {
+          const { error } = await supabase
+            .from("projects")
+            .update({
+              name: trimmedName,
+              goal_id: projectGoalId || null,
+              priority: projectPriority,
+              energy: projectEnergy,
+              stage: projectStage,
+              why: projectWhy?.trim() || null,
+              duration_min:
+                typeof projectDuration === "number" &&
+                Number.isFinite(projectDuration)
+                  ? projectDuration
+                  : normalizedProjectDuration || null,
+              due_date: projectDue || null,
+            })
+            .eq("id", activeEditTarget.entityId)
+            .eq("user_id", user.id);
+          if (error) throwIfLimitError(error);
+
+          const { error: projectSkillsDeleteError } = await supabase
+            .from("project_skills")
+            .delete()
+            .eq("project_id", activeEditTarget.entityId);
+          if (projectSkillsDeleteError)
+            throwIfLimitError(projectSkillsDeleteError);
+
+          if (projectSkillIds.length > 0) {
+            const { error: projectSkillsInsertError } = await supabase
+              .from("project_skills")
+              .insert(
+                projectSkillIds.map((skillId) => ({
+                  project_id: activeEditTarget.entityId,
+                  skill_id: skillId,
+                })),
+              );
+            if (projectSkillsInsertError)
+              throwIfLimitError(projectSkillsInsertError);
+          }
+
+          try {
+            await replaceSelectedTagsForEntity({
+              supabase,
+              userId: user.id,
+              entityType: "PROJECT",
+              entityId: activeEditTarget.entityId,
+              tagIds: selectedTagIdsSnapshot,
+            });
+          } catch (error) {
+            tagAttachmentFailed = true;
+            console.error("Failed to update tags after project edit", error);
+          }
+
+          dispatchCreatorEntitySaved({
+            entityType: "PROJECT",
+            entityId: activeEditTarget.entityId,
+            action: "updated",
+            monumentId: null,
+          });
+          resetFabFormState();
+          setExpanded(false);
+          setSelected(null);
+          setIsOpen(false);
+          onEditSaved?.(activeEditTarget);
+          onEditClose?.();
+          toast.success("Project updated");
+          if (tagAttachmentFailed) {
+            toast.error(
+              "Tags not updated",
+              "The project was saved, but selected tags could not be updated.",
+            );
+          }
+          return;
+        }
+
+        if (selected === "TASK" && activeEditTarget?.entityType === "TASK") {
+          const { error } = await supabase
+            .from("tasks")
+            .update({
+              name: trimmedName,
+              project_id: taskProjectId || null,
+              stage: taskStage,
+              skill_id: taskSkillId || null,
+              due_date: taskDue || null,
+            })
+            .eq("id", activeEditTarget.entityId)
+            .eq("user_id", user.id);
+          if (error) throwIfLimitError(error);
+
+          try {
+            await replaceSelectedTagsForEntity({
+              supabase,
+              userId: user.id,
+              entityType: "TASK",
+              entityId: activeEditTarget.entityId,
+              tagIds: selectedTagIdsSnapshot,
+            });
+          } catch (error) {
+            tagAttachmentFailed = true;
+            console.error("Failed to update tags after task edit", error);
+          }
+
+          dispatchCreatorEntitySaved({
+            entityType: "TASK",
+            entityId: activeEditTarget.entityId,
+            action: "updated",
+            monumentId: null,
+          });
+          resetFabFormState();
+          setExpanded(false);
+          setSelected(null);
+          setIsOpen(false);
+          onEditSaved?.(activeEditTarget);
+          onEditClose?.();
+          toast.success("Task updated");
+          if (tagAttachmentFailed) {
+            toast.error(
+              "Tags not updated",
+              "The task was saved, but selected tags could not be updated.",
+            );
+          }
+          return;
+        }
+
+        if (selected === "HABIT" && activeEditTarget?.entityType === "HABIT") {
+          const parsedDuration = Number.parseInt(habitDuration || "0", 10);
+          const duration = Number.isFinite(parsedDuration)
+            ? parsedDuration
+            : null;
+          let routineIdToUse: string | null = habitRoutineId || null;
+          if (isCreatingHabitRoutineInline) {
+            const trimmedRoutineName = habitInlineRoutineName.trim();
+            if (!trimmedRoutineName) {
+              setSaveError("Please name the routine before saving.");
+              return;
+            }
+            const trimmedRoutineDescription =
+              habitInlineRoutineDescription.trim();
+            const { data: routineData, error: routineError } = await supabase
+              .from("habit_routines")
+              .insert({
+                user_id: user.id,
+                name: trimmedRoutineName,
+                description:
+                  trimmedRoutineDescription.length > 0
+                    ? trimmedRoutineDescription
+                    : null,
+              })
+              .select("id")
+              .single();
+            if (routineError) throwIfLimitError(routineError);
+            routineIdToUse = routineData?.id ?? null;
+          }
+
+          const { error } = await supabase
+            .from("habits")
+            .update({
+              name: trimmedName,
+              description: habitWhy?.trim() || null,
+              type: habitType,
+              habit_type: habitType,
+              recurrence: habitRecurrence,
+              duration_minutes: duration,
+              energy: habitEnergy,
+              skill_id: habitSkillId || null,
+              routine_id: routineIdToUse,
+              goal_id: habitGoalId || null,
+              location_context_id: isValidUuid(habitLocationContextId)
+                ? habitLocationContextId
+                : null,
+              daylight_preference:
+                habitDaylightPreference === "ALL_DAY"
+                  ? null
+                  : habitDaylightPreference,
+              window_edge_preference:
+                habitWindowEdgePreference?.trim().toUpperCase() || "FRONT",
+              next_due_override: habitNextDueOverride
+                ? new Date(habitNextDueOverride).toISOString()
+                : null,
+            })
+            .eq("id", activeEditTarget.entityId)
+            .eq("user_id", user.id);
+          if (error) throwIfLimitError(error);
+
+          await notifySchedulerOfChange();
+
+          try {
+            await replaceSelectedTagsForEntity({
+              supabase,
+              userId: user.id,
+              entityType: "HABIT",
+              entityId: activeEditTarget.entityId,
+              tagIds: selectedTagIdsSnapshot,
+            });
+          } catch (error) {
+            tagAttachmentFailed = true;
+            console.error("Failed to update tags after habit edit", error);
+          }
+
+          dispatchCreatorEntitySaved({
+            entityType: "HABIT",
+            entityId: activeEditTarget.entityId,
+            action: "updated",
+            monumentId: null,
+          });
+          resetFabFormState();
+          setExpanded(false);
+          setSelected(null);
+          setIsOpen(false);
+          onEditSaved?.(activeEditTarget);
+          onEditClose?.();
+          toast.success("Habit updated");
+          if (tagAttachmentFailed) {
+            toast.error(
+              "Tags not updated",
+              "The habit was saved, but selected tags could not be updated.",
             );
           }
           return;
@@ -10864,6 +11479,7 @@ export function Fab({
     habitWhy,
     habitName,
     editTarget,
+    isDeletingFabEntity,
     isCreatingHabitRoutineInline,
     isSavingFab,
     goalCampaignId,
@@ -10901,12 +11517,81 @@ export function Fab({
     toast,
   ]);
 
+  const handleFabDeleteEntity = useCallback(async () => {
+    if (isDeletingFabEntity || !editableDeleteTarget) {
+      return;
+    }
+
+    const { entityType, entityId } = editableDeleteTarget;
+    const typeSegment = entityType === "HABIT" ? "habit" : "project";
+    const successLabel = entityType === "HABIT" ? "Habit" : "Project";
+
+    setSaveError(null);
+    setIsDeletingFabEntity(true);
+    try {
+      const response = await fetch(
+        `/api/schedule/events/${typeSegment}/${entityId}`,
+        {
+          method: "DELETE",
+        },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(
+          payload?.error ?? `Unable to delete this ${typeSegment}`,
+        );
+      }
+
+      dispatchCreatorEntitySaved({
+        entityType,
+        entityId,
+        action: "deleted",
+        monumentId: null,
+      });
+      resetFabFormState();
+      setExpanded(false);
+      setSelected(null);
+      setIsOpen(false);
+      onEditClose?.();
+      await notifySchedulerOfChange();
+      toast.success(`${successLabel} deleted`);
+    } catch (error) {
+      console.error("Failed to delete FAB edit entity", {
+        entityType,
+        entityId,
+        error,
+      });
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : `Unable to delete this ${typeSegment}`,
+      );
+    } finally {
+      setIsDeletingFabEntity(false);
+    }
+  }, [
+    editableDeleteTarget,
+    isDeletingFabEntity,
+    notifySchedulerOfChange,
+    onEditClose,
+    resetFabFormState,
+    toast,
+  ]);
+
   const overhangCancelTapHandlers = useTapHandler(() => {
     closeExpandedPanel();
   });
   const overhangSaveTapHandlers = useTapHandler(() => handleFabSave(), {
     disabled: isSaveDisabled,
   });
+  const overhangDeleteTapHandlers = useTapHandler(
+    () => {
+      void handleFabDeleteEntity();
+    },
+    {
+      disabled: isDeletingFabEntity || !editableDeleteTarget,
+    },
+  );
   const handleDeleteEvent = useCallback(async () => {
     if (isDeletingEvent) {
       return;
@@ -11473,6 +12158,23 @@ export function Fab({
           : null}
       </div>
       <div className="flex items-center gap-3">
+        {editableDeleteTarget ? (
+          <Button
+            type="button"
+            aria-label={`Delete ${editableDeleteTarget.entityType.toLowerCase()}`}
+            variant="ghost"
+            size="iconSquare"
+            disabled={isDeletingFabEntity}
+            className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation border border-white/15 bg-black text-white hover:bg-zinc-900 disabled:opacity-50"
+            {...overhangDeleteTapHandlers}
+          >
+            <Trash2
+              className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+              aria-hidden="true"
+            />
+          </Button>
+        ) : null}
+
         <Button
           type="button"
           aria-label="Discard"
@@ -11924,8 +12626,9 @@ export function Fab({
                       duration: 0.18,
                       ease: "easeOut",
                     }}
-                    className="pointer-events-auto fixed flex w-[108px] items-center gap-3"
+                    className="pointer-events-auto fixed flex items-center gap-3"
                     style={{
+                      width: overhangControlWidth,
                       left: overhangPos?.left,
                       top: overhangPos?.top,
                       right: overhangPos ? undefined : 12,
@@ -11941,6 +12644,23 @@ export function Fab({
                           : undefined,
                     }}
                   >
+                    {editableDeleteTarget ? (
+                      <Button
+                        type="button"
+                        aria-label={`Delete ${editableDeleteTarget.entityType.toLowerCase()}`}
+                        variant="ghost"
+                        size="iconSquare"
+                        disabled={isDeletingFabEntity}
+                        className="drop-shadow-xl shrink-0 transform-none hover:scale-100 active:translate-y-0 transition-none touch-manipulation border border-white/15 bg-black text-white hover:bg-zinc-900 disabled:opacity-50"
+                        {...overhangDeleteTapHandlers}
+                      >
+                        <Trash2
+                          className="h-5 w-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+                          aria-hidden="true"
+                        />
+                      </Button>
+                    ) : null}
+
                     <Button
                       type="button"
                       aria-label="Discard"

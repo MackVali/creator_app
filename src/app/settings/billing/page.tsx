@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import BillingPageClient from "./BillingPageClient";
 
 export const metadata = {
@@ -7,21 +8,21 @@ export const metadata = {
 
 export default function BillingPage() {
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      <div className="safe-page-y mx-auto flex w-full max-w-5xl flex-col px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-[#02050a] text-white">
+      <div className="safe-page-y mx-auto flex w-full max-w-5xl flex-col px-5 sm:px-6 lg:px-8">
+        <div className="relative flex min-h-14 items-center justify-center sm:min-h-16">
           <Link
             href="/settings"
-            className="inline-flex items-center rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-white/40 hover:text-white"
+            className="absolute left-0 inline-flex h-11 items-center gap-2 rounded-full border border-white/25 bg-white/[0.035] px-4 text-sm font-bold uppercase tracking-[0.08em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-white/40 hover:bg-white/[0.06] sm:h-16 sm:gap-3 sm:px-7 sm:text-2xl"
           >
-            <span aria-hidden="true" className="mr-1 text-base leading-none">
-              ←
-            </span>
+            <ArrowLeft className="h-5 w-5 sm:h-8 sm:w-8" aria-hidden="true" />
             Back
           </Link>
+          <h1 className="text-2xl font-semibold tracking-normal text-white sm:text-4xl">
+            Billing
+          </h1>
         </div>
-        <h1 className="mt-8 text-2xl font-semibold tracking-tight text-white">Billing</h1>
-        <div className="mt-8 w-full">
+        <div className="mt-8 w-full sm:mt-11">
           <BillingPageClient />
         </div>
       </div>

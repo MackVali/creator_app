@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { PaywallModal } from "@/components/billing/PaywallModal";
 import {
   HabitFormFields,
   HABIT_RECURRENCE_OPTIONS,
@@ -60,6 +61,12 @@ interface GoalOption {
   description?: string | null;
 }
 
+const HABIT_PAYWALL_FEATURES = [
+  "More room for habits and routines.",
+  "Build deeper systems without cutting rituals out.",
+  "The full CREATOR Pro planning and execution layer.",
+];
+
 export default function NewHabitPage() {
   const router = useRouter();
   const supabase = getSupabaseBrowser();
@@ -98,6 +105,7 @@ export default function NewHabitPage() {
   const [goalLoadError, setGoalLoadError] = useState<string | null>(null);
   const [goalId, setGoalId] = useState<string>("none");
   const [completionTarget, setCompletionTarget] = useState("10");
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -482,6 +490,11 @@ export default function NewHabitPage() {
     ];
   }, [routineOptions, routinesLoading]);
 
+  const handlePaywallCta = () => {
+    setPaywallOpen(false);
+    router.push("/settings/billing");
+  };
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -685,9 +698,8 @@ export default function NewHabitPage() {
     } catch (err) {
       console.error("Failed to create habit:", err);
       if (err instanceof LimitReachedError) {
-        setError(
-          "Free-tier accounts can create up to 20 habits. Upgrade to CREATOR Pro to drop the limit."
-        );
+        setError(null);
+        setPaywallOpen(true);
         return;
       }
       setError(
@@ -702,6 +714,7 @@ export default function NewHabitPage() {
 
   return (
     <ProtectedRoute>
+      <>
       <div className="min-h-screen bg-[#05070c] pb-16 text-white">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-4 pb-10 pt-8 sm:px-6 lg:px-8">
           <PageHeader
@@ -862,6 +875,17 @@ export default function NewHabitPage() {
           </div>
         </div>
       </div>
+        <PaywallModal
+          open={paywallOpen}
+          onOpenChange={setPaywallOpen}
+          title="Your routine system is full"
+          description="You’ve hit the free habit limit. CREATOR Pro gives you more room to build the routines that hold everything together."
+          featureList={HABIT_PAYWALL_FEATURES}
+          ctaLabel="Upgrade to CREATOR Pro"
+          onCta={handlePaywallCta}
+          secondaryLabel="Maybe later"
+        />
+      </>
     </ProtectedRoute>
   );
 }

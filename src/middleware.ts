@@ -14,7 +14,14 @@ export async function middleware(req: NextRequest) {
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
-    pathname === "/favicon.ico"
+    pathname.startsWith("/images") ||
+    pathname.startsWith("/assets") ||
+    pathname.startsWith("/icons") ||
+    pathname.startsWith("/apple-touch-icon") ||
+    pathname === "/favicon.ico" ||
+    pathname === "/manifest.json" ||
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml"
   ) {
     console.log(`[Middleware] Skipping ${pathname} (static/API route)`);
     return NextResponse.next();
@@ -200,5 +207,7 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next|static|favicon.ico).*)"],
+  matcher: [
+    "/((?!api|_next|static|images|assets|icons|apple-touch-icon|favicon.ico|manifest.json|robots.txt|sitemap.xml).*)",
+  ],
 };
