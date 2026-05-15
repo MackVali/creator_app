@@ -22,6 +22,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@capacitor/camera": "^8.2.0",
     "@capacitor/core": "^8.0.2",
     "@capacitor/ios": "^8.0.2",
     "@dnd-kit/core": "^6.3.1",

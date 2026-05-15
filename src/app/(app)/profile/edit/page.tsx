@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
+import { Camera as CapacitorCamera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
@@ -23,10 +24,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Save, User, Calendar, MapPin, FileText, Camera } from "lucide-react";
+import { ArrowLeft, Save, User, Calendar, MapPin, FileText, Camera, ImageIcon } from "lucide-react";
 import Link from "next/link";
 import ContentCardManager from "@/components/profile/ContentCardManager";
 import SocialPillsRow from "@/components/profile/SocialPillsRow";
+
+type AvatarPhotoSource = "camera" | "photos";
 
 const LINKED_ACCOUNT_ORDER: SupportedPlatform[] = [
   "instagram",
@@ -40,6 +43,62 @@ const LINKED_ACCOUNT_ORDER: SupportedPlatform[] = [
 
 const HERO_HEIGHT_CLASSES =
   "min-h-[308px] sm:min-h-[380px] lg:min-h-[440px] xl:min-h-[500px]";
+
+const AVATAR_PHOTO_SOURCE_LABELS: Record<AvatarPhotoSource, string> = {
+  camera: "Take Photo",
+  photos: "Choose from Library",
+};
+
+function isCameraCancelError(error: unknown) {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+  const normalized = message.toLowerCase();
+  return normalized.includes("cancel") || normalized.includes("dismiss");
+}
+
+function getImageMimeType(format?: string) {
+  const normalizedFormat = format?.toLowerCase();
+  if (normalizedFormat === "png") {
+    return "image/png";
+  }
+  if (normalizedFormat === "gif") {
+    return "image/gif";
+  }
+  if (normalizedFormat === "webp") {
+    return "image/webp";
+  }
+  return "image/jpeg";
+}
+
+function getImageFileExtension(format?: string) {
+  const normalizedFormat = format?.toLowerCase();
+  if (normalizedFormat === "png" || normalizedFormat === "gif" || normalizedFormat === "webp") {
+    return normalizedFormat;
+  }
+  return "jpg";
+}
+
+function base64ToBlob(base64: string, mimeType: string) {
+  const byteCharacters = window.atob(base64);
+  const byteArrays: Uint8Array[] = [];
+
+  for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+    const slice = byteCharacters.slice(offset, offset + 512);
+    const byteNumbers = new Array(slice.length);
+
+    for (let i = 0; i < slice.length; i += 1) {
+      byteNumbers[i] = slice.charCodeAt(i);
+    }
+
+    byteArrays.push(new Uint8Array(byteNumbers));
+  }
+
+  return new Blob(byteArrays, { type: mimeType });
+}
 
 function getHeroInitials(name?: string | null, username?: string | null) {
   if (name && name.trim()) {
@@ -80,6 +139,8 @@ export default function ProfileEditPage() {
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [isAvatarSourceDialogOpen, setIsAvatarSourceDialogOpen] = useState(false);
+  const [avatarSourceLoading, setAvatarSourceLoading] = useState<AvatarPhotoSource | null>(null);
   const [isAvatarEditorOpen, setIsAvatarEditorOpen] = useState(false);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
   const [pendingAvatarSourceUrl, setPendingAvatarSourceUrl] = useState<string | null>(null);
@@ -363,38 +424,92 @@ export default function ProfileEditPage() {
     [editorFrameSize.height, editorFrameSize.width, editorImageSize.height, editorImageSize.width],
   );
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const openAvatarEditorFromFile = useCallback((file: File) => {
     try {
-      const file = e.target.files?.[0];
-      if (!file) {
-        return;
-      }
-
       if (!file.type.startsWith("image/")) {
         setError("Please choose an image file for your profile photo.");
-        return;
+        return false;
       }
 
       const heroRect = heroPhotoSurfaceRef.current?.getBoundingClientRect();
       if (heroRect?.width && heroRect?.height) {
         setEditorFrameAspectRatio(heroRect.width / heroRect.height);
       }
-      if (pendingAvatarSourceUrl) {
-        URL.revokeObjectURL(pendingAvatarSourceUrl);
-      }
       const sourceUrl = URL.createObjectURL(file);
+      setPendingAvatarSourceUrl((currentSourceUrl) => {
+        if (currentSourceUrl) {
+          URL.revokeObjectURL(currentSourceUrl);
+        }
+        return sourceUrl;
+      });
       setPendingAvatarFile(file);
-      setPendingAvatarSourceUrl(sourceUrl);
       setEditorZoom(1);
       setEditorOffset({ x: 0, y: 0 });
       setEditorImageSize({ width: 0, height: 0 });
+      setEditorFrameSize({ width: 0, height: 0 });
       setIsAvatarEditorOpen(true);
       setError(null);
+      return true;
     } catch (err) {
       console.error("Error opening selected profile photo:", err);
       setError("We couldn't open that photo. Please try choosing another image.");
+      return false;
+    }
+  }, []);
+
+  const handleCapacitorAvatarPhoto = async (source: AvatarPhotoSource) => {
+    setAvatarSourceLoading(source);
+    setError(null);
+    setIsAvatarSourceDialogOpen(false);
+
+    try {
+      const photo = await CapacitorCamera.getPhoto({
+        source: source === "camera" ? CameraSource.Camera : CameraSource.Photos,
+        resultType: CameraResultType.Base64,
+        quality: 85,
+        correctOrientation: true,
+        allowEditing: false,
+      });
+
+      if (!photo.base64String) {
+        setError("We couldn't read that photo. Please try another image.");
+        return;
+      }
+
+      const mimeType = getImageMimeType(photo.format);
+      let blob: Blob;
+      try {
+        blob = base64ToBlob(photo.base64String, mimeType);
+      } catch (conversionError) {
+        console.error("Error converting profile photo result:", conversionError);
+        setError("We couldn't process that photo. Please try another image.");
+        return;
+      }
+
+      if (!blob.size) {
+        setError("We couldn't read that photo. Please try another image.");
+        return;
+      }
+
+      const extension = getImageFileExtension(photo.format);
+      const file = new File([blob], `avatar-${source}-${Date.now()}.${extension}`, {
+        type: mimeType,
+      });
+
+      openAvatarEditorFromFile(file);
+    } catch (err) {
+      if (isCameraCancelError(err)) {
+        return;
+      }
+
+      console.error(`Error opening profile photo ${source}:`, err);
+      setError(
+        source === "camera"
+          ? "We couldn't open the camera. Check camera permission and try again."
+          : "We couldn't open your photo library. Check photo permission and try again.",
+      );
     } finally {
-      e.target.value = "";
+      setAvatarSourceLoading(null);
     }
   };
 
@@ -745,13 +860,6 @@ export default function ProfileEditPage() {
                   </span>
                 </div>
               </header>
-              <input
-                id="avatar"
-                type="file"
-                accept="image/*"
-                onChange={handleAvatarChange}
-                className="sr-only"
-              />
               <div className="absolute inset-x-5 bottom-4 z-10 flex flex-col items-center gap-2 text-center text-white sm:inset-x-6 sm:bottom-6 sm:gap-2.5">
                 <p className="text-3xl font-semibold text-white sm:text-4xl lg:text-5xl">{heroName}</p>
                 {heroHandle ? (
@@ -764,13 +872,15 @@ export default function ProfileEditPage() {
                     {heroBio}
                   </p>
                 ) : null}
-                <label
-                  htmlFor="avatar"
+                <button
+                  type="button"
+                  onClick={() => setIsAvatarSourceDialogOpen(true)}
+                  disabled={avatarSourceLoading !== null}
                   className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-black/60 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.32em] text-white transition hover:border-white/50 sm:px-5 sm:py-2 sm:text-xs sm:tracking-[0.35em]"
                 >
                   <Camera className="h-3.5 w-3.5" />
                   Edit profile photo
-                </label>
+                </button>
                 <div className="mt-2 w-full max-w-2xl pointer-events-auto sm:mt-3 sm:max-w-3xl">
                   <SocialPillsRow
                     socials={socialsData}
@@ -783,6 +893,52 @@ export default function ProfileEditPage() {
           </div>
         </div>
       </section>
+      <Dialog.Root
+        open={isAvatarSourceDialogOpen}
+        onOpenChange={(open) => {
+          if (!avatarSourceLoading) {
+            setIsAvatarSourceDialogOpen(open);
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[220] bg-black/80 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[230] w-[min(92vw,420px)] -translate-x-1/2 -translate-y-1/2 rounded-[24px] border border-white/10 bg-[#05070c] p-4 text-white shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none sm:p-5">
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Dialog.Title className="text-lg font-semibold">Edit profile photo</Dialog.Title>
+              </div>
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  disabled={avatarSourceLoading !== null}
+                  onClick={() => handleCapacitorAvatarPhoto("camera")}
+                  className="flex min-h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Camera className="h-5 w-5 text-white/80" aria-hidden="true" />
+                  {AVATAR_PHOTO_SOURCE_LABELS.camera}
+                </button>
+                <button
+                  type="button"
+                  disabled={avatarSourceLoading !== null}
+                  onClick={() => handleCapacitorAvatarPhoto("photos")}
+                  className="flex min-h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <ImageIcon className="h-5 w-5 text-white/80" aria-hidden="true" />
+                  {AVATAR_PHOTO_SOURCE_LABELS.photos}
+                </button>
+              </div>
+              <div className="flex justify-end pt-1">
+                <Dialog.Close asChild>
+                  <Button type="button" variant="ghost">
+                    Cancel
+                  </Button>
+                </Dialog.Close>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
       <Dialog.Root
         open={isAvatarEditorOpen}
         onOpenChange={(open) => {
