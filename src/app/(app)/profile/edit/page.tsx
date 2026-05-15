@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
+import { Capacitor } from "@capacitor/core";
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useProfileContext } from "@/components/ProfileProvider";
@@ -141,6 +142,10 @@ export default function ProfileEditPage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isAvatarSourceDialogOpen, setIsAvatarSourceDialogOpen] = useState(false);
   const [avatarSourceLoading, setAvatarSourceLoading] = useState<AvatarPhotoSource | null>(null);
+  const [isWebCameraOpen, setIsWebCameraOpen] = useState(false);
+  const [webCameraStarting, setWebCameraStarting] = useState(false);
+  const [webCameraCapturing, setWebCameraCapturing] = useState(false);
+  const [webCameraError, setWebCameraError] = useState<string | null>(null);
   const [isAvatarEditorOpen, setIsAvatarEditorOpen] = useState(false);
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
   const [pendingAvatarSourceUrl, setPendingAvatarSourceUrl] = useState<string | null>(null);
@@ -151,6 +156,9 @@ export default function ProfileEditPage() {
   const [editorFrameAspectRatio, setEditorFrameAspectRatio] = useState(3 / 2);
   const avatarEditorFrameRef = useRef<HTMLDivElement | null>(null);
   const heroPhotoSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const webCameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const webCameraStreamRef = useRef<MediaStream | null>(null);
+  const webPhotoLibraryInputRef = useRef<HTMLInputElement | null>(null);
   const gestureStateRef = useRef<{
     mode: "pan" | "pinch";
     startDistance: number;
@@ -457,6 +465,17 @@ export default function ProfileEditPage() {
     }
   }, []);
 
+  const stopWebCameraStream = useCallback(() => {
+    webCameraStreamRef.current?.getTracks().forEach((track) => {
+      track.stop();
+    });
+    webCameraStreamRef.current = null;
+
+    if (webCameraVideoRef.current) {
+      webCameraVideoRef.current.srcObject = null;
+    }
+  }, []);
+
   const handleCapacitorAvatarPhoto = async (source: AvatarPhotoSource) => {
     setAvatarSourceLoading(source);
     setError(null);
@@ -512,6 +531,107 @@ export default function ProfileEditPage() {
       setAvatarSourceLoading(null);
     }
   };
+
+  const handleWebAvatarCamera = () => {
+    setError(null);
+    setWebCameraError(null);
+    setIsAvatarSourceDialogOpen(false);
+    setIsWebCameraOpen(true);
+  };
+
+  const handleWebAvatarLibrary = () => {
+    setError(null);
+    setIsAvatarSourceDialogOpen(false);
+    const input = webPhotoLibraryInputRef.current;
+    if (!input) {
+      setError("We couldn't open your photo library. Please try again.");
+      return;
+    }
+    input.value = "";
+    input.click();
+  };
+
+  const handleAvatarSourceSelect = (source: AvatarPhotoSource) => {
+    if (Capacitor.isNativePlatform()) {
+      void handleCapacitorAvatarPhoto(source);
+      return;
+    }
+
+    if (source === "camera") {
+      handleWebAvatarCamera();
+      return;
+    }
+
+    handleWebAvatarLibrary();
+  };
+
+  const handleWebLibraryFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    openAvatarEditorFromFile(file);
+  };
+
+  const handleWebCameraCancel = useCallback(() => {
+    stopWebCameraStream();
+    setIsWebCameraOpen(false);
+    setWebCameraError(null);
+    setWebCameraStarting(false);
+    setWebCameraCapturing(false);
+    setAvatarSourceLoading(null);
+  }, [stopWebCameraStream]);
+
+  const handleWebCameraCapture = useCallback(async () => {
+    const video = webCameraVideoRef.current;
+    if (!video || !webCameraStreamRef.current || !video.videoWidth || !video.videoHeight) {
+      setWebCameraError("The camera preview isn't ready yet. Please try again.");
+      return;
+    }
+
+    setWebCameraCapturing(true);
+    setWebCameraError(null);
+
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("Canvas context unavailable");
+      }
+
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((result) => resolve(result), "image/jpeg", 0.92);
+      });
+
+      if (!blob?.size) {
+        throw new Error("Captured photo blob was empty");
+      }
+
+      const file = new File([blob], `avatar-camera-${Date.now()}.jpg`, {
+        type: "image/jpeg",
+      });
+
+      stopWebCameraStream();
+      setIsWebCameraOpen(false);
+      openAvatarEditorFromFile(file);
+    } catch (captureError) {
+      console.error("Error capturing profile photo from web camera:", captureError);
+      stopWebCameraStream();
+      setIsWebCameraOpen(false);
+      setError("We couldn't capture that photo. Please try again.");
+    } finally {
+      setWebCameraCapturing(false);
+      setAvatarSourceLoading(null);
+    }
+  }, [openAvatarEditorFromFile, stopWebCameraStream]);
 
   const handleEditorTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
     if (event.touches.length === 1) {
@@ -771,6 +891,67 @@ export default function ProfileEditPage() {
   }, [isAvatarEditorOpen]);
 
   useEffect(() => {
+    if (!isWebCameraOpen) {
+      return;
+    }
+
+    let isActive = true;
+
+    const startWebCamera = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setWebCameraError("Camera capture isn't available in this browser.");
+        setAvatarSourceLoading(null);
+        setWebCameraStarting(false);
+        return;
+      }
+
+      setAvatarSourceLoading("camera");
+      setWebCameraStarting(true);
+      setWebCameraError(null);
+
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false,
+        });
+
+        if (!isActive) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        webCameraStreamRef.current = stream;
+
+        if (webCameraVideoRef.current) {
+          webCameraVideoRef.current.srcObject = stream;
+          await webCameraVideoRef.current.play();
+        }
+      } catch (cameraError) {
+        stream?.getTracks().forEach((track) => track.stop());
+
+        if (isActive) {
+          console.error("Error opening web profile camera:", cameraError);
+          stopWebCameraStream();
+          setWebCameraError("We couldn't open the camera. Check camera permission and try again.");
+        }
+      } finally {
+        if (isActive) {
+          setWebCameraStarting(false);
+          setAvatarSourceLoading(null);
+        }
+      }
+    };
+
+    void startWebCamera();
+
+    return () => {
+      isActive = false;
+      stopWebCameraStream();
+    };
+  }, [isWebCameraOpen, stopWebCameraStream]);
+
+  useEffect(() => {
     return () => {
       if (pendingAvatarSourceUrl) {
         URL.revokeObjectURL(pendingAvatarSourceUrl);
@@ -912,7 +1093,7 @@ export default function ProfileEditPage() {
                 <button
                   type="button"
                   disabled={avatarSourceLoading !== null}
-                  onClick={() => handleCapacitorAvatarPhoto("camera")}
+                  onClick={() => handleAvatarSourceSelect("camera")}
                   className="flex min-h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Camera className="h-5 w-5 text-white/80" aria-hidden="true" />
@@ -921,7 +1102,7 @@ export default function ProfileEditPage() {
                 <button
                   type="button"
                   disabled={avatarSourceLoading !== null}
-                  onClick={() => handleCapacitorAvatarPhoto("photos")}
+                  onClick={() => handleAvatarSourceSelect("photos")}
                   className="flex min-h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <ImageIcon className="h-5 w-5 text-white/80" aria-hidden="true" />
@@ -934,6 +1115,63 @@ export default function ProfileEditPage() {
                     Cancel
                   </Button>
                 </Dialog.Close>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+      <input
+        ref={webPhotoLibraryInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleWebLibraryFileChange}
+      />
+      <Dialog.Root
+        open={isWebCameraOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleWebCameraCancel();
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[220] bg-black/80 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[230] w-[min(95vw,460px)] -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-white/10 bg-[#05070c] p-4 text-white shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none sm:p-5">
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Dialog.Title className="text-lg font-semibold">Take Photo</Dialog.Title>
+              </div>
+              <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[24px] border border-white/10 bg-black">
+                <video
+                  ref={webCameraVideoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="h-full w-full object-cover"
+                />
+                {webCameraStarting ? (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-sm text-zinc-300">
+                    Opening camera...
+                  </div>
+                ) : null}
+                {webCameraError ? (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/80 px-6 text-center text-sm text-zinc-200">
+                    {webCameraError}
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button type="button" variant="ghost" onClick={handleWebCameraCancel}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleWebCameraCapture}
+                  disabled={webCameraStarting || webCameraCapturing || Boolean(webCameraError)}
+                >
+                  {webCameraCapturing ? "Capturing..." : "Capture"}
+                </Button>
               </div>
             </div>
           </Dialog.Content>
