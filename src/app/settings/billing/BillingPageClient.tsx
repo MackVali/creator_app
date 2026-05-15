@@ -1,17 +1,13 @@
 "use client";
 
 import { Capacitor } from "@capacitor/core";
+import { ArrowRight, BarChart3, Box, CalendarDays, Map } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
 import { useUpgradeAction } from "@/lib/entitlements/useUpgradeAction";
 import { syncEntitlement } from "@/lib/entitlements/syncEntitlement";
@@ -21,10 +17,22 @@ import type { Product as RevenueCatWebProduct } from "@revenuecat/purchases-js";
 import type { PurchasesStoreProduct } from "@revenuecat/purchases-typescript-internal-esm";
 
 const PREMIUM_BENEFITS = [
-  "Premium planning tools",
-  "Advanced scheduling",
-  "Progress analytics",
-  "Goal, project, and habit system features",
+  {
+    label: "More room for goals, projects, tasks, and habits",
+    Icon: Box,
+  },
+  {
+    label: "Bigger roadmaps",
+    Icon: Map,
+  },
+  {
+    label: "Progress analytics",
+    Icon: BarChart3,
+  },
+  {
+    label: "Advanced scheduling",
+    Icon: CalendarDays,
+  },
 ];
 const UPGRADE_PLAN_NAME = "CREATOR Pro";
 const MONTHLY_PLAN_NAME = "CREATOR Pro Monthly";
@@ -194,7 +202,7 @@ function getPlanDescription(pkg: AvailableUpgradePackage) {
     return getReviewSafeCopy(product.description);
   }
 
-  return "Premium access";
+  return "The full CREATOR Pro planning and execution layer.";
 }
 
 function getPlanLabel(pkg: AvailableUpgradePackage) {
@@ -212,10 +220,7 @@ function getPlanLabel(pkg: AvailableUpgradePackage) {
 
 function BillingPageClient() {
   const {
-    tier,
     isPlus,
-    is_active,
-    isReady,
     current_period_end,
     refreshEntitlement,
   } = useEntitlement();
@@ -223,8 +228,6 @@ function BillingPageClient() {
     useUpgradeAction();
   const { isLaunching, error: upgradeError } = upgradeState;
   const isNativePlatform = Capacitor.isNativePlatform();
-  const planLabel = tier === "CREATOR PLUS" ? UPGRADE_PLAN_NAME : getReviewSafeCopy(tier || "CREATOR");
-  const statusLabel = !isReady ? "Loading" : is_active ? "Active" : "Free plan";
   const renewalDate = formatRenewalDate(current_period_end);
   const [packages, setPackages] = useState<LoadedUpgradePackages | null>(null);
   const [loadState, setLoadState] = useState<PackageLoadState>("idle");
@@ -362,152 +365,222 @@ function BillingPageClient() {
   }, [isNativePlatform, refreshEntitlement]);
 
   const canPurchase = Boolean(selectedPackage && loadState === "success");
-  const selectedPlanLabel = selectedPackage ? getPlanLabel(selectedPackage) : UPGRADE_PLAN_NAME;
-
   return (
-    <div className="space-y-6">
-      <Card className="bg-[#15161A]/80 border-white/5">
-        <CardHeader className="items-center gap-3">
-          <CardTitle>Billing overview</CardTitle>
-          <span className="ml-auto rounded-full border border-white/10 px-3 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.35em] text-zinc-300">
-            {statusLabel}
-          </span>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-1">
-            <p className="text-[0.65rem] uppercase tracking-[0.3em] text-zinc-400">Current plan</p>
-            <p className="text-3xl font-semibold text-zinc-100">{planLabel}</p>
-          </div>
-          <div className="grid gap-3 text-sm text-zinc-300 sm:grid-cols-2">
-            <div>
-              <p className="text-[0.65rem] uppercase tracking-[0.3em] text-zinc-500">Status</p>
-              <p className="text-lg text-zinc-100">{statusLabel}</p>
-            </div>
-            {renewalDate && (
-              <div>
-                <p className="text-[0.65rem] uppercase tracking-[0.3em] text-zinc-500">
-                  Renewal date
+    <div className="mx-auto max-w-[930px] space-y-3 pb-3 pt-1 text-zinc-100 sm:px-4 sm:pb-5 sm:pt-2 md:space-y-4">
+      <Card className="relative overflow-hidden rounded-[1.35rem] border-white/15 bg-[#070808] shadow-[0_14px_34px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] md:rounded-[1.65rem]">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-[0.22]"
+          style={{ backgroundImage: "url('/images/paywall-stone-bg.png')" }}
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_16%_30%,rgba(16,185,129,0.13),transparent_26%),linear-gradient(135deg,rgba(0,0,0,0.06),rgba(0,0,0,0.82))]"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"
+        />
+        <CardContent className="relative z-10 p-6 sm:p-9 md:p-10">
+          <div className="min-w-0">
+            <div className="flex items-start gap-5 md:gap-7">
+              <span className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[1.45rem] border border-emerald-300/45 bg-black/50 p-2.5 shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_16px_34px_rgba(16,185,129,0.14),inset_0_1px_0_rgba(255,255,255,0.14)] md:h-28 md:w-28 md:rounded-[1.7rem] md:p-3.5">
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-2 rounded-[1.1rem] bg-[radial-gradient(circle_at_45%_18%,rgba(255,255,255,0.24),transparent_28%),linear-gradient(145deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02))] md:rounded-[1.3rem]"
+                />
+                <span className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[1rem] md:rounded-[1.15rem]">
+                  <Image
+                    src="/images/creator-logo.png"
+                    alt=""
+                    width={112}
+                    height={112}
+                    className="h-full w-full object-cover"
+                  />
+                </span>
+              </span>
+              <div className="min-w-0 pt-1 md:pt-1.5">
+                <p className="text-[0.72rem] font-bold uppercase tracking-[0.32em] text-emerald-300 md:text-[0.9rem] md:tracking-[0.36em]">
+                  CREATOR PRO
                 </p>
-                <p className="text-lg text-zinc-100">{renewalDate}</p>
+                <h2 className="mt-4 text-3xl font-semibold leading-tight tracking-normal text-white md:text-4xl">
+                  Build beyond the free roadmap
+                </h2>
               </div>
-            )}
+            </div>
+            <p className="mt-7 max-w-[31rem] text-lg leading-8 text-zinc-300 md:mt-8 md:text-2xl md:leading-10">
+              Upgrade when your system outgrows the free tier. CREATOR Pro gives you more room
+              for goals, projects, tasks, and habits.
+            </p>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="bg-[#15161A]/80 border-white/5">
-        <CardHeader className="gap-1">
-          <CardTitle>Choose your plan</CardTitle>
-          <CardDescription>
-            Select the cadence that fits your workflow and unlock {UPGRADE_PLAN_NAME}.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
+      <Card className="relative overflow-hidden rounded-[1.35rem] border-white/15 bg-[#070808] shadow-[0_14px_34px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] md:rounded-[1.65rem]">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-[0.14]"
+          style={{ backgroundImage: "url('/images/paywall-stone-bg.png')" }}
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(16,185,129,0.06),transparent_36%),linear-gradient(180deg,rgba(0,0,0,0.1),rgba(0,0,0,0.75))]"
+        />
+        <CardContent className="relative z-10 space-y-3 p-4 md:space-y-4 md:p-5">
+          <div>
+            <h2 className="text-xl font-semibold tracking-normal text-white md:text-2xl">Choose your plan</h2>
+            <p className="mt-1 text-sm leading-5 text-zinc-400 md:mt-1.5 md:text-base md:leading-6">
+              Monthly or annual access to the full CREATOR Pro planning layer.
+            </p>
+          </div>
           {isPlus ? (
-            <div className="space-y-4">
-              <p className="text-sm text-zinc-300">
-                You are already on {UPGRADE_PLAN_NAME}. Manage your subscription through the
-                store or web billing portal you used to purchase it.
-              </p>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Button className="w-full sm:w-auto" type="button" disabled>
-                  Subscription managed through third-party billing
-                </Button>
-                <Link
-                  href="/settings"
-                  className="text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
-                >
-                  Back to settings
-                </Link>
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-emerald-300/35 bg-emerald-400/[0.075] p-4 md:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-[0.65rem] font-bold uppercase tracking-[0.22em] text-emerald-300">
+                      Active subscription
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-white">
+                      {UPGRADE_PLAN_NAME}
+                    </p>
+                    <p className="mt-1 max-w-2xl text-sm leading-5 text-zinc-300">
+                      Manage your subscription through the store or web billing portal you used to
+                      purchase it.
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-xs font-semibold text-zinc-300">
+                    Subscription managed through your purchase provider
+                  </span>
+                </div>
+                {renewalDate && (
+                  <p className="mt-3 text-xs font-medium text-zinc-500">
+                    Current period ends {renewalDate}
+                  </p>
+                )}
               </div>
             </div>
           ) : (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <p className="text-xl font-semibold text-zinc-100">{MONTHLY_PLAN_NAME}</p>
-                <p className="text-sm text-zinc-400">
-                  Includes premium planning tools, advanced scheduling, progress analytics,
-                  and goal, project, and habit system features.
-                </p>
-              </div>
-
+            <div className="space-y-3 md:space-y-4">
               {loadState === "loading" && (
-                <p className="text-sm text-zinc-400">Loading plans…</p>
+                <div
+                  className="rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-sm text-zinc-400 sm:rounded-2xl sm:px-4 sm:py-3"
+                  role="status"
+                >
+                  Loading CREATOR Pro plans...
+                </div>
               )}
               {loadError && (
-                <p className="text-sm text-rose-400" role="alert">
+                <p
+                  className="rounded-xl border border-rose-300/15 bg-rose-500/10 px-3 py-2 text-sm text-rose-200 sm:rounded-2xl sm:px-4 sm:py-3"
+                  role="alert"
+                >
                   {PURCHASES_UNAVAILABLE_MESSAGE}
                 </p>
               )}
 
               {planOptions.length > 0 && (
-                <div className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {planOptions.map((pkg) => {
-                      const product = getPackageProduct(pkg);
-                      const priceLabel = getProductPriceLabel(product);
-                      const cadenceLabel = getBillingCadenceLabel(pkg);
-                      const planDescription = getPlanDescription(pkg);
-                      const planTitle = getPlanLabel(pkg);
-                      const isSelected = selectedPackage?.identifier === pkg.identifier;
-                      const isRecommended = recommendedPackageId === pkg.identifier;
+                <div className="space-y-2.5 md:space-y-3">
+                  {planOptions.map((pkg) => {
+                    const product = getPackageProduct(pkg);
+                    const priceLabel = getProductPriceLabel(product);
+                    const cadenceLabel = getBillingCadenceLabel(pkg);
+                    const planDescription = getPlanDescription(pkg);
+                    const planTitle = getPlanLabel(pkg);
+                    const isSelected = selectedPackage?.identifier === pkg.identifier;
+                    const isRecommended = recommendedPackageId === pkg.identifier;
+                    const compactSavingsLabel = savingsLabel?.replace(
+                      / vs 12 months of the monthly plan\.$/,
+                      "",
+                    );
 
-                      const cardClasses = [
-                        "rounded-2xl border px-5 py-6 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400",
-                        isSelected
-                          ? "border-emerald-500 bg-white/5 shadow-[0_0_0_3px] shadow-emerald-600/20"
-                          : "border-white/5 hover:border-white/40 hover:bg-white/5",
-                      ].join(" ");
+                    const priceSuffix =
+                      cadenceLabel === "Annual"
+                        ? "/ year"
+                        : cadenceLabel === "Monthly"
+                          ? "/ month"
+                          : "";
+                    const cardClasses = [
+                      "relative grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 overflow-hidden rounded-2xl border px-3.5 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 md:gap-4 md:px-5 md:py-4",
+                      isSelected
+                        ? "border-emerald-300/85 bg-emerald-400/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_1px_rgba(110,231,183,0.12)]"
+                        : "border-white/[0.12] bg-white/[0.025] hover:border-white/25 hover:bg-white/[0.04]",
+                    ].join(" ");
 
-                      return (
-                        <button
-                          key={pkg.identifier}
-                          type="button"
-                          aria-pressed={isSelected}
-                          onClick={() => selectPackage(pkg)}
-                          className={`${cardClasses} ${
-                            !isSelected ? "hover:shadow-[0_0_0_1px] hover:shadow-white/20" : ""
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-[0.65rem] uppercase tracking-[0.3em] text-zinc-500">
-                                {cadenceLabel} plan
-                              </p>
-                              <p className="text-lg font-semibold text-zinc-100">{planTitle}</p>
-                            </div>
-                            {isRecommended && (
-                              <span className="rounded-full border border-emerald-500/60 bg-emerald-500/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-emerald-300">
-                                Recommended
-                              </span>
-                            )}
-                          </div>
-                          <p className="mt-4 text-3xl font-semibold text-zinc-100">{priceLabel}</p>
-                          <p className="mt-2 text-sm text-zinc-400">{planDescription}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {savingsLabel && (
-                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-300">
-                      {savingsLabel}
-                    </p>
-                  )}
+                    return (
+                      <button
+                        key={pkg.identifier}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => selectPackage(pkg)}
+                        aria-label={`${planTitle}: ${planDescription}`}
+                        className={cardClasses}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/18 to-transparent"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="min-w-0">
+                            <span className="block text-lg font-semibold leading-tight text-zinc-100 md:text-xl">
+                              {planTitle}
+                            </span>
+                            <span
+                              className={[
+                                "mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-2xl font-semibold tracking-normal md:mt-1.5",
+                                isSelected ? "text-emerald-300" : "text-white",
+                              ].join(" ")}
+                            >
+                              {priceLabel}
+                              {priceSuffix && (
+                                <span className="text-sm font-medium text-zinc-400 md:text-base">
+                                  {priceSuffix}
+                                </span>
+                              )}
+                            </span>
+                            {cadenceLabel === "Annual" &&
+                              compactSavingsLabel &&
+                              (isSelected || isRecommended) && (
+                                <span className="mt-0.5 block text-xs font-semibold text-emerald-300 md:mt-1 md:text-sm">
+                                  {compactSavingsLabel}
+                                </span>
+                              )}
+                          </span>
+                        </span>
+                        {isRecommended && (
+                          <span className="inline-flex shrink-0 items-center justify-center rounded-full border border-emerald-300/40 bg-emerald-400/[0.08] px-2 py-1 text-[0.58rem] font-bold uppercase tracking-[0.18em] text-emerald-200 md:px-2.5 md:text-[0.6rem]">
+                            Recommended
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 
               {planOptions.length === 0 && loadState === "success" && (
-                <p className="text-sm text-zinc-400">No plans are available right now.</p>
+                <p
+                  className="rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-sm text-zinc-400 sm:rounded-2xl sm:px-4 sm:py-3"
+                  role="status"
+                >
+                  No CREATOR Pro plans are available right now.
+                </p>
               )}
 
               {upgradeError && (
-                <p className="text-sm text-rose-400" role="alert">
+                <p
+                  className="rounded-xl border border-rose-300/15 bg-rose-500/10 px-3 py-2 text-sm text-rose-200 sm:rounded-2xl sm:px-4 sm:py-3"
+                  role="alert"
+                >
                   {PURCHASES_UNAVAILABLE_MESSAGE}
                 </p>
               )}
 
               {restoreState === "success" && (
-                <p className="text-sm text-emerald-300" role="status">
+                <p
+                  className="rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-200 sm:rounded-2xl sm:px-4 sm:py-3"
+                  role="status"
+                >
                   {isNativePlatform
                     ? "Purchases restored. Your access will update shortly."
                     : "Restore or manage purchases from the store or web billing portal you used to subscribe."}
@@ -515,75 +588,72 @@ function BillingPageClient() {
               )}
 
               {restoreState === "error" && (
-                <p className="text-sm text-rose-400" role="alert">
+                <p
+                  className="rounded-xl border border-rose-300/15 bg-rose-500/10 px-3 py-2 text-sm text-rose-200 sm:rounded-2xl sm:px-4 sm:py-3"
+                  role="alert"
+                >
                   {PURCHASES_UNAVAILABLE_MESSAGE}
                 </p>
               )}
 
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Button
-                  className="w-full sm:w-auto"
-                  type="button"
-                  onClick={handlePurchase}
-                  disabled={!canPurchase || isLaunching}
-                >
-                  {canPurchase
-                    ? `Subscribe to ${selectedPlanLabel}`
-                    : "Subscribe / upgrade"}
-                </Button>
-                <Button
-                  className="w-full sm:w-auto"
-                  type="button"
-                  variant="outline"
-                  onClick={handleRestorePurchases}
-                  disabled={restoreState === "restoring" || isLaunching}
-                >
-                  Restore purchases
-                </Button>
-                <Link
-                  href="/settings"
-                  className="text-sm font-medium text-zinc-400 transition hover:text-zinc-100"
-                >
-                  Back to settings
-                </Link>
-              </div>
+              <ul className="grid grid-cols-2 overflow-hidden rounded-2xl border border-white/[0.12] bg-white/[0.02] text-xs text-zinc-100 sm:text-sm">
+                {PREMIUM_BENEFITS.map(({ label, Icon }) => (
+                  <li
+                    key={label}
+                    className="flex min-h-20 items-center gap-3 border-white/[0.09] px-3 py-3 odd:border-r odd:border-b even:border-b [&:nth-child(n+3)]:border-b-0 md:gap-3.5 md:px-5 md:py-4"
+                  >
+                    <span
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-emerald-300/20 bg-emerald-400/10 text-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_0_16px_rgba(52,211,153,0.12)] md:h-11 md:w-11"
+                      aria-hidden="true"
+                    >
+                      <Icon className="h-5 w-5" strokeWidth={2.2} />
+                    </span>
+                    <span className="leading-4 md:leading-5">{label}</span>
+                  </li>
+                ))}
+              </ul>
 
-              <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-zinc-400">
-                <Link
-                  href="https://trycreator.app/legal/privacy"
-                  className="font-medium transition hover:text-zinc-100"
-                >
-                  Privacy Policy
-                </Link>
-                <Link
-                  href="https://trycreator.app/legal/terms"
-                  className="font-medium transition hover:text-zinc-100"
-                >
-                  Terms
-                </Link>
+              <div className="space-y-2.5">
+                <div className="flex flex-col gap-2.5 md:gap-3">
+                  <Button
+                    className="relative h-11 w-full rounded-xl border border-emerald-300/30 bg-gradient-to-r from-emerald-300 via-emerald-400 to-emerald-500 px-4 text-sm font-bold text-black shadow-none hover:from-emerald-200 hover:via-emerald-300 hover:to-emerald-400 md:h-12 md:px-5 md:text-base"
+                    type="button"
+                    onClick={handlePurchase}
+                    disabled={!canPurchase || isLaunching}
+                  >
+                    <span className="flex w-full items-center justify-center">
+                      Upgrade to CREATOR Pro
+                      <ArrowRight className="absolute right-4 h-5 w-5 md:right-5" aria-hidden="true" />
+                    </span>
+                  </Button>
+                  <Button
+                    className="h-10 w-full rounded-xl border-white/15 bg-transparent text-sm font-semibold text-zinc-300 hover:border-white/30 hover:bg-white/[0.04] md:h-11 md:text-base"
+                    type="button"
+                    variant="outline"
+                    onClick={handleRestorePurchases}
+                    disabled={restoreState === "restoring" || isLaunching}
+                  >
+                    Restore purchases
+                  </Button>
+                </div>
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card className="bg-[#15161A]/60 border-white/5">
-        <CardHeader className="gap-1">
-          <CardTitle>Premium benefits</CardTitle>
-          <CardDescription>A few highlights you unlock with {UPGRADE_PLAN_NAME}.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="space-y-2 text-sm text-zinc-300">
-            {PREMIUM_BENEFITS.map((benefit) => (
-              <li key={benefit} className="flex items-start gap-2">
-                <span
-                  aria-hidden="true"
-                  className="mt-2 h-1.5 w-1.5 rounded-full bg-emerald-400"
-                />
-                <span>{benefit}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="flex items-center justify-center gap-5 text-xs text-zinc-500 md:text-sm">
+            <Link
+              href="https://trycreator.app/legal/privacy"
+              className="font-medium transition hover:text-zinc-100"
+            >
+              Privacy
+            </Link>
+            <span aria-hidden="true" className="h-4 w-px bg-zinc-500/70" />
+            <Link
+              href="https://trycreator.app/legal/terms"
+              className="font-medium transition hover:text-zinc-100"
+            >
+              Terms
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>

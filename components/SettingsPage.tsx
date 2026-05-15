@@ -129,7 +129,6 @@ export default function SettingsPage() {
   }, [baseTimeZones, timezone]);
   const router = useRouter();
 
-  const planLabel = isPlus ? "CREATOR Pro" : "CREATOR";
   const planStatusLabel = !isReady ? "Loading" : is_active ? "Active" : "Free plan";
   const handlePlanAction = () => router.push("/settings/billing");
   const planRenewalDate = (() => {
@@ -333,46 +332,68 @@ export default function SettingsPage() {
   ) : (
     <>
       <section className="grid gap-6">
-        <section className="card overflow-hidden">
-          <div className="px-6 py-5 inner-hair">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
-                  Plan · {planLabel}
-                </p>
-                <h2 className="text-xl font-semibold text-[var(--text)]">{planLabel}</h2>
-              </div>
-              <span className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
-                {planStatusLabel}
+        <section className="relative overflow-hidden rounded-[28px] border border-white/12 bg-[linear-gradient(155deg,rgba(38,38,39,0.96)_0%,rgba(12,13,13,0.99)_52%,rgba(3,5,5,1)_100%)] text-white shadow-[0_24px_70px_rgba(0,0,0,0.42),0_0_58px_rgba(16,185,129,0.08),inset_0_1px_0_rgba(255,255,255,0.1)]">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-80"
+            style={{ backgroundImage: "url('/images/paywall-stone-bg.png')" }}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(110,231,183,0.17),transparent_30%),radial-gradient(ellipse_at_88%_92%,rgba(0,0,0,0.78),transparent_54%),linear-gradient(180deg,rgba(0,0,0,0.06),rgba(0,0,0,0.6))]"
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-12 top-0 h-px bg-gradient-to-r from-transparent via-emerald-100/70 to-transparent"
+          />
+          <div className="relative z-10 grid gap-6 px-6 py-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:px-7">
+            <div className="flex gap-4">
+              <span className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[18px] border border-white/18 bg-black/45 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_14px_28px_rgba(0,0,0,0.4)]">
+                <Image
+                  src="/images/creator-logo.png"
+                  alt=""
+                  width={48}
+                  height={48}
+                  className="h-full w-full rounded-[14px] object-cover"
+                />
               </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.42em] text-emerald-300">
+                    CREATOR Pro
+                  </p>
+                  {isPlus && (
+                    <span className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-zinc-300">
+                      {planStatusLabel}
+                    </span>
+                  )}
+                </div>
+                <h2 className="mt-3 text-2xl font-semibold leading-tight tracking-normal text-white">
+                  {isPlus ? "CREATOR Pro is active." : "Upgrade when your system outgrows free."}
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
+                  {isPlus
+                    ? "The full CREATOR Pro planning and execution layer is unlocked on this account."
+                    : "More room for goals, projects, tasks, and habits. Bigger roadmaps for bigger life systems."}
+                </p>
+                {planRenewalDate && (
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                    Renews {planRenewalDate}
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex flex-col gap-4 border-t border-white/5 px-6 py-6">
-            {planRenewalDate && (
-              <p className="text-sm text-[var(--muted)]">Renews {planRenewalDate}</p>
-            )}
-            <div className="flex flex-wrap items-center gap-3">
-              {isPlus ? (
-                <button
-                  type="button"
-                  onClick={handlePlanAction}
-                  className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-[var(--text)] transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-                >
-                  Manage plan
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handlePlanAction}
-                  className="inline-flex items-center justify-center rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-                >
-                  Upgrade
-                </button>
-              )}
-              <p className="text-sm text-[var(--muted)]">
-                {isPlus ? "Premium active" : "Upgrade to unlock CREATOR Pro."}
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={handlePlanAction}
+              className={
+                isPlus
+                  ? "inline-flex h-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.045] px-5 text-sm font-semibold text-zinc-100 transition hover:border-white/20 hover:bg-white/[0.075] focus:outline-none focus:ring-2 focus:ring-emerald-300/55"
+                  : "inline-flex h-12 items-center justify-center rounded-2xl border border-emerald-100/40 bg-[linear-gradient(145deg,#6ee7b7_0%,#22c55e_36%,#059669_68%,#064e3b_100%)] px-5 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.58),0_16px_32px_rgba(16,185,129,0.22)] transition hover:bg-[linear-gradient(145deg,#a7f3d0_0%,#34d399_40%,#10b981_70%,#047857_100%)] focus:outline-none focus:ring-2 focus:ring-emerald-200/60"
+              }
+            >
+              {isPlus ? "Manage plan" : "Upgrade to CREATOR Pro"}
+            </button>
           </div>
         </section>
       </section>

@@ -10,6 +10,7 @@ import {
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import {
   ArrowLeft,
   CalendarDays,
@@ -280,7 +281,15 @@ async function fetchAnalyticsRange(
   });
 
   if (!response.ok) {
-    throw new Error(response.status === 401 ? "unauthorized" : "fetch_failed");
+    if (response.status === 401) {
+      throw new Error("unauthorized");
+    }
+
+    if (response.status === 403) {
+      throw new Error("upgrade_required");
+    }
+
+    throw new Error("fetch_failed");
   }
 
   return (await response.json()) as AnalyticsResponse;
@@ -293,6 +302,7 @@ export default function AnalyticsDashboard({
   activeView: AnalyticsView;
   onViewChange: (view: AnalyticsView) => void;
 }) {
+  const router = useRouter();
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyticsRefreshing, setAnalyticsRefreshing] = useState(false);
@@ -361,8 +371,15 @@ export default function AnalyticsDashboard({
         ) {
           return;
         }
+        const errorMessage = err instanceof Error ? err.message : "fetch_failed";
+
+        if (errorMessage === "upgrade_required") {
+          setError("upgrade_required");
+          return;
+        }
+
         const message =
-          err instanceof Error && err.message === "unauthorized"
+          errorMessage === "unauthorized"
             ? "Sign in to view analytics."
             : hasVisibleAnalytics
               ? "Unable to update analytics."
@@ -417,17 +434,28 @@ export default function AnalyticsDashboard({
   const streakHistory = habitSummary.streakHistory;
   const activeTabLabel =
     ANALYTICS_TABS.find((tab) => tab.id === activeView)?.label ?? "Analytics";
+  const handleUpgrade = () => {
+    router.push("/settings/billing");
+  };
+  const renderErrorState = () =>
+    error === "upgrade_required" ? (
+      <AnalyticsPaywallState onUpgrade={handleUpgrade} />
+    ) : error ? (
+      <ErrorState message={error} />
+    ) : null;
 
   let activeContent: ReactNode = null;
 
-  if (activeView === "overview") {
+  if (!loading && error === "upgrade_required") {
+    activeContent = <AnalyticsPaywallState onUpgrade={handleUpgrade} />;
+  } else if (activeView === "overview") {
     activeContent = (
       <div className="space-y-4 xl:space-y-5">
         <SectionCard className="rounded-[24px] border-zinc-800/90 bg-[radial-gradient(circle_at_top_left,rgba(63,63,70,0.18),transparent_34%),linear-gradient(145deg,rgba(9,9,11,0.96),rgba(24,24,27,0.88))] p-4 shadow-[0_22px_54px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.04)] sm:rounded-[28px] sm:p-5 lg:p-6">
           {!hasAnalyticsData && loading ? (
             <Skeleton className="h-64" />
           ) : !hasAnalyticsData && error ? (
-            <ErrorState message={error} />
+            renderErrorState()
           ) : overviewTrend.length === 0 ? (
             <div
               className={classNames(
@@ -461,7 +489,7 @@ export default function AnalyticsDashboard({
           {loading ? (
             <Skeleton className="h-72" />
           ) : error ? (
-            <ErrorState message={error} />
+            renderErrorState()
           ) : (
             <SkillContributionDashboard
               range={selectedRange}
@@ -477,7 +505,7 @@ export default function AnalyticsDashboard({
           {loading ? (
             <Skeleton className="h-40" />
           ) : error ? (
-            <ErrorState message={error} />
+            renderErrorState()
           ) : recentSchedules.length === 0 ? (
             <EmptyCopy copy="No completed events in this range." />
           ) : (
@@ -496,7 +524,7 @@ export default function AnalyticsDashboard({
           {loading ? (
             <Skeleton className="h-44" />
           ) : error ? (
-            <ErrorState message={error} />
+            renderErrorState()
           ) : (
             <div className="space-y-4">
               <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
@@ -551,7 +579,7 @@ export default function AnalyticsDashboard({
           {loading ? (
             <Skeleton className="h-44" />
           ) : error ? (
-            <ErrorState message={error} />
+            renderErrorState()
           ) : timeBlockPerformance.length === 0 ? (
             <EmptyCopy copy="No Time Block event data in this range yet." />
           ) : (
@@ -570,7 +598,7 @@ export default function AnalyticsDashboard({
           {loading ? (
             <Skeleton className="h-40" />
           ) : error ? (
-            <ErrorState message={error} />
+            renderErrorState()
           ) : projects.length === 0 ? (
             <EmptyCopy copy="No project identity data in this range." />
           ) : (
@@ -602,7 +630,7 @@ export default function AnalyticsDashboard({
           {loading ? (
             <Skeleton className="h-40" />
           ) : error ? (
-            <ErrorState message={error} />
+            renderErrorState()
           ) : (
             <RoutineHeatmap routines={routineTrends} />
           )}
@@ -3809,6 +3837,38 @@ function EmptyCopy({ copy }: { copy: string }) {
   return (
     <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-950/60 px-3 py-4 text-center text-xs text-zinc-500 sm:px-4 sm:py-5 sm:text-sm">
       {copy}
+    </div>
+  );
+}
+
+function AnalyticsPaywallState({ onUpgrade }: { onUpgrade: () => void }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-zinc-700/80 bg-[radial-gradient(circle_at_top_left,rgba(250,204,21,0.12),transparent_34%),linear-gradient(145deg,rgba(9,9,11,0.98),rgba(24,24,27,0.94))] p-4 shadow-[0_24px_64px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.06)] sm:p-6">
+      <div className="max-w-2xl">
+        <div className="mb-3 inline-flex rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-amber-100">
+          CREATOR Pro
+        </div>
+        <h3 className="text-lg font-semibold text-white sm:text-2xl">
+          Unlock CREATOR Pro analytics
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-zinc-300 sm:text-base">
+          Analytics are part of CREATOR Pro. Upgrade to see your execution
+          trends, schedule performance, skill progress, and system health in one
+          place.
+        </p>
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Button
+            type="button"
+            onClick={onUpgrade}
+            className="border border-amber-200/30 bg-amber-200 text-zinc-950 shadow-[0_10px_28px_rgba(250,204,21,0.18)] hover:bg-amber-100"
+          >
+            Upgrade to CREATOR Pro
+          </Button>
+          <p className="text-xs text-zinc-500">
+            Built for users who want the full system view.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
