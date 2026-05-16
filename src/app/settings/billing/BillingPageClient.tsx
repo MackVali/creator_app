@@ -5,6 +5,7 @@ import { ArrowRight, BarChart3, Box, CalendarDays, Map } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -38,6 +39,22 @@ const UPGRADE_PLAN_NAME = "CREATOR Pro";
 const MONTHLY_PLAN_NAME = "CREATOR Pro Monthly";
 const PURCHASES_UNAVAILABLE_MESSAGE =
   "Purchases are temporarily unavailable. Please try again from the iOS app or contact support.";
+const premiumIconShellClassName =
+  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-emerald-200/25 bg-[linear-gradient(145deg,rgba(255,255,255,0.14),rgba(16,185,129,0.16)_32%,rgba(0,0,0,0.58)_100%)] text-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-10px_18px_rgba(0,0,0,0.42),0_8px_18px_rgba(0,0,0,0.45),0_0_18px_rgba(52,211,153,0.16)] md:h-11 md:w-11";
+const recommendedPillClassName =
+  "inline-flex shrink-0 items-center justify-center rounded-full border border-emerald-300/50 bg-[linear-gradient(180deg,rgba(110,231,183,0.16),rgba(16,185,129,0.08))] px-2 py-1 text-[0.58rem] font-bold uppercase tracking-[0.18em] text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-10px_20px_rgba(0,0,0,0.35),0_0_24px_rgba(52,211,153,0.18)] md:px-2.5 md:text-[0.6rem]";
+const selectedPlanOuterClassName =
+  "relative w-full overflow-hidden rounded-2xl bg-[linear-gradient(145deg,rgba(236,253,245,0.95)_0%,rgba(167,243,208,0.86)_10%,rgba(52,211,153,0.82)_24%,rgba(5,150,105,0.78)_48%,rgba(6,78,59,0.92)_72%,rgba(16,185,129,0.68)_88%,rgba(255,255,255,0.42)_100%)] p-[2px] text-left shadow-[0_0_0_1px_rgba(110,231,183,0.12),0_0_28px_rgba(52,211,153,0.18),0_14px_28px_rgba(0,0,0,0.28)] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300";
+const selectedPlanInnerClassName =
+  "relative z-10 grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 rounded-[0.9rem] bg-[linear-gradient(145deg,rgba(9,12,11,0.98)_0%,rgba(13,17,16,0.98)_46%,rgba(4,7,6,0.99)_100%)] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-14px_24px_rgba(0,0,0,0.48)] md:gap-4 md:px-5 md:py-4";
+const unselectedPlanClassName =
+  "relative grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 overflow-hidden rounded-2xl border border-white/[0.12] bg-white/[0.025] px-3.5 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/25 hover:bg-white/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 md:gap-4 md:px-5 md:py-4";
+const selectedPlanTextOutlineStyle = {
+  WebkitTextStroke: "0.55px rgba(2,4,3,0.88)",
+  paintOrder: "stroke fill",
+  textShadow:
+    "0.75px 0 0 rgba(2,4,3,0.82), -0.75px 0 0 rgba(2,4,3,0.82), 0 0.75px 0 rgba(2,4,3,0.82), 0 -0.75px 0 rgba(2,4,3,0.82)",
+} satisfies CSSProperties;
 
 type UpgradeActionReturn = ReturnType<typeof useUpgradeAction>;
 type LoadedUpgradePackages = Awaited<
@@ -384,18 +401,18 @@ function BillingPageClient() {
         <CardContent className="relative z-10 p-6 sm:p-9 md:p-10">
           <div className="min-w-0">
             <div className="flex items-start gap-5 md:gap-7">
-              <span className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[1.45rem] border border-emerald-300/45 bg-black/50 p-2.5 shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_16px_34px_rgba(16,185,129,0.14),inset_0_1px_0_rgba(255,255,255,0.14)] md:h-28 md:w-28 md:rounded-[1.7rem] md:p-3.5">
-                <span
-                  aria-hidden="true"
-                  className="absolute inset-2 rounded-[1.1rem] bg-[radial-gradient(circle_at_45%_18%,rgba(255,255,255,0.24),transparent_28%),linear-gradient(145deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02))] md:rounded-[1.3rem]"
-                />
-                <span className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[1rem] md:rounded-[1.15rem]">
+              <span className="relative flex h-20 w-20 shrink-0 overflow-hidden rounded-[1.45rem] bg-[linear-gradient(145deg,rgba(236,253,245,0.7)_0%,rgba(110,231,183,0.72)_18%,rgba(5,150,105,0.58)_42%,rgba(6,78,59,0.72)_68%,rgba(255,255,255,0.22)_100%)] p-[1px] shadow-[0_16px_34px_rgba(0,0,0,0.52),0_0_30px_rgba(52,211,153,0.18)] md:h-28 md:w-28 md:rounded-[1.7rem]">
+                <span className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[1.35rem] bg-[linear-gradient(145deg,rgba(255,255,255,0.16),rgba(16,185,129,0.16)_28%,rgba(0,0,0,0.62)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.24),inset_0_-18px_28px_rgba(0,0,0,0.58)] md:rounded-[1.6rem]">
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-1.5 z-20 rounded-[1rem] border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] md:rounded-[1.25rem]"
+                  />
                   <Image
                     src="/images/creator-logo.png"
                     alt=""
                     width={112}
                     height={112}
-                    className="h-full w-full object-cover"
+                    className="relative z-10 h-full w-full object-cover"
                   />
                 </span>
               </span>
@@ -500,12 +517,59 @@ function BillingPageClient() {
                         : cadenceLabel === "Monthly"
                           ? "/ month"
                           : "";
-                    const cardClasses = [
-                      "relative grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 overflow-hidden rounded-2xl border px-3.5 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 md:gap-4 md:px-5 md:py-4",
-                      isSelected
-                        ? "border-emerald-300/85 bg-emerald-400/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_1px_rgba(110,231,183,0.12)]"
-                        : "border-white/[0.12] bg-white/[0.025] hover:border-white/25 hover:bg-white/[0.04]",
-                    ].join(" ");
+                    const cardClasses = isSelected
+                      ? selectedPlanOuterClassName
+                      : unselectedPlanClassName;
+                    const planCardContent = (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-x-5 top-0 z-10 h-px bg-gradient-to-r from-transparent via-white/18 to-transparent"
+                        />
+                        <span className="relative z-10 min-w-0 flex-1">
+                          <span className="min-w-0">
+                            <span
+                              className="block text-lg font-semibold leading-tight text-zinc-100 md:text-xl"
+                              style={isSelected ? selectedPlanTextOutlineStyle : undefined}
+                            >
+                              {planTitle}
+                            </span>
+                            <span
+                              className={[
+                                "mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-2xl font-semibold tracking-normal md:mt-1.5",
+                                isSelected ? "text-emerald-300" : "text-white",
+                              ].join(" ")}
+                              style={isSelected ? selectedPlanTextOutlineStyle : undefined}
+                            >
+                              {priceLabel}
+                              {priceSuffix && (
+                                <span
+                                  className="text-sm font-medium text-zinc-400 md:text-base"
+                                  style={isSelected ? selectedPlanTextOutlineStyle : undefined}
+                                >
+                                  {priceSuffix}
+                                </span>
+                              )}
+                            </span>
+                            {cadenceLabel === "Annual" &&
+                              compactSavingsLabel &&
+                              (isSelected || isRecommended) && (
+                                <span
+                                  className="mt-0.5 block text-xs font-semibold text-emerald-300 md:mt-1 md:text-sm"
+                                  style={isSelected ? selectedPlanTextOutlineStyle : undefined}
+                                >
+                                  {compactSavingsLabel}
+                                </span>
+                              )}
+                          </span>
+                        </span>
+                        {isRecommended && (
+                          <span className={`relative z-10 ${recommendedPillClassName}`}>
+                            Recommended
+                          </span>
+                        )}
+                      </>
+                    );
 
                     return (
                       <button
@@ -516,41 +580,12 @@ function BillingPageClient() {
                         aria-label={`${planTitle}: ${planDescription}`}
                         className={cardClasses}
                       >
-                        <span
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/18 to-transparent"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="min-w-0">
-                            <span className="block text-lg font-semibold leading-tight text-zinc-100 md:text-xl">
-                              {planTitle}
-                            </span>
-                            <span
-                              className={[
-                                "mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-2xl font-semibold tracking-normal md:mt-1.5",
-                                isSelected ? "text-emerald-300" : "text-white",
-                              ].join(" ")}
-                            >
-                              {priceLabel}
-                              {priceSuffix && (
-                                <span className="text-sm font-medium text-zinc-400 md:text-base">
-                                  {priceSuffix}
-                                </span>
-                              )}
-                            </span>
-                            {cadenceLabel === "Annual" &&
-                              compactSavingsLabel &&
-                              (isSelected || isRecommended) && (
-                                <span className="mt-0.5 block text-xs font-semibold text-emerald-300 md:mt-1 md:text-sm">
-                                  {compactSavingsLabel}
-                                </span>
-                              )}
+                        {isSelected ? (
+                          <span className={selectedPlanInnerClassName}>
+                            {planCardContent}
                           </span>
-                        </span>
-                        {isRecommended && (
-                          <span className="inline-flex shrink-0 items-center justify-center rounded-full border border-emerald-300/40 bg-emerald-400/[0.08] px-2 py-1 text-[0.58rem] font-bold uppercase tracking-[0.18em] text-emerald-200 md:px-2.5 md:text-[0.6rem]">
-                            Recommended
-                          </span>
+                        ) : (
+                          planCardContent
                         )}
                       </button>
                     );
@@ -603,7 +638,7 @@ function BillingPageClient() {
                     className="flex min-h-20 items-center gap-3 border-white/[0.09] px-3 py-3 odd:border-r odd:border-b even:border-b [&:nth-child(n+3)]:border-b-0 md:gap-3.5 md:px-5 md:py-4"
                   >
                     <span
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-emerald-300/20 bg-emerald-400/10 text-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_0_16px_rgba(52,211,153,0.12)] md:h-11 md:w-11"
+                      className={premiumIconShellClassName}
                       aria-hidden="true"
                     >
                       <Icon className="h-5 w-5" strokeWidth={2.2} />
@@ -616,7 +651,7 @@ function BillingPageClient() {
               <div className="space-y-2.5">
                 <div className="flex flex-col gap-2.5 md:gap-3">
                   <Button
-                    className="relative h-11 w-full rounded-xl border border-emerald-300/30 bg-gradient-to-r from-emerald-300 via-emerald-400 to-emerald-500 px-4 text-sm font-bold text-black shadow-none hover:from-emerald-200 hover:via-emerald-300 hover:to-emerald-400 md:h-12 md:px-5 md:text-base"
+                    className="relative h-12 w-full rounded-2xl border border-emerald-100/40 bg-[linear-gradient(145deg,#6ee7b7_0%,#22c55e_36%,#059669_68%,#064e3b_100%)] px-5 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.58),0_16px_32px_rgba(16,185,129,0.22)] transition hover:bg-[linear-gradient(145deg,#a7f3d0_0%,#34d399_40%,#10b981_70%,#047857_100%)] focus:outline-none focus:ring-2 focus:ring-emerald-200/60 md:h-12 md:text-base"
                     type="button"
                     onClick={handlePurchase}
                     disabled={!canPurchase || isLaunching}
@@ -627,7 +662,7 @@ function BillingPageClient() {
                     </span>
                   </Button>
                   <Button
-                    className="h-10 w-full rounded-xl border-white/15 bg-transparent text-sm font-semibold text-zinc-300 hover:border-white/30 hover:bg-white/[0.04] md:h-11 md:text-base"
+                    className="h-10 w-full rounded-xl border-white/15 bg-transparent text-sm font-semibold text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-12px_24px_rgba(0,0,0,0.34)] hover:border-white/30 hover:bg-white/[0.04] md:h-11 md:text-base"
                     type="button"
                     variant="outline"
                     onClick={handleRestorePurchases}

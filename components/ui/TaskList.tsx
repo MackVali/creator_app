@@ -139,7 +139,7 @@ export function TaskList() {
             </div>
             <div className="flex gap-2">
               <Badge variant={getPriorityVariant(task.priority)}>
-                {task.priority}
+                {formatPriorityLabel(task.priority)}
               </Badge>
               <Badge variant={getEnergyVariant(task.energy)}>
                 {task.energy}
@@ -151,6 +151,10 @@ export function TaskList() {
       ))}
     </div>
   );
+}
+
+function formatPriorityLabel(priority: string): string {
+  return priority === "ULTRA-CRITICAL" ? "Ultra" : priority;
 }
 
 function getPriorityVariant(

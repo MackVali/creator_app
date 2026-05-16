@@ -119,7 +119,7 @@ export function GoalList() {
             <h3 className="font-medium text-white mb-2">{goal.name}</h3>
             <div className="flex gap-2">
               <Badge variant={getPriorityVariant(goal.priority)}>
-                {goal.priority}
+                {formatPriorityLabel(goal.priority)}
               </Badge>
               <Badge variant={getEnergyVariant(goal.energy)}>
                 {goal.energy}
@@ -130,6 +130,10 @@ export function GoalList() {
       ))}
     </div>
   );
+}
+
+function formatPriorityLabel(priority: string): string {
+  return priority === "ULTRA-CRITICAL" ? "Ultra" : priority;
 }
 
 function getPriorityVariant(

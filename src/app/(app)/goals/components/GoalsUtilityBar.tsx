@@ -119,7 +119,7 @@ export function GoalsUtilityBar({
               { value: "MEDIUM", label: "Medium" },
               { value: "HIGH", label: "High" },
               { value: "CRITICAL", label: "Critical" },
-              { value: "ULTRA-CRITICAL", label: "Ultra-Critical" },
+              { value: "ULTRA-CRITICAL", label: "Ultra" },
             ]}
           />
           <FilterSelect

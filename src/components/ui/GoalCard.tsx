@@ -14,6 +14,9 @@ interface GoalCardProps {
 }
 
 export function GoalCard({ goal, showLink = false }: GoalCardProps) {
+  const formatPriorityLabel = (priority: GoalItem["priority"]) =>
+    priority === "ULTRA-CRITICAL" ? "Ultra" : priority;
+
   const getPriorityVariant = (
     priority: GoalItem["priority"]
   ): "default" | "secondary" | "destructive" | "outline" => {
@@ -76,7 +79,7 @@ export function GoalCard({ goal, showLink = false }: GoalCardProps) {
             variant={getPriorityVariant(goal.priority)}
             className="text-xs"
           >
-            {goal.priority}
+            {formatPriorityLabel(goal.priority)}
           </Badge>
           <Badge variant={getEnergyVariant(goal.energy)} className="text-xs">
             {goal.energy}

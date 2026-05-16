@@ -56,7 +56,7 @@ function mapPriority(
     case "NO":
       return "No";
     case "ULTRA-CRITICAL":
-      return "Ultra-Critical";
+      return "Ultra";
     case "CRITICAL":
       return "Critical";
     case "HIGH":
@@ -114,6 +114,7 @@ function projectStatusToStage(status: Project["status"]): string {
 
 function priorityToDbValue(priority: Goal["priority"]): string {
   switch (priority) {
+    case "Ultra":
     case "Ultra-Critical":
       return "ULTRA-CRITICAL";
     case "Critical":
@@ -169,7 +170,7 @@ const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
   MEDIUM: "MEDIUM",
   HIGH: "HIGH",
   CRITICAL: "Critical",
-  "ULTRA-CRITICAL": "Ultra-Critical",
+  "ULTRA-CRITICAL": "Ultra",
 };
 const NORMALIZED_PRIORITY_VALUES = new Set([
   "NO",

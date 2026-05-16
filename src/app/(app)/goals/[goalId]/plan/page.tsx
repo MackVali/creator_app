@@ -50,7 +50,7 @@ const PRIORITY_OPTIONS = [
   { value: "MEDIUM", label: "Medium" },
   { value: "HIGH", label: "High" },
   { value: "CRITICAL", label: "Critical" },
-  { value: "ULTRA-CRITICAL", label: "Ultra-Critical" },
+  { value: "ULTRA-CRITICAL", label: "Ultra" },
 ];
 
 const ENERGY_OPTIONS = [

@@ -64,7 +64,7 @@ const PRIORITY_OPTIONS = [
   { value: "MEDIUM", label: "Medium" },
   { value: "HIGH", label: "High" },
   { value: "Critical", label: "Critical" },
-  { value: "Ultra-Critical", label: "Ultra critical" },
+  { value: "Ultra-Critical", label: "Ultra" },
 ];
 
 const PRIORITY_OPTION_LOOKUP = PRIORITY_OPTIONS.reduce<Record<string, string>>(

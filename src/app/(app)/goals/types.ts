@@ -2,9 +2,12 @@ export interface Task {
   id: string;
   name: string;
   stage: string;
+  completedAt?: string | null;
   skillId?: string | null;
   isNew?: boolean;
   priorityCode?: string | null;
+  energyCode?: string | null;
+  skillIcon?: string | null;
 }
 
 export interface Project {
@@ -33,7 +36,14 @@ export interface Goal {
   emoji?: string;
   dueDate?: string;
   estimatedCompletionAt?: string | null;
-  priority: "No" | "Low" | "Medium" | "High" | "Critical" | "Ultra-Critical";
+  priority:
+    | "No"
+    | "Low"
+    | "Medium"
+    | "High"
+    | "Critical"
+    | "Ultra"
+    | "Ultra-Critical";
   energy: "No" | "Low" | "Medium" | "High" | "Ultra" | "Extreme";
   progress: number; // 0-100
   status: "ACTIVE" | "PAUSED" | "COMPLETED";

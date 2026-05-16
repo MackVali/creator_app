@@ -162,6 +162,7 @@ interface FabProps extends HTMLAttributes<HTMLDivElement> {
   menuVariant?: "default" | "timeline";
   swipeUpToOpen?: boolean;
   editTarget?: FabEditTarget | null;
+  onEditTargetChange?: (target: FabEditTarget) => void;
   onEditTargetConsumed?: () => void;
   onEditClose?: () => void;
   onEditSaved?: (target: FabEditTarget) => void;
@@ -222,6 +223,17 @@ type FabProjectScheduleInstanceRow = {
   duration_min: number | null;
   energy_resolved: string | null;
 };
+type FabTaskEditRow = {
+  id: string;
+  name: string | null;
+  project_id: string | null;
+  priority: string | null;
+  energy: string | null;
+  stage: string | null;
+  duration_min: number | null;
+  skill_id: string | null;
+  why: string | null;
+};
 type FabTagRelationRow = {
   tag_id: string | null;
 };
@@ -270,7 +282,11 @@ type DraftProjectChild = {
 type DraftTaskChild = {
   tempId: string;
   name: string;
+  priority: string;
+  energy: string;
   stage: string;
+  why: string;
+  durationMin: number | null;
   skillId: string | null;
   dueDate: string | null;
 };
@@ -625,6 +641,9 @@ const normalizeFabPriority = (value?: string | null) => {
     .toUpperCase();
   return FAB_PRIORITY_VALUES.has(normalized) ? normalized : "MEDIUM";
 };
+
+const formatFabPriorityLabel = (value?: string | null) =>
+  value === "ULTRA-CRITICAL" ? "Ultra" : value ?? "";
 
 const normalizeFabEnergy = (value?: string | null) => normalizeFlameLevel(value);
 
@@ -1650,7 +1669,7 @@ const formatSchedulerPriorityLabel = (value: number) => {
     0,
     Math.min(value - 1, SCHEDULER_PRIORITY_LABELS.length - 1),
   );
-  return SCHEDULER_PRIORITY_LABELS[index] ?? "NO";
+  return formatFabPriorityLabel(SCHEDULER_PRIORITY_LABELS[index] ?? "NO");
 };
 
 const describeSchedulerOp = (op: AiSchedulerOp) => {
@@ -1817,6 +1836,7 @@ export function Fab({
   menuVariant = "default",
   swipeUpToOpen = false,
   editTarget = null,
+  onEditTargetChange,
   onEditTargetConsumed,
   onEditClose,
   onEditSaved,
@@ -2296,7 +2316,7 @@ export function Fab({
     { value: "MEDIUM", label: "MEDIUM" },
     { value: "HIGH", label: "HIGH" },
     { value: "CRITICAL", label: "CRITICAL" },
-    { value: "ULTRA-CRITICAL", label: "ULTRA-CRITICAL" },
+    { value: "ULTRA-CRITICAL", label: "Ultra" },
   ];
   const PRIORITY_ICON_MAP: Record<string, string | null> = {
     NO: null,
@@ -2315,11 +2335,9 @@ export function Fab({
     { value: "EXTREME", label: "Extreme" },
   ];
   const TASK_STAGE_OPTIONS_LOCAL = [
-    { value: "RESEARCH", label: "Research" },
-    { value: "PLAN", label: "Plan" },
+    { value: "PREPARE", label: "Prepare" },
     { value: "PRODUCE", label: "Produce" },
-    { value: "QA", label: "QA" },
-    { value: "SHIP", label: "Ship" },
+    { value: "PERFECT", label: "Perfect" },
   ];
   const defaultHabitType = HABIT_TYPE_OPTIONS[0]?.value ?? "";
   const defaultHabitRecurrence =
@@ -3099,8 +3117,9 @@ export function Fab({
     EditGoalProjectChild[]
   >([]);
   const [taskName, setTaskName] = useState("");
-  const [taskStage, setTaskStage] = useState("PRODUCE");
+  const [taskStage, setTaskStage] = useState("PREPARE");
   const [taskDuration, setTaskDuration] = useState<string>("");
+  const normalizedTaskDuration = Number.parseInt(taskDuration || "30", 10);
   const [taskPriority, setTaskPriority] = useState("MEDIUM");
   const [taskEnergy, setTaskEnergy] = useState("MEDIUM");
   const [taskProjectId, setTaskProjectId] = useState<string | "">("");
@@ -3155,7 +3174,7 @@ export function Fab({
   );
   const [draftProjectDue, setDraftProjectDue] = useState("");
   const [draftTaskName, setDraftTaskName] = useState("");
-  const [draftTaskStage, setDraftTaskStage] = useState("PRODUCE");
+  const [draftTaskStage, setDraftTaskStage] = useState("PREPARE");
   const [draftTaskDuration, setDraftTaskDuration] = useState<string>("");
   const normalizedDraftTaskDuration = Number.parseInt(
     draftTaskDuration || "30",
@@ -3216,7 +3235,7 @@ export function Fab({
   }, [defaultHabitRecurrence, defaultHabitType]);
   const resetTaskFormDraft = useCallback(() => {
     setTaskName("");
-    setTaskStage("PRODUCE");
+    setTaskStage("PREPARE");
     setTaskDuration("");
     setTaskPriority("MEDIUM");
     setTaskEnergy("MEDIUM");
@@ -3274,7 +3293,7 @@ export function Fab({
 
   const resetNestedTaskDraftForm = useCallback(() => {
     setDraftTaskName("");
-    setDraftTaskStage("PRODUCE");
+    setDraftTaskStage("PREPARE");
     setDraftTaskDuration("");
     setDraftTaskPriority("MEDIUM");
     setDraftTaskEnergy("MEDIUM");
@@ -3288,9 +3307,7 @@ export function Fab({
   const resetNestedDraftState = useCallback(() => {
     setNestedDraftPanel(null);
     setGoalDraftProjects([]);
-    setEditGoalProjects([]);
     setProjectDraftTasks([]);
-    setEditProjectTasks([]);
     resetNestedProjectDraftForm();
     resetNestedTaskDraftForm();
   }, [resetNestedProjectDraftForm, resetNestedTaskDraftForm]);
@@ -3416,6 +3433,7 @@ export function Fab({
       }
 
       let hydrationBranch: string | null = null;
+      let hydrationSelect: string | null = null;
 
       try {
         const {
@@ -3656,7 +3674,7 @@ export function Fab({
 
           const { data: taskRows, error: taskRowsError } = await supabase
             .from("tasks")
-            .select("id, name, stage, skill_id, due_date")
+            .select("id, name, stage, skill_id")
             .eq("user_id", user.id)
             .eq("project_id", entityId);
           if (cancelled) return;
@@ -3672,10 +3690,7 @@ export function Fab({
                   name: task.name ?? "Untitled task",
                   stage: task.stage ?? null,
                   skillId: task.skill_id ?? null,
-                  dueDate:
-                    typeof task.due_date === "string"
-                      ? task.due_date.slice(0, 10)
-                      : null,
+                  dueDate: null,
                 }))
               : [],
           );
@@ -3801,16 +3816,18 @@ export function Fab({
           );
         } else {
           hydrationBranch = "TASK";
+          const taskEditHydrationSelect =
+            "id, name, project_id, priority, energy, stage, duration_min, skill_id, why";
+          hydrationSelect = taskEditHydrationSelect;
           const [
-            { data: taskRow, error: taskError },
-            { data: tagRows, error: tagError },
+            { data: taskRowData, error: taskError },
+            { data: tagRowsData, error: tagError },
           ] = await Promise.all([
             supabase
               .from("tasks")
-              .select(
-                "id, name, project_id, priority, energy, stage, duration_min, skill_id, due_date, notes",
-              )
+              .select(taskEditHydrationSelect)
               .eq("id", entityId)
+              .eq("user_id", user.id)
               .single(),
             supabase
               .from("event_tags")
@@ -3824,23 +3841,29 @@ export function Fab({
           if (tagError) throw tagError;
           if (cancelled) return;
 
+          const taskRow = taskRowData as FabTaskEditRow | null;
+          const tagRows = tagRowsData as FabTagRelationRow[] | null;
+
           setTaskName(taskRow?.name ?? "");
           setTaskProjectId(taskRow?.project_id ?? "");
-          setTaskPriority(taskRow?.priority ?? "MEDIUM");
-          setTaskEnergy(taskRow?.energy ?? "MEDIUM");
-          setTaskStage(taskRow?.stage ?? "PRODUCE");
+          setTaskPriority(normalizeFabPriority(taskRow?.priority));
+          setTaskEnergy(normalizeFabEnergy(taskRow?.energy));
+          setTaskStage(
+            taskRow?.stage === "PREPARE" ||
+              taskRow?.stage === "PRODUCE" ||
+              taskRow?.stage === "PERFECT"
+              ? taskRow.stage
+              : "PREPARE",
+          );
           setTaskDuration(
-            typeof taskRow?.duration_min === "number"
+            typeof taskRow?.duration_min === "number" &&
+              Number.isFinite(taskRow.duration_min) &&
+              taskRow.duration_min > 0
               ? String(taskRow.duration_min)
-              : "",
+              : "30",
           );
           setTaskSkillId(taskRow?.skill_id ?? "");
-          setTaskDue(
-            typeof taskRow?.due_date === "string"
-              ? taskRow.due_date.slice(0, 10)
-              : "",
-          );
-          setTaskNotes(taskRow?.notes ?? "");
+          setTaskNotes(taskRow?.why ?? "");
           setSelectedTagIds(
             Array.isArray(tagRows)
               ? tagRows
@@ -3865,6 +3888,7 @@ export function Fab({
           entityType,
           entityId,
           branch: hydrationBranch,
+          select: hydrationSelect,
           message:
             supabaseError?.message ??
             (typeof error === "string" ? error : null),
@@ -3919,7 +3943,11 @@ export function Fab({
       {
         tempId: createLocalDraftId(),
         name: trimmedName,
+        priority: draftTaskPriority,
+        energy: draftTaskEnergy,
         stage: draftTaskStage,
+        why: draftTaskNotes.trim(),
+        durationMin: normalizedDraftTaskDuration || null,
         skillId: draftTaskSkillId,
         dueDate: draftTaskDue || null,
       },
@@ -3928,9 +3956,13 @@ export function Fab({
     setNestedDraftPanel(null);
   }, [
     draftTaskDue,
+    draftTaskEnergy,
     draftTaskName,
+    draftTaskNotes,
+    draftTaskPriority,
     draftTaskSkillId,
     draftTaskStage,
+    normalizedDraftTaskDuration,
     resetNestedTaskDraftForm,
   ]);
 
@@ -5168,7 +5200,7 @@ export function Fab({
     setGoalCampaignCreating(false);
 
     setTaskName("");
-    setTaskStage("PRODUCE");
+    setTaskStage("PREPARE");
     setTaskDuration("");
     setTaskPriority("MEDIUM");
     setTaskEnergy("MEDIUM");
@@ -6102,23 +6134,57 @@ export function Fab({
 
   const associatedEditCardStyle: React.CSSProperties = {
     boxShadow:
-      "0 18px 38px rgba(8,12,32,0.52), inset 0 1px 0 rgba(255,255,255,0.10)",
-    outline: "1px solid rgba(10, 10, 12, 0.85)",
+      "0 20px 42px rgba(0,0,0,0.58), inset 0 1px 0 rgba(255,255,255,0.07)",
+    outline: "1px solid rgba(0, 0, 0, 0.9)",
     outlineOffset: "-1px",
     background:
-      "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)",
+      "radial-gradient(circle at 0% 0%, rgba(92, 98, 112, 0.18), transparent 56%), linear-gradient(140deg, rgba(4, 5, 8, 0.98) 0%, rgba(12, 13, 18, 0.97) 48%, rgba(29, 31, 39, 0.86) 100%)",
   };
   const associatedEditBlankStyle: React.CSSProperties = {
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06)",
-    outline: "1px solid rgba(10, 10, 12, 0.72)",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+    outline: "1px solid rgba(0, 0, 0, 0.82)",
     outlineOffset: "-1px",
     background:
-      "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.12), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.62) 0%, rgba(22, 22, 26, 0.52) 46%, rgba(88, 90, 104, 0.22) 100%)",
+      "radial-gradient(circle at 0% 0%, rgba(92, 98, 112, 0.1), transparent 56%), linear-gradient(140deg, rgba(3, 4, 7, 0.78) 0%, rgba(9, 10, 14, 0.72) 48%, rgba(22, 24, 31, 0.44) 100%)",
   };
   const associatedEditCardClass =
-    "relative flex h-full min-h-0 w-full items-center justify-between gap-3 rounded-[var(--schedule-instance-radius,1.25rem)] border border-black/70 px-3 text-left text-white backdrop-blur-sm transition-[background,box-shadow,border-color,transform] duration-200 hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30";
+    "relative flex h-full min-h-0 w-full items-center gap-3 overflow-hidden rounded-[var(--schedule-instance-radius,1.25rem)] border border-black/80 px-3 text-left text-white backdrop-blur-sm transition-[background,box-shadow,border-color,transform] duration-200 hover:border-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30";
   const associatedEditBlankClass =
-    "relative flex h-full min-h-0 w-full items-center justify-center rounded-[var(--schedule-instance-radius,1.25rem)] border border-black/60 px-3 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-white/35 backdrop-blur-sm";
+    "relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-[var(--schedule-instance-radius,1.25rem)] border border-black/75 px-3 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-white/28 backdrop-blur-sm";
+  const renderAssociatedSkillBadge = (
+    visualValue: string | null | undefined,
+    label: string,
+  ) => {
+    const visual = visualValue?.trim() || label;
+    const isCompactVisual = visual.length <= 3;
+    return (
+      <span
+        className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[calc(var(--schedule-instance-radius,1.25rem)-0.55rem)] border border-white/10 bg-black/45 px-1.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+        title={label}
+        aria-hidden="true"
+      >
+        <span
+          className={cn(
+            "block max-w-full truncate leading-none text-white/74",
+            isCompactVisual
+              ? "text-lg"
+              : "text-[8px] font-extrabold uppercase tracking-[0.08em]",
+          )}
+        >
+          {visual}
+        </span>
+      </span>
+    );
+  };
+  const renderAssociatedEnergyFlame = (energy?: string | null) => (
+    <span className="flex h-10 w-8 shrink-0 items-center justify-center">
+      <FlameEmber
+        level={normalizeFlameLevel(energy)}
+        size="sm"
+        className="pointer-events-none drop-shadow-[0_0_8px_rgba(0,0,0,0.55)]"
+      />
+    </span>
+  );
 
   const renderGoalProjectsPanel = () => {
     const isEditingGoal = Boolean(
@@ -6137,8 +6203,14 @@ export function Fab({
           const editCards =
             visibleEditProjects.length > 0
               ? visibleEditProjects.map((project) => {
-                  const skillNames = project.skillIds
-                    .map((skillId) => findSkillById(skillId)?.name ?? null)
+                  const linkedSkills = project.skillIds
+                    .map((skillId) => findSkillById(skillId))
+                    .filter(
+                      (value): value is Skill =>
+                        value !== null && typeof value.name === "string",
+                    );
+                  const skillNames = linkedSkills
+                    .map((skill) => skill.name ?? null)
                     .filter(
                       (value): value is string =>
                         typeof value === "string" && value.trim().length > 0,
@@ -6149,10 +6221,15 @@ export function Fab({
                       : project.skillIds.length > 0
                         ? "Linked skill"
                         : "No skill";
+                  const skillVisual =
+                    linkedSkills.find(
+                      (skill) =>
+                        typeof skill.icon === "string" &&
+                        skill.icon.trim().length > 0,
+                    )?.icon ?? skillLabel;
                   const metaItems = [
                     project.stage,
-                    project.priority,
-                    project.energy,
+                    formatFabPriorityLabel(project.priority),
                     project.durationMin ? `${project.durationMin}m` : null,
                     project.dueDate,
                   ].filter(
@@ -6162,10 +6239,14 @@ export function Fab({
                   return (
                     <div
                       key={project.id}
-                      className={associatedEditCardClass}
+                      className={cn(
+                        associatedEditCardClass,
+                        goalProjectCardClass,
+                      )}
                       style={associatedEditCardStyle}
                     >
-                      <span className="grid min-w-0 gap-1">
+                      {renderAssociatedSkillBadge(skillVisual, skillLabel)}
+                      <span className="grid min-w-0 flex-1 gap-1">
                         <span className="truncate text-xs font-extrabold uppercase tracking-[0.08em] text-white">
                           {project.name}
                         </span>
@@ -6176,6 +6257,7 @@ export function Fab({
                           {skillLabel}
                         </span>
                       </span>
+                      {renderAssociatedEnergyFlame(project.energy)}
                     </div>
                   );
                 })
@@ -6238,7 +6320,7 @@ export function Fab({
                 </div>
                 <div className="flex flex-wrap gap-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/55">
                   <span>{project.stage}</span>
-                  <span>{project.priority}</span>
+                  <span>{formatFabPriorityLabel(project.priority)}</span>
                   <span>{project.energy}</span>
                   {project.durationMin ? (
                     <span>{project.durationMin}m</span>
@@ -6596,7 +6678,6 @@ export function Fab({
         <div
           className={cn(
             "h-full min-h-0 pr-1",
-            expanded && !goalProjectListShouldScroll && "min-h-0",
             goalProjectListShouldScroll &&
               "max-h-full overflow-y-auto overscroll-contain",
           )}
@@ -6632,20 +6713,47 @@ export function Fab({
           const editCards =
             visibleEditTasks.length > 0
               ? visibleEditTasks.map((task) => {
+                  const taskSkill = findSkillById(task.skillId);
                   const skillLabel = task.skillId
-                    ? (findSkillById(task.skillId)?.name ?? "Linked skill")
+                    ? (taskSkill?.name ?? "Linked skill")
                     : "No skill";
+                  const skillVisual =
+                    typeof taskSkill?.icon === "string" &&
+                    taskSkill.icon.trim().length > 0
+                      ? taskSkill.icon
+                      : skillLabel;
                   const metaItems = [task.stage, task.dueDate].filter(
                     (value): value is string =>
                       typeof value === "string" && value.trim().length > 0,
                   );
                   return (
-                    <div
+                    <button
                       key={task.id}
-                      className={associatedEditCardClass}
+                      type="button"
+                      className={cn(
+                        associatedEditCardClass,
+                        projectTaskCardClass,
+                      )}
                       style={associatedEditCardStyle}
+                      onClick={(event) => {
+                        const rect =
+                          event.currentTarget.getBoundingClientRect();
+                        onEditTargetChange?.({
+                          entityType: "TASK",
+                          entityId: task.id,
+                          title: task.name,
+                          originRect: {
+                            top: rect.top,
+                            left: rect.left,
+                            width: rect.width,
+                            height: rect.height,
+                          },
+                        });
+                      }}
+                      aria-label={`Edit task ${task.name}`}
                     >
-                      <span className="grid min-w-0 gap-1">
+                      {renderAssociatedSkillBadge(skillVisual, skillLabel)}
+                      <span className="grid min-w-0 flex-1 gap-1">
                         <span className="truncate text-xs font-extrabold uppercase tracking-[0.08em] text-white">
                           {task.name}
                         </span>
@@ -6656,7 +6764,8 @@ export function Fab({
                           {skillLabel}
                         </span>
                       </span>
-                    </div>
+                      {renderAssociatedEnergyFlame()}
+                    </button>
                   );
                 })
               : [
@@ -11006,7 +11115,10 @@ export function Fab({
               project_id: taskProjectId || null,
               stage: taskStage,
               skill_id: taskSkillId || null,
-              due_date: taskDue || null,
+              priority: taskPriority,
+              energy: taskEnergy,
+              duration_min: normalizedTaskDuration || 0,
+              why: taskNotes.trim() || null,
             })
             .eq("id", activeEditTarget.entityId)
             .eq("user_id", user.id);
@@ -11222,7 +11334,10 @@ export function Fab({
               project_id: taskProjectId || null,
               stage: taskStage,
               skill_id: taskSkillId || null,
-              due_date: taskDue || null,
+              priority: taskPriority,
+              energy: taskEnergy,
+              duration_min: normalizedTaskDuration || 0,
+              why: taskNotes.trim() || null,
             })
             .select("id")
             .single();
@@ -11388,7 +11503,10 @@ export function Fab({
                   project_id: createdEntityId,
                   stage: draftTask.stage,
                   skill_id: draftTask.skillId || null,
-                  due_date: draftTask.dueDate || null,
+                  priority: draftTask.priority,
+                  energy: draftTask.energy,
+                  duration_min: draftTask.durationMin || 0,
+                  why: draftTask.why || null,
                 });
               if (childTaskError) {
                 childErrors.push(childTaskError.message);
@@ -11490,6 +11608,7 @@ export function Fab({
     goalName,
     goalPriority,
     goalWhy,
+    normalizedTaskDuration,
     normalizedProjectDuration,
     notifySchedulerOfChange,
     projectDuration,
@@ -11505,8 +11624,10 @@ export function Fab({
     replaceSelectedTagsForEntity,
     selectedTagIds,
     selected,
+    taskEnergy,
     taskName,
-    taskDue,
+    taskNotes,
+    taskPriority,
     taskProjectId,
     taskSkillId,
     taskStage,
@@ -11750,6 +11871,9 @@ export function Fab({
     expanded && (viewportHeight || stableViewportHeight)
       ? (viewportHeight ?? stableViewportHeight)
       : null;
+  const editPresentationOriginRect = editTarget?.originRect ?? null;
+  const shouldUseCenteredEditModal =
+    expanded && Boolean(editPresentationOriginRect);
   const isGoalCreationExpanded = expanded && selected === "GOAL";
   const isProjectCreationExpanded = expanded && selected === "PROJECT";
   const isTaskCreationExpanded = expanded && selected === "TASK";
@@ -11760,16 +11884,25 @@ export function Fab({
     isTaskCreationExpanded ||
     isHabitCreationExpanded;
   const goalCreationMinHeight = 240;
+  const goalCenteredEditMinHeight = 440;
   const projectCreationMinHeight = 280;
+  const projectCenteredEditMinHeight = 480;
   const taskCreationMinHeight = 320;
+  const taskCenteredEditMinHeight = 460;
   const habitCreationMinHeight = 300;
   const selectedCreationTypeMinHeight =
     selected === "GOAL"
-      ? goalCreationMinHeight
+      ? shouldUseCenteredEditModal
+        ? goalCenteredEditMinHeight
+        : goalCreationMinHeight
       : selected === "PROJECT"
-        ? projectCreationMinHeight
+        ? shouldUseCenteredEditModal
+          ? projectCenteredEditMinHeight
+          : projectCreationMinHeight
         : selected === "TASK"
-          ? taskCreationMinHeight
+          ? shouldUseCenteredEditModal
+            ? taskCenteredEditMinHeight
+            : taskCreationMinHeight
           : selected === "HABIT"
             ? habitCreationMinHeight
             : null;
@@ -12028,9 +12161,6 @@ export function Fab({
   const creationRevealClipStart = `circle(0px at ${creationRevealOriginX}px ${creationRevealOriginY}px)`;
   const creationRevealClipEnd =
     `circle(${creationRevealGeometry?.radius ?? 0}px at ${creationRevealOriginX}px ${creationRevealOriginY}px)`;
-  const editPresentationOriginRect = editTarget?.originRect ?? null;
-  const shouldUseCenteredEditModal =
-    expanded && Boolean(editPresentationOriginRect);
   const centeredEditModalAnimation = useMemo(() => {
     if (!shouldUseCenteredEditModal || !editPresentationOriginRect) {
       return null;
@@ -13673,7 +13803,7 @@ function ProposalTimelineCard({
             <SelectContent className="bg-[#050507] border border-white/10">
               {SCHEDULER_PRIORITY_LABELS.map((option) => (
                 <SelectItem key={option} value={option}>
-                  {option}
+                  {formatFabPriorityLabel(option)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -13921,7 +14051,7 @@ function GoalProposalForm({
                   <SelectContent className="bg-[#050507] border border-white/10">
                     {SCHEDULER_PRIORITY_LABELS.map((option) => (
                       <SelectItem key={option} value={option}>
-                        {option}
+                        {formatFabPriorityLabel(option)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -14093,7 +14223,7 @@ function ProjectProposalForm({
                 <SelectContent className="bg-[#050507] border border-white/10">
                   {SCHEDULER_PRIORITY_LABELS.map((option) => (
                     <SelectItem key={option} value={option}>
-                      {option}
+                      {formatFabPriorityLabel(option)}
                     </SelectItem>
                   ))}
                 </SelectContent>

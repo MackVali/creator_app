@@ -1,9 +1,17 @@
 "use client";
 
 import type React from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ChevronDown } from "lucide-react";
-import type { Project } from "../types";
+import type { Project, Task } from "../types";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
@@ -21,14 +29,54 @@ export type ProjectCardMorphOrigin = {
 
 interface ProjectRowProps {
   project: Project;
+  goalId?: string;
   onLongPress?: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
   onUpdated?: (projectId: string, updates: Partial<Project>) => void;
+  onTaskEditOpen?: (
+    task: Task,
+    project: Project,
+    origin: ProjectCardMorphOrigin | null
+  ) => void;
+  onTaskToggleCompletion?: (
+    goalId: string,
+    projectId: string,
+    taskId: string,
+    currentCompletedAt: string | null
+  ) => void;
 }
 
 const MAX_VISIBLE_TASKS = 12;
 const LONG_PRESS_MS = 650;
 const DOUBLE_TAP_MS = 325;
 const SINGLE_TAP_DELAY_MS = 160;
+
+type ProjectRowTaskInteractions = Pick<
+  ProjectRowProps,
+  "goalId" | "onTaskEditOpen" | "onTaskToggleCompletion"
+>;
+
+const ProjectRowTaskInteractionsContext =
+  createContext<ProjectRowTaskInteractions>({});
+
+export const ProjectRowTaskInteractionsProvider =
+  ProjectRowTaskInteractionsContext.Provider;
+
+const energyCodeToFlameLevel = (value?: string | null): FlameLevel => {
+  switch (value?.toUpperCase()) {
+    case "LOW":
+      return "LOW";
+    case "MEDIUM":
+      return "MEDIUM";
+    case "HIGH":
+      return "HIGH";
+    case "ULTRA":
+      return "ULTRA";
+    case "EXTREME":
+      return "EXTREME";
+    default:
+      return "NO";
+  }
+};
 
 const projectStageToStatus = (stage: string): Project["status"] => {
   switch (stage) {
@@ -82,7 +130,21 @@ function buildProjectOrigin(
   };
 }
 
-export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps) {
+export function ProjectRow({
+  project,
+  goalId: goalIdProp,
+  onLongPress,
+  onUpdated,
+  onTaskEditOpen: onTaskEditOpenProp,
+  onTaskToggleCompletion: onTaskToggleCompletionProp,
+}: ProjectRowProps) {
+  const taskInteractionContext = useContext(ProjectRowTaskInteractionsContext);
+  const goalId = goalIdProp ?? taskInteractionContext.goalId;
+  const onTaskEditOpen =
+    onTaskEditOpenProp ?? taskInteractionContext.onTaskEditOpen;
+  const onTaskToggleCompletion =
+    onTaskToggleCompletionProp ??
+    taskInteractionContext.onTaskToggleCompletion;
   const hasTasks = project.tasks.length > 0;
   const [open, setOpen] = useState(hasTasks);
   const toggle = useCallback(() => {
@@ -101,8 +163,12 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
   const originElementRef = useRef<HTMLButtonElement | null>(null);
   const skipClickRef = useRef(false);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const taskSingleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const lastTapTimeRef = useRef(0);
   const tapSequenceRef = useRef(0);
+  const lastTaskTapRef = useRef<{ taskId: string; time: number } | null>(null);
 
   useEffect(() => {
     setLocalStatus(project.status);
@@ -124,6 +190,9 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
       }
       if (timerRef.current) {
         clearTimeout(timerRef.current);
+      }
+      if (taskSingleTapTimeoutRef.current) {
+        clearTimeout(taskSingleTapTimeoutRef.current);
       }
     },
     []
@@ -153,6 +222,143 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
       singleTapTimeoutRef.current = null;
     }
   }, []);
+
+  const cancelTaskSingleTap = useCallback(() => {
+    if (taskSingleTapTimeoutRef.current) {
+      clearTimeout(taskSingleTapTimeoutRef.current);
+      taskSingleTapTimeoutRef.current = null;
+    }
+  }, []);
+
+  const buildTaskOrigin = useCallback(
+    (element: HTMLElement | null): ProjectCardMorphOrigin | null => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      const computed = window.getComputedStyle(element);
+      const radius =
+        computed.borderRadius && computed.borderRadius.trim().length > 0
+          ? computed.borderRadius
+          : [
+              computed.borderTopLeftRadius,
+              computed.borderTopRightRadius,
+              computed.borderBottomRightRadius,
+              computed.borderBottomLeftRadius,
+            ]
+              .filter(Boolean)
+              .join(" ") || "0px";
+      const backgroundColor =
+        computed.backgroundColor &&
+        computed.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+        computed.backgroundColor.toLowerCase() !== "transparent"
+          ? computed.backgroundColor
+          : undefined;
+      const boxShadow =
+        computed.boxShadow && computed.boxShadow !== "none"
+          ? computed.boxShadow
+          : undefined;
+
+      return {
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+        borderRadius: radius,
+        backgroundColor,
+        boxShadow,
+        emoji: project.emoji,
+      };
+    },
+    [project.emoji]
+  );
+
+  const openTaskEditor = useCallback(
+    (task: Task, element: HTMLElement | null) => {
+      onTaskEditOpen?.(task, project, buildTaskOrigin(element));
+    },
+    [buildTaskOrigin, onTaskEditOpen, project]
+  );
+
+  const handleTaskPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      cancelPendingPress();
+      cancelSingleTap();
+      cancelTaskSingleTap();
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+    },
+    [cancelPendingPress, cancelSingleTap, cancelTaskSingleTap]
+  );
+
+  const handleTaskPointerUp = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>, task: Task) => {
+      event.stopPropagation();
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
+      const now = Date.now();
+      const lastTaskTap = lastTaskTapRef.current;
+      if (
+        lastTaskTap?.taskId === task.id &&
+        now - lastTaskTap.time <= DOUBLE_TAP_MS
+      ) {
+        lastTaskTapRef.current = null;
+        cancelTaskSingleTap();
+        event.preventDefault();
+        if (goalId && onTaskToggleCompletion) {
+          onTaskToggleCompletion(
+            goalId,
+            project.id,
+            task.id,
+            task.completedAt ?? null
+          );
+        }
+        return;
+      }
+
+      lastTaskTapRef.current = { taskId: task.id, time: now };
+      cancelTaskSingleTap();
+      const element = event.currentTarget;
+      taskSingleTapTimeoutRef.current = setTimeout(() => {
+        if (lastTaskTapRef.current?.taskId !== task.id) {
+          taskSingleTapTimeoutRef.current = null;
+          return;
+        }
+        lastTaskTapRef.current = null;
+        openTaskEditor(task, element);
+        taskSingleTapTimeoutRef.current = null;
+      }, DOUBLE_TAP_MS);
+    },
+    [
+      cancelTaskSingleTap,
+      goalId,
+      onTaskToggleCompletion,
+      openTaskEditor,
+      project.id,
+    ]
+  );
+
+  const handleTaskPointerCancel = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+    },
+    []
+  );
+
+  const handleTaskClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>, task: Task) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.detail === 0) {
+        cancelTaskSingleTap();
+        lastTaskTapRef.current = null;
+        openTaskEditor(task, event.currentTarget);
+      }
+    },
+    [cancelTaskSingleTap, openTaskEditor]
+  );
 
   const openProjectEditor = useCallback(() => {
     if (!onLongPress) {
@@ -330,6 +536,24 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
     [cancelSingleTap, completionPending, openProjectEditor]
   );
 
+  const handleChevronPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      cancelPendingPress();
+      cancelSingleTap();
+    },
+    [cancelPendingPress, cancelSingleTap]
+  );
+
+  const handleChevronClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggle();
+    },
+    [toggle]
+  );
+
   const primaryTextClass = isCompleted ? "text-emerald-50" : "text-white";
   const secondaryTextClass = isCompleted ? "text-emerald-100/80" : "text-white/60";
   const accentTextClass = isCompleted ? "text-emerald-100/75" : "text-white/70";
@@ -342,9 +566,16 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
     ? "ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] shadow-[0_22px_42px_rgba(4,47,39,0.55)]"
     : "ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]";
   const tasksPanelClass = isCompleted
-    ? "ring-emerald-200/60 bg-emerald-900/30 text-emerald-50"
-    : "ring-white/10 bg-white/5 text-white/70";
-  const bulletClass = isCompleted ? "bg-emerald-100/80" : "bg-white/70";
+    ? "border-emerald-100/24 bg-emerald-950/35 ring-emerald-200/20 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-12px_18px_rgba(2,44,34,0.22)]"
+    : "border-white/10 bg-[#030407] ring-white/10 text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-12px_18px_rgba(0,0,0,0.18)]";
+  const completedTaskRowClass =
+    "border-emerald-300/60 bg-[linear-gradient(135deg,rgba(6,78,59,0.96)_0%,rgba(4,120,87,0.9)_48%,rgba(16,185,129,0.84)_100%)] text-emerald-50 ring-1 ring-emerald-200/30 shadow-[0_12px_26px_-16px_rgba(16,185,129,0.72),0_0_22px_rgba(16,185,129,0.14),inset_2px_0_0_rgba(209,250,229,0.24),inset_0_1px_0_rgba(255,255,255,0.14)]";
+  const incompleteTaskRowClass =
+    "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.34)_24%,rgba(24,24,24,0.92)_100%)] text-white/78 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03)]";
+  const completedTaskMarkerClass =
+    "border-emerald-50/40 bg-emerald-100/22 text-white shadow-[0_0_12px_rgba(16,185,129,0.28)]";
+  const incompleteTaskMarkerClass =
+    "border-white/10 bg-white/[0.05] text-white/50";
 
   return (
     <>
@@ -357,62 +588,119 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
         <div
           className={`pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
         />
-        <button
-          onClick={handleClick}
-          type="button"
-          className={`relative z-0 flex w-full items-center justify-between text-left text-sm select-none ${primaryTextClass}`}
-          aria-expanded={open}
-          aria-controls={`project-${project.id}`}
-          aria-disabled={completionPending}
-          onPointerDown={handlePointerDown}
-          onPointerUp={handlePointerEnd}
-          onPointerCancel={handlePointerEnd}
+        <div
+          className={`relative z-0 flex w-full items-center gap-3 text-sm select-none ${primaryTextClass}`}
         >
-          <div className={`flex items-center gap-3 ${primaryTextClass}`}>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
-              {displayEmoji}
-            </div>
-            <div className="flex flex-col">
-              <span className="font-semibold leading-tight">{project.name}</span>
-              <div className={`flex items-center gap-1.5 text-[11px] ${secondaryTextClass}`}>
-                <FlameEmber level={flameLevel} size="xs" />
-                <span className="uppercase tracking-[0.2em]">{project.energy}</span>
+          <button
+            onClick={handleClick}
+            type="button"
+            className={`flex min-w-0 flex-1 items-center justify-between text-left select-none ${primaryTextClass}`}
+            aria-disabled={completionPending}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerEnd}
+            onPointerCancel={handlePointerEnd}
+          >
+            <div className={`flex min-w-0 items-center gap-3 ${primaryTextClass}`}>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
+                {displayEmoji}
+              </div>
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate font-semibold leading-tight">{project.name}</span>
+                <div className={`flex items-center gap-1.5 text-[11px] ${secondaryTextClass}`}>
+                  <FlameEmber level={flameLevel} size="xs" />
+                  <span className="uppercase tracking-[0.2em]">{project.energy}</span>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <p className={`text-[11px] ${accentTextClass}`}>{project.progress}%</p>
-            {project.dueDate && (
-              <span className={`text-xs ${secondaryTextClass}`}>
-                {new Date(project.dueDate).toLocaleDateString()}
-              </span>
-            )}
-            {hasTasks && (
+            <div className="flex shrink-0 items-center gap-3">
+              <p className={`text-[11px] ${accentTextClass}`}>{project.progress}%</p>
+              {project.dueDate && (
+                <span className={`text-xs ${secondaryTextClass}`}>
+                  {new Date(project.dueDate).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+          </button>
+          {hasTasks && (
+            <button
+              type="button"
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none ${chevronColorClass}`}
+              aria-expanded={open}
+              aria-controls={`project-${project.id}`}
+              aria-label={open ? "Collapse project tasks" : "Expand project tasks"}
+              onPointerDown={handleChevronPointerDown}
+              onClick={handleChevronClick}
+            >
               <ChevronDown
-                className={`h-4 w-4 transition-transform ${chevronColorClass} ${open ? "rotate-180" : ""}`}
+                className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+                aria-hidden="true"
               />
-            )}
-          </div>
-        </button>
+            </button>
+          )}
+        </div>
         {hasTasks && (
-          <ul
+          <div
             id={`project-${project.id}`}
-            className={`mt-3 space-y-1.5 overflow-hidden rounded-xl ring-1 p-3 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all ${
-              open ? "max-h-60" : "max-h-0"
+            className={`relative mt-3 overflow-hidden rounded-[16px] border ring-1 transition-all duration-200 ${
+              open ? "max-h-72 p-2" : "max-h-0 border-transparent p-0"
             } ${tasksPanelClass}`}
           >
             {open && (
               <>
-                {visibleTasks.map((task) => (
-                  <li key={task.id} className="flex items-start gap-2">
-                    <span className={`mt-1 h-1 w-1 rounded-full ${bulletClass}`} aria-hidden="true" />
-                    <span>{task.name}</span>
-                  </li>
-                ))}
-                {hiddenCount > 0 && <li className={tertiaryTextClass}>+{hiddenCount} more tasks</li>}
+                <div className="pointer-events-none absolute inset-y-3 left-2 w-px bg-white/10" />
+                <div className="relative space-y-1.5" role="list">
+                  {visibleTasks.map((task) => {
+                    const taskCompleted = Boolean(task.completedAt);
+                    return (
+                      <button
+                        type="button"
+                        key={task.id}
+                        className={`flex w-full min-w-0 items-start gap-2 rounded-lg border px-2 py-1.5 text-left text-xs leading-4 ${
+                          taskCompleted
+                            ? completedTaskRowClass
+                            : incompleteTaskRowClass
+                        }`}
+                        role="listitem"
+                        onPointerDown={handleTaskPointerDown}
+                        onPointerUp={(event) => handleTaskPointerUp(event, task)}
+                        onPointerCancel={handleTaskPointerCancel}
+                        onClick={(event) => handleTaskClick(event, task)}
+                      >
+                        <span
+                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold leading-none ${
+                            taskCompleted
+                              ? completedTaskMarkerClass
+                              : incompleteTaskMarkerClass
+                          }`}
+                          aria-hidden="true"
+                        >
+                          {task.skillIcon ?? (
+                            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1 break-words pr-1">
+                          {task.name}
+                        </span>
+                        <FlameEmber
+                          level={energyCodeToFlameLevel(task.energyCode)}
+                          size="sm"
+                          className="shrink-0"
+                        />
+                      </button>
+                    );
+                  })}
+                  {hiddenCount > 0 && (
+                    <div
+                      className={`rounded-lg border border-white/8 bg-black/20 px-2 py-1.5 text-[11px] ${tertiaryTextClass}`}
+                      role="listitem"
+                    >
+                      +{hiddenCount} more tasks
+                    </div>
+                  )}
+                </div>
               </>
             )}
-          </ul>
+          </div>
         )}
       </div>
       <style jsx>{`

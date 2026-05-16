@@ -15,7 +15,7 @@ import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import MixedRoadmapCard from "@/app/(app)/goals/components/MixedRoadmapCard";
 import { RoadmapCard } from "@/app/(app)/goals/components/RoadmapCard";
 import type { ProjectCardMorphOrigin } from "@/app/(app)/goals/components/ProjectRow";
-import type { Goal, Project } from "@/app/(app)/goals/types";
+import type { Goal, Project, Task } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Fab, type FabEditTarget } from "@/components/ui/Fab";
@@ -54,10 +54,13 @@ type GoalRowWithRelations = GoalRow & {
     due_date?: string | null;
     tasks?: {
       id: string;
+      project_id: string | null;
       stage: string;
-      name?: string;
+      completed_at: string | null;
+      name: string | null;
       skill_id: string | null;
       priority: string | null;
+      energy: string | null;
     }[];
     project_skills?: {
       skill_id: string | null;
@@ -75,7 +78,7 @@ const GOAL_RELATIONS_SELECT = `
     priority,
     energy,
     tasks (
-      id, stage, skill_id, priority
+      id, project_id, stage, completed_at, name, skill_id, priority, energy
     ),
     project_skills (
       skill_id
@@ -91,7 +94,7 @@ function mapPriority(
     case "NO":
       return "No";
     case "ULTRA-CRITICAL":
-      return "Ultra-Critical";
+      return "Ultra";
     case "CRITICAL":
       return "Critical";
     case "HIGH":
@@ -159,13 +162,72 @@ function buildProjectFromUpdates(
   };
 }
 
+function updateGoalTaskCompletion(
+  goal: Goal,
+  goalId: string,
+  projectId: string,
+  taskId: string,
+  nextCompletedAt: string | null
+): Goal {
+  if (goal.id !== goalId) return goal;
+  let projectChanged = false;
+  const updatedProjects = goal.projects.map((project) => {
+    if (project.id !== projectId) return project;
+    projectChanged = true;
+    const updatedTasks = project.tasks.map((task) =>
+      task.id === taskId ? { ...task, completedAt: nextCompletedAt } : task
+    );
+    const total = updatedTasks.length;
+    const done = updatedTasks.filter((task) => Boolean(task.completedAt)).length;
+    const progress = total ? Math.round((done / total) * 100) : 0;
+    const schedulerTasks = updatedTasks.map(toSchedulerTask);
+    const relatedTaskWeightSum = schedulerTasks.reduce(
+      (sum, task) => sum + taskWeight(task),
+      0
+    );
+    const projectWeightValue = projectWeight(
+      toSchedulerProject({
+        id: project.id,
+        priorityCode: project.priorityCode ?? undefined,
+        stage: project.stage ?? undefined,
+        dueDate: project.dueDate ?? null,
+      }),
+      relatedTaskWeightSum
+    );
+
+    return {
+      ...project,
+      tasks: updatedTasks,
+      progress,
+      weight: projectWeightValue,
+    };
+  });
+
+  if (!projectChanged) return goal;
+  const goalProgress =
+    updatedProjects.length > 0
+      ? Math.round(
+          updatedProjects.reduce(
+            (sum, project) => sum + (project.progress ?? 0),
+            0
+          ) / updatedProjects.length
+        )
+      : 0;
+
+  return {
+    ...goal,
+    projects: updatedProjects,
+    progress: goalProgress,
+  };
+}
+
 const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
   NO: "NO",
   LOW: "LOW",
   MEDIUM: "MEDIUM",
   HIGH: "HIGH",
   CRITICAL: "Critical",
-  "ULTRA-CRITICAL": "Ultra-Critical",
+  "ULTRA-CRITICAL": "Ultra",
 };
 
 const TASK_STAGE_MAP: Record<string, string> = {
@@ -492,8 +554,11 @@ export function MonumentGoalsList({
             id: task.id,
             name: task.name ?? "Untitled task",
             stage: task.stage,
+            completedAt: task.completed_at ?? null,
             skillId: task.skill_id ?? null,
             priorityCode: task.priority ?? null,
+            energyCode: normalizeEnergyCode(task.energy),
+            skillIcon: resolveSkillEmoji(task.skill_id ?? null),
             isNew: false,
           };
           if (normalized.skillId) {
@@ -509,7 +574,9 @@ export function MonumentGoalsList({
           }
         });
         const total = normalizedTasks.length;
-        const done = normalizedTasks.filter((task) => task.stage === "PERFECT").length;
+        const done = normalizedTasks.filter((task) =>
+          Boolean(task.completedAt)
+        ).length;
         const isCompleted =
           typeof project.completed_at === "string" &&
           project.completed_at.length > 0;
@@ -1117,6 +1184,102 @@ export function MonumentGoalsList({
     []
   );
 
+  const handleTaskEditOpen = useCallback(
+    (
+      task: Task,
+      _project: Project,
+      origin: ProjectCardMorphOrigin | null
+    ) => {
+      setFabEditTarget({
+        entityType: "TASK",
+        entityId: task.id,
+        title: task.name,
+        originRect: origin
+          ? {
+              top: origin.y,
+              left: origin.x,
+              width: origin.width,
+              height: origin.height,
+              borderRadius: origin.borderRadius,
+              backgroundColor: origin.backgroundColor,
+              boxShadow: origin.boxShadow,
+            }
+          : null,
+      });
+    },
+    []
+  );
+
+  const handleTaskToggleCompletion = useCallback(
+    async (
+      goalId: string,
+      projectId: string,
+      taskId: string,
+      currentCompletedAt: string | null
+    ) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+
+      const nextCompletedAt = currentCompletedAt
+        ? null
+        : new Date().toISOString();
+      const updateGoal = (completedAt: string | null) => (goal: Goal) => {
+        const updatedGoal = updateGoalTaskCompletion(
+          goal,
+          goalId,
+          projectId,
+          taskId,
+          completedAt
+        );
+        return updatedGoal === goal ? goal : decorate(updatedGoal);
+      };
+      const applyTaskCompletion = updateGoal(nextCompletedAt);
+      const revertTaskCompletion = updateGoal(currentCompletedAt);
+      const updateRoadmapGoals = (updater: (goal: Goal) => Goal) => {
+        setRoadmapGoals((prev) => {
+          let changed = false;
+          const next = new Map(prev);
+          prev.forEach((list, roadmapId) => {
+            const updatedList = list.map((goal) => {
+              const updatedGoal = updater(goal);
+              if (updatedGoal !== goal) changed = true;
+              return updatedGoal;
+            });
+            next.set(roadmapId, updatedList);
+          });
+          return changed ? next : prev;
+        });
+      };
+
+      setGoals((prev) => prev.map(applyTaskCompletion));
+      updateRoadmapGoals(applyTaskCompletion);
+      setRoadmapOpenGoal((current) =>
+        current?.id === goalId ? applyTaskCompletion(current) : current
+      );
+
+      try {
+        const { error } = await supabase
+          .from("tasks")
+          .update({ completed_at: nextCompletedAt })
+          .eq("id", taskId);
+
+        if (error) {
+          throw error;
+        }
+
+        void refreshGoalStatus(goalId);
+      } catch (err) {
+        console.error("Failed to toggle monument task completion", err);
+        setGoals((prev) => prev.map(revertTaskCompletion));
+        updateRoadmapGoals(revertTaskCompletion);
+        setRoadmapOpenGoal((current) =>
+          current?.id === goalId ? revertTaskCompletion(current) : current
+        );
+      }
+    },
+    [decorate, refreshGoalStatus]
+  );
+
   useEffect(() => {
     if (!openGoalId) {
       setRoadmapOpenGoal(null);
@@ -1219,6 +1382,8 @@ export function MonumentGoalsList({
                     origin
                   )
                 }
+                onTaskEditOpen={handleTaskEditOpen}
+                onTaskToggleCompletion={handleTaskToggleCompletion}
                 open={openGoalId === roadmapOpenGoal.id}
                 onOpenChange={(isOpen) => {
                   handleGoalOpenChange(roadmapOpenGoal.id, isOpen);
@@ -1319,6 +1484,8 @@ export function MonumentGoalsList({
                 onProjectEditOpen={(target, project, origin) =>
                   handleProjectEditOpen(target, project.id, goal.id, origin)
                 }
+                onTaskEditOpen={handleTaskEditOpen}
+                onTaskToggleCompletion={handleTaskToggleCompletion}
                 open={openGoalId === goal.id}
                 onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
               />
@@ -1342,6 +1509,8 @@ export function MonumentGoalsList({
     handleGoalOpenChange,
     handleRoadmapGoalOpen,
     handleProjectEditOpen,
+    handleTaskEditOpen,
+    handleTaskToggleCompletion,
     handleProjectUpdated,
     handleProjectDeleted,
     handleRoadmapGoalEdit,
@@ -1354,6 +1523,7 @@ export function MonumentGoalsList({
       {content}
       <Fab
         editTarget={fabEditTarget}
+        onEditTargetChange={(target) => setFabEditTarget(target)}
         onEditClose={() => setFabEditTarget(null)}
         onEditSaved={() => setRefreshVersion((current) => current + 1)}
         hideLauncher

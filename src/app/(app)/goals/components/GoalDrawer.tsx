@@ -94,8 +94,8 @@ const PRIORITY_OPTIONS: {
     description: "Top of the stack—treat like a burning deadline.",
   },
   {
-    value: "Ultra-Critical",
-    label: "Ultra-Critical",
+    value: "Ultra",
+    label: "Ultra",
     description: "Emergency mode. Everything else yields until this moves.",
   },
 ];
@@ -106,7 +106,7 @@ const PRIORITY_CODE_TO_LABEL: Record<string, Goal["priority"]> = {
   MEDIUM: "Medium",
   HIGH: "High",
   CRITICAL: "Critical",
-  "ULTRA-CRITICAL": "Ultra-Critical",
+  "ULTRA-CRITICAL": "Ultra",
 };
 
 const PRIORITY_LABEL_TO_CODE: Record<Goal["priority"], string> = {
@@ -115,6 +115,7 @@ const PRIORITY_LABEL_TO_CODE: Record<Goal["priority"], string> = {
   Medium: "MEDIUM",
   High: "HIGH",
   Critical: "CRITICAL",
+  Ultra: "ULTRA-CRITICAL",
   "Ultra-Critical": "ULTRA-CRITICAL",
 };
 
@@ -141,8 +142,9 @@ const priorityLabelFromCode = (
   fallback: Goal["priority"] = "Low"
 ): Goal["priority"] => {
   const normalized = normalizePriorityCodeInput(code);
-  if (!normalized) return fallback;
-  return PRIORITY_CODE_TO_LABEL[normalized] ?? fallback;
+  const displayFallback = fallback === "Ultra-Critical" ? "Ultra" : fallback;
+  if (!normalized) return displayFallback;
+  return PRIORITY_CODE_TO_LABEL[normalized] ?? displayFallback;
 };
 
 const energyLabelFromCode = (
