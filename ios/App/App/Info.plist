@@ -22,10 +22,19 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>CREATOR needs camera access so you can take a new profile photo.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>CREATOR needs permission to save edited profile photos when needed.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>CREATOR needs photo library access so you can choose a profile photo.</string>
 	<key>UILaunchStoryboardName</key>
@@ -36,8 +45,6 @@
 	<array>
 		<string>arm64</string>
 	</array>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -53,10 +60,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<false/>
-	</dict>
 </dict>
 </plist>
