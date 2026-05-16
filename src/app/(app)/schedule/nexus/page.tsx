@@ -228,7 +228,7 @@ const DEFAULT_PRIORITY_PRESETS = [
   { code: "MEDIUM", label: "Medium" },
   { code: "HIGH", label: "High" },
   { code: "CRITICAL", label: "Critical" },
-  { code: "ULTRA-CRITICAL", label: "Ultra Critical" },
+  { code: "ULTRA-CRITICAL", label: "Ultra" },
 ] as const;
 
 function formatTimestamp(value: string | null | undefined): string | null {

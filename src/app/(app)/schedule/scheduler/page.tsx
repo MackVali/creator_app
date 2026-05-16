@@ -17,6 +17,9 @@ import { Lock } from "lucide-react";
 
 const GAP_THRESHOLD_MINUTES = 1;
 
+const formatPriorityLabel = (priority: string | null | undefined) =>
+  priority === "ULTRA-CRITICAL" ? "Ultra" : priority;
+
 type SchedulerFailure = {
   itemId: string;
   reason: string;
@@ -454,7 +457,7 @@ export default function SchedulerPage() {
                                       {placement.project?.priority && (
                                         <span>
                                           {placement.project?.stage ? " · " : ""}
-                                          {placement.project.priority}
+                                          {formatPriorityLabel(placement.project.priority)}
                                         </span>
                                       )}
                                     </div>
@@ -635,7 +638,7 @@ export default function SchedulerPage() {
                                 {project.stage}
                               </td>
                               <td className="py-2 pr-3 text-xs uppercase tracking-wide text-zinc-400">
-                                {project.priority}
+                                {formatPriorityLabel(project.priority)}
                               </td>
                               <td className="py-2 pr-3 text-right text-sm font-semibold text-zinc-100">
                                 {project.weight.toFixed(2)}

@@ -30,6 +30,9 @@ import type { Goal } from "../types";
 import { GoalCard } from "./GoalCard";
 import type { ProjectCardMorphOrigin } from "./ProjectRow";
 
+const formatPriorityLabel = (priority: Goal["priority"]) =>
+  priority === "Ultra-Critical" ? "Ultra" : priority;
+
 const cardSpringTransition = {
   type: "spring",
   stiffness: 480,
@@ -258,7 +261,7 @@ function DraggableGoalCard({
                 <span className="uppercase tracking-[0.16em] sm:tracking-[0.24em]">{goal.energy}</span>
                 <span className="text-white/30">•</span>
                 <span className="uppercase tracking-[0.16em] sm:tracking-[0.24em]">
-                  {goal.priority}
+                  {formatPriorityLabel(goal.priority)}
                 </span>
                 {goal.dueDate && (
                   <>

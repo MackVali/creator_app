@@ -15,7 +15,7 @@ export const PRIORITY_LABELS: Record<PriorityBucketId, string> = {
   MEDIUM: "Medium",
   HIGH: "High",
   CRITICAL: "Critical",
-  "ULTRA-CRITICAL": "Ultra-Critical",
+  "ULTRA-CRITICAL": "Ultra",
 };
 
 export const STAGE_ORDER = ["RESEARCH", "BUILD", "TEST", "REFINE", "RELEASE"] as const;

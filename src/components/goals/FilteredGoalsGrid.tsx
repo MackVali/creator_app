@@ -58,7 +58,7 @@ function mapPriority(priorityInput: LookupValue): Goal["priority"] {
   const priority = extractLookupName(priorityInput)?.toUpperCase();
   switch (priority) {
     case "ULTRA-CRITICAL":
-      return "Ultra-Critical";
+      return "Ultra";
     case "CRITICAL":
       return "Critical";
     case "HIGH":

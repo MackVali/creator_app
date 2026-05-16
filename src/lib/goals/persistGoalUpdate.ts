@@ -52,6 +52,7 @@ const PRIORITY_TO_DB: Record<Goal["priority"], string> = {
   Medium: "MEDIUM",
   High: "HIGH",
   Critical: "CRITICAL",
+  Ultra: "ULTRA-CRITICAL",
   "Ultra-Critical": "ULTRA-CRITICAL",
 };
 

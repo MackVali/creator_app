@@ -55,7 +55,7 @@ function mapPriority(
     case "NO":
       return "No";
     case "ULTRA-CRITICAL":
-      return "Ultra-Critical";
+      return "Ultra";
     case "CRITICAL":
       return "Critical";
     case "HIGH":
@@ -114,7 +114,7 @@ const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
   MEDIUM: "MEDIUM",
   HIGH: "HIGH",
   CRITICAL: "Critical",
-  "ULTRA-CRITICAL": "Ultra-Critical",
+  "ULTRA-CRITICAL": "Ultra",
 };
 const NORMALIZED_PRIORITY_VALUES = new Set(["NO", "LOW", "MEDIUM", "HIGH", "CRITICAL", "ULTRA-CRITICAL"]);
 const NORMALIZED_ENERGY_VALUES = new Set(["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"]);
@@ -1192,7 +1192,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
                 >
                   {["NO", "LOW", "MEDIUM", "HIGH", "CRITICAL", "ULTRA-CRITICAL"].map((value) => (
                     <option key={value} value={value} className="bg-[#0d111b] text-white">
-                      {value}
+                      {SCHEDULER_PRIORITY_MAP[value] ?? value}
                     </option>
                   ))}
                 </select>

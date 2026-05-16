@@ -13,8 +13,11 @@ import dynamic from "next/dynamic";
 import { ChevronDown, MoreHorizontal, Sparkles } from "lucide-react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import type { Goal, Project } from "../types";
-import type { ProjectCardMorphOrigin } from "./ProjectRow";
+import type { Goal, Project, Task } from "../types";
+import {
+  ProjectRowTaskInteractionsProvider,
+  type ProjectCardMorphOrigin,
+} from "./ProjectRow";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import { normalizeGoalStatus } from "@/lib/goals/status";
 // Lazy-load dropdown contents to reduce initial bundle and re-render cost
@@ -94,6 +97,11 @@ interface GoalCardProps {
     project: Project,
     origin: ProjectCardMorphOrigin | null
   ) => void;
+  onTaskEditOpen?: (
+    task: Task,
+    project: Project,
+    origin: ProjectCardMorphOrigin | null
+  ) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   projectDropdownMode?: "default" | "tasks-only";
@@ -101,7 +109,7 @@ interface GoalCardProps {
     goalId: string,
     projectId: string,
     taskId: string,
-    currentStage: string
+    currentCompletedAt: string | null
   ) => void;
   onAddTask?: (goalId: string) => void | Promise<void>;
   onProjectHoldComplete?: (
@@ -180,6 +188,7 @@ function GoalCardImpl({
   onProjectUpdated,
   onProjectDeleted,
   onProjectEditOpen,
+  onTaskEditOpen,
   open: openProp,
   onOpenChange,
   projectDropdownMode = "default",
@@ -473,6 +482,7 @@ function GoalCardImpl({
                     onAddProject={handleAddProject}
                     addingProject={addingProject}
                     onEdit={onEdit}
+                    onTaskEditOpen={onTaskEditOpen}
                     onTaskToggleCompletion={onTaskToggleCompletion}
                   />
                 ) : null}
@@ -558,6 +568,7 @@ function GoalCardImpl({
                   onAddProject={handleAddProject}
                   addingProject={addingProject}
                   onEdit={onEdit}
+                  onTaskEditOpen={onTaskEditOpen}
                   onTaskToggleCompletion={onTaskToggleCompletion}
                 />
               ) : null}
@@ -822,19 +833,27 @@ function GoalCardImpl({
                   animate={prefersReducedMotion ? undefined : "visible"}
                   exit={prefersReducedMotion ? undefined : "exit"}
                 >
-                  <ProjectsDropdown
-                    id={`goal-${goal.id}`}
-                    goalTitle={goal.title}
-                    projects={goal.projects}
-                    loading={loading}
-                    onProjectLongPress={handleProjectLongPress}
-                    onProjectUpdated={onProjectUpdated}
-                    goalId={goal.id}
-                    projectTasksOnly={projectDropdownMode === "tasks-only"}
-                    onAddProject={handleAddProject}
-                    addingProject={addingProject}
-                    onTaskToggleCompletion={onTaskToggleCompletion}
-                  />
+                  <ProjectRowTaskInteractionsProvider
+                    value={{
+                      goalId: goal.id,
+                      onTaskEditOpen,
+                      onTaskToggleCompletion,
+                    }}
+                  >
+                    <ProjectsDropdown
+                      id={`goal-${goal.id}`}
+                      goalTitle={goal.title}
+                      projects={goal.projects}
+                      loading={loading}
+                      onProjectLongPress={handleProjectLongPress}
+                      onProjectUpdated={onProjectUpdated}
+                      goalId={goal.id}
+                      projectTasksOnly={projectDropdownMode === "tasks-only"}
+                      onAddProject={handleAddProject}
+                      addingProject={addingProject}
+                      onTaskToggleCompletion={onTaskToggleCompletion}
+                    />
+                  </ProjectRowTaskInteractionsProvider>
                 </motion.div>
               </motion.div>
             ) : null}
@@ -871,11 +890,16 @@ type CompactProjectsOverlayProps = {
   onAddProject: () => void;
   addingProject: boolean;
   onEdit?: () => void;
+  onTaskEditOpen?: (
+    task: Task,
+    project: Project,
+    origin: ProjectCardMorphOrigin | null
+  ) => void;
   onTaskToggleCompletion?: (
     goalId: string,
     projectId: string,
     taskId: string,
-    currentStage: string
+    currentCompletedAt: string | null
   ) => void;
 };
 
@@ -890,6 +914,7 @@ function CompactProjectsOverlay({
   onAddProject,
   addingProject,
   onEdit,
+  onTaskEditOpen,
   onTaskToggleCompletion,
 }: CompactProjectsOverlayProps) {
   const [mounted, setMounted] = useState(false);
@@ -972,19 +997,23 @@ function CompactProjectsOverlay({
 
   const listContent = (
     <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
-      <ProjectsDropdown
-        id={regionId}
-        goalTitle={goal.title}
-        projects={goal.projects}
-        loading={loading}
-        onProjectLongPress={onProjectLongPress}
-        onProjectUpdated={onProjectUpdated}
-        projectTasksOnly={projectDropdownMode === "tasks-only"}
-        goalId={goalId}
-        onAddProject={onAddProject}
-        addingProject={addingProject}
-        onTaskToggleCompletion={onTaskToggleCompletion}
-      />
+      <ProjectRowTaskInteractionsProvider
+        value={{ goalId, onTaskEditOpen, onTaskToggleCompletion }}
+      >
+        <ProjectsDropdown
+          id={regionId}
+          goalTitle={goal.title}
+          projects={goal.projects}
+          loading={loading}
+          onProjectLongPress={onProjectLongPress}
+          onProjectUpdated={onProjectUpdated}
+          projectTasksOnly={projectDropdownMode === "tasks-only"}
+          goalId={goalId}
+          onAddProject={onAddProject}
+          addingProject={addingProject}
+          onTaskToggleCompletion={onTaskToggleCompletion}
+        />
+      </ProjectRowTaskInteractionsProvider>
     </div>
   );
 

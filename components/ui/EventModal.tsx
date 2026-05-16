@@ -371,7 +371,7 @@ const PRIORITY_META = [
   { code: "MEDIUM", label: "Medium Priority" },
   { code: "HIGH", label: "High Priority" },
   { code: "CRITICAL", label: "Critical Priority" },
-  { code: "ULTRA-CRITICAL", label: "Ultra Critical Priority" },
+  { code: "ULTRA-CRITICAL", label: "Ultra" },
 ] as const;
 
 const DEFAULT_PRIORITY_DEFINITIONS: PriorityDefinition[] = PRIORITY_META.map(
@@ -381,6 +381,14 @@ const DEFAULT_PRIORITY_DEFINITIONS: PriorityDefinition[] = PRIORITY_META.map(
     order_index: index,
   }),
 );
+
+const getPriorityDisplayLabel = (code: string): string =>
+  code === "ULTRA-CRITICAL"
+    ? "Ultra"
+    : code
+        .toLowerCase()
+        .replace(/-/g, " ")
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const ENERGY_META = [
   { code: "NO", label: "No Energy", level: "NO" as FlameLevel },
@@ -477,6 +485,9 @@ const getNextSelectableOptionValue = (
 
 const matchPriorityCodeFromLabel = (label: string): string | null => {
   const normalized = normalizeSelectionLabel(label).replace("PRIORITY", "");
+  if (normalized === "ULTRA") {
+    return "ULTRA-CRITICAL";
+  }
   for (const entry of PRIORITY_META) {
     const normalizedLabel = normalizeSelectionLabel(entry.label).replace(
       "PRIORITY",
@@ -516,8 +527,10 @@ const priorityCodeToOptionId = (
   const normalized = normalizeSelectionLabel(code);
   const match = definitions.find((entry) => {
     const labelNormalized = normalizeSelectionLabel(entry.name);
+    const labelCode = matchPriorityCodeFromLabel(entry.name);
     return (
       labelNormalized === normalized ||
+      labelCode === normalized ||
       String(entry.id).toUpperCase() === normalized
     );
   });
@@ -1225,7 +1238,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       const rawLabel = priority.name?.trim() || String(priority.id);
       const matchedCode = matchPriorityCodeFromLabel(rawLabel);
       const displayLabel =
-        matchedCode ?? rawLabel.toUpperCase().replace(/\s+/g, " ");
+        matchedCode
+          ? getPriorityDisplayLabel(matchedCode)
+          : rawLabel.toUpperCase().replace(/\s+/g, " ");
       return {
         value: priority.id,
         label: displayLabel,

@@ -8,6 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { fetchReadyTasks } from "@/lib/scheduler/repo";
 import { TaskLite, taskWeight } from "@/lib/scheduler/weight";
 
+const formatPriorityLabel = (priority: string | null | undefined) =>
+  priority === "ULTRA-CRITICAL" ? "Ultra" : priority;
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<TaskLite[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +66,7 @@ export default function TasksPage() {
                 </div>
               </div>
               <div className="text-xs text-zinc-400">
-                {t.priority} / {t.stage} • {t.duration_min}m
+                {formatPriorityLabel(t.priority)} / {t.stage} • {t.duration_min}m
               </div>
             </li>
           ))}

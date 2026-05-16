@@ -58,7 +58,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
         <div className="flex gap-2">
           <Badge variant={getPriorityVariant(project.priority)}>
-            {project.priority}
+            {formatPriorityLabel(project.priority)}
           </Badge>
           <Badge variant={getEnergyVariant(project.energy)}>
             {project.energy}
@@ -68,6 +68,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
       </CardContent>
     </Card>
   );
+}
+
+function formatPriorityLabel(priority: string): string {
+  return priority === "ULTRA-CRITICAL" ? "Ultra" : priority;
 }
 
 function getPriorityVariant(
