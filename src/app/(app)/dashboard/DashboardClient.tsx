@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
+import { CommandCirclesSection } from "@/components/command/CommandCirclesSection";
 import { useTour } from "@/components/tour/TourProvider";
 import { dashboardTourSteps } from "@/lib/tours/dashboardTour";
 import { useHasExistingTimeBlocks } from "@/lib/hooks/useHasExistingTimeBlocks";
@@ -49,8 +50,19 @@ export default function DashboardClient() {
 
       <MonumentContainer />
 
-      <Section title={<Link href="/skills" data-tour="nav-skills">Skills</Link>} className="mt-1 px-4">
+      <Section
+        title={
+          <Link href="/skills" data-tour="nav-skills">
+            Skills
+          </Link>
+        }
+        className="mt-1 px-4"
+      >
         <SkillsCarousel />
+      </Section>
+
+      <Section className="mt-5 px-4">
+        <CommandCirclesSection />
       </Section>
     </main>
   );

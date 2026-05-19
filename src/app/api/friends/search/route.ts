@@ -297,9 +297,37 @@ export async function GET(request: Request) {
             typeof adminUser.email === "string"
               ? adminUser.email.trim()
               : "";
-          const emailPrefix = email.split("@")[0]?.trim() ?? "";
-          const usernameCandidate = metadataUsername || emailPrefix;
-          if (!usernameCandidate) {
+
+          const {
+            data: canonicalProfile,
+            error: canonicalProfileError,
+          } = await profileClient
+            .from("profiles")
+            .select("id, user_id, username, name, avatar_url")
+            .eq("user_id", adminUser.id)
+            .not("username", "is", null)
+            .maybeSingle();
+
+          if (canonicalProfileError) {
+            console.error(
+              "Failed to load canonical profile for admin discovery fallback",
+              {
+                userId: adminUser.id,
+                error: canonicalProfileError,
+              }
+            );
+            continue;
+          }
+
+          const usernameCandidate =
+            typeof canonicalProfile?.username === "string"
+              ? canonicalProfile.username.trim()
+              : "";
+          if (
+            !canonicalProfile ||
+            canonicalProfile.user_id !== adminUser.id ||
+            !usernameCandidate
+          ) {
             continue;
           }
 
@@ -309,9 +337,14 @@ export async function GET(request: Request) {
           }
 
           const matchesQuery = [
+            usernameCandidate,
+            typeof canonicalProfile.name === "string"
+              ? canonicalProfile.name.trim()
+              : "",
             metadataUsername,
             metadataName,
             metadataDisplayName,
+            metadataFullName,
             email,
           ].some(
             (value) =>
@@ -323,19 +356,25 @@ export async function GET(request: Request) {
           }
 
           const displayNameCandidate =
+            (typeof canonicalProfile.name === "string"
+              ? canonicalProfile.name.trim()
+              : "") ||
             metadataName ||
             metadataDisplayName ||
             metadataFullName ||
             usernameCandidate;
           const avatarUrl =
-            metadataAvatar ?? buildAvatarFromSeed(displayNameCandidate);
+            (typeof canonicalProfile.avatar_url === "string" &&
+            canonicalProfile.avatar_url.trim().length
+              ? canonicalProfile.avatar_url.trim()
+              : metadataAvatar) ?? buildAvatarFromSeed(displayNameCandidate);
 
-          if (seenProfileIds.has(adminUser.id)) {
+          if (seenProfileIds.has(canonicalProfile.id)) {
             continue;
           }
 
           aggregated.push({
-            id: adminUser.id,
+            id: canonicalProfile.id,
             username: usernameCandidate,
             displayName: displayNameCandidate,
             avatarUrl,
@@ -345,7 +384,7 @@ export async function GET(request: Request) {
             profileUrl: `/profile/${usernameCandidate}`,
           });
           seenUsernames.add(normalizedCandidate);
-          seenProfileIds.add(adminUser.id);
+          seenProfileIds.add(canonicalProfile.id);
         }
       }
     } catch (adminFallbackError) {

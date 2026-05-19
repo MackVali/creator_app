@@ -136,7 +136,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ friends }, { status: 200 });
   }
 
-  const friendIds = outgoing.map((connection) => connection.friend_user_id);
+  const friendIds = outgoing
+    .map((connection) => connection.friend_user_id)
+    .filter((id): id is string => {
+      return typeof id === "string" && id.trim().length > 0 && id !== "null";
+    });
+
+  if (friendIds.length === 0) {
+    return NextResponse.json({ friends: [] }, { status: 200 });
+  }
 
   const { data: reverseConnections, error: reverseError } = await supabase
     .from("friend_connections")

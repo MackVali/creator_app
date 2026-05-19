@@ -13,12 +13,19 @@ export interface Goal {
   active?: boolean;
   status?: string;
   monument_id?: string | null;
+  circle_id?: string | null;
   monumentEmoji?: string | null;
   roadmap_id?: string | null;
   weight?: number | null;
   weight_boost?: number | null;
   due_date?: string | null;
 }
+
+type GoalQueryRow = Goal & {
+  monument?: {
+    emoji?: string | null;
+  } | null;
+};
 
 export async function getGoalsForUser(userId: string): Promise<Goal[]> {
   const supabase = getSupabaseBrowser();
@@ -29,7 +36,7 @@ export async function getGoalsForUser(userId: string): Promise<Goal[]> {
   const { data, error } = await supabase
     .from("goals")
     .select(
-      "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, weight, weight_boost, due_date, monument:monuments(emoji)"
+      "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, monument:monuments(emoji)"
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -40,10 +47,10 @@ export async function getGoalsForUser(userId: string): Promise<Goal[]> {
   }
 
   return (
-    data?.map((goal: any) => ({
+    ((data ?? []) as GoalQueryRow[]).map((goal) => ({
       ...goal,
       monumentEmoji: goal?.monument?.emoji ?? null,
-    })) ?? []
+    }))
   );
 }
 
@@ -56,7 +63,7 @@ export async function getGoalById(goalId: string): Promise<Goal | null> {
   const { data, error } = await supabase
     .from("goals")
     .select(
-      "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, due_date, monument:monuments(emoji)"
+      "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, due_date, monument:monuments(emoji)"
     )
     .eq("id", goalId)
     .single();
@@ -66,9 +73,8 @@ export async function getGoalById(goalId: string): Promise<Goal | null> {
     return null;
   }
 
-  return data
-    ? { ...data, monumentEmoji: (data as any)?.monument?.emoji ?? null }
-    : null;
+  const goal = data as GoalQueryRow | null;
+  return goal ? { ...goal, monumentEmoji: goal.monument?.emoji ?? null } : null;
 }
 
 export async function getGoalStatusById(
@@ -92,9 +98,10 @@ export async function getGoalStatusById(
   if (!data) {
     return null;
   }
+  const statusRow = data as { status?: unknown; updated_at?: string | null };
 
   return {
-    status: typeof data.status === "string" ? data.status : null,
-    updatedAt: data.updated_at ?? null,
+    status: typeof statusRow.status === "string" ? statusRow.status : null,
+    updatedAt: statusRow.updated_at ?? null,
   };
 }

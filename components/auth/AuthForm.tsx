@@ -252,7 +252,7 @@ export default function AuthForm() {
   }
 
   const handleForgotPassword = () => {
-    router.push("/auth/reset");
+    router.push("/forgot-password");
   };
 
   return (

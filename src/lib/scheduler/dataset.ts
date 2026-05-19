@@ -185,6 +185,7 @@ async function fetchSyncPairingsForInstances({
   for (const habit of habits) {
     habitTypeById.set(habit.id, normalizeHabitType(habit.habitType));
   }
+  const instanceById = new Map(instances.map((inst) => [inst.id, inst]));
 
   const syncInstanceIds = instances
     .filter((inst) => {
@@ -218,6 +219,63 @@ async function fetchSyncPairingsForInstances({
         )
       : [];
     pairings[syncInstanceId] = partnerIds;
+  }
+
+  for (const syncInstanceId of syncInstanceIds) {
+    if ((pairings[syncInstanceId]?.length ?? 0) > 0) continue;
+
+    const syncInstance = instanceById.get(syncInstanceId);
+    if (!syncInstance) continue;
+
+    const syncStart = new Date(syncInstance.start_utc ?? "").getTime();
+    const syncEnd = new Date(syncInstance.end_utc ?? "").getTime();
+    if (!Number.isFinite(syncStart) || !Number.isFinite(syncEnd)) continue;
+
+    const fallbackPartners = instances
+      .filter((candidate) => {
+        if (candidate.id === syncInstanceId) return false;
+        if (
+          candidate.status !== "scheduled" &&
+          candidate.status !== "completed"
+        ) {
+          return false;
+        }
+
+        const candidateStart = new Date(candidate.start_utc ?? "").getTime();
+        const candidateEnd = new Date(candidate.end_utc ?? "").getTime();
+        if (!Number.isFinite(candidateStart) || !Number.isFinite(candidateEnd)) {
+          return false;
+        }
+        if (candidateEnd <= syncStart || candidateStart >= syncEnd) {
+          return false;
+        }
+
+        if (candidate.source_type === "HABIT") {
+          const habitType = habitTypeById.get(candidate.source_id ?? "");
+          if (normalizeHabitType(habitType) === "SYNC") {
+            return false;
+          }
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        const aStart = new Date(a.start_utc ?? "").getTime();
+        const bStart = new Date(b.start_utc ?? "").getTime();
+        return aStart - bStart;
+      });
+
+    pairings[syncInstanceId] = fallbackPartners.map((partner) => partner.id);
+
+    if (
+      process.env.NODE_ENV !== "production" &&
+      fallbackPartners.length > 0
+    ) {
+      log("debug", "[SYNC_PAIRINGS_FALLBACK]", {
+        syncInstanceId,
+        fallbackPartnerCount: fallbackPartners.length,
+      });
+    }
   }
 
   return pairings;
