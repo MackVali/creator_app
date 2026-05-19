@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -890,7 +889,11 @@ export function CommandCirclesSection({ className }: CommandCirclesSectionProps)
       }
 
       const data = (await response.json()) as { circles?: CommandCircle[] };
-      setCircles(data.circles ?? []);
+      setCircles(
+        (data.circles ?? []).filter(
+          (circle) => circle.viewerRole?.toUpperCase() === "OWNER"
+        )
+      );
     } catch (loadError) {
       if (loadError instanceof DOMException && loadError.name === "AbortError") {
         return;
@@ -934,6 +937,10 @@ export function CommandCirclesSection({ className }: CommandCirclesSectionProps)
     };
   }, [activeCircleId]);
 
+  if (!isLoading && !error && circles.length === 0) {
+    return null;
+  }
+
   return (
     <section className={cn("text-white", className)}>
       <div className="mb-3 flex flex-col gap-1">
@@ -962,28 +969,6 @@ export function CommandCirclesSection({ className }: CommandCirclesSectionProps)
             Circles unavailable
           </p>
           <p className="mt-2 leading-6">{error}</p>
-        </article>
-      ) : null}
-
-      {!isLoading && !error && circles.length === 0 ? (
-        <article className="rounded-2xl border border-white/10 bg-black/45 p-6 shadow-xl shadow-black/30">
-          <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/65">
-              <Users className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <div>
-              <p className="text-base font-semibold text-white">
-                Create or join a Circle to manage shared goals, projects, tasks,
-                and habits.
-              </p>
-              <Link
-                href="/friends"
-                className="mt-4 inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-semibold text-white/70 transition hover:bg-white/10 hover:text-white"
-              >
-                Go to Friends
-              </Link>
-            </div>
-          </div>
         </article>
       ) : null}
 

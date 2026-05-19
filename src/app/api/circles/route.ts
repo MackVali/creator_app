@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { requirePlus } from "@/lib/entitlements/requirePlus";
 import { getSupabaseServer } from "@/lib/supabase";
 
 const circleColumns =
@@ -252,6 +253,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const gate = await requirePlus();
+  if (gate) {
+    return gate;
+  }
+
   const supabase = await getServerClient();
 
   if (!supabase) {

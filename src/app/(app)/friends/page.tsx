@@ -23,6 +23,7 @@ import {
 } from '@/components/friends/RelationshipViewBar';
 import SearchFriends from '@/components/friends/SearchFriends';
 import RequestsInvites from '@/components/friends/RequestsInvites';
+import { useEntitlement } from '@/components/entitlement/EntitlementProvider';
 import {
   Select,
   SelectContent,
@@ -124,6 +125,7 @@ const circleTypeFallbacks: Record<CircleType, string> = {
 };
 
 export default function FriendsPage() {
+  const { isPlus } = useEntitlement();
   const [tab, setTab] = useState<ConnectTab>('friends');
   const [friendsView, setFriendsView] = useState<RelationshipView>('friends');
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -155,6 +157,7 @@ export default function FriendsPage() {
   const [showCreateCircleForm, setShowCreateCircleForm] = useState(false);
   const [newCircleName, setNewCircleName] = useState('');
   const [newCircleType, setNewCircleType] = useState<CircleType>('CUSTOM');
+  const canCreateCircle = isPlus;
   const friendsTabRef = useRef<HTMLButtonElement>(null);
   const searchTabRef = useRef<HTMLButtonElement>(null);
   const requestsTabRef = useRef<HTMLButtonElement>(null);
@@ -217,6 +220,11 @@ export default function FriendsPage() {
 
       const trimmedName = newCircleName.trim();
 
+      if (!canCreateCircle) {
+        setCreateCircleError('CREATOR Pro is required to create a Circle.');
+        return;
+      }
+
       if (!trimmedName) {
         setCreateCircleError('Circle name is required.');
         return;
@@ -265,7 +273,7 @@ export default function FriendsPage() {
         }
       }
     },
-    [newCircleName, newCircleType, refreshCircles]
+    [canCreateCircle, newCircleName, newCircleType, refreshCircles]
   );
 
   const refreshFriends = useCallback(async () => {
@@ -695,7 +703,7 @@ export default function FriendsPage() {
       >
 
         {isLoading ? (
-          <div className="rounded-2xl bg-slate-900/50 p-6 text-center text-sm text-white/60 ring-1 ring-white/10">
+          <div className="rounded-2xl border border-white/10 bg-[#050506]/90 p-6 text-center text-sm text-white/60 shadow-xl shadow-black/30">
             {friendsView === 'following'
               ? 'Loading who you follow…'
               : friendsView === 'followers'
@@ -703,7 +711,7 @@ export default function FriendsPage() {
                 : 'Loading your friends…'}
           </div>
         ) : !error && sortedFriends.length === 0 ? (
-          <div className="rounded-2xl bg-slate-900/50 p-6 text-center text-sm text-white/60 ring-1 ring-white/10">
+          <div className="rounded-2xl border border-white/10 bg-[#050506]/90 p-6 text-center text-sm text-white/60 shadow-xl shadow-black/30">
             {friendsView === 'following'
               ? 'You are not following anyone yet.'
               : friendsView === 'followers'
@@ -897,21 +905,23 @@ export default function FriendsPage() {
                 roles, invites, and trust in one place.
               </p>
             </div>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowCreateCircleForm((current) => !current);
-                  setCreateCircleError(null);
-                }}
-                className="h-11 rounded-full bg-white px-5 text-sm font-semibold text-black/90 transition hover:bg-white/90"
-              >
-                {showCreateCircleForm ? 'Close Form' : 'Create Circle'}
-              </button>
-            </div>
+            {canCreateCircle ? (
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateCircleForm((current) => !current);
+                    setCreateCircleError(null);
+                  }}
+                  className="h-11 rounded-full bg-white px-5 text-sm font-semibold text-black/90 transition hover:bg-white/90"
+                >
+                  {showCreateCircleForm ? 'Close Form' : 'Create Circle'}
+                </button>
+              </div>
+            ) : null}
           </div>
 
-          {showCreateCircleForm ? (
+          {canCreateCircle && showCreateCircleForm ? (
             <form
               onSubmit={handleCreateCircle}
               className="rounded-2xl border border-white/10 bg-black/55 p-4 shadow-xl shadow-black/30"
