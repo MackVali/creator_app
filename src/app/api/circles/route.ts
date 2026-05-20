@@ -6,7 +6,7 @@ import { requirePlus } from "@/lib/entitlements/requirePlus";
 import { getSupabaseServer } from "@/lib/supabase";
 
 const circleColumns =
-  "id, owner_user_id, name, circle_type, status, description, created_at, updated_at";
+  "id, owner_user_id, name, icon_emoji, circle_type, status, description, created_at, updated_at";
 
 const circleTypes = new Set([
   "HOUSEHOLD",
@@ -22,6 +22,7 @@ type CircleRow = {
   id: string;
   owner_user_id: string;
   name: string;
+  icon_emoji: string | null;
   circle_type: CircleType;
   status: string;
   description: string | null;
@@ -139,6 +140,7 @@ export async function GET() {
   const circlesQuery = supabase
     .from("circles")
     .select(circleColumns)
+    .eq("status", "ACTIVE")
     .order("updated_at", { ascending: false });
 
   const { data: circles, error: circlesError } =

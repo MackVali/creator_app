@@ -3242,6 +3242,7 @@ export function Fab({
     useState("FRONT");
   const [habitNextDueOverride, setHabitNextDueOverride] = useState("");
   const [habitRoutineId, setHabitRoutineId] = useState<string | "">("");
+  const [habitCircleId, setHabitCircleId] = useState<string | "">("");
   const [habitRoutines, setHabitRoutines] = useState<
     { id: string; name: string; description?: string | null }[]
   >([]);
@@ -3251,6 +3252,14 @@ export function Fab({
   const [habitInlineRoutineName, setHabitInlineRoutineName] = useState("");
   const [habitInlineRoutineDescription, setHabitInlineRoutineDescription] =
     useState("");
+  const selectedHabitCircle = useMemo(
+    () =>
+      habitCircleId ? (manageableCircleById.get(habitCircleId) ?? null) : null,
+    [habitCircleId, manageableCircleById],
+  );
+  const habitCircleTriggerLabel = habitCircleId
+    ? (selectedHabitCircle?.name ?? "Selected Circle")
+    : "add to CIRCLE";
   const [nestedDraftPanel, setNestedDraftPanel] =
     useState<NestedDraftPanel>(null);
   const [draftProjectName, setDraftProjectName] = useState("");
@@ -3323,6 +3332,7 @@ export function Fab({
     setHabitWindowEdgePreference("FRONT");
     setHabitNextDueOverride("");
     setHabitRoutineId("");
+    setHabitCircleId("");
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineDescription("");
@@ -3979,6 +3989,11 @@ export function Fab({
           setHabitRoutineId(
             typeof habitRowRecord.routine_id === "string"
               ? habitRowRecord.routine_id
+              : "",
+          );
+          setHabitCircleId(
+            typeof habitRowRecord.circle_id === "string"
+              ? habitRowRecord.circle_id
               : "",
           );
           setSelectedTagIds(
@@ -5313,6 +5328,7 @@ export function Fab({
     [buildSearchUrl],
   );
 
+  // Scheduler runs should come from explicit scheduler flows, not generic object saves.
   const notifySchedulerOfChange = useCallback(async () => {
     try {
       const timeZone =
@@ -5399,6 +5415,7 @@ export function Fab({
     setHabitWindowEdgePreference("FRONT");
     setHabitNextDueOverride("");
     setHabitRoutineId("");
+    setHabitCircleId("");
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineDescription("");
@@ -8665,71 +8682,130 @@ export function Fab({
               {selected === "HABIT" && activeCreationMode === "main" && (
                 <div className="grid gap-3 md:gap-3.5">
                   <div className="grid gap-1.5">
-                    <Select
-                      value={habitRoutineId ?? ""}
-                      onValueChange={(value) => {
-                        if (value === "__create__") {
-                          setHabitRoutineId("");
-                          setIsCreatingHabitRoutineInline(true);
+                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+                      <Select
+                        value={habitRoutineId ?? ""}
+                        onValueChange={(value) => {
+                          if (value === "__create__") {
+                            setHabitRoutineId("");
+                            setIsCreatingHabitRoutineInline(true);
+                            setHabitInlineRoutineName("");
+                            setHabitInlineRoutineDescription("");
+                            return;
+                          }
+                          setIsCreatingHabitRoutineInline(false);
                           setHabitInlineRoutineName("");
                           setHabitInlineRoutineDescription("");
-                          return;
-                        }
-                        setIsCreatingHabitRoutineInline(false);
-                        setHabitInlineRoutineName("");
-                        setHabitInlineRoutineDescription("");
-                        setHabitRoutineId(value);
-                      }}
-                      hideChevron
-                      triggerClassName={cn(
-                        "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
-                        habitRoutineId
-                          ? "text-white/80 hover:text-blue-200"
-                          : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
-                      )}
-                      trigger={
-                        <span>
-                          {habitRoutineId
-                            ? (habitRoutines.find(
-                                (r) => r.id === habitRoutineId,
-                              )?.name ?? "Link to existing ROUTINE +")
-                            : "Link to existing ROUTINE +"}
-                        </span>
-                      }
-                    >
-                      <SelectContent className="min-w-[220px]">
-                        <SelectItem value="__create__">
-                          <div className="flex items-center gap-2 text-white">
-                            <Plus className="h-4 w-4" />
-                            <span>Create new routine</span>
-                          </div>
-                        </SelectItem>
-                        {habitRoutinesLoading ? (
-                          <SelectItem value="__loading" disabled>
-                            Loading routines…
-                          </SelectItem>
-                        ) : habitRoutines.length > 0 ? (
-                          habitRoutines.map((routine) => (
-                            <SelectItem key={routine.id} value={routine.id}>
-                              <div className="flex flex-col">
-                                <span className="font-medium">
-                                  {routine.name}
-                                </span>
-                                {routine.description ? (
-                                  <span className="text-xs text-white/60">
-                                    {routine.description}
-                                  </span>
-                                ) : null}
-                              </div>
-                            </SelectItem>
-                          ))
-                        ) : (
-                          <SelectItem value="__empty" disabled>
-                            No routines yet
-                          </SelectItem>
+                          setHabitRoutineId(value);
+                        }}
+                        hideChevron
+                        triggerClassName={cn(
+                          "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
+                          habitRoutineId
+                            ? "text-white/80 hover:text-blue-200"
+                            : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                         )}
-                      </SelectContent>
-                    </Select>
+                        trigger={
+                          <span>
+                            {habitRoutineId
+                              ? (habitRoutines.find(
+                                  (r) => r.id === habitRoutineId,
+                                )?.name ?? "Link to existing ROUTINE +")
+                              : "Link to existing ROUTINE +"}
+                          </span>
+                        }
+                      >
+                        <SelectContent className="min-w-[220px]">
+                          <SelectItem value="__create__">
+                            <div className="flex items-center gap-2 text-white">
+                              <Plus className="h-4 w-4" />
+                              <span>Create new routine</span>
+                            </div>
+                          </SelectItem>
+                          {habitRoutinesLoading ? (
+                            <SelectItem value="__loading" disabled>
+                              Loading routines…
+                            </SelectItem>
+                          ) : habitRoutines.length > 0 ? (
+                            habitRoutines.map((routine) => (
+                              <SelectItem key={routine.id} value={routine.id}>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">
+                                    {routine.name}
+                                  </span>
+                                  {routine.description ? (
+                                    <span className="text-xs text-white/60">
+                                      {routine.description}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="__empty" disabled>
+                              No routines yet
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={habitCircleId ?? ""}
+                        onValueChange={(value) => {
+                          setHabitCircleId(value === "__none__" ? "" : value);
+                        }}
+                        hideChevron
+                        placement="below"
+                        contentAlign="end"
+                        minContentWidth={220}
+                        maxHeight={180}
+                        triggerClassName={cn(
+                          "h-auto max-w-[11rem] border-0 bg-transparent p-0 text-right text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4 sm:max-w-[14rem]",
+                          habitCircleId
+                            ? "text-white/80 hover:text-blue-200"
+                            : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
+                        )}
+                        trigger={
+                          <span className="inline-flex min-w-0 items-center gap-1.5">
+                            {habitCircleId ? (
+                              <CircleDot
+                                className="h-3.5 w-3.5 shrink-0 text-blue-200"
+                                aria-hidden="true"
+                              />
+                            ) : null}
+                            <span className="truncate">
+                              {habitCircleTriggerLabel}
+                            </span>
+                          </span>
+                        }
+                      >
+                        <SelectContent className="w-full min-w-0 max-h-none">
+                          <SelectItem value="__none__">
+                            No Circle
+                          </SelectItem>
+                          {manageableCirclesLoading ? (
+                            <SelectItem value="__circles_loading" disabled>
+                              Loading circles…
+                            </SelectItem>
+                          ) : manageableCircles.length > 0 ? (
+                            manageableCircles.map((circle) => (
+                              <SelectItem key={circle.id} value={circle.id}>
+                                <div className="flex items-center gap-2">
+                                  <CircleDot
+                                    className="h-4 w-4 text-blue-200"
+                                    aria-hidden="true"
+                                  />
+                                  <span>{circle.name}</span>
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="__circles_empty" disabled>
+                              No managed circles yet
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     {isCreatingHabitRoutineInline && (
                       <div className="grid gap-1.5">
                         <Label htmlFor="habit-inline-routine-name">
@@ -10076,7 +10152,9 @@ export function Fab({
   }, [activeFabPage, overlayOpen, overlayPickerOpen, selected]);
 
   useEffect(() => {
-    if (selected !== "GOAL" && selected !== "PROJECT") return;
+    if (selected !== "GOAL" && selected !== "PROJECT" && selected !== "HABIT") {
+      return;
+    }
     const controller = new AbortController();
     let cancelled = false;
 
@@ -11937,6 +12015,7 @@ export function Fab({
               energy: habitEnergy,
               skill_id: habitSkillId || null,
               routine_id: routineIdToUse,
+              circle_id: isValidUuid(habitCircleId) ? habitCircleId : null,
               goal_id: habitGoalId || null,
               location_context_id: isValidUuid(habitLocationContextId)
                 ? habitLocationContextId
@@ -11954,8 +12033,6 @@ export function Fab({
             .eq("id", activeEditTarget.entityId)
             .eq("user_id", user.id);
           if (error) throwIfLimitError(error);
-
-          await notifySchedulerOfChange();
 
           try {
             await replaceSelectedTagsForEntity({
@@ -12151,6 +12228,7 @@ export function Fab({
               energy: habitEnergy,
               skill_id: habitSkillId || null,
               routine_id: routineIdToUse,
+              circle_id: isValidUuid(habitCircleId) ? habitCircleId : null,
               goal_id: habitGoalId || null,
               location_context_id: isValidUuid(habitLocationContextId)
                 ? habitLocationContextId
@@ -12169,7 +12247,6 @@ export function Fab({
             .single();
           if (error) throwIfLimitError(error);
           createdEntityId = habitData?.id ?? null;
-          await notifySchedulerOfChange();
         }
         if (createdEntityId && selectedTagIdsSnapshot.length > 0) {
           try {
@@ -12353,6 +12430,7 @@ export function Fab({
     }
   }, [
     habitDuration,
+    habitCircleId,
     habitDaylightPreference,
     habitEnergy,
     habitGoalId,
@@ -12383,7 +12461,6 @@ export function Fab({
     monuments,
     normalizedTaskDuration,
     normalizedProjectDuration,
-    notifySchedulerOfChange,
     projectDuration,
     projectDue,
     projectEnergy,
