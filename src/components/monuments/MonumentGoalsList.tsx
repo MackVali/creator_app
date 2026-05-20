@@ -422,6 +422,26 @@ async function fetchGoalWithRelationsById(goalId: string) {
   return (fallback.data as GoalRowWithRelations | null) ?? null;
 }
 
+function collectRoadmapItemGoalIds(
+  roadmapsWithItems: RoadmapWithItems[]
+): Set<string> {
+  const goalIds = new Set<string>();
+
+  for (const roadmap of roadmapsWithItems) {
+    for (const item of roadmap.items) {
+      if (item.goal?.id) {
+        goalIds.add(item.goal.id);
+      }
+
+      for (const campaignGoal of item.campaign?.goals ?? []) {
+        goalIds.add(campaignGoal.id);
+      }
+    }
+  }
+
+  return goalIds;
+}
+
 async function fetchTrueRoadmapsForMonument(
   userId: string,
   monumentId: string,
@@ -1308,11 +1328,18 @@ export function MonumentGoalsList({
       );
     }
 
-    // Compute standalone goals by excluding any that belong to a roadmap
-    const roadmapGoalIds = new Set<string>(
+    // Compute standalone goals by excluding any that already render inside a roadmap.
+    // Campaign goals do not always carry a `roadmap_id`, so collect the ids from
+    // the mixed roadmap payload as well as the legacy roadmap grouping.
+    const legacyRoadmapGoalIds = new Set<string>(
       roadmaps.flatMap((r) => (roadmapGoals.get(r.id) ?? []).map((g) => g.id))
     );
-    const standaloneGoals = goals.filter((g) => !roadmapGoalIds.has(g.id));
+    const trueRoadmapGoalIds = collectRoadmapItemGoalIds(
+      monumentRoadmapsWithItems
+    );
+    const standaloneGoals = goals.filter(
+      (g) => !legacyRoadmapGoalIds.has(g.id) && !trueRoadmapGoalIds.has(g.id)
+    );
     const isCompletedGoal = (goal: Goal) => goal.status === "COMPLETED";
     const filterGoalBySection = (goal: Goal) =>
       goalSection === "completed" ? isCompletedGoal(goal) : !isCompletedGoal(goal);
