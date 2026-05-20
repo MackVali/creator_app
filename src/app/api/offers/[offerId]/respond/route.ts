@@ -12,9 +12,70 @@ const offerColumns =
 const commandBlockColumns =
   "id, offer_id, circle_id, member_id, user_id, starts_at, ends_at, timezone, status, created_at, updated_at";
 
+const commandBlockRuleColumns =
+  "id, offer_id, circle_id, member_id, user_id, mode, status, starts_on, ends_on, days_of_week, start_local, end_local, required_minutes_per_day, required_minutes_per_week, timezone, terms, created_at, updated_at";
+
+const localDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+const localTimePattern = /^\d{2}:\d{2}$/;
+
 const RespondOfferSchema = z.object({
   response: z.enum(["ACCEPTED", "DECLINED"]),
 });
+
+const CommandBlockRuleTermsSchema = z
+  .object({
+    mode: z.enum(["FIXED", "FLEXIBLE"]),
+    dateStart: z.string().regex(localDatePattern, "Start date is required."),
+    dateEnd: z
+      .string()
+      .regex(localDatePattern, "End date is required.")
+      .nullable(),
+    daysOfWeek: z
+      .array(z.enum(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]))
+      .min(1, "Select at least one day."),
+    requiredMinutes: z
+      .number()
+      .int("Required duration must be whole minutes.")
+      .positive("Required duration must be greater than 0."),
+    fixedStartLocal: z
+      .string()
+      .regex(localTimePattern, "Start time is required.")
+      .nullable(),
+    fixedEndLocal: z
+      .string()
+      .regex(localTimePattern, "End time is required.")
+      .nullable(),
+  })
+  .superRefine((terms, context) => {
+    if (terms.dateEnd && terms.dateEnd < terms.dateStart) {
+      context.addIssue({
+        code: "custom",
+        message: "End date must not be before start date.",
+        path: ["dateEnd"],
+      });
+    }
+
+    if (terms.mode !== "FIXED") {
+      return;
+    }
+
+    if (!terms.fixedStartLocal || !terms.fixedEndLocal) {
+      context.addIssue({
+        code: "custom",
+        message: "Fixed offers require a start and end time.",
+        path: ["fixedStartLocal"],
+      });
+      return;
+    }
+
+    if (terms.fixedEndLocal <= terms.fixedStartLocal) {
+      context.addIssue({
+        code: "custom",
+        message: "End time must be after start time.",
+        path: ["fixedEndLocal"],
+      });
+    }
+  });
 
 type OfferRow = {
   id: string;
@@ -26,6 +87,7 @@ type OfferRow = {
   starts_at: string;
   ends_at: string;
   timezone: string | null;
+  terms: unknown;
 };
 
 type RespondOfferParams = {
@@ -152,6 +214,28 @@ export async function POST(request: Request, context: RespondOfferParams) {
     return NextResponse.json({ offer: updatedOffer }, { status: 200 });
   }
 
+  const parsedTerms = CommandBlockRuleTermsSchema.safeParse(offer.terms);
+
+  if (!parsedTerms.success) {
+    return NextResponse.json(
+      {
+        error:
+          parsedTerms.error.issues[0]?.message ??
+          "Offer terms are invalid for command block acceptance.",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (parsedTerms.data.mode === "FLEXIBLE") {
+    return NextResponse.json(
+      { error: "Flexible offer acceptance is not ready yet." },
+      { status: 400 }
+    );
+  }
+
+  const fixedTerms = parsedTerms.data;
+
   const { data: updatedOffer, error: updateError } = await admin
     .from("offers")
     .update({
@@ -179,6 +263,41 @@ export async function POST(request: Request, context: RespondOfferParams) {
     );
   }
 
+  const { data: commandBlockRule, error: commandBlockRuleError } = await admin
+    .from("command_block_rules")
+    .insert({
+      offer_id: offer.id,
+      circle_id: offer.circle_id,
+      member_id: offer.recipient_member_id,
+      user_id: offer.recipient_user_id,
+      mode: "FIXED",
+      status: "ACTIVE",
+      starts_on: fixedTerms.dateStart,
+      ends_on: fixedTerms.dateEnd,
+      days_of_week: fixedTerms.daysOfWeek,
+      start_local: fixedTerms.fixedStartLocal,
+      end_local: fixedTerms.fixedEndLocal,
+      required_minutes_per_day: fixedTerms.requiredMinutes,
+      required_minutes_per_week: null,
+      timezone: offer.timezone,
+      terms: offer.terms,
+    })
+    .select(commandBlockRuleColumns)
+    .single();
+
+  if (commandBlockRuleError) {
+    console.error(
+      "Failed to create command block rule from offer",
+      commandBlockRuleError
+    );
+    return NextResponse.json(
+      { error: "Offer accepted, but unable to create command block rule." },
+      { status: 500 }
+    );
+  }
+
+  // TODO: Move schedule rendering to command_block_rules, then remove this
+  // one-off command_blocks compatibility insert.
   const { data: commandBlock, error: commandBlockError } = await admin
     .from("command_blocks")
     .insert({
@@ -203,7 +322,7 @@ export async function POST(request: Request, context: RespondOfferParams) {
   }
 
   return NextResponse.json(
-    { offer: updatedOffer, commandBlock },
+    { offer: updatedOffer, commandBlockRule, commandBlock },
     { status: 200 }
   );
 }

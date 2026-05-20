@@ -88,6 +88,7 @@ const BLOCK_TYPE_LABEL: Record<BlockType, string> = {
   BREAK: "Break",
   PRACTICE: "Practice",
 };
+const DEFAULT_WEEKDAY_LINK_ENERGY: FlameLevel = "MEDIUM";
 const DAYS_OF_WEEK = [
   { key: "sun", label: "S", index: 0 },
   { key: "mon", label: "M", index: 1 },
@@ -551,14 +552,15 @@ export default function NewDayTypePage() {
 
   const ensureDayTypeBlockSettings = (
     blockId: string,
-    dayTypeId: string | null | undefined = selectedDayTypeId
+    dayTypeId: string | null | undefined = selectedDayTypeId,
+    defaultEnergy: FlameLevel = "NO"
   ) => {
     const stateKey = getDayTypeBlockStateKey(dayTypeId, blockId);
     if (!stateKey) return;
     setBlockEnergy((prev) => {
       if (prev.has(stateKey)) return prev;
       const next = new Map(prev);
-      next.set(stateKey, "NO");
+      next.set(stateKey, defaultEnergy);
       return next;
     });
     setBlockLocation((prev) => {
@@ -662,15 +664,43 @@ export default function NewDayTypePage() {
     pruneMap(setBlockAllowedMonumentIds);
   }, []);
 
-  const cycleEnergy = (id: string) => {
-    const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, id);
+  const getNextEnergyLevel = (current: FlameLevel): FlameLevel => {
+    const idx = FLAME_LEVELS.indexOf(current);
+    const nextIdx = idx >= 0 ? (idx + 1) % FLAME_LEVELS.length : 0;
+    return FLAME_LEVELS[nextIdx] ?? "NO";
+  };
+
+  const setEnergyForBlock = (
+    blockId: string,
+    dayTypeId: string | null | undefined,
+    energy: FlameLevel
+  ) => {
+    const stateKey = getDayTypeBlockStateKey(dayTypeId, blockId);
+    if (!stateKey) return;
     setBlockEnergy((prev) => {
-      if (!stateKey) return prev;
-      const current = prev.get(stateKey) ?? "NO";
-      const idx = FLAME_LEVELS.indexOf(current);
-      const nextLevel = FLAME_LEVELS[(idx + 1) % FLAME_LEVELS.length];
-      return new Map(prev).set(stateKey, nextLevel);
+      const next = new Map(prev);
+      next.set(stateKey, energy);
+      return next;
     });
+  };
+
+  const persistBlockEnergy = async (
+    blockId: string,
+    dayTypeId: string | null | undefined,
+    energy: FlameLevel
+  ) => {
+    if (!supabase || !dayTypeId) return;
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase
+      .from("day_type_time_blocks")
+      .update({ energy })
+      .eq("user_id", user.id)
+      .eq("day_type_id", dayTypeId)
+      .eq("time_block_id", blockId);
+    if (error) throw error;
   };
 
   const updateLocationForBlock = (
@@ -1397,7 +1427,9 @@ export default function NewDayTypePage() {
           });
           return next;
         });
-        uniqueDayTypes.forEach((dayType) => ensureDayTypeBlockSettings(optimistic.id, dayType.id));
+        uniqueDayTypes.forEach((dayType) =>
+          ensureDayTypeBlockSettings(optimistic.id, dayType.id, DEFAULT_WEEKDAY_LINK_ENERGY)
+        );
         if (focusedResolved) {
           if (focusedResolved.dayKey !== focusedDayKey) {
             setFocusedDayKey(focusedResolved.dayKey);
@@ -1472,7 +1504,7 @@ export default function NewDayTypePage() {
               user_id: user.id,
               day_type_id: dayType.id,
               time_block_id: inserted.id,
-              energy: "NO",
+              energy: DEFAULT_WEEKDAY_LINK_ENERGY,
               block_type: "FOCUS",
               location_context_id: null,
               allow_all_habit_types: true,
@@ -1507,7 +1539,9 @@ export default function NewDayTypePage() {
           });
           return next;
         });
-        uniqueDayTypes.forEach((dayType) => ensureDayTypeBlockSettings(inserted.id, dayType.id));
+        uniqueDayTypes.forEach((dayType) =>
+          ensureDayTypeBlockSettings(inserted.id, dayType.id, DEFAULT_WEEKDAY_LINK_ENERGY)
+        );
         const focusedResolved =
           resolved.find((entry) => entry.dayKey === focusedDayKey) ?? resolved[0] ?? null;
         if (focusedResolved) {
@@ -2862,7 +2896,21 @@ export default function NewDayTypePage() {
                   const isConstraintsTargetBlock = constraintsTarget?.id === block.id;
                   const tourHighlightBlock = isConstraintsTargetBlock || editingBlockId === block.id;
                   const label = normalizeLabel(block.label) ?? "TIME BLOCK";
-                  const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, block.id);
+                  const focusedOwnerId = dayOwnership.get(focusedDayKey) ?? null;
+                  const selectedDayTypeHasBlock = selectedDayTypeId
+                    ? dayTypeBlockMap.get(selectedDayTypeId)?.has(block.id) ?? false
+                    : false;
+                  const focusedDayTypeHasBlock = focusedOwnerId
+                    ? dayTypeBlockMap.get(focusedOwnerId)?.has(block.id) ?? false
+                    : false;
+                  const visibleDayTypeId = isCreatingDayType
+                    ? selectedDayTypeId
+                    : selectedDayTypeHasBlock
+                      ? selectedDayTypeId
+                      : focusedDayTypeHasBlock
+                        ? focusedOwnerId
+                        : selectedDayTypeId ?? focusedOwnerId;
+                  const stateKey = getDayTypeBlockStateKey(visibleDayTypeId, block.id);
                   const energyLevel = stateKey ? blockEnergy.get(stateKey) ?? "NO" : "NO";
                   const locationOption = stateKey ? blockLocation.get(stateKey) : null;
                   const allowAllHabits = stateKey ? blockAllowAllHabitTypes.get(stateKey) ?? true : true;
@@ -2989,12 +3037,21 @@ export default function NewDayTypePage() {
                           <div className="flex items-center gap-2">
                             <button
 	                              type="button"
-	                              disabled={!isCreatingDayType}
-	                              onClick={(event) => {
+	                              disabled={!visibleDayTypeId}
+	                              onClick={async (event) => {
 	                                event.preventDefault();
 	                                event.stopPropagation();
-	                                if (!isCreatingDayType) return;
-	                                cycleEnergy(block.id);
+	                                if (!visibleDayTypeId) return;
+	                                const nextEnergyLevel = getNextEnergyLevel(energyLevel);
+	                                setEnergyForBlock(block.id, visibleDayTypeId, nextEnergyLevel);
+	                                if (!isCreatingDayType) {
+	                                  try {
+	                                    await persistBlockEnergy(block.id, visibleDayTypeId, nextEnergyLevel);
+	                                  } catch (err) {
+	                                    console.error(err);
+	                                    setSaveMessage("Unable to update block energy right now.");
+	                                  }
+	                                }
 	                              }}
 	                              className="rounded-md bg-white/5 px-1 py-0.5 text-white/70 transition hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-white/30 disabled:cursor-default disabled:opacity-70"
                               aria-label={`Cycle energy for ${label}`}
