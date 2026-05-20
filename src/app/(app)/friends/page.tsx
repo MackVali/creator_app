@@ -14,19 +14,27 @@ import type {
   SentInvite,
   SuggestedFriend,
 } from '@/types/friends';
-import FriendsList from '@/components/friends/FriendsList';
 import {
   RELATIONSHIP_VIEWS,
   RelationshipView,
 } from '@/components/friends/RelationshipViewBar';
 import SearchFriends from '@/components/friends/SearchFriends';
 import RequestsInvites from '@/components/friends/RequestsInvites';
+import MessageFriendButton from '@/components/friends/MessageFriendButton';
+import { DEFAULT_AVATAR_URL } from '@/lib/friends/avatar';
+import Image from 'next/image';
+import Link from 'next/link';
 import {
   Select,
   SelectContent,
   SelectItem,
 } from '@/components/ui/select';
-import { ChevronDown } from 'lucide-react';
+import {
+  Camera,
+  ChevronDown,
+  SlidersHorizontal,
+  SquarePen,
+} from 'lucide-react';
 
 export default function FriendsPage() {
   const [tab, setTab] = useState<'friends' | 'search' | 'requests'>('friends');
@@ -42,6 +50,11 @@ export default function FriendsPage() {
   const [searchProfiles, setSearchProfiles] = useState<DiscoveryProfile[]>([]);
   const [isLoadingSearch, setIsLoadingSearch] = useState(true);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [inboxLane, setInboxLane] = useState<'primary' | 'requests' | 'general'>(
+    'primary'
+  );
+  const [sortMode, setSortMode] = useState<'recent' | 'name' | 'unread'>('recent');
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const friendsTabRef = useRef<HTMLButtonElement>(null);
   const searchTabRef = useRef<HTMLButtonElement>(null);
   const requestsTabRef = useRef<HTMLButtonElement>(null);
@@ -232,6 +245,71 @@ export default function FriendsPage() {
     );
   }, [friends]);
 
+  const inboxFriendThreads = useMemo(() => {
+    const relativeTimes = ['5m', '22m', '1h', '3h', '8h', '1d', '2d', '4d', '1w'];
+    return friends.map((friend, index) => {
+      const displayName = friend.displayName || friend.username;
+      const unread = friend.isOnline || index % 3 === 0;
+      const isPrimary = friend.hasRing || friend.isOnline || index < 4;
+      const snippet = friend.isOnline
+        ? `Active now · pick up where you left off`
+        : friend.hasRing
+          ? `Sent a reel by ${displayName}`
+          : `Sent`;
+      return {
+        id: friend.id,
+        lane: isPrimary ? 'primary' : 'general',
+        displayName,
+        username: friend.username,
+        avatarUrl: friend.avatarUrl || DEFAULT_AVATAR_URL,
+        href: `/friends/${encodeURIComponent(friend.username)}`,
+        snippet,
+        unread,
+        timeLabel: relativeTimes[index % relativeTimes.length],
+        canMessage: Boolean(friend.userId),
+        friend,
+      };
+    });
+  }, [friends]);
+
+  const inboxRequestThreads = useMemo(
+    () =>
+      requests.map((request, index) => ({
+        id: request.id,
+        lane: 'requests' as const,
+        displayName: request.displayName || request.username,
+        username: request.username,
+        avatarUrl: request.avatarUrl || DEFAULT_AVATAR_URL,
+        href: `/friends/${encodeURIComponent(request.username)}`,
+        snippet:
+          request.note && request.note.trim().length > 0
+            ? request.note
+            : `${request.mutualFriends} mutual friend${
+                request.mutualFriends === 1 ? '' : 's'
+              }`,
+        unread: true,
+        timeLabel: `${index + 1}d`,
+      })),
+    [requests]
+  );
+
+  const activeInboxThreads = useMemo(() => {
+    const source =
+      inboxLane === 'requests'
+        ? inboxRequestThreads
+        : inboxFriendThreads.filter((thread) => thread.lane === inboxLane);
+    const filtered = unreadOnly ? source.filter((thread) => thread.unread) : source;
+    return [...filtered].sort((a, b) => {
+      if (sortMode === 'name') {
+        return a.displayName.localeCompare(b.displayName);
+      }
+      if (sortMode === 'unread') {
+        return Number(b.unread) - Number(a.unread);
+      }
+      return 0;
+    });
+  }, [inboxLane, inboxRequestThreads, inboxFriendThreads, sortMode, unreadOnly]);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
       return;
@@ -361,7 +439,6 @@ export default function FriendsPage() {
         aria-labelledby="friends-tab"
         hidden={tab !== 'friends'}
       >
-
         {isLoading ? (
           <div className="rounded-2xl bg-slate-900/50 p-6 text-center text-sm text-white/60 ring-1 ring-white/10">
             {friendsView === 'following'
@@ -370,20 +447,145 @@ export default function FriendsPage() {
                 ? 'Loading your followers…'
                 : 'Loading your friends…'}
           </div>
-        ) : !error && sortedFriends.length === 0 ? (
-          <div className="rounded-2xl bg-slate-900/50 p-6 text-center text-sm text-white/60 ring-1 ring-white/10">
-            {friendsView === 'following'
-              ? 'You are not following anyone yet.'
-              : friendsView === 'followers'
-                ? 'No one is following you yet.'
-                : 'You haven’t added any friends yet.'}
-          </div>
         ) : (
-          <FriendsList
-            data={sortedFriends}
-            isLoading={isLoading}
-            error={error}
-          />
+          <div className="space-y-4 rounded-[28px] border border-white/10 bg-[#050b16] p-4 shadow-[0_24px_80px_rgba(2,6,23,0.55)]">
+            {error ? (
+              <div className="rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200 ring-1 ring-rose-400/30">
+                {error}
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-white">Inbox</h2>
+              <button
+                type="button"
+                onClick={() => setTab('search')}
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/90 transition hover:border-white/30 hover:bg-white/10"
+              >
+                <SquarePen className="h-4 w-4" />
+                New message
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setUnreadOnly((prev) => !prev)}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition ${
+                  unreadOnly
+                    ? 'border-white/30 bg-white/10 text-white'
+                    : 'border-white/15 bg-transparent text-white/80 hover:border-white/25 hover:text-white'
+                }`}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                Filter {unreadOnly ? 'Unread' : 'All'}
+              </button>
+              {(['primary', 'requests', 'general'] as const).map((lane) => (
+                <button
+                  key={lane}
+                  type="button"
+                  onClick={() => setInboxLane(lane)}
+                  className={`rounded-full border px-4 py-2 text-sm font-semibold capitalize transition ${
+                    inboxLane === lane
+                      ? 'border-transparent bg-white/15 text-white'
+                      : 'border-white/15 text-white/75 hover:border-white/25 hover:text-white'
+                  }`}
+                >
+                  {lane}
+                  {lane === 'primary' ? (
+                    <span className="ml-2 text-white/65">{inboxFriendThreads.filter((thread) => thread.lane === 'primary').length}</span>
+                  ) : null}
+                  {lane === 'requests' ? (
+                    <span className="ml-2 text-white/65">{inboxRequestThreads.length}</span>
+                  ) : null}
+                </button>
+              ))}
+
+              <button
+                type="button"
+                onClick={() =>
+                  setSortMode((prev) =>
+                    prev === 'recent'
+                      ? 'name'
+                      : prev === 'name'
+                        ? 'unread'
+                        : 'recent'
+                  )
+                }
+                className="ml-auto inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-2 text-sm font-medium text-white/80 transition hover:border-white/25 hover:text-white"
+              >
+                Sort:{' '}
+                {sortMode === 'recent'
+                  ? 'Recent'
+                  : sortMode === 'name'
+                    ? 'Name'
+                    : 'Unread'}
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </div>
+
+            {activeInboxThreads.length === 0 ? (
+              <div className="rounded-2xl bg-slate-900/40 p-6 text-center text-sm text-white/65 ring-1 ring-white/10">
+                No conversations found for this filter.
+              </div>
+            ) : (
+              <ul className="space-y-2">
+                {activeInboxThreads.map((thread) => (
+                  <li key={thread.id}>
+                    <div className="flex items-center gap-3 rounded-2xl border border-white/5 bg-slate-950/55 px-3 py-2 transition hover:border-white/15 hover:bg-slate-900/70">
+                      <Link
+                        href={thread.href}
+                        className="min-w-0 flex-1"
+                        prefetch={false}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Image
+                            alt={`${thread.displayName} avatar`}
+                            src={thread.avatarUrl}
+                            width={56}
+                            height={56}
+                            className="h-14 w-14 rounded-full object-cover"
+                          />
+                          <div className="min-w-0">
+                            <p className="truncate text-base font-semibold text-white">
+                              {thread.displayName}
+                            </p>
+                            <p className="truncate text-sm text-white/75">
+                              {thread.snippet}{' '}
+                              <span className="text-white/45">· {thread.timeLabel}</span>
+                            </p>
+                          </div>
+                        </div>
+                      </Link>
+                      {thread.unread ? (
+                        <span
+                          className="h-2.5 w-2.5 rounded-full bg-blue-500"
+                          aria-label="Unread conversation"
+                        />
+                      ) : null}
+                      {'friend' in thread && thread.canMessage ? (
+                        <MessageFriendButton
+                          friend={thread.friend}
+                          className="rounded-full border border-white/10 p-2 text-white/70 hover:border-white/30 hover:text-white"
+                          aria-label={`Message ${thread.username}`}
+                        >
+                          <Camera className="h-4 w-4" />
+                        </MessageFriendButton>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setTab('requests')}
+                          className="rounded-full border border-white/10 p-2 text-white/70 transition hover:border-white/30 hover:text-white"
+                          aria-label={`Open ${thread.username} request`}
+                        >
+                          <Camera className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </section>
 
