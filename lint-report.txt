@@ -1,0 +1,496 @@
+
+/Users/validtali/premium-app/components/Source.tsx
+  1449:10  warning  'listingForm' is assigned a value but never used                                                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+  1451:10  warning  'listingError' is assigned a value but never used                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  2295:6   warning  React Hook useEffect has a missing dependency: 'resetProductDetailImageState'. Either include it or remove the dependency array                                                                                                                                                          react-hooks/exhaustive-deps
+  2361:6   warning  React Hook useEffect has a missing dependency: 'resetServiceDetailImageState'. Either include it or remove the dependency array                                                                                                                                                          react-hooks/exhaustive-deps
+  2407:9   warning  'activeIntegrationCount' is assigned a value but never used                                                                                                                                                                                                                              @typescript-eslint/no-unused-vars
+  2957:14  warning  'error' is defined but never used                                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  2993:14  warning  'error' is defined but never used                                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  3936:25  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  4017:23  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  4172:15  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  4462:21  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  4832:21  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  5312:10  warning  'ListingCard' is defined but never used                                                                                                                                                                                                                                                  @typescript-eslint/no-unused-vars
+  5831:10  warning  'PublishRow' is defined but never used                                                                                                                                                                                                                                                   @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/components/habits/habit-form-fields.tsx
+  483:7  warning  The 'resolvedWindowOptions' conditional could make the dependencies of useMemo Hook (at line 506) change on every render. To fix this, wrap the initialization of 'resolvedWindowOptions' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+/Users/validtali/premium-app/components/ui/EventModal.tsx
+   155:7   warning  'normalizeLookupKey' is assigned a value but never used                                                                                                                                                              @typescript-eslint/no-unused-vars
+   191:16  warning  'createGoalFallback' is defined but never used                                                                                                                                                                       @typescript-eslint/no-unused-vars
+   523:7   warning  'priorityCodeToOptionId' is assigned a value but never used                                                                                                                                                          @typescript-eslint/no-unused-vars
+   540:7   warning  'energyCodeToOptionId' is assigned a value but never used                                                                                                                                                            @typescript-eslint/no-unused-vars
+  2733:15  warning  'goalPriorityCode' is assigned a value but never used                                                                                                                                                                @typescript-eslint/no-unused-vars
+  2737:15  warning  'goalEnergyCode' is assigned a value but never used                                                                                                                                                                  @typescript-eslint/no-unused-vars
+  2897:5   warning  React Hook useCallback has missing dependencies: 'energyChoiceOptions', 'priorityChoiceOptions', 'resolveEnergyPayloadValue', and 'resolvePriorityPayloadValue'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/Users/validtali/premium-app/components/ui/Fab.tsx
+    109:10  warning  'ErrorBoundary' is defined but never used                                                                                          @typescript-eslint/no-unused-vars
+    139:15  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+    145:10  warning  'DebugPanel' is defined but never used                                                                                             @typescript-eslint/no-unused-vars
+    951:7   warning  'formatTimelinePlacementRange' is assigned a value but never used                                                                  @typescript-eslint/no-unused-vars
+   1606:17  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   1606:46  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   1620:6   warning  'e' is defined but never used                                                                                                      @typescript-eslint/no-unused-vars
+   1634:47  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   1638:9   error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   1826:7   warning  'formatTimeLabel' is assigned a value but never used                                                                               @typescript-eslint/no-unused-vars
+   1857:6   warning  'DayTypePreviewSegment' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+   2182:9   warning  'overlayDragCandidatePlacementStartMinutes' is assigned a value but never used                                                     @typescript-eslint/no-unused-vars
+   2497:33  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   4945:27  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   5687:36  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   5715:43  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   5740:43  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   5832:5   warning  React Hook useCallback has an unnecessary dependency: 'overlayTimelinePxPerMin'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+   5842:13  warning  'intent' is assigned a value but never used                                                                                        @typescript-eslint/no-unused-vars
+   5978:9   warning  'menuVariants' is assigned a value but never used                                                                                  @typescript-eslint/no-unused-vars
+   6073:25  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   6084:27  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   6133:61  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   9499:16  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   9506:16  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   9656:19  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+   9985:28  error    Unexpected any. Specify a different type                                                                                           @typescript-eslint/no-explicit-any
+  15468:6   warning  React Hook useEffect has a missing dependency: 'selectedOp'. Either include it or remove the dependency array                      react-hooks/exhaustive-deps
+
+/Users/validtali/premium-app/components/ui/select.tsx
+  168:8  warning  React Hook React.useEffect has a missing dependency: 'updateOpen'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  531:9  warning  Elements with the ARIA role "option" must have the following attributes defined: aria-selected                       jsx-a11y/role-has-required-aria-props
+
+/Users/validtali/premium-app/lib/analytics.ts
+  16:5  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/Users/validtali/premium-app/lib/db/profiles-client.ts
+  35:12  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+  55:12  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/lib/queries/habits.ts
+  222:10  warning  'pickLatestTimestamp' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/lib/utils.ts
+   8:10  warning  'safeDateTimeFormat' is defined but never used  @typescript-eslint/no-unused-vars
+  11:12  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/scripts/apply-migration-cleanup.js
+   91:21  warning  'viewData' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  101:14  warning  'e' is defined but never used                  @typescript-eslint/no-unused-vars
+  207:21  warning  'viewData' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  218:14  warning  'e' is defined but never used                  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/scripts/backfill-event-names.js
+  1:16  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+  2:26  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+
+/Users/validtali/premium-app/scripts/check-profile-state.js
+  86:9  warning  'username' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/scripts/run-scheduler.ts
+  60:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/scripts/smoke-ai-scheduler-ops.ts
+  8:10  warning  'ensureEnv' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/scripts/test-auth-gate.js
+   13:7   warning  'BASE_URL' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  162:12  warning  'error' is defined but never used              @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/scripts/test-frontend-forms.js
+  11:7  warning  'path' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/scripts/verify-no-overlap.ts
+  35:7  error  'overlaps' is never reassigned. Use 'const' instead  prefer-const
+
+/Users/validtali/premium-app/scripts/verify-schema-cleanup.js
+   91:15  warning  'data' is assigned a value but never used        @typescript-eslint/no-unused-vars
+  159:21  warning  'insertData' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/(app)/dashboard/_skills/SkillsCarousel.tsx
+  607:6   warning  '_categoryId' is defined but never used  @typescript-eslint/no-unused-vars
+  607:27  warning  '_nextName' is defined but never used    @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/(app)/dashboard/page.tsx
+  19:9  warning  'data' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/(app)/goals/components/GoalDrawer.tsx
+   10:3   warning  'SheetDescription' is defined but never used         @typescript-eslint/no-unused-vars
+   29:10  warning  'cn' is defined but never used                       @typescript-eslint/no-unused-vars
+  302:10  warning  'hasCustomEmoji' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/(app)/goals/components/ProjectQuickEditDialog.tsx
+  134:7  warning  'formatEnergyLabel' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/(app)/goals/components/RoadmapDrawer.tsx
+  3:23  warning  'useEffect' is defined but never used           @typescript-eslint/no-unused-vars
+  3:34  warning  'useMemo' is defined but never used             @typescript-eslint/no-unused-vars
+  4:10  warning  'X' is defined but never used                   @typescript-eslint/no-unused-vars
+  5:10  warning  'getSupabaseBrowser' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/(app)/goals/page.tsx
+   150:7   warning  'DAY_IN_MS' is assigned a value but never used             @typescript-eslint/no-unused-vars
+   158:7   warning  'GOAL_PRIORITY_WEIGHT' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  1063:15  warning  'goalsWithRoadmap' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  1387:6   warning  '_limitCode' is defined but never used                     @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/(app)/habits/[id]/edit/page.tsx
+  151:10  warning  'monumentLookup' is assigned a value but never used                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  472:6   warning  React Hook useEffect has an unnecessary dependency: 'open'. Either exclude it or remove the dependency array. Outer scope values like 'open' aren't valid dependencies because mutating them doesn't re-render the component  react-hooks/exhaustive-deps
+  604:36  error    Unexpected any. Specify a different type                                                                                                                                                                                      @typescript-eslint/no-explicit-any
+  604:48  error    Unexpected any. Specify a different type                                                                                                                                                                                      @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/src/app/(app)/habits/new/page.tsx
+  270:6  warning  React Hook useEffect has a missing dependency: 'MAX_PRACTICE_ENERGY'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/Users/validtali/premium-app/src/app/(app)/habits/page.tsx
+   11:3   warning  'Skeleton' is defined but never used               @typescript-eslint/no-unused-vars
+   86:10  warning  'getHabitLocationLabel' is defined but never used  @typescript-eslint/no-unused-vars
+  130:10  warning  'buildHabitStreakPills' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/(app)/profile/[handle]/page.tsx
+   71:10  warning  'relationshipLoading' is assigned a value but never used     @typescript-eslint/no-unused-vars
+  525:9   warning  'handleFollow' is assigned a value but never used            @typescript-eslint/no-unused-vars
+  582:9   warning  'handleRespondToRequest' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/(app)/profile/edit/ProfileEditForm.tsx
+  112:16  warning  'error' is defined but never used               @typescript-eslint/no-unused-vars
+  188:15  warning  'data' is assigned a value but never used       @typescript-eslint/no-unused-vars
+  201:14  warning  'error' is defined but never used               @typescript-eslint/no-unused-vars
+  226:9   warning  'avatarUrl' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/(app)/profile/edit/page.tsx
+  1029:19  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  1216:19  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/validtali/premium-app/src/app/(app)/schedule/nexus/page.tsx
+   37:3   warning  'ArrowLeft' is defined but never used             @typescript-eslint/no-unused-vars
+  530:15  warning  'skillLookup' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/(app)/schedule/page.tsx
+   108:3   warning  'normalizeTimeZone' is defined but never used                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+   116:23  warning  'format' is defined but never used                                                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+   160:10  warning  'safeDateTimeFormat' is defined but never used                                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+   163:12  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+   199:7   warning  'LONG_PRESS_ACTION_DELAY_MS' is assigned a value but never used                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  1739:3   warning  'projectInstances' is defined but never used                                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  1744:3   warning  'habitPlacements' is defined but never used                                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+  2567:26  warning  'profile' is assigned a value but never used                                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  2567:44  warning  'profileLoading' is assigned a value but never used                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+  2619:9   warning  'isViewingToday' is assigned a value but never used                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+  2680:9   warning  'todayBaseDate' is assigned a value but never used                                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+  2773:3   warning  The 'setTasks' function makes the dependencies of useCallback Hook (at line 5628) change on every render. To fix this, wrap the definition of 'setTasks' in its own useCallback() Hook                                                                                 react-hooks/exhaustive-deps
+  2926:3   warning  The 'setExpandedProjects' function makes the dependencies of useCallback Hook (at line 3481) change on every render. To fix this, wrap the definition of 'setExpandedProjects' in its own useCallback() Hook                                                           react-hooks/exhaustive-deps
+  2926:3   warning  The 'setExpandedProjects' function makes the dependencies of useEffect Hook (at line 3497) change on every render. To fix this, wrap the definition of 'setExpandedProjects' in its own useCallback() Hook                                                             react-hooks/exhaustive-deps
+  2948:10  warning  'editOrigin' is assigned a value but never used                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  2948:22  warning  'setEditOrigin' is assigned a value but never used                                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+  2977:17  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+  3185:9   warning  'hasInitializedRef' is assigned a value but never used                                                                                                                                                                                                                 @typescript-eslint/no-unused-vars
+  3203:6   warning  React Hook useEffect has a missing dependency: 'clearScheduleData'. Either include it or remove the dependency array                                                                                                                                                   react-hooks/exhaustive-deps
+  3587:44  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+  3813:6   warning  React Hook useEffect has a missing dependency: 'clearScheduleData'. Either include it or remove the dependency array                                                                                                                                                   react-hooks/exhaustive-deps
+  3889:6   warning  React Hook useEffect has a missing dependency: 'effectiveTimeZone'. Either include it or remove the dependency array                                                                                                                                                   react-hooks/exhaustive-deps
+  3969:38  error    Unexpected any. Specify a different type                                                                                                                                                                                                                               @typescript-eslint/no-explicit-any
+  4361:6   warning  React Hook useMemo has unnecessary dependencies: 'allInstances', 'loadInstancesRef', 'localTimeZone', 'refreshScheduledProjectIds', and 'resolvedModePayload'. Either exclude them or remove the dependency array                                                      react-hooks/exhaustive-deps
+  4502:9   warning  'editingEventTypeLabel' is assigned a value but never used                                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+  4516:9   warning  'editingTimeRangeLabel' is assigned a value but never used                                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+  4867:6   warning  React Hook useEffect has a missing dependency: 'canonicalTodayDateKey'. Either include it or remove the dependency array                                                                                                                                               react-hooks/exhaustive-deps
+  5218:9   warning  'ok' is assigned a value but never used                                                                                                                                                                                                                                @typescript-eslint/no-unused-vars
+  5297:5   warning  React Hook useCallback has an unnecessary dependency: 'applyStatusTargets'. Either exclude it or remove the dependency array. Outer scope values like 'applyStatusTargets' aren't valid dependencies because mutating them doesn't re-render the component             react-hooks/exhaustive-deps
+  5630:3   warning  The 'navigate' function makes the dependencies of useEffect Hook (at line 3683) change on every render. To fix this, wrap the definition of 'navigate' in its own useCallback() Hook                                                                                   react-hooks/exhaustive-deps
+  5818:5   warning  React Hook useCallback has a missing dependency: 'effectiveTimeZone'. Either include it or remove the dependency array                                                                                                                                                 react-hooks/exhaustive-deps
+  5879:6   warning  React Hook useCallback has missing dependencies: 'ENABLE_BACKGROUND_SCHEDULER' and 'FULL_WRITE_WINDOW_DAYS'. Either include them or remove the dependency array                                                                                                        react-hooks/exhaustive-deps
+  6322:7   warning  'scheduleContext' is defined but never used                                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+  6603:5   warning  React Hook useCallback has missing dependencies: 'dayViewDateKey' and 'userId'. Either include them or remove the dependency array                                                                                                                                     react-hooks/exhaustive-deps
+  6644:5   warning  React Hook useCallback has a missing dependency: 'instances'. Either include it or remove the dependency array                                                                                                                                                         react-hooks/exhaustive-deps
+  6803:5   warning  React Hook useMemo has a missing dependency: 'dayTimelineModel'. Either include it or remove the dependency array                                                                                                                                                      react-hooks/exhaustive-deps
+  7049:9   warning  'dayStart' is assigned a value but never used                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+  7050:9   warning  'dayEnd' is assigned a value but never used                                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+  7072:13  warning  'viewIsPastDay' is assigned a value but never used                                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+  7073:13  warning  'viewIsFutureDay' is assigned a value but never used                                                                                                                                                                                                                   @typescript-eslint/no-unused-vars
+  7336:21  warning  'windowHeightPx' is assigned a value but never used                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+  9076:5   warning  React Hook useCallback has missing dependencies: 'editingSnapshot', 'handleOpenDayTypeBlockConstraints', 'instances', 'instancesById', 'manualPlacementSession', 'practiceContextDisplayById', and 'syncPairings'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/Users/validtali/premium-app/src/app/(app)/schedule/scheduler/page.tsx
+  86:52  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/src/app/analytics/_components/MetricBadge.tsx
+  1:10  warning  'ReactNode' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/api/ai/apply/route.ts
+   382:55  error    Unexpected any. Specify a different type                     @typescript-eslint/no-explicit-any
+   426:7   warning  'VALID_GOAL_OVERRIDE' is assigned a value but never used     @typescript-eslint/no-unused-vars
+   427:7   warning  'VALID_PROJECT_OVERRIDE' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  1218:19  error    'selectedDayType' is never reassigned. Use 'const' instead   prefer-const
+  1526:19  error    'selectedDayType' is never reassigned. Use 'const' instead   prefer-const
+
+/Users/validtali/premium-app/src/app/api/ai/intent/route.ts
+  507:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/src/app/api/dashboard/route.ts
+  47:8   error  'skillsResponse' is never reassigned. Use 'const' instead  prefer-const
+  47:24  error  'catsResponse' is never reassigned. Use 'const' instead    prefer-const
+
+/Users/validtali/premium-app/src/app/api/onboarding/needs-skill-stack/route.ts
+  7:27  warning  '_' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/api/profile/update/route.ts
+  14:12  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/api/windows/for-date/route.ts
+  3:36  warning  'WindowLite' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/app/legal/terms/page.tsx
+  60:29  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  60:35  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+
+/Users/validtali/premium-app/src/components/monuments/MonumentCreationForm.tsx
+  346:17  warning  Unused eslint-disable directive (no problems were reported from 'react/no-array-index-key')
+
+/Users/validtali/premium-app/src/components/profile/HeroHeader.tsx
+    9:3  warning  'ExternalLink' is defined but never used         @typescript-eslint/no-unused-vars
+  155:9  warning  'joinedDate' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/components/profile/ProfileDetailSheet.tsx
+  78:7  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/validtali/premium-app/src/components/profile/modules/buildProfileModules.ts
+  35:3  warning  'profile' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/components/schedule/HabitEditSheet.tsx
+    61:3   warning  'updateInstanceStatus' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+   342:10  warning  'monumentLookup' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+   921:6   warning  React Hook useMemo has missing dependencies: 'daylightPreference' and 'habitType'. Either include them or remove the dependency array                                                                                                                                                                                                                                                                                                                   react-hooks/exhaustive-deps
+  1220:6   warning  React Hook useEffect has missing dependencies: 'instance.duration_min', 'instance?.energy_resolved', 'scheduleContext.durationMin', 'scheduleContext?.energyResolved', and 'scheduleContext?.windowId'. Either include them or remove the dependency array. If 'setEnergy' needs the current value of 'scheduleContext.energyResolved', you can also switch to useReducer instead of useState and read 'scheduleContext.energyResolved' in the reducer  react-hooks/exhaustive-deps
+
+/Users/validtali/premium-app/src/components/schedule/JumpToDateSheet.tsx
+    34:15  warning  'WindowLite' is defined but never used                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+    91:7   warning  'BLOCK_TYPES' is assigned a value but never used                                                                                                                                                                                                              @typescript-eslint/no-unused-vars
+   226:10  warning  'assignmentId' is assigned a value but never used                                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+   226:24  warning  'setAssignmentId' is assigned a value but never used                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+   231:10  warning  'isLoadingAssignment' is assigned a value but never used                                                                                                                                                                                                      @typescript-eslint/no-unused-vars
+   232:10  warning  'assignmentError' is assigned a value but never used                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+   233:10  warning  'savingBlockId' is assigned a value but never used                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+   832:6   warning  React Hook useEffect has a missing dependency: 'normalizeTimeLabel'. Either include it or remove the dependency array                                                                                                                                         react-hooks/exhaustive-deps
+   842:9   warning  'formatWindowHours' is assigned a value but never used                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+   844:9   warning  The 'normalizeFlameLevel' function makes the dependencies of useEffect Hook (at line 1061) change on every render. To fix this, wrap the definition of 'normalizeFlameLevel' in its own useCallback() Hook                                                    react-hooks/exhaustive-deps
+  1220:5   warning  React Hook useCallback has an unnecessary dependency: 'OVERLAY_DURATION_MS'. Either exclude it or remove the dependency array. Outer scope values like 'OVERLAY_DURATION_MS' aren't valid dependencies because mutating them doesn't re-render the component  react-hooks/exhaustive-deps
+  1622:5   warning  React Hook useCallback has an unnecessary dependency: 'paintDayType.id'. Either exclude it or remove the dependency array                                                                                                                                     react-hooks/exhaustive-deps
+  1867:23  error    Unexpected any. Specify a different type                                                                                                                                                                                                                      @typescript-eslint/no-explicit-any
+  1878:5   warning  React Hook useCallback has a missing dependency: 'paintSelectionKey'. Either include it or remove the dependency array                                                                                                                                        react-hooks/exhaustive-deps
+  2283:35  warning  'hours' is assigned a value but never used                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/components/schedule/ProjectEditSheet.tsx
+   48:3  warning  'updateInstanceStatus' is defined but never used                                                                                                                                                                                                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+  100:7  warning  'resolveEnergyValue' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                      @typescript-eslint/no-unused-vars
+  190:6  warning  'LookupRow' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  444:6  warning  React Hook useCallback has missing dependencies: 'instance.duration_min', 'instance?.energy_resolved', 'scheduleContext.durationMin', and 'scheduleContext?.energyResolved'. Either include them or remove the dependency array. If 'setEnergy' needs the current value of 'scheduleContext.energyResolved', you can also switch to useReducer instead of useState and read 'scheduleContext.energyResolved' in the reducer  react-hooks/exhaustive-deps
+
+/Users/validtali/premium-app/src/components/schedule/ScheduleTopBar.tsx
+  12:3  warning  'CheckSquare' is defined but never used  @typescript-eslint/no-unused-vars
+  13:3  warning  'FolderPlus' is defined but never used   @typescript-eslint/no-unused-vars
+  14:3  warning  'Filter' is defined but never used       @typescript-eslint/no-unused-vars
+  15:3  warning  'Flame' is defined but never used        @typescript-eslint/no-unused-vars
+  16:3  warning  'ListChecks' is defined but never used   @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/components/schedule/YearView.tsx
+  20:11  warning  '_events' is defined but never used    @typescript-eslint/no-unused-vars
+  21:13  warning  '_energies' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/components/skills/SkillCard.tsx
+  25:14  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/Users/validtali/premium-app/src/components/skills/SkillProjectsList.tsx
+   101:7  warning  'DAY_IN_MS' is assigned a value but never used                                                                                                                                        @typescript-eslint/no-unused-vars
+   102:7  warning  'GOAL_PRIORITY_WEIGHT' is assigned a value but never used                                                                                                                             @typescript-eslint/no-unused-vars
+  1082:6  warning  React Hook useMemo has missing dependencies: 'handleGoalEdit', 'handleProjectToggleCompletion', and 'handleTaskToggleCompletion'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/Users/validtali/premium-app/src/components/tour/TourProvider.tsx
+   66:31  error    Unexpected any. Specify a different type                                                                        @typescript-eslint/no-explicit-any
+   69:31  error    Unexpected any. Specify a different type                                                                        @typescript-eslint/no-explicit-any
+   98:16  error    Unexpected any. Specify a different type                                                                        @typescript-eslint/no-explicit-any
+  111:9   warning  'finishTour' is assigned a value but never used                                                                 @typescript-eslint/no-unused-vars
+  216:6   warning  React Hook useEffect has a missing dependency: 'currentStep'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/Users/validtali/premium-app/src/lib/ai/autopilotIntent.ts
+  420:7  warning  'buildScheduleAssistantMessage' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  512:7  warning  'isNowInWindow' is assigned a value but never used                  @typescript-eslint/no-unused-vars
+  537:7  warning  'determineNextWindow' is assigned a value but never used            @typescript-eslint/no-unused-vars
+  837:7  warning  'isCodingPriorityName' is assigned a value but never used           @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/lib/analytics/types.ts
+  23:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/src/lib/friends/mappers.ts
+  21:25  warning  '_seedSource' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/lib/scheduler/__tests__/constraints.spec.ts
+  139:13  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  162:13  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/src/lib/scheduler/dayWindowReports.ts
+  11:3  warning  'startOfDayInTimeZone' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/src/lib/scheduler/placement.ts
+     9:3   warning  'markProjectMissed' is defined but never used                  @typescript-eslint/no-unused-vars
+    90:3   warning  'rangeStartUtc' is defined but never used                      @typescript-eslint/no-unused-vars
+    91:3   warning  'rangeEndUtc' is defined but never used                        @typescript-eslint/no-unused-vars
+   106:27  error    Unexpected any. Specify a different type                       @typescript-eslint/no-explicit-any
+   106:47  error    Unexpected any. Specify a different type                       @typescript-eslint/no-explicit-any
+   541:10  warning  'compareProjectPriorityForEviction' is defined but never used  @typescript-eslint/no-unused-vars
+   554:10  warning  'pickEvictionLoser' is defined but never used                  @typescript-eslint/no-unused-vars
+   641:3   warning  'sourceType' is defined but never used                         @typescript-eslint/no-unused-vars
+   758:5   warning  'projectGlobalRankMap' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  1524:39  error    Unexpected any. Specify a different type                       @typescript-eslint/no-explicit-any
+  1535:13  error    Unexpected any. Specify a different type                       @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/src/lib/scheduler/repo.test.ts
+   22:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   29:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   29:46  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   66:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  106:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  145:75  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/src/lib/scheduler/repo.ts
+  435:7  warning  'splitCrossMidnightWindow' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  611:5  error    Unexpected any. Specify a different type                       @typescript-eslint/no-explicit-any
+  616:5  error    Unexpected any. Specify a different type                       @typescript-eslint/no-explicit-any
+  621:5  error    Unexpected any. Specify a different type                       @typescript-eslint/no-explicit-any
+  626:5  error    Unexpected any. Specify a different type                       @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/src/lib/scheduler/reschedule.ts
+     53:3   warning  'ClosestCandidateTrace' is defined but never used                       @typescript-eslint/no-unused-vars
+    170:7   warning  'LOCATION_CLEANUP_DAYS' is assigned a value but never used              @typescript-eslint/no-unused-vars
+    950:35  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+    952:35  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   1477:7   warning  'debug' is assigned a value but never used                              @typescript-eslint/no-unused-vars
+   1973:65  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   2464:9   warning  'restrictProjectsToToday' is assigned a value but never used            @typescript-eslint/no-unused-vars
+   2467:9   warning  'noteModeFiltered' is assigned a value but never used                   @typescript-eslint/no-unused-vars
+   2956:9   warning  'matchesMode' is assigned a value but never used                        @typescript-eslint/no-unused-vars
+   3519:9   warning  'collectProjectOverlapConflicts' is assigned a value but never used     @typescript-eslint/no-unused-vars
+   3603:9   warning  'buildProjectQueueItemFromInstance' is assigned a value but never used  @typescript-eslint/no-unused-vars
+   3610:9   error    'duration' is never reassigned. Use 'const' instead                     prefer-const
+   4149:27  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   4168:31  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   4173:31  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   4174:29  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   4194:37  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   4951:22  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   4952:22  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   4969:21  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   5324:33  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   5365:21  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   5367:26  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   5530:13  warning  'releaseReservationsForItem' is assigned a value but never used         @typescript-eslint/no-unused-vars
+   5635:51  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   5695:31  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   5701:30  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   6022:11  warning  'dayWindows' is assigned a value but never used                         @typescript-eslint/no-unused-vars
+   6834:5   warning  'maxGapCache' is assigned a value but never used                        @typescript-eslint/no-unused-vars
+   7265:24  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   7266:24  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   8928:22  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   8929:22  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   8940:20  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   8941:20  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   8945:20  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   8945:55  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   8949:26  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   8952:26  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   8998:24  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+   8999:24  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  10140:20  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  10141:20  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  10147:32  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  10148:32  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  10241:28  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  10242:28  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  10875:7   error    'filterCounters' is never reassigned. Use 'const' instead               prefer-const
+  11009:29  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  11010:29  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  11011:28  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  11042:7   warning  'filteredWindowCount' is assigned a value but never used                @typescript-eslint/no-unused-vars
+  11544:20  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  11592:50  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  11694:32  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  11809:32  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  12000:10  warning  'adoptAvailabilityMap' is defined but never used                        @typescript-eslint/no-unused-vars
+  12124:15  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  12136:39  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  12144:24  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  12145:19  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  12152:22  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  12153:19  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  12154:26  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+  12155:21  error    Unexpected any. Specify a different type                                @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/src/lib/tours/dayTypesTour.ts
+  4:7  warning  'CONSTRAINTS_OPENED_EVENT' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/test/app/schedule/windowReports.spec.ts
+  106:8  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/test/lib/scheduler/manualPlacementCascade.spec.ts
+  172:14  warning  '_userId' is defined but never used    @typescript-eslint/no-unused-vars
+  172:23  warning  '_startUtc' is defined but never used  @typescript-eslint/no-unused-vars
+  172:34  warning  '_endUtc' is defined but never used    @typescript-eslint/no-unused-vars
+
+/Users/validtali/premium-app/test/lib/scheduler/nonDailyChainOrchestration.spec.ts
+  137:31  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  140:35  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  142:27  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  145:5   warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+  299:35  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  309:35  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  312:35  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  317:29  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  335:37  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  342:37  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  394:35  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  397:35  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  402:54  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  403:56  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+  432:37  error    Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/test/lib/scheduler/repo.spec.ts
+   63:22  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  105:39  warning  '_column' is defined but never used       @typescript-eslint/no-unused-vars
+  105:56  warning  'value' is defined but never used         @typescript-eslint/no-unused-vars
+  111:22  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  140:22  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  319:22  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/test/lib/scheduler/reschedule.spec.ts
+    36:7   warning  'schedNoon' is assigned a value but never used                   @typescript-eslint/no-unused-vars
+    41:9   warning  'failDiag' is assigned a value but never used                    @typescript-eslint/no-unused-vars
+    41:45  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+    48:20  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+    49:38  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+    63:34  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+    65:12  warning  'userId' is assigned a value but never used                      @typescript-eslint/no-unused-vars
+   130:21  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+   192:8   warning  'ProjectPlacementCall' is defined but never used                 @typescript-eslint/no-unused-vars
+  7742:13  warning  'firstArgs' is assigned a value but never used                   @typescript-eslint/no-unused-vars
+  7853:17  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  7867:17  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  7886:17  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  9160:14  warning  'params' is defined but never used                               @typescript-eslint/no-unused-vars
+  9417:11  warning  'originalPlaceItemInWindows' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  9733:33  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  9826:21  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/test/utils/supabaseMock.ts
+   52:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  101:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  127:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  169:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/validtali/premium-app/trace-project.ts
+  22:11  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 352 problems (144 errors, 208 warnings)
+  7 errors and 3 warnings potentially fixable with the `--fix` option.
+

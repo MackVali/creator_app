@@ -2781,6 +2781,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         let createdProjectIds: string[] = [];
 
         if (rpcError || !data) {
+          const rpcErrorData =
+            rpcError && typeof rpcError === "object" && "data" in rpcError
+              ? rpcError.data
+              : undefined;
+
           // Log everything we know to help diagnose local dev issues
           console.error("[GOAL WIZARD RPC ERROR FULL]", {
             error: rpcError,
@@ -2788,7 +2793,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             error_code: rpcError?.code,
             error_details: rpcError?.details,
             error_hint: rpcError?.hint,
-            error_data: (rpcError as any)?.data,
+            error_data: rpcErrorData,
             data,
             goalInput,
             hasProjects,

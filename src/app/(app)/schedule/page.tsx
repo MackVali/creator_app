@@ -283,10 +283,22 @@ type OverlayWindowRecord = {
   label: string | null;
 };
 
+type CommandBlockRecord = {
+  id: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  circle_name: string | null;
+  circle_icon_emoji: string | null;
+};
+
 type OverlayWindowSegment = {
   id: string;
+  source: "overlay_window" | "command_block";
   startMin: number;
   durationMin: number;
+  label: string | null;
+  icon: string | null;
+  rangeLabel: string | null;
 };
 
 type MinuteRange = {
@@ -2695,6 +2707,7 @@ export default function SchedulePage() {
   const [windows, setWindows_REAL] = useState<RepoWindow[]>([]);
   const [overlayWindows, setOverlayWindows] =
     useState<OverlayWindowRecord[]>([]);
+  const [commandBlocks, setCommandBlocks] = useState<CommandBlockRecord[]>([]);
   const [manualPlacementSession, setManualPlacementSession] = useState<{
     candidate: ManualPlacementCandidate;
     pointerId: number | null;
@@ -3987,6 +4000,53 @@ export default function SchedulePage() {
       );
     };
   }, [userId, currentDate, effectiveTimeZone]);
+
+  useEffect(() => {
+    if (!userId) {
+      setCommandBlocks([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    const params = new URLSearchParams({
+      start: renderDayStart.toISOString(),
+      end: renderDayEnd.toISOString(),
+    });
+
+    async function fetchCommandBlocks() {
+      try {
+        const response = await fetch(`/api/command-blocks?${params}`, {
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+
+        if (!active) return;
+
+        if (!response.ok) {
+          console.error("Failed to load command blocks", response.status);
+          setCommandBlocks([]);
+          return;
+        }
+
+        const payload = (await response.json()) as {
+          commandBlocks?: CommandBlockRecord[];
+        };
+        setCommandBlocks(payload.commandBlocks ?? []);
+      } catch (fetchError) {
+        if (!active || controller.signal.aborted) return;
+        console.error("Failed to load command blocks", fetchError);
+        setCommandBlocks([]);
+      }
+    }
+
+    void fetchCommandBlocks();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [userId, renderDayStart, renderDayEnd]);
 
   useEffect(() => {
     if (!userId) {
@@ -7048,8 +7108,8 @@ export default function SchedulePage() {
         .filter(
           (instance): instance is ProjectInstance => instance !== null
         );
-      const overlaySegments = overlayWindows
-        .map((overlay) => {
+      const overlaySegments = [
+        ...overlayWindows.map((overlay) => {
           if (!overlay.start_utc || !overlay.end_utc) return null;
           const start = new Date(overlay.start_utc);
           const end = new Date(overlay.end_utc);
@@ -7066,13 +7126,48 @@ export default function SchedulePage() {
           if (!Number.isFinite(durationMin) || durationMin <= 0) return null;
           return {
             id: overlay.id,
+            source: "overlay_window" as const,
             startMin,
             durationMin,
+            label: null,
+            icon: null,
+            rangeLabel: null,
           };
-        })
+        }),
+        ...commandBlocks.map((commandBlock) => {
+          if (!commandBlock.starts_at || !commandBlock.ends_at) return null;
+          const start = new Date(commandBlock.starts_at);
+          const end = new Date(commandBlock.ends_at);
+          const clipped = clipSegmentToDay(
+            start,
+            end,
+            renderDayStart,
+            renderDayEnd
+          );
+          if (!clipped) return null;
+          const startMin = getDayMinuteOffset(clipped.segStart, renderDayStart);
+          const endMin = getDayMinuteOffset(clipped.segEnd, renderDayStart);
+          const durationMin = endMin - startMin;
+          if (!Number.isFinite(durationMin) || durationMin <= 0) return null;
+          const circleName = commandBlock.circle_name?.trim() || "Circle";
+          return {
+            id: commandBlock.id,
+            source: "command_block" as const,
+            startMin,
+            durationMin,
+            label: `${circleName} Command Block`,
+            icon: commandBlock.circle_icon_emoji?.trim() || null,
+            rangeLabel: `${formatTimeForWindow(
+              clipped.segStart,
+              viewTimeZone
+            )} - ${formatTimeForWindow(clipped.segEnd, viewTimeZone)}`,
+          };
+        }),
+      ]
         .filter(
           (segment): segment is OverlayWindowSegment => segment !== null
-        );
+        )
+        .sort((a, b) => a.startMin - b.startMin);
       const overlayRanges = overlaySegments
         .map((segment) => {
           const start = segment.startMin - modelStartHour * 60;
@@ -7369,7 +7464,6 @@ export default function SchedulePage() {
             })}
             <div
               className="pointer-events-none absolute inset-0"
-              aria-hidden="true"
             >
               {overlaySegments.map((segment) => {
                 const start = segment.startMin - modelStartHour * 60;
@@ -7378,10 +7472,21 @@ export default function SchedulePage() {
                 const clampedEnd = Math.max(clampedStart, end);
                 const heightMin = clampedEnd - clampedStart;
                 if (!Number.isFinite(heightMin) || heightMin <= 0) return null;
+                const heightPx = heightMin * modelPxPerMin;
+                const isCommandBlock = segment.source === "command_block";
+                const showCommandLabel =
+                  isCommandBlock && segment.label && heightPx >= 24;
+                const showCommandRange =
+                  showCommandLabel && segment.rangeLabel && heightPx >= 42;
                 return (
                   <div
-                    key={`overlay-window-${segment.id}`}
-                    className="pointer-events-none absolute rounded-[var(--radius-lg)] border border-zinc-800 bg-zinc-950"
+                    key={`${segment.source}-${segment.id}`}
+                    className={clsx(
+                      "pointer-events-none absolute overflow-hidden rounded-[var(--radius-lg)] bg-zinc-950",
+                      isCommandBlock
+                        ? "border border-white/10 shadow-[0_14px_30px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)]"
+                        : "border border-zinc-800"
+                    )}
                     style={{
                       ...TIMELINE_CARD_BOUNDS,
                       top: toTimelinePosition(clampedStart),
@@ -7389,7 +7494,31 @@ export default function SchedulePage() {
                       pointerEvents: "none",
                       zIndex: overlayLayerZIndex,
                     }}
-                  />
+                    aria-label={segment.label ?? undefined}
+                  >
+                    {showCommandLabel ? (
+                      <div className="flex h-full min-h-0 flex-col justify-center px-3 py-1.5 text-white">
+                        <div className="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-tight">
+                          {segment.icon ? (
+                            <span
+                              className="shrink-0 leading-none"
+                              aria-hidden="true"
+                            >
+                              {segment.icon}
+                            </span>
+                          ) : null}
+                          <span className="min-w-0 truncate">
+                            {segment.label}
+                          </span>
+                        </div>
+                        {showCommandRange ? (
+                          <div className="mt-0.5 truncate text-[10px] font-medium leading-tight text-white/60">
+                            {segment.rangeLabel}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 );
               })}
             </div>
@@ -8952,6 +9081,7 @@ export default function SchedulePage() {
       setProjectExpansion,
       expandedProjects,
       overlayWindows,
+      commandBlocks,
       pendingInstanceStatuses,
       pendingBacklogTaskIds,
       projectGoalRelations,

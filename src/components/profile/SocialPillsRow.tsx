@@ -56,17 +56,6 @@ export default function SocialPillsRow({
 
   const hasSocials = availableSocials.length > 0;
 
-  if (!hasSocials && !editMode) {
-    if (layout === "vertical") {
-      return null;
-    }
-    return (
-      <div className="w-full text-center text-sm text-white/60">
-        No social links added yet
-      </div>
-    );
-  }
-
   const [isPlatformMenuOpen, setIsPlatformMenuOpen] = useState(false);
   const plusButtonRef = useRef<HTMLButtonElement | null>(null);
   const platformMenuRef = useRef<HTMLDivElement | null>(null);
@@ -160,6 +149,17 @@ export default function SocialPillsRow({
     layout === "vertical"
       ? "flex flex-col items-center gap-3"
       : "-mx-2 flex snap-x snap-mandatory items-center gap-4 overflow-x-auto overflow-y-visible px-2 pb-2 sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 lg:justify-start";
+
+  if (!hasSocials && !editMode) {
+    if (layout === "vertical") {
+      return null;
+    }
+    return (
+      <div className="w-full text-center text-sm text-white/60">
+        No social links added yet
+      </div>
+    );
+  }
 
   return (
     <>
