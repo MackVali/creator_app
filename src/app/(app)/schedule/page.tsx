@@ -4166,6 +4166,52 @@ export default function SchedulePage() {
         endMs: new Date(instance.end_utc ?? "").getTime(),
       }));
 
+      const instanceById = new Map(
+        allInstances.map((candidate) => [candidate.id, candidate])
+      );
+      const pairedPartnerInstanceIds = new Set<string>();
+      const pairedPartnerSourceKeys = new Set<string>();
+      const pairedPartnerWindowsBySourceKey = new Map<
+        string,
+        Array<{ startMs: number; endMs: number }>
+      >();
+      for (const visibleInstance of filtered) {
+        if (visibleInstance.source_type !== "HABIT") continue;
+        const habit = habitMap[visibleInstance.source_id];
+        if (!habit || normalizeHabitType(habit.habitType) !== "SYNC") continue;
+
+        const syncStartMs = new Date(
+          visibleInstance.start_utc ?? ""
+        ).getTime();
+        const syncEndMs = new Date(visibleInstance.end_utc ?? "").getTime();
+
+        for (const partnerId of syncPairings[visibleInstance.id] ?? []) {
+          const partner =
+            instanceById.get(partnerId) ??
+            filtered.find((candidate) => candidate.id === partnerId);
+          if (!partner) continue;
+
+          pairedPartnerInstanceIds.add(partner.id);
+          const sourceKey = `${partner.source_type}:${partner.source_id}`;
+          pairedPartnerSourceKeys.add(sourceKey);
+
+          const windows = pairedPartnerWindowsBySourceKey.get(sourceKey) ?? [];
+          if (Number.isFinite(syncStartMs) && Number.isFinite(syncEndMs)) {
+            windows.push({ startMs: syncStartMs, endMs: syncEndMs });
+          }
+
+          const partnerStartMs = new Date(partner.start_utc ?? "").getTime();
+          const partnerEndMs = new Date(partner.end_utc ?? "").getTime();
+          if (Number.isFinite(partnerStartMs) && Number.isFinite(partnerEndMs)) {
+            windows.push({ startMs: partnerStartMs, endMs: partnerEndMs });
+          }
+
+          if (windows.length > 0) {
+            pairedPartnerWindowsBySourceKey.set(sourceKey, windows);
+          }
+        }
+      }
+
       const completedIdsToHide = new Set<string>();
 
       // Check each completed instance against all scheduled instances
@@ -4186,6 +4232,18 @@ export default function SchedulePage() {
             continue;
           }
         }
+
+        const completedSourceKey = `${instance.source_type}:${instance.source_id}`;
+        const pairedById = pairedPartnerInstanceIds.has(instance.id);
+        const pairedBySource = pairedPartnerSourceKeys.has(completedSourceKey);
+        const pairedWindows =
+          pairedPartnerWindowsBySourceKey.get(completedSourceKey) ?? [];
+        const overlapsPairedWindow = pairedWindows.some(
+          (window) =>
+            completedEnd > window.startMs && completedStart < window.endMs
+        );
+
+        if (pairedById || (pairedBySource && overlapsPairedWindow)) continue;
 
         // Check if this completed instance overlaps with any scheduled instance
         for (const scheduled of scheduledWithTimes) {
@@ -4234,7 +4292,7 @@ export default function SchedulePage() {
       }
       return filtered;
     },
-    [allInstances, habitMap]
+    [allInstances, habitMap, syncPairings]
   );
 
   const visibleInstances = useMemo(() => {
@@ -7441,6 +7499,11 @@ export default function SchedulePage() {
                 "0 8px 18px rgba(82, 62, 18, 0.24)",
                 "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
               ].join(", ");
+              const syncCompletedShadow = [
+                "0 14px 28px rgba(20, 83, 45, 0.26)",
+                "0 6px 14px rgba(6, 78, 59, 0.18)",
+                "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+              ].join(", ");
               const practiceShadow = [
                 "0 30px 60px rgba(2, 2, 6, 0.72)",
                 "0 12px 28px rgba(0, 0, 0, 0.48)",
@@ -7457,9 +7520,13 @@ export default function SchedulePage() {
                 "inset 0 1px 0 rgba(255, 255, 255, 0.16)",
               ].join(", ");
               const completedShadow = [
-                "0 26px 52px rgba(2, 32, 24, 0.6)",
-                "0 12px 28px rgba(1, 55, 34, 0.45)",
-                "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+                "0 22px 44px rgba(3, 83, 63, 0.34)",
+                "0 10px 24px rgba(2, 44, 34, 0.28)",
+                "inset 0 1px 0 rgba(236, 253, 245, 0.24)",
+              ].join(", ");
+              const completedGemBevelInset = [
+                "inset 0 1px 0 rgba(236, 253, 245, 0.20)",
+                "inset 0 -8px 14px rgba(1, 35, 29, 0.18)",
               ].join(", ");
               let cardShadow = scheduledShadow;
               let cardOutline = "1px solid rgba(10, 10, 12, 0.85)";
@@ -7488,14 +7555,18 @@ export default function SchedulePage() {
                   cardOutline = "1px solid rgba(147, 51, 234, 0.5)";
                   habitBorderClass = "border-purple-300/55";
                 }
+              } else if (normalizedHabitType === "SYNC" && isHabitCompleted) {
+                cardShadow = syncCompletedShadow;
+                cardOutline = "1px solid rgba(167, 243, 208, 0.42)";
+                habitBorderClass = "border-emerald-200/40";
               } else if (normalizedHabitType === "CHORE" && isHabitCompleted) {
                 cardShadow = completedShadow;
-                cardOutline = "1px solid rgba(12, 137, 96, 0.55)";
-                habitBorderClass = "border-emerald-500/60";
+                cardOutline = "1px solid rgba(167, 243, 208, 0.62)";
+                habitBorderClass = "border-emerald-200/55";
               } else if (isHabitCompleted) {
                 cardShadow = completedShadow;
-                cardOutline = "1px solid rgba(16, 185, 129, 0.55)";
-                habitBorderClass = "border-emerald-400/60";
+                cardOutline = "1px solid rgba(167, 243, 208, 0.58)";
+                habitBorderClass = "border-emerald-200/55";
               } else if (normalizedHabitType === "CHORE") {
                 cardShadow = choreShadow;
                 cardOutline = "1px solid rgba(0, 0, 0, 0.85)";
@@ -7537,9 +7608,16 @@ export default function SchedulePage() {
               const habitCornerClass = getTimelineCardCornerClass(layoutMode);
               const useCompactShadow =
                 habitHeightPx <= HABIT_COMPACT_SHADOW_HEIGHT_PX;
-              const habitCardShadow = useCompactShadow
+              const isCompletedHabitCard = isHabitCompleted;
+              const isCompactCompletedCard =
+                isHabitCompleted && habitHeightPx <= 44;
+              const habitCardShadowBase = useCompactShadow
                 ? HABIT_COMPACT_SHADOW
                 : cardShadow;
+              const habitCardShadow = isCompletedHabitCard
+                ? `${habitCardShadowBase}, ${completedGemBevelInset}`
+                : habitCardShadowBase;
+              const isCompletedGemCard = isHabitCompleted;
               const stackingZIndex =
                 computeTimelineStackingIndex(startOffsetMinutes);
               const cardStyle: CSSProperties = applyTimelineLayoutStyle(
@@ -7547,9 +7625,6 @@ export default function SchedulePage() {
                   ...TIMELINE_CARD_BOUNDS,
                   top: topStyle,
                   height: heightStyle,
-                  boxShadow: habitCardShadow,
-                  outline: cardOutline,
-                  outlineOffset: "-1px",
                 },
                 layoutMode,
                 {
@@ -7557,6 +7632,12 @@ export default function SchedulePage() {
                   laneLayout: syncLaneLayout,
                 }
               );
+              const habitCardSurfaceStyle: CSSProperties = {
+                ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
+                boxShadow: habitCardShadow,
+                outline: cardOutline,
+                outlineOffset: "-1px",
+              };
               const hasHabitInstance = Boolean(placement.habitId);
               const habitBounceActive =
                 hasHabitInstance && placement.instanceId
@@ -7683,7 +7764,6 @@ export default function SchedulePage() {
 
               const layeredCardStyle = {
                 ...cardStyle,
-                ...SCHEDULE_INSTANCE_NO_SELECT_STYLE,
                 zIndex: stackingZIndex,
               };
 
@@ -7696,43 +7776,8 @@ export default function SchedulePage() {
                   }
                   layout="position"
                   layoutId={habitLayoutTokens?.card}
-                  className={clsx(
-                    "habit-card absolute flex h-full items-center justify-between gap-3 border px-3 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
-                    habitCornerClass,
-                    habitPaddingClass,
-                    habitBorderClass,
-                    habitTypeClass,
-                    isHabitCompleted
-                      ? "habit-card--completed"
-                      : "habit-card--scheduled",
-                    disableHabitInteractions
-                      ? "pointer-events-none cursor-default opacity-90"
-                      : "cursor-pointer"
-                  )}
-                  role="button"
-                  tabIndex={disableHabitInteractions ? -1 : 0}
-                  aria-pressed={isHabitCompleted}
-                  aria-disabled={disableHabitInteractions}
+                  className="absolute"
                   style={layeredCardStyle}
-                  onContextMenu={() => console.log("[LONGPRESS] contextmenu")}
-                  onClick={() => {
-                    console.log("[INTERACT] CLICK", {
-                      shouldBlock: shouldBlockClickFromLongPress(),
-                      longPressTriggered: longPressTriggeredRef.current,
-                      shortPressHandled: shortPressHandledRef.current,
-                      disableInteractions: disableHabitInteractions,
-                    });
-                    if (shouldBlockClickFromLongPress()) return;
-                    handleHabitPrimaryAction();
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") {
-                      return;
-                    }
-                    event.preventDefault();
-                    handleHabitPrimaryAction();
-                  }}
-                  {...habitPointerHandlers}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={
                     prefersReducedMotion
@@ -7745,38 +7790,92 @@ export default function SchedulePage() {
                   }
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
                 >
-                  {practiceContextLabel ? (
-                    <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
-                      <span className="truncate text-[9px] font-semibold text-white/80">
-                        {practiceContextLabel}
-                      </span>
-                    </div>
-                  ) : null}
-                  <motion.span
-                    layoutId={habitLayoutTokens?.title}
-                    className={habitTitleClass}
+                  <div
+                    className={clsx(
+                      "habit-card relative flex h-full w-full items-center justify-between gap-3 border px-3 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur select-none",
+                      habitCornerClass,
+                      habitPaddingClass,
+                      habitBorderClass,
+                      habitTypeClass,
+                      isCompletedGemCard && "habit-card--completed-gem",
+                      isCompactCompletedCard &&
+                        "habit-card--completed-compact",
+                      isHabitCompleted
+                        ? "habit-card--completed"
+                        : "habit-card--scheduled",
+                      disableHabitInteractions
+                        ? "pointer-events-none cursor-default opacity-90"
+                        : "cursor-pointer"
+                    )}
+                    role="button"
+                    tabIndex={disableHabitInteractions ? -1 : 0}
+                    aria-pressed={isHabitCompleted}
+                    aria-disabled={disableHabitInteractions}
+                    style={habitCardSurfaceStyle}
+                    onContextMenu={() => console.log("[LONGPRESS] contextmenu")}
+                    onClick={() => {
+                      console.log("[INTERACT] CLICK", {
+                        shouldBlock: shouldBlockClickFromLongPress(),
+                        longPressTriggered: longPressTriggeredRef.current,
+                        shortPressHandled: shortPressHandledRef.current,
+                        disableInteractions: disableHabitInteractions,
+                      });
+                      if (shouldBlockClickFromLongPress()) return;
+                      handleHabitPrimaryAction();
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") {
+                        return;
+                      }
+                      event.preventDefault();
+                      handleHabitPrimaryAction();
+                    }}
+                    {...habitPointerHandlers}
                   >
-                    {placement.habitName}
-                  </motion.span>
-                  {showHabitStreakBadge ? (
-                    <span
-                      className="pointer-events-none absolute right-3 top-2 flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-[2px] text-xs font-semibold leading-tight text-amber-100"
-                      style={streakBadgeStyle}
+                    {practiceContextLabel ? (
+                      <div
+                        className={clsx(
+                          "pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight",
+                          isCompletedGemCard && "z-[2]"
+                        )}
+                      >
+                        <span className="truncate text-[9px] font-semibold text-white/80">
+                          {practiceContextLabel}
+                        </span>
+                      </div>
+                    ) : null}
+                    <motion.span
+                      layoutId={habitLayoutTokens?.title}
+                      className={clsx(
+                        habitTitleClass,
+                        isCompletedGemCard && "relative z-[2]"
+                      )}
                     >
-                      <FlameEmber
-                        level={
-                          streakDays >= 7
-                            ? "HIGH"
-                            : streakDays >= 4
-                              ? "MEDIUM"
-                              : "LOW"
-                        }
-                        size="xs"
-                        className="drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
-                      />
-                      <span className="tracking-normal">{streakLabel}</span>
-                    </span>
-                  ) : null}
+                      {placement.habitName}
+                    </motion.span>
+                    {showHabitStreakBadge ? (
+                      <span
+                        className={clsx(
+                          "pointer-events-none absolute right-3 top-2 flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-[2px] text-xs font-semibold leading-tight text-amber-100",
+                          isCompletedGemCard && "z-[2]"
+                        )}
+                        style={streakBadgeStyle}
+                      >
+                        <FlameEmber
+                          level={
+                            streakDays >= 7
+                              ? "HIGH"
+                              : streakDays >= 4
+                                ? "MEDIUM"
+                                : "LOW"
+                          }
+                          size="xs"
+                          className="drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
+                        />
+                        <span className="tracking-normal">{streakLabel}</span>
+                      </span>
+                    ) : null}
+                  </div>
                 </motion.div>
               );
             })}

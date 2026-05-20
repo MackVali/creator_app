@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Friend } from "@/types/friends";
-import { DEFAULT_AVATAR_URL } from "@/lib/friends/avatar";
 
 import MessageFriendButton from "./MessageFriendButton";
 
@@ -20,6 +19,20 @@ type FriendRowProps = {
   f: Friend;
   onRemoveFriend?: (friend: Friend) => void;
 };
+
+const friendCardClass =
+  "flex min-h-[68px] items-center gap-4 rounded-2xl border border-white/10 bg-[#050506]/90 px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.45)] transition hover:border-white/20 hover:bg-zinc-950/90 focus-within:border-white/20 focus-within:ring-1 focus-within:ring-white/40";
+
+function getInitials(displayName: string, username: string) {
+  const source = displayName.trim() || username.trim();
+  const parts = source.split(/\s+/).filter(Boolean);
+  const initials =
+    parts.length > 1
+      ? `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`
+      : source.slice(0, 2);
+
+  return initials.toUpperCase() || "?";
+}
 
 export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
   const router = useRouter();
@@ -37,14 +50,15 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
   const statusIndicatorClass = f.isOnline ? "bg-emerald-500" : "bg-white/40";
   const statusTextClass = f.isOnline ? "text-emerald-300" : "text-white/40";
   const displayName = f.displayName || f.username;
-  const avatarSrc = f.avatarUrl || DEFAULT_AVATAR_URL;
+  const avatarSrc = f.avatarUrl?.trim() || null;
+  const fallbackInitials = getInitials(displayName, f.username);
 
   return (
     <li className="list-none">
-      <div className="flex min-h-[68px] items-center gap-4 rounded-2xl border border-white/5 bg-slate-950/60 px-4 py-3 shadow-[0_10px_30px_rgba(2,6,23,0.5)] transition hover:border-white/20 hover:bg-slate-900/75 focus-within:border-white/20 focus-within:ring-1 focus-within:ring-white/40">
+      <div className={friendCardClass}>
         <Link
           href={href}
-          className="group flex flex-1 items-center gap-4 min-w-0 rounded-2xl pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          className="group flex flex-1 items-center gap-4 min-w-0 rounded-2xl pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
           prefetch={false}
           aria-label={`View ${displayName}'s profile — ${statusText}`}
           title={title}
@@ -57,17 +71,23 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
                   : "bg-transparent"
               }`}
             >
-              <div className="rounded-full bg-slate-950 p-[2px]">
-                <Image
-                  alt={`${displayName} avatar`}
-                  src={avatarSrc}
-                  width={52}
-                  height={52}
-                  className="rounded-full object-cover"
-                />
+              <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-black p-[2px] ring-1 ring-white/10">
+                {avatarSrc ? (
+                  <Image
+                    alt={`${displayName} avatar`}
+                    src={avatarSrc}
+                    width={52}
+                    height={52}
+                    className="h-full w-full rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center rounded-full bg-zinc-900 text-sm font-semibold uppercase text-white/70">
+                    {fallbackInitials}
+                  </span>
+                )}
               </div>
             </div>
-            <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full ring-2 ring-slate-950">
+            <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full ring-2 ring-black">
               <span className={`h-2 w-2 rounded-full ${statusIndicatorClass}`} aria-hidden />
               <span className="sr-only">{statusText}</span>
             </span>
@@ -134,7 +154,7 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="w-44 border-white/10 bg-slate-900/95 text-white shadow-xl backdrop-blur"
+              className="w-44 border-white/10 bg-black/95 text-white shadow-xl backdrop-blur"
             >
               <DropdownMenuItem
                 onSelect={() => {

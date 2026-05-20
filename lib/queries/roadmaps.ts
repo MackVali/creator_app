@@ -19,6 +19,8 @@ export interface Roadmap {
   id: string;
   title: string;
   emoji: string | null;
+  monument_id?: string | null;
+  circle_id?: string | null;
   goals: RoadmapGoal[];
 }
 
@@ -48,7 +50,9 @@ export interface RoadmapCampaign {
   emoji: string | null;
   scheduling_state: CampaignSchedulingState;
   position: number | null;
+  roadmap_id?: string | null;
   primary_monument_id: string | null;
+  primary_circle_id?: string | null;
   goals: RoadmapCampaignGoal[];
 }
 
@@ -63,6 +67,7 @@ export interface RoadmapMixedItem {
 
 export interface RoadmapWithItems extends Roadmap {
   monument_id: string | null;
+  circle_id?: string | null;
   items: RoadmapMixedItem[];
 }
 
@@ -207,6 +212,8 @@ export async function listRoadmaps(
       id,
       title,
       emoji,
+      monument_id,
+      circle_id,
       created_at,
       goals:goals(id, name, emoji, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji))
     `)
@@ -222,6 +229,8 @@ export async function listRoadmaps(
     id: row.id,
     title: row.title,
     emoji: row.emoji ?? null,
+    monument_id: row.monument_id ?? null,
+    circle_id: row.circle_id ?? null,
     goals: (row.goals ?? []).map(goal => normalizeRoadmapGoal(goal as RoadmapGoalRow)),
   }));
 }
@@ -236,7 +245,7 @@ export async function listRoadmapsWithItems(
 
   const { data: roadmapRows, error: roadmapsError } = await supabase
     .from("roadmaps")
-    .select("id, title, emoji, created_at, monument_id")
+    .select("id, title, emoji, created_at, monument_id, circle_id")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -250,6 +259,7 @@ export async function listRoadmapsWithItems(
     title: row.title,
     emoji: row.emoji ?? null,
     monument_id: row.monument_id ?? null,
+    circle_id: row.circle_id ?? null,
   }));
 
   if (roadmaps.length === 0) {
@@ -323,7 +333,7 @@ export async function listRoadmapsWithItems(
       ? await supabase
           .from("campaigns")
           .select(
-            "id, name, description, emoji, scheduling_state, position, primary_monument_id"
+            "id, name, description, emoji, scheduling_state, position, roadmap_id, primary_monument_id, primary_circle_id"
           )
           .in("id", campaignIds)
       : { data: [], error: null };
@@ -462,7 +472,9 @@ export async function listRoadmapsWithItems(
         emoji: campaign.emoji ?? null,
         scheduling_state: campaign.scheduling_state as CampaignSchedulingState,
         position: campaign.position,
+        roadmap_id: campaign.roadmap_id ?? null,
         primary_monument_id: campaign.primary_monument_id ?? null,
+        primary_circle_id: campaign.primary_circle_id ?? null,
         goals: campaignGoalsByCampaignId.get(campaign.id) ?? [],
       }))
       .filter(campaign => campaign.goals.length > 0)
@@ -519,6 +531,7 @@ export async function listRoadmapsWithItems(
       title: roadmap.title,
       emoji: roadmap.emoji,
       monument_id: roadmap.monument_id,
+      circle_id: roadmap.circle_id,
       goals: goalItems,
       items,
     };
@@ -545,6 +558,8 @@ export async function createRoadmap(
       id,
       title,
       emoji,
+      monument_id,
+      circle_id,
       created_at,
       goals:goals(id, name, emoji, roadmap_id, status, global_rank, priority_rank, monument:monuments(emoji))
     `)
@@ -559,6 +574,8 @@ export async function createRoadmap(
     id: data.id,
     title: data.title,
     emoji: data.emoji ?? null,
+    monument_id: data.monument_id ?? null,
+    circle_id: data.circle_id ?? null,
     goals: (data.goals ?? []).map(goal => normalizeRoadmapGoal(goal as RoadmapGoalRow)),
   };
 }
@@ -568,6 +585,7 @@ export async function createCampaign(
   input: {
     roadmapId?: string | null;
     primaryMonumentId?: string | null;
+    primaryCircleId?: string | null;
     name: string;
     description?: string | null;
     emoji?: string | null;
@@ -586,6 +604,7 @@ export async function createCampaign(
       user_id: userId,
       roadmap_id: input.roadmapId ?? null,
       primary_monument_id: input.primaryMonumentId ?? null,
+      primary_circle_id: input.primaryCircleId ?? null,
       name: input.name.trim(),
       description: input.description?.trim() || null,
       emoji: input.emoji?.trim() || null,
@@ -593,7 +612,7 @@ export async function createCampaign(
       position: input.position ?? null,
     })
     .select(
-      "id, name, description, emoji, scheduling_state, position, primary_monument_id"
+      "id, name, description, emoji, scheduling_state, position, primary_monument_id, primary_circle_id"
     )
     .single();
 
@@ -610,6 +629,7 @@ export async function createCampaign(
     scheduling_state: data.scheduling_state as CampaignSchedulingState,
     position: data.position ?? null,
     primary_monument_id: data.primary_monument_id ?? null,
+    primary_circle_id: data.primary_circle_id ?? null,
     goals: [],
   };
 }

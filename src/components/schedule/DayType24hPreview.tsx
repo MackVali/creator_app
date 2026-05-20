@@ -173,9 +173,9 @@ export function DayType24hPreview({
   const previewSegments = useMemo(() => buildPreviewSegments(blocks), [blocks]);
 
   return (
-    <div className="w-full overflow-x-hidden rounded-2xl border border-slate-300/15 bg-gradient-to-br from-slate-950/95 via-slate-900/85 to-slate-950/95 px-3 py-4 shadow-[0_20px_40px_rgba(2,6,23,0.45)]">
+    <div className="w-full overflow-x-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#050507] via-[#0b0b0f] to-[#050507] px-3 py-4 shadow-[0_18px_36px_rgba(0,0,0,0.34)]">
       <div className="flex items-start gap-4">
-        <div className="relative h-[38vh] sm:h-[52vh] w-12 min-w-[3rem] text-[10px] uppercase tracking-[0.14em] text-slate-300/55">
+        <div className="relative h-[38vh] sm:h-[52vh] w-12 min-w-[3rem] text-[10px] uppercase tracking-[0.14em] text-white/35">
           {HOURS.map((hour) => (
             <span
               key={`label-${hour}`}
@@ -187,20 +187,20 @@ export function DayType24hPreview({
             </span>
           ))}
         </div>
-        <div className="relative flex-1 h-[38vh] sm:h-[52vh] overflow-y-auto overflow-x-hidden rounded-lg border border-slate-300/10 bg-slate-950/55 backdrop-blur-sm">
+        <div className="relative flex-1 h-[38vh] sm:h-[52vh] overflow-y-auto overflow-x-hidden rounded-lg border border-white/10 bg-[#050507]/70 backdrop-blur-sm">
           {HOURS.map((hour) => (
             <div
               key={`rail-${hour}`}
               className={cn(
                 "absolute left-0 right-0 h-px",
-                hour % 6 === 0 ? "bg-slate-200/18" : "bg-slate-200/10"
+                hour % 6 === 0 ? "bg-white/12" : "bg-white/6"
               )}
               style={{ top: `${(hour / 24) * 100}%` }}
               aria-hidden
             />
           ))}
           {previewSegments.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-200/60">
+            <div className="absolute inset-0 flex items-center justify-center text-sm text-white/45">
               Select time blocks to preview your day.
             </div>
           ) : null}
@@ -234,37 +234,37 @@ export function DayType24hPreview({
                 tabIndex={onSelect ? 0 : undefined}
                 aria-pressed={isSelected || undefined}
                 className={cn(
-                  "absolute inset-x-3 rounded-md shadow-[0_14px_38px_rgba(2,6,23,0.45)] transition focus-visible:outline-none",
+                  "absolute inset-x-3 rounded-md shadow-[0_12px_28px_rgba(0,0,0,0.28)] transition focus-visible:outline-none",
                   onSelect ? "cursor-pointer" : "",
                   isSelected
-                    ? "border border-violet-300/55 bg-violet-300/18 text-violet-50"
+                    ? "border border-emerald-200/70 bg-emerald-300/20 text-emerald-50 ring-1 ring-emerald-200/30"
                     : segment.overlapped
-                      ? "border border-rose-300/70 bg-rose-500/25"
+                      ? "border border-white/24 bg-white/10 text-white/75"
                       : isConstrained
-                        ? "border border-cyan-300/70 bg-cyan-400/20"
+                        ? "border border-emerald-200/55 bg-emerald-400/16 text-emerald-50 ring-1 ring-white/10"
                         : isBreak
-                          ? "border border-indigo-300/65 bg-indigo-400/18"
+                          ? "border border-white/18 bg-white/8 text-white/65"
                           : isPractice
-                            ? "border border-slate-300/35 bg-slate-300/12"
-                            : "border border-emerald-300/55 bg-emerald-400/18"
+                            ? "border border-emerald-200/32 bg-emerald-300/10 text-emerald-50/85"
+                            : "border border-emerald-300/45 bg-emerald-400/14 text-emerald-50"
                 )}
                 style={{
                   top: `${topPct}%`,
                   height: `${Math.max(heightPct, 1.5)}%`,
                 }}
               >
-                <div className="flex h-full items-center justify-center px-3 text-[11px] uppercase tracking-[0.14em] text-slate-100/85">
+                <div className="flex h-full items-center justify-center px-3 text-[11px] uppercase tracking-[0.14em]">
                   <span
                     className={cn(
                       "font-semibold truncate",
                       segment.overlapped
-                        ? "text-rose-50"
+                        ? "text-white/75"
                         : isConstrained
-                          ? "text-cyan-50"
+                          ? "text-emerald-50"
                           : isBreak
-                            ? "text-indigo-50"
+                            ? "text-white/65"
                             : isPractice
-                              ? "text-slate-100/85"
+                              ? "text-emerald-50/85"
                               : "text-emerald-50"
                     )}
                   >

@@ -201,11 +201,28 @@ type FabGoalEditRow = {
   energy_code?: string | null;
   why?: string | null;
   monument_id?: string | null;
+  circle_id?: string | null;
+  roadmap_id?: string | null;
   due_date?: string | null;
 };
 type FabGoalCampaignRow = {
   campaign_id: string | null;
   position?: number | null;
+};
+type FabGoalCampaignContextRow = {
+  id: string;
+  name: string;
+  emoji: string | null;
+  roadmap_id: string | null;
+  primary_monument_id: string | null;
+  primary_circle_id?: string | null;
+  scheduling_state: CampaignSchedulingState | null;
+  position: number | null;
+};
+type FabRoadmapContextRow = {
+  id: string;
+  monument_id: string | null;
+  circle_id?: string | null;
 };
 type FabProjectEditRow = {
   id: string;
@@ -372,8 +389,24 @@ type GoalCampaignOption = {
   emoji: string | null;
   roadmap_id: string | null;
   primary_monument_id: string | null;
+  primary_circle_id?: string | null;
   scheduling_state: CampaignSchedulingState;
   position: number | null;
+};
+
+type GoalRelationType = "MONUMENT" | "CIRCLE" | null;
+
+type GoalCircleOption = {
+  id: string;
+  name: string;
+  circle_type?: string | null;
+  viewerRole?: string | null;
+};
+
+type GoalRelationResolution = {
+  selectedMonumentId: string | null;
+  selectedCircleId: string | null;
+  error: string | null;
 };
 
 type GoalCampaignCreateRowProps = {
@@ -529,6 +562,11 @@ const FAB_SELECTION_EXIT_MS = 140;
 const FAB_CREATION_ENTER_MS = 220;
 const FAB_CREATION_FOCUS_DELAY_MS =
   FAB_SELECTION_EXIT_MS + FAB_CREATION_ENTER_MS + 40;
+const GOAL_MANAGEABLE_CIRCLE_ROLES = new Set([
+  "OWNER",
+  "MANAGER",
+  "OPERATOR",
+]);
 
 const getClampedVisualViewportKeyboardInset = () => {
   if (typeof window === "undefined") return 0;
@@ -646,6 +684,30 @@ const formatFabPriorityLabel = (value?: string | null) =>
   value === "ULTRA-CRITICAL" ? "Ultra" : value ?? "";
 
 const normalizeFabEnergy = (value?: string | null) => normalizeFlameLevel(value);
+
+const pickHydratedGoalPriority = (
+  priority?: string | null,
+  priorityCode?: string | null,
+) => {
+  const normalizedPriority = String(priority ?? "").trim().toUpperCase();
+  if (FAB_PRIORITY_VALUES.has(normalizedPriority)) {
+    return normalizedPriority;
+  }
+
+  return normalizeFabPriority(priorityCode);
+};
+
+const pickHydratedGoalEnergy = (
+  energy?: string | null,
+  energyCode?: string | null,
+) => {
+  const normalizedEnergy = String(energy ?? "").trim().toUpperCase();
+  if (FLAME_LEVELS.includes(normalizedEnergy as FlameLevel)) {
+    return normalizedEnergy as FlameLevel;
+  }
+
+  return normalizeFabEnergy(energyCode);
+};
 
 const collapseWhitespace = (value: string) => value.trim().replace(/\s+/g, " ");
 const FAB_DEFAULT_CAMPAIGN_EMOJI = "🎯";
@@ -2422,9 +2484,10 @@ export function Fab({
       );
     }
     if (goalFilterMonumentId) {
-      list = list.filter(
-        (goal) => (goal.monument_id ?? "") === goalFilterMonumentId,
-      );
+      list = list.filter((goal) => {
+        if (goal.circle_id) return true;
+        return (goal.monument_id ?? "") === goalFilterMonumentId;
+      });
     }
     if (goalFilterSkillId) {
       const skillName =
@@ -3095,6 +3158,10 @@ export function Fab({
   const [goalEnergy, setGoalEnergy] = useState("MEDIUM");
   const [goalWhy, setGoalWhy] = useState("");
   const [goalDue, setGoalDue] = useState<string | null>(null);
+  const [goalRelationType, setGoalRelationType] =
+    useState<GoalRelationType>(null);
+  const [goalRelationId, setGoalRelationId] = useState("");
+  const [goalCircleId, setGoalCircleId] = useState<string | "">("");
   const [goalCampaignId, setGoalCampaignId] = useState<string | null>(null);
   const [goalCampaigns, setGoalCampaigns] = useState<GoalCampaignOption[]>([]);
   const [goalCampaignsLoading, setGoalCampaignsLoading] = useState(false);
@@ -3110,6 +3177,32 @@ export function Fab({
   const [goalCampaignCreating, setGoalCampaignCreating] = useState(false);
   const [monuments, setMonuments] = useState<Monument[]>([]);
   const [monumentsLoading, setMonumentsLoading] = useState(false);
+  const [manageableCircles, setManageableCircles] = useState<
+    GoalCircleOption[]
+  >([]);
+  const [manageableCirclesLoading, setManageableCirclesLoading] =
+    useState(false);
+  const manageableCircleById = useMemo(() => {
+    const map = new Map<string, GoalCircleOption>();
+    manageableCircles.forEach((circle) => {
+      map.set(circle.id, circle);
+    });
+    return map;
+  }, [manageableCircles]);
+  const getCircleGoalContextLabel = useCallback(
+    (goal: Goal) => {
+      const circleId = goal.circle_id;
+      if (!circleId) return null;
+      const circle = manageableCircleById.get(circleId);
+      const circleType = circle?.circle_type?.trim();
+      if (circleType) {
+        return `Circle · ${circleType.toUpperCase()}`;
+      }
+      const circleName = circle?.name?.trim();
+      return circleName ? `Circle · ${circleName}` : "Circle";
+    },
+    [manageableCircleById],
+  );
   const [goalDraftProjects, setGoalDraftProjects] = useState<
     DraftProjectChild[]
   >([]);
@@ -3149,6 +3242,7 @@ export function Fab({
     useState("FRONT");
   const [habitNextDueOverride, setHabitNextDueOverride] = useState("");
   const [habitRoutineId, setHabitRoutineId] = useState<string | "">("");
+  const [habitCircleId, setHabitCircleId] = useState<string | "">("");
   const [habitRoutines, setHabitRoutines] = useState<
     { id: string; name: string; description?: string | null }[]
   >([]);
@@ -3158,6 +3252,14 @@ export function Fab({
   const [habitInlineRoutineName, setHabitInlineRoutineName] = useState("");
   const [habitInlineRoutineDescription, setHabitInlineRoutineDescription] =
     useState("");
+  const selectedHabitCircle = useMemo(
+    () =>
+      habitCircleId ? (manageableCircleById.get(habitCircleId) ?? null) : null,
+    [habitCircleId, manageableCircleById],
+  );
+  const habitCircleTriggerLabel = habitCircleId
+    ? (selectedHabitCircle?.name ?? "Selected Circle")
+    : "add to CIRCLE";
   const [nestedDraftPanel, setNestedDraftPanel] =
     useState<NestedDraftPanel>(null);
   const [draftProjectName, setDraftProjectName] = useState("");
@@ -3202,6 +3304,9 @@ export function Fab({
   const resetGoalFormDraft = useCallback(() => {
     setGoalName("");
     setGoalMonumentId("");
+    setGoalRelationType(null);
+    setGoalRelationId("");
+    setGoalCircleId("");
     setGoalPriority("MEDIUM");
     setGoalEnergy("MEDIUM");
     setGoalWhy("");
@@ -3227,6 +3332,7 @@ export function Fab({
     setHabitWindowEdgePreference("FRONT");
     setHabitNextDueOverride("");
     setHabitRoutineId("");
+    setHabitCircleId("");
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineDescription("");
@@ -3459,7 +3565,7 @@ export function Fab({
             supabase
               .from("goals")
               .select(
-                "id, name, priority, energy, priority_code, energy_code, why, monument_id, due_date",
+                "id, name, priority, energy, priority_code, energy_code, why, monument_id, circle_id, roadmap_id, due_date",
               )
               .eq("id", entityId)
               .single(),
@@ -3494,6 +3600,54 @@ export function Fab({
           const tagRows = tagRowsData as FabTagRelationRow[] | null;
           const campaignGoalRows =
             campaignGoalRowsData as FabGoalCampaignRow[] | null;
+          const hydratedCampaignId =
+            campaignGoalRows?.[0]?.campaign_id ?? null;
+          let campaignContext: FabGoalCampaignContextRow | null = null;
+          if (hydratedCampaignId) {
+            const { data: campaignContextData, error: campaignContextError } =
+              await supabase
+                .from("campaigns")
+                .select(
+                  "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
+                )
+                .eq("id", hydratedCampaignId)
+                .eq("user_id", user.id)
+                .maybeSingle();
+            if (campaignContextError) throw campaignContextError;
+            campaignContext =
+              campaignContextData as FabGoalCampaignContextRow | null;
+          }
+          const roadmapContextId =
+            goalRow?.roadmap_id ?? campaignContext?.roadmap_id ?? null;
+          let roadmapContext: FabRoadmapContextRow | null = null;
+          if (roadmapContextId) {
+            const { data: roadmapContextData, error: roadmapContextError } =
+              await supabase
+                .from("roadmaps")
+                .select("id, monument_id, circle_id")
+                .eq("id", roadmapContextId)
+                .eq("user_id", user.id)
+                .maybeSingle();
+            if (roadmapContextError) throw roadmapContextError;
+            roadmapContext = roadmapContextData as FabRoadmapContextRow | null;
+          }
+          if (cancelled) return;
+
+          const selectedCampaignContext = campaignContext;
+          if (selectedCampaignContext) {
+            const selectedCampaignOption: GoalCampaignOption = {
+              ...selectedCampaignContext,
+              scheduling_state:
+                selectedCampaignContext.scheduling_state ?? "ACTIVE",
+            };
+            setGoalCampaigns((current) =>
+              current.some(
+                (campaign) => campaign.id === selectedCampaignOption.id,
+              )
+                ? current
+                : [...current, selectedCampaignOption],
+            );
+          }
           const projectRows = Array.isArray(projectRowsData)
             ? (projectRowsData as {
                 id: string;
@@ -3534,24 +3688,54 @@ export function Fab({
               skillIdsByProjectId.set(projectId, current);
             }
           }
-          const normalizedPriority =
-            typeof goalRow?.priority_code === "string"
-              ? normalizeFabPriority(goalRow.priority_code)
-              : typeof goalRow?.priority === "string"
-                ? normalizeFabPriority(goalRow.priority)
-                : "MEDIUM";
-          const normalizedEnergy =
-            typeof goalRow?.energy_code === "string"
-              ? normalizeFabEnergy(goalRow.energy_code)
-              : typeof goalRow?.energy === "string"
-                ? normalizeFabEnergy(goalRow.energy)
-                : "MEDIUM";
+          const normalizedPriority = pickHydratedGoalPriority(
+            goalRow?.priority,
+            goalRow?.priority_code,
+          );
+          const normalizedEnergy = pickHydratedGoalEnergy(
+            goalRow?.energy,
+            goalRow?.energy_code,
+          );
+
+          if (process.env.NODE_ENV === "development") {
+            console.log("[fab goal hydration]", {
+              rawPriority: goalRow?.priority,
+              rawPriorityCode: goalRow?.priority_code,
+              normalizedPriority,
+              rawEnergy: goalRow?.energy,
+              rawEnergyCode: goalRow?.energy_code,
+              normalizedEnergy,
+            });
+          }
 
           setGoalName(goalRow?.name ?? "");
           setGoalPriority(normalizedPriority);
           setGoalEnergy(normalizedEnergy);
           setGoalWhy(goalRow?.why ?? "");
-          setGoalMonumentId(goalRow?.monument_id ?? "");
+          const hydratedMonumentId =
+            goalRow?.monument_id ||
+            campaignContext?.primary_monument_id ||
+            roadmapContext?.monument_id ||
+            "";
+          const hydratedCircleId =
+            hydratedMonumentId
+              ? ""
+              : (goalRow?.circle_id ||
+                campaignContext?.primary_circle_id ||
+                roadmapContext?.circle_id ||
+                "");
+          setGoalMonumentId(hydratedMonumentId);
+          setGoalCircleId(hydratedCircleId);
+          if (hydratedMonumentId) {
+            setGoalRelationType("MONUMENT");
+            setGoalRelationId(hydratedMonumentId);
+          } else if (hydratedCircleId) {
+            setGoalRelationType("CIRCLE");
+            setGoalRelationId(hydratedCircleId);
+          } else {
+            setGoalRelationType(null);
+            setGoalRelationId("");
+          }
           setGoalDue(
             typeof goalRow?.due_date === "string"
               ? goalRow.due_date.slice(0, 10)
@@ -3575,7 +3759,7 @@ export function Fab({
               skillIds: skillIdsByProjectId.get(project.id) ?? [],
             })),
           );
-          setGoalCampaignId(campaignGoalRows?.[0]?.campaign_id ?? null);
+          setGoalCampaignId(hydratedCampaignId);
           setSelectedTagIds(
             Array.isArray(tagRows)
               ? tagRows
@@ -3805,6 +3989,11 @@ export function Fab({
           setHabitRoutineId(
             typeof habitRowRecord.routine_id === "string"
               ? habitRowRecord.routine_id
+              : "",
+          );
+          setHabitCircleId(
+            typeof habitRowRecord.circle_id === "string"
+              ? habitRowRecord.circle_id
               : "",
           );
           setSelectedTagIds(
@@ -5139,6 +5328,7 @@ export function Fab({
     [buildSearchUrl],
   );
 
+  // Scheduler runs should come from explicit scheduler flows, not generic object saves.
   const notifySchedulerOfChange = useCallback(async () => {
     try {
       const timeZone =
@@ -5188,6 +5378,9 @@ export function Fab({
 
     setGoalName("");
     setGoalMonumentId("");
+    setGoalRelationType(null);
+    setGoalRelationId("");
+    setGoalCircleId("");
     setGoalPriority("MEDIUM");
     setGoalEnergy("MEDIUM");
     setGoalWhy("");
@@ -5222,6 +5415,7 @@ export function Fab({
     setHabitWindowEdgePreference("FRONT");
     setHabitNextDueOverride("");
     setHabitRoutineId("");
+    setHabitCircleId("");
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
     setHabitInlineRoutineDescription("");
@@ -7303,33 +7497,37 @@ export function Fab({
                 <>
                   <div className="grid gap-3">
                     <Select
-                      value={goalMonumentId ?? ""}
-                      onValueChange={setGoalMonumentId}
+                      value={selectedGoalRelationValue}
+                      onValueChange={handleGoalRelationChange}
                       hideChevron
                       triggerClassName={cn(
                         "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
-                        goalMonumentId
+                        goalRelationType && goalRelationId
                           ? "text-white/80 hover:text-blue-200"
                           : "text-red-400/80 drop-shadow-[0_0_4px_rgba(248,113,113,0.15)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                       )}
                       trigger={
-                        <span>
-                          {goalMonumentId
-                            ? (monuments.find((m) => m.id === goalMonumentId)
-                                ?.title ?? "Link to existing MONUMENT +")
-                            : "Link to existing MONUMENT +"}
-                        </span>
+                        <span>{selectedGoalRelationLabel}</span>
                       }
                     >
                       <SelectContent className="min-w-[220px]">
-                        <SelectItem value="">No monument</SelectItem>
+                        <SelectItem
+                          value="__monuments_label"
+                          disabled
+                          className="cursor-default px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45 opacity-100 hover:bg-transparent hover:text-white/45"
+                        >
+                          MONUMENTS
+                        </SelectItem>
                         {monumentsLoading ? (
                           <SelectItem value="__loading" disabled>
                             Loading monuments…
                           </SelectItem>
                         ) : monuments.length > 0 ? (
                           monuments.map((monument) => (
-                            <SelectItem key={monument.id} value={monument.id}>
+                            <SelectItem
+                              key={monument.id}
+                              value={`MONUMENT:${monument.id}`}
+                            >
                               <div className="flex items-center gap-2">
                                 <span className="text-lg">
                                   {monument.emoji ?? "🏛️"}
@@ -7341,6 +7539,37 @@ export function Fab({
                         ) : (
                           <SelectItem value="__empty" disabled>
                             No monuments yet
+                          </SelectItem>
+                        )}
+                        <SelectItem
+                          value="__circles_label"
+                          disabled
+                          className="cursor-default px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45 opacity-100 hover:bg-transparent hover:text-white/45"
+                        >
+                          CIRCLES
+                        </SelectItem>
+                        {manageableCirclesLoading ? (
+                          <SelectItem value="__circles_loading" disabled>
+                            Loading circles…
+                          </SelectItem>
+                        ) : manageableCircles.length > 0 ? (
+                          manageableCircles.map((circle) => (
+                            <SelectItem
+                              key={circle.id}
+                              value={`CIRCLE:${circle.id}`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <CircleDot
+                                  className="h-4 w-4 text-blue-200"
+                                  aria-hidden="true"
+                                />
+                                <span>{circle.name}</span>
+                              </div>
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="__circles_empty" disabled>
+                            No managed circles yet
                           </SelectItem>
                         )}
                       </SelectContent>
@@ -7681,23 +7910,41 @@ export function Fab({
                             </SelectItem>
                           ) : goals.length > 0 ? (
                             filteredGoals.length > 0 ? (
-                              filteredGoals.map((goal) => (
-                                <SelectItem key={goal.id} value={goal.id}>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-lg">
-                                      {goal.emoji ??
-                                        goal.monumentEmoji ??
-                                        monumentEmojiMap.get(
-                                          (goal as any).monument_id ??
-                                            (goal as any).monumentId ??
-                                            "",
-                                        ) ??
-                                        "✨"}
-                                    </span>
-                                    <span>{goal.name}</span>
-                                  </div>
-                                </SelectItem>
-                              ))
+                              filteredGoals.map((goal) => {
+                                const circleLabel =
+                                  getCircleGoalContextLabel(goal);
+                                return (
+                                  <SelectItem key={goal.id} value={goal.id}>
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      {goal.circle_id ? (
+                                        <CircleDot
+                                          className="h-4 w-4 shrink-0 text-blue-200"
+                                          aria-hidden="true"
+                                        />
+                                      ) : (
+                                        <span className="shrink-0 text-lg">
+                                          {goal.emoji ??
+                                            goal.monumentEmoji ??
+                                            monumentEmojiMap.get(
+                                              goal.monument_id ?? "",
+                                            ) ??
+                                            "✨"}
+                                        </span>
+                                      )}
+                                      <span className="flex min-w-0 flex-col">
+                                        <span className="truncate">
+                                          {goal.name}
+                                        </span>
+                                        {circleLabel ? (
+                                          <span className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-200/70">
+                                            {circleLabel}
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    </div>
+                                  </SelectItem>
+                                );
+                              })
                             ) : (
                               <SelectItem value="" disabled>
                                 No goals match your search
@@ -8435,71 +8682,130 @@ export function Fab({
               {selected === "HABIT" && activeCreationMode === "main" && (
                 <div className="grid gap-3 md:gap-3.5">
                   <div className="grid gap-1.5">
-                    <Select
-                      value={habitRoutineId ?? ""}
-                      onValueChange={(value) => {
-                        if (value === "__create__") {
-                          setHabitRoutineId("");
-                          setIsCreatingHabitRoutineInline(true);
+                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+                      <Select
+                        value={habitRoutineId ?? ""}
+                        onValueChange={(value) => {
+                          if (value === "__create__") {
+                            setHabitRoutineId("");
+                            setIsCreatingHabitRoutineInline(true);
+                            setHabitInlineRoutineName("");
+                            setHabitInlineRoutineDescription("");
+                            return;
+                          }
+                          setIsCreatingHabitRoutineInline(false);
                           setHabitInlineRoutineName("");
                           setHabitInlineRoutineDescription("");
-                          return;
-                        }
-                        setIsCreatingHabitRoutineInline(false);
-                        setHabitInlineRoutineName("");
-                        setHabitInlineRoutineDescription("");
-                        setHabitRoutineId(value);
-                      }}
-                      hideChevron
-                      triggerClassName={cn(
-                        "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
-                        habitRoutineId
-                          ? "text-white/80 hover:text-blue-200"
-                          : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
-                      )}
-                      trigger={
-                        <span>
-                          {habitRoutineId
-                            ? (habitRoutines.find(
-                                (r) => r.id === habitRoutineId,
-                              )?.name ?? "Link to existing ROUTINE +")
-                            : "Link to existing ROUTINE +"}
-                        </span>
-                      }
-                    >
-                      <SelectContent className="min-w-[220px]">
-                        <SelectItem value="__create__">
-                          <div className="flex items-center gap-2 text-white">
-                            <Plus className="h-4 w-4" />
-                            <span>Create new routine</span>
-                          </div>
-                        </SelectItem>
-                        {habitRoutinesLoading ? (
-                          <SelectItem value="__loading" disabled>
-                            Loading routines…
-                          </SelectItem>
-                        ) : habitRoutines.length > 0 ? (
-                          habitRoutines.map((routine) => (
-                            <SelectItem key={routine.id} value={routine.id}>
-                              <div className="flex flex-col">
-                                <span className="font-medium">
-                                  {routine.name}
-                                </span>
-                                {routine.description ? (
-                                  <span className="text-xs text-white/60">
-                                    {routine.description}
-                                  </span>
-                                ) : null}
-                              </div>
-                            </SelectItem>
-                          ))
-                        ) : (
-                          <SelectItem value="__empty" disabled>
-                            No routines yet
-                          </SelectItem>
+                          setHabitRoutineId(value);
+                        }}
+                        hideChevron
+                        triggerClassName={cn(
+                          "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
+                          habitRoutineId
+                            ? "text-white/80 hover:text-blue-200"
+                            : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
                         )}
-                      </SelectContent>
-                    </Select>
+                        trigger={
+                          <span>
+                            {habitRoutineId
+                              ? (habitRoutines.find(
+                                  (r) => r.id === habitRoutineId,
+                                )?.name ?? "Link to existing ROUTINE +")
+                              : "Link to existing ROUTINE +"}
+                          </span>
+                        }
+                      >
+                        <SelectContent className="min-w-[220px]">
+                          <SelectItem value="__create__">
+                            <div className="flex items-center gap-2 text-white">
+                              <Plus className="h-4 w-4" />
+                              <span>Create new routine</span>
+                            </div>
+                          </SelectItem>
+                          {habitRoutinesLoading ? (
+                            <SelectItem value="__loading" disabled>
+                              Loading routines…
+                            </SelectItem>
+                          ) : habitRoutines.length > 0 ? (
+                            habitRoutines.map((routine) => (
+                              <SelectItem key={routine.id} value={routine.id}>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">
+                                    {routine.name}
+                                  </span>
+                                  {routine.description ? (
+                                    <span className="text-xs text-white/60">
+                                      {routine.description}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="__empty" disabled>
+                              No routines yet
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={habitCircleId ?? ""}
+                        onValueChange={(value) => {
+                          setHabitCircleId(value === "__none__" ? "" : value);
+                        }}
+                        hideChevron
+                        placement="below"
+                        contentAlign="end"
+                        minContentWidth={220}
+                        maxHeight={180}
+                        triggerClassName={cn(
+                          "h-auto max-w-[11rem] border-0 bg-transparent p-0 text-right text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4 sm:max-w-[14rem]",
+                          habitCircleId
+                            ? "text-white/80 hover:text-blue-200"
+                            : "text-zinc-600/90 drop-shadow-[0_0_4px_rgba(39,39,42,0.32)] animate-[goalLinkPulse_4.4s_ease-in-out_infinite]",
+                        )}
+                        trigger={
+                          <span className="inline-flex min-w-0 items-center gap-1.5">
+                            {habitCircleId ? (
+                              <CircleDot
+                                className="h-3.5 w-3.5 shrink-0 text-blue-200"
+                                aria-hidden="true"
+                              />
+                            ) : null}
+                            <span className="truncate">
+                              {habitCircleTriggerLabel}
+                            </span>
+                          </span>
+                        }
+                      >
+                        <SelectContent className="w-full min-w-0 max-h-none">
+                          <SelectItem value="__none__">
+                            No Circle
+                          </SelectItem>
+                          {manageableCirclesLoading ? (
+                            <SelectItem value="__circles_loading" disabled>
+                              Loading circles…
+                            </SelectItem>
+                          ) : manageableCircles.length > 0 ? (
+                            manageableCircles.map((circle) => (
+                              <SelectItem key={circle.id} value={circle.id}>
+                                <div className="flex items-center gap-2">
+                                  <CircleDot
+                                    className="h-4 w-4 text-blue-200"
+                                    aria-hidden="true"
+                                  />
+                                  <span>{circle.name}</span>
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="__circles_empty" disabled>
+                              No managed circles yet
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     {isCreatingHabitRoutineInline && (
                       <div className="grid gap-1.5">
                         <Label htmlFor="habit-inline-routine-name">
@@ -9711,14 +10017,30 @@ export function Fab({
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) return;
-        const [goalsData, monumentsResp] = await Promise.all([
+        const manageableCircleIds = manageableCircles
+          .map((circle) => circle.id)
+          .filter((circleId): circleId is string => Boolean(circleId));
+        const circleGoalsRequest =
+          manageableCircleIds.length > 0
+            ? supabase
+                .from("goals")
+                .select(
+                  "id, name, emoji, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, monument:monuments(emoji)",
+                )
+                .eq("user_id", user.id)
+                .in("circle_id", manageableCircleIds)
+                .order("created_at", { ascending: false })
+            : Promise.resolve({ data: [], error: null });
+        const [goalsData, circleGoalsResp, monumentsResp] = await Promise.all([
           getGoalsForUser(user.id),
+          circleGoalsRequest,
           supabase
             .from("monuments")
             .select("id, emoji")
             .eq("user_id", user.id)
             .order("created_at", { ascending: false }),
         ]);
+        if (circleGoalsResp.error) throw circleGoalsResp.error;
         if (!cancelled) {
           const map = new Map<string, string | null>();
           monumentsResp.data?.forEach((m) => {
@@ -9727,14 +10049,36 @@ export function Fab({
             }
           });
           setMonumentEmojiMap(map);
+          const mergedGoals = new Map<string, Goal>();
+          const manageableCircleIdSet = new Set(manageableCircleIds);
+          const addGoals = (items: Goal[]) => {
+            items.forEach((goal) => {
+              if (!mergedGoals.has(goal.id)) {
+                mergedGoals.set(goal.id, goal);
+              }
+            });
+          };
+          const circleGoals = (
+            (circleGoalsResp.data ?? []) as (Goal & {
+              monument?: { emoji?: string | null } | null;
+            })[]
+          ).map(({ monument, ...goal }) => ({
+            ...goal,
+            monumentEmoji: monument?.emoji ?? null,
+          }));
+          addGoals(
+            goalsData.filter(
+              (goal) =>
+                !goal.circle_id || manageableCircleIdSet.has(goal.circle_id),
+            ),
+          );
+          addGoals(circleGoals);
           setGoals(
-            goalsData.map((goal) => ({
+            Array.from(mergedGoals.values()).map((goal) => ({
               ...goal,
               monumentEmoji:
                 goal.monumentEmoji ??
-                map.get(
-                  (goal as any).monument_id ?? (goal as any).monumentId ?? "",
-                ) ??
+                map.get(goal.monument_id ?? "") ??
                 null,
             })),
           );
@@ -9755,11 +10099,12 @@ export function Fab({
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [manageableCircles, selected]);
 
   useEffect(() => {
     const shouldLoadMonuments =
       selected === "GOAL" ||
+      selected === "PROJECT" ||
       overlayOpen ||
       overlayPickerOpen ||
       FAB_PAGES[activeFabPage] === "nexus";
@@ -9805,6 +10150,59 @@ export function Fab({
       cancelled = true;
     };
   }, [activeFabPage, overlayOpen, overlayPickerOpen, selected]);
+
+  useEffect(() => {
+    if (selected !== "GOAL" && selected !== "PROJECT" && selected !== "HABIT") {
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+
+    const loadManageableCircles = async () => {
+      try {
+        setManageableCirclesLoading(true);
+        const response = await fetch("/api/circles", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(payload?.error ?? "Unable to load Circles.");
+        }
+        const payload = (await response.json()) as {
+          circles?: GoalCircleOption[];
+        };
+        const circles = (payload.circles ?? []).filter((circle) =>
+          GOAL_MANAGEABLE_CIRCLE_ROLES.has(
+            circle.viewerRole?.trim().toUpperCase() ?? "",
+          ),
+        );
+        if (!cancelled) {
+          setManageableCircles(circles);
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        console.error("Failed to load manageable circles", error);
+        if (!cancelled) {
+          setManageableCircles([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setManageableCirclesLoading(false);
+        }
+      }
+    };
+
+    void loadManageableCircles();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selected]);
 
   useEffect(() => {
     if (selected !== "TASK") return;
@@ -9877,7 +10275,7 @@ export function Fab({
         const { data, error } = await supabase
           .from("campaigns")
           .select(
-            "id, name, emoji, roadmap_id, primary_monument_id, scheduling_state, position",
+            "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
           )
           .eq("user_id", user.id)
           .order("position", { ascending: true, nullsFirst: false })
@@ -9886,7 +10284,16 @@ export function Fab({
           throw error;
         }
         if (!cancelled) {
-          setGoalCampaigns((data ?? []) as GoalCampaignOption[]);
+          const loadedCampaigns = (data ?? []) as GoalCampaignOption[];
+          setGoalCampaigns((current) => {
+            const loadedIds = new Set(
+              loadedCampaigns.map((campaign) => campaign.id),
+            );
+            const hydratedCampaigns = current.filter(
+              (campaign) => !loadedIds.has(campaign.id),
+            );
+            return [...loadedCampaigns, ...hydratedCampaigns];
+          });
         }
       } catch (error) {
         console.error("Failed to load goal campaigns", error);
@@ -9907,9 +10314,29 @@ export function Fab({
 
   const goalCampaignOptions = useMemo(() => {
     const campaigns = [...goalCampaigns];
+    if (goalRelationType === "CIRCLE" && goalCircleId) {
+      return campaigns
+        .filter(
+          (campaign) =>
+            campaign.primary_circle_id === goalCircleId ||
+            campaign.id === goalCampaignId,
+        )
+        .sort((a, b) => {
+          const aPosition = a.position ?? Number.MAX_SAFE_INTEGER;
+          const bPosition = b.position ?? Number.MAX_SAFE_INTEGER;
+          if (aPosition !== bPosition) {
+            return aPosition - bPosition;
+          }
+          return a.name.localeCompare(b.name);
+        });
+    }
     campaigns.sort((a, b) => {
-      const aMatches = a.primary_monument_id === goalMonumentId;
-      const bMatches = b.primary_monument_id === goalMonumentId;
+      const aMatches =
+        goalRelationType === "MONUMENT" &&
+        a.primary_monument_id === goalMonumentId;
+      const bMatches =
+        goalRelationType === "MONUMENT" &&
+        b.primary_monument_id === goalMonumentId;
       if (aMatches !== bMatches) {
         return aMatches ? -1 : 1;
       }
@@ -9921,19 +10348,17 @@ export function Fab({
       return a.name.localeCompare(b.name);
     });
     return campaigns;
-  }, [goalCampaigns, goalMonumentId]);
-
-  useEffect(() => {
-    setGoalCampaignId((current) =>
-      current && goalCampaigns.some((campaign) => campaign.id === current)
-        ? current
-        : null,
-    );
-  }, [goalCampaigns]);
+  }, [
+    goalCampaignId,
+    goalCampaigns,
+    goalMonumentId,
+    goalRelationType,
+    goalCircleId,
+  ]);
 
   useEffect(() => {
     setGoalCampaignCreateError(null);
-  }, [goalMonumentId]);
+  }, [goalMonumentId, goalCircleId]);
 
   const resetGoalCampaignInlineCreation = useCallback(() => {
     setIsCreatingGoalCampaignInline(false);
@@ -9942,6 +10367,115 @@ export function Fab({
     setGoalCampaignCreateError(null);
     setGoalCampaignCreating(false);
   }, []);
+
+  const selectedGoalRelationValue =
+    goalRelationType && goalRelationId
+      ? `${goalRelationType}:${goalRelationId}`
+      : "";
+
+  const selectedGoalRelationLabel = useMemo(() => {
+    if (goalRelationType === "MONUMENT" && goalRelationId) {
+      return (
+        monuments.find((monument) => monument.id === goalRelationId)?.title ??
+        "Link to MONUMENT / CIRCLE +"
+      );
+    }
+    if (goalRelationType === "CIRCLE" && goalRelationId) {
+      return (
+        manageableCircles.find((circle) => circle.id === goalRelationId)
+          ?.name ?? "Link to MONUMENT / CIRCLE +"
+      );
+    }
+    return "Link to MONUMENT / CIRCLE +";
+  }, [goalRelationId, goalRelationType, manageableCircles, monuments]);
+
+  const handleGoalRelationChange = useCallback(
+    (value: string) => {
+      resetGoalCampaignInlineCreation();
+      setSaveError(null);
+
+      if (!value) {
+        setGoalRelationType(null);
+        setGoalRelationId("");
+        setGoalMonumentId("");
+        setGoalCircleId("");
+        return;
+      }
+
+      const [rawType, relationId] = value.split(":");
+      if (
+        (rawType !== "MONUMENT" && rawType !== "CIRCLE") ||
+        !relationId
+      ) {
+        return;
+      }
+
+      setGoalRelationType(rawType);
+      setGoalRelationId(relationId);
+      if (rawType === "MONUMENT") {
+        setGoalMonumentId(relationId);
+        setGoalCircleId("");
+        return;
+      }
+
+      setGoalCircleId(relationId);
+      setGoalMonumentId("");
+    },
+    [resetGoalCampaignInlineCreation],
+  );
+
+  const resolveSelectedGoalRelation =
+    useCallback((): GoalRelationResolution => {
+      if (!goalRelationType || !goalRelationId) {
+        return {
+          selectedMonumentId: null,
+          selectedCircleId: null,
+          error: "Link this goal to a Monument or Circle before saving.",
+        };
+      }
+
+      if (goalRelationType === "MONUMENT") {
+        if (!goalMonumentId) {
+          return {
+            selectedMonumentId: null,
+            selectedCircleId: null,
+            error: "Link this goal to a monument before saving.",
+          };
+        }
+        if (!isValidUuid(goalMonumentId)) {
+          return {
+            selectedMonumentId: null,
+            selectedCircleId: null,
+            error: "Link this goal to a valid monument before saving.",
+          };
+        }
+        return {
+          selectedMonumentId: goalMonumentId,
+          selectedCircleId: null,
+          error: null,
+        };
+      }
+
+      if (!goalCircleId) {
+        return {
+          selectedMonumentId: null,
+          selectedCircleId: null,
+          error: "Link this goal to a circle before saving.",
+        };
+      }
+      if (!isValidUuid(goalCircleId)) {
+        return {
+          selectedMonumentId: null,
+          selectedCircleId: null,
+          error: "Link this goal to a valid circle before saving.",
+        };
+      }
+      return {
+        selectedMonumentId: null,
+        selectedCircleId: goalCircleId,
+        error: null,
+      };
+    }, [goalCircleId, goalMonumentId, goalRelationId, goalRelationType]);
 
   const handleCreateGoalCampaignInline = useCallback(async () => {
     if (goalCampaignCreating) {
@@ -9955,8 +10489,34 @@ export function Fab({
       setGoalCampaignCreateError("Name the campaign first.");
       return;
     }
-    if (!goalMonumentId || !isValidUuid(goalMonumentId)) {
-      setGoalCampaignCreateError("Link a monument before creating a campaign.");
+    if (!goalRelationType || !goalRelationId) {
+      setGoalCampaignCreateError(
+        "Link a Monument or Circle before creating a campaign.",
+      );
+      return;
+    }
+
+    const selectedMonumentId =
+      goalRelationType === "MONUMENT" ? goalMonumentId : null;
+    const selectedCircleId =
+      goalRelationType === "CIRCLE" ? goalCircleId : null;
+
+    if (
+      goalRelationType === "MONUMENT" &&
+      (!selectedMonumentId || !isValidUuid(selectedMonumentId))
+    ) {
+      setGoalCampaignCreateError(
+        "Link a valid Monument before creating a campaign.",
+      );
+      return;
+    }
+    if (
+      goalRelationType === "CIRCLE" &&
+      (!selectedCircleId || !isValidUuid(selectedCircleId))
+    ) {
+      setGoalCampaignCreateError(
+        "Link a valid Circle before creating a campaign.",
+      );
       return;
     }
 
@@ -9978,52 +10538,97 @@ export function Fab({
         throw new Error("Sign in before creating a campaign.");
       }
 
-      const { data: existingRoadmap, error: roadmapError } = await supabase
-        .from("roadmaps")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("monument_id", goalMonumentId)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (roadmapError) throw roadmapError;
+      let roadmapId: string | null = null;
+      if (selectedMonumentId) {
+        const { data: existingRoadmap, error: roadmapError } = await supabase
+          .from("roadmaps")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("monument_id", selectedMonumentId)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (roadmapError) throw roadmapError;
 
-      let roadmapId =
-        typeof existingRoadmap?.id === "string" ? existingRoadmap.id : null;
-      if (!roadmapId) {
-        const monument = monuments.find((item) => item.id === goalMonumentId);
-        const { data: createdRoadmap, error: createRoadmapError } =
-          await supabase
-            .from("roadmaps")
-            .insert({
-              user_id: user.id,
-              monument_id: goalMonumentId,
-              title: monument?.title
-                ? `${monument.title} Roadmap`
-                : "True Roadmap",
-              emoji: monument?.emoji ?? null,
-            })
-            .select("id")
-            .single();
-        if (createRoadmapError) throw createRoadmapError;
         roadmapId =
-          typeof createdRoadmap?.id === "string" ? createdRoadmap.id : null;
+          typeof existingRoadmap?.id === "string" ? existingRoadmap.id : null;
+        if (!roadmapId) {
+          const monument = monuments.find(
+            (item) => item.id === selectedMonumentId,
+          );
+          const { data: createdRoadmap, error: createRoadmapError } =
+            await supabase
+              .from("roadmaps")
+              .insert({
+                user_id: user.id,
+                monument_id: selectedMonumentId,
+                title: monument?.title
+                  ? `${monument.title} Roadmap`
+                  : "True Roadmap",
+                emoji: monument?.emoji ?? null,
+              })
+              .select("id")
+              .single();
+          if (createRoadmapError) throw createRoadmapError;
+          roadmapId =
+            typeof createdRoadmap?.id === "string" ? createdRoadmap.id : null;
+        }
+      } else if (selectedCircleId) {
+        const { data: existingRoadmap, error: roadmapError } = await supabase
+          .from("roadmaps")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("circle_id", selectedCircleId)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (roadmapError) throw roadmapError;
+
+        roadmapId =
+          typeof existingRoadmap?.id === "string" ? existingRoadmap.id : null;
+        if (!roadmapId) {
+          const circle = manageableCircles.find(
+            (item) => item.id === selectedCircleId,
+          );
+          const { data: createdRoadmap, error: createRoadmapError } =
+            await supabase
+              .from("roadmaps")
+              .insert({
+                user_id: user.id,
+                circle_id: selectedCircleId,
+                monument_id: null,
+                title: circle?.name
+                  ? `${circle.name} Roadmap`
+                  : "Circle Roadmap",
+                emoji: null,
+              })
+              .select("id")
+              .single();
+          if (createRoadmapError) throw createRoadmapError;
+          roadmapId =
+            typeof createdRoadmap?.id === "string" ? createdRoadmap.id : null;
+        }
       }
 
       if (!roadmapId) {
-        throw new Error("Unable to resolve the monument roadmap.");
+        throw new Error(
+          selectedCircleId
+            ? "Unable to resolve the circle roadmap."
+            : "Unable to resolve the monument roadmap.",
+        );
       }
 
+      const campaignContextFilter = selectedCircleId
+        ? `roadmap_id.eq.${roadmapId},primary_circle_id.eq.${selectedCircleId}`
+        : `roadmap_id.eq.${roadmapId},primary_monument_id.eq.${selectedMonumentId}`;
       const { data: contextCampaignRows, error: contextCampaignsError } =
         await supabase
           .from("campaigns")
           .select(
-            "id, name, emoji, roadmap_id, primary_monument_id, scheduling_state, position",
+            "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
           )
           .eq("user_id", user.id)
-          .or(
-            `roadmap_id.eq.${roadmapId},primary_monument_id.eq.${goalMonumentId}`,
-          );
+          .or(campaignContextFilter);
       if (contextCampaignsError) throw contextCampaignsError;
 
       const contextCampaigns =
@@ -10033,7 +10638,9 @@ export function Fab({
         (campaign) => {
           const belongsToCurrentContext =
             campaign.roadmap_id === roadmapId ||
-            campaign.primary_monument_id === goalMonumentId;
+            (selectedCircleId
+              ? campaign.primary_circle_id === selectedCircleId
+              : campaign.primary_monument_id === selectedMonumentId);
           return (
             belongsToCurrentContext &&
             collapseWhitespace(campaign.name).toLocaleLowerCase() ===
@@ -10069,7 +10676,8 @@ export function Fab({
 
       const campaign = await createCampaign(user.id, {
         roadmapId,
-        primaryMonumentId: goalMonumentId,
+        primaryMonumentId: selectedMonumentId,
+        primaryCircleId: selectedCircleId,
         name: campaignName,
         emoji: campaignEmoji,
         schedulingState: "ACTIVE",
@@ -10087,6 +10695,7 @@ export function Fab({
         emoji: campaign.emoji,
         roadmap_id: roadmapId,
         primary_monument_id: campaign.primary_monument_id,
+        primary_circle_id: campaign.primary_circle_id ?? null,
         scheduling_state: campaign.scheduling_state,
         position: campaign.position,
       };
@@ -10112,13 +10721,18 @@ export function Fab({
     goalCampaigns,
     goalInlineCampaignEmoji,
     goalInlineCampaignName,
+    goalCircleId,
     goalMonumentId,
+    goalRelationId,
+    goalRelationType,
+    manageableCircles,
     monuments,
     resetGoalCampaignInlineCreation,
   ]);
 
   useEffect(() => {
     const shouldLoadSkills =
+      selected === "GOAL" ||
       selected === "HABIT" ||
       selected === "PROJECT" ||
       selected === "TASK" ||
@@ -10782,7 +11396,7 @@ export function Fab({
       return true;
     if (selected === "GOAL") {
       if (goalName.trim().length === 0) return true;
-      if (!goalMonumentId) return true;
+      if (!goalRelationType || !goalRelationId) return true;
       if (!goalEnergy) return true;
       if (!goalPriority) return true;
       return false;
@@ -10810,7 +11424,8 @@ export function Fab({
     return habitName.trim().length === 0;
   }, [
     goalEnergy,
-    goalMonumentId,
+    goalRelationId,
+    goalRelationType,
     goalName,
     goalPriority,
     habitEnergy,
@@ -10876,9 +11491,17 @@ export function Fab({
         setSaveError("Please enter a name.");
         return;
       }
+      const goalRelationResolution =
+        selected === "GOAL"
+          ? resolveSelectedGoalRelation()
+          : {
+              selectedMonumentId: null,
+              selectedCircleId: null,
+              error: null,
+            };
       if (selected === "GOAL") {
-        if (!goalMonumentId) {
-          setSaveError("Link this goal to a monument before saving.");
+        if (goalRelationResolution.error) {
+          setSaveError(goalRelationResolution.error);
           return;
         }
         if (!goalEnergy) {
@@ -10941,7 +11564,192 @@ export function Fab({
         let tagAttachmentFailed = false;
         let childDraftFailureMessage: string | null = null;
 
+        const resolveGoalRoadmapId = async ({
+          selectedMonumentId,
+          selectedCircleId,
+        }: {
+          selectedMonumentId: string | null;
+          selectedCircleId: string | null;
+        }) => {
+          if (selectedMonumentId) {
+            const { data: existingRoadmap, error: roadmapError } =
+              await supabase
+                .from("roadmaps")
+                .select("id")
+                .eq("user_id", user.id)
+                .eq("monument_id", selectedMonumentId)
+                .order("created_at", { ascending: true })
+                .limit(1)
+                .maybeSingle();
+            if (roadmapError) throwIfLimitError(roadmapError);
+
+            const existingRoadmapId =
+              typeof existingRoadmap?.id === "string"
+                ? existingRoadmap.id
+                : null;
+            if (existingRoadmapId) {
+              return existingRoadmapId;
+            }
+
+            const monument = monuments.find(
+              (item) => item.id === selectedMonumentId,
+            );
+            const { data: createdRoadmap, error: createRoadmapError } =
+              await supabase
+                .from("roadmaps")
+                .insert({
+                  user_id: user.id,
+                  monument_id: selectedMonumentId,
+                  circle_id: null,
+                  title: monument?.title
+                    ? `${monument.title} Roadmap`
+                    : "True Roadmap",
+                  emoji: monument?.emoji ?? null,
+                })
+                .select("id")
+                .single();
+            if (createRoadmapError) throwIfLimitError(createRoadmapError);
+            const createdRoadmapId =
+              typeof createdRoadmap?.id === "string"
+                ? createdRoadmap.id
+                : null;
+            if (createdRoadmapId) {
+              return createdRoadmapId;
+            }
+          }
+
+          if (selectedCircleId) {
+            const { data: existingRoadmap, error: roadmapError } =
+              await supabase
+                .from("roadmaps")
+                .select("id")
+                .eq("user_id", user.id)
+                .eq("circle_id", selectedCircleId)
+                .order("created_at", { ascending: true })
+                .limit(1)
+                .maybeSingle();
+            if (roadmapError) throwIfLimitError(roadmapError);
+
+            const existingRoadmapId =
+              typeof existingRoadmap?.id === "string"
+                ? existingRoadmap.id
+                : null;
+            if (existingRoadmapId) {
+              return existingRoadmapId;
+            }
+
+            const circle = manageableCircles.find(
+              (item) => item.id === selectedCircleId,
+            );
+            const { data: createdRoadmap, error: createRoadmapError } =
+              await supabase
+                .from("roadmaps")
+                .insert({
+                  user_id: user.id,
+                  circle_id: selectedCircleId,
+                  monument_id: null,
+                  title: circle?.name
+                    ? `${circle.name} Roadmap`
+                    : "Circle Roadmap",
+                  emoji: null,
+                })
+                .select("id")
+                .single();
+            if (createRoadmapError) throwIfLimitError(createRoadmapError);
+            const createdRoadmapId =
+              typeof createdRoadmap?.id === "string"
+                ? createdRoadmap.id
+                : null;
+            if (createdRoadmapId) {
+              return createdRoadmapId;
+            }
+          }
+
+          throw new Error("Unable to resolve the selected roadmap.");
+        };
+
         if (selected === "GOAL" && activeEditTarget?.entityType === "GOAL") {
+          const { data: existingGoalData, error: existingGoalError } =
+            await supabase
+              .from("goals")
+              .select("id, monument_id, circle_id, roadmap_id")
+              .eq("id", activeEditTarget.entityId)
+              .eq("user_id", user.id)
+              .maybeSingle();
+          if (existingGoalError) throwIfLimitError(existingGoalError);
+
+          const existingGoal = existingGoalData as Pick<
+            FabGoalEditRow,
+            "id" | "monument_id" | "circle_id" | "roadmap_id"
+          > | null;
+          if (!existingGoal) {
+            throw new Error("Goal could not be found.");
+          }
+
+          const originalRelationType = existingGoal.circle_id
+            ? "CIRCLE"
+            : "MONUMENT";
+          const nextRelationType = goalRelationResolution.selectedCircleId
+            ? "CIRCLE"
+            : "MONUMENT";
+          if (originalRelationType !== nextRelationType) {
+            setSaveError(
+              "Moving a Goal between Monument and Circle is coming next.",
+            );
+            return;
+          }
+          if (
+            originalRelationType === "CIRCLE" &&
+            existingGoal.circle_id !== goalRelationResolution.selectedCircleId
+          ) {
+            setSaveError("Moving a Goal between Circles is coming next.");
+            return;
+          }
+
+          const resolvedGoalRoadmapId = await resolveGoalRoadmapId({
+            selectedMonumentId: goalRelationResolution.selectedMonumentId,
+            selectedCircleId: goalRelationResolution.selectedCircleId,
+          });
+
+          if (goalCampaignId && goalRelationResolution.selectedCircleId) {
+            let selectedCampaign =
+              goalCampaigns.find(
+                (campaign) => campaign.id === goalCampaignId,
+              ) ?? null;
+            if (!selectedCampaign) {
+              const {
+                data: selectedCampaignData,
+                error: selectedCampaignError,
+              } = await supabase
+                .from("campaigns")
+                .select(
+                  "id, name, emoji, roadmap_id, primary_monument_id, primary_circle_id, scheduling_state, position",
+                )
+                .eq("id", goalCampaignId)
+                .eq("user_id", user.id)
+                .maybeSingle();
+              if (selectedCampaignError) {
+                throwIfLimitError(selectedCampaignError);
+              }
+              selectedCampaign =
+                selectedCampaignData as GoalCampaignOption | null;
+            }
+            if (!selectedCampaign) {
+              setSaveError("Selected campaign could not be found.");
+              return;
+            }
+            const belongsToSelectedCircle =
+              selectedCampaign.primary_circle_id ===
+                goalRelationResolution.selectedCircleId ||
+              selectedCampaign.roadmap_id === resolvedGoalRoadmapId;
+            if (!belongsToSelectedCircle) {
+              setSaveError(
+                "Select a campaign that belongs to this Circle before saving.",
+              );
+              return;
+            }
+          }
+
           const { error } = await supabase
             .from("goals")
             .update({
@@ -10951,7 +11759,13 @@ export function Fab({
               energy: goalEnergy,
               energy_code: goalEnergy,
               why: goalWhy?.trim() || null,
-              monument_id: goalMonumentId || null,
+              monument_id: goalRelationResolution.selectedMonumentId,
+              circle_id: goalRelationResolution.selectedCircleId,
+              roadmap_id: goalRelationResolution.selectedCircleId
+                ? resolvedGoalRoadmapId
+                : existingGoal.roadmap_id
+                  ? resolvedGoalRoadmapId
+                  : (existingGoal.roadmap_id ?? null),
               due_date: goalDue ?? null,
             })
             .eq("id", activeEditTarget.entityId)
@@ -11010,7 +11824,7 @@ export function Fab({
             entityType: "GOAL",
             entityId: activeEditTarget.entityId,
             action: "updated",
-            monumentId: goalMonumentId || null,
+            monumentId: goalRelationResolution.selectedMonumentId,
           });
           resetFabFormState();
           setExpanded(false);
@@ -11201,6 +12015,7 @@ export function Fab({
               energy: habitEnergy,
               skill_id: habitSkillId || null,
               routine_id: routineIdToUse,
+              circle_id: isValidUuid(habitCircleId) ? habitCircleId : null,
               goal_id: habitGoalId || null,
               location_context_id: isValidUuid(habitLocationContextId)
                 ? habitLocationContextId
@@ -11218,8 +12033,6 @@ export function Fab({
             .eq("id", activeEditTarget.entityId)
             .eq("user_id", user.id);
           if (error) throwIfLimitError(error);
-
-          await notifySchedulerOfChange();
 
           try {
             await replaceSelectedTagsForEntity({
@@ -11257,6 +12070,29 @@ export function Fab({
         }
 
         if (selected === "GOAL") {
+          const roadmapId = await resolveGoalRoadmapId({
+            selectedMonumentId: goalRelationResolution.selectedMonumentId,
+            selectedCircleId: goalRelationResolution.selectedCircleId,
+          });
+          if (goalCampaignId && goalRelationResolution.selectedCircleId) {
+            const selectedCampaign =
+              goalCampaigns.find((campaign) => campaign.id === goalCampaignId) ??
+              null;
+            if (!selectedCampaign) {
+              setSaveError("Selected campaign could not be found.");
+              return;
+            }
+            const belongsToSelectedCircle =
+              selectedCampaign.primary_circle_id ===
+                goalRelationResolution.selectedCircleId ||
+              selectedCampaign.roadmap_id === roadmapId;
+            if (!belongsToSelectedCircle) {
+              setSaveError(
+                "Select a campaign that belongs to this Circle before saving.",
+              );
+              return;
+            }
+          }
           const { data: goalData, error } = await supabase
             .from("goals")
             .insert({
@@ -11265,7 +12101,9 @@ export function Fab({
               priority: goalPriority,
               energy: goalEnergy,
               why: goalWhy?.trim() || null,
-              monument_id: goalMonumentId || null,
+              monument_id: goalRelationResolution.selectedMonumentId,
+              circle_id: goalRelationResolution.selectedCircleId,
+              roadmap_id: roadmapId,
               due_date: goalDue ?? null,
             })
             .select("id")
@@ -11390,6 +12228,7 @@ export function Fab({
               energy: habitEnergy,
               skill_id: habitSkillId || null,
               routine_id: routineIdToUse,
+              circle_id: isValidUuid(habitCircleId) ? habitCircleId : null,
               goal_id: habitGoalId || null,
               location_context_id: isValidUuid(habitLocationContextId)
                 ? habitLocationContextId
@@ -11408,7 +12247,6 @@ export function Fab({
             .single();
           if (error) throwIfLimitError(error);
           createdEntityId = habitData?.id ?? null;
-          await notifySchedulerOfChange();
         }
         if (createdEntityId && selectedTagIdsSnapshot.length > 0) {
           try {
@@ -11535,7 +12373,10 @@ export function Fab({
             entityType: createdType,
             entityId: createdEntityId,
             action: "created",
-            monumentId: createdType === "GOAL" ? goalMonumentId || null : null,
+            monumentId:
+              createdType === "GOAL"
+                ? goalRelationResolution.selectedMonumentId
+                : null,
           });
         }
         resetFabFormState();
@@ -11564,6 +12405,13 @@ export function Fab({
         }
       } catch (error: unknown) {
         console.error("Failed to save item", error);
+        if (
+          process.env.NODE_ENV === "development" &&
+          selected === "GOAL" &&
+          activeEditTarget?.entityType === "GOAL"
+        ) {
+          console.error("[fab goal edit save] failed", error);
+        }
         if (error instanceof LimitReachedError) {
           setSaveError(null);
           setActiveLimitCode(error.limitCode);
@@ -11582,6 +12430,7 @@ export function Fab({
     }
   }, [
     habitDuration,
+    habitCircleId,
     habitDaylightPreference,
     habitEnergy,
     habitGoalId,
@@ -11601,16 +12450,17 @@ export function Fab({
     isCreatingHabitRoutineInline,
     isSavingFab,
     goalCampaignId,
+    goalCampaigns,
     goalDraftProjects,
     goalDue,
     goalEnergy,
-    goalMonumentId,
     goalName,
     goalPriority,
     goalWhy,
+    manageableCircles,
+    monuments,
     normalizedTaskDuration,
     normalizedProjectDuration,
-    notifySchedulerOfChange,
     projectDuration,
     projectDue,
     projectEnergy,
@@ -11622,6 +12472,7 @@ export function Fab({
     projectWhy,
     projectDraftTasks,
     replaceSelectedTagsForEntity,
+    resolveSelectedGoalRelation,
     selectedTagIds,
     selected,
     taskEnergy,

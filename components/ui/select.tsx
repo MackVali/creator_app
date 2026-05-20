@@ -94,6 +94,10 @@ interface SelectProps {
   maxHeight?: number;
   /** Control menu placement. Defaults to auto. */
   placement?: "auto" | "above" | "below";
+  /** Horizontal menu alignment against the trigger. Defaults to start. */
+  contentAlign?: "start" | "end";
+  /** Optional minimum menu width in pixels. Defaults to trigger width. */
+  minContentWidth?: number;
   /** Optional hook for attaching data attributes to the trigger. */
   dataTour?: string;
 }
@@ -115,6 +119,8 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       disablePortal = false,
       maxHeight,
       placement = "auto",
+      contentAlign = "start",
+      minContentWidth,
       dataTour,
     },
     ref
@@ -167,9 +173,21 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       const el = containerRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || 0;
       const viewportHeight = window.innerHeight || 0;
       const gap = 0;
       const safeMargin = 12;
+      const desiredWidth = Math.max(rect.width, minContentWidth ?? 0);
+      const width = Math.min(
+        desiredWidth,
+        Math.max(rect.width, viewportWidth - safeMargin * 2)
+      );
+      const rawLeft =
+        contentAlign === "end" ? rect.right - width : rect.left;
+      const left = Math.min(
+        Math.max(rawLeft, safeMargin),
+        Math.max(safeMargin, viewportWidth - width - safeMargin)
+      );
       const spaceBelow = Math.max(0, viewportHeight - rect.bottom - gap);
       const spaceAbove = Math.max(0, rect.top - gap);
       const forcedAbove = placement === "above";
@@ -188,20 +206,20 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
 
       if (preferAbove) {
         setContentPosition({
-          left: rect.left,
-          width: rect.width,
+          left,
+          width,
           bottom: Math.max(gap, viewportHeight - rect.top + gap),
           maxHeight: computedMaxHeight,
         });
       } else {
         setContentPosition({
-          left: rect.left,
-          width: rect.width,
+          left,
+          width,
           top: rect.bottom + gap,
           maxHeight: computedMaxHeight,
         });
       }
-    }, [isOpen, maxHeight, placement]);
+    }, [contentAlign, isOpen, maxHeight, minContentWidth, placement]);
 
     React.useLayoutEffect(() => {
       if (!isOpen) return;

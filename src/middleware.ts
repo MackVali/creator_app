@@ -32,6 +32,16 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  const publicAuthRoutes = new Set([
+    "/auth",
+    "/auth/callback",
+    "/auth/reset",
+    "/auth/update-password",
+    "/forgot-password",
+    "/update-password",
+  ]);
+  const isPublicAuthRoute = publicAuthRoutes.has(pathname);
+
   const res = NextResponse.next();
 
   const bypassToken = process.env.CODEX_UI_BYPASS_TOKEN;
@@ -93,7 +103,7 @@ export async function middleware(req: NextRequest) {
         `[Middleware] Missing env vars - URL: ${!!supabaseUrl}, KEY: ${!!supabaseKey}`
       );
       // If no Supabase config, redirect to auth for all non-auth routes
-      if (pathname !== "/auth") {
+      if (!isPublicAuthRoute) {
         const redirectUrl = new URL("/auth", req.url);
         redirectUrl.searchParams.set("redirect", pathname + req.nextUrl.search);
         console.log(
@@ -140,7 +150,7 @@ export async function middleware(req: NextRequest) {
     );
 
     // If NO session and path !== /auth: redirect → /auth?redirect=<path+search>
-    if (!isAuthenticated && !isAuthRoute) {
+    if (!isAuthenticated && !isPublicAuthRoute) {
       const redirectUrl = new URL("/auth", req.url);
       redirectUrl.searchParams.set("redirect", pathname + req.nextUrl.search);
       console.log(`[Middleware] Redirecting to: ${redirectUrl.toString()}`);
@@ -170,7 +180,7 @@ export async function middleware(req: NextRequest) {
     }
 
     const shouldEnforceLegal =
-      isAuthenticated && !isAuthGroup && pathname !== "/";
+      isAuthenticated && !isAuthGroup && !isPublicAuthRoute && pathname !== "/";
     if (shouldEnforceLegal) {
       const legalAccepted = await hasAcceptedLegal(user.id, supabase);
       if (!legalAccepted) {
@@ -193,7 +203,7 @@ export async function middleware(req: NextRequest) {
     console.error(`[Middleware] Error processing ${pathname}:`, error);
 
     // On error, redirect to auth for non-auth routes
-    if (pathname !== "/auth") {
+    if (!isPublicAuthRoute) {
       const redirectUrl = new URL("/auth", req.url);
       redirectUrl.searchParams.set("redirect", pathname + req.nextUrl.search);
       console.log(

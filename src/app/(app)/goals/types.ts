@@ -52,6 +52,7 @@ export interface Goal {
   updatedAt: string;
   projects: Project[];
   monumentId?: string | null;
+  circleId?: string | null;
   monumentEmoji?: string | null;
   roadmapId?: string | null;
   priorityCode?: string | null;

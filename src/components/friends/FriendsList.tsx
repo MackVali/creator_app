@@ -18,7 +18,7 @@ export default function FriendsList({
 }: FriendsListProps) {
   if (isLoading) {
     return (
-      <div className="rounded-2xl bg-slate-900/50 p-6 text-center text-sm text-white/60 ring-1 ring-white/10">
+      <div className="rounded-2xl border border-white/10 bg-[#050506]/90 p-6 text-center text-sm text-white/60 shadow-xl shadow-black/30">
         Loading your friends…
       </div>
     );
@@ -34,7 +34,7 @@ export default function FriendsList({
 
   if (data.length === 0) {
     return (
-      <div className="rounded-2xl bg-slate-900/50 p-6 text-center text-sm text-white/60 ring-1 ring-white/10">
+      <div className="rounded-2xl border border-white/10 bg-[#050506]/90 p-6 text-center text-sm text-white/60 shadow-xl shadow-black/30">
         You haven’t added any friends yet.
       </div>
     );
@@ -43,7 +43,7 @@ export default function FriendsList({
   return (
     <ul
       role="list"
-      className="space-y-3 rounded-[28px] bg-slate-950/60 p-4 ring-1 ring-white/10 backdrop-blur-sm"
+      className="space-y-3 rounded-[28px] border border-white/10 bg-[#050506]/90 p-4 shadow-xl shadow-black/30 backdrop-blur-sm"
     >
       {data.map((f) => (
         <FriendRow key={f.id} f={f} onRemoveFriend={onRemoveFriend} />
