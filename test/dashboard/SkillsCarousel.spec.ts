@@ -3,7 +3,7 @@ import {
   deriveInitialIndex,
   computeNextIndex,
   shouldPreventScroll,
-  shouldUseFourColumnCategoryPillGrid,
+  shouldUseFiveColumnCategoryPillGrid,
   derivePersistedCategoryOrders,
 } from "../../src/app/(app)/dashboard/_skills/carouselUtils";
 import type { SimpleCategory as Category } from "../../src/app/(app)/dashboard/_skills/carouselUtils";
@@ -34,10 +34,9 @@ describe("SkillsCarousel helpers", () => {
     expect(shouldPreventScroll(20, 40)).toBe(false);
   });
 
-  it("uses a four-column category pill grid once there are eight categories", () => {
-    expect(shouldUseFourColumnCategoryPillGrid(7)).toBe(false);
-    expect(shouldUseFourColumnCategoryPillGrid(8)).toBe(true);
-    expect(shouldUseFourColumnCategoryPillGrid(10)).toBe(true);
+  it("uses a five-column category pill grid once there are ten categories", () => {
+    expect(shouldUseFiveColumnCategoryPillGrid(9)).toBe(false);
+    expect(shouldUseFiveColumnCategoryPillGrid(10)).toBe(true);
   });
 
   it("persists reorderable orders without colliding with locked slots", () => {

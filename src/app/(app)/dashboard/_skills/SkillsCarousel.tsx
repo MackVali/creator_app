@@ -10,7 +10,7 @@ import useSkillsData, { type Category, type Skill } from "./useSkillsData";
 import {
   deriveInitialIndex,
   derivePersistedCategoryOrders,
-  shouldUseFourColumnCategoryPillGrid,
+  shouldUseFiveColumnCategoryPillGrid,
 } from "./carouselUtils";
 import { updateCatOrder } from "@/lib/data/cats";
 import { createRecord, updateRecord } from "@/lib/db";
@@ -105,9 +105,9 @@ export default function SkillsCarousel() {
     [categories]
   );
   const canAddCategory = actualCategoryCount < MAX_CATEGORY_SLOTS;
-  const useFourColumnCategoryPillGrid = shouldUseFourColumnCategoryPillGrid(categories.length);
-  const categoryPillListClass = useFourColumnCategoryPillGrid
-    ? "grid w-full max-w-3xl grid-cols-4 gap-2.5"
+  const useFiveColumnCategoryPillGrid = shouldUseFiveColumnCategoryPillGrid(categories.length);
+  const categoryPillListClass = useFiveColumnCategoryPillGrid
+    ? "grid w-full max-w-4xl grid-cols-5 gap-2.5"
     : "flex flex-wrap justify-center gap-2.5";
 
   useEffect(() => {
@@ -879,7 +879,7 @@ export default function SkillsCarousel() {
                   });
                 }}
                 className={`inline-flex min-w-0 items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
-                  useFourColumnCategoryPillGrid ? "w-full justify-center" : ""
+                  useFiveColumnCategoryPillGrid ? "w-full justify-center" : ""
                 } ${isActive ? "text-slate-100" : "text-slate-300/85 hover:text-slate-100"}`}
                 style={{
                   backgroundColor: isActive ? withAlpha(chipColor, 0.24) : "rgba(0, 0, 0, 0.65)",
