@@ -1,15 +1,18 @@
 import type { HabitScheduleItem } from "./habits";
 import {
   normalizeRecurrence,
+  normalizeRecurrenceMode,
   resolveRecurrenceInterval,
 } from "./habitRecurrence";
 import { safeDate } from "./safeDate";
 import { getDateTimeParts, makeZonedDate, normalizeTimeZone } from "./timezone";
 
 export type NonDailyRole = "PRIMARY" | "FORECAST";
+export type NonDailyAnchorSource = "COMPLETION" | "CREATION";
 
 export type NonDailyAnchor = {
   completedAtUtc: string;
+  source: NonDailyAnchorSource;
 };
 
 export type NonDailyChainPlan = {
@@ -103,14 +106,21 @@ export function computeNonDailyAnchor(
     },
     zone
   );
+  const lastCompletion = safeDate(habit.lastCompletedAt ?? null);
+  const hasCompletionAnchor =
+    lastCompletion !== null &&
+    Number.isFinite(lastCompletion.getTime()) &&
+    !Number.isNaN(lastCompletion.getTime());
   const anchorIso = normalizeIso(
-    habit.lastCompletedAt ??
-      habit.createdAt ??
-      habit.updatedAt ??
-      new Date().toISOString(),
+    hasCompletionAnchor
+      ? habit.lastCompletedAt
+      : habit.createdAt ?? habit.updatedAt ?? new Date().toISOString(),
     fallback
   );
-  return { completedAtUtc: anchorIso };
+  return {
+    completedAtUtc: anchorIso,
+    source: hasCompletionAnchor ? "COMPLETION" : "CREATION",
+  };
 }
 
 export function addRecurrenceIntervalUtc(
@@ -150,11 +160,11 @@ export function computeNonDailyChainPlan(
 ): NonDailyChainPlan {
   const zone = normalizeTimeZone(timeZone ?? DEFAULT_TIME_ZONE);
   const anchor = computeNonDailyAnchor(habit, zone);
-  const primaryDueAtUtc = addRecurrenceIntervalUtc(
-    anchor.completedAtUtc,
-    habit,
-    zone
-  );
+  const recurrenceMode = normalizeRecurrenceMode(habit.recurrenceMode);
+  const primaryDueAtUtc =
+    anchor.source === "CREATION" && recurrenceMode === "INTERVAL"
+      ? anchor.completedAtUtc
+      : addRecurrenceIntervalUtc(anchor.completedAtUtc, habit, zone);
   const dueDateRaw = safeDate(primaryDueAtUtc) ?? new Date(primaryDueAtUtc);
   const dueDate =
     Number.isNaN(dueDateRaw.getTime()) || !Number.isFinite(dueDateRaw.getTime())

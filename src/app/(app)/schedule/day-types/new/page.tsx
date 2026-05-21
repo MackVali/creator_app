@@ -203,6 +203,11 @@ function normalizeDayTypeRow(dayType: DayType): DayType {
   };
 }
 
+function isDefaultWeekdayDayType(dayType: DayType | null | undefined): boolean {
+  if (!dayType?.is_default) return false;
+  return new Set(normalizeDayIndexes(dayType.days)).size === 1;
+}
+
 function getAverageDayTypeName(dayKey: string): string {
   return `AVERAGE ${(DAY_KEY_TO_FULL_LABEL[dayKey] ?? dayKey).toUpperCase()}`;
 }
@@ -670,37 +675,59 @@ export default function NewDayTypePage() {
     return FLAME_LEVELS[nextIdx] ?? "NO";
   };
 
-  const setEnergyForBlock = (
+  const setEnergyForBlockDayTypes = (
     blockId: string,
-    dayTypeId: string | null | undefined,
+    dayTypeIds: string[],
     energy: FlameLevel
   ) => {
-    const stateKey = getDayTypeBlockStateKey(dayTypeId, blockId);
-    if (!stateKey) return;
+    const stateKeys = Array.from(new Set(dayTypeIds))
+      .map((dayTypeId) => getDayTypeBlockStateKey(dayTypeId, blockId))
+      .filter((stateKey): stateKey is string => Boolean(stateKey));
+    if (stateKeys.length === 0) return;
     setBlockEnergy((prev) => {
       const next = new Map(prev);
-      next.set(stateKey, energy);
+      stateKeys.forEach((stateKey) => next.set(stateKey, energy));
       return next;
     });
   };
 
+  const getEnergyUpdateDayTypeIds = useCallback(
+    (blockId: string, visibleDayTypeId: string | null | undefined) => {
+      if (!visibleDayTypeId) return [];
+      const visibleDayType = dayTypes.find((dayType) => dayType.id === visibleDayTypeId);
+      if (!isDefaultWeekdayDayType(visibleDayType)) {
+        return [visibleDayTypeId];
+      }
+
+      const linkedDefaultWeekdayIds = dayTypes
+        .filter(isDefaultWeekdayDayType)
+        .filter((dayType) => dayTypeBlockMap.get(dayType.id)?.has(blockId) ?? false)
+        .map((dayType) => dayType.id);
+
+      return linkedDefaultWeekdayIds.length > 0 ? linkedDefaultWeekdayIds : [visibleDayTypeId];
+    },
+    [dayTypeBlockMap, dayTypes]
+  );
+
   const persistBlockEnergy = async (
     blockId: string,
-    dayTypeId: string | null | undefined,
+    dayTypeIds: string[],
     energy: FlameLevel
   ) => {
-    if (!supabase || !dayTypeId) return;
+    const uniqueDayTypeIds = Array.from(new Set(dayTypeIds)).filter(Boolean);
+    if (!supabase || uniqueDayTypeIds.length === 0) return 0;
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) return;
-    const { error } = await supabase
+    if (!user) return 0;
+    const { count, error } = await supabase
       .from("day_type_time_blocks")
-      .update({ energy })
+      .update({ energy }, { count: "exact" })
       .eq("user_id", user.id)
-      .eq("day_type_id", dayTypeId)
-      .eq("time_block_id", blockId);
+      .eq("time_block_id", blockId)
+      .in("day_type_id", uniqueDayTypeIds);
     if (error) throw error;
+    return count ?? 0;
   };
 
   const updateLocationForBlock = (
@@ -3043,10 +3070,13 @@ export default function NewDayTypePage() {
 	                                event.stopPropagation();
 	                                if (!visibleDayTypeId) return;
 	                                const nextEnergyLevel = getNextEnergyLevel(energyLevel);
-	                                setEnergyForBlock(block.id, visibleDayTypeId, nextEnergyLevel);
+	                                const dayTypeIdsToUpdate = isCreatingDayType
+	                                  ? [visibleDayTypeId]
+	                                  : getEnergyUpdateDayTypeIds(block.id, visibleDayTypeId);
+	                                setEnergyForBlockDayTypes(block.id, dayTypeIdsToUpdate, nextEnergyLevel);
 	                                if (!isCreatingDayType) {
 	                                  try {
-	                                    await persistBlockEnergy(block.id, visibleDayTypeId, nextEnergyLevel);
+	                                    await persistBlockEnergy(block.id, dayTypeIdsToUpdate, nextEnergyLevel);
 	                                  } catch (err) {
 	                                    console.error(err);
 	                                    setSaveMessage("Unable to update block energy right now.");

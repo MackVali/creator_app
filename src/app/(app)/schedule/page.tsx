@@ -2674,6 +2674,7 @@ export default function SchedulePage() {
   const [currentDateKey, setCurrentDateKey] = useState(
     () => initialDateResult.key
   );
+  const hasAppliedInitialDateFallbackRef = useRef(initialDateWasValid);
   const normalizedTz = useMemo(() => effectiveTimeZone, [effectiveTimeZone]);
   const runIdRef = useRef(0);
   const isTimeZoneReady = stableTimeZone !== null;
@@ -2689,22 +2690,22 @@ export default function SchedulePage() {
   }, [isTimeZoneReady, currentDateKey, stableTimeZone]);
   const [view, setView] = useState<ScheduleView>(initialView);
 
-  const [tasks, setTasks_REAL] = useState<TaskLite[]>([]);
-  const [projects, setProjects_REAL] = useState<ProjectLite[]>([]);
-  const [skills, setSkills_REAL] = useState<SkillRow[]>([]);
-  const [monuments, setMonuments_REAL] = useState<Monument[]>([]);
-  const [projectSkillIds, setProjectSkillIds_REAL] = useState<
+  const [tasks, setTasks] = useState<TaskLite[]>([]);
+  const [projects, setProjects] = useState<ProjectLite[]>([]);
+  const [skills, setSkills] = useState<SkillRow[]>([]);
+  const [monuments, setMonuments] = useState<Monument[]>([]);
+  const [projectSkillIds, setProjectSkillIds] = useState<
     Record<string, string[]>
   >({});
-  const [projectGoalRelations, setProjectGoalRelations_REAL] = useState<
+  const [projectGoalRelations, setProjectGoalRelations] = useState<
     ScheduleEventDataset["projectGoalRelations"]
   >({});
-  const [habits, setHabits_REAL] = useState<HabitScheduleItem[]>([]);
-  const [syncPairings, setSyncPairings_REAL] =
+  const [habits, setHabits] = useState<HabitScheduleItem[]>([]);
+  const [syncPairings, setSyncPairings] =
     useState<SyncPairingsByInstanceId>({});
-  const [habitCompletionByDate, setHabitCompletionByDate_REAL] =
+  const [habitCompletionByDate, setHabitCompletionByDate] =
     useState<HabitCompletionByDate>({});
-  const [windows, setWindows_REAL] = useState<RepoWindow[]>([]);
+  const [windows, setWindows] = useState<RepoWindow[]>([]);
   const [overlayWindows, setOverlayWindows] =
     useState<OverlayWindowRecord[]>([]);
   const [commandBlocks, setCommandBlocks] = useState<CommandBlockRecord[]>([]);
@@ -2770,57 +2771,8 @@ export default function SchedulePage() {
     return map;
   }, [projectGoalRelations, monuments]);
 
-  function setTasks(next) {
-    debugger;
-    setTasks_REAL(next);
-  }
-
-  function setProjects(next) {
-    debugger;
-    setProjects_REAL(next);
-  }
-
-  function setSkills(next) {
-    debugger;
-    setSkills_REAL(next);
-  }
-
-  function setMonuments(next) {
-    debugger;
-    setMonuments_REAL(next);
-  }
-
-  function setProjectSkillIds(next) {
-    debugger;
-    setProjectSkillIds_REAL(next);
-  }
-
-  function setProjectGoalRelations(next) {
-    debugger;
-    setProjectGoalRelations_REAL(next);
-  }
-
-  function setHabits(next) {
-    debugger;
-    setHabits_REAL(next);
-  }
-
-  function setSyncPairings(next) {
-    debugger;
-    setSyncPairings_REAL(next);
-  }
-
-  function setHabitCompletionByDate(next) {
-    debugger;
-    setHabitCompletionByDate_REAL(next);
-  }
-
-  function setWindows(next) {
-    debugger;
-    setWindows_REAL(next);
-  }
-  const [allInstances, setAllInstances_REAL] = useState<ScheduleInstance[]>([]);
-  const [instances, setInstances_REAL] = useState<ScheduleInstance[]>([]);
+  const [allInstances, setAllInstances] = useState<ScheduleInstance[]>([]);
+  const [instances, setInstances] = useState<ScheduleInstance[]>([]);
   const instanceStatusLogRef = useRef<Map<string, ScheduleInstance["status"]>>(
     new Map()
   );
@@ -2861,21 +2813,6 @@ export default function SchedulePage() {
     []
   );
 
-  function setAllInstances(next) {
-    debugger;
-    setAllInstances_REAL(next);
-  }
-
-  function setInstances(next) {
-    debugger;
-    setInstances_REAL(next);
-  }
-
-  function setInstances(next) {
-    debugger;
-    setInstances_REAL(next);
-  }
-
   const instancesById = useMemo(() => {
     const map = new Map<string, ScheduleInstance>();
     for (const instance of instances) {
@@ -2885,48 +2822,23 @@ export default function SchedulePage() {
     }
     return map;
   }, [instances]);
-  const [scheduledProjectIds, setScheduledProjectIds_REAL] = useState<
+  const [scheduledProjectIds, setScheduledProjectIds] = useState<
     Set<string>
   >(new Set());
   const [metaStatus, setMetaStatus] = useState<LoadStatus>("idle");
   const [instancesStatus, setInstancesStatus] = useState<LoadStatus>("idle");
-  const [schedulerDebug, setSchedulerDebug_REAL] =
+  const [schedulerDebug, setSchedulerDebug] =
     useState<SchedulerDebugState | null>(null);
-  const [pendingInstanceStatuses, setPendingInstanceStatuses_REAL] = useState<
+  const [pendingInstanceStatuses, setPendingInstanceStatuses] = useState<
     Map<string, ScheduleInstance["status"]>
   >(new Map());
-  const [pendingBacklogTaskIds, setPendingBacklogTaskIds_REAL] = useState<
+  const [pendingBacklogTaskIds, setPendingBacklogTaskIds] = useState<
     Set<string>
   >(new Set());
-  const [expandedProjects, setExpandedProjects_REAL] = useState<Set<string>>(
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     new Set()
   );
   const expandedProjectsRef = useRef<Set<string>>(expandedProjects);
-
-  function setScheduledProjectIds(next) {
-    debugger;
-    setScheduledProjectIds_REAL(next);
-  }
-
-  function setSchedulerDebug(next) {
-    debugger;
-    setSchedulerDebug_REAL(next);
-  }
-
-  function setPendingInstanceStatuses(next) {
-    debugger;
-    setPendingInstanceStatuses_REAL(next);
-  }
-
-  function setPendingBacklogTaskIds(next) {
-    debugger;
-    setPendingBacklogTaskIds_REAL(next);
-  }
-
-  function setExpandedProjects(next) {
-    debugger;
-    setExpandedProjects_REAL(next);
-  }
   useEffect(() => {
     expandedProjectsRef.current = expandedProjects;
   }, [expandedProjects]);
@@ -3318,12 +3230,13 @@ export default function SchedulePage() {
           })();
         setDayTransitionDirection(resolvedDirection);
       } else {
-      setDayTransitionDirection(0);
-    }
-    const tz = stableTimeZone ?? effectiveTimeZone ?? "UTC";
-    setCurrentDateKey(formatScheduleDateKey(nextDate, tz));
-  },
-  [prefersReducedMotion, view, currentDate, stableTimeZone, effectiveTimeZone]
+        setDayTransitionDirection(0);
+      }
+      hasAppliedInitialDateFallbackRef.current = true;
+      const tz = stableTimeZone ?? normalizeTimeZone(effectiveTimeZone);
+      setCurrentDateKey(formatScheduleDateKey(nextDate, tz));
+    },
+    [prefersReducedMotion, view, currentDate, stableTimeZone, effectiveTimeZone]
   );
 
   useEffect(() => {
@@ -3334,9 +3247,16 @@ export default function SchedulePage() {
 
   useEffect(() => {
     if (initialDateWasValid) return;
-    const tz = stableTimeZone ?? effectiveTimeZone ?? "UTC";
+    if (hasAppliedInitialDateFallbackRef.current) return;
+    const tz =
+      stableTimeZone ??
+      (profileLoading ? null : normalizeTimeZone(effectiveTimeZone));
+    if (!tz) return;
+    // Only apply the invalid-date fallback once so setup/timezone changes
+    // cannot override user date navigation after the page has initialized.
+    hasAppliedInitialDateFallbackRef.current = true;
     setCurrentDateKey(formatScheduleDateKey(new Date(), tz));
-  }, [initialDateWasValid, stableTimeZone, effectiveTimeZone]);
+  }, [initialDateWasValid, stableTimeZone, effectiveTimeZone, profileLoading]);
 
   useEffect(() => {
     setMemoNoteState(null);
@@ -3896,7 +3816,7 @@ export default function SchedulePage() {
 
   const refreshDayTypeWindows = useCallback(async () => {
     if (!userId) {
-      setWindows_REAL([]);
+      setWindows([]);
       return;
     }
     const tz = localTimeZone ?? effectiveTimeZone ?? "UTC";
@@ -3914,18 +3834,17 @@ export default function SchedulePage() {
       }
       const payload = await response.json();
       if (payload?.windows) {
-        setWindows_REAL(payload.windows);
+        setWindows(payload.windows);
       }
     } catch (error) {
       console.error("Failed to fetch day-type-aware windows", error);
-      setWindows_REAL([]);
+      setWindows([]);
     }
   }, [
     userId,
     currentDate,
     localTimeZone,
     effectiveTimeZone,
-    setWindows_REAL,
   ]);
 
   useEffect(() => {
