@@ -52,6 +52,51 @@ export interface MonumentSkills {
   skill_id: number | null;
 }
 
+export interface Tags {
+  id: string;
+  user_id: string;
+  name: string;
+  normalized_name: string;
+  color: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventTags {
+  id: string;
+  user_id: string;
+  tag_id: string;
+  entity_type: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+  entity_id: string;
+  created_at: string;
+}
+
+export interface OverlayWindows {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
+  schedule_date: string;
+  start_utc: string;
+  end_utc: string;
+  label: string | null;
+}
+
+export interface OverlayWindowItems {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  overlay_window_id: string;
+  user_id: string;
+  source_type: "PROJECT" | "TASK" | "HABIT";
+  source_id: string;
+  start_utc: string;
+  end_utc: string;
+  locked: boolean;
+  event_name: string | null;
+  schedule_instance_id: string | null;
+}
+
 // Lookup tables
 export interface Energy {
   id: number;
@@ -510,6 +555,48 @@ export interface Database {
         Row: MonumentSkills;
         Insert: MonumentSkills;
         Update: Partial<MonumentSkills>;
+      };
+      tags: {
+        Row: Tags;
+        Insert: Omit<Tags, "id" | "created_at" | "updated_at"> & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Omit<Tags, "id" | "created_at" | "updated_at">>;
+      };
+      event_tags: {
+        Row: EventTags;
+        Insert: Omit<EventTags, "id" | "created_at"> & {
+          id?: string;
+          created_at?: string;
+        };
+        Update: Partial<Omit<EventTags, "id" | "created_at">>;
+      };
+      overlay_windows: {
+        Row: OverlayWindows;
+        Insert: Omit<OverlayWindows, "id" | "created_at" | "updated_at"> & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Omit<OverlayWindows, "id" | "created_at" | "updated_at">
+        >;
+      };
+      overlay_window_items: {
+        Row: OverlayWindowItems;
+        Insert: Omit<
+          OverlayWindowItems,
+          "id" | "created_at" | "updated_at"
+        > & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Omit<OverlayWindowItems, "id" | "created_at" | "updated_at">
+        >;
       };
       energy: {
         Row: Energy;

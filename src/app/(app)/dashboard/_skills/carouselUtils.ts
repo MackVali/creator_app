@@ -32,6 +32,10 @@ export function shouldPreventScroll(dx: number, dy: number) {
   return Math.abs(dx) > 16 && Math.abs(dx) > Math.abs(dy);
 }
 
+export function shouldUseFourColumnCategoryPillGrid(categoryCount: number) {
+  return categoryCount >= 8;
+}
+
 export function derivePersistedCategoryOrders(
   categories: PersistableCategoryOrderItem[]
 ): Record<string, number> {
