@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { ChevronUp, ChevronDown, MoreVertical, Pencil, Trash2, Wand2, MapPin, Check } from "lucide-react";
+import { ChevronUp, ChevronDown, MoreVertical, Pencil, Trash2, Wand2, MapPin, Check, Plus } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -88,6 +88,7 @@ const BLOCK_TYPE_LABEL: Record<BlockType, string> = {
   BREAK: "Break",
   PRACTICE: "Practice",
 };
+const DEFAULT_WEEKDAY_LINK_ENERGY: FlameLevel = "MEDIUM";
 const DAYS_OF_WEEK = [
   { key: "sun", label: "S", index: 0 },
   { key: "mon", label: "M", index: 1 },
@@ -119,6 +120,10 @@ const DAY_INDEX_TO_KEY = DAYS_OF_WEEK.reduce<Record<number, string>>((acc, day) 
 }, {});
 const DAY_INDEX_TO_LABEL = DAYS_OF_WEEK.reduce<Record<number, string>>((acc, day) => {
   acc[day.index] = day.label;
+  return acc;
+}, {});
+const DAY_KEY_TO_FULL_LABEL = DAY_PREVIEWS.reduce<Record<string, string>>((acc, day) => {
+  acc[day.key] = day.fullLabel;
   return acc;
 }, {});
 
@@ -182,6 +187,29 @@ function normalizeSchedulerMode(value?: string | null): SchedulerModeType {
   if (normalized === "SKILLED") return "SKILLED";
   if (normalized === "REST") return "REST";
   return "REGULAR";
+}
+
+function normalizeDayIndexes(value?: number[] | null): number[] {
+  return (value ?? [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+}
+
+function normalizeDayTypeRow(dayType: DayType): DayType {
+  return {
+    ...dayType,
+    scheduler_mode: normalizeSchedulerMode(dayType.scheduler_mode as string | null),
+    days: normalizeDayIndexes(dayType.days),
+  };
+}
+
+function isDefaultWeekdayDayType(dayType: DayType | null | undefined): boolean {
+  if (!dayType?.is_default) return false;
+  return new Set(normalizeDayIndexes(dayType.days)).size === 1;
+}
+
+function getAverageDayTypeName(dayKey: string): string {
+  return `AVERAGE ${(DAY_KEY_TO_FULL_LABEL[dayKey] ?? dayKey).toUpperCase()}`;
 }
 
 function normalizeHabitTypeValue(value?: string | null): string | null {
@@ -322,6 +350,7 @@ export default function NewDayTypePage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [selectedDays, setSelectedDays] = useState<Set<string>>(() => new Set());
+  const [days, setDays] = useState<Set<string>>(() => new Set([DEFAULT_DAY_PREVIEW.key]));
   const [selectedDayTypeId, setSelectedDayTypeId] = useState<string | null>(null);
   const [focusedDayKey, setFocusedDayKey] = useState(DEFAULT_DAY_PREVIEW.key);
   const [isCreatingDayType, setIsCreatingDayType] = useState(false);
@@ -442,12 +471,17 @@ export default function NewDayTypePage() {
   }, [timeBlocks]);
 
   const startCreateBlock = useCallback(() => {
+    const defaultDayKey =
+      typeof DAY_KEY_TO_INDEX[focusedDayKey] === "number"
+        ? focusedDayKey
+        : DEFAULT_DAY_PREVIEW.key;
     setEditingBlockId(null);
     setConstraintsTarget(null);
     setCreateState(DEFAULT_FORM);
     setCreateError(null);
+    setDays(new Set([defaultDayKey]));
     setShowCreateForm(true);
-  }, []);
+  }, [focusedDayKey]);
 
   const removeCompositeStateEntriesForBlock = (blockId: string) => {
     const suffix = `:${blockId}`;
@@ -523,14 +557,15 @@ export default function NewDayTypePage() {
 
   const ensureDayTypeBlockSettings = (
     blockId: string,
-    dayTypeId: string | null | undefined = selectedDayTypeId
+    dayTypeId: string | null | undefined = selectedDayTypeId,
+    defaultEnergy: FlameLevel = "NO"
   ) => {
     const stateKey = getDayTypeBlockStateKey(dayTypeId, blockId);
     if (!stateKey) return;
     setBlockEnergy((prev) => {
       if (prev.has(stateKey)) return prev;
       const next = new Map(prev);
-      next.set(stateKey, "NO");
+      next.set(stateKey, defaultEnergy);
       return next;
     });
     setBlockLocation((prev) => {
@@ -634,15 +669,65 @@ export default function NewDayTypePage() {
     pruneMap(setBlockAllowedMonumentIds);
   }, []);
 
-  const cycleEnergy = (id: string) => {
-    const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, id);
+  const getNextEnergyLevel = (current: FlameLevel): FlameLevel => {
+    const idx = FLAME_LEVELS.indexOf(current);
+    const nextIdx = idx >= 0 ? (idx + 1) % FLAME_LEVELS.length : 0;
+    return FLAME_LEVELS[nextIdx] ?? "NO";
+  };
+
+  const setEnergyForBlockDayTypes = (
+    blockId: string,
+    dayTypeIds: string[],
+    energy: FlameLevel
+  ) => {
+    const stateKeys = Array.from(new Set(dayTypeIds))
+      .map((dayTypeId) => getDayTypeBlockStateKey(dayTypeId, blockId))
+      .filter((stateKey): stateKey is string => Boolean(stateKey));
+    if (stateKeys.length === 0) return;
     setBlockEnergy((prev) => {
-      if (!stateKey) return prev;
-      const current = prev.get(stateKey) ?? "NO";
-      const idx = FLAME_LEVELS.indexOf(current);
-      const nextLevel = FLAME_LEVELS[(idx + 1) % FLAME_LEVELS.length];
-      return new Map(prev).set(stateKey, nextLevel);
+      const next = new Map(prev);
+      stateKeys.forEach((stateKey) => next.set(stateKey, energy));
+      return next;
     });
+  };
+
+  const getEnergyUpdateDayTypeIds = useCallback(
+    (blockId: string, visibleDayTypeId: string | null | undefined) => {
+      if (!visibleDayTypeId) return [];
+      const visibleDayType = dayTypes.find((dayType) => dayType.id === visibleDayTypeId);
+      if (!isDefaultWeekdayDayType(visibleDayType)) {
+        return [visibleDayTypeId];
+      }
+
+      const linkedDefaultWeekdayIds = dayTypes
+        .filter(isDefaultWeekdayDayType)
+        .filter((dayType) => dayTypeBlockMap.get(dayType.id)?.has(blockId) ?? false)
+        .map((dayType) => dayType.id);
+
+      return linkedDefaultWeekdayIds.length > 0 ? linkedDefaultWeekdayIds : [visibleDayTypeId];
+    },
+    [dayTypeBlockMap, dayTypes]
+  );
+
+  const persistBlockEnergy = async (
+    blockId: string,
+    dayTypeIds: string[],
+    energy: FlameLevel
+  ) => {
+    const uniqueDayTypeIds = Array.from(new Set(dayTypeIds)).filter(Boolean);
+    if (!supabase || uniqueDayTypeIds.length === 0) return 0;
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return 0;
+    const { count, error } = await supabase
+      .from("day_type_time_blocks")
+      .update({ energy }, { count: "exact" })
+      .eq("user_id", user.id)
+      .eq("time_block_id", blockId)
+      .in("day_type_id", uniqueDayTypeIds);
+    if (error) throw error;
+    return count ?? 0;
   };
 
   const updateLocationForBlock = (
@@ -688,6 +773,87 @@ export default function NewDayTypePage() {
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2);
+
+  const resolveOrCreateWeekdayDayTypes = async ({
+    userId,
+    dayKeys,
+  }: {
+    userId: string;
+    dayKeys: string[];
+  }) => {
+    const validDayKeys = Array.from(new Set(dayKeys)).filter(
+      (dayKey) => typeof DAY_KEY_TO_INDEX[dayKey] === "number"
+    );
+    if (validDayKeys.length === 0) {
+      return [] as Array<{ dayKey: string; dayType: DayType }>;
+    }
+
+    if (!supabase) {
+      const working = [...dayTypes];
+      const resolved: Array<{ dayKey: string; dayType: DayType }> = [];
+      validDayKeys.forEach((dayKey) => {
+        const dayIndex = DAY_KEY_TO_INDEX[dayKey];
+        const existing =
+          working.find((dt) => dt.is_default && dt.days.includes(dayIndex)) ??
+          working.find((dt) => dt.days.includes(dayIndex));
+        if (existing) {
+          resolved.push({ dayKey, dayType: existing });
+          return;
+        }
+        const created: DayType = {
+          id: makeId(),
+          name: getAverageDayTypeName(dayKey),
+          is_default: true,
+          days: [dayIndex],
+          scheduler_mode: "REGULAR",
+        };
+        working.push(created);
+        resolved.push({ dayKey, dayType: created });
+      });
+      return resolved;
+    }
+
+    const { data: existingRows, error: fetchError } = await supabase
+      .from("day_types")
+      .select("id,name,is_default,days,scheduler_mode")
+      .eq("user_id", userId)
+      .eq("is_temporary", false)
+      .order("created_at", { ascending: true });
+    if (fetchError) throw fetchError;
+
+    const working = ((existingRows as DayType[] | null) ?? []).map(normalizeDayTypeRow);
+    const resolved: Array<{ dayKey: string; dayType: DayType }> = [];
+
+    for (const dayKey of validDayKeys) {
+      const dayIndex = DAY_KEY_TO_INDEX[dayKey];
+      const existing =
+        working.find((dt) => dt.is_default && dt.days.includes(dayIndex)) ??
+        working.find((dt) => dt.days.includes(dayIndex));
+      if (existing) {
+        resolved.push({ dayKey, dayType: existing });
+        continue;
+      }
+
+      const { data: inserted, error: insertError } = await supabase
+        .from("day_types")
+        .insert({
+          user_id: userId,
+          name: getAverageDayTypeName(dayKey),
+          is_default: true,
+          days: [dayIndex],
+          scheduler_mode: "REGULAR",
+        })
+        .select("id,name,is_default,days,scheduler_mode")
+        .single();
+      if (insertError) throw insertError;
+
+      const created = normalizeDayTypeRow(inserted as DayType);
+      working.push(created);
+      resolved.push({ dayKey, dayType: created });
+    }
+
+    return resolved;
+  };
 
   const loadBlocks = useCallback(async () => {
     setError(null);
@@ -745,13 +911,7 @@ export default function NewDayTypePage() {
         .eq("is_temporary", false)
         .order("created_at", { ascending: true });
       if (fetchError) throw fetchError;
-      const normalized = (data as DayType[] | null)?.map((dt) => ({
-        ...dt,
-        scheduler_mode: normalizeSchedulerMode((dt as DayType)?.scheduler_mode as string | null),
-        days: (dt.days ?? [])
-          .map((n) => Number(n))
-          .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) as number[],
-      }));
+      const normalized = (data as DayType[] | null)?.map(normalizeDayTypeRow);
       setDayTypes(normalized ?? []);
       setHasDefaultDayType(Boolean((normalized ?? []).find((dt) => dt.is_default && dt.days.length > 0)));
     } catch (err) {
@@ -1184,6 +1344,13 @@ export default function NewDayTypePage() {
       setCreateError("Please name this time block.");
       return;
     }
+    const selectedDayKeys = Array.from(days).filter(
+      (dayKey) => typeof DAY_KEY_TO_INDEX[dayKey] === "number"
+    );
+    if (!isEditingBlock && selectedDayKeys.length === 0) {
+      setCreateError("Pick at least one day for this block.");
+      return;
+    }
     setSavingBlock(true);
     try {
       if (isEditingBlock && editingBlockId) {
@@ -1257,19 +1424,56 @@ export default function NewDayTypePage() {
         start_local: normalizeTimeLabel(createState.start_local),
         end_local: normalizeTimeLabel(createState.end_local),
       };
-      const activeDayTypeId = selectedDayTypeId ?? makeId();
-      if (!selectedDayTypeId) {
-        setSelectedDayTypeId(activeDayTypeId);
-        setIsCreatingDayType(true);
-        setDayTypeName(`${focusedWeekday.fullLabel} windows`.toUpperCase());
-        setIsDefault(true);
-        setSelectedDays(new Set([focusedDayKey]));
-      }
 
       if (!supabase) {
+        const resolved = await resolveOrCreateWeekdayDayTypes({
+          userId: "local",
+          dayKeys: selectedDayKeys,
+        });
+        const uniqueDayTypes = Array.from(
+          new Map(resolved.map((entry) => [entry.dayType.id, entry.dayType])).values()
+        );
+        const focusedResolved =
+          resolved.find((entry) => entry.dayKey === focusedDayKey) ?? resolved[0] ?? null;
         setTimeBlocks((prev) => sortTimeBlocks([...prev, optimistic]));
         setSelectedIds((prev) => new Set(prev).add(optimistic.id));
-        ensureDayTypeBlockSettings(optimistic.id, activeDayTypeId);
+        setDayTypes((prev) => {
+          const next = new Map(prev.map((dayType) => [dayType.id, dayType]));
+          uniqueDayTypes.forEach((dayType) => next.set(dayType.id, dayType));
+          return Array.from(next.values());
+        });
+        setHasDefaultDayType((prev) =>
+          prev || uniqueDayTypes.some((dt) => dt.is_default && dt.days.length > 0)
+        );
+        setDayTypeBlockMap((prev) => {
+          const next = new Map(prev);
+          uniqueDayTypes.forEach((dayType) => {
+            const blockIds = new Set(next.get(dayType.id) ?? []);
+            blockIds.add(optimistic.id);
+            next.set(dayType.id, blockIds);
+          });
+          return next;
+        });
+        uniqueDayTypes.forEach((dayType) =>
+          ensureDayTypeBlockSettings(optimistic.id, dayType.id, DEFAULT_WEEKDAY_LINK_ENERGY)
+        );
+        if (focusedResolved) {
+          if (focusedResolved.dayKey !== focusedDayKey) {
+            setFocusedDayKey(focusedResolved.dayKey);
+          }
+          setSelectedDayTypeId(focusedResolved.dayType.id);
+          setDayTypeName(focusedResolved.dayType.name);
+          setIsDefault(focusedResolved.dayType.is_default);
+          setSchedulerMode(focusedResolved.dayType.scheduler_mode ?? "REGULAR");
+          setSelectedDays(
+            new Set(
+              focusedResolved.dayType.days
+                .map((dayIndex) => DAY_INDEX_TO_KEY[dayIndex])
+                .filter((dayKey): dayKey is string => Boolean(dayKey))
+            )
+          );
+          setIsCreatingDayType(false);
+        }
         setConstraintsTarget(optimistic);
       } else {
         const {
@@ -1299,9 +1503,91 @@ export default function NewDayTypePage() {
           end_local: normalizeTimeLabel(insertedRaw.end_local),
           day_type_id: insertedRaw.day_type_id ?? null,
         };
+        const resolved = await resolveOrCreateWeekdayDayTypes({
+          userId: user.id,
+          dayKeys: selectedDayKeys,
+        });
+        const uniqueDayTypes = Array.from(
+          new Map(resolved.map((entry) => [entry.dayType.id, entry.dayType])).values()
+        );
+        const dayTypeIds = uniqueDayTypes.map((dayType) => dayType.id);
+        if (dayTypeIds.length > 0) {
+          const { data: existingLinks, error: existingLinksError } = await supabase
+            .from("day_type_time_blocks")
+            .select("day_type_id,time_block_id")
+            .eq("user_id", user.id)
+            .eq("time_block_id", inserted.id)
+            .in("day_type_id", dayTypeIds);
+          if (existingLinksError) throw existingLinksError;
+
+          const alreadyLinked = new Set(
+            (existingLinks ?? [])
+              .map((row) => (row as { day_type_id?: string | null }).day_type_id)
+              .filter((id): id is string => Boolean(id))
+          );
+          const linkPayload = uniqueDayTypes
+            .filter((dayType) => !alreadyLinked.has(dayType.id))
+            .map((dayType) => ({
+              user_id: user.id,
+              day_type_id: dayType.id,
+              time_block_id: inserted.id,
+              energy: DEFAULT_WEEKDAY_LINK_ENERGY,
+              block_type: "FOCUS",
+              location_context_id: null,
+              allow_all_habit_types: true,
+              allow_all_skills: true,
+              allow_all_monuments: true,
+            }));
+
+          if (linkPayload.length > 0) {
+            const { error: linkError } = await supabase
+              .from("day_type_time_blocks")
+              .insert(linkPayload);
+            if (linkError) throw linkError;
+          }
+        }
+
         setTimeBlocks((prev) => sortTimeBlocks([...prev, inserted]));
         setSelectedIds((prev) => new Set(prev).add(inserted.id));
-        ensureDayTypeBlockSettings(inserted.id, activeDayTypeId);
+        setDayTypes((prev) => {
+          const next = new Map(prev.map((dayType) => [dayType.id, dayType]));
+          uniqueDayTypes.forEach((dayType) => next.set(dayType.id, dayType));
+          return Array.from(next.values());
+        });
+        setHasDefaultDayType((prev) =>
+          prev || uniqueDayTypes.some((dt) => dt.is_default && dt.days.length > 0)
+        );
+        setDayTypeBlockMap((prev) => {
+          const next = new Map(prev);
+          uniqueDayTypes.forEach((dayType) => {
+            const blockIds = new Set(next.get(dayType.id) ?? []);
+            blockIds.add(inserted.id);
+            next.set(dayType.id, blockIds);
+          });
+          return next;
+        });
+        uniqueDayTypes.forEach((dayType) =>
+          ensureDayTypeBlockSettings(inserted.id, dayType.id, DEFAULT_WEEKDAY_LINK_ENERGY)
+        );
+        const focusedResolved =
+          resolved.find((entry) => entry.dayKey === focusedDayKey) ?? resolved[0] ?? null;
+        if (focusedResolved) {
+          if (focusedResolved.dayKey !== focusedDayKey) {
+            setFocusedDayKey(focusedResolved.dayKey);
+          }
+          setSelectedDayTypeId(focusedResolved.dayType.id);
+          setDayTypeName(focusedResolved.dayType.name);
+          setIsDefault(focusedResolved.dayType.is_default);
+          setSchedulerMode(focusedResolved.dayType.scheduler_mode ?? "REGULAR");
+          setSelectedDays(
+            new Set(
+              focusedResolved.dayType.days
+                .map((dayIndex) => DAY_INDEX_TO_KEY[dayIndex])
+                .filter((dayKey): dayKey is string => Boolean(dayKey))
+            )
+          );
+          setIsCreatingDayType(false);
+        }
         setConstraintsTarget(inserted);
       }
 
@@ -2077,46 +2363,35 @@ export default function NewDayTypePage() {
           </div>
           <div className="flex flex-col gap-2">
             <h1 className="text-2xl font-semibold uppercase tracking-[0.2em] sm:text-3xl sm:tracking-[0.22em]">
-              SCHEDULING WINDOWS
+              TIME BLOCKS
             </h1>
             <p className="text-xs text-white/55 sm:text-sm">
-              CREATOR only schedules inside the blocks you create. Empty time stays unavailable.
+              CREATOR only schedules inside the blocks you create.
             </p>
           </div>
 
-          <section className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-b from-[#151820] to-[#0d0f14] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_42px_rgba(0,0,0,0.42)] sm:p-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div className="space-y-1">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/50">
-                  Create a Time Block
-                </div>
-                <p className="max-w-2xl text-xs text-white/58 sm:text-sm">
-                  Set a name, start time, and end time. Times outside your blocks stay unavailable.
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-xs text-white/65 sm:text-right">
-                <div className="font-semibold text-white/85">
-                  {selectedBlocks.length} {selectedBlocks.length === 1 ? "window" : "windows"}
-                </div>
-                <div>
-                  {focusedWeekday.fullLabel}
-                </div>
-              </div>
-            </div>
+          <section className="space-y-2">
             {!showCreateForm ? (
-              <button
-                type="button"
-                onClick={startCreateWindowBlock}
-                data-tour="day-type-add-block"
-                className="w-full rounded-2xl border border-white/18 bg-gradient-to-b from-white/18 to-white/8 px-4 py-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_16px_34px_rgba(0,0,0,0.38)] transition hover:border-white/30 hover:from-white/22 hover:to-white/11"
-              >
-                <span className="block text-sm font-semibold uppercase tracking-[0.16em] text-white">
-                  Create time block
-                </span>
-                <span className="mt-1 block text-xs text-white/58">
-                  Choose when scheduling is allowed.
-                </span>
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={startCreateWindowBlock}
+                  data-tour="day-type-add-block"
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 text-xs font-semibold text-white/80 transition hover:border-white/25 hover:bg-white/10 hover:text-white sm:px-3"
+                >
+                  <Plus className="h-3.5 w-3.5 text-emerald-300/80" aria-hidden="true" />
+                  <span>add TIME BLOCK</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={startCreateDayType}
+                  data-tour="day-type-create"
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-white/15 bg-black/25 px-2.5 text-xs font-semibold text-white/80 transition hover:border-white/25 hover:bg-white/10 hover:text-white sm:px-3"
+                >
+                  <Plus className="h-3.5 w-3.5 text-emerald-300/80" aria-hidden="true" />
+                  <span>add DAY TYPE</span>
+                </button>
+              </div>
             ) : null}
 
             {showCreateForm ? (
@@ -2190,6 +2465,44 @@ export default function NewDayTypePage() {
                     helper="Ends before start? We wrap past midnight."
                   />
                 </div>
+                {!isEditingBlock ? (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/50">
+                      Days
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {DAY_PREVIEWS.map((day) => {
+                        const active = days.has(day.key);
+                        return (
+                          <button
+                            key={day.key}
+                            type="button"
+                            onClick={() =>
+                              setDays((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(day.key)) {
+                                  next.delete(day.key);
+                                } else {
+                                  next.add(day.key);
+                                }
+                                return next;
+                              })
+                            }
+                            aria-pressed={active}
+                            className={cn(
+                              "h-7 rounded-full border px-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition",
+                              active
+                                ? "border-white/40 bg-white/16 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]"
+                                : "border-white/12 bg-black/25 text-white/55 hover:border-white/24 hover:bg-white/10 hover:text-white/80"
+                            )}
+                          >
+                            {day.shortLabel}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
                 {createError ? (
                   <div className="mt-3 text-sm text-white/70">{createError}</div>
                 ) : null}
@@ -2506,9 +2819,6 @@ export default function NewDayTypePage() {
                 <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                   Day previews
                 </h2>
-                <p className="mt-1 text-xs text-white/50">
-                  Swipe through the week to see where your time blocks open scheduling.
-                </p>
               </div>
               <span className="shrink-0 text-[11px] uppercase tracking-[0.14em] text-white/40">
                 Swipe
@@ -2613,7 +2923,21 @@ export default function NewDayTypePage() {
                   const isConstraintsTargetBlock = constraintsTarget?.id === block.id;
                   const tourHighlightBlock = isConstraintsTargetBlock || editingBlockId === block.id;
                   const label = normalizeLabel(block.label) ?? "TIME BLOCK";
-                  const stateKey = getDayTypeBlockStateKey(selectedDayTypeId, block.id);
+                  const focusedOwnerId = dayOwnership.get(focusedDayKey) ?? null;
+                  const selectedDayTypeHasBlock = selectedDayTypeId
+                    ? dayTypeBlockMap.get(selectedDayTypeId)?.has(block.id) ?? false
+                    : false;
+                  const focusedDayTypeHasBlock = focusedOwnerId
+                    ? dayTypeBlockMap.get(focusedOwnerId)?.has(block.id) ?? false
+                    : false;
+                  const visibleDayTypeId = isCreatingDayType
+                    ? selectedDayTypeId
+                    : selectedDayTypeHasBlock
+                      ? selectedDayTypeId
+                      : focusedDayTypeHasBlock
+                        ? focusedOwnerId
+                        : selectedDayTypeId ?? focusedOwnerId;
+                  const stateKey = getDayTypeBlockStateKey(visibleDayTypeId, block.id);
                   const energyLevel = stateKey ? blockEnergy.get(stateKey) ?? "NO" : "NO";
                   const locationOption = stateKey ? blockLocation.get(stateKey) : null;
                   const allowAllHabits = stateKey ? blockAllowAllHabitTypes.get(stateKey) ?? true : true;
@@ -2740,12 +3064,24 @@ export default function NewDayTypePage() {
                           <div className="flex items-center gap-2">
                             <button
 	                              type="button"
-	                              disabled={!isCreatingDayType}
-	                              onClick={(event) => {
+	                              disabled={!visibleDayTypeId}
+	                              onClick={async (event) => {
 	                                event.preventDefault();
 	                                event.stopPropagation();
-	                                if (!isCreatingDayType) return;
-	                                cycleEnergy(block.id);
+	                                if (!visibleDayTypeId) return;
+	                                const nextEnergyLevel = getNextEnergyLevel(energyLevel);
+	                                const dayTypeIdsToUpdate = isCreatingDayType
+	                                  ? [visibleDayTypeId]
+	                                  : getEnergyUpdateDayTypeIds(block.id, visibleDayTypeId);
+	                                setEnergyForBlockDayTypes(block.id, dayTypeIdsToUpdate, nextEnergyLevel);
+	                                if (!isCreatingDayType) {
+	                                  try {
+	                                    await persistBlockEnergy(block.id, dayTypeIdsToUpdate, nextEnergyLevel);
+	                                  } catch (err) {
+	                                    console.error(err);
+	                                    setSaveMessage("Unable to update block energy right now.");
+	                                  }
+	                                }
 	                              }}
 	                              className="rounded-md bg-white/5 px-1 py-0.5 text-white/70 transition hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-white/30 disabled:cursor-default disabled:opacity-70"
                               aria-label={`Cycle energy for ${label}`}
