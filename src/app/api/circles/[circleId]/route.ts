@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import { requirePlus } from "@/lib/entitlements/requirePlus";
 import { getSupabaseServer } from "@/lib/supabase";
 
@@ -93,6 +94,13 @@ export async function GET(_request: Request, context: CircleDetailParams) {
 
   if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!userHasAppManagerAccess(user)) {
+    return NextResponse.json(
+      { error: "Circle not found or access denied." },
+      { status: 404 }
+    );
   }
 
   const { data: circle, error: circleError } = await supabase
@@ -207,6 +215,13 @@ export async function PATCH(request: Request, context: CircleDetailParams) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!userHasAppManagerAccess(user)) {
+    return NextResponse.json(
+      { error: "Circle not found or access denied." },
+      { status: 404 }
+    );
+  }
+
   const body = (await request.json().catch(() => ({}))) as UpdateCircleBody;
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const hasIconEmoji = Object.prototype.hasOwnProperty.call(
@@ -309,6 +324,13 @@ export async function DELETE(_request: Request, context: CircleDetailParams) {
 
   if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!userHasAppManagerAccess(user)) {
+    return NextResponse.json(
+      { error: "Circle not found or access denied." },
+      { status: 404 }
+    );
   }
 
   const { data: circle, error: circleError } = await supabase

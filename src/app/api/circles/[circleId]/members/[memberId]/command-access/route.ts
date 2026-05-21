@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import { getSupabaseServer } from "@/lib/supabase";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -69,6 +70,13 @@ export async function GET(_request: Request, context: CommandAccessParams) {
 
   if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!userHasAppManagerAccess(user)) {
+    return NextResponse.json(
+      { error: "Circle not found or access denied." },
+      { status: 404 }
+    );
   }
 
   const { data: circle, error: circleError } = await supabase
