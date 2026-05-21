@@ -69,6 +69,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useToastHelpers } from "./toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import type { Database } from "@/types/supabase";
 import { getGoalsForUser, type Goal } from "@/lib/queries/goals";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 import { getProjectsForUser, type Project } from "@/lib/queries/projects";
@@ -136,8 +137,8 @@ function BoundarySetter({
 }) {
   try {
     return <>{children}</>;
-  } catch (e: any) {
-    onError(e);
+  } catch (e: unknown) {
+    onError(e instanceof Error ? e : new Error(String(e)));
     return null;
   }
 }
@@ -1603,7 +1604,7 @@ function useTapHandler(onTap: () => void, opts?: { disabled?: boolean }) {
       if (opts?.disabled) return;
       // Only primary button
       // (pointerup.button may be 0 or -1 on some mobile UAs; don't over-filter)
-      if ((e as any).button != null && (e as any).button !== 0) return;
+      if (e.button != null && e.button !== 0) return;
 
       // Act immediately on pointerup for mouse & touch
       sawPointerUpRef.current = true;
@@ -1631,11 +1632,12 @@ function useTapHandler(onTap: () => void, opts?: { disabled?: boolean }) {
   return { onPointerUp, onClick };
 }
 
-const isTourActive = () => Boolean((window as any).__CREATOR_TOUR_ACTIVE__);
+const isTourActive = () =>
+  Boolean((window as Window & { __CREATOR_TOUR_ACTIVE__?: unknown }).__CREATOR_TOUR_ACTIVE__);
 
 function useOverhangLT(
   ref: React.RefObject<HTMLElement>,
-  deps: any[] = [],
+  deps: React.DependencyList = [],
   opts?: {
     listenVisualViewport?: boolean;
     listenScroll?: boolean;
@@ -2494,8 +2496,7 @@ export function Fab({
         skills.find((s) => s.id === goalFilterSkillId)?.name?.toLowerCase() ??
         "";
       list = list.filter((goal) => {
-        const goalAny = goal as any;
-        const skillIds: string[] | undefined = goalAny.skills;
+        const skillIds = (goal as typeof goal & { skills?: string[] }).skills;
         const matchesId = Array.isArray(skillIds)
           ? skillIds.includes(goalFilterSkillId)
           : false;
@@ -4941,8 +4942,9 @@ export function Fab({
           }
           return;
         }
+        const tagsTableName: string = "tags";
         const { data, error } = await supabase
-          .from("tags" as any)
+          .from(tagsTableName as keyof Database["public"]["Tables"])
           .select("id, user_id, name, normalized_name, color")
           .eq("user_id", user.id)
           .order("name", { ascending: true });
@@ -5684,7 +5686,7 @@ export function Fab({
         "0",
       )}-${String(overlayStartTime.getDate()).padStart(2, "0")}`;
       const { data: overlayRow, error: overlayError } = await supabase
-        .from("overlay_windows" as any)
+        .from("overlay_windows")
         .insert({
           user_id: user.id,
           schedule_date: scheduleDate,
@@ -5712,7 +5714,7 @@ export function Fab({
             ),
           );
           const { data: scheduleRow, error: scheduleError } = await supabase
-            .from("schedule_instances" as any)
+            .from("schedule_instances")
             .insert({
               user_id: user.id,
               source_type: placement.type,
@@ -5737,13 +5739,13 @@ export function Fab({
           savedItems.push({ placement, scheduleInstanceId });
         }
         const { error: itemsError } = await supabase
-          .from("overlay_window_items" as any)
+          .from("overlay_window_items")
           .insert(
             savedItems.map(({ placement, scheduleInstanceId }) => ({
               overlay_window_id: overlayWindowId,
               user_id: user.id,
               source_type: placement.type,
-              source_id: placement.sourceId ?? null,
+              source_id: placement.sourceId,
               start_utc: placement.start.toISOString(),
               end_utc: placement.end.toISOString(),
               locked: true,
@@ -6130,7 +6132,7 @@ export function Fab({
       tagIds: string[];
     }) => {
       if (!entityId || tagIds.length === 0) return;
-      const { error } = await supabase.from("event_tags" as any).insert(
+      const { error } = await supabase.from("event_tags").insert(
         tagIds.map((tagId) => ({
           user_id: userId,
           tag_id: tagId,

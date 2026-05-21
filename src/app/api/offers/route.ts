@@ -13,12 +13,76 @@ const allowedOfferCreatorRoles = new Set(["OWNER", "MANAGER", "OPERATOR"]);
 const allowedRecipientStatuses = new Set(["ACTIVE", "INVITED", "ACCEPTED"]);
 const localDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const localTimePattern = /^\d{2}:\d{2}$/;
+const weekdayToJsDay = {
+  MON: 1,
+  TUE: 2,
+  WED: 3,
+  THU: 4,
+  FRI: 5,
+  SAT: 6,
+  SUN: 0,
+} as const;
+
+type CommandBlockWeekday = keyof typeof weekdayToJsDay;
+
+function parseLocalDateInput(dateValue: string) {
+  const [year, month, day] = dateValue.split("-").map(Number);
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day)
+  ) {
+    return null;
+  }
+
+  const date = new Date(year, month - 1, day, 0, 0, 0, 0);
+
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function hasWeekdayInDateRange(
+  startDate: Date,
+  endDate: Date,
+  daysOfWeek: CommandBlockWeekday[]
+) {
+  const selectedDays = new Set(daysOfWeek.map((day) => weekdayToJsDay[day]));
+  const current = new Date(startDate);
+  const searchEnd = new Date(startDate);
+  searchEnd.setDate(searchEnd.getDate() + 6);
+
+  if (endDate.getTime() < searchEnd.getTime()) {
+    searchEnd.setTime(endDate.getTime());
+  }
+
+  while (current.getTime() <= searchEnd.getTime()) {
+    if (selectedDays.has(current.getDay())) {
+      return true;
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return false;
+}
 
 const CommandBlockTermsSchema = z
   .object({
     mode: z.enum(["FIXED", "FLEXIBLE"]),
     dateStart: z.string().regex(localDatePattern, "Start date is required."),
-    dateEnd: z.string().regex(localDatePattern, "End date is required."),
+    dateEnd: z
+      .string()
+      .regex(localDatePattern, "End date is required.")
+      .nullable(),
     daysOfWeek: z
       .array(z.enum(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]))
       .min(1, "Select at least one day."),
@@ -36,11 +100,45 @@ const CommandBlockTermsSchema = z
       .nullable(),
   })
   .superRefine((terms, context) => {
-    if (terms.dateEnd < terms.dateStart) {
+    const startDate = parseLocalDateInput(terms.dateStart);
+    const endDate = terms.dateEnd
+      ? parseLocalDateInput(terms.dateEnd)
+      : null;
+
+    if (!startDate) {
+      context.addIssue({
+        code: "custom",
+        message: "Start date is required.",
+        path: ["dateStart"],
+      });
+    }
+
+    if (terms.dateEnd && !endDate) {
+      context.addIssue({
+        code: "custom",
+        message: "End date is required.",
+        path: ["dateEnd"],
+      });
+    }
+
+    if (startDate && endDate && endDate.getTime() < startDate.getTime()) {
       context.addIssue({
         code: "custom",
         message: "End date must not be before start date.",
         path: ["dateEnd"],
+      });
+    }
+
+    if (
+      startDate &&
+      endDate &&
+      endDate.getTime() >= startDate.getTime() &&
+      !hasWeekdayInDateRange(startDate, endDate, terms.daysOfWeek)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Select a day that occurs during the offer length.",
+        path: ["daysOfWeek"],
       });
     }
 

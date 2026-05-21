@@ -23,13 +23,14 @@ import {
 } from '@/components/friends/RelationshipViewBar';
 import SearchFriends from '@/components/friends/SearchFriends';
 import RequestsInvites from '@/components/friends/RequestsInvites';
-import { useEntitlement } from '@/components/entitlement/EntitlementProvider';
+import { useAuth } from '@/components/auth/AuthProvider';
 import {
   Select,
   SelectContent,
   SelectItem,
 } from '@/components/ui/select';
-import { ChevronDown } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown } from 'lucide-react';
+import { userHasAppManagerAccess } from '@/lib/auth/userRoles';
 
 type ConnectTab = 'friends' | 'search' | 'requests' | 'circles';
 
@@ -125,7 +126,7 @@ const circleTypeFallbacks: Record<CircleType, string> = {
 };
 
 export default function FriendsPage() {
-  const { isPlus } = useEntitlement();
+  const { user } = useAuth();
   const [tab, setTab] = useState<ConnectTab>('friends');
   const [friendsView, setFriendsView] = useState<RelationshipView>('friends');
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -157,7 +158,7 @@ export default function FriendsPage() {
   const [showCreateCircleForm, setShowCreateCircleForm] = useState(false);
   const [newCircleName, setNewCircleName] = useState('');
   const [newCircleType, setNewCircleType] = useState<CircleType>('CUSTOM');
-  const canCreateCircle = isPlus;
+  const canCreateCircle = userHasAppManagerAccess(user);
   const friendsTabRef = useRef<HTMLButtonElement>(null);
   const searchTabRef = useRef<HTMLButtonElement>(null);
   const requestsTabRef = useRef<HTMLButtonElement>(null);
@@ -221,7 +222,9 @@ export default function FriendsPage() {
       const trimmedName = newCircleName.trim();
 
       if (!canCreateCircle) {
-        setCreateCircleError('CREATOR Pro is required to create a Circle.');
+        setCreateCircleError(
+          'CREATOR Manager access is required to create a Circle.'
+        );
         return;
       }
 
@@ -502,7 +505,7 @@ export default function FriendsPage() {
         await Promise.all([
           refreshCircleInvites(),
           refreshFriends(),
-          refreshCircles(),
+          ...(canCreateCircle ? [refreshCircles()] : []),
         ]);
       } catch (err) {
         if (!isMountedRef.current) {
@@ -519,7 +522,7 @@ export default function FriendsPage() {
         }
       }
     },
-    [refreshCircleInvites, refreshCircles, refreshFriends]
+    [canCreateCircle, refreshCircleInvites, refreshCircles, refreshFriends]
   );
 
   useEffect(() => {
@@ -539,8 +542,16 @@ export default function FriendsPage() {
   }, [refreshSearch]);
 
   useEffect(() => {
+    if (!canCreateCircle) {
+      setCircles([]);
+      setCirclesError(null);
+      setIsLoadingCircles(false);
+      setShowCreateCircleForm(false);
+      return;
+    }
+
     void refreshCircles();
-  }, [refreshCircles]);
+  }, [canCreateCircle, refreshCircles]);
 
   const sortedFriends = useMemo(() => {
     if (!friends.length) {
@@ -918,7 +929,44 @@ export default function FriendsPage() {
                   {showCreateCircleForm ? 'Close Form' : 'Create Circle'}
                 </button>
               </div>
-            ) : null}
+            ) : (
+              <div className="mt-5 max-w-2xl rounded-2xl border border-white/10 bg-stone-950/70 p-4 shadow-xl shadow-black/35 ring-1 ring-white/[0.03]">
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/45">
+                  CREATOR MANAGER
+                </p>
+                <h3 className="mt-2 text-lg font-semibold leading-tight text-white">
+                  Create Circles with Manager access
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-white/60">
+                  Circles are for coordinating people, roles, invites, and
+                  command availability. Manager access keeps those tools out of
+                  the way until your account is ready to use them.
+                </p>
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {[
+                    'Create Circles',
+                    'Manage roles and invites',
+                    'Send command availability offers',
+                    'Use the Command dashboard',
+                  ].map((benefit) => (
+                    <div
+                      key={benefit}
+                      className="flex items-center gap-2 text-sm font-medium text-white/75"
+                    >
+                      <Check className="h-4 w-4 shrink-0 text-emerald-300" />
+                      <span>{benefit}</span>
+                    </div>
+                  ))}
+                </div>
+                <Link
+                  href="/settings/billing"
+                  className="mt-4 inline-flex h-10 items-center gap-2 rounded-full bg-white px-4 text-sm font-semibold text-black/90 transition hover:bg-white/90"
+                >
+                  Manage access
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            )}
           </div>
 
           {canCreateCircle && showCreateCircleForm ? (
@@ -1013,7 +1061,7 @@ export default function FriendsPage() {
             </form>
           ) : null}
 
-          {isLoadingCircles ? (
+          {canCreateCircle && isLoadingCircles ? (
             <article className="rounded-2xl border border-white/10 bg-slate-950/70 p-5 shadow-xl shadow-black/30">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -1034,7 +1082,7 @@ export default function FriendsPage() {
             </article>
           ) : null}
 
-          {circlesError ? (
+          {canCreateCircle && circlesError ? (
             <article className="rounded-2xl border border-rose-300/20 bg-rose-500/10 p-5 text-sm text-rose-100 shadow-xl shadow-rose-950/20">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-rose-200/70">
                 Circles unavailable
@@ -1043,7 +1091,7 @@ export default function FriendsPage() {
             </article>
           ) : null}
 
-          {!isLoadingCircles && !circlesError ? (
+          {canCreateCircle && !isLoadingCircles && !circlesError ? (
             <div className="grid gap-3 md:grid-cols-3">
               {circles.length > 0
                 ? circles.map((circle) => (

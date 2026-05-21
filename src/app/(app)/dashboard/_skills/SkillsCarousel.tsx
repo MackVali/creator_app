@@ -7,7 +7,11 @@ import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import CategoryCard from "./CategoryCard";
 import useSkillProgress from "./useSkillProgress";
 import useSkillsData, { type Category, type Skill } from "./useSkillsData";
-import { deriveInitialIndex, derivePersistedCategoryOrders } from "./carouselUtils";
+import {
+  deriveInitialIndex,
+  derivePersistedCategoryOrders,
+  shouldUseFiveColumnCategoryPillGrid,
+} from "./carouselUtils";
 import { updateCatOrder } from "@/lib/data/cats";
 import { createRecord, updateRecord } from "@/lib/db";
 import { useToastHelpers } from "@/components/ui/toast";
@@ -101,6 +105,10 @@ export default function SkillsCarousel() {
     [categories]
   );
   const canAddCategory = actualCategoryCount < MAX_CATEGORY_SLOTS;
+  const useFiveColumnCategoryPillGrid = shouldUseFiveColumnCategoryPillGrid(categories.length);
+  const categoryPillListClass = useFiveColumnCategoryPillGrid
+    ? "grid w-full max-w-4xl grid-cols-5 gap-2.5"
+    : "flex flex-wrap justify-center gap-2.5";
 
   useEffect(() => {
     if (!canAddCategory && isAddCategoryMenuOpen) {
@@ -839,63 +847,65 @@ export default function SkillsCarousel() {
           })}
         </div>
       </div>
-      <div className="mt-6 flex flex-wrap justify-center gap-2.5" role="tablist">
-        {categories.map((category, idx) => {
-          const isActive = idx === activeIndex;
-          const previewSkill = (skillsByCategory[category.id] || []).find(
-            (skill) => skill.emoji
-          )?.emoji;
-          const catIcon = getCategoryIcon(category);
-          const resolvedIcon = catIcon?.trim();
-          const preview =
-            resolvedIcon && resolvedIcon.length > 0
-              ? resolvedIcon
-              : previewSkill || category.name.charAt(0).toUpperCase();
-          const chipColor = getCategoryColor(category) || FALLBACK_COLOR;
+      <div className="mt-6 flex flex-col items-center gap-3">
+        <div className={categoryPillListClass} role="tablist">
+          {categories.map((category, idx) => {
+            const isActive = idx === activeIndex;
+            const previewSkill = (skillsByCategory[category.id] || []).find(
+              (skill) => skill.emoji
+            )?.emoji;
+            const catIcon = getCategoryIcon(category);
+            const resolvedIcon = catIcon?.trim();
+            const preview =
+              resolvedIcon && resolvedIcon.length > 0
+                ? resolvedIcon
+                : previewSkill || category.name.charAt(0).toUpperCase();
+            const chipColor = getCategoryColor(category) || FALLBACK_COLOR;
 
-          return (
-            <button
-              key={category.id}
-              role="tab"
-              aria-selected={isActive}
-              aria-label={`Go to ${category.name}`}
-              onClick={() => {
-                const alreadyActive = idx === activeIndexRef.current;
-                scrollToIndex(idx);
-                setOpenMenuFor((current) => {
-                  if (!alreadyActive) {
-                    return null;
-                  }
-                  return current === category.id ? null : category.id;
-                });
-              }}
-              className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
-                isActive ? "text-slate-100" : "text-slate-300/85 hover:text-slate-100"
-              }`}
-              style={{
-                backgroundColor: isActive ? withAlpha(chipColor, 0.24) : "rgba(0, 0, 0, 0.65)",
-                borderColor: isActive ? withAlpha(chipColor, 0.45) : "rgba(148, 163, 184, 0.25)",
-                boxShadow: isActive
-                  ? `0 16px 32px ${withAlpha(chipColor, 0.28)}`
-                  : "0 6px 18px rgba(0, 0, 0, 0.3)",
-              }}
-            >
-              <span
-                className="flex h-6 w-6 items-center justify-center rounded-full text-base font-semibold shadow"
+            return (
+              <button
+                key={category.id}
+                role="tab"
+                aria-selected={isActive}
+                aria-label={`Go to ${category.name}`}
+                onClick={() => {
+                  const alreadyActive = idx === activeIndexRef.current;
+                  scrollToIndex(idx);
+                  setOpenMenuFor((current) => {
+                    if (!alreadyActive) {
+                      return null;
+                    }
+                    return current === category.id ? null : category.id;
+                  });
+                }}
+                className={`inline-flex min-w-0 items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
+                  useFiveColumnCategoryPillGrid ? "w-full justify-center" : ""
+                } ${isActive ? "text-slate-100" : "text-slate-300/85 hover:text-slate-100"}`}
                 style={{
-                  backgroundColor: isActive ? withAlpha(chipColor, 0.55) : withAlpha(chipColor, 0.18),
-                  color: isActive ? "rgba(0, 0, 0, 0.85)" : "rgba(255,255,255,0.92)",
+                  backgroundColor: isActive ? withAlpha(chipColor, 0.24) : "rgba(0, 0, 0, 0.65)",
+                  borderColor: isActive ? withAlpha(chipColor, 0.45) : "rgba(148, 163, 184, 0.25)",
                   boxShadow: isActive
-                    ? `0 12px 24px ${withAlpha(chipColor, 0.32)}`
-                    : "0 6px 14px rgba(0,0,0,0.28)",
+                    ? `0 16px 32px ${withAlpha(chipColor, 0.28)}`
+                    : "0 6px 18px rgba(0, 0, 0, 0.3)",
                 }}
               >
-                {preview}
-              </span>
-              <span className="hidden pr-1 sm:block">{category.name}</span>
-            </button>
-          );
-        })}
+                <span
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-base font-semibold shadow"
+                  style={{
+                    backgroundColor: isActive ? withAlpha(chipColor, 0.55) : withAlpha(chipColor, 0.18),
+                    color: isActive ? "rgba(0, 0, 0, 0.85)" : "rgba(255,255,255,0.92)",
+                    boxShadow: isActive
+                      ? `0 12px 24px ${withAlpha(chipColor, 0.32)}`
+                      : "0 6px 14px rgba(0,0,0,0.28)",
+                  }}
+                >
+                  {preview}
+                </span>
+                <span className="hidden min-w-0 truncate pr-1 sm:block">{category.name}</span>
+              </button>
+            );
+          })}
+        </div>
         {canAddCategory && (
           <>
             <div className="inline-flex">

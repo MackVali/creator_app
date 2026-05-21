@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import { getSupabaseServer } from "@/lib/supabase";
 
 const profileColumns = "user_id, username, name, avatar_url";
@@ -44,6 +45,10 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
 
   if (authError || !user) {
+    return NextResponse.json({ profiles: [] }, { status: 200 });
+  }
+
+  if (!userHasAppManagerAccess(user)) {
     return NextResponse.json({ profiles: [] }, { status: 200 });
   }
 

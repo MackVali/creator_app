@@ -7,13 +7,17 @@ import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import { CommandCirclesSection } from "@/components/command/CommandCirclesSection";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { useTour } from "@/components/tour/TourProvider";
 import { dashboardTourSteps } from "@/lib/tours/dashboardTour";
 import { useHasExistingTimeBlocks } from "@/lib/hooks/useHasExistingTimeBlocks";
+import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import SkillsCarousel from "./_skills/SkillsCarousel";
 
 export default function DashboardClient() {
   const router = useRouter();
+  const { user } = useAuth();
+  const canUseCommandManagement = userHasAppManagerAccess(user);
   const { hasExistingTimeBlocks, isLoading: isLoadingExistingTimeBlocks } =
     useHasExistingTimeBlocks();
 
@@ -61,9 +65,11 @@ export default function DashboardClient() {
         <SkillsCarousel />
       </Section>
 
-      <Section className="mt-5 px-4">
-        <CommandCirclesSection />
-      </Section>
+      {canUseCommandManagement ? (
+        <Section className="mt-5 px-4">
+          <CommandCirclesSection />
+        </Section>
+      ) : null}
     </main>
   );
 }

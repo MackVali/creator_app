@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { requirePlus } from "@/lib/entitlements/requirePlus";
+import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import { getSupabaseServer } from "@/lib/supabase";
 
 const circleColumns =
@@ -111,6 +111,10 @@ export async function GET() {
   } = await supabase.auth.getUser();
 
   if (authError || !user) {
+    return NextResponse.json({ circles: [] }, { status: 200 });
+  }
+
+  if (!userHasAppManagerAccess(user)) {
     return NextResponse.json({ circles: [] }, { status: 200 });
   }
 
@@ -255,11 +259,6 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const gate = await requirePlus();
-  if (gate) {
-    return gate;
-  }
-
   const supabase = await getServerClient();
 
   if (!supabase) {
@@ -273,6 +272,13 @@ export async function POST(request: Request) {
 
   if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!userHasAppManagerAccess(user)) {
+    return NextResponse.json(
+      { error: "CREATOR Manager access is required to create a Circle." },
+      { status: 403 }
+    );
   }
 
   const body = (await request.json().catch(() => ({}))) as CreateCircleBody;

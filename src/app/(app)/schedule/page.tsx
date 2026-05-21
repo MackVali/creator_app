@@ -285,6 +285,7 @@ type OverlayWindowRecord = {
 
 type CommandBlockRecord = {
   id: string;
+  offer_id?: string | null;
   starts_at: string | null;
   ends_at: string | null;
   circle_name: string | null;
@@ -2591,35 +2592,14 @@ export default function SchedulePage() {
   const effectiveTimeZone = useMemo(() => {
     return localTimeZone || browserTimeZone || "UTC";
   }, [localTimeZone, browserTimeZone]);
-  const dateParam = searchParams.get("date"); // string | null
-  // 3. parsed DAY KEY (string only, NOT Date)
-  const parsedDayKey = useMemo(() => {
-    if (!dateParam) return null;
-    return parseScheduleDateParam(dateParam).key; // must return YYYY-MM-DD
-  }, [dateParam]);
-  // 4. viewedDate (Date object, LOCAL midnight)
-  const viewedDate = useMemo(() => {
-    if (!stableTimeZone || !parsedDayKey) return null;
-    const [year, month, day] = parsedDayKey.split("-").map(Number);
-    return makeDateInTimeZone(
-      { year, month, day, hour: 0, minute: 0 },
-      stableTimeZone
-    );
-  }, [stableTimeZone, parsedDayKey]);
-  // 5. dayViewDateKey (string)
-  const dayViewDateKey = useMemo(() => {
-    if (!viewedDate || !stableTimeZone) return "";
-    return formatScheduleDateKey(viewedDate, stableTimeZone);
-  }, [viewedDate, stableTimeZone]);
+  const resolvedScheduleTimeZone = useMemo(
+    () => stableTimeZone ?? normalizeTimeZone(effectiveTimeZone) ?? "UTC",
+    [stableTimeZone, effectiveTimeZone]
+  );
   // 6. canonical today (already fixed earlier)
   const canonicalTodayDateKey = useMemo(() => {
     return dayKeyFromUtc(new Date().toISOString(), effectiveTimeZone);
   }, [effectiveTimeZone]);
-  // 7. comparison
-  const isViewingToday = useMemo(() => {
-    if (!dayViewDateKey || !canonicalTodayDateKey) return false;
-    return dayViewDateKey === canonicalTodayDateKey;
-  }, [dayViewDateKey, canonicalTodayDateKey]);
   const prefersReducedMotion = useReducedMotion();
   const { user } = useAuth();
   const { hasExistingTimeBlocks, isLoading: isLoadingExistingTimeBlocks } =
@@ -2685,9 +2665,17 @@ export default function SchedulePage() {
   );
 
   const currentDate = useMemo(() => {
-    if (!isTimeZoneReady) return new Date();
-    return localDayFromKey(currentDateKey, stableTimeZone);
-  }, [isTimeZoneReady, currentDateKey, stableTimeZone]);
+    return localDayFromKey(currentDateKey, resolvedScheduleTimeZone);
+  }, [currentDateKey, resolvedScheduleTimeZone]);
+  // 5. dayViewDateKey (string)
+  const dayViewDateKey = useMemo(() => {
+    return formatScheduleDateKey(currentDate, resolvedScheduleTimeZone);
+  }, [currentDate, resolvedScheduleTimeZone]);
+  // 7. comparison
+  const isViewingToday = useMemo(() => {
+    if (!dayViewDateKey || !canonicalTodayDateKey) return false;
+    return dayViewDateKey === canonicalTodayDateKey;
+  }, [dayViewDateKey, canonicalTodayDateKey]);
   const [view, setView] = useState<ScheduleView>(initialView);
 
   const [tasks, setTasks] = useState<TaskLite[]>([]);
@@ -3931,6 +3919,7 @@ export default function SchedulePage() {
     const params = new URLSearchParams({
       start: renderDayStart.toISOString(),
       end: renderDayEnd.toISOString(),
+      timezone: resolvedScheduleTimeZone,
     });
 
     async function fetchCommandBlocks() {
@@ -3950,8 +3939,12 @@ export default function SchedulePage() {
 
         const payload = (await response.json()) as {
           commandBlocks?: CommandBlockRecord[];
+          commandBlockRuleOccurrences?: CommandBlockRecord[];
         };
-        setCommandBlocks(payload.commandBlocks ?? []);
+        setCommandBlocks([
+          ...(payload.commandBlockRuleOccurrences ?? []),
+          ...(payload.commandBlocks ?? []),
+        ]);
       } catch (fetchError) {
         if (!active || controller.signal.aborted) return;
         console.error("Failed to load command blocks", fetchError);
@@ -3965,7 +3958,7 @@ export default function SchedulePage() {
       active = false;
       controller.abort();
     };
-  }, [userId, renderDayStart, renderDayEnd]);
+  }, [userId, renderDayStart, renderDayEnd, resolvedScheduleTimeZone]);
 
   useEffect(() => {
     if (!userId) {

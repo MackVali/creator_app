@@ -13,6 +13,7 @@ import {
   BarChart3,
   BriefcaseBusiness,
   CalendarDays,
+  ChevronDown,
   CircleDot,
   Handshake,
   LockKeyhole,
@@ -28,6 +29,12 @@ import {
 
 import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
 import { Fab, type FabEditTarget } from "@/components/ui/Fab";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToastHelpers } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
@@ -110,7 +117,7 @@ type OfferMode = "FIXED" | "FLEXIBLE";
 type CommandOfferTerms = {
   mode?: OfferMode;
   dateStart?: string;
-  dateEnd?: string;
+  dateEnd?: string | null;
   daysOfWeek?: OfferWeekdayValue[];
   requiredMinutes?: number;
   fixedStartLocal?: string | null;
@@ -138,6 +145,45 @@ type IncomingOffer = {
   } | null;
 };
 
+type PendingMemberOffer = {
+  id: string;
+  offer_type: string;
+  status: string;
+  title: string | null;
+  note: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  timezone: string | null;
+  terms: CommandOfferTerms | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type CommandAccessRule = {
+  id: string;
+  mode: string;
+  starts_on: string | null;
+  ends_on: string | null;
+  days_of_week: string[] | null;
+  start_local: string | null;
+  end_local: string | null;
+  required_minutes_per_day: number | null;
+  required_minutes_per_week: number | null;
+  timezone: string | null;
+};
+
+type CommandAccessState = {
+  rules: CommandAccessRule[];
+  isLoading: boolean;
+  error: string | null;
+};
+
+type PendingMemberOffersState = {
+  offers: PendingMemberOffer[];
+  isLoading: boolean;
+  error: string | null;
+};
+
 const elevatedRoles = new Set(["OWNER", "MANAGER", "OPERATOR"]);
 const offerWeekdays = [
   { label: "Mon", value: "MON", jsDay: 1 },
@@ -147,6 +193,19 @@ const offerWeekdays = [
   { label: "Fri", value: "FRI", jsDay: 5 },
   { label: "Sat", value: "SAT", jsDay: 6 },
   { label: "Sun", value: "SUN", jsDay: 0 },
+] as const;
+
+const offerTypeOptions = [
+  { label: "Command Block", value: "COMMAND_BLOCK", disabled: false },
+  { label: "Day Type", value: "DAY_TYPE", disabled: true },
+  { label: "Product", value: "PRODUCT", disabled: true },
+  { label: "Course", value: "COURSE", disabled: true },
+  { label: "Appointment", value: "APPOINTMENT", disabled: true },
+  { label: "Job", value: "JOB", disabled: true },
+  { label: "Session", value: "SESSION", disabled: true },
+  { label: "Service", value: "SERVICE", disabled: true },
+  { label: "Collaboration", value: "COLLABORATION", disabled: true },
+  { label: "Template", value: "TEMPLATE", disabled: true },
 ] as const;
 
 type OfferWeekdayValue = (typeof offerWeekdays)[number]["value"];
@@ -200,6 +259,114 @@ function getWeekdayValue(date: Date): OfferWeekdayValue {
   );
 }
 
+function formatCommandAccessDays(daysOfWeek: string[] | null) {
+  if (!Array.isArray(daysOfWeek) || daysOfWeek.length === 0) {
+    return "Days not set";
+  }
+
+  const selectedDays = new Set(
+    daysOfWeek.map((day) => day.trim().toUpperCase()).filter(Boolean)
+  );
+
+  if (selectedDays.size === offerWeekdays.length) {
+    return "Every day";
+  }
+
+  const weekdaysOnly = offerWeekdays
+    .filter((day) => day.value !== "SAT" && day.value !== "SUN")
+    .every((day) => selectedDays.has(day.value));
+  const weekendSelected =
+    selectedDays.has("SAT") || selectedDays.has("SUN");
+
+  if (selectedDays.size === 5 && weekdaysOnly && !weekendSelected) {
+    return "Weekdays";
+  }
+
+  const labels = offerWeekdays
+    .filter((weekday) => selectedDays.has(weekday.value))
+    .map((weekday) => weekday.label);
+
+  return labels.length > 0 ? labels.join(", ") : "Days not set";
+}
+
+function formatCommandAccessDate(value: string | null) {
+  if (!value) return null;
+
+  const date = parseDateInputValue(value);
+
+  if (!date) return null;
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function formatCommandAccessDateRange(
+  startsOn: string | null,
+  endsOn: string | null
+) {
+  const startLabel = formatCommandAccessDate(startsOn);
+  const endLabel = formatCommandAccessDate(endsOn);
+
+  if (startLabel && endLabel) {
+    return `${startLabel} - ${endLabel}`;
+  }
+
+  if (startLabel) {
+    return `Starts ${startLabel} · No end date`;
+  }
+
+  if (endLabel) {
+    return `Ends ${endLabel}`;
+  }
+
+  return "Date range not set";
+}
+
+function formatCommandAccessLocalTime(value: string | null) {
+  if (!value) return null;
+
+  const [hourPart, minutePart] = value.split(":");
+  const hours = Number(hourPart);
+  const minutes = Number(minutePart);
+
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  const period = hours >= 12 ? "PM" : "AM";
+  const displayHour = hours % 12 || 12;
+
+  return `${displayHour}:${padDatePart(minutes)} ${period}`;
+}
+
+function formatCommandAccessTimeRange(rule: CommandAccessRule) {
+  const startLabel = formatCommandAccessLocalTime(rule.start_local);
+  const endLabel = formatCommandAccessLocalTime(rule.end_local);
+
+  if (startLabel && endLabel) {
+    return `${startLabel} - ${endLabel}`;
+  }
+
+  if (rule.required_minutes_per_day) {
+    return `${rule.required_minutes_per_day} min/day`;
+  }
+
+  if (rule.required_minutes_per_week) {
+    return `${rule.required_minutes_per_week} min/week`;
+  }
+
+  return "Time not set";
+}
+
 function parseDateInputValue(dateValue: string) {
   const [year, month, day] = dateValue.split("-").map(Number);
 
@@ -227,20 +394,30 @@ function parseDateInputValue(dateValue: string) {
 
 function getFirstSelectedDateInRange(
   dateStart: string,
-  dateEnd: string,
+  dateEnd: string | null,
   daysOfWeek: OfferWeekdayValue[]
 ) {
   const start = parseDateInputValue(dateStart);
-  const end = parseDateInputValue(dateEnd);
+  const end = dateEnd ? parseDateInputValue(dateEnd) : null;
 
-  if (!start || !end || end.getTime() < start.getTime()) {
+  if (
+    !start ||
+    (dateEnd && !end) ||
+    (end && end.getTime() < start.getTime())
+  ) {
     return null;
   }
 
   const selectedDays = new Set(daysOfWeek);
   const current = new Date(start);
+  const searchEnd = new Date(start);
+  searchEnd.setDate(searchEnd.getDate() + 6);
 
-  while (current.getTime() <= end.getTime()) {
+  if (end && end.getTime() < searchEnd.getTime()) {
+    searchEnd.setTime(end.getTime());
+  }
+
+  while (current.getTime() <= searchEnd.getTime()) {
     if (selectedDays.has(getWeekdayValue(current))) {
       return formatDateInputValue(current);
     }
@@ -367,6 +544,21 @@ function formatOfferTimeRange(terms: CommandOfferTerms | null) {
   }
 
   return `${terms.fixedStartLocal} - ${terms.fixedEndLocal}`;
+}
+
+function formatPendingOfferTimeRange(terms: CommandOfferTerms | null) {
+  if (terms?.mode === "FLEXIBLE") {
+    return formatOfferDuration(terms.requiredMinutes);
+  }
+
+  const startLabel = formatCommandAccessLocalTime(terms?.fixedStartLocal ?? null);
+  const endLabel = formatCommandAccessLocalTime(terms?.fixedEndLocal ?? null);
+
+  if (startLabel && endLabel) {
+    return `${startLabel} - ${endLabel}`;
+  }
+
+  return formatOfferTimeRange(terms);
 }
 
 function getOfferSenderName(offer: IncomingOffer) {
@@ -715,6 +907,160 @@ function WorkProfilePlaceholderRow({
   );
 }
 
+function CommandAccessAvailabilityRow({
+  commandAccess,
+  pendingOffers,
+  cancellingOfferId,
+  cancelOfferError,
+  onCancelOffer,
+}: {
+  commandAccess: CommandAccessState;
+  pendingOffers: PendingMemberOffersState;
+  cancellingOfferId: string | null;
+  cancelOfferError: string | null;
+  onCancelOffer?: (offerId: string) => Promise<void>;
+}) {
+  const hasRules = commandAccess.rules.length > 0;
+  const hasPendingOffers = pendingOffers.offers.length > 0;
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="flex items-center gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/[0.04] text-white/48 ring-1 ring-white/10">
+          <CalendarDays className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <h6 className="text-xs font-semibold uppercase tracking-[0.14em] text-white/55">
+          Availability
+        </h6>
+      </div>
+
+      <div className="mt-3 grid gap-2">
+        {commandAccess.isLoading ? (
+          <p className="rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-sm font-semibold text-white/70">
+            Loading command access...
+          </p>
+        ) : commandAccess.error ? (
+          <div className="rounded-xl border border-amber-300/15 bg-amber-400/10 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+            <p className="text-sm font-semibold text-amber-50/88">
+              Unable to load command access.
+            </p>
+            <p className="mt-1 text-xs leading-5 text-amber-100/65">
+              {commandAccess.error}
+            </p>
+          </div>
+        ) : (
+          <>
+            {hasRules
+              ? commandAccess.rules.map((rule) => {
+                  const isFixed = rule.mode.toUpperCase() === "FIXED";
+
+                  return (
+                    <article
+                      key={rule.id}
+                      className="w-full rounded-xl border border-white/[0.10] bg-gradient-to-br from-zinc-900/95 via-zinc-950 to-black px-3.5 py-3 shadow-[0_10px_20px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.06)]"
+                    >
+                      {isFixed ? (
+                        <div className="grid gap-1.5 sm:grid-cols-[minmax(0,0.8fr)_minmax(11rem,1fr)_auto] sm:items-center sm:gap-3">
+                          <p className="min-w-0 text-sm font-medium leading-5 text-white/64">
+                            {formatCommandAccessDays(rule.days_of_week)}
+                          </p>
+                          <p className="text-lg font-semibold leading-6 text-white sm:text-center">
+                            {formatCommandAccessTimeRange(rule)}
+                          </p>
+                          <p className="text-[11px] font-medium leading-4 text-white/42 sm:text-right">
+                            {formatCommandAccessDateRange(
+                              rule.starts_on,
+                              rule.ends_on
+                            )}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs leading-5 text-white/50">
+                          Flexible command access display is coming later.
+                        </p>
+                      )}
+                    </article>
+                  );
+                })
+              : null}
+
+            {hasPendingOffers
+              ? pendingOffers.offers.map((offer) => (
+                  <article
+                    key={offer.id}
+                    className="w-full rounded-xl border border-dashed border-white/[0.14] bg-white/[0.025] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                  >
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,0.8fr)_minmax(11rem,1fr)_auto] sm:items-center sm:gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/42">
+                          Pending offer
+                        </p>
+                        <p className="mt-1 text-sm font-medium leading-5 text-white/58">
+                          {formatOfferDays(offer.terms)}
+                        </p>
+                      </div>
+                      <p className="text-base font-semibold leading-6 text-white/78 sm:text-center">
+                        {formatPendingOfferTimeRange(offer.terms)}
+                      </p>
+                      <div className="flex flex-col gap-2 sm:items-end">
+                        <p className="text-[11px] font-medium leading-4 text-white/38 sm:text-right">
+                          {formatOfferDateRange(offer.terms)}
+                        </p>
+                        {onCancelOffer ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void onCancelOffer(offer.id);
+                            }}
+                            disabled={cancellingOfferId === offer.id}
+                            className="h-7 min-w-[5.75rem] rounded-full border border-white/12 bg-transparent px-2.5 text-[11px] font-semibold text-white/45 transition hover:border-white/22 hover:bg-white/[0.05] hover:text-white/70 disabled:cursor-not-allowed disabled:border-white/8 disabled:text-white/28"
+                          >
+                            {cancellingOfferId === offer.id
+                              ? "Cancelling..."
+                              : "Cancel"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </article>
+                ))
+              : null}
+
+            {!hasRules && !hasPendingOffers && !pendingOffers.isLoading ? (
+              <>
+                <p className="rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-sm font-semibold text-white/78">
+                  No accepted command access yet.
+                </p>
+                <p className="text-xs leading-5 text-white/48">
+                  Make an offer to request schedule access from this member.
+                </p>
+              </>
+            ) : null}
+
+            {pendingOffers.isLoading ? (
+              <p className="px-1 text-xs leading-5 text-white/38">
+                Checking pending offers...
+              </p>
+            ) : null}
+
+            {pendingOffers.error ? (
+              <p className="px-1 text-xs leading-5 text-amber-100/55">
+                Pending offers unavailable.
+              </p>
+            ) : null}
+
+            {cancelOfferError ? (
+              <p className="rounded-lg border border-amber-300/15 bg-amber-400/10 px-2.5 py-2 text-xs leading-5 text-amber-50/75">
+                {cancelOfferError}
+              </p>
+            ) : null}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MakeOfferModal({
   circle,
   member,
@@ -728,7 +1074,8 @@ function MakeOfferModal({
 }) {
   const initialWindow = getInitialOfferWindow();
   const [dateStart, setDateStart] = useState(initialWindow.date);
-  const [dateEnd, setDateEnd] = useState(initialWindow.date);
+  const [dateEnd, setDateEnd] = useState("");
+  const [hasEndDate, setHasEndDate] = useState(false);
   const [mode, setMode] = useState<OfferMode>("FIXED");
   const [daysOfWeek, setDaysOfWeek] = useState<OfferWeekdayValue[]>([
     getWeekdayValue(new Date()),
@@ -744,14 +1091,23 @@ function MakeOfferModal({
     event.preventDefault();
 
     const parsedDateStart = parseDateInputValue(dateStart);
-    const parsedDateEnd = parseDateInputValue(dateEnd);
+    const parsedDateEnd = hasEndDate ? parseDateInputValue(dateEnd) : null;
 
-    if (!parsedDateStart || !parsedDateEnd) {
-      setError("Choose a valid offer length.");
+    if (!parsedDateStart) {
+      setError("Choose a valid start date.");
       return;
     }
 
-    if (parsedDateEnd.getTime() < parsedDateStart.getTime()) {
+    if (hasEndDate && !parsedDateEnd) {
+      setError("Choose a valid end date.");
+      return;
+    }
+
+    if (
+      hasEndDate &&
+      parsedDateEnd &&
+      parsedDateEnd.getTime() < parsedDateStart.getTime()
+    ) {
       setError("End date must not be before start date.");
       return;
     }
@@ -763,12 +1119,16 @@ function MakeOfferModal({
 
     const firstSelectedDate = getFirstSelectedDateInRange(
       dateStart,
-      dateEnd,
+      hasEndDate ? dateEnd : null,
       daysOfWeek
     );
 
     if (!firstSelectedDate) {
-      setError("Select a day that occurs during the offer length.");
+      setError(
+        hasEndDate
+          ? "Select a day that occurs during the offer length."
+          : "Select at least one day."
+      );
       return;
     }
 
@@ -811,7 +1171,7 @@ function MakeOfferModal({
     const terms = {
       mode,
       dateStart,
-      dateEnd,
+      dateEnd: hasEndDate ? dateEnd : null,
       daysOfWeek,
       requiredMinutes,
       fixedStartLocal: mode === "FIXED" ? startTime : null,
@@ -903,17 +1263,82 @@ function MakeOfferModal({
         exit={{ opacity: 0, y: 12, scale: 0.98 }}
         transition={{ type: "spring", stiffness: 430, damping: 38, mass: 0.8 }}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-zinc-950 p-5 shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)]">
-          <div>
+        <div className="flex items-start justify-between gap-3 border-b border-white/10 bg-[#0b0c10] p-4 shadow-[inset_0_-1px_0_rgba(255,255,255,0.04)] sm:p-5">
+          <div className="min-w-0 flex-1">
             <h3
               id={`make-offer-title-${member.id}`}
               className="text-base font-semibold text-white"
             >
               Make Offer
             </h3>
-            <p className="mt-1 text-sm leading-5 text-white/52">
-              Make an offer for when this member can receive Circle command work.
-            </p>
+            <div className="mt-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 text-xs font-semibold text-white/50">
+                  to
+                </span>
+                <div className="flex min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-black/35 px-2.5 py-2">
+                  <MemberAvatar
+                    member={member}
+                    className="h-7 w-7 text-[10px]"
+                  />
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold leading-4 text-white">
+                      {member.displayName}
+                    </div>
+                    {member.username ? (
+                      <div className="truncate text-[11px] leading-4 text-white/45">
+                        @{member.username}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 text-xs font-semibold text-white/50">
+                  for
+                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild disabled={isSubmitting}>
+                    <button
+                      type="button"
+                      aria-label="Offer type: Command Block"
+                      className="inline-flex h-8 min-w-[142px] items-center justify-between gap-2 rounded-md border border-white/10 bg-zinc-900 px-2.5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)] outline-none transition hover:border-white/18 hover:bg-zinc-800 focus-visible:border-white/26 focus-visible:bg-zinc-900 focus-visible:ring-1 focus-visible:ring-white/18 disabled:cursor-not-allowed disabled:opacity-60 data-[state=open]:border-white/18 data-[state=open]:bg-zinc-900"
+                    >
+                      <span>Command Block</span>
+                      <ChevronDown
+                        className="h-3.5 w-3.5 shrink-0 text-white/45"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    sideOffset={5}
+                    className="z-[70] max-h-64 min-w-[190px] overflow-y-auto rounded-md border border-white/10 bg-[#050507] p-1 text-white shadow-[0_18px_45px_rgba(0,0,0,0.5)]"
+                  >
+                    {offerTypeOptions.map((option) => (
+                      <DropdownMenuItem
+                        key={option.value}
+                        disabled={option.disabled}
+                        className={cn(
+                          "flex min-h-8 justify-between gap-3 rounded px-2 py-1.5 text-xs font-semibold text-white outline-none transition focus:bg-zinc-900 focus:text-white",
+                          option.disabled
+                            ? "text-white/35 data-[disabled]:opacity-100"
+                            : "cursor-default data-[highlighted]:bg-zinc-900 data-[highlighted]:text-white"
+                        )}
+                      >
+                        <span>{option.label}</span>
+                        {option.disabled ? (
+                          <span className="rounded border border-white/8 bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-white/38">
+                            Coming soon
+                          </span>
+                        ) : null}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
           </div>
           <button
             type="button"
@@ -927,8 +1352,8 @@ function MakeOfferModal({
         </div>
 
         <div className="grid gap-5 overflow-y-auto p-5">
-          <div className="grid grid-cols-2 gap-3">
-            <label className="grid gap-2">
+          <div className="grid grid-cols-2 items-end gap-3">
+            <label className="grid min-w-0 gap-2">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-white/52">
                 Start date
               </span>
@@ -940,31 +1365,117 @@ function MakeOfferModal({
                   setError(null);
                 }}
                 disabled={isSubmitting}
-                className="h-11 rounded-2xl border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition [color-scheme:dark] focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
+                className="h-11 w-full min-w-0 rounded-lg border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition [color-scheme:dark] focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
               />
             </label>
-            <label className="grid gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-white/52">
-                End date
-              </span>
-              <input
-                type="date"
-                value={dateEnd}
-                onChange={(event) => {
-                  setDateEnd(event.target.value);
-                  setError(null);
-                }}
-                disabled={isSubmitting}
-                className="h-11 rounded-2xl border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition [color-scheme:dark] focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
-              />
-            </label>
+            <div className="min-w-0">
+              {hasEndDate ? (
+                <div className="grid gap-2">
+                  <div className="flex min-h-4 items-center justify-between gap-2">
+                    <span
+                      id={`make-offer-end-date-label-${member.id}`}
+                      className="text-xs font-semibold uppercase tracking-[0.18em] text-white/52"
+                    >
+                      END DATE
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={hasEndDate}
+                      aria-label="Toggle end date"
+                      onClick={() => {
+                        const nextHasEndDate = !hasEndDate;
+
+                        setHasEndDate(nextHasEndDate);
+
+                        if (nextHasEndDate) {
+                          setDateEnd(
+                            (currentEndDate) => currentEndDate || dateStart
+                          );
+                        }
+
+                        setError(null);
+                      }}
+                      disabled={isSubmitting}
+                      className={cn(
+                        "relative h-4 w-7 shrink-0 rounded-md border transition disabled:cursor-not-allowed disabled:opacity-60",
+                        hasEndDate
+                          ? "border-white/35 bg-zinc-200"
+                          : "border-white/12 bg-zinc-800"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-sm transition",
+                          hasEndDate
+                            ? "left-[13px] bg-black"
+                            : "left-0.5 bg-zinc-500"
+                        )}
+                      />
+                    </button>
+                  </div>
+                  <input
+                    type="date"
+                    aria-labelledby={`make-offer-end-date-label-${member.id}`}
+                    value={dateEnd}
+                    onChange={(event) => {
+                      setDateEnd(event.target.value);
+                      setError(null);
+                    }}
+                    disabled={isSubmitting}
+                    className="h-11 w-full min-w-0 rounded-lg border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition [color-scheme:dark] focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                </div>
+              ) : (
+                <div className="flex h-11 items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/35 px-3">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    END DATE
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={hasEndDate}
+                    aria-label="Toggle end date"
+                    onClick={() => {
+                      const nextHasEndDate = !hasEndDate;
+
+                      setHasEndDate(nextHasEndDate);
+
+                      if (nextHasEndDate) {
+                        setDateEnd(
+                          (currentEndDate) => currentEndDate || dateStart
+                        );
+                      }
+
+                      setError(null);
+                    }}
+                    disabled={isSubmitting}
+                    className={cn(
+                      "relative h-4 w-7 shrink-0 rounded-md border transition disabled:cursor-not-allowed disabled:opacity-60",
+                      hasEndDate
+                        ? "border-white/35 bg-zinc-200"
+                        : "border-white/12 bg-zinc-800"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-sm transition",
+                        hasEndDate
+                          ? "left-[13px] bg-black"
+                          : "left-0.5 bg-zinc-500"
+                      )}
+                    />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="grid gap-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
               FIXED / FLEXIBLE
             </span>
-            <div className="inline-grid w-fit grid-cols-2 rounded-full border border-white/10 bg-black/55 p-0.5">
+            <div className="inline-grid w-fit grid-cols-2 rounded-lg border border-white/10 bg-black/55 p-0.5">
               {(["FIXED", "FLEXIBLE"] as const).map((modeOption) => (
                 <button
                   key={modeOption}
@@ -975,9 +1486,9 @@ function MakeOfferModal({
                   }}
                   disabled={isSubmitting}
                   className={cn(
-                    "h-7 rounded-full px-3 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
+                    "h-7 rounded-md px-3 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
                     mode === modeOption
-                      ? "bg-zinc-200 text-black shadow-[0_8px_18px_rgba(255,255,255,0.10)]"
+                      ? "border border-white/14 bg-zinc-800 text-white shadow-[0_8px_18px_rgba(0,0,0,0.22)]"
                       : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200"
                   )}
                   aria-pressed={mode === modeOption}
@@ -992,7 +1503,7 @@ function MakeOfferModal({
             <span className="text-xs font-semibold uppercase tracking-[0.18em] text-white/52">
               Days
             </span>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-7 gap-1.5">
               {offerWeekdays.map((weekday) => {
                 const isSelected = daysOfWeek.includes(weekday.value);
 
@@ -1010,14 +1521,15 @@ function MakeOfferModal({
                     }}
                     disabled={isSubmitting}
                     className={cn(
-                      "h-10 min-w-12 rounded-full border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
+                      "h-9 min-w-0 rounded-md border px-0 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
                       isSelected
-                        ? "border-white/30 bg-white text-black"
+                        ? "border-white/20 bg-zinc-800 text-white"
                         : "border-white/10 bg-zinc-950/70 text-white/58 hover:border-white/22 hover:bg-zinc-900 hover:text-white"
                     )}
                     aria-pressed={isSelected}
+                    aria-label={weekday.label}
                   >
-                    {weekday.label}
+                    {weekday.label.charAt(0)}
                   </button>
                 );
               })}
@@ -1038,7 +1550,7 @@ function MakeOfferModal({
                     setError(null);
                   }}
                   disabled={isSubmitting}
-                  className="h-11 rounded-2xl border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition [color-scheme:dark] focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-11 rounded-lg border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition [color-scheme:dark] focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
                 />
               </label>
               <label className="grid gap-2">
@@ -1053,7 +1565,7 @@ function MakeOfferModal({
                     setError(null);
                   }}
                   disabled={isSubmitting}
-                  className="h-11 rounded-2xl border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition [color-scheme:dark] focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-11 rounded-lg border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition [color-scheme:dark] focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
                 />
               </label>
             </div>
@@ -1072,7 +1584,7 @@ function MakeOfferModal({
                   setError(null);
                 }}
                 disabled={isSubmitting}
-                className="h-11 rounded-2xl border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition [color-scheme:dark] focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
+                className="h-11 rounded-lg border border-white/10 bg-black/45 px-3 text-sm font-semibold text-white outline-none transition [color-scheme:dark] focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
               />
               <span className="text-xs leading-5 text-white/45">
                 The recipient will choose where these hours fit when accepting.
@@ -1091,7 +1603,7 @@ function MakeOfferModal({
               disabled={isSubmitting}
               rows={3}
               maxLength={500}
-              className="resize-none rounded-2xl border border-white/10 bg-black/45 px-3 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
+              className="resize-none rounded-lg border border-white/10 bg-black/45 px-3 py-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-white/28 focus:bg-black/60 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </label>
 
@@ -1107,14 +1619,14 @@ function MakeOfferModal({
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="h-10 rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-white/72 transition hover:border-white/22 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-10 rounded-lg border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-white/72 transition hover:border-white/22 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isSubmitting}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-white/18 bg-white px-4 text-sm font-semibold text-black transition hover:bg-white/88 disabled:cursor-not-allowed disabled:opacity-70"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/14 bg-zinc-800 px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(0,0,0,0.24)] transition hover:border-white/24 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-zinc-900 disabled:text-white/45"
           >
             <Handshake className="h-4 w-4" aria-hidden="true" />
             {isSubmitting ? "Sending..." : "Send Offer"}
@@ -1141,11 +1653,217 @@ function CircleMemberFloatingDetail({
   const statusLabel = formatMemberStatus(member.status);
   const [isOfferOpen, setIsOfferOpen] = useState(false);
   const [offerSuccess, setOfferSuccess] = useState<string | null>(null);
+  const [commandAccess, setCommandAccess] = useState<CommandAccessState>({
+    rules: [],
+    isLoading: true,
+    error: null,
+  });
+  const [pendingOffers, setPendingOffers] = useState<PendingMemberOffersState>({
+    offers: [],
+    isLoading: true,
+    error: null,
+  });
+  const [cancellingOfferId, setCancellingOfferId] = useState<string | null>(
+    null
+  );
+  const [cancelOfferError, setCancelOfferError] = useState<string | null>(null);
+
+  const loadPendingOffers = useCallback(
+    async (signal?: AbortSignal) => {
+      if (member.isPreview) {
+        setPendingOffers({
+          offers: [],
+          isLoading: false,
+          error: null,
+        });
+        return;
+      }
+
+      try {
+        setPendingOffers({
+          offers: [],
+          isLoading: true,
+          error: null,
+        });
+
+        const response = await fetch(
+          `/api/circles/${encodeURIComponent(
+            circle.id
+          )}/members/${encodeURIComponent(member.id)}/offers`,
+          {
+            cache: "no-store",
+            signal,
+          }
+        );
+
+        if (!response.ok) {
+          const data = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(data?.error ?? "Unable to load pending offers.");
+        }
+
+        const data = (await response.json()) as {
+          offers?: PendingMemberOffer[];
+        };
+
+        setPendingOffers({
+          offers: data.offers ?? [],
+          isLoading: false,
+          error: null,
+        });
+      } catch (loadError) {
+        if (loadError instanceof DOMException && loadError.name === "AbortError") {
+          return;
+        }
+
+        setPendingOffers({
+          offers: [],
+          isLoading: false,
+          error:
+            loadError instanceof Error
+              ? loadError.message
+              : "Unable to load pending offers.",
+        });
+      }
+    },
+    [circle.id, member.id, member.isPreview]
+  );
 
   useEffect(() => {
     setIsOfferOpen(false);
     setOfferSuccess(null);
+    setCancellingOfferId(null);
+    setCancelOfferError(null);
   }, [circle.id, member.id]);
+
+  const handleCancelPendingOffer = useCallback(
+    async (offerId: string) => {
+      if (member.isPreview || cancellingOfferId) {
+        return;
+      }
+
+      try {
+        setCancellingOfferId(offerId);
+        setCancelOfferError(null);
+
+        const response = await fetch(
+          `/api/circles/${encodeURIComponent(
+            circle.id
+          )}/members/${encodeURIComponent(
+            member.id
+          )}/offers/${encodeURIComponent(offerId)}/cancel`,
+          {
+            method: "POST",
+          }
+        );
+
+        if (!response.ok) {
+          const data = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(data?.error ?? "Unable to cancel pending offer.");
+        }
+
+        setPendingOffers((current) => ({
+          ...current,
+          offers: current.offers.filter((offer) => offer.id !== offerId),
+          error: null,
+        }));
+      } catch (cancelError) {
+        setCancelOfferError(
+          cancelError instanceof Error
+            ? cancelError.message
+            : "Unable to cancel pending offer."
+        );
+      } finally {
+        setCancellingOfferId(null);
+      }
+    },
+    [cancellingOfferId, circle.id, member.id, member.isPreview]
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    if (member.isPreview) {
+      setCommandAccess({
+        rules: [],
+        isLoading: true,
+        error: null,
+      });
+
+      return () => {
+        controller.abort();
+      };
+    }
+
+    async function loadCommandAccess() {
+      try {
+        setCommandAccess({
+          rules: [],
+          isLoading: true,
+          error: null,
+        });
+
+        const response = await fetch(
+          `/api/circles/${encodeURIComponent(
+            circle.id
+          )}/members/${encodeURIComponent(member.id)}/command-access`,
+          {
+            cache: "no-store",
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          const data = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(data?.error ?? "Unable to load command access.");
+        }
+
+        const data = (await response.json()) as {
+          commandAccess?: CommandAccessRule[];
+        };
+
+        setCommandAccess({
+          rules: data.commandAccess ?? [],
+          isLoading: false,
+          error: null,
+        });
+      } catch (loadError) {
+        if (loadError instanceof DOMException && loadError.name === "AbortError") {
+          return;
+        }
+
+        setCommandAccess({
+          rules: [],
+          isLoading: false,
+          error:
+            loadError instanceof Error
+              ? loadError.message
+              : "Unable to load command access.",
+        });
+      }
+    }
+
+    void loadCommandAccess();
+
+    return () => {
+      controller.abort();
+    };
+  }, [circle.id, member.id, member.isPreview]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void loadPendingOffers(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [loadPendingOffers]);
 
   return (
     <motion.article
@@ -1253,27 +1971,14 @@ function CircleMemberFloatingDetail({
               actionLabel="Add Location"
               showAction={isOwner}
             />
-            <WorkProfilePlaceholderRow
-              Icon={CalendarDays}
-              title="Availability"
-              text="Not connected yet."
-              secondaryText="Availability will come from approved Command Blocks."
-              actionLabel="Set Availability"
-              showAction={isOwner}
-            />
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
-          <div className="flex items-center gap-2">
-            <CircleDot className="h-4 w-4 text-white/55" aria-hidden="true" />
-            <h5 className="text-sm font-semibold text-white">Command Blocks</h5>
-          </div>
-          <div className="mt-3">
-            <MemberDetailEmptyRow
-              Icon={CircleDot}
-              text="No approved Command Blocks yet."
-              secondaryText="Command Blocks will define when this Circle can schedule work for this member."
+            <CommandAccessAvailabilityRow
+              commandAccess={commandAccess}
+              pendingOffers={pendingOffers}
+              cancellingOfferId={cancellingOfferId}
+              cancelOfferError={cancelOfferError}
+              onCancelOffer={
+                canMakeOffer ? handleCancelPendingOffer : undefined
+              }
             />
           </div>
         </section>
@@ -1330,6 +2035,7 @@ function CircleMemberFloatingDetail({
             onCreated={() => {
               setIsOfferOpen(false);
               setOfferSuccess("Offer sent.");
+              void loadPendingOffers();
             }}
           />
         ) : null}
