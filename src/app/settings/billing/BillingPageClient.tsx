@@ -37,8 +37,12 @@ const PREMIUM_BENEFITS = [
 ];
 const UPGRADE_PLAN_NAME = "CREATOR Pro";
 const MONTHLY_PLAN_NAME = "CREATOR Pro Monthly";
-const PURCHASES_UNAVAILABLE_MESSAGE =
-  "Purchases are temporarily unavailable. Please try again from the iOS app or contact support.";
+const PLAN_LOAD_FAILED_MESSAGE =
+  "CREATOR Pro plans could not be loaded. Please try again.";
+const PURCHASE_FAILED_MESSAGE =
+  "Purchase could not be completed. Please try again.";
+const RESTORE_FAILED_MESSAGE =
+  "Restore could not be completed. Please try again.";
 const premiumIconShellClassName =
   "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-emerald-200/25 bg-[linear-gradient(145deg,rgba(255,255,255,0.14),rgba(16,185,129,0.16)_32%,rgba(0,0,0,0.58)_100%)] text-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-10px_18px_rgba(0,0,0,0.42),0_8px_18px_rgba(0,0,0,0.45),0_0_18px_rgba(52,211,153,0.16)] md:h-11 md:w-11";
 const recommendedPillClassName =
@@ -251,6 +255,8 @@ function BillingPageClient() {
   const [loadError, setLoadError] = useState<Error | null>(null);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
   const [restoreState, setRestoreState] = useState<RestoreState>("idle");
+  const [reloadAttempt, setReloadAttempt] = useState(0);
+  const [purchaseAttempted, setPurchaseAttempted] = useState(false);
 
   useEffect(() => {
     if (isPlus) {
@@ -258,12 +264,14 @@ function BillingPageClient() {
       setLoadState("idle");
       setLoadError(null);
       setSelectedPackageId(null);
+      setPurchaseAttempted(false);
       return;
     }
 
     let isMounted = true;
     setLoadState("loading");
     setLoadError(null);
+    setPackages(null);
 
     (async () => {
       try {
@@ -291,7 +299,7 @@ function BillingPageClient() {
     return () => {
       isMounted = false;
     };
-  }, [isNativePlatform, isPlus, loadUpgradePackages]);
+  }, [isNativePlatform, isPlus, loadUpgradePackages, reloadAttempt]);
 
   const { planOptions, annualPackage, monthlyPackage } = useMemo(() => {
     if (!packages) {
@@ -344,6 +352,33 @@ function BillingPageClient() {
     () => planOptions.find((pkg) => pkg.identifier === selectedPackageId) ?? null,
     [planOptions, selectedPackageId],
   );
+  const hasLoadedPlanOptions = loadState === "success" && planOptions.length > 0;
+  const availablePackageCount = packages?.availablePackages.length ?? 0;
+
+  useEffect(() => {
+    if (hasLoadedPlanOptions && loadError) {
+      setLoadError(null);
+    }
+  }, [hasLoadedPlanOptions, loadError]);
+
+  useEffect(() => {
+    console.info("Billing page state", {
+      platform: Capacitor.getPlatform(),
+      isNativePlatform,
+      loadState,
+      availablePackageCount,
+      selectedPackageIdentifier: selectedPackage?.identifier ?? null,
+      hasLoadError: Boolean(loadError),
+      hasUpgradeError: Boolean(upgradeError),
+    });
+  }, [
+    availablePackageCount,
+    isNativePlatform,
+    loadError,
+    loadState,
+    selectedPackage?.identifier,
+    upgradeError,
+  ]);
 
   const recommendedPackageId = annualPackage?.identifier ?? planOptions[0]?.identifier ?? null;
   const savingsLabel = useMemo(
@@ -360,8 +395,15 @@ function BillingPageClient() {
       return;
     }
 
+    setPurchaseAttempted(true);
     await purchaseUpgradePackage(selectedPackage);
   }, [purchaseUpgradePackage, selectedPackage]);
+
+  const handleRetryLoadPlans = useCallback(() => {
+    setLoadError(null);
+    setLoadState("loading");
+    setReloadAttempt((attempt) => attempt + 1);
+  }, []);
 
   const handleRestorePurchases = useCallback(async () => {
     setRestoreState("restoring");
@@ -487,13 +529,21 @@ function BillingPageClient() {
                   Loading CREATOR Pro plans...
                 </div>
               )}
-              {loadError && (
-                <p
-                  className="rounded-xl border border-rose-300/15 bg-rose-500/10 px-3 py-2 text-sm text-rose-200 sm:rounded-2xl sm:px-4 sm:py-3"
+              {loadState === "error" && loadError && !hasLoadedPlanOptions && (
+                <div
+                  className="flex flex-col gap-2 rounded-xl border border-rose-300/15 bg-rose-500/10 px-3 py-2 text-sm text-rose-200 sm:rounded-2xl sm:px-4 sm:py-3 md:flex-row md:items-center md:justify-between"
                   role="alert"
                 >
-                  {PURCHASES_UNAVAILABLE_MESSAGE}
-                </p>
+                  <span>{PLAN_LOAD_FAILED_MESSAGE}</span>
+                  <Button
+                    className="h-8 rounded-lg border-rose-200/20 bg-transparent px-3 text-xs font-semibold text-rose-100 hover:bg-rose-100/10"
+                    type="button"
+                    variant="outline"
+                    onClick={handleRetryLoadPlans}
+                  >
+                    Retry
+                  </Button>
+                </div>
               )}
 
               {planOptions.length > 0 && (
@@ -602,12 +652,12 @@ function BillingPageClient() {
                 </p>
               )}
 
-              {upgradeError && (
+              {purchaseAttempted && upgradeError && (
                 <p
                   className="rounded-xl border border-rose-300/15 bg-rose-500/10 px-3 py-2 text-sm text-rose-200 sm:rounded-2xl sm:px-4 sm:py-3"
                   role="alert"
                 >
-                  {PURCHASES_UNAVAILABLE_MESSAGE}
+                  {PURCHASE_FAILED_MESSAGE}
                 </p>
               )}
 
@@ -627,7 +677,7 @@ function BillingPageClient() {
                   className="rounded-xl border border-rose-300/15 bg-rose-500/10 px-3 py-2 text-sm text-rose-200 sm:rounded-2xl sm:px-4 sm:py-3"
                   role="alert"
                 >
-                  {PURCHASES_UNAVAILABLE_MESSAGE}
+                  {RESTORE_FAILED_MESSAGE}
                 </p>
               )}
 
