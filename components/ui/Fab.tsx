@@ -12937,6 +12937,12 @@ export function Fab({
     currentMobileFabPanelHeightExpanded ?? maxHeightExpanded;
   const panelHeightExpanded = currentMobileFabPanelHeightExpanded;
   const panelSizeTransition = "border-color 0.1s linear, transform 0.2s ease";
+  const shouldUseCenteredMobileCreationPanel =
+    expanded &&
+    isMobileViewport &&
+    isContentSizedCreationExpanded &&
+    !editTarget &&
+    !shouldUseCenteredEditModal;
   const shouldUseCreationSpawnReveal =
     expanded &&
     !prefersReducedMotion &&
@@ -12944,12 +12950,14 @@ export function Fab({
     selected !== null &&
     creationSpawnOrigin !== null &&
     creationSpawnOrigin.type === selected;
+  const shouldUseFabSpawnRevealForPanel =
+    shouldUseCreationSpawnReveal && !shouldUseCenteredMobileCreationPanel;
   const isCreationRevealReady =
-    shouldUseCreationSpawnReveal &&
+    shouldUseFabSpawnRevealForPanel &&
     creationSpawnOrigin !== null &&
     creationRevealGeometry?.nonce === creationSpawnOrigin.nonce;
   useLayoutEffect(() => {
-    if (!shouldUseCreationSpawnReveal || !creationSpawnOrigin) {
+    if (!shouldUseFabSpawnRevealForPanel || !creationSpawnOrigin) {
       setCreationRevealGeometry(null);
       return;
     }
@@ -13007,7 +13015,7 @@ export function Fab({
     panelMaxHeightExpanded,
     panelMinHeightExpanded,
     selected,
-    shouldUseCreationSpawnReveal,
+    shouldUseFabSpawnRevealForPanel,
   ]);
   const creationRevealOriginX = creationRevealGeometry?.x ?? 0;
   const creationRevealOriginY = creationRevealGeometry?.y ?? 0;
@@ -13108,6 +13116,8 @@ export function Fab({
     expanded && isKeyboardVisible
       ? Math.round(stableSafeBottom + FAB_KEYBOARD_MODAL_GAP)
       : Math.round(stableSafeBottom + 8);
+  const centeredMobileCreationPanelMaxHeight =
+    "calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 3rem)";
   const renderAttachedCreationControls = () => (
     <div
       ref={attachedCreationControlsRef}
@@ -13218,54 +13228,67 @@ export function Fab({
                   document.body,
                 )
               : null}
-            <div
-              className={cn(
-                shouldUseCenteredEditModal
-                  ? "fixed inset-0 z-[2147483650] flex items-center justify-center px-3 py-6 sm:px-4"
-                  : "bottom-20 mb-2 z-[2147483650] flex flex-col items-stretch",
-                !shouldUseCenteredEditModal &&
-                  (expanded ? "fixed" : "absolute"),
-                !shouldUseCenteredEditModal && menuClassName,
-              )}
-              style={
-                expanded &&
-                  shouldAttachCreationControls &&
-                  !shouldUseCenteredEditModal
-                  ? {
-                      bottom: attachedCreationPanelBottom,
-                      marginBottom: 0,
-                    }
-                  : undefined
-              }
-            >
+            {(() => {
+              const panelShell = (
+                <div
+                  className={cn(
+                    shouldUseCenteredEditModal
+                      ? "fixed inset-0 z-[2147483650] flex items-center justify-center px-3 py-6 sm:px-4"
+                      : shouldUseCenteredMobileCreationPanel
+                        ? "fixed left-1/2 top-1/2 z-[2147483650] box-border -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                        : "bottom-20 mb-2 z-[2147483650] flex flex-col items-stretch",
+                    !shouldUseCenteredEditModal &&
+                      !shouldUseCenteredMobileCreationPanel &&
+                      (expanded ? "fixed" : "absolute"),
+                    !shouldUseCenteredEditModal &&
+                      !shouldUseCenteredMobileCreationPanel &&
+                      menuClassName,
+                  )}
+                  style={
+                    expanded &&
+                      shouldAttachCreationControls &&
+                      !shouldUseCenteredMobileCreationPanel &&
+                      !shouldUseCenteredEditModal
+                      ? {
+                          bottom: attachedCreationPanelBottom,
+                          marginBottom: 0,
+                        }
+                      : undefined
+                  }
+                >
               <motion.div
                 ref={creationRevealWrapperRef}
                 key={
-                  shouldUseCreationSpawnReveal && creationSpawnOrigin
+                  shouldUseFabSpawnRevealForPanel && creationSpawnOrigin
                     ? isCreationRevealReady
                       ? `fab-creation-spawn-${creationSpawnOrigin.nonce}`
                       : `fab-creation-spawn-measure-${creationSpawnOrigin.nonce}`
                     : "fab-panel-frame"
                 }
-                className="relative"
+                className={cn(
+                  "relative",
+                  shouldUseCenteredMobileCreationPanel && "pointer-events-auto",
+                )}
                 style={{
                   borderRadius: "0.5rem",
-                  transformOrigin: `${creationRevealOriginX}px ${creationRevealOriginY}px`,
-                  willChange: shouldUseCreationSpawnReveal
+                  transformOrigin: shouldUseCenteredMobileCreationPanel
+                    ? "center center"
+                    : `${creationRevealOriginX}px ${creationRevealOriginY}px`,
+                  willChange: shouldUseFabSpawnRevealForPanel
                     ? "clip-path, opacity"
                     : undefined,
                   pointerEvents:
-                    shouldUseCreationSpawnReveal && !isCreationRevealReady
+                    shouldUseFabSpawnRevealForPanel && !isCreationRevealReady
                       ? "none"
                       : undefined,
                 }}
                 initial={
-                  shouldUseCreationSpawnReveal
+                  shouldUseFabSpawnRevealForPanel
                     ? { opacity: 0, clipPath: creationRevealClipStart }
                     : false
                 }
                 animate={
-                  shouldUseCreationSpawnReveal
+                  shouldUseFabSpawnRevealForPanel
                     ? isCreationRevealReady
                       ? {
                           opacity: 1,
@@ -13280,7 +13303,7 @@ export function Fab({
                     : { opacity: 1 }
                 }
                 exit={
-                  shouldUseCreationSpawnReveal
+                  shouldUseFabSpawnRevealForPanel
                     ? {
                         opacity: 0,
                         transition: {
@@ -13310,6 +13333,7 @@ export function Fab({
                       : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
                     expanded &&
                       (shouldUseCenteredEditModal ||
+                        shouldUseCenteredMobileCreationPanel ||
                         shouldAttachCreationControls) &&
                       "flex flex-col overflow-hidden",
                     expanded
@@ -13346,17 +13370,25 @@ export function Fab({
                     transformOrigin:
                       shouldUseCenteredEditModal
                         ? "center center"
+                        : shouldUseCenteredMobileCreationPanel
+                          ? "center center"
                         : menuVariant === "timeline"
                           ? "bottom right"
                           : "bottom center",
                     minHeight: expanded
-                      ? panelMinHeightExpanded
+                      ? shouldUseCenteredMobileCreationPanel
+                        ? undefined
+                        : panelMinHeightExpanded
                       : menuContainerHeight,
                     maxHeight: expanded
-                      ? panelMaxHeightExpanded
+                      ? shouldUseCenteredMobileCreationPanel
+                        ? centeredMobileCreationPanelMaxHeight
+                        : panelMaxHeightExpanded
                       : menuContainerHeight,
                     height: expanded
-                      ? panelHeightExpanded
+                      ? shouldUseCenteredMobileCreationPanel
+                        ? undefined
+                        : panelHeightExpanded
                       : menuContainerHeight,
                     minWidth: expanded ? undefined : (menuWidth ?? undefined),
                     width: expanded ? undefined : (menuWidth ?? undefined),
@@ -13372,7 +13404,7 @@ export function Fab({
                     overscrollBehavior: expanded ? "contain" : undefined,
                   }}
                   initial={
-                    shouldUseCreationSpawnReveal
+                    shouldUseFabSpawnRevealForPanel
                       ? false
                       : (centeredEditModalAnimation?.initial ?? {
                           opacity: 0,
@@ -13380,7 +13412,7 @@ export function Fab({
                         })
                   }
                   animate={
-                    shouldUseCreationSpawnReveal
+                    shouldUseFabSpawnRevealForPanel
                       ? { opacity: 1, y: 0 }
                       : (centeredEditModalAnimation?.animate ?? {
                           opacity: 1,
@@ -13393,7 +13425,7 @@ export function Fab({
                         })
                   }
                   exit={
-                    shouldUseCreationSpawnReveal
+                    shouldUseFabSpawnRevealForPanel
                       ? { opacity: 1 }
                       : (centeredEditModalAnimation?.exit ?? {
                           opacity: 0,
@@ -13409,14 +13441,19 @@ export function Fab({
                 >
                   <div
                     data-fab-scroll-body={
-                      shouldUseScrollableFabBody ? "" : undefined
+                      shouldUseCenteredMobileCreationPanel ||
+                      shouldUseScrollableFabBody
+                        ? ""
+                        : undefined
                     }
                     className={cn(
-                      shouldUseScrollableFabBody
-                        ? "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
+                      shouldUseCenteredMobileCreationPanel
+                        ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                        : shouldUseScrollableFabBody
+                          ? "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
                         : shouldRenderAttachedCreationControls
                           ? "flex-none overflow-visible"
-                        : null,
+                          : null,
                     )}
                   >
                     <motion.div
@@ -13539,7 +13576,14 @@ export function Fab({
                   <span className="text-lg font-bold">OVERLAY</span>
                 </motion.button>
               )}
-            </div>
+                </div>
+              );
+
+              return shouldUseCenteredMobileCreationPanel &&
+                typeof document !== "undefined"
+                ? createPortal(panelShell, document.body)
+                : panelShell;
+            })()}
             {expanded &&
             !shouldHideOverhangButtons &&
             !shouldUseCenteredEditModal &&
