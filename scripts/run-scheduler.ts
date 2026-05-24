@@ -57,7 +57,7 @@ async function main() {
   } catch (error) {
     console.error("Scheduler run failed:", error);
     // Attempt to unwrap causes for fetch failures
-    const cause = (error as any)?.cause;
+    const cause = (error as { cause?: unknown })?.cause;
     if (cause) {
       console.error("Cause:", cause);
     }
