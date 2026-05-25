@@ -2,9 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BatteryCharging, Flame, MoreHorizontal, Plus } from "lucide-react";
+import {
+  BatteryCharging,
+  Flame,
+  MoreHorizontal,
+  Plus,
+  Timer,
+} from "lucide-react";
 
 import ActivityPanel from "./ActivityPanel";
+import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
 import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
 import type { MonumentNote } from "@/lib/types/monument-note";
@@ -61,6 +68,8 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
   const [goalSection, setGoalSection] = useState<"active" | "completed">(
     "active"
   );
+  const [focusPomoSource, setFocusPomoSource] =
+    useState<FocusPomoSource | null>(null);
 
   useEffect(() => {
     setMonumentView("goals");
@@ -89,6 +98,18 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
     },
   ] as const;
 
+  const handleStartFocusPomo = () => {
+    const source: FocusPomoSource = {
+      sourceType: "monument",
+      sourceId: id,
+      title: monument.title,
+      icon: monument.emoji,
+    };
+
+    console.info("Start focus pomo", source);
+    setFocusPomoSource(source);
+  };
+
   return (
     <main className="overflow-x-hidden px-2.5 py-4 sm:px-6 sm:py-6 lg:px-8">
       <MonumentEditDialog
@@ -100,6 +121,11 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
           }
         }}
         onSaved={() => setEditDialogOpen(false)}
+      />
+      <FocusPomo
+        open={Boolean(focusPomoSource)}
+        source={focusPomoSource}
+        onClose={() => setFocusPomoSource(null)}
       />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
         <section
@@ -114,7 +140,15 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
             <div className="absolute inset-x-12 -top-16 h-48 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.18),_transparent_70%)] blur-3xl" />
             <div className="absolute bottom-0 right-0 h-56 w-56 translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.06),_transparent_60%)] blur-3xl" />
           </div>
-          <div className="absolute top-3 right-3 z-10 flex items-center">
+          <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+            <button
+              type="button"
+              aria-label={`Start focus pomo for ${monument.title}`}
+              onClick={handleStartFocusPomo}
+              className="rounded-full border border-white/10 bg-white/5 p-2 text-white/70 transition hover:border-white/20 hover:bg-white/10"
+            >
+              <Timer className="h-4 w-4" aria-hidden="true" />
+            </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
