@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Clock3,
   Target,
+  Timer,
   Award,
   MoreHorizontal,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { NotesGrid } from "@/components/notes/NotesGrid";
 import { Button } from "@/components/ui/button";
 import { useToastHelpers } from "@/components/ui/toast";
+import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
 import { SkillDrawer, type Category, type Skill as DrawerSkill } from "@/app/(app)/skills/components/SkillDrawer";
 import {
   DropdownMenu,
@@ -181,6 +183,8 @@ export default function SkillDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
+  const [focusPomoSource, setFocusPomoSource] =
+    useState<FocusPomoSource | null>(null);
   const supabase = getSupabaseBrowser();
   const router = useRouter();
   const toast = useToastHelpers();
@@ -718,6 +722,18 @@ export default function SkillDetailPage() {
     router.push("/goals/new");
   };
 
+  const handleStartFocusPomo = () => {
+    const source: FocusPomoSource = {
+      sourceType: "skill",
+      sourceId: id,
+      title: skill.name,
+      icon: skill.icon,
+    };
+
+    console.info("Start focus pomo", source);
+    setFocusPomoSource(source);
+  };
+
   return (
     <main className="px-4 py-6 sm:px-6 lg:px-8">
       <SkillDrawer
@@ -730,9 +746,22 @@ export default function SkillDetailPage() {
         initialSkill={skillForDrawer}
         onUpdate={handleSaveSkill}
       />
+      <FocusPomo
+        open={Boolean(focusPomoSource)}
+        source={focusPomoSource}
+        onClose={() => setFocusPomoSource(null)}
+      />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-6 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-8">
-          <div className="absolute right-4 top-4 z-20">
+          <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
+            <button
+              type="button"
+              aria-label={`Start focus pomo for ${skill.name}`}
+              onClick={handleStartFocusPomo}
+              className="rounded-full border border-white/10 bg-white/5 p-2 text-white/70 transition hover:border-white/20 hover:bg-white/10"
+            >
+              <Timer className="h-4 w-4" aria-hidden="true" />
+            </button>
             <DropdownMenu
               open={actionsMenuOpen}
               onOpenChange={(open) => {
