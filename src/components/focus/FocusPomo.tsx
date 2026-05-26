@@ -3366,16 +3366,51 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           >
             <div className="pointer-events-none absolute inset-0 rounded-[inherit] border border-white/[0.035] bg-[linear-gradient(145deg,rgba(255,255,255,0.07),transparent_24%,rgba(255,255,255,0.025)_72%,rgba(0,0,0,0.38)),radial-gradient(circle_at_25%_35%,rgba(255,255,255,0.04),transparent_28%)]" />
             <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
-            <button
-              type="button"
-              aria-label="Close focus pomo"
-              onClick={handleClose}
-              className="absolute right-3 top-3 z-20 inline-flex size-10 items-center justify-center border border-white/15 bg-[#080a0d] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_20px_rgba(0,0,0,0.36),0_18px_34px_-26px_rgba(0,0,0,0.95)] transition [clip-path:polygon(24%_0,76%_0,100%_24%,100%_76%,76%_100%,24%_100%,0_76%,0_24%)] hover:border-white/28 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:right-7 sm:top-7 sm:size-12"
-            >
-              <X className="size-5 sm:size-6" aria-hidden="true" />
-            </button>
-
             <div className="relative z-10 flex flex-1 flex-col gap-3 sm:gap-6">
+              <header className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-4">
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-600 sm:text-sm sm:tracking-[0.28em]">
+                    FOCUSPOMO
+                  </p>
+                </div>
+                <div
+                  role="group"
+                  aria-label="Focus pomo mode"
+                  className="grid h-7 w-[7rem] shrink-0 grid-cols-2 overflow-hidden rounded-lg border border-white/10 bg-black/35 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] sm:h-8 sm:w-[8.75rem]"
+                >
+                  {modeOptions.map((option) => {
+                    const selected = mode === option.value;
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => handleModeChange(option.value)}
+                        disabled={isRunning}
+                        className={
+                          selected
+                            ? "rounded-md border border-emerald-300/35 bg-emerald-500/14 px-1 text-[8px] font-semibold uppercase tracking-[0.1em] text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition disabled:cursor-not-allowed disabled:opacity-70 sm:text-[9px] sm:tracking-[0.14em]"
+                            : "rounded-md border border-transparent px-1 text-[8px] font-semibold uppercase tracking-[0.1em] text-zinc-500 transition hover:border-white/10 hover:bg-white/[0.04] hover:text-zinc-200 disabled:cursor-not-allowed disabled:hover:border-transparent disabled:hover:bg-transparent disabled:hover:text-zinc-500 sm:text-[9px] sm:tracking-[0.14em]"
+                        }
+                        aria-pressed={selected}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    aria-label="Close focus pomo"
+                    onClick={handleClose}
+                    className="inline-flex size-10 items-center justify-center border border-white/15 bg-[#080a0d] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_20px_rgba(0,0,0,0.36),0_18px_34px_-26px_rgba(0,0,0,0.95)] transition [clip-path:polygon(24%_0,76%_0,100%_24%,100%_76%,76%_100%,24%_100%,0_76%,0_24%)] hover:border-white/28 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:size-12"
+                  >
+                    <X className="size-5 sm:size-6" aria-hidden="true" />
+                  </button>
+                </div>
+              </header>
+
               <main className="flex flex-1 flex-col gap-3 sm:gap-5">
                 {!hasRunStarted ? (
                   <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-zinc-700/50 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
@@ -3779,6 +3814,17 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       </motion.div>
                     ) : null}
                   </AnimatePresence>
+                      <div className="border-b border-white/[0.10] bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
+                        <button
+                          type="button"
+                          onClick={() => setScopeOpen((current) => !current)}
+                          aria-expanded={scopeOpen}
+                          aria-controls={executionScopePanelId}
+                          className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-white/18 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                        >
+                          {scopeOpen ? "Done" : "Adjust"}
+                        </button>
+                      </div>
                       <div className="relative flex min-w-0 items-center gap-2 border border-white/10 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-3">
                         <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
                           {displaySource.icon ? (
@@ -3795,79 +3841,89 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             <p className="min-w-0 truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38 sm:text-[10px] sm:tracking-[0.18em]">
                               Focus Scope
                             </p>
-                            <div className="grid h-6 w-[6.25rem] shrink-0 grid-cols-2 overflow-hidden rounded-md border border-white/10 bg-black/30 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:h-7 sm:w-[8.25rem] sm:rounded-lg">
-                              {modeOptions.map((option) => {
-                                const selected = mode === option.value;
-
-                                return (
-                                  <button
-                                    key={option.value}
-                                    type="button"
-                                    onClick={() =>
-                                      handleModeChange(option.value)
-                                    }
-                                    className={
-                                      selected && option.value === "pomo"
-                                        ? "rounded-[5px] border border-emerald-300/30 bg-emerald-500/14 px-1 text-[8px] font-semibold uppercase tracking-[0.08em] text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] sm:rounded-md sm:text-[9px] sm:tracking-[0.12em]"
-                                        : selected
-                                          ? "rounded-[5px] border border-white/12 bg-white/[0.06] px-1 text-[8px] font-semibold uppercase tracking-[0.08em] text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] sm:rounded-md sm:text-[9px] sm:tracking-[0.12em]"
-                                          : "rounded-[5px] border border-transparent px-1 text-[8px] font-semibold uppercase tracking-[0.08em] text-white/35 transition hover:border-white/10 hover:bg-white/[0.04] hover:text-white/68 sm:rounded-md sm:text-[9px] sm:tracking-[0.12em]"
-                                    }
-                                    aria-pressed={selected}
-                                  >
-                                    {option.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
                           </div>
                           <p className="mt-0.5 min-w-0 truncate text-xs font-semibold uppercase tracking-normal text-white/82 sm:text-sm">
                             {scopeSummary}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setScopeOpen((current) => !current)}
-                          aria-expanded={scopeOpen}
-                          aria-controls={executionScopePanelId}
-                          className="inline-flex min-h-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] px-2.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-[10px] sm:tracking-[0.14em]"
-                        >
-                          {scopeOpen ? "Done" : "Adjust"}
-                        </button>
                       </div>
                     </div>
                   </section>
                 ) : null}
 
-                {latestRunResult ? (
+                {hasRunStarted ? (
                   <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-zinc-700/45 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(113,113,122,0.12)_32%,rgba(39,39,42,0.26)_60%,rgba(255,255,255,0.04))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
                     <div className="overflow-hidden rounded-[17px] border border-white/[0.055] bg-zinc-950/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-18px_30px_rgba(0,0,0,0.32)] sm:rounded-[21px]">
-                      {isRunLogExpanded && earlierRunResultsCount > 0 ? (
-                        <div className="grid max-h-32 overflow-y-auto sm:max-h-40">
-                          {visibleEarlierRunResults.map((session) =>
-                            renderRunHistoryRow(session, "earlier")
-                          )}
-                        </div>
-                      ) : null}
+                      {latestRunResult ? (
+                        <>
+                          {isRunLogExpanded && earlierRunResultsCount > 0 ? (
+                            <div className="grid max-h-32 overflow-y-auto sm:max-h-40">
+                              {visibleEarlierRunResults.map((session) =>
+                                renderRunHistoryRow(session, "earlier")
+                              )}
+                            </div>
+                          ) : null}
 
-                      {earlierRunResultsCount > 0 ? (
-                        <div className="border-t border-white/[0.10] bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setIsRunLogExpanded((current) => !current)
-                            }
-                            aria-expanded={isRunLogExpanded}
-                            className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-white/18 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
-                          >
-                            {isRunLogExpanded
-                              ? "See less"
-                              : `See more (${earlierRunResultsCount})`}
-                          </button>
-                        </div>
-                      ) : null}
+                          <div className="border-t border-white/[0.10] bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
+                            {earlierRunResultsCount > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setIsRunLogExpanded((current) => !current)
+                                }
+                                aria-expanded={isRunLogExpanded}
+                                className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-white/18 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                              >
+                                {isRunLogExpanded ? "See less" : "See more"}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled
+                                className="inline-flex min-h-7 w-full cursor-default items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.012] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-600 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                              >
+                                See more
+                              </button>
+                            )}
+                          </div>
 
-                      {renderRunHistoryRow(latestRunResult, "latest")}
+                          {renderRunHistoryRow(latestRunResult, "latest")}
+                        </>
+                      ) : (
+                        <>
+                          <div className="border-t border-white/[0.10] bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
+                            <button
+                              type="button"
+                              disabled
+                              className="inline-flex min-h-7 w-full cursor-default items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.012] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-600 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                            >
+                              See more
+                            </button>
+                          </div>
+
+                          <div className="relative flex min-w-0 items-center gap-2 border border-white/10 bg-white/[0.03] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3">
+                            <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-zinc-400 sm:size-8 sm:rounded-lg">
+                              <Play
+                                className="size-3 fill-current sm:size-3.5"
+                                aria-hidden="true"
+                              />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+                                <p className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-normal text-white/82 sm:text-sm">
+                                  Complete your first event
+                                </p>
+                                <span className="ml-auto whitespace-nowrap pl-1 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-400 sm:text-[10px]">
+                                  RUN STARTED
+                                </span>
+                              </div>
+                              <p className="mt-0.5 truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-white/38 sm:mt-1 sm:text-[10px]">
+                                Your run history will appear here.
+                              </p>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </section>
                 ) : null}
