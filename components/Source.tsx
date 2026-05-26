@@ -3964,9 +3964,6 @@ export default function Source() {
                           {durationMinutes} min service
                         </span>
                       )}
-                      <p className="mt-auto text-[8px] uppercase tracking-[0.3em] text-zinc-500">
-                        Updated {formatRelativeTime(listing.updated_at)}
-                      </p>
                     </div>
                   </button>
                 )
@@ -4042,9 +4039,6 @@ export default function Source() {
                     <p className="text-[10px] text-zinc-400">{priceLabel}</p>
                     <p className="text-[9px] uppercase tracking-[0.3em] text-zinc-500">
                       Status · {availabilityLabels[listing.status]}
-                    </p>
-                    <p className="mt-auto text-[8px] uppercase tracking-[0.3em] text-zinc-500">
-                      Updated {formatRelativeTime(listing.updated_at)}
                     </p>
                   </div>
                 </button>
