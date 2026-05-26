@@ -5,10 +5,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   CalendarDays,
-  Clock3,
   Target,
   Timer,
-  Award,
   MoreHorizontal,
 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -463,7 +461,6 @@ export default function SkillDetailPage() {
               <div className="flex items-start gap-5">
                 <Skeleton className="h-[88px] w-[88px] rounded-3xl border border-white/10 bg-white/10" />
                 <div className="flex flex-col gap-3">
-                  <Skeleton className="h-6 w-28 rounded-full bg-white/10" />
                   <Skeleton className="h-10 w-48 bg-white/10 sm:w-64" />
                   <div className="flex gap-2">
                     <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
@@ -473,11 +470,11 @@ export default function SkillDetailPage() {
                 </div>
               </div>
             </div>
-            <div className="relative mt-8 flex flex-wrap gap-2 md:flex-nowrap">
-              {Array.from({ length: 4 }).map((_, index) => (
+            <div className="relative mt-8 grid grid-cols-2 gap-2">
+              {Array.from({ length: 2 }).map((_, index) => (
                 <div
                   key={index}
-                  className="flex min-w-[140px] flex-1 basis-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
+                  className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
                 >
                   <Skeleton className="size-6 rounded-full bg-white/10" />
                   <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -586,8 +583,6 @@ export default function SkillDetailPage() {
     : "Creation date unavailable.";
 
   const skillBadges = progress?.badges ?? [];
-  const skillBadgeCount = skillBadges.length;
-
   const stats = [
     {
       label: "Skill level",
@@ -596,36 +591,10 @@ export default function SkillDetailPage() {
       icon: Target,
     },
     {
-      label: "Badges",
-      value:
-        skillBadgeCount > 0
-          ? `${skillBadgeCount} badge${skillBadgeCount === 1 ? "" : "s"}`
-          : "No badges yet",
-      description:
-        skillBadgeCount > 0
-          ? `Unlocked ${skillBadgeCount} badge${
-              skillBadgeCount === 1 ? "" : "s"
-            } for ${skill.name}.`
-          : "Level milestones and prestige resets unlock badges for this skill.",
-      icon: Award,
-    },
-    {
       label: "Added to timeline",
       value: formattedCreatedAt ?? "Not available",
       description: createdRelativeText,
       icon: CalendarDays,
-    },
-    {
-      label: "Days tracked",
-      value:
-        daysTracked !== null
-          ? `${daysTracked} day${daysTracked === 1 ? "" : "s"}`
-          : "Not tracked",
-      description:
-        daysTracked !== null
-          ? `Time since you logged ${skill.name}.`
-          : "Tracking duration unavailable.",
-      icon: Clock3,
     },
   ];
 
@@ -824,9 +793,6 @@ export default function SkillDetailPage() {
                 {icon}
               </span>
               <div className="space-y-3">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/80 backdrop-blur">
-                  Skill overview
-                </div>
                 <h1 id="skill-overview" className="text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
                   {skill.name}
                 </h1>
@@ -854,11 +820,11 @@ export default function SkillDetailPage() {
               </div>
             </div>
           </div>
-          <div className="relative mt-8 flex flex-wrap gap-2 md:flex-nowrap">
+          <div className="relative mt-8 grid grid-cols-2 gap-2">
             {stats.map(({ label, value, icon: Icon }) => (
               <div
                 key={label}
-                className="group flex min-w-[140px] flex-1 basis-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-2 py-1 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10 md:min-w-0"
+                className="group flex min-w-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-2 py-1 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10"
               >
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80">
                   <Icon className="size-2.5" aria-hidden="true" />
