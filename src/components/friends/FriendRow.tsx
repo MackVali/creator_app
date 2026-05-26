@@ -46,9 +46,9 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
       ? rawProfileUrl
       : defaultProfileHref;
   const title = isExternalProfile ? rawProfileUrl : undefined;
-  const statusText = f.isOnline ? "Online now" : "Offline";
+  const statusText = f.isOnline ? "Online now" : null;
   const statusIndicatorClass = f.isOnline ? "bg-emerald-500" : "bg-white/40";
-  const statusTextClass = f.isOnline ? "text-emerald-300" : "text-white/40";
+  const statusTextClass = "text-emerald-300";
   const displayName = f.displayName || f.username;
   const avatarSrc = f.avatarUrl?.trim() || null;
   const fallbackInitials = getInitials(displayName, f.username);
@@ -60,7 +60,7 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
           href={href}
           className="group flex flex-1 items-center gap-4 min-w-0 rounded-2xl pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
           prefetch={false}
-          aria-label={`View ${displayName}'s profile — ${statusText}`}
+          aria-label={`View ${displayName}'s profile${statusText ? ` — ${statusText}` : ""}`}
           title={title}
         >
           <div className="relative flex-shrink-0">
@@ -89,7 +89,7 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
             </div>
             <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full ring-2 ring-black">
               <span className={`h-2 w-2 rounded-full ${statusIndicatorClass}`} aria-hidden />
-              <span className="sr-only">{statusText}</span>
+              {statusText ? <span className="sr-only">{statusText}</span> : null}
             </span>
           </div>
 
@@ -103,7 +103,7 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
               </p>
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
                 <span className={`h-1.5 w-1.5 rounded-full ${statusIndicatorClass}`} aria-hidden />
-                <span className={statusTextClass}>{statusText}</span>
+                {statusText ? <span className={statusTextClass}>{statusText}</span> : null}
                 {f.hasRing && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white/70">
                     <span
@@ -132,7 +132,7 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
           </div>
         </Link>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="hidden shrink-0 items-center gap-2 sm:flex">
           <MessageFriendButton
             friend={f}
             className="rounded-2xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:border-white/30 hover:bg-white/10 active:scale-[0.97]"
