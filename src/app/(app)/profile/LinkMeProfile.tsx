@@ -406,7 +406,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
                   <Menu className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-56 border border-gray-200 bg-gradient-to-b from-gray-100 to-gray-200 text-gray-900">
                 <DropdownMenuLabel>Profile actions</DropdownMenuLabel>
                 <DropdownMenuItem
                   className="flex items-center gap-2"
