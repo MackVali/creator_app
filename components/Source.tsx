@@ -3059,7 +3059,7 @@ export default function Source() {
                 <Plug className="size-3" /> Paid upgrade
               </Badge>
             </div>
-            <div className="rounded-[28px] border border-zinc-800/70 bg-zinc-900/60 p-1 shadow-[0_20px_45px_rgba(0,0,0,0.8)]">
+            <div className="rounded-md border border-zinc-800/70 bg-zinc-900/60 p-1 shadow-[0_20px_45px_rgba(0,0,0,0.8)]">
               <div className="grid min-w-full grid-cols-[repeat(5,minmax(0,1fr))] gap-2 text-xs sm:gap-3 sm:text-sm">
                 {overviewTiles.map((tile) => {
                   const isActive = selectedOverviewSection === tile.key
@@ -3070,7 +3070,7 @@ export default function Source() {
                       onClick={() => setSelectedOverviewSection(tile.key)}
                       aria-pressed={isActive}
                       className={cn(
-                        "flex flex-col items-center justify-center gap-1 rounded-2xl border px-3 py-4 text-center text-xs text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60 sm:px-4 sm:py-5 sm:text-sm",
+                        "flex flex-col items-center justify-center gap-1 rounded-md border px-3 py-4 text-center text-xs text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60 sm:px-4 sm:py-5 sm:text-sm",
                         "border-transparent bg-zinc-950/60",
                         isActive &&
                           "border-zinc-600 bg-zinc-900/80 text-white shadow-[inset_0_2px_6px_rgba(255,255,255,0.08),0_14px_35px_rgba(0,0,0,0.75)]"
@@ -3964,9 +3964,6 @@ export default function Source() {
                           {durationMinutes} min service
                         </span>
                       )}
-                      <p className="mt-auto text-[8px] uppercase tracking-[0.3em] text-zinc-500">
-                        Updated {formatRelativeTime(listing.updated_at)}
-                      </p>
                     </div>
                   </button>
                 )
@@ -4042,9 +4039,6 @@ export default function Source() {
                     <p className="text-[10px] text-zinc-400">{priceLabel}</p>
                     <p className="text-[9px] uppercase tracking-[0.3em] text-zinc-500">
                       Status · {availabilityLabels[listing.status]}
-                    </p>
-                    <p className="mt-auto text-[8px] uppercase tracking-[0.3em] text-zinc-500">
-                      Updated {formatRelativeTime(listing.updated_at)}
                     </p>
                   </div>
                 </button>
