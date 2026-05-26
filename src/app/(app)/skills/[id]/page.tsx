@@ -461,7 +461,6 @@ export default function SkillDetailPage() {
               <div className="flex items-start gap-5">
                 <Skeleton className="h-[88px] w-[88px] rounded-3xl border border-white/10 bg-white/10" />
                 <div className="flex flex-col gap-3">
-                  <Skeleton className="h-6 w-28 rounded-full bg-white/10" />
                   <Skeleton className="h-10 w-48 bg-white/10 sm:w-64" />
                   <div className="flex gap-2">
                     <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
@@ -471,11 +470,11 @@ export default function SkillDetailPage() {
                 </div>
               </div>
             </div>
-            <div className="relative mt-8 flex flex-wrap gap-2 md:flex-nowrap">
-              {Array.from({ length: 4 }).map((_, index) => (
+            <div className="relative mt-8 grid grid-cols-2 gap-2">
+              {Array.from({ length: 2 }).map((_, index) => (
                 <div
                   key={index}
-                  className="flex min-w-[140px] flex-1 basis-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
+                  className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
                 >
                   <Skeleton className="size-6 rounded-full bg-white/10" />
                   <div className="flex min-w-0 flex-1 flex-col gap-1.5">
