@@ -452,7 +452,7 @@ export default function SearchFriends({
                   <p className="text-sm font-semibold text-white whitespace-nowrap">
                     {profile.displayName}
                   </p>
-                  <p className="truncate text-xs text-white/60">
+                  <p className="text-xs text-white/60 whitespace-nowrap">
                     @{profile.username} • {profile.role}
                   </p>
                 </div>
