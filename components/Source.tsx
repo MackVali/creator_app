@@ -3059,7 +3059,7 @@ export default function Source() {
                 <Plug className="size-3" /> Paid upgrade
               </Badge>
             </div>
-            <div className="rounded-xl border border-zinc-800/70 bg-zinc-900/60 p-1 shadow-[0_20px_45px_rgba(0,0,0,0.8)]">
+            <div className="rounded-md border border-zinc-800/70 bg-zinc-900/60 p-1 shadow-[0_20px_45px_rgba(0,0,0,0.8)]">
               <div className="grid min-w-full grid-cols-[repeat(5,minmax(0,1fr))] gap-2 text-xs sm:gap-3 sm:text-sm">
                 {overviewTiles.map((tile) => {
                   const isActive = selectedOverviewSection === tile.key
