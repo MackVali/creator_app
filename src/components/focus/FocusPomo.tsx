@@ -166,6 +166,23 @@ function formatSignedTimerMs(totalMs: number): string {
   return `${sign}${paddedMinutes}:${paddedSeconds}.${paddedCentiseconds}`;
 }
 
+function clampTimerRingProgress(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(value, 0), 1);
+}
+
+function getCountdownTimerRingProgress({
+  remainingMs,
+  totalDurationMs,
+}: {
+  remainingMs: number;
+  totalDurationMs: number;
+}): number {
+  if (totalDurationMs <= 0) return 0;
+
+  return clampTimerRingProgress(remainingMs / totalDurationMs);
+}
+
 function createLocalSessionId(): string {
   return (
     globalThis.crypto?.randomUUID?.() ??
@@ -1312,6 +1329,21 @@ function deriveScopeOptions(
   };
 }
 
+function withSourceScopeOption(
+  options: ScopeOption[],
+  source: FocusPomoSource | null | undefined,
+  kind: "monument" | "skill"
+): ScopeOption[] {
+  const sourceOption = getSourceScopeOption(source, kind);
+  if (!sourceOption) return options;
+
+  const mergedOptions = new Map<string, ScopeOption>();
+  options.forEach((option) => mergeScopeOption(mergedOptions, option));
+  mergeScopeOption(mergedOptions, sourceOption);
+
+  return sortScopeOptions(Array.from(mergedOptions.values()));
+}
+
 function deriveConstraintOptions(
   items: FocusPomoQueueItem[]
 ): Pick<AvailableConstraintOptions, "tags" | "goals" | "campaigns" | "routines"> {
@@ -2241,6 +2273,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const [hasRunStarted, setHasRunStarted] = useState(false);
   const [isRunLogExpanded, setIsRunLogExpanded] = useState(false);
   const previousActiveIndexRef = useRef(activeIndex);
+  const initializedSourceScopeRef = useRef<string | null>(null);
   const previousTimerItemRef = useRef<{
     itemKey: string | null;
     durationMs: number;
@@ -2250,6 +2283,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const timerBaseRemainingMsRef = useRef(0);
   const elapsedMsRef = useRef(0);
   const remainingMsRef = useRef(0);
+  const previousStopwatchSecondInMinuteRef = useRef<number | null>(null);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [isQueueExpanded, setIsQueueExpanded] = useState(false);
   const [selectedMonumentIds, setSelectedMonumentIds] = useState<string[]>([]);
@@ -2593,6 +2627,27 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   }, [open, source?.sourceId, source?.sourceType]);
 
   useEffect(() => {
+    if (!open || !source?.sourceId) {
+      initializedSourceScopeRef.current = null;
+      return;
+    }
+
+    const sourceScopeKey = `${source.sourceType}:${source.sourceId}`;
+    if (initializedSourceScopeRef.current === sourceScopeKey) return;
+
+    initializedSourceScopeRef.current = sourceScopeKey;
+
+    if (source.sourceType === "monument") {
+      setSelectedMonumentIds([source.sourceId]);
+      setSelectedSkillIds([]);
+      return;
+    }
+
+    setSelectedSkillIds([source.sourceId]);
+    setSelectedMonumentIds([]);
+  }, [open, source?.sourceId, source?.sourceType]);
+
+  useEffect(() => {
     const shouldResetActiveIndex =
       (!showRoutinesSection && selectedRoutineIds.length > 0) ||
       (!showGoalsSection && selectedGoalIds.length > 0) ||
@@ -2664,6 +2719,36 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       return;
     }
 
+    const selectedSourceScope =
+      source && scopeSources.length === 1
+        ? scopeSources.find(
+            (scopeSource) =>
+              scopeSource.sourceType === source.sourceType &&
+              scopeSource.sourceId === source.sourceId
+          )
+        : null;
+
+    if (selectedSourceScope) {
+      setActiveIndex(0);
+
+      if (queueLoading) {
+        setScopeQueueLoading(true);
+        setScopeQueueError(null);
+        return;
+      }
+
+      if (!queueError) {
+        setScopeQueue(
+          mergeScopeQueueItems(
+            queue.map((item) => annotateScopeWorkItem(item, selectedSourceScope))
+          )
+        );
+        setScopeQueueLoading(false);
+        setScopeQueueError(null);
+        return;
+      }
+    }
+
     let stale = false;
 
     setActiveIndex(0);
@@ -2705,6 +2790,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   }, [
     open,
     source,
+    queue,
+    queueError,
+    queueLoading,
     selectedMonumentIds,
     selectedSkillIds,
     availableScopeOptions,
@@ -2725,11 +2813,15 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   );
   const monumentOptions =
     availableScopeOptions.monuments.length > 0
-      ? availableScopeOptions.monuments
+      ? withSourceScopeOption(
+          availableScopeOptions.monuments,
+          displaySource,
+          "monument"
+        )
       : queueDerivedScopeOptions.monuments;
   const skillOptions =
     availableScopeOptions.skills.length > 0
-      ? availableScopeOptions.skills
+      ? withSourceScopeOption(availableScopeOptions.skills, displaySource, "skill")
       : queueDerivedScopeOptions.skills;
   const queueDerivedConstraintOptions = deriveConstraintOptions([
     ...queue,
@@ -2874,10 +2966,46 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const pomoDurationMinutes = currentItem?.durationMinutes ?? 25;
   const currentTimerDurationMs = pomoDurationMinutes * 60 * 1000;
   const currentItemTimerKey = currentItem?.id ?? null;
+  const timerMatchesCurrentItem =
+    previousTimerItemRef.current?.itemKey === currentItemTimerKey &&
+    previousTimerItemRef.current.durationMs === currentTimerDurationMs;
+  const canCompleteCurrentRun = Boolean(
+    currentItem &&
+      hasRunStarted &&
+      (isRunning ||
+        elapsedMs > 0 ||
+        (mode === "pomo" &&
+          timerMatchesCurrentItem &&
+          remainingMs !== currentTimerDurationMs))
+  );
   const timerDisplay = formatSignedTimerMs(
     mode === "pomo" ? remainingMs : elapsedMs
   );
   const timerLabel = mode === "pomo" ? "COUNTDOWN" : "STOPWATCH";
+  const timerRingRadius = 18;
+  const timerRingCircumference = 2 * Math.PI * timerRingRadius;
+  const countdownRingProgress = getCountdownTimerRingProgress({
+    remainingMs,
+    totalDurationMs: currentTimerDurationMs,
+  });
+  const elapsedSeconds = Math.floor(Math.max(elapsedMs, 0) / 1000);
+  const stopwatchSecondInMinute = elapsedSeconds % 60;
+  const stopwatchRingProgress = stopwatchSecondInMinute / 60;
+  const timerRingProgress =
+    mode === "stopwatch" ? stopwatchRingProgress : countdownRingProgress;
+  const timerRingDashOffset =
+    timerRingCircumference * (1 - timerRingProgress);
+  const previousStopwatchSecondInMinute =
+    previousStopwatchSecondInMinuteRef.current;
+  const isStopwatchRingReset =
+    mode === "stopwatch" &&
+    previousStopwatchSecondInMinute !== null &&
+    previousStopwatchSecondInMinute >= 59 &&
+    stopwatchSecondInMinute === 0;
+  const shouldAnimateTimerRing =
+    !prefersReducedMotion && !isStopwatchRingReset;
+  const timerRingTransition =
+    shouldAnimateTimerRing ? "stroke-dashoffset 950ms linear" : "none";
   const latestRunResult = runHistory[0] ?? null;
   const earlierRunResults = runHistory.slice(1);
   const visibleEarlierRunResults = [...earlierRunResults].reverse();
@@ -2898,6 +3026,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const currentRoutineDisplay = getItemRoutineDisplay(currentItem);
   const currentMetaDisplay =
     currentItem?.kind === "project" ? currentGoalDisplay : currentRoutineDisplay;
+  const activeCardLoading = effectiveQueueLoading && !currentItem;
   const currentEnergyLevel = normalizeFlameLevel(
     currentItem?.energyCode,
     currentItem?.energyLabel
@@ -3042,9 +3171,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const cardState: FocusPomoCardState = effectiveQueueLoading
     ? {
         badge: "QUEUE",
-        title: hasSelectedScope
-          ? "Loading scope work..."
-          : "Loading your execution queue",
+        title: "Loading focus item",
         subtitle: hasSelectedScope
           ? "Pulling eligible habits and projects for this scope."
           : "Pulling habits and projects for this source.",
@@ -3060,7 +3187,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       : scopeEmpty
         ? {
             badge: "SCOPE",
-            title: "No work matches this scope.",
+            title: "No focus items in this scope",
             subtitle: "Clear filters or choose different constraints.",
             tone: "empty",
           }
@@ -3076,7 +3203,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           }
         : {
             badge: "QUEUE",
-            title: "No work found here yet",
+            title: "No focus items in this scope",
             subtitle:
               "Add habits or projects to this Monument/Skill to run them from FocusPomo.",
             tone: "empty",
@@ -3121,6 +3248,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   useEffect(() => {
     remainingMsRef.current = remainingMs;
   }, [remainingMs]);
+
+  useEffect(() => {
+    previousStopwatchSecondInMinuteRef.current =
+      mode === "stopwatch" ? stopwatchSecondInMinute : null;
+  }, [mode, stopwatchSecondInMinute]);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -3256,6 +3388,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       return;
     }
 
+    if (!currentItem) return;
+
     setHasRunStarted(true);
     setIsRunning(true);
     console.info("Focus pomo start requested", { mode, source });
@@ -3288,7 +3422,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   };
 
   const handleComplete = () => {
-    if (!currentItem) return;
+    if (!canCompleteCurrentRun || !currentItem) return;
 
     const plannedMs = currentTimerDurationMs;
     const actualMs =
@@ -3937,19 +4071,36 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                     <div className="grid gap-3 sm:gap-4 md:grid-cols-[minmax(0,1fr)_6.5rem] md:items-start">
                       <div className="min-w-0">
                         <div className="flex min-w-0 items-start gap-2.5 sm:gap-4">
-                          {currentItemIcon ? (
+                          {activeCardLoading ? (
+                            <div className="flex size-10 shrink-0 animate-pulse items-center justify-center rounded-lg border border-white/10 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-12px_18px_rgba(0,0,0,0.28)] sm:size-14 sm:rounded-xl" />
+                          ) : currentItemIcon ? (
                             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.045] text-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-12px_18px_rgba(0,0,0,0.28)] sm:size-14 sm:rounded-xl sm:text-2xl">
                               <span aria-hidden="true">{currentItemIcon}</span>
                             </div>
                           ) : null}
                           <div className="flex min-w-0 flex-1 items-start gap-1.5 overflow-visible sm:gap-3">
                             <div className="min-w-0 flex-1">
-                              <h2
-                                id={titleId}
-                                className="min-w-0 max-w-2xl break-words text-[1.35rem] font-semibold uppercase leading-tight tracking-normal text-white min-[390px]:text-[1.55rem] sm:text-4xl"
-                              >
-                                {cardState.title}
-                              </h2>
+                              {activeCardLoading ? (
+                                <>
+                                  <h2 id={titleId} className="sr-only">
+                                    {cardState.title}
+                                  </h2>
+                                  <div
+                                    className="max-w-2xl space-y-2 py-1.5 sm:space-y-3 sm:py-2"
+                                    aria-hidden="true"
+                                  >
+                                    <div className="h-7 w-11/12 animate-pulse rounded-lg bg-white/10 min-[390px]:h-8 sm:h-10" />
+                                    <div className="h-7 w-7/12 animate-pulse rounded-lg bg-white/[0.07] min-[390px]:h-8 sm:h-10" />
+                                  </div>
+                                </>
+                              ) : (
+                                <h2
+                                  id={titleId}
+                                  className="min-w-0 max-w-2xl break-words text-[1.35rem] font-semibold uppercase leading-tight tracking-normal text-white min-[390px]:text-[1.55rem] sm:text-4xl"
+                                >
+                                  {cardState.title}
+                                </h2>
+                              )}
                             </div>
                             {currentItem ? (
                               <span className="relative flex h-11 w-8 shrink-0 items-start justify-center overflow-visible sm:h-16 sm:w-12">
@@ -3963,35 +4114,45 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           </div>
                         </div>
 
-                        <div
-                          className={
-                            currentMetaDisplay
-                              ? "mt-2 flex w-full flex-wrap items-center gap-1.5 sm:mt-3 sm:w-fit sm:gap-2"
-                              : "mt-2 flex w-full flex-wrap items-center gap-1.5 sm:mt-3 sm:w-fit sm:gap-2"
-                          }
-                        >
+                        {activeCardLoading ? (
+                          <div
+                            className="mt-2 flex w-full flex-wrap items-center gap-1.5 sm:mt-3 sm:w-fit sm:gap-2"
+                            aria-hidden="true"
+                          >
+                            <div className="h-5 w-20 animate-pulse rounded-md border border-white/10 bg-white/[0.07] sm:h-7 sm:w-24 sm:rounded-lg" />
+                            <div className="h-5 w-36 animate-pulse rounded-md border border-white/10 bg-white/[0.045] sm:h-7 sm:w-44 sm:rounded-lg" />
+                          </div>
+                        ) : (
                           <div
                             className={
-                              cardState.tone === "error"
-                                ? "inline-flex min-w-0 items-center justify-center rounded-md border border-red-300/25 bg-red-950/25 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-red-100/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
-                                : "inline-flex min-w-0 items-center justify-center rounded-md border border-white/10 bg-black/40 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-zinc-300/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
+                              currentMetaDisplay
+                                ? "mt-2 flex w-full flex-wrap items-center gap-1.5 sm:mt-3 sm:w-fit sm:gap-2"
+                                : "mt-2 flex w-full flex-wrap items-center gap-1.5 sm:mt-3 sm:w-fit sm:gap-2"
                             }
                           >
-                            <span className="min-w-0 truncate">
-                              {currentItem?.rawTypeLabel ?? cardState.badge}
-                            </span>
-                          </div>
-                          {currentMetaDisplay ? (
-                            <div className="inline-flex min-w-0 max-w-[calc(100%-3.5rem)] items-center justify-start gap-1.5 rounded-md border border-white/10 bg-black/25 px-2 py-0.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:max-w-[13rem] sm:gap-2 sm:rounded-lg sm:px-2.5 sm:py-1">
-                              <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
-                                {currentMetaDisplay.icon}
-                              </span>
-                              <span className="min-w-0 truncate text-[10px] font-semibold text-zinc-400 sm:text-[11px]">
-                                {currentMetaDisplay.name}
+                            <div
+                              className={
+                                cardState.tone === "error"
+                                  ? "inline-flex min-w-0 items-center justify-center rounded-md border border-red-300/25 bg-red-950/25 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-red-100/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
+                                  : "inline-flex min-w-0 items-center justify-center rounded-md border border-white/10 bg-black/40 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-zinc-300/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
+                              }
+                            >
+                              <span className="min-w-0 truncate">
+                                {currentItem?.rawTypeLabel ?? cardState.badge}
                               </span>
                             </div>
-                          ) : null}
-                        </div>
+                            {currentMetaDisplay ? (
+                              <div className="inline-flex min-w-0 max-w-[calc(100%-3.5rem)] items-center justify-start gap-1.5 rounded-md border border-white/10 bg-black/25 px-2 py-0.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:max-w-[13rem] sm:gap-2 sm:rounded-lg sm:px-2.5 sm:py-1">
+                                <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                                  {currentMetaDisplay.icon}
+                                </span>
+                                <span className="min-w-0 truncate text-[10px] font-semibold text-zinc-400 sm:text-[11px]">
+                                  {currentMetaDisplay.name}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
 
                         {scopeEmpty ? (
                           <button
@@ -4007,36 +4168,55 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       <div className="hidden justify-self-end md:block">
                         <div className="relative flex size-24 rotate-3 items-center justify-center border border-white/10 bg-[#0b0e11] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-18px_28px_rgba(0,0,0,0.44),0_18px_34px_-26px_rgba(0,0,0,0.9)] [clip-path:polygon(18%_0,88%_7%,100%_55%,74%_100%,8%_90%,0_34%)]">
                           <div className="flex size-14 -rotate-3 items-center justify-center rounded-xl border border-white/10 bg-white/[0.045] text-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-12px_18px_rgba(0,0,0,0.28)]">
-                            <span aria-hidden="true">
-                              {currentItemIcon ?? displaySource.icon ?? "</>"}
-                            </span>
+                            {activeCardLoading ? (
+                              <span className="size-8 animate-pulse rounded-lg bg-white/10" />
+                            ) : (
+                              <span aria-hidden="true">
+                                {currentItemIcon ?? displaySource.icon ?? "</>"}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    {currentItem ? (
+                    {currentItem || activeCardLoading ? (
                       <div
                         role="group"
                         aria-label="Current item actions"
                         className="mt-3 grid w-full grid-cols-2 gap-2 border-t border-white/[0.08] pt-3 sm:mt-5 sm:max-w-sm sm:pt-4"
                       >
-                        <button
-                          type="button"
-                          aria-label="Skip current item"
-                          onClick={handleSkip}
-                          className="inline-flex min-h-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.035] px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
-                        >
-                          Skip
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="Complete current item"
-                          onClick={handleComplete}
-                          className="inline-flex min-h-9 items-center justify-center rounded-lg border border-emerald-300/35 bg-emerald-500/12 px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-emerald-100 transition hover:border-emerald-300/50 hover:bg-emerald-500/18 focus:outline-none focus:ring-2 focus:ring-emerald-200/70 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
-                        >
-                          Complete
-                        </button>
+                        {activeCardLoading ? (
+                          <>
+                            <div className="min-h-9 animate-pulse rounded-lg border border-white/10 bg-white/[0.035] sm:min-h-10 sm:rounded-xl" />
+                            <div className="min-h-9 animate-pulse rounded-lg border border-white/12 bg-white/[0.05] sm:min-h-10 sm:rounded-xl" />
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              aria-label="Skip current item"
+                              onClick={handleSkip}
+                              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.035] px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
+                            >
+                              Skip
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Complete current item"
+                              onClick={handleComplete}
+                              aria-disabled={!canCompleteCurrentRun}
+                              disabled={!canCompleteCurrentRun}
+                              className={
+                                canCompleteCurrentRun
+                                  ? "inline-flex min-h-9 items-center justify-center rounded-lg border border-emerald-300/45 bg-[linear-gradient(180deg,rgba(16,185,129,0.74),rgba(5,150,105,0.82)_48%,rgba(6,78,59,0.98))] px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.32),inset_0_-5px_0_rgba(4,120,87,0.88),0_20px_42px_-30px_rgba(16,185,129,0.95)] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
+                                  : "inline-flex min-h-9 cursor-not-allowed items-center justify-center rounded-lg border border-white/12 bg-zinc-900/90 px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
+                              }
+                            >
+                              Complete
+                            </button>
+                          </>
+                        )}
                       </div>
                     ) : null}
 
@@ -4044,7 +4224,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                   </div>
                 </section>
 
-                {currentItem ? (
+                {currentItem || activeCardLoading ? (
                   <div className="relative overflow-hidden rounded-[18px] border border-zinc-700/50 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
                     <motion.div
                       layout
@@ -4067,7 +4247,26 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           ease: [0.22, 1, 0.36, 1],
                         }}
                       >
-                        {visibleQueueItems.map((item, index) => {
+                        {activeCardLoading
+                          ? Array.from({ length: 3 }).map((_, index) => (
+                              <div
+                                key={`queue-skeleton-${index}`}
+                                className={
+                                  index === 0
+                                    ? "relative flex min-w-0 items-center gap-2 border border-white/10 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-4"
+                                    : "flex min-w-0 items-center gap-2 border-t border-white/[0.10] px-3 py-2.5 opacity-60 sm:gap-3 sm:border-l sm:border-t-0 sm:px-4 sm:py-4"
+                                }
+                              >
+                                <div className="size-7 shrink-0 animate-pulse rounded-md border border-white/12 bg-white/[0.045] sm:size-8 sm:rounded-lg" />
+                                <div className="size-7 shrink-0 animate-pulse rounded-md border border-white/10 bg-white/[0.04] sm:size-8 sm:rounded-lg" />
+                                <div className="min-w-0 flex-1 space-y-1.5">
+                                  <div className="h-3.5 w-10/12 animate-pulse rounded-full bg-white/10 sm:h-4" />
+                                  <div className="h-2.5 w-20 animate-pulse rounded-full bg-white/[0.06] sm:h-3" />
+                                </div>
+                                <div className="ml-auto h-7 w-5 shrink-0 animate-pulse rounded-full bg-white/[0.05] sm:h-9 sm:w-7" />
+                              </div>
+                            ))
+                          : visibleQueueItems.map((item, index) => {
                           const position = activeIndex + index + 1;
                           const selected = index === 0;
                           const previewIcon = itemDisplayIcon(item);
@@ -4142,7 +4341,38 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 <div className="grid grid-cols-[minmax(6rem,1fr)_minmax(0,2fr)] items-stretch gap-2.5 sm:grid-cols-[minmax(12rem,18rem)_1fr] sm:items-center sm:gap-4">
                   <div className="flex min-w-0 overflow-hidden flex-col justify-center gap-1 rounded-xl border border-white/[0.08] bg-white/[0.025] px-1.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:border-0 sm:border-r sm:bg-transparent sm:px-0 sm:py-0 sm:pr-5">
                     <div className="flex min-w-0 items-center gap-1 sm:gap-3">
-                      <div className="size-5 shrink-0 rounded-full border-[3px] border-white/[0.18] border-t-white/55 sm:size-11 sm:border-[6px]" />
+                      <svg
+                        aria-hidden="true"
+                        className="size-5 shrink-0 -rotate-90 overflow-visible sm:size-11"
+                        viewBox="0 0 44 44"
+                      >
+                        <circle
+                          cx="22"
+                          cy="22"
+                          fill="none"
+                          r={timerRingRadius}
+                          stroke="rgba(16, 185, 129, 0.18)"
+                          strokeWidth="6"
+                        />
+                        <circle
+                          cx="22"
+                          cy="22"
+                          fill="none"
+                          r={timerRingRadius}
+                          stroke={
+                            mode === "pomo"
+                              ? "rgba(209, 250, 229, 0.92)"
+                              : "rgba(255, 255, 255, 0.78)"
+                          }
+                          strokeDasharray={timerRingCircumference}
+                          strokeDashoffset={timerRingDashOffset}
+                          strokeLinecap="round"
+                          strokeWidth="6"
+                          style={{
+                            transition: timerRingTransition,
+                          }}
+                        />
+                      </svg>
                       <p className="min-w-0 truncate text-[7px] font-semibold uppercase tracking-[0.08em] text-zinc-300/80 sm:text-[10px] sm:tracking-[0.22em]">
                         {timerLabel}
                       </p>
@@ -4156,10 +4386,14 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                     <button
                       type="button"
                       onClick={handlePrimaryAction}
+                      disabled={!isRunning && !currentItem}
+                      aria-disabled={!isRunning && !currentItem}
                       className={
                         isRunning
                           ? "inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-white/12 bg-zinc-900/90 px-5 text-sm font-semibold uppercase tracking-[0.12em] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition hover:bg-zinc-800/90 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.18em]"
-                          : "inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-300/45 bg-[linear-gradient(180deg,rgba(16,185,129,0.74),rgba(5,150,105,0.82)_48%,rgba(6,78,59,0.98))] px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.32),inset_0_-5px_0_rgba(4,120,87,0.88),0_20px_42px_-30px_rgba(16,185,129,0.95)] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.22em]"
+                          : currentItem
+                            ? "inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-300/45 bg-[linear-gradient(180deg,rgba(16,185,129,0.74),rgba(5,150,105,0.82)_48%,rgba(6,78,59,0.98))] px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.32),inset_0_-5px_0_rgba(4,120,87,0.88),0_20px_42px_-30px_rgba(16,185,129,0.95)] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.22em]"
+                            : "inline-flex min-h-12 w-full flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-white/12 bg-zinc-900/90 px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.22em]"
                       }
                     >
                       {isRunning ? (
