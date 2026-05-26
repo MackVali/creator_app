@@ -3538,7 +3538,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                     type="button"
                     aria-label="Close focus pomo"
                     onClick={handleClose}
-                    className="inline-flex size-10 items-center justify-center border border-white/15 bg-[#080a0d] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_20px_rgba(0,0,0,0.36),0_18px_34px_-26px_rgba(0,0,0,0.95)] transition [clip-path:polygon(24%_0,76%_0,100%_24%,100%_76%,76%_100%,24%_100%,0_76%,0_24%)] hover:border-white/28 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:size-12"
+                    className="inline-flex size-10 items-center justify-center bg-[#080a0d] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_20px_rgba(0,0,0,0.36),0_18px_34px_-26px_rgba(0,0,0,0.95)] transition [clip-path:polygon(24%_0,76%_0,100%_24%,100%_76%,76%_100%,24%_100%,0_76%,0_24%)] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:size-12"
                   >
                     <X className="size-5 sm:size-6" aria-hidden="true" />
                   </button>
