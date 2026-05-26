@@ -80,8 +80,7 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
 
   return (
     <div className="max-w-full space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-[#aeb5c1]">Notes</h3>
+      <div className="flex justify-end">
         <div className="flex min-w-0 items-center gap-1.5">
           <div className="flex h-8 min-w-0 w-[11rem] max-w-[52vw] items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3">
             <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
