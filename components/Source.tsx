@@ -3070,7 +3070,7 @@ export default function Source() {
                       onClick={() => setSelectedOverviewSection(tile.key)}
                       aria-pressed={isActive}
                       className={cn(
-                        "flex flex-col items-center justify-center gap-1 rounded-xl border px-3 py-4 text-center text-xs text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60 sm:px-4 sm:py-5 sm:text-sm",
+                        "flex flex-col items-center justify-center gap-1 rounded-md border px-3 py-4 text-center text-xs text-zinc-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500/60 sm:px-4 sm:py-5 sm:text-sm",
                         "border-transparent bg-zinc-950/60",
                         isActive &&
                           "border-zinc-600 bg-zinc-900/80 text-white shadow-[inset_0_2px_6px_rgba(255,255,255,0.08),0_14px_35px_rgba(0,0,0,0.75)]"
