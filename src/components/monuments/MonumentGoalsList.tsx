@@ -1700,7 +1700,7 @@ export function MonumentGoalsList({
     if (loading) {
       return (
         <div className={GOAL_GRID_CLASS}>
-          {Array.from({ length: 9 }).map((_, i) => (
+          {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton
               key={i}
               className="h-[100px] w-full rounded-2xl bg-white/10"
