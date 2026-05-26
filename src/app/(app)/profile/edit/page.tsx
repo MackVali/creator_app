@@ -10,11 +10,12 @@ import { useProfileContext } from "@/components/ProfileProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
+  deleteLinkedAccount,
   getLinkedAccounts,
   SupportedPlatform,
   upsertLinkedAccount,
 } from "@/lib/db/linked-accounts";
-import { getSocialLinks } from "@/lib/db/profile-management";
+import { deleteSocialLink, getSocialLinks } from "@/lib/db/profile-management";
 import { updateMyOnboarding } from "@/lib/db/profiles-client";
 import { Profile, ProfileFormData, SocialLink, LinkedAccount } from "@/lib/types";
 import { uploadAvatar } from "@/lib/storage";
@@ -25,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Save, User, Calendar, MapPin, Images, Camera, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, User, Calendar, MapPin, Images, Camera, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import ContentCardManager from "@/components/profile/ContentCardManager";
 import SocialPillsRow from "@/components/profile/SocialPillsRow";
@@ -156,9 +157,11 @@ export default function ProfileEditPage() {
   const [inlineSelectedPlatform, setInlineSelectedPlatform] = useState<SupportedPlatform | null>(
     null,
   );
+  const [isSocialPickerOpen, setIsSocialPickerOpen] = useState(false);
   const [inlineHandle, setInlineHandle] = useState("");
   const [inlineError, setInlineError] = useState<string | null>(null);
-  const [inlineSaving, setInlineSaving] = useState(false);
+  const [inlineAction, setInlineAction] = useState<"save" | "remove" | null>(null);
+  const inlineSaving = inlineAction !== null;
   const inlinePlatformDefinition = inlineSelectedPlatform
     ? getSocialIconDefinition(inlineSelectedPlatform)
     : null;
@@ -323,13 +326,35 @@ export default function ProfileEditPage() {
   }, [linkedAccounts]);
 
   const hasLinkedAccounts = activeLinkedAccounts.length > 0;
+  const inlineSelectedLinkedAccount = inlineSelectedPlatform
+    ? linkedAccounts.find(
+        (account) =>
+          account.platform?.toLowerCase?.() === inlineSelectedPlatform &&
+          account.url?.trim(),
+      )
+    : undefined;
+  const inlineSelectedSocialLinks = inlineSelectedPlatform
+    ? socialLinks.filter((link) => link.platform?.toLowerCase?.() === inlineSelectedPlatform)
+    : [];
+  const inlineCanRemove =
+    Boolean(inlineSelectedLinkedAccount) || inlineSelectedSocialLinks.length > 0;
+
+  const closeSocialEditor = useCallback(() => {
+    setInlineSelectedPlatform(null);
+    setInlineError(null);
+    setInlineHandle("");
+  }, []);
 
   const handlePlatformSelection = useCallback(
     (platform?: SupportedPlatform) => {
       if (!platform) {
-        setInlineSelectedPlatform(null);
+        setIsAvatarSourceDialogOpen(false);
+        setInlineError(null);
+        setIsSocialPickerOpen(true);
         return;
       }
+      setIsAvatarSourceDialogOpen(false);
+      setIsSocialPickerOpen(false);
       setInlineSelectedPlatform(platform);
       setInlineHandle(linkedHandlePrefills[platform] ?? "");
       setInlineError(null);
@@ -348,23 +373,73 @@ export default function ProfileEditPage() {
       return;
     }
 
-    setInlineSaving(true);
+    setInlineAction("save");
     setInlineError(null);
     const { success, error: saveError } = await upsertLinkedAccount(
       user.id,
       inlineSelectedPlatform,
       trimmed,
     );
-    setInlineSaving(false);
+    setInlineAction(null);
 
     if (success) {
-      setInlineSelectedPlatform(null);
-      setInlineHandle("");
+      closeSocialEditor();
       await refreshLinkedAccounts();
     } else {
       setInlineError(saveError || "Failed to link account");
     }
-  }, [inlineHandle, inlineSelectedPlatform, refreshLinkedAccounts, user?.id]);
+  }, [closeSocialEditor, inlineHandle, inlineSelectedPlatform, refreshLinkedAccounts, user?.id]);
+
+  const handleInlineRemove = useCallback(async () => {
+    if (!user?.id || !inlineSelectedPlatform) {
+      return;
+    }
+
+    const linkedAccountExists = linkedAccounts.some(
+      (account) =>
+        account.platform?.toLowerCase?.() === inlineSelectedPlatform &&
+        account.url?.trim(),
+    );
+    const matchingSocialLinks = socialLinks.filter(
+      (link) => link.platform?.toLowerCase?.() === inlineSelectedPlatform,
+    );
+
+    if (!linkedAccountExists && matchingSocialLinks.length === 0) {
+      closeSocialEditor();
+      return;
+    }
+
+    setInlineAction("remove");
+    setInlineError(null);
+
+    const results = await Promise.all([
+      ...(linkedAccountExists
+        ? [deleteLinkedAccount(user.id, inlineSelectedPlatform)]
+        : []),
+      ...matchingSocialLinks.map((link) => deleteSocialLink(link.id, user.id)),
+    ]);
+    const failedResult = results.find((result) => !result.success);
+
+    setInlineAction(null);
+
+    if (failedResult) {
+      setInlineError(failedResult.error || "Failed to remove link");
+      return;
+    }
+
+    setSocialLinks((currentLinks) =>
+      currentLinks.filter((link) => link.platform?.toLowerCase?.() !== inlineSelectedPlatform),
+    );
+    closeSocialEditor();
+    await refreshLinkedAccounts();
+  }, [
+    closeSocialEditor,
+    inlineSelectedPlatform,
+    linkedAccounts,
+    refreshLinkedAccounts,
+    socialLinks,
+    user?.id,
+  ]);
 
   const handleInputChange = (field: keyof ProfileFormData, value: string) => {
     setFormData(prev => ({
@@ -1138,38 +1213,40 @@ export default function ProfileEditPage() {
                       />
                     </button>
                   </Dialog.Trigger>
-                  <Dialog.Content className="absolute left-1/2 top-full z-50 mt-3 w-64 -translate-x-1/2 rounded-[20px] border border-white/10 bg-[#05070c]/95 p-1.5 text-white shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl focus:outline-none md:left-full md:top-1/2 md:ml-4 md:mt-0 md:-translate-y-1/2 md:translate-x-0">
-                    <Dialog.Title className="sr-only">Edit profile photo</Dialog.Title>
-                    <div className="grid gap-1">
-                      <button
-                        type="button"
-                        disabled={avatarSourceLoading !== null}
-                        onClick={() => handleAvatarSourceSelect("photos")}
-                        className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Images className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
-                        <span>{AVATAR_PHOTO_SOURCE_LABELS.photos}</span>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={avatarSourceLoading !== null}
-                        onClick={() => handleAvatarSourceSelect("camera")}
-                        className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Camera className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
-                        <span>{AVATAR_PHOTO_SOURCE_LABELS.camera}</span>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={avatarSourceLoading !== null}
-                        onClick={handleAvatarRemove}
-                        className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Trash2 className="h-4 w-4 shrink-0 text-red-300/85" aria-hidden="true" />
-                        <span>Remove Photo</span>
-                      </button>
-                    </div>
-                  </Dialog.Content>
+                  <Dialog.Portal>
+                    <Dialog.Content className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+8.75rem)] z-50 w-[calc(100vw-2rem)] max-w-[17rem] -translate-x-1/2 rounded-[20px] border border-white/10 bg-[#05070c]/95 p-1.5 text-white shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl focus:outline-none">
+                      <Dialog.Title className="sr-only">Edit profile photo</Dialog.Title>
+                      <div className="grid gap-1">
+                        <button
+                          type="button"
+                          disabled={avatarSourceLoading !== null}
+                          onClick={() => handleAvatarSourceSelect("photos")}
+                          className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Images className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
+                          <span>{AVATAR_PHOTO_SOURCE_LABELS.photos}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={avatarSourceLoading !== null}
+                          onClick={() => handleAvatarSourceSelect("camera")}
+                          className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Camera className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
+                          <span>{AVATAR_PHOTO_SOURCE_LABELS.camera}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={avatarSourceLoading !== null}
+                          onClick={handleAvatarRemove}
+                          className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Trash2 className="h-4 w-4 shrink-0 text-red-300/85" aria-hidden="true" />
+                          <span>Remove Photo</span>
+                        </button>
+                      </div>
+                    </Dialog.Content>
+                  </Dialog.Portal>
                 </div>
               </Dialog.Root>
               <div className="min-w-0 flex-1">
@@ -1587,81 +1664,146 @@ export default function ProfileEditPage() {
         </section>
       ) : null}
 
-      {inlineSelectedPlatform ? (
-        <div className="fixed inset-0 z-60 flex items-center justify-center px-4">
-          <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            onClick={() => {
-              setInlineSelectedPlatform(null);
-              setInlineError(null);
-              setInlineHandle("");
-            }}
-            aria-hidden="true"
-          />
-          <div className="relative w-full max-w-lg rounded-[30px] border border-white/10 bg-[#08090E]/90 p-6 shadow-[0_25px_70px_rgba(2,6,23,0.65)] backdrop-blur-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
+      <Dialog.Root open={isSocialPickerOpen} onOpenChange={setIsSocialPickerOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[260] bg-black/75 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[270] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[28px] border border-white/10 bg-[#07090E]/95 p-4 text-white shadow-[0_30px_90px_rgba(0,0,0,0.72)] backdrop-blur-2xl focus:outline-none sm:p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <Dialog.Title className="text-base font-semibold text-white">
+                  Social links
+                </Dialog.Title>
+                <Dialog.Description className="text-sm text-zinc-400">
+                  Choose a platform to add or edit.
+                </Dialog.Description>
+              </div>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/70 transition hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                  aria-label="Close social links"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </Dialog.Close>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {LINKED_ACCOUNT_ORDER.map((platform) => {
+                const definition = getSocialIconDefinition(platform);
+                const Icon = definition.icon;
+                const prefilledHandle = linkedHandlePrefills[platform];
+
+                return (
+                  <button
+                    key={platform}
+                    type="button"
+                    onClick={() => handlePlatformSelection(platform)}
+                    className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.035] px-3.5 py-2.5 text-left transition hover:border-white/[0.18] hover:bg-white/[0.075] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                  >
+                    <span
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white ${definition.background}`}
+                      aria-hidden="true"
+                    >
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-white">
+                        {definition.label}
+                      </span>
+                      <span className="block truncate text-xs text-zinc-500">
+                        {prefilledHandle ? `@${prefilledHandle}` : "Add account"}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={Boolean(inlineSelectedPlatform)}
+        onOpenChange={(open) => {
+          if (!open && !inlineSaving) {
+            closeSocialEditor();
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[260] bg-black/75 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[270] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[30px] border border-white/10 bg-[#07090E]/95 p-5 text-white shadow-[0_30px_90px_rgba(0,0,0,0.72)] backdrop-blur-2xl focus:outline-none sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
                 {InlinePlatformIcon ? (
                   <span
-                    className={`flex h-12 w-12 items-center justify-center rounded-2xl border border-white/15 bg-white/[0.04] text-white`}
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/[0.045] text-white shadow-[0_14px_34px_rgba(0,0,0,0.3)]"
                     aria-hidden="true"
                   >
                     <InlinePlatformIcon className="h-6 w-6" />
                   </span>
                 ) : null}
-                <div>
-                  <p className="text-[0.65rem] uppercase tracking-[0.4em] text-white/60">
-                    Add a platform
+                <div className="min-w-0">
+                  <p className="text-[0.65rem] font-semibold uppercase tracking-[0.34em] text-white/55">
+                    {inlineCanRemove ? "Edit platform" : "Add platform"}
                   </p>
-                  <p className="text-xl font-semibold text-white">
+                  <Dialog.Title className="truncate text-xl font-semibold text-white">
                     {inlinePlatformDefinition?.label ?? "Add account"}
-                  </p>
+                  </Dialog.Title>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setInlineSelectedPlatform(null);
-                  setInlineError(null);
-                  setInlineHandle("");
-                }}
-                className="text-xs uppercase tracking-[0.35em] text-white/60 transition hover:text-white"
-              >
-                Close
-              </button>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  disabled={inlineSaving}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/70 transition hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Close social link editor"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </Dialog.Close>
             </div>
             <div className="mt-5 space-y-3">
               <Input
                 value={inlineHandle}
                 onChange={(e) => setInlineHandle(e.target.value)}
                 placeholder="Username or URL"
-                className="h-12 rounded-xl border border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40 focus-visible:border-white/40 focus-visible:bg-white/10"
+                className="h-12 rounded-2xl border border-white/15 bg-white/[0.055] text-sm text-white placeholder:text-white/40 focus-visible:border-white/40 focus-visible:bg-white/[0.08] focus-visible:ring-white/15"
                 aria-label={`Add ${inlinePlatformDefinition?.label ?? "platform"} handle`}
               />
               {inlineError ? (
-                <p className="text-xs text-red-400">{inlineError}</p>
+                <p className="text-xs text-red-300">{inlineError}</p>
               ) : null}
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setInlineSelectedPlatform(null);
-                    setInlineError(null);
-                    setInlineHandle("");
-                  }}
-                  disabled={inlineSaving}
-                >
-                  Cancel
-                </Button>
-                <Button type="button" onClick={handleInlineSave} disabled={inlineSaving}>
-                  {inlineSaving ? "Saving..." : "Save link"}
-                </Button>
+              <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:items-center sm:justify-between">
+                {inlineCanRemove ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleInlineRemove}
+                    disabled={inlineSaving}
+                    className="justify-center text-red-300 hover:bg-red-500/10 hover:text-red-200 sm:justify-start"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    {inlineAction === "remove" ? "Removing..." : "Remove"}
+                  </Button>
+                ) : (
+                  <span aria-hidden="true" />
+                )}
+                <div className="flex justify-end gap-2">
+                  <Dialog.Close asChild>
+                    <Button type="button" variant="ghost" disabled={inlineSaving}>
+                      Cancel
+                    </Button>
+                  </Dialog.Close>
+                  <Button type="button" onClick={handleInlineSave} disabled={inlineSaving}>
+                    {inlineAction === "save" ? "Saving..." : "Save link"}
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      ) : null}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }
