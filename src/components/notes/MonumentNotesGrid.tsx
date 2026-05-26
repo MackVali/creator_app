@@ -81,18 +81,18 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
   }
 
   return (
-    <div className="space-y-4 max-w-full">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-[#121316]/80 p-2">
+    <div className="max-w-full space-y-4">
+      <div className="flex items-center gap-2 rounded-[20px] border border-white/12 bg-[linear-gradient(135deg,rgba(57,61,70,0.75),rgba(28,31,38,0.86))] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_10px_24px_-20px_rgba(0,0,0,0.95)]">
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value as "all" | "bookmarked")}
-          className="h-8 rounded-lg border border-white/15 bg-[#1a1c20] px-2 text-xs text-white"
+          className="h-9 shrink-0 rounded-full border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(18,19,24,0.5))] px-3 text-xs font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
         >
           <option value="all">All Notes</option>
           <option value="bookmarked">Bookmarked</option>
         </select>
-        <div className="flex h-8 flex-1 items-center gap-1 rounded-lg border border-white/15 bg-[#1a1c20] px-2">
-          <Search className="h-3.5 w-3.5 text-slate-400" />
+        <div className="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-full border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(18,19,24,0.5))] px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
+          <Search className="h-3.5 w-3.5 shrink-0 text-slate-300" />
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -100,27 +100,30 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
             className="w-full bg-transparent text-xs text-white outline-none placeholder:text-slate-400"
           />
         </div>
-        <button type="button" className="h-8 rounded-lg border border-white/15 bg-[#1a1c20] px-2">
+        <button
+          type="button"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(18,19,24,0.5))] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
+        >
           <Filter className="h-3.5 w-3.5 text-slate-300" />
         </button>
       </div>
       {!hasNotes && !isLoading ? (
-        <div className={cn(monumentNoteTileOuterClass, "max-w-md")}>
+        <div className={cn(monumentNoteTileOuterClass, "w-full")}>
           <div
             className={cn(
               monumentNoteTileInnerClass,
-              "flex flex-col justify-center gap-1 text-center"
+              "flex min-h-[5.5rem] flex-col justify-center gap-1.5 text-left"
             )}
           >
-            <p className="text-sm font-semibold text-slate-50">No notes yet</p>
-            <p className="text-xs font-medium text-slate-300">
+            <p className="text-base font-semibold tracking-tight text-[#f2f4f8]">No notes yet</p>
+            <p className="text-sm text-[#d2d7e0]">
               Capture your first thought here and keep ideas close at hand.
             </p>
           </div>
         </div>
       ) : null}
 
-      <div className="grid w-full max-w-full grid-cols-2 gap-2.5 px-0 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+      <div className="flex w-full max-w-full flex-col gap-3 px-0">
         {visibleNotes.map((note) => (
           <MonumentNoteCard
             key={note.id}
@@ -131,32 +134,22 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
         ))}
 
         {(() => {
-          const columns = 2;
-          const remainder = visibleNotes.length % columns;
-          const spanClass = !hasNotes
-            ? "col-span-2"
-            : remainder === 0
-              ? "col-span-2"
-              : "col-span-1";
-          const isBarVariant = hasNotes && remainder === 0;
-
           return (
             <Link
               href={`/monuments/${monumentId}/notes/new`}
-              className={cn(monumentNoteTileOuterClass, spanClass)}
+              className={cn(monumentNoteTileOuterClass, "w-full")}
               aria-label={hasNotes ? "Add note" : "Create note"}
             >
               <div
                 className={cn(
                   monumentNoteTileInnerClass,
-                  "items-center justify-center gap-2 text-center",
-                  isBarVariant ? "min-h-[4.5rem] flex-row text-left" : "flex-col"
+                  "min-h-[5.75rem] items-center justify-center gap-2.5 text-center"
                 )}
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/35 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_20px_-14px_rgba(0,0,0,0.9)]">
                   <Plus className="h-4 w-4" aria-hidden="true" />
                 </div>
-                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-950">
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#f2f4f8]">
                   {hasNotes ? "Add note" : "Create note"}
                 </span>
               </div>
