@@ -449,7 +449,9 @@ export default function SearchFriends({
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex items-baseline justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-white">{profile.displayName}</p>
+                  <p className="text-sm font-semibold text-white whitespace-normal break-words md:truncate">
+                    {profile.displayName}
+                  </p>
                   <p className="truncate text-xs text-white/60">
                     @{profile.username} • {profile.role}
                   </p>
