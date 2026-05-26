@@ -56,6 +56,14 @@ type FocusPomoRunResult = {
   itemId: string;
   itemKind: string;
   title: string;
+  icon: string | null;
+  energyCode: string | null;
+  energyLabel: string | null;
+  workTypeLabel: string;
+  relationLabel: string | null;
+  relationIcon: string | null;
+  relationType: "goal" | "routine" | null;
+  durationLabel: string | null;
   action: "completed" | "skipped";
   plannedMs: number;
   actualMs: number | null;
@@ -156,11 +164,6 @@ function formatSignedTimerMs(totalMs: number): string {
   const paddedCentiseconds = String(centiseconds).padStart(2, "0");
 
   return `${sign}${paddedMinutes}:${paddedSeconds}.${paddedCentiseconds}`;
-}
-
-function formatTimerDeltaMs(totalMs: number): string {
-  const sign = totalMs > 0 ? "+" : "";
-  return `${sign}${formatSignedTimerMs(totalMs)}`;
 }
 
 function createLocalSessionId(): string {
@@ -1963,6 +1966,35 @@ function normalizeFlameLevel(
   }
 }
 
+function buildRunResultDisplayMetadata(item: FocusPomoQueueItem): Pick<
+  FocusPomoRunResult,
+  | "itemKind"
+  | "icon"
+  | "energyCode"
+  | "energyLabel"
+  | "workTypeLabel"
+  | "relationLabel"
+  | "relationIcon"
+  | "relationType"
+  | "durationLabel"
+> {
+  const itemKind = getFocusItemKind(item);
+  const relation =
+    itemKind === "habit" ? getItemRoutineDisplay(item) : getItemGoalDisplay(item);
+
+  return {
+    itemKind,
+    icon: itemDisplayIcon(item),
+    energyCode: item.energyCode ?? null,
+    energyLabel: item.energyLabel ?? null,
+    workTypeLabel: item.rawTypeLabel ?? itemKind.toUpperCase(),
+    relationLabel: relation?.name ?? null,
+    relationIcon: relation?.icon ?? null,
+    relationType: relation ? (itemKind === "habit" ? "routine" : "goal") : null,
+    durationLabel: item.durationLabel || null,
+  };
+}
+
 async function fetchUserHabitTypeOptions(
   supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
   userId: string
@@ -2206,6 +2238,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   );
   const [activeIndex, setActiveIndex] = useState(0);
   const [runHistory, setRunHistory] = useState<FocusPomoRunResult[]>([]);
+  const [hasRunStarted, setHasRunStarted] = useState(false);
+  const [isRunLogExpanded, setIsRunLogExpanded] = useState(false);
   const previousActiveIndexRef = useRef(activeIndex);
   const previousTimerItemRef = useRef<{
     itemKey: string | null;
@@ -2257,6 +2291,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       setIsRunning(false);
       setScopeOpen(false);
       setIsQueueExpanded(false);
+      setHasRunStarted(false);
+      setIsRunLogExpanded(false);
     }
   }, [open]);
 
@@ -2502,6 +2538,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
       setEnabledItemTypes(DEFAULT_ENABLED_ITEM_TYPES);
       setEnabledHabitTypes(null);
       setRunHistory([]);
+      setHasRunStarted(false);
+      setIsRunLogExpanded(false);
       setScopeOpen(false);
       setIsQueueExpanded(false);
       return;
@@ -2519,6 +2557,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setEnabledItemTypes(DEFAULT_ENABLED_ITEM_TYPES);
     setEnabledHabitTypes(null);
     setRunHistory([]);
+    setHasRunStarted(false);
+    setIsRunLogExpanded(false);
     setScopeOpen(false);
     setIsQueueExpanded(false);
     setQueueLoading(true);
@@ -2563,6 +2603,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     if (shouldResetActiveIndex) {
       setActiveIndex(0);
       setRunHistory([]);
+      setHasRunStarted(false);
+      setIsRunLogExpanded(false);
     }
 
     if (!showRoutinesSection) {
@@ -2836,7 +2878,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     mode === "pomo" ? remainingMs : elapsedMs
   );
   const timerLabel = mode === "pomo" ? "COUNTDOWN" : "STOPWATCH";
-  const visibleRunHistory = runHistory.slice(-5).reverse();
+  const latestRunResult = runHistory[0] ?? null;
+  const earlierRunResults = runHistory.slice(1);
+  const visibleEarlierRunResults = [...earlierRunResults].reverse();
+  const earlierRunResultsCount = earlierRunResults.length;
   const collapsedQueueLimit = 3;
   const queueCollapsedEndIndex = activeIndex + collapsedQueueLimit;
   const hasMoreQueueItems = sortedQueue.length > queueCollapsedEndIndex;
@@ -2857,6 +2902,102 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     currentItem?.energyCode,
     currentItem?.energyLabel
   );
+  const renderRunHistoryRow = (
+    session: FocusPomoRunResult,
+    variant: "latest" | "earlier"
+  ) => {
+    const completed =
+      session.action === "completed" &&
+      session.actualMs !== null &&
+      session.deltaMs !== null;
+    const over = session.resultTone === "over";
+    const hasEnergy = Boolean(session.energyCode || session.energyLabel);
+    const energyLevel = normalizeFlameLevel(
+      session.energyCode,
+      session.energyLabel
+    );
+    const rowClassName =
+      variant === "latest"
+        ? completed
+          ? over
+            ? "relative flex min-w-0 items-center gap-2 border border-red-300/15 bg-red-500/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(239,68,68,0.025),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3"
+            : "relative flex min-w-0 items-center gap-2 border border-emerald-300/15 bg-emerald-500/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(16,185,129,0.025),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3"
+          : "relative flex min-w-0 items-center gap-2 border border-white/10 bg-white/[0.03] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3"
+        : "flex min-w-0 items-center gap-2 border-t border-white/[0.10] px-3 py-2.5 opacity-70 sm:gap-3 sm:px-4 sm:py-3";
+    const statusClassName = completed
+      ? over
+        ? "text-red-200/85"
+        : "text-emerald-200/85"
+      : "text-zinc-400";
+    const timeClassName = completed
+      ? over
+        ? "text-red-300/85"
+        : "text-emerald-300/85"
+      : "text-zinc-400";
+
+    return (
+      <div key={session.id} className={rowClassName}>
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
+          <span aria-hidden="true">
+            {session.icon ?? initialsFallback(session.title, "•")}
+          </span>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+            <p
+              className={
+                variant === "latest"
+                  ? "min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-normal text-white/82 sm:text-sm"
+                  : "min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-normal text-white/68 sm:text-sm"
+              }
+            >
+              {session.title}
+            </p>
+            {hasEnergy ? (
+              <span className="flex h-7 w-5 shrink-0 items-center justify-end overflow-visible sm:h-9 sm:w-7">
+                <FlameEmber
+                  level={energyLevel}
+                  size="sm"
+                  className="shrink-0 overflow-visible [&_svg]:overflow-visible"
+                />
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1 sm:mt-1 sm:gap-1.5">
+            <span className="inline-flex max-w-full items-center rounded-md border border-white/10 bg-black/30 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.1em] text-zinc-300/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:text-[9px] sm:tracking-[0.12em]">
+              <span className="min-w-0 truncate">{session.workTypeLabel}</span>
+            </span>
+            {session.relationLabel ? (
+              <span className="inline-flex min-w-0 max-w-[9.5rem] items-center gap-1 rounded-md border border-white/10 bg-black/20 px-1.5 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] sm:max-w-[13rem] sm:gap-1.5">
+                {session.relationIcon ? (
+                  <span className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[7px] font-semibold text-zinc-200 sm:size-4 sm:text-[8px]">
+                    {session.relationIcon}
+                  </span>
+                ) : null}
+                <span className="min-w-0 truncate text-[9px] font-semibold text-zinc-400 sm:text-[10px]">
+                  {session.relationLabel}
+                </span>
+              </span>
+            ) : null}
+            <span
+              className={`ml-auto whitespace-nowrap pl-1 text-[9px] font-bold uppercase tracking-[0.12em] sm:text-[10px] ${statusClassName}`}
+            >
+              {completed ? "COMPLETED" : "SKIPPED"}
+            </span>
+            {completed ? (
+              <span
+                className={`whitespace-nowrap font-mono text-[9px] font-semibold tabular-nums sm:text-[10px] ${timeClassName}`}
+              >
+                {formatSignedTimerMs(session.actualMs)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  };
   const scopeEmpty =
     !effectiveQueueLoading &&
     !effectiveQueueError &&
@@ -3039,6 +3180,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     setEnabledHabitTypes(null);
     setActiveIndex(0);
     setRunHistory([]);
+    setHasRunStarted(false);
+    setIsRunLogExpanded(false);
   };
 
   const toggleSelectedId = (
@@ -3052,6 +3195,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     );
     setActiveIndex(0);
     setRunHistory([]);
+    setHasRunStarted(false);
+    setIsRunLogExpanded(false);
   };
 
   const toggleMonumentScope = (id: string) => {
@@ -3070,6 +3215,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     );
     setActiveIndex(0);
     setRunHistory([]);
+    setHasRunStarted(false);
+    setIsRunLogExpanded(false);
   };
 
   const toggleHabitType = (type: string) => {
@@ -3085,6 +3232,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     });
     setActiveIndex(0);
     setRunHistory([]);
+    setHasRunStarted(false);
+    setIsRunLogExpanded(false);
   };
 
   const resetCurrentTimer = () => {
@@ -3102,10 +3251,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     if (isRunning) {
       setIsRunning(false);
       resetCurrentTimer();
+      setHasRunStarted(false);
       console.info("Focus pomo cancel requested", { mode, source });
       return;
     }
 
+    setHasRunStarted(true);
     setIsRunning(true);
     console.info("Focus pomo start requested", { mode, source });
   };
@@ -3113,13 +3264,14 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
   const handleSkip = () => {
     if (!currentItem) return;
 
+    setHasRunStarted(true);
+    setIsRunLogExpanded(false);
     setRunHistory((current) => [
-      ...current,
       {
         id: createLocalSessionId(),
         itemId: currentItem.id,
-        itemKind: getFocusItemKind(currentItem),
         title: currentItem.title,
+        ...buildRunResultDisplayMetadata(currentItem),
         action: "skipped",
         plannedMs: currentTimerDurationMs,
         actualMs: null,
@@ -3127,6 +3279,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         completedAt: new Date().toISOString(),
         resultTone: "skipped",
       },
+      ...current,
     ]);
 
     setIsRunning(false);
@@ -3145,13 +3298,14 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
     const deltaMs = actualMs - plannedMs;
 
     // TODO: Wire this to the app's existing completion pathways by item kind/sourceType.
+    setHasRunStarted(true);
+    setIsRunLogExpanded(false);
     setRunHistory((current) => [
-      ...current,
       {
         id: createLocalSessionId(),
         itemId: currentItem.id,
-        itemKind: getFocusItemKind(currentItem),
         title: currentItem.title,
+        ...buildRunResultDisplayMetadata(currentItem),
         action: "completed",
         plannedMs,
         actualMs,
@@ -3159,6 +3313,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         completedAt: new Date().toISOString(),
         resultTone: deltaMs <= 0 ? "under" : "over",
       },
+      ...current,
     ]);
 
     setIsRunning(false);
@@ -3188,7 +3343,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(255,255,255,0.08),transparent_32%),linear-gradient(180deg,rgba(24,24,27,0.36),rgba(0,0,0,0.82)),repeating-linear-gradient(120deg,rgba(255,255,255,0.025)_0px,rgba(255,255,255,0.025)_1px,transparent_1px,transparent_9px)]" />
           <motion.div
-            className="relative flex min-h-dvh w-full flex-col overflow-visible bg-[#050707] px-5 py-6 shadow-[0_40px_110px_-70px_rgba(0,0,0,0.82)] sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-4xl sm:overflow-y-auto sm:rounded-[22px] sm:border sm:border-white/10 sm:px-7"
+            className="relative flex min-h-dvh w-full flex-col overflow-visible bg-[#050707] px-3 py-3 shadow-[0_40px_110px_-70px_rgba(0,0,0,0.82)] sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-4xl sm:overflow-y-auto sm:rounded-[22px] sm:border sm:border-white/10 sm:px-7 sm:py-6"
             initial={
               prefersReducedMotion
                 ? { opacity: 0 }
@@ -3215,110 +3370,51 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
               type="button"
               aria-label="Close focus pomo"
               onClick={handleClose}
-              className="absolute right-4 top-4 z-20 inline-flex size-12 items-center justify-center border border-white/15 bg-[#080a0d] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_20px_rgba(0,0,0,0.36),0_18px_34px_-26px_rgba(0,0,0,0.95)] transition [clip-path:polygon(24%_0,76%_0,100%_24%,100%_76%,76%_100%,24%_100%,0_76%,0_24%)] hover:border-white/28 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:right-7 sm:top-7"
+              className="absolute right-3 top-3 z-20 inline-flex size-10 items-center justify-center border border-white/15 bg-[#080a0d] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_20px_rgba(0,0,0,0.36),0_18px_34px_-26px_rgba(0,0,0,0.95)] transition [clip-path:polygon(24%_0,76%_0,100%_24%,100%_76%,76%_100%,24%_100%,0_76%,0_24%)] hover:border-white/28 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:right-7 sm:top-7 sm:size-12"
             >
-              <X className="size-6" aria-hidden="true" />
+              <X className="size-5 sm:size-6" aria-hidden="true" />
             </button>
 
-            <div className="relative z-10 flex flex-1 flex-col gap-6">
-              <header className="relative flex min-h-12 items-center justify-between pr-14">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-zinc-300/80 min-[390px]:text-[12px] min-[390px]:tracking-[0.28em] sm:tracking-[0.32em]">
-                  FOCUSPOMO
-                </p>
-                <div className="absolute left-1/2 top-1/2 grid w-[10rem] shrink-0 -translate-x-1/2 -translate-y-1/2 grid-cols-2 overflow-hidden rounded-xl border border-white/12 bg-[#050707] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-16px_30px_rgba(0,0,0,0.48)] min-[390px]:w-[11.5rem] sm:w-[16rem]">
-                  {modeOptions.map((option) => {
-                    const selected = mode === option.value;
-
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => handleModeChange(option.value)}
-                        className={
-                          selected && option.value === "pomo"
-                            ? "min-h-10 rounded-lg border border-emerald-300/35 bg-[linear-gradient(180deg,rgba(6,78,59,0.58),rgba(5,150,105,0.16))] px-2 text-[11px] font-semibold tracking-[0.11em] text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-12px_20px_rgba(6,78,59,0.28),0_12px_28px_-24px_rgba(16,185,129,0.95)] min-[390px]:text-[12px] min-[390px]:tracking-[0.16em] sm:min-h-12 sm:px-4 sm:tracking-[0.22em]"
-                            : selected
-                              ? "min-h-10 rounded-lg border border-white/12 bg-white/[0.055] px-2 text-[11px] font-semibold tracking-[0.11em] text-white/86 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-12px_20px_rgba(0,0,0,0.26),0_12px_28px_-24px_rgba(0,0,0,0.95)] min-[390px]:text-[12px] min-[390px]:tracking-[0.16em] sm:min-h-12 sm:px-4 sm:tracking-[0.22em]"
-                            : "min-h-10 rounded-lg border border-transparent px-2 text-[11px] font-semibold tracking-[0.11em] text-white/36 transition hover:border-white/10 hover:bg-white/[0.04] hover:text-white/68 min-[390px]:text-[12px] min-[390px]:tracking-[0.16em] sm:min-h-12 sm:px-4 sm:tracking-[0.22em]"
-                        }
-                        aria-pressed={selected}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </header>
-
-              <main className="flex flex-1 flex-col gap-5">
-                <div className="overflow-hidden rounded-[18px] border border-white/10 bg-zinc-950/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-16px_28px_rgba(0,0,0,0.36)]">
-                  <div className="flex min-h-14 items-center gap-3 bg-black/40 px-4 py-3">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.045] text-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                      {displaySource.icon ? (
-                        <span aria-hidden="true">{displaySource.icon}</span>
-                      ) : (
-                        <Layers3
-                          className="size-4 text-zinc-300/70"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </div>
-                    <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-400/80">
-                          Execution Constraints
-                        </p>
-                        <p className="mt-1 min-w-0 truncate text-sm font-semibold uppercase tracking-[0.08em] text-white/86 sm:text-base">
-                          {scopeSummary}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setScopeOpen((current) => !current)}
-                        aria-expanded={scopeOpen}
-                        aria-controls={executionScopePanelId}
-                        className="shrink-0 rounded-lg border border-white/12 bg-white/[0.055] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-white/24 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35"
-                      >
-                        {scopeOpen ? "Done" : "Adjust"}
-                      </button>
-                    </div>
-                  </div>
-
+            <div className="relative z-10 flex flex-1 flex-col gap-3 sm:gap-6">
+              <main className="flex flex-1 flex-col gap-3 sm:gap-5">
+                {!hasRunStarted ? (
+                  <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-zinc-700/50 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
+                    <div className="overflow-hidden rounded-[17px] border border-white/[0.06] bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]">
                   <AnimatePresence initial={false}>
                     {scopeOpen ? (
                       <motion.div
                         id={executionScopePanelId}
-                        className="overflow-hidden border-t border-white/10 bg-zinc-950/40 px-4 py-4"
+                        className="overflow-hidden border-b border-white/[0.10] bg-black/25 px-3 py-3 sm:px-4 sm:py-4"
                         initial={
                           prefersReducedMotion
                             ? { opacity: 0 }
-                            : { opacity: 0, height: 0 }
+                            : { opacity: 0, height: 0, y: 8 }
                         }
                         animate={
                           prefersReducedMotion
                             ? { opacity: 1 }
-                            : { opacity: 1, height: "auto" }
+                            : { opacity: 1, height: "auto", y: 0 }
                         }
                         exit={
                           prefersReducedMotion
                             ? { opacity: 0 }
-                            : { opacity: 0, height: 0 }
+                            : { opacity: 0, height: 0, y: 8 }
                         }
                         transition={{
                           duration: prefersReducedMotion ? 0.01 : 0.18,
                           ease: [0.22, 1, 0.36, 1],
                         }}
                       >
-                        <div className="max-h-[min(62dvh,34rem)] space-y-4 overflow-y-auto pr-1">
-                          <div className="flex items-center justify-between gap-3">
-                            <h3 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-200/90">
-                              Execution Constraints
+                        <div className="max-h-[min(50dvh,30rem)] space-y-3 overflow-y-auto pr-1 sm:max-h-[min(58dvh,34rem)] sm:space-y-4">
+                          <div className="flex items-center justify-between gap-2 sm:gap-3">
+                            <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200/90 sm:text-[11px] sm:tracking-[0.22em]">
+                              Focus Scope
                             </h3>
                             {hasSelectedScope || hasCustomExecutionFilters ? (
                               <button
                                 type="button"
                                 onClick={resetExecutionFilters}
-                                className="shrink-0 rounded-lg border border-white/12 bg-black/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-300 transition hover:border-white/24 hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35"
+                                className="shrink-0 rounded-lg border border-white/12 bg-black/30 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/24 hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:px-3 sm:text-[10px] sm:tracking-[0.16em]"
                               >
                                 Reset filters
                               </button>
@@ -3326,11 +3422,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           </div>
 
                           <section>
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-400/85">
+                            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-400/85 sm:text-[10px] sm:tracking-[0.22em]">
                               Monuments
                             </p>
                             {monumentOptions.length > 0 ? (
-                              <div className="mt-2 flex flex-wrap gap-2">
+                              <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
                                 {monumentOptions.map((option) => {
                                   const selected = selectedMonumentIds.includes(
                                     option.id
@@ -3346,11 +3442,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                       }
                                       className={
                                         selected
-                                          ? "inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-2.5 py-2 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35"
-                                          : "inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-2.5 py-2 text-xs font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35"
+                                          ? "inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                          : "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
                                       }
                                     >
-                                      <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[10px] font-semibold text-zinc-200">
+                                      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                         {option.icon ??
                                           scopeOptionFallback(
                                             "monument",
@@ -3363,18 +3459,18 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                 })}
                               </div>
                             ) : (
-                              <p className="mt-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm text-zinc-400">
+                              <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                 No monuments available.
                               </p>
                             )}
                           </section>
 
                           <section>
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-400/85">
+                            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-400/85 sm:text-[10px] sm:tracking-[0.22em]">
                               Skills
                             </p>
                             {skillOptions.length > 0 ? (
-                              <div className="mt-2 flex flex-wrap gap-2">
+                              <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
                                 {skillOptions.map((option) => {
                                   const selected = selectedSkillIds.includes(
                                     option.id
@@ -3388,11 +3484,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                       onClick={() => toggleSkillScope(option.id)}
                                       className={
                                         selected
-                                          ? "inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-2.5 py-2 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35"
-                                          : "inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-2.5 py-2 text-xs font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35"
+                                          ? "inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                          : "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
                                       }
                                     >
-                                      <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[10px] font-semibold text-zinc-200">
+                                      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                         {option.icon ??
                                           scopeOptionFallback(
                                             "skill",
@@ -3405,17 +3501,17 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                 })}
                               </div>
                             ) : (
-                              <p className="mt-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm text-zinc-400">
+                              <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                 No skills available.
                               </p>
                             )}
                           </section>
 
                           <section>
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                            <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
                               Work Type
                             </p>
-                            <div className="mt-2 flex flex-wrap gap-2">
+                            <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
                               {workTypeOptions.map((option) => {
                                 const selected = enabledItemTypes.includes(
                                   option.value
@@ -3429,8 +3525,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                     onClick={() => toggleItemType(option.value)}
                                     className={
                                       selected
-                                        ? "inline-flex min-h-9 items-center rounded-full border border-white/20 bg-white/10 px-3 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35"
-                                        : "inline-flex min-h-9 items-center rounded-full border border-white/10 bg-black/30 px-3 text-xs font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35"
+                                        ? "inline-flex min-h-8 items-center rounded-full border border-white/20 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                                        : "inline-flex min-h-8 items-center rounded-full border border-white/10 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
                                     }
                                   >
                                     {option.label}
@@ -3442,10 +3538,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
                           {showHabitTypeSection ? (
                             <section>
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
                                 Habit Type
                               </p>
-                              <div className="mt-2 flex flex-wrap gap-2">
+                              <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
                                 {habitTypePillOptions.map((option) => {
                                   const lockedOff = isLockedOffHabitTypeKey(
                                     option.key
@@ -3466,10 +3562,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                       }
                                       className={
                                         lockedOff
-                                          ? "inline-flex min-h-9 cursor-not-allowed items-center rounded-full border border-white/10 bg-black/20 px-3 text-xs font-semibold text-zinc-600 opacity-70"
+                                          ? "inline-flex min-h-8 cursor-not-allowed items-center rounded-full border border-white/10 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-600 opacity-70 sm:min-h-9 sm:px-3 sm:text-xs"
                                           : selected
-                                            ? "inline-flex min-h-9 items-center rounded-full border border-white/20 bg-white/10 px-3 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35"
-                                            : "inline-flex min-h-9 items-center rounded-full border border-white/10 bg-black/30 px-3 text-xs font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35"
+                                            ? "inline-flex min-h-8 items-center rounded-full border border-white/20 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                                            : "inline-flex min-h-8 items-center rounded-full border border-white/10 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
                                       }
                                     >
                                       {option.label}
@@ -3482,11 +3578,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
                           {showTagsSection ? (
                             <section>
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
                                 Tags
                               </p>
                               {tagOptions.length > 0 ? (
-                                <div className="mt-2 flex flex-wrap gap-2">
+                                <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
                                   {tagOptions.map((option) => {
                                     const selected = selectedTagIds.includes(
                                       option.id
@@ -3505,8 +3601,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                         }
                                         className={
                                           selected
-                                            ? "inline-flex min-h-9 items-center rounded-full border border-white/20 bg-white/10 px-3 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35"
-                                            : "inline-flex min-h-9 items-center rounded-full border border-white/10 bg-black/30 px-3 text-xs font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35"
+                                            ? "inline-flex min-h-8 items-center rounded-full border border-white/20 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                                            : "inline-flex min-h-8 items-center rounded-full border border-white/10 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
                                       }
                                     >
                                       {option.name}
@@ -3515,7 +3611,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   })}
                                 </div>
                               ) : (
-                                <p className="mt-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm text-zinc-400">
+                                <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                   No tags available.
                                 </p>
                               )}
@@ -3524,16 +3620,16 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
                           {showGoalsSection ? (
                             <section>
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
                                 Goals
                               </p>
                               {goalOptions.length > 0 ? (
-                                <div className="mt-2 space-y-3">
+                                <div className="mt-1.5 space-y-2 sm:mt-2 sm:space-y-3">
                                   {groupedGoalOptions.map((group) => (
                                     <div key={group.key}>
-                                      <div className="flex items-center gap-2 text-[11px] font-semibold text-zinc-500">
+                                      <div className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500 sm:gap-2 sm:text-[11px]">
                                         {group.icon ? (
-                                          <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[10px] text-zinc-200">
+                                          <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] text-zinc-200 sm:size-5 sm:text-[10px]">
                                             {group.icon}
                                           </span>
                                         ) : null}
@@ -3541,8 +3637,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                           {group.name}
                                         </span>
                                       </div>
-                                      <div className="mt-2 overflow-x-auto overflow-y-hidden pb-1">
-                                        <div className="inline-flex max-h-32 flex-col flex-wrap content-start gap-2 pr-4">
+                                      <div className="mt-1.5 overflow-x-auto overflow-y-hidden pb-1 sm:mt-2">
+                                        <div className="inline-flex max-h-28 flex-col flex-wrap content-start gap-1.5 pr-3 sm:max-h-32 sm:gap-2 sm:pr-4">
                                           {group.options.map((option) => {
                                             const selected =
                                               selectedGoalIds.includes(
@@ -3562,11 +3658,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                                 }
                                                 className={
                                                   selected
-                                                    ? "inline-flex min-h-9 max-w-[13rem] shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-white/20 bg-white/10 px-2.5 py-2 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:max-w-[16rem]"
-                                                    : "inline-flex min-h-9 max-w-[13rem] shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-white/10 bg-black/30 px-2.5 py-2 text-xs font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:max-w-[16rem]"
+                                                    ? "inline-flex min-h-8 max-w-[12rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-white/20 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:max-w-[16rem] sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                                    : "inline-flex min-h-8 max-w-[12rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:max-w-[16rem] sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
                                                 }
                                               >
-                                                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[10px] font-semibold text-zinc-200">
+                                                <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                                   {option.icon ??
                                                     initialsFallback(
                                                       option.name,
@@ -3585,7 +3681,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   ))}
                                 </div>
                               ) : (
-                                <p className="mt-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm text-zinc-400">
+                                <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                   No goals available.
                                 </p>
                               )}
@@ -3594,11 +3690,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
                           {showCampaignsSection ? (
                             <section>
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
                                 Campaigns
                               </p>
                               {campaignOptions.length > 0 ? (
-                                <div className="mt-2 flex flex-wrap gap-2">
+                                <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
                                   {campaignOptions.map((option) => {
                                     const selected =
                                       selectedCampaignIds.includes(option.id);
@@ -3616,11 +3712,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                         }
                                         className={
                                           selected
-                                            ? "inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-2.5 py-2 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35"
-                                            : "inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-2.5 py-2 text-xs font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35"
+                                            ? "inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                            : "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
                                         }
                                       >
-                                        <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[10px] font-semibold text-zinc-200">
+                                        <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                           {option.icon ?? "C"}
                                         </span>
                                         <span>{option.name}</span>
@@ -3629,7 +3725,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   })}
                                 </div>
                               ) : (
-                                <p className="mt-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm text-zinc-400">
+                                <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                   No campaigns available.
                                 </p>
                               )}
@@ -3638,11 +3734,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
                           {showRoutinesSection ? (
                             <section>
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.22em]">
                                 Routines
                               </p>
                               {routineOptions.length > 0 ? (
-                                <div className="mt-2 flex flex-wrap gap-2">
+                                <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
                                   {routineOptions.map((option) => {
                                     const selected =
                                       selectedRoutineIds.includes(option.id);
@@ -3660,11 +3756,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                         }
                                         className={
                                           selected
-                                            ? "inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-2.5 py-2 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35"
-                                            : "inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-2.5 py-2 text-xs font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35"
+                                            ? "inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                            : "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
                                         }
                                       >
-                                        <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[10px] font-semibold text-zinc-200">
+                                        <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                           {option.icon ?? "R"}
                                         </span>
                                         <span>{option.name}</span>
@@ -3673,7 +3769,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   })}
                                 </div>
                               ) : (
-                                <p className="mt-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm text-zinc-400">
+                                <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                   No routines available.
                                 </p>
                               )}
@@ -3683,102 +3779,124 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       </motion.div>
                     ) : null}
                   </AnimatePresence>
-                </div>
+                      <div className="relative flex min-w-0 items-center gap-2 border border-white/10 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-3">
+                        <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
+                          {displaySource.icon ? (
+                            <span aria-hidden="true">{displaySource.icon}</span>
+                          ) : (
+                            <Layers3
+                              className="size-3.5 text-zinc-300/70 sm:size-4"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <p className="min-w-0 truncate text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38 sm:text-[10px] sm:tracking-[0.18em]">
+                              Focus Scope
+                            </p>
+                            <div className="grid h-6 w-[6.25rem] shrink-0 grid-cols-2 overflow-hidden rounded-md border border-white/10 bg-black/30 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:h-7 sm:w-[8.25rem] sm:rounded-lg">
+                              {modeOptions.map((option) => {
+                                const selected = mode === option.value;
 
-                {visibleRunHistory.length > 0 ? (
-                  <section className="mx-auto w-full max-w-3xl rounded-[18px] border border-white/10 bg-black/30 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-400/85">
-                        Run log
-                      </p>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                        Latest {visibleRunHistory.length}
-                      </p>
-                    </div>
-                    <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                      {visibleRunHistory.map((session) => {
-                        const completed =
-                          session.action === "completed" &&
-                          session.actualMs !== null &&
-                          session.deltaMs !== null;
-
-                        return (
-                          <div
-                            key={session.id}
-                            className={
-                              session.resultTone === "under"
-                                ? "grid gap-2 rounded-xl border border-emerald-300/20 bg-emerald-500/[0.055] px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
-                                : session.resultTone === "over"
-                                  ? "grid gap-2 rounded-xl border border-red-300/20 bg-red-500/[0.055] px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
-                                  : "grid gap-2 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-                            }
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-xs font-semibold uppercase tracking-normal text-white/84">
-                                {session.title}
-                              </p>
-                              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                                {session.itemKind}
-                              </p>
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() =>
+                                      handleModeChange(option.value)
+                                    }
+                                    className={
+                                      selected && option.value === "pomo"
+                                        ? "rounded-[5px] border border-emerald-300/30 bg-emerald-500/14 px-1 text-[8px] font-semibold uppercase tracking-[0.08em] text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] sm:rounded-md sm:text-[9px] sm:tracking-[0.12em]"
+                                        : selected
+                                          ? "rounded-[5px] border border-white/12 bg-white/[0.06] px-1 text-[8px] font-semibold uppercase tracking-[0.08em] text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] sm:rounded-md sm:text-[9px] sm:tracking-[0.12em]"
+                                          : "rounded-[5px] border border-transparent px-1 text-[8px] font-semibold uppercase tracking-[0.08em] text-white/35 transition hover:border-white/10 hover:bg-white/[0.04] hover:text-white/68 sm:rounded-md sm:text-[9px] sm:tracking-[0.12em]"
+                                    }
+                                    aria-pressed={selected}
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
                             </div>
-                            {completed ? (
-                              <>
-                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                  <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-100/90">
-                                    COMPLETED
-                                  </span>
-                                  <span className="whitespace-nowrap font-mono text-xs font-semibold tabular-nums text-zinc-300">
-                                    {formatSignedTimerMs(session.actualMs)} /{" "}
-                                    {formatSignedTimerMs(session.plannedMs)}
-                                  </span>
-                                </div>
-                                <span
-                                  className={
-                                    session.resultTone === "under"
-                                      ? "whitespace-nowrap font-mono text-xs font-semibold tabular-nums text-emerald-300"
-                                      : "whitespace-nowrap font-mono text-xs font-semibold tabular-nums text-red-300"
-                                  }
-                                >
-                                  {formatTimerDeltaMs(session.deltaMs)}
-                                </span>
-                              </>
-                            ) : (
-                              <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-300">
-                                SKIPPED
-                              </span>
-                            )}
                           </div>
-                        );
-                      })}
+                          <p className="mt-0.5 min-w-0 truncate text-xs font-semibold uppercase tracking-normal text-white/82 sm:text-sm">
+                            {scopeSummary}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setScopeOpen((current) => !current)}
+                          aria-expanded={scopeOpen}
+                          aria-controls={executionScopePanelId}
+                          className="inline-flex min-h-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] px-2.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-[10px] sm:tracking-[0.14em]"
+                        >
+                          {scopeOpen ? "Done" : "Adjust"}
+                        </button>
+                      </div>
                     </div>
                   </section>
                 ) : null}
 
-                <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[26px] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),rgba(113,113,122,0.18)_28%,rgba(39,39,42,0.42)_55%,rgba(82,82,91,0.14)_78%,rgba(255,255,255,0.08))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_0_32px_rgba(255,255,255,0.025),0_20px_70px_rgba(0,0,0,0.55)]">
-                  <div className="relative overflow-hidden rounded-[25px] border border-zinc-500/20 bg-zinc-950/80 px-4 pb-4 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_28px_rgba(255,255,255,0.025),inset_0_-20px_36px_rgba(0,0,0,0.48)] sm:px-6 sm:py-5">
+                {latestRunResult ? (
+                  <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-zinc-700/45 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(113,113,122,0.12)_32%,rgba(39,39,42,0.26)_60%,rgba(255,255,255,0.04))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
+                    <div className="overflow-hidden rounded-[17px] border border-white/[0.055] bg-zinc-950/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-18px_30px_rgba(0,0,0,0.32)] sm:rounded-[21px]">
+                      {isRunLogExpanded && earlierRunResultsCount > 0 ? (
+                        <div className="grid max-h-32 overflow-y-auto sm:max-h-40">
+                          {visibleEarlierRunResults.map((session) =>
+                            renderRunHistoryRow(session, "earlier")
+                          )}
+                        </div>
+                      ) : null}
+
+                      {earlierRunResultsCount > 0 ? (
+                        <div className="border-t border-white/[0.10] bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setIsRunLogExpanded((current) => !current)
+                            }
+                            aria-expanded={isRunLogExpanded}
+                            className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-white/18 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                          >
+                            {isRunLogExpanded
+                              ? "See less"
+                              : `See more (${earlierRunResultsCount})`}
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {renderRunHistoryRow(latestRunResult, "latest")}
+                    </div>
+                  </section>
+                ) : null}
+
+                <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[20px] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),rgba(113,113,122,0.18)_28%,rgba(39,39,42,0.42)_55%,rgba(82,82,91,0.14)_78%,rgba(255,255,255,0.08))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_0_32px_rgba(255,255,255,0.025),0_20px_70px_rgba(0,0,0,0.55)] sm:rounded-[26px]">
+                  <div className="relative overflow-hidden rounded-[19px] border border-zinc-500/20 bg-zinc-950/80 px-3 pb-3 pt-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_28px_rgba(255,255,255,0.025),inset_0_-20px_36px_rgba(0,0,0,0.48)] sm:rounded-[25px] sm:px-6 sm:py-5">
                     <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(135deg,rgba(255,255,255,0.065),transparent_24%,rgba(255,255,255,0.022)_74%,rgba(0,0,0,0.32)),radial-gradient(circle_at_18%_0%,rgba(255,255,255,0.045),transparent_34%)]" />
                     <div className="pointer-events-none absolute inset-x-10 top-0 h-px rounded-full bg-gradient-to-r from-transparent via-white/28 to-transparent" />
 
                   <div className="relative">
-                    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_6.5rem] md:items-start">
+                    <div className="grid gap-3 sm:gap-4 md:grid-cols-[minmax(0,1fr)_6.5rem] md:items-start">
                       <div className="min-w-0">
-                        <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+                        <div className="flex min-w-0 items-start gap-2.5 sm:gap-4">
                           {currentItemIcon ? (
-                            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.045] text-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-12px_18px_rgba(0,0,0,0.28)] sm:size-14 sm:text-2xl">
+                            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.045] text-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-12px_18px_rgba(0,0,0,0.28)] sm:size-14 sm:rounded-xl sm:text-2xl">
                               <span aria-hidden="true">{currentItemIcon}</span>
                             </div>
                           ) : null}
-                          <div className="flex min-w-0 flex-1 items-start gap-2 overflow-visible sm:gap-3">
+                          <div className="flex min-w-0 flex-1 items-start gap-1.5 overflow-visible sm:gap-3">
                             <div className="min-w-0 flex-1">
                               <h2
                                 id={titleId}
-                                className="min-w-0 max-w-2xl break-words text-[1.65rem] font-semibold uppercase leading-tight tracking-normal text-white min-[390px]:text-3xl sm:text-4xl"
+                                className="min-w-0 max-w-2xl break-words text-[1.35rem] font-semibold uppercase leading-tight tracking-normal text-white min-[390px]:text-[1.55rem] sm:text-4xl"
                               >
                                 {cardState.title}
                               </h2>
                             </div>
                             {currentItem ? (
-                              <span className="relative flex h-14 w-10 shrink-0 items-start justify-center overflow-visible sm:h-16 sm:w-12">
+                              <span className="relative flex h-11 w-8 shrink-0 items-start justify-center overflow-visible sm:h-16 sm:w-12">
                                 <FlameEmber
                                   level={currentEnergyLevel}
                                   size="md"
@@ -3792,15 +3910,15 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                         <div
                           className={
                             currentMetaDisplay
-                              ? "mt-3 flex w-full flex-wrap items-center gap-2 sm:w-fit"
-                              : "mt-3 flex w-full flex-wrap items-center gap-2 sm:w-fit"
+                              ? "mt-2 flex w-full flex-wrap items-center gap-1.5 sm:mt-3 sm:w-fit sm:gap-2"
+                              : "mt-2 flex w-full flex-wrap items-center gap-1.5 sm:mt-3 sm:w-fit sm:gap-2"
                           }
                         >
                           <div
                             className={
                               cardState.tone === "error"
-                                ? "inline-flex min-w-0 items-center justify-center rounded-lg border border-red-300/25 bg-red-950/25 px-2 py-1 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-red-100/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:px-2.5 sm:tracking-[0.18em]"
-                                : "inline-flex min-w-0 items-center justify-center rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:px-2.5 sm:tracking-[0.18em]"
+                                ? "inline-flex min-w-0 items-center justify-center rounded-md border border-red-300/25 bg-red-950/25 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-red-100/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
+                                : "inline-flex min-w-0 items-center justify-center rounded-md border border-white/10 bg-black/40 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-zinc-300/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
                             }
                           >
                             <span className="min-w-0 truncate">
@@ -3808,11 +3926,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             </span>
                           </div>
                           {currentMetaDisplay ? (
-                            <div className="inline-flex min-w-0 max-w-[calc(100%-4.75rem)] items-center justify-start gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:max-w-[13rem]">
-                              <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[10px] font-semibold text-zinc-200">
+                            <div className="inline-flex min-w-0 max-w-[calc(100%-3.5rem)] items-center justify-start gap-1.5 rounded-md border border-white/10 bg-black/25 px-2 py-0.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:max-w-[13rem] sm:gap-2 sm:rounded-lg sm:px-2.5 sm:py-1">
+                              <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                 {currentMetaDisplay.icon}
                               </span>
-                              <span className="min-w-0 truncate text-[11px] font-semibold text-zinc-400">
+                              <span className="min-w-0 truncate text-[10px] font-semibold text-zinc-400 sm:text-[11px]">
                                 {currentMetaDisplay.name}
                               </span>
                             </div>
@@ -3823,7 +3941,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           <button
                             type="button"
                             onClick={resetExecutionFilters}
-                            className="mt-3 inline-flex min-h-10 items-center justify-center rounded-lg border border-white/12 bg-white/[0.055] px-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-white/24 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35"
+                            className="mt-2 inline-flex min-h-9 items-center justify-center rounded-lg border border-white/12 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-white/24 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:mt-3 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
                           >
                             Reset filters
                           </button>
@@ -3845,13 +3963,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       <div
                         role="group"
                         aria-label="Current item actions"
-                        className="mt-5 grid w-full grid-cols-2 gap-2 border-t border-white/[0.08] pt-4 sm:max-w-sm"
+                        className="mt-3 grid w-full grid-cols-2 gap-2 border-t border-white/[0.08] pt-3 sm:mt-5 sm:max-w-sm sm:pt-4"
                       >
                         <button
                           type="button"
                           aria-label="Skip current item"
                           onClick={handleSkip}
-                          className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.035] px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35"
+                          className="inline-flex min-h-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.035] px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
                         >
                           Skip
                         </button>
@@ -3859,7 +3977,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           type="button"
                           aria-label="Complete current item"
                           onClick={handleComplete}
-                          className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-300/35 bg-emerald-500/12 px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:border-emerald-300/50 hover:bg-emerald-500/18 focus:outline-none focus:ring-2 focus:ring-emerald-200/70"
+                          className="inline-flex min-h-9 items-center justify-center rounded-lg border border-emerald-300/35 bg-emerald-500/12 px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-emerald-100 transition hover:border-emerald-300/50 hover:bg-emerald-500/18 focus:outline-none focus:ring-2 focus:ring-emerald-200/70 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
                         >
                           Complete
                         </button>
@@ -3871,10 +3989,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 </section>
 
                 {currentItem ? (
-                  <div className="relative overflow-hidden rounded-[22px] border border-zinc-700/50 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_18px_45px_rgba(0,0,0,0.45)]">
+                  <div className="relative overflow-hidden rounded-[18px] border border-zinc-700/50 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
                     <motion.div
                       layout
-                      className="overflow-hidden rounded-[21px] border border-white/[0.06] bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)]"
+                      className="overflow-hidden rounded-[17px] border border-white/[0.06] bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]"
                       transition={{
                         duration: prefersReducedMotion ? 0.01 : 0.18,
                         ease: [0.22, 1, 0.36, 1],
@@ -3907,29 +4025,29 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                               key={item.id}
                               className={
                                 selected
-                                  ? "relative flex min-w-0 items-center gap-3 border border-white/10 bg-white/[0.035] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)]"
+                                  ? "relative flex min-w-0 items-center gap-2 border border-white/10 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-4"
                                   : isQueueExpanded
-                                    ? "flex min-w-0 items-center gap-3 border-t border-white/[0.10] px-4 py-3.5 opacity-60"
-                                    : "flex min-w-0 items-center gap-3 border-t border-white/[0.10] px-4 py-4 opacity-60 sm:border-l sm:border-t-0"
+                                    ? "flex min-w-0 items-center gap-2 border-t border-white/[0.10] px-3 py-2.5 opacity-60 sm:gap-3 sm:px-4 sm:py-3.5"
+                                    : "flex min-w-0 items-center gap-2 border-t border-white/[0.10] px-3 py-2.5 opacity-60 sm:gap-3 sm:border-l sm:border-t-0 sm:px-4 sm:py-4"
                               }
                             >
-                              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/12 bg-white/[0.045] text-xs font-semibold text-white/78">
+                              <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/12 bg-white/[0.045] text-[11px] font-semibold text-white/78 sm:size-8 sm:rounded-lg sm:text-xs">
                                 {position}
                               </div>
                               {previewIcon ? (
-                                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-base">
+                                <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
                                   <span aria-hidden="true">{previewIcon}</span>
                                 </div>
                               ) : null}
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-semibold uppercase tracking-normal text-white/82">
+                                <p className="truncate text-xs font-semibold uppercase tracking-normal text-white/82 sm:text-sm">
                                   {item.title}
                                 </p>
-                                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/38">
+                                <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/38 sm:mt-1 sm:text-[10px] sm:tracking-[0.18em]">
                                   {item.rawTypeLabel ?? item.kind}
                                 </p>
                               </div>
-                              <div className="ml-auto flex h-9 w-7 shrink-0 items-center justify-end overflow-visible">
+                              <div className="ml-auto flex h-7 w-5 shrink-0 items-center justify-end overflow-visible sm:h-9 sm:w-7">
                                 <FlameEmber
                                   level={queueEnergyLevel}
                                   size="sm"
@@ -3942,7 +4060,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       </motion.div>
 
                       {hasMoreQueueItems ? (
-                        <div className="border-t border-white/[0.10] bg-black/25 px-3 py-3">
+                        <div className="border-t border-white/[0.10] bg-black/25 px-2.5 py-2 sm:px-3 sm:py-3">
                           <button
                             type="button"
                             onClick={() =>
@@ -3950,7 +4068,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             }
                             aria-expanded={isQueueExpanded}
                             aria-controls={queueListId}
-                            className="inline-flex min-h-10 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] px-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-300 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35"
+                            className="inline-flex min-h-9 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
                           >
                             {isQueueExpanded
                               ? "See less"
@@ -3964,35 +4082,35 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
               </main>
 
-              <div className="mt-auto rounded-[22px] border border-white/12 bg-[#080a0d] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-18px_32px_rgba(0,0,0,0.42),0_22px_64px_-50px_rgba(0,0,0,0.85)]">
-                <div className="grid gap-4 sm:grid-cols-[minmax(12rem,18rem)_1fr] sm:items-center">
-                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.08] pb-4 sm:flex-nowrap sm:border-b-0 sm:border-r sm:pb-0 sm:pr-5">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="size-11 shrink-0 rounded-full border-[6px] border-white/[0.18] border-t-white/55" />
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-zinc-300/80">
+              <div className="mt-auto rounded-[18px] border border-white/12 bg-[#080a0d] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-18px_32px_rgba(0,0,0,0.42),0_22px_64px_-50px_rgba(0,0,0,0.85)] sm:rounded-[22px] sm:p-4">
+                <div className="grid grid-cols-[minmax(6rem,1fr)_minmax(0,2fr)] items-stretch gap-2.5 sm:grid-cols-[minmax(12rem,18rem)_1fr] sm:items-center sm:gap-4">
+                  <div className="flex min-w-0 overflow-hidden flex-col justify-center gap-1 rounded-xl border border-white/[0.08] bg-white/[0.025] px-1.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:border-0 sm:border-r sm:bg-transparent sm:px-0 sm:py-0 sm:pr-5">
+                    <div className="flex min-w-0 items-center gap-1 sm:gap-3">
+                      <div className="size-5 shrink-0 rounded-full border-[3px] border-white/[0.18] border-t-white/55 sm:size-11 sm:border-[6px]" />
+                      <p className="min-w-0 truncate text-[7px] font-semibold uppercase tracking-[0.08em] text-zinc-300/80 sm:text-[10px] sm:tracking-[0.22em]">
                         {timerLabel}
                       </p>
                     </div>
-                    <p className="shrink-0 whitespace-nowrap font-mono text-[2rem] font-semibold leading-none tabular-nums tracking-tight text-white sm:text-[2.35rem] md:text-[2.5rem]">
+                    <p className="min-w-0 max-w-full shrink whitespace-nowrap font-mono text-[1.05rem] font-semibold leading-none tabular-nums tracking-normal text-white min-[390px]:text-[1.15rem] sm:text-[1.65rem] md:text-[2rem]">
                       {timerDisplay}
                     </p>
                   </div>
 
-                  <div>
+                  <div className="flex min-w-0">
                     <button
                       type="button"
                       onClick={handlePrimaryAction}
                       className={
                         isRunning
-                          ? "inline-flex min-h-16 w-full items-center justify-center gap-3 rounded-[16px] border border-white/12 bg-zinc-900/90 px-7 text-base font-semibold uppercase tracking-[0.18em] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition hover:bg-zinc-800/90 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950"
-                          : "inline-flex min-h-16 w-full items-center justify-center gap-3 rounded-[16px] border border-emerald-300/45 bg-[linear-gradient(180deg,rgba(16,185,129,0.74),rgba(5,150,105,0.82)_48%,rgba(6,78,59,0.98))] px-7 text-base font-semibold uppercase tracking-[0.22em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.32),inset_0_-5px_0_rgba(4,120,87,0.88),0_20px_42px_-30px_rgba(16,185,129,0.95)] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:ring-offset-2 focus:ring-offset-zinc-950"
+                          ? "inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-white/12 bg-zinc-900/90 px-5 text-sm font-semibold uppercase tracking-[0.12em] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition hover:bg-zinc-800/90 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.18em]"
+                          : "inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-300/45 bg-[linear-gradient(180deg,rgba(16,185,129,0.74),rgba(5,150,105,0.82)_48%,rgba(6,78,59,0.98))] px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.32),inset_0_-5px_0_rgba(4,120,87,0.88),0_20px_42px_-30px_rgba(16,185,129,0.95)] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.22em]"
                       }
                     >
                       {isRunning ? (
-                        <Square className="size-5" aria-hidden="true" />
+                        <Square className="size-4 sm:size-5" aria-hidden="true" />
                       ) : (
                         <Play
-                          className="size-5 fill-current"
+                          className="size-4 fill-current sm:size-5"
                           aria-hidden="true"
                         />
                       )}
