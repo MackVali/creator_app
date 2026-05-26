@@ -821,7 +821,7 @@ export default function SkillDetailPage() {
               </div>
             </div>
           </div>
-          <div className="relative mt-8 grid gap-2 sm:grid-cols-2">
+          <div className="relative mt-8 grid grid-cols-2 gap-2">
             {stats.map(({ label, value, icon: Icon }) => (
               <div
                 key={label}
