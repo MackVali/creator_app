@@ -8,6 +8,9 @@ const NOTES_TABLE = "notes";
 type NoteRow = Database["public"]["Tables"]["notes"]["Row"];
 
 function mapRowToMonumentNote(row: NoteRow): MonumentNote {
+  const metadata = (row.metadata as Record<string, unknown> | null) ?? null;
+  const icon = typeof metadata?.icon === "string" ? metadata.icon : null;
+  const isBookmarked = metadata?.bookmarked === true;
   return {
     id: row.id,
     monumentId: row.monument_id ?? "",
@@ -15,6 +18,9 @@ function mapRowToMonumentNote(row: NoteRow): MonumentNote {
     content: row.content,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    metadata,
+    icon,
+    isBookmarked,
   };
 }
 
@@ -37,7 +43,7 @@ export async function getMonumentNotes(
 
   const { data, error } = await supabase
     .from(NOTES_TABLE)
-    .select("id, title, content, monument_id, created_at, updated_at")
+    .select("id, title, content, monument_id, created_at, updated_at, metadata")
     .eq("user_id", userId)
     .eq("monument_id", monumentId)
     .order("created_at", { ascending: true });
@@ -64,7 +70,7 @@ export async function getMonumentNote(
 
   const { data, error } = await supabase
     .from(NOTES_TABLE)
-    .select("id, title, content, monument_id, created_at, updated_at")
+    .select("id, title, content, monument_id, created_at, updated_at, metadata")
     .eq("user_id", userId)
     .eq("monument_id", monumentId)
     .eq("id", noteId)
@@ -80,7 +86,11 @@ export async function getMonumentNote(
 
 export async function createMonumentNote(
   monumentId: string,
-  note: { title?: string | null; content: string }
+  note: {
+    title?: string | null;
+    content: string;
+    metadata?: Record<string, unknown> | null;
+  }
 ): Promise<MonumentNote | null> {
   if (!monumentId) return null;
 
@@ -108,8 +118,9 @@ export async function createMonumentNote(
       monument_id: monumentId,
       title: derivedTitle,
       content: contentToStore,
+      metadata: note.metadata ?? null,
     })
-    .select("id, title, content, monument_id, created_at, updated_at")
+    .select("id, title, content, monument_id, created_at, updated_at, metadata")
     .single();
 
   if (error) {
@@ -126,7 +137,11 @@ export async function createMonumentNote(
 export async function updateMonumentNote(
   monumentId: string,
   noteId: string,
-  note: { title?: string | null; content: string }
+  note: {
+    title?: string | null;
+    content: string;
+    metadata?: Record<string, unknown> | null;
+  }
 ): Promise<MonumentNote | null> {
   if (!monumentId || !noteId) return null;
 
@@ -152,12 +167,13 @@ export async function updateMonumentNote(
     .update({
       title: derivedTitle,
       content: contentToStore,
+      metadata: note.metadata ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", userId)
     .eq("monument_id", monumentId)
     .eq("id", noteId)
-    .select("id, title, content, monument_id, created_at, updated_at")
+    .select("id, title, content, monument_id, created_at, updated_at, metadata")
     .maybeSingle();
 
   if (error) {

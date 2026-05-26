@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Filter, Plus, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { MonumentNote } from "@/lib/types/monument-note";
 import { cn } from "@/lib/utils";
-import { getMonumentNotes } from "@/lib/monumentNotesStorage";
+import { getMonumentNotes, updateMonumentNote } from "@/lib/monumentNotesStorage";
 import {
   MonumentNoteCard,
   monumentNoteTileInnerClass,
@@ -23,6 +23,7 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [notes, setNotes] = useState<MonumentNote[]>(initialNotes ?? []);
   const [isLoading, setIsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const initialNoteCount = initialNotes?.length ?? 0;
 
   useEffect(() => {
@@ -49,60 +50,100 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
     };
   }, [monumentId, initialNoteCount]);
 
-  const hasNotes = notes.length > 0;
+  const filteredNotes = notes.filter((note) => {
+    const title = note.title?.toLowerCase() ?? "";
+    const content = note.content?.toLowerCase() ?? "";
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return title.includes(q) || content.includes(q);
+  });
+  const hasNotes = filteredNotes.length > 0;
   const hasMoreNotes = notes.length > 3;
-  const visibleNotes = showAllNotes ? notes : notes.slice(0, 3);
+  const visibleNotes = showAllNotes ? filteredNotes : filteredNotes.slice(0, 3);
+
+  async function handleToggleBookmark(noteId: string) {
+    const target = notes.find((note) => note.id === noteId);
+    if (!target) return;
+    const next = !target.isBookmarked;
+    setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, isBookmarked: next } : n)));
+    const saved = await updateMonumentNote(monumentId, noteId, {
+      title: target.title,
+      content: target.content ?? "",
+      metadata: { ...(target.metadata ?? {}), bookmarked: next },
+    });
+    if (!saved) {
+      setNotes((prev) =>
+        prev.map((n) => (n.id === noteId ? { ...n, isBookmarked: target.isBookmarked } : n))
+      );
+    }
+  }
 
   return (
-    <div className="space-y-4 max-w-full">
+    <div className="max-w-full space-y-4">
+      <div className="flex justify-end">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <div className="flex h-8 min-w-0 w-[11rem] max-w-[52vw] items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3">
+            <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <span className="sr-only">Search notes</span>
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search"
+              className="w-full bg-transparent text-xs text-white/85 outline-none placeholder:text-slate-500"
+            />
+          </div>
+          <button
+            type="button"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] transition hover:bg-white/[0.06]"
+            aria-label="Filter notes"
+          >
+            <Filter className="h-3.5 w-3.5 text-slate-400" />
+          </button>
+        </div>
+      </div>
       {!hasNotes && !isLoading ? (
-        <div className={cn(monumentNoteTileOuterClass, "max-w-md")}>
+        <div className={cn(monumentNoteTileOuterClass, "w-full")}>
           <div
             className={cn(
               monumentNoteTileInnerClass,
-              "flex flex-col justify-center gap-1 text-center"
+              "flex min-h-[5.5rem] flex-col justify-center gap-1.5 text-left"
             )}
           >
-            <p className="text-sm font-semibold text-slate-50">No notes yet</p>
-            <p className="text-xs font-medium text-slate-300">
+            <p className="text-base font-semibold tracking-tight text-[#f2f4f8]">No notes yet</p>
+            <p className="text-sm text-[#d2d7e0]">
               Capture your first thought here and keep ideas close at hand.
             </p>
           </div>
         </div>
       ) : null}
 
-      <div className="grid w-full max-w-full grid-cols-2 gap-2.5 px-0 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+      <div className="flex w-full max-w-full flex-col gap-3 px-0">
         {visibleNotes.map((note) => (
-          <MonumentNoteCard key={note.id} note={note} monumentId={monumentId} />
+          <MonumentNoteCard
+            key={note.id}
+            note={note}
+            monumentId={monumentId}
+            onToggleBookmark={handleToggleBookmark}
+          />
         ))}
 
         {(() => {
-          const columns = 2;
-          const remainder = visibleNotes.length % columns;
-          const spanClass = !hasNotes
-            ? "col-span-2"
-            : remainder === 0
-              ? "col-span-2"
-              : "col-span-1";
-          const isBarVariant = hasNotes && remainder === 0;
-
           return (
             <Link
               href={`/monuments/${monumentId}/notes/new`}
-              className={cn(monumentNoteTileOuterClass, spanClass)}
+              className={cn(monumentNoteTileOuterClass, "w-full")}
               aria-label={hasNotes ? "Add note" : "Create note"}
             >
               <div
                 className={cn(
                   monumentNoteTileInnerClass,
-                  "items-center justify-center gap-2 text-center",
-                  isBarVariant ? "min-h-[4.5rem] flex-row text-left" : "flex-col"
+                  "min-h-[5.75rem] items-center justify-center gap-2.5 text-center"
                 )}
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/35 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_20px_-14px_rgba(0,0,0,0.9)]">
                   <Plus className="h-4 w-4" aria-hidden="true" />
                 </div>
-                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-950">
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#f2f4f8]">
                   {hasNotes ? "Add note" : "Create note"}
                 </span>
               </div>
