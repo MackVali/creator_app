@@ -1036,7 +1036,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     if (loading) {
       return (
         <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {Array.from({ length: 9 }).map((_, i) => (
+          {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-[100px] w-full rounded-2xl bg-white/10" />
           ))}
         </div>
