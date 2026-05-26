@@ -95,7 +95,7 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
 
           <div className="flex flex-1 items-center gap-4 min-w-0">
             <div className="min-w-0 space-y-1">
-              <p className="text-sm font-semibold text-white transition-colors group-hover:text-white/90 group-focus-visible:text-white/90 whitespace-normal break-words md:truncate">
+              <p className="text-sm font-semibold text-white transition-colors group-hover:text-white/90 group-focus-visible:text-white/90 whitespace-nowrap">
                 {displayName}
               </p>
               <p className="truncate text-[13px] text-white/70 transition-colors group-hover:text-white/80 group-focus-visible:text-white/80">
