@@ -4,11 +4,12 @@ import { Home, Calendar, Link, DollarSign } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import BottomBarNav from "./BottomBarNav";
 import { Fab } from "@/components/ui/Fab";
+import { shouldHideBottomChrome } from "@/components/appChromeVisibility";
 
 export default function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const shouldHideNav = pathname?.startsWith("/schedule");
+  const shouldHideNav = shouldHideBottomChrome(pathname);
   const items = [
     { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: <Home className="h-6 w-6" /> },
     { key: "schedule", label: "Schedule", href: "/schedule", icon: <Calendar className="h-6 w-6" /> },

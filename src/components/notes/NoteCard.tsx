@@ -34,15 +34,15 @@ export function NoteCard({ note, skillId, childCount = 0 }: NoteCardProps) {
       <div
         className={cn(
           monumentNoteTileInnerClass,
-          "items-center justify-center bg-white text-center"
+          "min-h-[4.5rem] items-center justify-center bg-white px-2.5 py-2 text-center"
         )}
       >
         <div className="flex flex-col items-center text-center">
-          <p className="line-clamp-3 text-sm font-semibold leading-tight tracking-tight text-slate-900 drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)] transition group-hover:text-slate-950">
+          <p className="line-clamp-2 text-[13px] font-semibold leading-tight text-slate-900 drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)] transition group-hover:text-slate-950">
             {displayTitle}
           </p>
           {hasChildren ? (
-            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500">
+            <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.24em] text-slate-500">
               {childCount} sub-page{childCount === 1 ? "" : "s"}
             </p>
           ) : null}

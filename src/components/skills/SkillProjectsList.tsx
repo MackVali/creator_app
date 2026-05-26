@@ -30,6 +30,7 @@ type GoalRowWithRelations = GoalRow & {
     priority: string | null;
     energy: string | null;
     stage: string | null;
+    completed_at?: string | null;
     duration_min?: number | null;
     created_at: string;
     due_date?: string | null;
@@ -87,26 +88,41 @@ function mapEnergy(energy: { name?: string | null } | string | null | undefined)
   }
 }
 
-function projectStageToStatus(stage: string): Project["status"] {
-  switch (stage) {
-    case "RESEARCH":
-      return "Todo";
-    case "RELEASE":
-      return "Done";
-    default:
-      return "In-Progress";
-  }
+type ProjectSection = "active" | "completed";
+type ProjectWithCompletion = Project & {
+  completedAt?: string | null;
+  completed_at?: string | null;
+};
+
+function isSkillProjectCompleted(project: Project): boolean {
+  const projectWithCompletion = project as ProjectWithCompletion;
+  const completedAt = projectWithCompletion.completedAt ?? projectWithCompletion.completed_at;
+  return typeof completedAt === "string" && completedAt.trim().length > 0;
 }
 
-const DAY_IN_MS = 86_400_000;
-const GOAL_PRIORITY_WEIGHT: Record<string, number> = {
-  NO: 0,
-  LOW: 10,
-  MEDIUM: 200,
-  HIGH: 300,
-  CRITICAL: 500,
-  "ULTRA-CRITICAL": 1000,
-};
+function filterGoalProjectsBySection(goal: Goal, section: ProjectSection): Goal | null {
+  const selectedProjects = goal.projects.filter((project) => {
+    const isCompleted = isSkillProjectCompleted(project);
+    return section === "completed" ? isCompleted : !isCompleted;
+  });
+
+  if (selectedProjects.length === 0) {
+    return null;
+  }
+
+  const selectedProgress = Math.round(
+    selectedProjects.reduce((sum, project) => sum + (project.progress ?? 0), 0) /
+      selectedProjects.length
+  );
+
+  return {
+    ...goal,
+    projects: selectedProjects,
+    progress: section === "completed" ? Math.max(selectedProgress, 100) : selectedProgress,
+    status: section === "completed" ? "COMPLETED" : "ACTIVE",
+    active: section === "active",
+  };
+}
 
 const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
   NO: "NO",
@@ -199,7 +215,7 @@ async function fetchGoalsWithRelations(userId: string) {
   const selectWithEnumColumns = `
     ${baseSelect},
     projects (
-      id, name, goal_id, stage, duration_min, created_at, due_date,
+      id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
       priority,
       energy,
       tasks (
@@ -213,7 +229,7 @@ async function fetchGoalsWithRelations(userId: string) {
   const selectWithLookupRelations = `
     ${baseSelect},
     projects (
-      id, name, goal_id, stage, duration_min, created_at, due_date,
+      id, name, goal_id, stage, completed_at, duration_min, created_at, due_date,
       priority:priority(name),
       energy:energy(name),
       tasks (
@@ -258,6 +274,7 @@ async function fetchGoalsWithRelations(userId: string) {
 export function SkillProjectsList({ skillId }: { skillId: string }) {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<Goal[]>([]);
+  const [projectSection, setProjectSection] = useState<ProjectSection>("active");
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [monumentOptions, setMonumentOptions] = useState<{ id: string; title: string; emoji: string | null }[]>([]);
@@ -277,6 +294,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
 
   useEffect(() => {
     setOpenGoalId(null);
+    setProjectSection("active");
   }, [skillId]);
 
   const decorate = useCallback((goal: Goal) => {
@@ -395,15 +413,23 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
           });
           const total = normalizedTasks.length;
           const done = normalizedTasks.filter((t) => t.stage === "PERFECT").length;
-          const progress = total ? Math.round((done / total) * 100) : 0;
-          const status = projectStageToStatus(p.stage ?? "BUILD");
+          const completedAt =
+            typeof p.completed_at === "string" && p.completed_at.trim().length > 0
+              ? p.completed_at
+              : null;
+          const stage = p.stage ?? "BUILD";
+          const status: Project["status"] = completedAt ? "Done" : "In-Progress";
+          let progress = total ? Math.round((done / total) * 100) : 0;
+          if (completedAt) {
+            progress = 100;
+          }
           const schedulerTasks: TaskLite[] = normalizedTasks.map(toSchedulerTask);
           const relatedTaskWeightSum = schedulerTasks.reduce((sum, t) => sum + taskWeight(t), 0);
           const projectWeightValue = projectWeight(
             toSchedulerProject({
               id: p.id,
               priorityCode: p.priority ?? undefined,
-              stage: p.stage ?? undefined,
+              stage,
               dueDate: p.due_date ?? null,
             }),
             relatedTaskWeightSum
@@ -423,7 +449,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
           const rawPriority = extractLookupName(p.priority);
           const energyCode = normalizeEnergyCode(rawEnergy);
           const priorityCode = normalizePriorityCode(rawPriority);
-          return {
+          const mappedProject: ProjectWithCompletion = {
             id: p.id,
             name: p.name,
             status,
@@ -437,12 +463,15 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
                 : null,
             skillIds: projectSkillIds,
             emoji: projectEmoji,
-            stage: p.stage ?? "BUILD",
+            stage,
+            completedAt,
+            completed_at: completedAt,
             priorityCode,
             weight: projectWeightValue,
             isNew: false,
             tasks: normalizedTasks,
           };
+          return mappedProject;
         });
 
         const progressValue =
@@ -510,8 +539,8 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
             priority: mapPriority(project.priorityCode ?? "NO"),
             energy: mapEnergy(project.energyCode ?? "NO"),
             progress: project.progress,
-            status: project.status === "Done" ? "Completed" : "Active",
-            active: project.status !== "Done",
+            status: isSkillProjectCompleted(project) ? "COMPLETED" : "ACTIVE",
+            active: !isSkillProjectCompleted(project),
             createdAt: goal.createdAt,
             updatedAt: goal.updatedAt,
             dueDate: project.dueDate ?? undefined,
@@ -555,7 +584,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
   }, [loadProjects]);
 
   const buildProjectFromUpdates = useCallback(
-    (projectId: string, updates: Partial<Project>): Project => ({
+    (projectId: string, updates: Partial<Project>): ProjectWithCompletion => ({
       id: projectId,
       name: updates.name ?? "New project",
       status: updates.status ?? "In-Progress",
@@ -571,6 +600,8 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
       skillIds: updates.skillIds ?? [],
       weight: updates.weight,
       isNew: updates.isNew,
+      completedAt: (updates as ProjectWithCompletion).completedAt ?? null,
+      completed_at: (updates as ProjectWithCompletion).completed_at ?? null,
     }),
     []
   );
@@ -702,20 +733,22 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
   );
 
   const handleProjectToggleCompletion = useCallback(
-    async (goalId: string, projectId: string, currentStage: string) => {
+    async (goalId: string, projectId: string) => {
       const supabase = getSupabaseBrowser();
       if (!supabase) return;
 
       const goalSnapshot = projects.find((goal) => goal.id === goalId);
       const originalProject = goalSnapshot?.projects.find((project) => project.id === projectId);
 
-      const nextStage = currentStage === "RELEASE" ? "BUILD" : "RELEASE";
-      const completedAt = nextStage === "RELEASE" ? new Date().toISOString() : null;
+      const isCurrentlyCompleted = originalProject
+        ? isSkillProjectCompleted(originalProject)
+        : false;
+      const completedAt = isCurrentlyCompleted ? null : new Date().toISOString();
 
       try {
         const { error } = await supabase
           .from("projects")
-          .update({ stage: nextStage, completed_at: completedAt })
+          .update({ completed_at: completedAt })
           .eq("id", projectId);
 
         if (error) {
@@ -738,17 +771,25 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
                 toSchedulerProject({
                   id: project.id,
                   priorityCode: project.priorityCode ?? undefined,
-                  stage: nextStage,
+                  stage: project.stage ?? undefined,
                   dueDate: project.dueDate ?? null,
                 }),
                 relatedTaskWeightSum
               );
+              const total = project.tasks.length;
+              const done = project.tasks.filter((task) => task.stage === "PERFECT").length;
+              const progress = completedAt
+                ? 100
+                : total
+                  ? Math.round((done / total) * 100)
+                  : 0;
 
               return {
                 ...project,
-                stage: nextStage,
-                status: nextStage === "RELEASE" ? "Done" : "In-Progress",
-                progress: nextStage === "RELEASE" ? 100 : 0,
+                completedAt,
+                completed_at: completedAt,
+                status: completedAt ? "Done" : "In-Progress",
+                progress,
                 weight: projectWeightValue,
               };
             });
@@ -760,38 +801,30 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
                       updatedProjects.length
                   )
                 : 0;
+            const goalCompleted = updatedProjects.every(isSkillProjectCompleted);
 
-          return decorate({
-            ...goal,
-            projects: updatedProjects,
-            progress: goalProgress,
-          });
-        })
-      );
+            return decorate({
+              ...goal,
+              projects: updatedProjects,
+              progress: goalProgress,
+              status: goalCompleted ? "COMPLETED" : "ACTIVE",
+              active: !goalCompleted,
+            });
+          })
+        );
+
+        if (originalProject) {
+          void recordProjectCompletion(
+            {
+              projectId,
+              projectSkillIds: originalProject.skillIds,
+              taskSkillIds: (originalProject.tasks ?? []).map((task) => task.skillId),
+            },
+            completedAt ? "complete" : "undo"
+          );
+        }
       } catch (err) {
         console.error("Failed to toggle project completion", err);
-      }
-
-      if (nextStage === "RELEASE" && originalProject) {
-        void recordProjectCompletion(
-          {
-            projectId,
-            projectSkillIds: originalProject.skillIds,
-            taskSkillIds: (originalProject.tasks ?? []).map((task) => task.skillId),
-          },
-          "complete"
-        );
-      }
-
-      if (currentStage === "RELEASE" && nextStage !== "RELEASE" && originalProject) {
-        void recordProjectCompletion(
-          {
-            projectId,
-            projectSkillIds: originalProject.skillIds,
-            taskSkillIds: (originalProject.tasks ?? []).map((task) => task.skillId),
-          },
-          "undo"
-        );
       }
     },
     [decorate, projects]
@@ -1032,6 +1065,21 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     [projects]
   );
 
+  const filteredProjects = useMemo(
+    () =>
+      projects
+        .map((goal) => filterGoalProjectsBySection(goal, projectSection))
+        .filter((goal): goal is Goal => Boolean(goal)),
+    [projects, projectSection]
+  );
+
+  useEffect(() => {
+    if (!openGoalId) return;
+    if (!filteredProjects.some((goal) => goal.id === openGoalId)) {
+      setOpenGoalId(null);
+    }
+  }, [filteredProjects, openGoalId]);
+
   const content = useMemo(() => {
     if (loading) {
       return (
@@ -1043,17 +1091,19 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
       );
     }
 
-    if (projects.length === 0) {
+    if (filteredProjects.length === 0) {
       return (
         <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-          No projects linked to this skill yet.
+          {projectSection === "completed"
+            ? "No completed projects linked to this skill yet."
+            : "No active projects linked to this skill yet."}
         </Card>
       );
     }
 
     return (
       <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-        {projects.map((goal) => (
+        {filteredProjects.map((goal) => (
           <div key={goal.id} className="skill-project-card-wrapper relative z-0 w-full isolate min-w-0">
             <GoalCard
               goal={goal}
@@ -1070,8 +1120,8 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
               }
               onTaskToggleCompletion={handleTaskToggleCompletion}
               onAddTask={handleTaskCreate}
-              onProjectHoldComplete={(goalId, projectId, stage) =>
-                handleProjectToggleCompletion(goalId, projectId, stage)
+              onProjectHoldComplete={(goalId, projectId) =>
+                handleProjectToggleCompletion(goalId, projectId)
               }
               onProjectDeleted={() => handleProjectDeleted(goal.id)}
             />
@@ -1081,17 +1131,54 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     );
   }, [
     loading,
-    projects,
+    filteredProjects,
+    projectSection,
     openGoalId,
+    handleGoalEdit,
     handleGoalOpenChange,
     handleProjectUpdated,
     handleProjectDeleted,
     handleTaskCreate,
+    handleTaskToggleCompletion,
+    handleProjectToggleCompletion,
   ]);
 
   return (
     <div className="skill-projects-list">
-      {content}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
+            Project Library
+          </p>
+          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-1">
+            <button
+              type="button"
+              onClick={() => setProjectSection("active")}
+              className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
+                projectSection === "active"
+                  ? "bg-[#3B3F49] text-white"
+                  : "text-[#A7B0BD] hover:text-white"
+              }`}
+              aria-pressed={projectSection === "active"}
+            >
+              Active
+            </button>
+            <button
+              type="button"
+              onClick={() => setProjectSection("completed")}
+              className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
+                projectSection === "completed"
+                  ? "bg-[#3B3F49] text-white"
+                  : "text-[#A7B0BD] hover:text-white"
+              }`}
+              aria-pressed={projectSection === "completed"}
+            >
+              Completed
+            </button>
+          </div>
+        </div>
+        {content}
+      </section>
       {taskFormOpenForGoalId ? (
         <div className="fixed inset-0 z-[85] flex items-center justify-center px-4 py-8">
           <button
@@ -1224,6 +1311,32 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
       <style jsx global>{`
         .skill-projects-list .group { transform: none !important; will-change: auto !important; z-index: 0 !important; }
         .skill-projects-list .group:hover { transform: none !important; }
+        .skill-projects-list .goal-card.emerald-completed-compact {
+          border: 1px solid rgba(6, 78, 59, 0.7) !important;
+          background: linear-gradient(145deg, #059669 0%, #047857 48%, #065f46 100%) !important;
+          color: rgba(255, 255, 255, 0.96) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.12),
+            0 10px 20px rgba(0, 0, 0, 0.34) !important;
+        }
+        .skill-projects-list .goal-card.emerald-completed-compact :is(p, span, div, button) {
+          color: rgba(255, 255, 255, 0.92);
+        }
+        .skill-projects-list .goal-card.emerald-completed-compact button > div:first-child {
+          border-color: rgba(255, 255, 255, 0.28) !important;
+          background: rgba(6, 78, 59, 0.64) !important;
+          color: rgb(255, 255, 255) !important;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+        }
+        .skill-projects-list .goal-card.emerald-completed-compact button > div:last-child {
+          border-color: rgba(6, 78, 59, 0.82) !important;
+          background: rgba(4, 120, 87, 0.72) !important;
+          box-shadow: inset 0 2px 3px rgba(6, 48, 37, 0.52) !important;
+        }
+        .skill-projects-list .goal-card.emerald-completed-compact button > div:last-child > div {
+          background: linear-gradient(90deg, #6ee7b7 0%, #34d399 46%, #10b981 100%) !important;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
+        }
         @media (min-width: 640px) {
           .skill-projects-list .skill-project-card-wrapper { isolation: isolate; content-visibility: auto; contain-intrinsic-size: 300px 1px; }
         }

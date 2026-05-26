@@ -12,6 +12,7 @@ import {
   monumentNoteTileInnerClass,
   monumentNoteTileOuterClass,
 } from "./MonumentNoteCard";
+import { NotesHeaderControls } from "./NotesHeaderControls";
 
 type MemoNoteGroup = {
   containerId: string;
@@ -30,30 +31,30 @@ function MemoFolderCard({
   const memoCount = group.notes.length;
   return (
     <div className="col-span-3 sm:col-span-2 md:col-span-3">
-      <Card className="h-full rounded-3xl border border-white/70 bg-white/80 text-slate-900 shadow-[0_26px_60px_-32px_rgba(148,163,184,0.55)] backdrop-blur-xl">
-        <CardContent className="space-y-4 p-4">
+      <Card className="h-full rounded-[22px] border border-white/70 bg-white/80 text-slate-900 shadow-[0_22px_48px_-32px_rgba(148,163,184,0.55)] backdrop-blur-xl">
+        <CardContent className="space-y-3 p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
                 Memo habit
               </p>
-              <h3 className="text-lg font-semibold text-slate-900">
+              <h3 className="text-base font-semibold leading-tight text-slate-900">
                 {group.habitName || "Memo habit"}
               </h3>
             </div>
-            <div className="flex flex-col items-end gap-2">
-              <span className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm">
+            <div className="flex flex-col items-end gap-1.5">
+              <span className="rounded-full border border-white/70 bg-white/80 px-2.5 py-0.5 text-[11px] font-medium text-slate-700 shadow-sm">
                 {memoCount} memo{memoCount === 1 ? "" : "s"}
               </span>
               <Link
                 href={`/skills/${skillId}/notes/${group.containerId}`}
-                className="text-xs font-medium text-slate-700 underline-offset-4 transition hover:text-slate-900 hover:underline"
+                className="text-[11px] font-medium text-slate-700 underline-offset-4 transition hover:text-slate-900 hover:underline"
               >
                 Open page
               </Link>
             </div>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {group.notes.map(({ note, sequence }, index) => {
               const label = sequence !== null ? `Memo #${sequence}` : `Memo ${index + 1}`;
               const createdAt = note.createdAt ? new Date(note.createdAt) : null;
@@ -65,10 +66,10 @@ function MemoFolderCard({
                 <Link
                   key={note.id}
                   href={`/skills/${skillId}/notes/${note.id}`}
-                  className="group flex items-center justify-between rounded-xl border border-white/70 bg-white/70 px-3 py-2 text-sm text-slate-800 shadow-sm transition hover:border-white hover:bg-white/90 hover:text-slate-900"
+                  className="group flex items-center justify-between rounded-xl border border-white/70 bg-white/70 px-2.5 py-1.5 text-xs text-slate-800 shadow-sm transition hover:border-white hover:bg-white/90 hover:text-slate-900"
                 >
                   <span className="font-medium">{label}</span>
-                  <span className="text-xs text-slate-600 group-hover:text-slate-800">
+                  <span className="text-[11px] text-slate-600 group-hover:text-slate-800">
                     {dateLabel}
                   </span>
                 </Link>
@@ -88,6 +89,7 @@ interface NotesGridProps {
 export function NotesGrid({ skillId }: NotesGridProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -114,6 +116,8 @@ export function NotesGrid({ skillId }: NotesGridProps) {
       isMounted = false;
     };
   }, [skillId]);
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 
   const { memoGroups, regularNotes, childLookup } = useMemo(() => {
     if (notes.length === 0) {
@@ -220,12 +224,41 @@ export function NotesGrid({ skillId }: NotesGridProps) {
   }, [notes]);
 
   const hasTopLevelNotes = memoGroups.length > 0 || regularNotes.length > 0;
+  const visibleMemoGroups = useMemo(() => {
+    if (!normalizedSearchQuery) return memoGroups;
+
+    return memoGroups
+      .map((group) => {
+        const groupMatches = group.habitName.toLowerCase().includes(normalizedSearchQuery);
+        if (groupMatches) return group;
+
+        const matchingNotes = group.notes.filter(({ note }) => {
+          const title = note.title?.toLowerCase() ?? "";
+          const content = note.content?.toLowerCase() ?? "";
+          return title.includes(normalizedSearchQuery) || content.includes(normalizedSearchQuery);
+        });
+
+        return matchingNotes.length > 0 ? { ...group, notes: matchingNotes } : null;
+      })
+      .filter((group): group is MemoNoteGroup => group !== null);
+  }, [memoGroups, normalizedSearchQuery]);
+  const visibleRegularNotes = useMemo(() => {
+    if (!normalizedSearchQuery) return regularNotes;
+
+    return regularNotes.filter((note) => {
+      const title = note.title?.toLowerCase() ?? "";
+      const content = note.content?.toLowerCase() ?? "";
+      return title.includes(normalizedSearchQuery) || content.includes(normalizedSearchQuery);
+    });
+  }, [normalizedSearchQuery, regularNotes]);
+  const hasVisibleTopLevelNotes = visibleMemoGroups.length > 0 || visibleRegularNotes.length > 0;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      <NotesHeaderControls searchQuery={searchQuery} onSearchChange={setSearchQuery} />
       {isLoading ? (
-        <Card className="rounded-3xl border border-white/70 bg-white/80 text-slate-700 shadow-[0_24px_60px_-32px_rgba(148,163,184,0.55)] backdrop-blur-xl">
-          <CardContent className="p-4">
+        <Card className="rounded-[22px] border border-white/70 bg-white/80 text-slate-700 shadow-[0_20px_44px_-32px_rgba(148,163,184,0.55)] backdrop-blur-xl">
+          <CardContent className="p-3">
             <p className="text-sm font-medium text-slate-900">Loading notes…</p>
             <p className="mt-1 text-xs text-slate-600">
               We’re pulling your notes from Supabase.
@@ -234,12 +267,32 @@ export function NotesGrid({ skillId }: NotesGridProps) {
         </Card>
       ) : null}
 
-      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-        {memoGroups.map((group) => (
+      {!hasVisibleTopLevelNotes && !isLoading ? (
+        <div className={cn(monumentNoteTileOuterClass, "col-span-3 w-full")}>
+          <div
+            className={cn(
+              monumentNoteTileInnerClass,
+              "flex min-h-[4.5rem] flex-col justify-center gap-1 text-left"
+            )}
+          >
+            <p className="text-sm font-semibold tracking-tight text-[#f2f4f8]">
+              {hasTopLevelNotes ? "No matching notes" : "No notes yet"}
+            </p>
+            <p className="text-xs leading-5 text-[#d2d7e0]">
+              {hasTopLevelNotes
+                ? "Try a different search."
+                : "Capture your first thought and keep ideas close at hand."}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        {visibleMemoGroups.map((group) => (
           <MemoFolderCard key={group.habitId} group={group} skillId={skillId} />
         ))}
 
-        {regularNotes.map((note) => (
+        {visibleRegularNotes.map((note) => (
           <NoteCard
             key={note.id}
             note={note}
@@ -249,35 +302,35 @@ export function NotesGrid({ skillId }: NotesGridProps) {
         ))}
 
         {(() => {
-          const regularNoteCount = regularNotes.length;
-          const hasAnyNotes = hasTopLevelNotes;
+          const regularNoteCount = visibleRegularNotes.length;
+          const hasAnyVisibleNotes = hasVisibleTopLevelNotes;
           const remainder = regularNoteCount % 3;
-          const spanClass = !hasAnyNotes
+          const spanClass = !hasAnyVisibleNotes
             ? "col-span-3"
             : remainder === 0
               ? "col-span-3"
               : remainder === 1
                 ? "col-span-2"
                 : "col-span-1";
-          const isBarVariant = hasAnyNotes && remainder === 0;
+          const isBarVariant = hasAnyVisibleNotes && remainder === 0;
           return (
             <Link
               href={`/skills/${skillId}/notes/new`}
               className={cn(monumentNoteTileOuterClass, spanClass)}
-              aria-label={hasAnyNotes ? "Add note" : "Create note"}
+              aria-label={hasTopLevelNotes ? "Add note" : "Create note"}
             >
               <div
                 className={cn(
                   monumentNoteTileInnerClass,
                   "items-center justify-center gap-2 text-center",
-                  isBarVariant ? "min-h-[4.5rem] flex-row text-left" : "flex-col"
+                  isBarVariant ? "min-h-[4.25rem] flex-row text-left" : "min-h-[4.25rem] flex-col"
                 )}
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
-                  <Plus className="h-4 w-4" aria-hidden="true" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 </div>
-                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-950">
-                  {hasAnyNotes ? "Add note" : "Create note"}
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-950">
+                  {hasTopLevelNotes ? "Add note" : "Create note"}
                 </span>
               </div>
             </Link>

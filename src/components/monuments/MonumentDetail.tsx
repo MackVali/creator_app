@@ -267,20 +267,13 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
             className={cn(
               containerShell,
               sectionBackground,
-              "p-5 sm:p-7",
-              "min-h-[260px]",
+              "p-4 sm:p-5",
+              "min-h-[220px]",
               "overflow-visible sm:overflow-hidden"
             )}
           >
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
-            <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-white/60">
-                  Notes
-                </p>
-              </div>
-            </header>
-            <div className="relative mt-5">
+            <div className="relative">
               <MonumentNotesGrid monumentId={id} initialNotes={notes} />
             </div>
           </section>
