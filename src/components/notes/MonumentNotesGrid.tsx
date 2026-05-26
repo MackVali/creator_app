@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Filter, Plus, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { MonumentNote } from "@/lib/types/monument-note";
 import { cn } from "@/lib/utils";
-import { getMonumentNotes } from "@/lib/monumentNotesStorage";
+import { getMonumentNotes, updateMonumentNote } from "@/lib/monumentNotesStorage";
 import {
   MonumentNoteCard,
   monumentNoteTileInnerClass,
@@ -23,6 +23,8 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [notes, setNotes] = useState<MonumentNote[]>(initialNotes ?? []);
   const [isLoading, setIsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "bookmarked">("all");
   const initialNoteCount = initialNotes?.length ?? 0;
 
   useEffect(() => {
@@ -49,12 +51,59 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
     };
   }, [monumentId, initialNoteCount]);
 
-  const hasNotes = notes.length > 0;
+  const filteredNotes = notes.filter((note) => {
+    if (filter === "bookmarked" && !note.isBookmarked) return false;
+    const title = note.title?.toLowerCase() ?? "";
+    const content = note.content?.toLowerCase() ?? "";
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return title.includes(q) || content.includes(q);
+  });
+  const hasNotes = filteredNotes.length > 0;
   const hasMoreNotes = notes.length > 3;
-  const visibleNotes = showAllNotes ? notes : notes.slice(0, 3);
+  const visibleNotes = showAllNotes ? filteredNotes : filteredNotes.slice(0, 3);
+
+  async function handleToggleBookmark(noteId: string) {
+    const target = notes.find((note) => note.id === noteId);
+    if (!target) return;
+    const next = !target.isBookmarked;
+    setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, isBookmarked: next } : n)));
+    const saved = await updateMonumentNote(monumentId, noteId, {
+      title: target.title,
+      content: target.content ?? "",
+      metadata: { ...(target.metadata ?? {}), bookmarked: next },
+    });
+    if (!saved) {
+      setNotes((prev) =>
+        prev.map((n) => (n.id === noteId ? { ...n, isBookmarked: target.isBookmarked } : n))
+      );
+    }
+  }
 
   return (
     <div className="space-y-4 max-w-full">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-[#121316]/80 p-2">
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as "all" | "bookmarked")}
+          className="h-8 rounded-lg border border-white/15 bg-[#1a1c20] px-2 text-xs text-white"
+        >
+          <option value="all">All Notes</option>
+          <option value="bookmarked">Bookmarked</option>
+        </select>
+        <div className="flex h-8 flex-1 items-center gap-1 rounded-lg border border-white/15 bg-[#1a1c20] px-2">
+          <Search className="h-3.5 w-3.5 text-slate-400" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search titles"
+            className="w-full bg-transparent text-xs text-white outline-none placeholder:text-slate-400"
+          />
+        </div>
+        <button type="button" className="h-8 rounded-lg border border-white/15 bg-[#1a1c20] px-2">
+          <Filter className="h-3.5 w-3.5 text-slate-300" />
+        </button>
+      </div>
       {!hasNotes && !isLoading ? (
         <div className={cn(monumentNoteTileOuterClass, "max-w-md")}>
           <div
@@ -73,7 +122,12 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
 
       <div className="grid w-full max-w-full grid-cols-2 gap-2.5 px-0 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
         {visibleNotes.map((note) => (
-          <MonumentNoteCard key={note.id} note={note} monumentId={monumentId} />
+          <MonumentNoteCard
+            key={note.id}
+            note={note}
+            monumentId={monumentId}
+            onToggleBookmark={handleToggleBookmark}
+          />
         ))}
 
         {(() => {

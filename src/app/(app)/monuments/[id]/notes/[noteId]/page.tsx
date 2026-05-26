@@ -47,6 +47,9 @@ export default function MonumentNotePage() {
   const [isLoading, setIsLoading] = useState(noteId !== "new");
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedText, setLastSavedText] = useState("");
+  const [noteIcon, setNoteIcon] = useState("📝");
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const presetIcons = ["📝", "💡", "🔥", "🎯", "📚", "⚡"];
 
   useEffect(() => {
     let isMounted = true;
@@ -73,6 +76,10 @@ export default function MonumentNotePage() {
           setCurrentNoteId(note.id);
           setNoteText(combined);
           setLastSavedText(combined);
+          const savedIcon =
+            typeof note.metadata?.icon === "string" ? String(note.metadata.icon) : "📝";
+          setNoteIcon(savedIcon);
+          setIsBookmarked(note.metadata?.bookmarked === true);
         } else {
           setCurrentNoteId(null);
           setNoteText("");
@@ -108,12 +115,16 @@ export default function MonumentNotePage() {
       setIsSaving(true);
       try {
         const parsed = splitNoteText(noteText);
+        const metadata = { icon: noteIcon, bookmarked: isBookmarked };
         let saved: MonumentNote | null = null;
 
         if (currentNoteId) {
-          saved = await updateMonumentNote(monumentId, currentNoteId, parsed);
+          saved = await updateMonumentNote(monumentId, currentNoteId, {
+            ...parsed,
+            metadata,
+          });
         } else {
-          saved = await createMonumentNote(monumentId, parsed);
+          saved = await createMonumentNote(monumentId, { ...parsed, metadata });
         }
 
         if (!saved) return;
@@ -133,7 +144,7 @@ export default function MonumentNotePage() {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [currentNoteId, isLoading, isSaving, lastSavedText, monumentId, noteId, noteText, router]);
+  }, [currentNoteId, isBookmarked, isLoading, isSaving, lastSavedText, monumentId, noteIcon, noteId, noteText, router]);
 
   const heading = useMemo(() => {
     const { title } = splitNoteText(noteText);
@@ -162,6 +173,25 @@ export default function MonumentNotePage() {
           ) : (
             <>
               <h1 className="mb-2 text-lg font-semibold text-white">{heading}</h1>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                {presetIcons.map((icon) => (
+                  <button
+                    key={icon}
+                    type="button"
+                    onClick={() => setNoteIcon(icon)}
+                    className={`rounded-lg border px-2 py-1 text-sm ${noteIcon === icon ? "border-white/70 bg-white/15" : "border-white/20 bg-white/5"}`}
+                  >
+                    {icon}
+                  </button>
+                ))}
+                <input
+                  value={noteIcon}
+                  onChange={(event) => setNoteIcon(event.target.value)}
+                  maxLength={4}
+                  className="h-8 w-14 rounded-lg border border-white/20 bg-white/5 px-2 text-center text-sm outline-none"
+                  aria-label="Custom note icon"
+                />
+              </div>
               <textarea
                 value={noteText}
                 onChange={(event) => setNoteText(event.target.value)}
