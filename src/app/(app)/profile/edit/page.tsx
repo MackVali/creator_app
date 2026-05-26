@@ -8,6 +8,7 @@ import { Camera as CapacitorCamera, CameraResultType, CameraSource } from "@capa
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import {
   getLinkedAccounts,
   SupportedPlatform,
@@ -23,8 +24,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Save, User, Calendar, MapPin, FileText, Camera } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { ArrowLeft, Save, User, Calendar, MapPin, Images, Camera, Trash2 } from "lucide-react";
 import Link from "next/link";
 import ContentCardManager from "@/components/profile/ContentCardManager";
 import SocialPillsRow from "@/components/profile/SocialPillsRow";
@@ -40,9 +41,6 @@ const LINKED_ACCOUNT_ORDER: SupportedPlatform[] = [
   "facebook",
   "twitter",
 ];
-
-const HERO_HEIGHT_CLASSES =
-  "min-h-[308px] sm:min-h-[380px] lg:min-h-[440px] xl:min-h-[500px]";
 
 const AVATAR_PHOTO_SOURCE_LABELS: Record<AvatarPhotoSource, string> = {
   camera: "Take Photo",
@@ -100,21 +98,6 @@ function base64ToBlob(base64: string, mimeType: string) {
   return new Blob(byteArrays, { type: mimeType });
 }
 
-function getHeroInitials(name?: string | null, username?: string | null) {
-  if (name && name.trim()) {
-    return name
-      .split(" ")
-      .map((word) => word.charAt(0))
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  }
-  if (username) {
-    return username.slice(0, 2).toUpperCase();
-  }
-  return "??";
-}
-
 export default function ProfileEditPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -139,6 +122,7 @@ export default function ProfileEditPage() {
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarMarkedForRemoval, setAvatarMarkedForRemoval] = useState(false);
   const [isAvatarSourceDialogOpen, setIsAvatarSourceDialogOpen] = useState(false);
   const [avatarSourceLoading, setAvatarSourceLoading] = useState<AvatarPhotoSource | null>(null);
   const [isWebCameraOpen, setIsWebCameraOpen] = useState(false);
@@ -155,7 +139,7 @@ export default function ProfileEditPage() {
   const [editorFrameSize, setEditorFrameSize] = useState({ width: 0, height: 0 });
   const [editorFrameAspectRatio, setEditorFrameAspectRatio] = useState(3 / 2);
   const avatarEditorFrameRef = useRef<HTMLDivElement | null>(null);
-  const heroPhotoSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const heroPhotoSurfaceRef = useRef<HTMLButtonElement | null>(null);
   const webCameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const webCameraStreamRef = useRef<MediaStream | null>(null);
   const webCameraRequestIdRef = useRef(0);
@@ -205,6 +189,7 @@ export default function ProfileEditPage() {
           is_private: userProfile.is_private ?? false,
         });
         setAvatarPreview(userProfile.avatar_url || null);
+        setAvatarMarkedForRemoval(false);
       }
       } catch (err) {
         console.error("Error loading profile:", err);
@@ -277,17 +262,28 @@ export default function ProfileEditPage() {
 
   const socialsData = useMemo(() => {
     const data: Record<string, string | undefined> = {};
+
+    linkedAccounts.forEach((account) => {
+      const platformKey = account.platform?.toLowerCase?.();
+      if (!platformKey || !account.url) return;
+      data[platformKey] = account.url;
+    });
+
     socialLinks.forEach((link) => {
+      const platformKey = link.platform.toLowerCase();
+      if (data[platformKey]) return;
+
       const resolved = resolveSocialLink(link);
       if (resolved.url) {
-        data[link.platform.toLowerCase()] = resolved.url;
+        data[platformKey] = resolved.url;
       }
     });
     return data;
-  }, [socialLinks]);
+  }, [linkedAccounts, socialLinks]);
 
   const linkedHandlePrefills = useMemo(() => {
     const prefills: Record<string, string> = {};
+
     linkedAccounts.forEach((account) => {
       const platformKey = account.platform?.toLowerCase?.();
       if (!platformKey) return;
@@ -296,8 +292,20 @@ export default function ProfileEditPage() {
         prefills[platformKey] = handle;
       }
     });
+
+    socialLinks.forEach((link) => {
+      const platformKey = link.platform?.toLowerCase?.();
+      if (!platformKey || prefills[platformKey]) return;
+
+      const resolved = resolveSocialLink(link);
+      const handle = normalizeUsername(platformKey, link.username ?? resolved.url);
+      if (handle) {
+        prefills[platformKey] = handle;
+      }
+    });
+
     return prefills;
-  }, [linkedAccounts]);
+  }, [linkedAccounts, socialLinks]);
 
   const activeLinkedAccounts = useMemo(() => {
     const visible = linkedAccounts.filter((account) => account.url?.trim());
@@ -825,6 +833,7 @@ export default function ProfileEditPage() {
       const croppedAvatarDataUrl = canvas.toDataURL("image/jpeg", 0.92);
       setAvatarFile(croppedAvatarFile);
       setAvatarPreview(croppedAvatarDataUrl);
+      setAvatarMarkedForRemoval(false);
       setError(null);
       handleAvatarEditorCancel();
     } catch (err) {
@@ -832,6 +841,32 @@ export default function ProfileEditPage() {
       setError("We couldn't save that photo. Please try another image.");
     }
   };
+
+  const handleAvatarRemove = useCallback(() => {
+    webCameraRequestIdRef.current += 1;
+    stopWebCameraStream();
+    setIsWebCameraOpen(false);
+    setWebCameraError(null);
+    setWebCameraStarting(false);
+    setWebCameraCapturing(false);
+    setAvatarSourceLoading(null);
+    setIsAvatarSourceDialogOpen(false);
+    setIsAvatarEditorOpen(false);
+    if (pendingAvatarSourceUrl) {
+      URL.revokeObjectURL(pendingAvatarSourceUrl);
+    }
+    setPendingAvatarFile(null);
+    setPendingAvatarSourceUrl(null);
+    setEditorZoom(1);
+    setEditorOffset({ x: 0, y: 0 });
+    setEditorImageSize({ width: 0, height: 0 });
+    setEditorFrameSize({ width: 0, height: 0 });
+    gestureStateRef.current = null;
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    setAvatarMarkedForRemoval(true);
+    setError(null);
+  }, [pendingAvatarSourceUrl, stopWebCameraStream]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -852,6 +887,7 @@ export default function ProfileEditPage() {
       setError(null);
 
       let avatarUrl: string | undefined;
+      const shouldRemoveAvatar = avatarMarkedForRemoval && !avatarFile;
 
       if (avatarFile) {
         const uploadRes = await uploadAvatar(avatarFile, user.id);
@@ -870,9 +906,40 @@ export default function ProfileEditPage() {
       );
       
       if (result.success && result.profile) {
+        let savedProfile = result.profile;
+
+        if (shouldRemoveAvatar) {
+          const supabase = getSupabaseBrowser();
+          if (!supabase) {
+            setError("Supabase client not initialized");
+            setSaving(false);
+            return;
+          }
+
+          const { data: clearedProfile, error: clearAvatarError } = await supabase
+            .from("profiles")
+            .update({
+              avatar_url: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", user.id)
+            .select()
+            .maybeSingle();
+
+          if (clearAvatarError || !clearedProfile) {
+            setError(clearAvatarError?.message || "Failed to remove profile picture");
+            setSaving(false);
+            return;
+          }
+
+          savedProfile = clearedProfile as Profile;
+        }
+
         setSuccess(true);
-        setProfile(result.profile);
-        setAvatarPreview(result.profile.avatar_url || null);
+        setProfile(savedProfile);
+        setAvatarFile(null);
+        setAvatarMarkedForRemoval(false);
+        setAvatarPreview(savedProfile.avatar_url || null);
 
         if (onboarding) {
           try {
@@ -1000,14 +1067,15 @@ export default function ProfileEditPage() {
     return null;
   }
 
-  const heroAvatarUrl = avatarPreview ?? profile.avatar_url ?? null;
-  const heroName = profile.name?.trim() || profile.username || "Your profile";
-  const heroHandle = profile.username ? `@${profile.username}` : null;
-  const heroBio =
-    profile.bio?.trim() ||
-    profile.tagline?.trim() ||
-    "Add a short story so visitors understand what to expect from your profile.";
-  const heroInitials = getHeroInitials(profile.name, profile.username);
+  const heroAvatarUrl = avatarMarkedForRemoval
+    ? null
+    : avatarPreview ?? profile.avatar_url ?? null;
+  const heroName =
+    formData.name.trim() ||
+    formData.username.trim() ||
+    profile.name?.trim() ||
+    profile.username ||
+    "Your profile";
   const editorBaseContainScale =
     editorImageSize.width && editorImageSize.height && editorFrameSize.width && editorFrameSize.height
       ? Math.min(
@@ -1020,111 +1088,118 @@ export default function ProfileEditPage() {
 
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
-      <section className="w-full border-b border-white/5 bg-gradient-to-b from-slate-950 via-slate-950/80 to-black">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 pb-8 pt-5 text-center">
-          <div className="relative w-full overflow-visible rounded-[32px] border border-white/10 bg-black/40 shadow-[0_25px_60px_rgba(2,6,23,0.55)]">
-            <div ref={heroPhotoSurfaceRef} className={`relative ${HERO_HEIGHT_CLASSES}`}>
-              <div className="absolute inset-0">
-                {heroAvatarUrl ? (
-                  <img
-                    src={heroAvatarUrl}
-                    alt={`${heroName}'s profile photo`}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-5xl font-semibold text-white">
-                    <span aria-hidden="true">{heroInitials}</span>
-                    <span className="sr-only">{`${heroName}'s initials`}</span>
-                  </div>
-                )}
-              </div>
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/60 to-black/95" />
-              <header className="pointer-events-auto absolute inset-x-4 top-3 flex items-center text-white/80 sm:top-4">
-                <div className="flex items-center gap-2.5">
-                  <Link href="/profile">
-                    <Button variant="ghost" size="sm" className="p-2">
-                      <ArrowLeft className="h-5 w-5" />
-                    </Button>
-                  </Link>
-                  <span className="text-xs font-semibold uppercase tracking-[0.32em] text-white/60 sm:text-sm">
-                    Edit profile
-                  </span>
+      <section className="w-full border-b border-white/5 bg-gradient-to-b from-[#08090E] via-[#0F0F12] to-[#0F0F12]">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 pb-4 pt-5">
+          <header className="flex items-center gap-2.5 text-white/80">
+            <Link href="/profile">
+              <Button variant="ghost" size="sm" className="p-2">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            </Link>
+            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-white/60 sm:text-sm">
+              Edit profile
+            </span>
+          </header>
+
+          <div className="relative overflow-visible rounded-3xl border border-white/10 bg-[#15161A]/85 px-4 py-4 shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl sm:px-5 sm:py-5">
+            <div className="flex items-center gap-4 sm:gap-5">
+              <Dialog.Root
+                modal={false}
+                open={isAvatarSourceDialogOpen}
+                onOpenChange={(open) => {
+                  if (!avatarSourceLoading) {
+                    setIsAvatarSourceDialogOpen(open);
+                  }
+                }}
+              >
+                <div className="relative flex shrink-0 justify-center overflow-visible">
+                  <Dialog.Trigger asChild>
+                    <button
+                      ref={heroPhotoSurfaceRef}
+                      type="button"
+                      disabled={avatarSourceLoading !== null}
+                      aria-label="Change profile photo"
+                      className="group relative h-24 w-24 overflow-hidden rounded-full border border-white/15 bg-black shadow-[0_14px_34px_rgba(0,0,0,0.38)] outline-none transition hover:border-white/30 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#15161A] disabled:cursor-not-allowed disabled:opacity-70 sm:h-28 sm:w-28"
+                    >
+                      {heroAvatarUrl ? (
+                        <img
+                          src={heroAvatarUrl}
+                          alt={`${heroName}'s profile photo`}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 via-zinc-900 to-black text-zinc-500">
+                          <User className="h-10 w-10 sm:h-12 sm:w-12" aria-hidden="true" />
+                        </span>
+                      )}
+                      <span
+                        className="absolute inset-0 bg-black/0 transition group-hover:bg-black/10 group-active:bg-black/15"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </Dialog.Trigger>
+                  <Dialog.Content className="absolute left-1/2 top-full z-50 mt-3 w-64 -translate-x-1/2 rounded-[20px] border border-white/10 bg-[#05070c]/95 p-1.5 text-white shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl focus:outline-none md:left-full md:top-1/2 md:ml-4 md:mt-0 md:-translate-y-1/2 md:translate-x-0">
+                    <Dialog.Title className="sr-only">Edit profile photo</Dialog.Title>
+                    <div className="grid gap-1">
+                      <button
+                        type="button"
+                        disabled={avatarSourceLoading !== null}
+                        onClick={() => handleAvatarSourceSelect("photos")}
+                        className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Images className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
+                        <span>{AVATAR_PHOTO_SOURCE_LABELS.photos}</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={avatarSourceLoading !== null}
+                        onClick={() => handleAvatarSourceSelect("camera")}
+                        className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Camera className="h-4 w-4 shrink-0 text-zinc-300" aria-hidden="true" />
+                        <span>{AVATAR_PHOTO_SOURCE_LABELS.camera}</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={avatarSourceLoading !== null}
+                        onClick={handleAvatarRemove}
+                        className="flex min-h-11 items-center justify-start gap-3 rounded-2xl px-3.5 text-left text-sm font-semibold text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Trash2 className="h-4 w-4 shrink-0 text-red-300/85" aria-hidden="true" />
+                        <span>Remove Photo</span>
+                      </button>
+                    </div>
+                  </Dialog.Content>
                 </div>
-              </header>
-              <div className="absolute inset-x-5 bottom-4 z-10 flex flex-col items-center gap-2 text-center text-white sm:inset-x-6 sm:bottom-6 sm:gap-2.5">
-                <p className="text-3xl font-semibold text-white sm:text-4xl lg:text-5xl">{heroName}</p>
-                {heroHandle ? (
-                  <span className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-black/40 px-3.5 py-1 text-[11px] font-medium uppercase tracking-[0.3em] text-white/80 sm:px-4 sm:text-xs sm:tracking-[0.35em]">
-                    {heroHandle}
-                  </span>
-                ) : null}
-                {heroBio ? (
-                  <p className="max-w-2xl text-xs leading-relaxed text-white/80 sm:text-sm">
-                    {heroBio}
-                  </p>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => setIsAvatarSourceDialogOpen(true)}
-                  disabled={avatarSourceLoading !== null}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-black/60 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.32em] text-white transition hover:border-white/50 sm:px-5 sm:py-2 sm:text-xs sm:tracking-[0.35em]"
-                >
-                  <Camera className="h-3.5 w-3.5" />
-                  Edit profile photo
-                </button>
-                <div className="mt-2 w-full max-w-2xl pointer-events-auto sm:mt-3 sm:max-w-3xl">
-                  <SocialPillsRow
-                    socials={socialsData}
-                    editMode
-                    onPlatformSelect={handlePlatformSelection}
-                  />
-                </div>
+              </Dialog.Root>
+              <div className="min-w-0 flex-1">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.32em] text-white/55">
+                  Profile photo
+                </p>
+                <p className="mt-1 text-sm font-medium text-white">
+                  {heroAvatarUrl ? "Update your photo" : "Add a profile photo"}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">
+                  Tap the avatar to choose, capture, adjust, or remove it.
+                </p>
               </div>
+            </div>
+
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.32em] text-white/55">
+                  Social links
+                </p>
+              </div>
+              <SocialPillsRow
+                socials={socialsData}
+                editMode
+                onPlatformSelect={handlePlatformSelection}
+              />
             </div>
           </div>
         </div>
       </section>
-      <Dialog.Root
-        open={isAvatarSourceDialogOpen}
-        onOpenChange={(open) => {
-          if (!avatarSourceLoading) {
-            setIsAvatarSourceDialogOpen(open);
-          }
-        }}
-      >
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-[220] bg-black/50 backdrop-blur-[2px]" />
-          <Dialog.Content className="fixed inset-x-3 bottom-4 z-[230] mx-auto w-auto max-w-sm rounded-[22px] border border-white/10 bg-[#05070c]/95 p-2 text-white shadow-[0_18px_50px_rgba(0,0,0,0.55)] focus:outline-none sm:inset-x-auto sm:left-1/2 sm:w-80 sm:-translate-x-1/2">
-            <Dialog.Title className="sr-only">Edit profile photo</Dialog.Title>
-            <div className="grid gap-1.5">
-              <button
-                type="button"
-                disabled={avatarSourceLoading !== null}
-                onClick={() => handleAvatarSourceSelect("camera")}
-                className="flex min-h-11 items-center justify-center rounded-2xl px-4 text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {AVATAR_PHOTO_SOURCE_LABELS.camera}
-              </button>
-              <button
-                type="button"
-                disabled={avatarSourceLoading !== null}
-                onClick={() => handleAvatarSourceSelect("photos")}
-                className="flex min-h-11 items-center justify-center rounded-2xl px-4 text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {AVATAR_PHOTO_SOURCE_LABELS.photos}
-              </button>
-              <Dialog.Close asChild>
-                <button
-                  type="button"
-                  className="flex min-h-11 items-center justify-center rounded-2xl border-t border-white/10 px-4 text-sm font-semibold text-zinc-300 transition hover:bg-white/[0.06]"
-                >
-                  Cancel
-                </button>
-              </Dialog.Close>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
       <input
         ref={webPhotoLibraryInputRef}
         type="file"
@@ -1200,7 +1275,7 @@ export default function ProfileEditPage() {
               <div className="space-y-1">
                 <Dialog.Title className="text-lg font-semibold">Adjust profile photo</Dialog.Title>
                 <Dialog.Description className="text-sm text-zinc-400">
-                  Zoom and move your image so it looks perfect in your profile hero.
+                  Zoom and move your image so it looks perfect as a profile photo.
                 </Dialog.Description>
               </div>
               <div
@@ -1247,7 +1322,7 @@ export default function ProfileEditPage() {
         </Dialog.Portal>
       </Dialog.Root>
 
-      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-10 pt-3">
         {onboarding && (
           <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-200">
             <p className="font-medium">Complete your profile to continue.</p>
@@ -1261,15 +1336,8 @@ export default function ProfileEditPage() {
             )}
           </div>
         )}
-        <Card className="shadow-xl border border-white/5 bg-[#15161A]">
-          <CardHeader>
-            <CardTitle className="text-center text-2xl">Update Your Profile</CardTitle>
-            <p className="text-center text-zinc-400 text-sm">
-              Customize your profile to make it uniquely yours
-            </p>
-          </CardHeader>
-
-          <CardContent>
+        <Card className="border border-white/5 bg-[#15161A] py-4 shadow-xl">
+          <CardContent className="px-4 sm:px-6">
             {success && (
               <div className="mb-6 p-4 bg-white/5 border border-white/10 rounded-lg">
                 <p className="text-zinc-200 text-center">
@@ -1287,14 +1355,11 @@ export default function ProfileEditPage() {
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Name */}
               <div className="space-y-2">
-                <Label htmlFor="name" className="flex items-center space-x-2">
-                  <User className="h-4 w-4 text-zinc-400" />
-                  <span>
-                    Full Name
-                    {hasAttemptedSubmit ? (
-                      <span className="text-red-400 ml-1">*</span>
-                    ) : null}
-                  </span>
+                <Label htmlFor="name">
+                  Full Name
+                  {hasAttemptedSubmit ? (
+                    <span className="text-red-400 ml-1">*</span>
+                  ) : null}
                 </Label>
                 <Input
                   id="name"
@@ -1315,27 +1380,32 @@ export default function ProfileEditPage() {
 
               {/* Username */}
               <div className="space-y-2">
-                <Label htmlFor="username" className="flex items-center space-x-2">
-                  <User className="h-4 w-4 text-zinc-400" />
-                  <span>
-                    Username
-                    {hasAttemptedSubmit ? (
-                      <span className="text-red-400 ml-1">*</span>
-                    ) : null}
-                  </span>
+                <Label htmlFor="username">
+                  Username
+                  {hasAttemptedSubmit ? (
+                    <span className="text-red-400 ml-1">*</span>
+                  ) : null}
                 </Label>
-                <Input
-                  id="username"
-                  type="text"
-                  value={formData.username}
-                  onChange={(e) => handleInputChange("username", e.target.value)}
-                  placeholder="Choose a unique username"
-                  className={`h-12 text-lg bg-black text-white placeholder:text-zinc-500 ${
-                    hasAttemptedSubmit && fieldErrors.username
-                      ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
-                      : "border-zinc-700 focus-visible:border-zinc-200 focus-visible:ring-white/20"
-                  }`}
-                />
+                <div className="relative">
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-medium text-zinc-500"
+                  >
+                    @
+                  </span>
+                  <Input
+                    id="username"
+                    type="text"
+                    value={formData.username}
+                    onChange={(e) => handleInputChange("username", e.target.value)}
+                    placeholder="Choose a unique username"
+                    className={`h-12 bg-black pl-8 text-lg text-white placeholder:text-zinc-500 ${
+                      hasAttemptedSubmit && fieldErrors.username
+                        ? "border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/60"
+                        : "border-zinc-700 focus-visible:border-zinc-200 focus-visible:ring-white/20"
+                    }`}
+                  />
+                </div>
                 <p className="text-sm text-zinc-400">
                   This will be your unique identifier: @{formData.username || "username"}
                 </p>
@@ -1346,10 +1416,7 @@ export default function ProfileEditPage() {
 
               {/* Bio */}
               <div className="space-y-2">
-                <Label htmlFor="bio" className="flex items-center space-x-2">
-                  <FileText className="h-4 w-4 text-zinc-400" />
-                  <span>Bio</span>
-                </Label>
+                <Label htmlFor="bio">Bio</Label>
                 <Textarea
                   id="bio"
                   value={formData.bio}
@@ -1436,11 +1503,11 @@ export default function ProfileEditPage() {
                 <Button
                   type="submit"
                   disabled={saving}
-                  className="w-full h-14 bg-white text-black text-lg font-semibold rounded-xl shadow-lg hover:bg-zinc-200 transition-all duration-200"
+                  className="h-14 w-full rounded-xl border border-stone-400/20 bg-stone-600 text-lg font-semibold text-white shadow-[0_16px_38px_rgba(0,0,0,0.35)] transition-all duration-200 hover:border-stone-300/30 hover:bg-stone-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? (
                     <div className="flex items-center space-x-2">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-black"></div>
+                      <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-white"></div>
                       <span>Saving...</span>
                     </div>
                   ) : (

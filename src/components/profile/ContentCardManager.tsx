@@ -268,34 +268,37 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
 
   return (
     <Card className="overflow-hidden border-white/10 bg-[#0b0c14] shadow-[0_30px_70px_-40px_rgba(2,6,23,0.9)]">
-      <CardHeader className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <CardTitle className="text-lg font-semibold text-white">Content cards</CardTitle>
-          <p className="mt-1 text-sm text-white/60">
-            Curate link tiles that show up on your public profile. Drag to reorder and edit on
-            the fly.
-          </p>
-        </div>
+      <Dialog.Root open={dialogOpen} onOpenChange={handleDialogOpenChange}>
+        <CardHeader className="gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-lg font-semibold text-white">Content Cards</CardTitle>
 
-        <Dialog.Root open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-          <Dialog.Trigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2 rounded-full px-4 py-2"
-              onClick={() => openCardForm()}
-            >
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              Add card
-            </Button>
-        </Dialog.Trigger>
+            <Dialog.Trigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-10 shrink-0 gap-1.5 rounded-full border-white/10 bg-zinc-900 px-3.5 py-2 text-sm font-semibold text-white shadow-[0_10px_26px_rgba(0,0,0,0.28)] transition hover:border-white/20 hover:bg-zinc-800 hover:text-white"
+                onClick={() => openCardForm()}
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Add Card
+              </Button>
+            </Dialog.Trigger>
+          </div>
+          <div>
+            <p className="mt-1 text-sm text-white/60">
+              Curate link tiles that show up on your public profile. Drag to reorder and edit on
+              the fly.
+            </p>
+          </div>
+        </CardHeader>
 
-          <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xl" />
-            <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(90vw,540px)] -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-white/10 bg-[#05070b] p-6 text-white shadow-[0_25px_60px_rgba(0,0,0,0.65)] focus:outline-none">
-              <Dialog.Title className="text-xl font-semibold">
-                {activeCard ? "Edit content card" : "Add a new card"}
-              </Dialog.Title>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xl" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(90vw,540px)] -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-white/10 bg-[#05070b] p-6 text-white shadow-[0_25px_60px_rgba(0,0,0,0.65)] focus:outline-none">
+            <Dialog.Title className="text-xl font-semibold">
+              {activeCard ? "Edit content card" : "Add a new card"}
+            </Dialog.Title>
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-4">
                 <div className="space-y-2">
@@ -431,10 +434,9 @@ export default function ContentCardManager({ userId, onCardsChange }: ContentCar
                   </Button>
                 </div>
               </form>
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
-      </CardHeader>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <CardContent className="space-y-4">
         {loading ? (

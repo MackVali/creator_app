@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 
 import { SupportedPlatform } from "@/lib/db/linked-accounts";
-import { getSocialIconDefinition } from "./SocialIcon";
+import { getSocialIconDefinition, SocialIcon } from "./SocialIcon";
 
 const LINKED_PLATFORMS: SupportedPlatform[] = [
   "instagram",
@@ -16,6 +16,10 @@ const LINKED_PLATFORMS: SupportedPlatform[] = [
   "facebook",
   "twitter",
 ];
+
+function isLinkedPlatform(platform: string): platform is SupportedPlatform {
+  return LINKED_PLATFORMS.includes(platform as SupportedPlatform);
+}
 
 interface SocialPillsRowProps {
   socials: Record<string, string | undefined>;
@@ -143,12 +147,14 @@ export default function SocialPillsRow({
   }, [isPlatformMenuOpen, updateMenuPosition]);
 
   const circleClasses =
-    "group relative inline-flex h-12 w-12 shrink-0 snap-center items-center justify-center rounded-full text-white transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-11 sm:w-11";
+    "group relative inline-flex h-11 w-11 shrink-0 snap-center items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
 
   const rowClasses =
     layout === "vertical"
       ? "flex flex-col items-center gap-3"
-      : "-mx-2 flex snap-x snap-mandatory items-center gap-4 overflow-x-auto overflow-y-visible px-2 pb-2 sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 lg:justify-start";
+      : editMode
+        ? "-mx-2 flex snap-x snap-mandatory items-center gap-2.5 overflow-x-auto overflow-y-visible px-2 pb-2 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
+        : "-mx-2 flex snap-x snap-mandatory items-center gap-4 overflow-x-auto overflow-y-visible px-2 pb-2 sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 lg:justify-start";
 
   if (!hasSocials && !editMode) {
     if (layout === "vertical") {
@@ -164,6 +170,58 @@ export default function SocialPillsRow({
   return (
     <>
       <div className={rowClasses}>
+        {availableSocials.map(([platform, url]) => {
+          const definition = getSocialIconDefinition(platform);
+          if (!url) return null;
+
+          const icon = (
+            <>
+              <span
+                className="pointer-events-none absolute inset-0 rounded-full bg-white/10 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+                aria-hidden="true"
+              />
+              <span
+                className="relative inline-flex h-8 w-8 items-center justify-center rounded-full transition-transform duration-200 group-hover:scale-110"
+                aria-hidden="true"
+              >
+                <SocialIcon
+                  platform={platform}
+                  className="h-8 w-8 shadow-none"
+                  iconClassName="h-4 w-4"
+                />
+              </span>
+              <span className="sr-only">{definition.label}</span>
+            </>
+          );
+
+          if (editMode && onPlatformSelect && isLinkedPlatform(platform)) {
+            return (
+              <button
+                key={platform}
+                type="button"
+                onClick={() => onPlatformSelect(platform)}
+                aria-label={`Edit ${definition.label}`}
+                className={circleClasses}
+              >
+                {icon}
+              </button>
+            );
+          }
+
+          return (
+            <Link
+              key={platform}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={definition.label}
+              className={circleClasses}
+            >
+              {icon}
+            </Link>
+          );
+        })}
+
         {editMode && onPlatformSelect ? (
           <div className="relative">
             <button
@@ -185,7 +243,7 @@ export default function SocialPillsRow({
               ref={plusButtonRef}
             >
               <span className="pointer-events-none absolute inset-0 rounded-full bg-white/10 opacity-0 transition-opacity duration-200 group-hover:opacity-100" aria-hidden="true" />
-              <span className="relative inline-flex h-8 w-8 items-center justify-center rounded-full">
+              <span className="relative inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/35">
                 <Plus className="h-4 w-4" aria-hidden="true" />
               </span>
             </button>
@@ -235,35 +293,6 @@ export default function SocialPillsRow({
             ) : null}
           </div>
         ) : null}
-
-        {availableSocials.map(([platform, url]) => {
-          const definition = getSocialIconDefinition(platform);
-          if (!url) return null;
-
-          const Icon = definition.icon;
-
-          return (
-            <Link
-              key={platform}
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={definition.label}
-              className={circleClasses}
-            >
-              <span className="pointer-events-none absolute inset-0 rounded-full bg-white/10 opacity-0 transition-opacity duration-200 group-hover:opacity-100" aria-hidden="true" />
-              <span
-                className="relative inline-flex h-8 w-8 items-center justify-center rounded-full transition-transform duration-200 group-hover:scale-110"
-                aria-hidden="true"
-              >
-                <span className={`flex h-full w-full items-center justify-center rounded-full text-white ${definition.background}`}>
-                  <Icon className="h-4 w-4" />
-                </span>
-              </span>
-              <span className="sr-only">{definition.label}</span>
-            </Link>
-          );
-        })}
       </div>
       {!hasSocials && !editMode ? (
         <div className="mt-2 w-full text-center text-sm text-white/60">

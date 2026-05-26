@@ -48,6 +48,7 @@ const BRAND_ICONS = {
   reddit: pickSimpleIcon("siReddit"),
   twitch: pickSimpleIcon("siTwitch"),
   spotify: pickSimpleIcon("siSpotify"),
+  soundcloud: pickSimpleIcon("siSoundcloud"),
   apple: pickSimpleIcon("siApplemusic", "siApplemusic"),
   google: pickSimpleIcon("siGoogle"),
 } as const;
@@ -153,6 +154,12 @@ export const SOCIAL_ICON_DEFINITIONS: Record<string, SocialIconDefinition> = {
     label: "Spotify",
     background: "bg-green-500",
     brandIcon: BRAND_ICONS.spotify,
+  },
+  soundcloud: {
+    icon: LinkIcon,
+    label: "SoundCloud",
+    background: "bg-orange-500",
+    brandIcon: BRAND_ICONS.soundcloud,
   },
   apple: {
     icon: Apple,

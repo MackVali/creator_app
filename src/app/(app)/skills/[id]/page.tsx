@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { TouchEvent } from "react";
+import clsx from "clsx";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -23,6 +25,7 @@ import { NotesGrid } from "@/components/notes/NotesGrid";
 import { Button } from "@/components/ui/button";
 import { useToastHelpers } from "@/components/ui/toast";
 import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
+import FlameEmber from "@/components/FlameEmber";
 import { SkillDrawer, type Category, type Skill as DrawerSkill } from "@/app/(app)/skills/components/SkillDrawer";
 import {
   DropdownMenu,
@@ -31,7 +34,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
-import { normalizeTimeZone } from "@/lib/scheduler/timezone";
+import {
+  formatDateKeyInTimeZone,
+  normalizeTimeZone,
+} from "@/lib/scheduler/timezone";
 import { MAX_SCHEDULE_LOOKAHEAD_DAYS } from "@/lib/scheduler/limits";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
@@ -61,13 +67,26 @@ interface HabitSummary {
   createdAt: string | null;
   updatedAt: string | null;
   lastCompletedAt: string | null;
+  currentStreakDays: number | null;
   recurrence: string | null;
   recurrenceDays: number[] | null;
+  recurrenceMode: string | null;
+  anchorType: string | null;
+  anchorValue: string | null;
+  anchorStartDate: string | null;
+  nextDueOverride: string | null;
   habitType: string | null;
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_LOOKAHEAD_DAYS = MAX_SCHEDULE_LOOKAHEAD_DAYS;
+const NO_DUE_MATCH_RANK = MAX_LOOKAHEAD_DAYS + 1;
+const RELATED_HABIT_DOUBLE_TAP_MS = 350;
+
+type HabitDueStatus = {
+  label: string;
+  rank: number;
+};
 
 function normalizeRecurrenceDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
@@ -93,6 +112,33 @@ function normalizeRecurrenceDays(value: unknown): number[] | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function normalizeRelatedHabitType(value: string | null | undefined): string {
+  const normalized = value?.trim().toUpperCase() || "HABIT";
+  return normalized === "ASYNC" ? "SYNC" : normalized;
+}
+
+function normalizeRelatedHabitStreakDays(value: unknown): number {
+  const numericValue =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value)
+        : NaN;
+
+  return Number.isFinite(numericValue)
+    ? Math.max(0, Math.round(numericValue))
+    : 0;
+}
+
+function parseOptionalDate(value: string | null | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
   return {
     id: habit.id,
@@ -101,11 +147,17 @@ function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
     createdAt: habit.createdAt,
     updatedAt: habit.updatedAt,
     lastCompletedAt: habit.lastCompletedAt,
-    habitType: (habit.habitType ?? "HABIT").toUpperCase(),
+    currentStreakDays: habit.currentStreakDays ?? 0,
+    longestStreakDays: 0,
+    habitType: normalizeRelatedHabitType(habit.habitType),
     windowId: null,
     energy: null,
     recurrence: habit.recurrence,
     recurrenceDays: habit.recurrenceDays,
+    recurrenceMode: habit.recurrenceMode,
+    anchorType: habit.anchorType,
+    anchorValue: habit.anchorValue,
+    anchorStartDate: habit.anchorStartDate,
     skillId: null,
     goalId: null,
     completionTarget: null,
@@ -114,23 +166,29 @@ function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
     locationContextName: null,
     daylightPreference: null,
     windowEdgePreference: null,
+    nextDueOverride: habit.nextDueOverride,
     window: null,
   } satisfies HabitScheduleItem;
 }
 
-function computeHabitDueLabel(habit: HabitSummary, timeZone: string): string {
+function computeHabitDueStatus(
+  habit: HabitSummary,
+  timeZone: string
+): HabitDueStatus {
   const normalizedZone = normalizeTimeZone(timeZone);
   const scheduleHabit = buildScheduleHabit(habit);
   const today = new Date();
+  const nextDueOverride = parseOptionalDate(habit.nextDueOverride);
 
   const todayEvaluation = evaluateHabitDueOnDate({
     habit: scheduleHabit,
     date: today,
     timeZone: normalizedZone,
+    nextDueOverride,
   });
 
   if (todayEvaluation.isDue) {
-    return "Due Now";
+    return { label: "Due Now", rank: 0 };
   }
 
   for (let dayOffset = 1; dayOffset <= MAX_LOOKAHEAD_DAYS; dayOffset += 1) {
@@ -139,17 +197,60 @@ function computeHabitDueLabel(habit: HabitSummary, timeZone: string): string {
       habit: scheduleHabit,
       date: futureDate,
       timeZone: normalizedZone,
+      nextDueOverride,
     });
 
     if (evaluation.isDue) {
       if (dayOffset === 1) {
-        return "Due in 1 Day";
+        return { label: "Due in 1 Day", rank: dayOffset };
       }
-      return `Due in ${dayOffset} Days`;
+      return { label: `Due in ${dayOffset} Days`, rank: dayOffset };
     }
   }
 
-  return "Due Now";
+  return { label: "No Due Match", rank: NO_DUE_MATCH_RANK };
+}
+
+function computeHabitDueLabel(habit: HabitSummary, timeZone: string): string {
+  return computeHabitDueStatus(habit, timeZone).label;
+}
+
+function computeHabitDueRank(habit: HabitSummary, timeZone: string): number {
+  return computeHabitDueStatus(habit, timeZone).rank;
+}
+
+function getHabitTypePriority(habitType: string | null | undefined): number {
+  const normalized = normalizeRelatedHabitType(habitType);
+  if (normalized === "CHORE") return 0;
+  if (normalized === "SYNC") return 2;
+  if (
+    normalized === "HABIT" ||
+    normalized === "PRACTICE" ||
+    normalized === "RELAXER" ||
+    normalized === "MEMO"
+  ) {
+    return 1;
+  }
+  return 3;
+}
+
+function getHabitCardTypeClass(habitType: string | null | undefined): string {
+  const normalized = normalizeRelatedHabitType(habitType);
+  if (normalized === "CHORE") return "habit-card--type-chore";
+  if (normalized === "SYNC") return "habit-card--type-sync";
+  if (normalized === "PRACTICE") return "habit-card--type-practice";
+  if (normalized === "RELAXER") return "habit-card--type-relaxer";
+  if (normalized === "MEMO") return "habit-card--type-memo";
+  return "habit-card--type-default";
+}
+
+function getHabitCardBorderClass(habitType: string | null | undefined): string {
+  const normalized = normalizeRelatedHabitType(habitType);
+  if (normalized === "CHORE") return "border-rose-200/45";
+  if (normalized === "SYNC") return "border-zinc-200/35";
+  if (normalized === "RELAXER") return "border-emerald-200/50";
+  if (normalized === "MEMO") return "border-purple-300/50";
+  return "border-slate-500/50";
 }
 
 function describeLevel(level: number): string {
@@ -175,6 +276,14 @@ export default function SkillDetailPage() {
   const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
   const [habitsLoading, setHabitsLoading] = useState(true);
   const [habitsError, setHabitsError] = useState<string | null>(null);
+  const [completionError, setCompletionError] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [completedRelatedHabitIds, setCompletedRelatedHabitIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const [pendingRelatedHabitIds, setPendingRelatedHabitIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [categories, setCategories] = useState<Category[]>([]);
   const [monuments, setMonuments] = useState<{ id: string; title: string }[]>([]);
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
@@ -196,13 +305,315 @@ export default function SkillDetailPage() {
       return "UTC";
     }
   }, []);
+  const [currentDateKey, setCurrentDateKey] = useState(() =>
+    formatDateKeyInTimeZone(new Date(), timeZone)
+  );
+  const relatedHabitIdsKey = useMemo(
+    () => relatedHabits.map((habit) => habit.id).join(","),
+    [relatedHabits]
+  );
+  const lastRelatedHabitTapRef = useRef<{
+    habitId: string;
+    timestamp: number;
+  } | null>(null);
+  const previousRelatedHabitStateRef = useRef(
+    new Map<
+      string,
+      {
+        lastCompletedAt: string | null;
+        nextDueOverride: string | null;
+      }
+    >()
+  );
+  const pendingRelatedHabitActionsRef = useRef(
+    new Map<string, { action: "complete" | "undo"; dateKey: string }>()
+  );
+  const completionStateDateKeyRef = useRef<string | null>(null);
   const decoratedHabits = useMemo(
     () =>
-      relatedHabits.map((habit) => ({
-        ...habit,
-        dueLabel: computeHabitDueLabel(habit, timeZone),
-      })),
+      relatedHabits
+        .map((habit) => ({
+          ...habit,
+          normalizedHabitType: normalizeRelatedHabitType(habit.habitType),
+          dueLabel: computeHabitDueLabel(habit, timeZone),
+          dueRank: computeHabitDueRank(habit, timeZone),
+        }))
+        .sort((first, second) => {
+          if (first.dueRank !== second.dueRank) {
+            return first.dueRank - second.dueRank;
+          }
+
+          const typeRank =
+            getHabitTypePriority(first.habitType) -
+            getHabitTypePriority(second.habitType);
+          if (typeRank !== 0) {
+            return typeRank;
+          }
+
+          return first.name.localeCompare(second.name, undefined, {
+            sensitivity: "base",
+          });
+        }),
     [relatedHabits, timeZone]
+  );
+
+  useEffect(() => {
+    const syncCurrentDateKey = () => {
+      const nextDateKey = formatDateKeyInTimeZone(new Date(), timeZone);
+      setCurrentDateKey((previousDateKey) =>
+        previousDateKey === nextDateKey ? previousDateKey : nextDateKey
+      );
+    };
+
+    syncCurrentDateKey();
+    const intervalId = window.setInterval(syncCurrentDateKey, 60 * 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [timeZone]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const habitIds = relatedHabitIdsKey
+      .split(",")
+      .map((habitId) => habitId.trim())
+      .filter(Boolean);
+
+    if (!supabase || !currentUserId || habitIds.length === 0) {
+      setCompletedRelatedHabitIds(new Set());
+      completionStateDateKeyRef.current = currentDateKey;
+      setCompletionError(null);
+      return;
+    }
+
+    if (completionStateDateKeyRef.current !== currentDateKey) {
+      const currentDatePendingCompletions = new Set<string>();
+      pendingRelatedHabitActionsRef.current.forEach((pendingAction, id) => {
+        if (
+          habitIds.includes(id) &&
+          pendingAction.dateKey === currentDateKey &&
+          pendingAction.action === "complete"
+        ) {
+          currentDatePendingCompletions.add(id);
+        }
+      });
+      setCompletedRelatedHabitIds(currentDatePendingCompletions);
+      completionStateDateKeyRef.current = currentDateKey;
+    }
+
+    const loadCompletionState = async () => {
+      try {
+        const { data, error: completionLoadError } = await supabase
+          .from("habit_completion_days")
+          .select("habit_id")
+          .eq("user_id", currentUserId)
+          .eq("completion_day", currentDateKey)
+          .in("habit_id", habitIds);
+
+        if (completionLoadError) {
+          throw completionLoadError;
+        }
+
+        if (!cancelled) {
+          const completedIds = new Set(
+            (data ?? [])
+              .map((row) =>
+                typeof row.habit_id === "string" ? row.habit_id : null
+              )
+              .filter((habitId): habitId is string => habitId !== null)
+          );
+          pendingRelatedHabitActionsRef.current.forEach((pendingAction, id) => {
+            if (
+              !habitIds.includes(id) ||
+              pendingAction.dateKey !== currentDateKey
+            ) {
+              return;
+            }
+
+            if (pendingAction.action === "complete") {
+              completedIds.add(id);
+            } else {
+              completedIds.delete(id);
+            }
+          });
+          setCompletedRelatedHabitIds(completedIds);
+          completionStateDateKeyRef.current = currentDateKey;
+          setCompletionError(null);
+        }
+      } catch (completionLoadErr) {
+        if (!cancelled) {
+          console.error(
+            "Error loading related habit completion state:",
+            completionLoadErr
+          );
+          setCompletionError("Unable to load habit completion state right now.");
+        }
+      }
+    };
+
+    void loadCompletionState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentDateKey, currentUserId, relatedHabitIdsKey, supabase]);
+
+  const handleRelatedHabitCompletionToggle = useCallback(
+    async (habitId: string) => {
+      if (!currentUserId || pendingRelatedHabitIds.has(habitId)) {
+        return;
+      }
+
+      const habitBeforeUpdate =
+        relatedHabits.find((habit) => habit.id === habitId) ?? null;
+      if (!habitBeforeUpdate) {
+        return;
+      }
+
+      const wasCompleted = completedRelatedHabitIds.has(habitId);
+      const action = wasCompleted ? "undo" : "complete";
+      const completedAt = new Date().toISOString();
+
+      setCompletionError(null);
+      setPendingRelatedHabitIds((previous) => {
+        const next = new Set(previous);
+        next.add(habitId);
+        return next;
+      });
+
+      if (!wasCompleted && !previousRelatedHabitStateRef.current.has(habitId)) {
+        previousRelatedHabitStateRef.current.set(habitId, {
+          lastCompletedAt: habitBeforeUpdate.lastCompletedAt,
+          nextDueOverride: habitBeforeUpdate.nextDueOverride,
+        });
+      }
+      pendingRelatedHabitActionsRef.current.set(habitId, {
+        action,
+        dateKey: currentDateKey,
+      });
+
+      setCompletedRelatedHabitIds((previous) => {
+        const next = new Set(previous);
+        if (wasCompleted) {
+          next.delete(habitId);
+        } else {
+          next.add(habitId);
+        }
+        return next;
+      });
+      setRelatedHabits((previous) =>
+        previous.map((habit) => {
+          if (habit.id !== habitId) {
+            return habit;
+          }
+
+          if (action === "complete") {
+            return {
+              ...habit,
+              lastCompletedAt: completedAt,
+              nextDueOverride: null,
+            };
+          }
+
+          const previousState = previousRelatedHabitStateRef.current.get(habitId);
+          return {
+            ...habit,
+            lastCompletedAt: previousState?.lastCompletedAt ?? null,
+            nextDueOverride:
+              previousState?.nextDueOverride ?? habit.nextDueOverride,
+          };
+        })
+      );
+
+      try {
+        const response = await fetch("/api/habits/completion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            habitId,
+            completedAt,
+            timeZone,
+            action,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+
+        if (action === "undo") {
+          previousRelatedHabitStateRef.current.delete(habitId);
+        }
+      } catch (completionUpdateErr) {
+        console.error(
+          "Failed to update related habit completion:",
+          completionUpdateErr
+        );
+        setCompletionError("Unable to update habit completion right now.");
+        toast.error(
+          "Completion failed",
+          "Unable to update habit completion right now."
+        );
+
+        setCompletedRelatedHabitIds((previous) => {
+          const next = new Set(previous);
+          if (wasCompleted) {
+            next.add(habitId);
+          } else {
+            next.delete(habitId);
+          }
+          return next;
+        });
+        setRelatedHabits((previous) =>
+          previous.map((habit) =>
+            habit.id === habitId ? habitBeforeUpdate : habit
+          )
+        );
+        if (!wasCompleted) {
+          previousRelatedHabitStateRef.current.delete(habitId);
+        }
+      } finally {
+        pendingRelatedHabitActionsRef.current.delete(habitId);
+        setPendingRelatedHabitIds((previous) => {
+          const next = new Set(previous);
+          next.delete(habitId);
+          return next;
+        });
+      }
+    },
+    [
+      completedRelatedHabitIds,
+      currentDateKey,
+      currentUserId,
+      pendingRelatedHabitIds,
+      relatedHabits,
+      timeZone,
+      toast,
+    ]
+  );
+
+  const handleRelatedHabitTouchEnd = useCallback(
+    (event: TouchEvent<HTMLDivElement>, habitId: string) => {
+      const now = Date.now();
+      const previousTap = lastRelatedHabitTapRef.current;
+
+      if (
+        previousTap?.habitId === habitId &&
+        now - previousTap.timestamp <= RELATED_HABIT_DOUBLE_TAP_MS
+      ) {
+        event.preventDefault();
+        lastRelatedHabitTapRef.current = null;
+        void handleRelatedHabitCompletionToggle(habitId);
+        return;
+      }
+
+      lastRelatedHabitTapRef.current = {
+        habitId,
+        timestamp: now,
+      };
+    },
+    [handleRelatedHabitCompletionToggle]
   );
 
   useEffect(() => {
@@ -221,7 +632,7 @@ export default function SkillDetailPage() {
         const { data: habitsData, error: habitsError } = await supabase
           .from("habits")
           .select(
-            "id, name, created_at, updated_at, recurrence, recurrence_days, habit_type"
+            "id, name, created_at, updated_at, last_completed_at, current_streak_days, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, next_due_override, habit_type"
           )
           .eq("user_id", userId)
           .eq("skill_id", id)
@@ -241,8 +652,15 @@ export default function SkillDetailPage() {
                 name?: unknown;
                 created_at?: unknown;
                 updated_at?: unknown;
+                last_completed_at?: unknown;
+                current_streak_days?: unknown;
                 recurrence?: unknown;
                 recurrence_days?: unknown;
+                recurrence_mode?: unknown;
+                anchor_type?: unknown;
+                anchor_value?: unknown;
+                anchor_start_date?: unknown;
+                next_due_override?: unknown;
                 habit_type?: unknown;
               };
 
@@ -263,6 +681,13 @@ export default function SkillDetailPage() {
                 typeof habitRecord.updated_at === "string"
                   ? habitRecord.updated_at
                   : null;
+              const lastCompletedAt =
+                typeof habitRecord.last_completed_at === "string"
+                  ? habitRecord.last_completed_at
+                  : null;
+              const currentStreakDays = normalizeRelatedHabitStreakDays(
+                habitRecord.current_streak_days
+              );
               const recurrence =
                 typeof habitRecord.recurrence === "string" && habitRecord.recurrence.trim().length > 0
                   ? habitRecord.recurrence
@@ -274,7 +699,32 @@ export default function SkillDetailPage() {
                 typeof habitRecord.habit_type === "string" && habitRecord.habit_type.trim().length > 0
                   ? habitRecord.habit_type
                   : null;
-              const lastCompletedAt = updatedAt ?? createdAt;
+              const recurrenceMode =
+                typeof habitRecord.recurrence_mode === "string" &&
+                habitRecord.recurrence_mode.trim().length > 0
+                  ? habitRecord.recurrence_mode
+                  : null;
+              const anchorType =
+                typeof habitRecord.anchor_type === "string" &&
+                habitRecord.anchor_type.trim().length > 0
+                  ? habitRecord.anchor_type
+                  : null;
+              const anchorValue =
+                typeof habitRecord.anchor_value === "string" &&
+                habitRecord.anchor_value.trim().length > 0
+                  ? habitRecord.anchor_value
+                  : typeof habitRecord.anchor_value === "number" &&
+                      Number.isFinite(habitRecord.anchor_value)
+                    ? String(habitRecord.anchor_value)
+                  : null;
+              const anchorStartDate =
+                typeof habitRecord.anchor_start_date === "string"
+                  ? habitRecord.anchor_start_date
+                  : null;
+              const nextDueOverride =
+                typeof habitRecord.next_due_override === "string"
+                  ? habitRecord.next_due_override
+                  : null;
 
               return {
                 id: habitId,
@@ -282,8 +732,14 @@ export default function SkillDetailPage() {
                 createdAt,
                 updatedAt,
                 lastCompletedAt,
+                currentStreakDays,
                 recurrence,
                 recurrenceDays,
+                recurrenceMode,
+                anchorType,
+                anchorValue,
+                anchorStartDate,
+                nextDueOverride,
                 habitType,
               } satisfies HabitSummary;
             })
@@ -359,7 +815,12 @@ export default function SkillDetailPage() {
       setLoading(true);
       setError(null);
       setHabitsError(null);
+      setCompletionError(null);
       setRelatedHabits([]);
+      setCompletedRelatedHabitIds(new Set());
+      setPendingRelatedHabitIds(new Set());
+      previousRelatedHabitStateRef.current.clear();
+      pendingRelatedHabitActionsRef.current.clear();
       setHabitsLoading(true);
       setProgress(null);
 
@@ -371,6 +832,7 @@ export default function SkillDetailPage() {
         }
 
         const userId = authData.user?.id ?? null;
+        setCurrentUserId(userId);
 
         let skillQuery = supabase
           .from("skills")
@@ -687,10 +1149,6 @@ export default function SkillDetailPage() {
     }
   };
 
-  const handleCreateGoal = () => {
-    router.push("/goals/new");
-  };
-
   const handleStartFocusPomo = () => {
     const source: FocusPomoSource = {
       sourceType: "skill",
@@ -848,19 +1306,7 @@ export default function SkillDetailPage() {
             <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">PROJECTS</p>
-                <h2 className="text-lg font-semibold text-white sm:text-xl">Projects powering this skill</h2>
-                <p className="text-xs text-white/60 sm:text-sm">
-                  Every project that touches {skill.name}, rendered like the monument goals you already know.
-                </p>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleCreateGoal}
-                className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
-              >
-                New goal
-              </Button>
             </header>
             <div className="relative mt-6 overflow-visible">
               <SkillProjectsList skillId={id} />
@@ -868,35 +1314,28 @@ export default function SkillDetailPage() {
           </section>
 
           <section className="relative space-y-6">
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#070707] via-[#121212] to-[#1c1c1c] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.78)] sm:p-7">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#070707] via-[#121212] to-[#1c1c1c] p-4 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.78)] sm:p-5">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.1),_transparent_60%)]" />
-              <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
-                  <p className="text-xs font-medium uppercase tracking-[0.3em] text-white/60">Notes</p>
-                  <h2 className="text-lg font-semibold text-white sm:text-xl">Keep discoveries close</h2>
-                  <p className="text-xs text-white/60 sm:text-sm">
-                    Save learnings, resources, and reminders tied to {skill.name}.
-                  </p>
-                </div>
-              </header>
-              <div className="relative mt-5">
+              <div className="relative">
                 <NotesGrid skillId={id} />
               </div>
             </div>
 
-            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-white/5 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.7)] backdrop-blur">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.18),_transparent_70%)]" />
+            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#070707] via-[#111111] to-[#1b1b1b] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_68%)]" />
               <CardHeader className="relative pb-2">
-                <CardTitle className="text-base font-semibold text-white">Related habits</CardTitle>
-                <CardDescription className="text-white/70">
-                  Rituals that reinforce {skill.name}.
-                </CardDescription>
+                <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+                  RELATED HABITS
+                </CardTitle>
               </CardHeader>
               <CardContent className="relative">
                 {habitsLoading ? (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid gap-2">
                     {Array.from({ length: 3 }).map((_, index) => (
-                      <Skeleton key={index} className="h-8 w-24 rounded-full" />
+                      <Skeleton
+                        key={index}
+                        className="h-[76px] rounded-2xl border border-white/10 bg-white/10"
+                      />
                     ))}
                   </div>
                 ) : habitsError ? (
@@ -904,18 +1343,90 @@ export default function SkillDetailPage() {
                 ) : relatedHabits.length === 0 ? (
                   <p className="text-xs text-white/60">no habits related to this skill yet</p>
                 ) : (
-                  <div className="grid gap-2">
-                    {decoratedHabits.map((habit) => (
-                      <div
-                        key={habit.id}
-                        className="flex flex-col gap-1 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-white/80 backdrop-blur transition hover:border-white/25 hover:bg-white/15"
-                      >
-                        <span className="text-sm font-medium text-white">{habit.name}</span>
-                        <span className="text-xs font-medium uppercase tracking-[0.18em] text-white/60">
-                          {habit.dueLabel}
-                        </span>
-                      </div>
-                    ))}
+                  <div className="space-y-2">
+                    {completionError ? (
+                      <p className="text-xs text-white/60">{completionError}</p>
+                    ) : null}
+                    <div className="grid gap-2">
+                      {decoratedHabits.map((habit) => {
+                        const isHabitCompletedToday =
+                          completedRelatedHabitIds.has(habit.id);
+                        const isHabitPending = pendingRelatedHabitIds.has(
+                          habit.id
+                        );
+                        const streakDays = habit.currentStreakDays ?? 0;
+                        const showStreakBadge = streakDays >= 2;
+                        const streakLabel = `${streakDays}x`;
+
+                        return (
+                          <div
+                            key={habit.id}
+                            className={clsx(
+                              "habit-card relative flex min-h-[76px] w-full flex-col justify-between gap-2 rounded-2xl border px-4 py-3 text-white backdrop-blur transition duration-150 select-none hover:-translate-y-0.5",
+                              isHabitCompletedToday
+                                ? "habit-card--completed habit-card--completed-gem"
+                                : "habit-card--scheduled",
+                              getHabitCardTypeClass(habit.normalizedHabitType),
+                              getHabitCardBorderClass(habit.normalizedHabitType),
+                              isHabitPending
+                                ? "pointer-events-none cursor-default opacity-75"
+                                : "cursor-pointer"
+                            )}
+                            role="button"
+                            tabIndex={isHabitPending ? -1 : 0}
+                            aria-pressed={isHabitCompletedToday}
+                            aria-disabled={isHabitPending}
+                            aria-label={`${habit.name}. ${habit.dueLabel}. Double tap to ${
+                              isHabitCompletedToday ? "undo" : "complete"
+                            }.`}
+                            style={{
+                              boxShadow: isHabitCompletedToday
+                                ? "0 14px 28px rgba(2, 6, 23, 0.34), inset 0 1px 0 rgba(236, 253, 245, 0.32), inset 0 0 0 1px rgba(110, 231, 183, 0.22)"
+                                : "0 18px 38px rgba(8, 12, 32, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.1)",
+                              outline: "1px solid rgba(0, 0, 0, 0.78)",
+                              outlineOffset: "-1px",
+                            }}
+                            title={`${habit.name} - ${habit.dueLabel}. Double tap to ${
+                              isHabitCompletedToday ? "undo" : "complete"
+                            }.`}
+                            onDoubleClick={() => {
+                              void handleRelatedHabitCompletionToggle(habit.id);
+                            }}
+                            onTouchEnd={(event) =>
+                              handleRelatedHabitTouchEnd(event, habit.id)
+                            }
+                          >
+                            {showStreakBadge ? (
+                              <span
+                                className="pointer-events-none absolute right-3 top-3 z-[2] flex items-center gap-0.5 rounded-full border border-white/10 bg-white/10 px-1.5 py-[2px] text-[11px] font-semibold leading-tight text-amber-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
+                                aria-label={`${streakDays} habit streak`}
+                              >
+                                <FlameEmber
+                                  level={
+                                    streakDays >= 7
+                                      ? "HIGH"
+                                      : streakDays >= 4
+                                        ? "MEDIUM"
+                                        : "LOW"
+                                  }
+                                  size="xs"
+                                  className="drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
+                                />
+                                <span className="tracking-normal">
+                                  {streakLabel}
+                                </span>
+                              </span>
+                            ) : null}
+                            <span className="relative z-[2] line-clamp-2 pr-14 text-sm font-semibold leading-tight text-white drop-shadow-[0_1px_8px_rgba(0,0,0,0.35)]">
+                              {habit.name}
+                            </span>
+                            <span className="relative z-[2] text-[10px] font-semibold uppercase tracking-[0.18em] text-white/65">
+                              {habit.dueLabel}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </CardContent>
