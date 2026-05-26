@@ -517,6 +517,7 @@ const SelectItem = React.forwardRef<HTMLDivElement, SelectItemProps>(
     const resolvedOnSelect = onSelect ?? context.onSelect;
     const resolvedSelectedValue = selectedValue ?? context.selectedValue;
     const isDisabled = Boolean(disabled);
+    const touchHandledRef = React.useRef(false);
 
     return (
       <div
@@ -531,7 +532,18 @@ const SelectItem = React.forwardRef<HTMLDivElement, SelectItemProps>(
         role="option"
         data-tour={dataTour}
         aria-disabled={isDisabled}
+        onPointerDown={(event) => {
+          if (event.pointerType !== "touch") return;
+          if (isDisabled) return;
+          event.preventDefault();
+          touchHandledRef.current = true;
+          resolvedOnSelect?.(value, labelText || value);
+        }}
         onClick={() => {
+          if (touchHandledRef.current) {
+            touchHandledRef.current = false;
+            return;
+          }
           if (isDisabled) return;
           resolvedOnSelect?.(value, labelText || value);
         }}
