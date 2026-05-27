@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight, FilePlus2 } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { NoteEditorHeader } from "@/components/notes/NoteEditorHeader";
+import { NoteSlashTextarea } from "@/components/notes/NoteSlashTextarea";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import {
   createSkillNote,
@@ -17,6 +18,7 @@ import {
 import type { Note } from "@/lib/types/note";
 
 const ROOT_PARENT_VALUE = "__root__";
+const DEFAULT_NOTE_ICON = "📝";
 
 function getNoteTitle(note: Note | null): string {
   if (!note) return "Untitled";
@@ -38,29 +40,29 @@ function formatTimestamp(note: Note): string {
   return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function splitNoteText(text: string) {
-  const normalized = text.replace(/\r\n/g, "\n");
-  const lines = normalized.split("\n");
-  const firstLineIndex = lines.findIndex((line) => line.trim().length > 0);
-
-  if (firstLineIndex === -1) {
-    return { title: "", content: "" };
-  }
-
-  const title = lines[firstLineIndex].trim();
-  const content = lines.slice(firstLineIndex + 1).join("\n").trim();
-  return { title, content };
+function getMetadataIcon(metadata: Record<string, unknown> | null | undefined) {
+  return typeof metadata?.icon === "string" && metadata.icon.trim()
+    ? metadata.icon
+    : DEFAULT_NOTE_ICON;
 }
 
-function combineNoteText(note: Pick<Note, "title" | "content"> | null) {
-  if (!note) return "";
-  const title = note.title?.trim() ?? "";
-  const content = note.content?.trim() ?? "";
-
-  if (!title && !content) return "";
-  if (!content) return title;
-  if (!title) return content;
-  return `${title}\n\n${content}`;
+function createSaveSnapshot({
+  title,
+  content,
+  icon,
+  parentNoteId,
+}: {
+  title: string;
+  content: string;
+  icon: string;
+  parentNoteId: string | null;
+}) {
+  return JSON.stringify({
+    title,
+    content,
+    icon,
+    parentNoteId,
+  });
 }
 
 export default function NotePage() {
@@ -72,7 +74,10 @@ export default function NotePage() {
   const parentFromQuery = searchParams?.get("parent");
   const normalizedParentFromQuery = parentFromQuery ? String(parentFromQuery) : null;
 
-  const [noteText, setNoteText] = useState("");
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
+  const [noteIcon, setNoteIcon] = useState(DEFAULT_NOTE_ICON);
+  const [noteMetadata, setNoteMetadata] = useState<Record<string, unknown> | null>(null);
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [selectedParentId, setSelectedParentId] = useState<string | null>(normalizedParentFromQuery);
   const [parentNote, setParentNote] = useState<Note | null>(null);
@@ -81,18 +86,28 @@ export default function NotePage() {
   const [isLoading, setIsLoading] = useState(noteId !== "new");
   const [isLoadingParents, setIsLoadingParents] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [lastSavedText, setLastSavedText] = useState("");
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState("");
 
   useEffect(() => {
     let isMounted = true;
 
     if (noteId === "new") {
       setCurrentNoteId(null);
-      setNoteText("");
+      setNoteTitle("");
+      setNoteContent("");
+      setNoteIcon(DEFAULT_NOTE_ICON);
+      setNoteMetadata(null);
       setChildren([]);
       setParentNote(null);
       setSelectedParentId(normalizedParentFromQuery);
-      setLastSavedText("");
+      setLastSavedSnapshot(
+        createSaveSnapshot({
+          title: "",
+          content: "",
+          icon: DEFAULT_NOTE_ICON,
+          parentNoteId: normalizedParentFromQuery,
+        }),
+      );
       setIsLoading(false);
       return () => {
         isMounted = false;
@@ -107,17 +122,30 @@ export default function NotePage() {
         if (!isMounted) return;
 
         if (result) {
-          const combined = combineNoteText(result.note);
+          const icon = getMetadataIcon(result.note.metadata);
           setCurrentNoteId(result.note.id);
-          setNoteText(combined);
-          setLastSavedText(combined);
+          setNoteTitle(result.note.title ?? "");
+          setNoteContent(result.note.content ?? "");
+          setNoteIcon(icon);
+          setNoteMetadata(result.note.metadata ?? null);
           setSelectedParentId(result.note.parentNoteId ?? null);
           setParentNote(result.parent);
           setChildren(result.children);
+          setLastSavedSnapshot(
+            createSaveSnapshot({
+              title: result.note.title ?? "",
+              content: result.note.content ?? "",
+              icon,
+              parentNoteId: result.note.parentNoteId ?? null,
+            }),
+          );
         } else {
           setCurrentNoteId(null);
-          setNoteText("");
-          setLastSavedText("");
+          setNoteTitle("");
+          setNoteContent("");
+          setNoteIcon(DEFAULT_NOTE_ICON);
+          setNoteMetadata(null);
+          setLastSavedSnapshot("");
           setSelectedParentId(null);
           setParentNote(null);
           setChildren([]);
@@ -126,8 +154,11 @@ export default function NotePage() {
         console.error("Failed to load skill note", { error, skillId, noteId });
         if (!isMounted) return;
         setCurrentNoteId(null);
-        setNoteText("");
-        setLastSavedText("");
+        setNoteTitle("");
+        setNoteContent("");
+        setNoteIcon(DEFAULT_NOTE_ICON);
+        setNoteMetadata(null);
+        setLastSavedSnapshot("");
         setSelectedParentId(null);
         setParentNote(null);
         setChildren([]);
@@ -204,37 +235,52 @@ export default function NotePage() {
   useEffect(() => {
     if (isLoading || isSaving) return;
 
-    const trimmed = noteText.trim();
-    if (!trimmed || noteText === lastSavedText) {
+    const hasDraft = noteTitle.trim().length > 0 || noteContent.trim().length > 0;
+    if (!currentNoteId && !hasDraft) {
+      return;
+    }
+
+    const nextSnapshot = createSaveSnapshot({
+      title: noteTitle,
+      content: noteContent,
+      icon: noteIcon,
+      parentNoteId: selectedParentId,
+    });
+
+    if (nextSnapshot === lastSavedSnapshot) {
       return;
     }
 
     const timer = setTimeout(async () => {
       setIsSaving(true);
       try {
-        const parsed = splitNoteText(noteText);
+        const metadata = { ...(noteMetadata ?? {}), icon: noteIcon };
+        const payload = {
+          title: noteTitle.trim() || "Untitled",
+          content: noteContent,
+        };
         let saved: Note | null = null;
 
         if (currentNoteId) {
           saved = await updateSkillNote(
             skillId,
             currentNoteId,
-            parsed,
-            { parentNoteId: selectedParentId },
+            payload,
+            { metadata, parentNoteId: selectedParentId },
           );
         } else {
           saved = await createSkillNote(
             skillId,
-            parsed,
-            { parentNoteId: selectedParentId },
+            payload,
+            { metadata, parentNoteId: selectedParentId },
           );
         }
 
         if (!saved) return;
 
-        const combined = combineNoteText(saved);
         setCurrentNoteId(saved.id);
-        setLastSavedText(combined);
+        setNoteMetadata(saved.metadata ?? metadata);
+        setLastSavedSnapshot(nextSnapshot);
 
         if (noteId === "new") {
           router.replace(`/skills/${skillId}/notes/${saved.id}`);
@@ -247,7 +293,20 @@ export default function NotePage() {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [currentNoteId, isLoading, isSaving, lastSavedText, noteId, noteText, router, selectedParentId, skillId]);
+  }, [
+    currentNoteId,
+    isLoading,
+    isSaving,
+    lastSavedSnapshot,
+    noteContent,
+    noteIcon,
+    noteId,
+    noteMetadata,
+    noteTitle,
+    router,
+    selectedParentId,
+    skillId,
+  ]);
 
   const availableParentOptions = useMemo(
     () => parentOptions.filter((option) => option.id !== currentNoteId),
@@ -256,13 +315,42 @@ export default function NotePage() {
 
   const parentSelectValue = selectedParentId ?? ROOT_PARENT_VALUE;
 
-  const heading = useMemo(() => {
-    const { title } = splitNoteText(noteText);
-    return title || "New note";
-  }, [noteText]);
+  async function handleCreateSubpage() {
+    if (!currentNoteId) {
+      return null;
+    }
+
+    const created = await createSkillNote(
+      skillId,
+      {
+        title: "Untitled",
+        content: "",
+      },
+      {
+        metadata: { icon: DEFAULT_NOTE_ICON },
+        parentNoteId: currentNoteId,
+        siblingOrder: children.length,
+      },
+    );
+
+    if (!created) {
+      return null;
+    }
+
+    setChildren((current) => [...current, created]);
+    return {
+      id: created.id,
+      title: getNoteTitle(created),
+      href: `/skills/${skillId}/notes/${created.id}`,
+    };
+  }
+
+  function handleOpenSubpage(subpageId: string) {
+    router.push(`/skills/${skillId}/notes/${subpageId}`);
+  }
 
   return (
-    <main className="min-h-screen bg-[#020202] px-4 py-6 text-white">
+    <main className="min-h-screen bg-[#020202] px-4 py-5 text-white sm:py-6">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         <div className="flex items-center justify-between">
           <Button
@@ -277,52 +365,54 @@ export default function NotePage() {
           <p className="text-xs font-medium text-white/60">{isSaving ? "Saving…" : "Autosaved"}</p>
         </div>
 
-        <section className="space-y-3 rounded-[20px] bg-[#0a0a0a] p-4 shadow-[0_12px_30px_-20px_rgba(0,0,0,0.9)] border border-white/10">
-          <Label className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/55">
-            Parent page
-          </Label>
-          <Select
-            value={parentSelectValue}
-            onValueChange={(value) => {
-              if (value === ROOT_PARENT_VALUE) {
-                setSelectedParentId(null);
-              } else {
-                setSelectedParentId(value);
-              }
-            }}
-            placeholder="Top-level page"
-            triggerClassName="h-11 rounded-[12px] border-0 bg-[#141414] px-3 text-left text-sm text-white"
-          >
-            <SelectContent className="border-0 bg-[#141414] text-white">
-              <SelectItem value={ROOT_PARENT_VALUE}>
-                {isLoadingParents ? "Loading…" : "Top-level page"}
-              </SelectItem>
-              {availableParentOptions.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {getNoteTitle(option)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {parentNote ? (
-            <p className="text-xs text-white/55">
-              Nested under <span className="font-semibold">{getNoteTitle(parentNote)}</span>
-            </p>
-          ) : null}
-
+        <section className="rounded-[22px] border border-white/[0.07] bg-[#050505]/92 p-4 shadow-[0_18px_42px_-30px_rgba(0,0,0,0.95)] sm:p-5">
           {isLoading ? (
             <p className="text-sm text-white/60">Loading note…</p>
           ) : (
-            <>
-              <h1 className="text-lg font-semibold text-white">{heading}</h1>
-              <textarea
-                value={noteText}
-                onChange={(event) => setNoteText(event.target.value)}
-                placeholder="Title\nStart typing your note…"
-                className="min-h-[60vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/35"
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <Select
+                  value={parentSelectValue}
+                  onValueChange={(value) => {
+                    if (value === ROOT_PARENT_VALUE) {
+                      setSelectedParentId(null);
+                    } else {
+                      setSelectedParentId(value);
+                    }
+                  }}
+                  placeholder="Top-level page"
+                  triggerClassName="h-8 max-w-full rounded-full border border-white/[0.08] bg-white/[0.045] px-3 text-left text-xs text-white/70 shadow-none hover:bg-white/[0.07]"
+                >
+                  <SelectContent className="border-white/[0.08] bg-[#101010] text-white">
+                    <SelectItem value={ROOT_PARENT_VALUE}>
+                      {isLoadingParents ? "Loading…" : "Top-level page"}
+                    </SelectItem>
+                    {availableParentOptions.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {getNoteTitle(option)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <NoteEditorHeader
+                icon={noteIcon}
+                title={noteTitle}
+                onIconChange={setNoteIcon}
+                onTitleChange={setNoteTitle}
+              />
+
+              <NoteSlashTextarea
+                value={noteContent}
+                onValueChange={setNoteContent}
+                onCreateSubpage={handleCreateSubpage}
+                onOpenSubpage={handleOpenSubpage}
+                placeholder="Start typing, or press / for commands…"
+                className="min-h-[62vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/28"
                 aria-label="Note editor"
               />
-            </>
+            </div>
           )}
         </section>
 
@@ -348,10 +438,18 @@ export default function NotePage() {
                     <li key={child.id}>
                       <Link
                         href={`/skills/${skillId}/notes/${child.id}`}
-                        className="flex items-center justify-between gap-3 rounded-xl bg-[#141414] px-3 py-2 text-sm text-white"
+                        className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.045] px-2.5 py-2 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition hover:border-emerald-300/20 hover:bg-white/[0.075]"
                       >
-                        <span className="truncate font-medium">{childTitle}</span>
-                        {subtitle ? <span className="text-xs text-white/55">{subtitle}</span> : null}
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-black/25 text-white/55">
+                          <FilePlus2 className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium leading-4">{childTitle}</span>
+                          <span className="block truncate text-[11px] font-medium leading-4 text-white/38">
+                            {subtitle || "Subpage"}
+                          </span>
+                        </span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-white/35" />
                       </Link>
                     </li>
                   );

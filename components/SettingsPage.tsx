@@ -7,6 +7,7 @@ import { useProfile } from "@/lib/hooks/useProfile";
 import type { Profile as ProfileType } from "@/lib/types";
 import { updateProfilePreferences } from "@/lib/db";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { useAmbientAudio } from "@/lib/audio/ambientAudio";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
 import {
@@ -19,6 +20,7 @@ import {
   Info,
   Link2,
   Lock,
+  Music,
   Moon,
   Pencil,
   RefreshCw,
@@ -26,6 +28,7 @@ import {
   Shield,
   ShieldCheck,
   Trash2,
+  Volume2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -128,6 +131,8 @@ export default function SettingsPage() {
     }));
   }, [baseTimeZones, timezone]);
   const router = useRouter();
+  const ambientAudio = useAmbientAudio();
+  const ambientVolumePercent = Math.round(ambientAudio.volume * 100);
 
   const planStatusLabel = !isReady ? "Loading" : is_active ? "Active" : "Free plan";
   const handlePlanAction = () => router.push("/settings/billing");
@@ -266,6 +271,14 @@ export default function SettingsPage() {
     }
 
     setSavingTimezone(false);
+  };
+
+  const handleAmbientToggle = () => {
+    void ambientAudio.toggle();
+  };
+
+  const handleAmbientVolumeChange = (nextVolume: number) => {
+    ambientAudio.setVolume(nextVolume / 100);
   };
 
   const initials = loading
@@ -467,6 +480,27 @@ export default function SettingsPage() {
             onChange={handleNotificationsToggle}
             ariaLabel="Toggle notifications"
             disabled={!userId || savingPreference.notifications}
+          />
+          <SettingsToggleRow
+            icon={Music}
+            title="Ambient Sound"
+            description="Loop soft background ambience while CREATOR is open."
+            checked={ambientAudio.enabled}
+            onChange={handleAmbientToggle}
+            ariaLabel="Toggle ambient sound"
+            disabled={!ambientAudio.isHydrated}
+          />
+          <SettingsRangeRow
+            icon={Volume2}
+            title="Volume"
+            description="Set the background ambience level."
+            value={ambientVolumePercent}
+            min={0}
+            max={100}
+            step={5}
+            onChange={handleAmbientVolumeChange}
+            valueLabel={`${ambientVolumePercent}%`}
+            disabled={!ambientAudio.isHydrated || !ambientAudio.enabled}
           />
           <SettingsSelectRow
             icon={Globe2}
@@ -933,6 +967,60 @@ function SettingsSelectRow({
             </option>
           ))}
         </select>
+      </div>
+    </div>
+  );
+}
+
+type SettingsRangeRowProps = {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  valueLabel: string;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+};
+
+function SettingsRangeRow({
+  icon: Icon,
+  title,
+  description,
+  value,
+  min,
+  max,
+  step,
+  valueLabel,
+  onChange,
+  disabled = false,
+}: SettingsRangeRowProps) {
+  return (
+    <div className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex gap-4">
+        <SettingsIcon icon={Icon} />
+        <div>
+          <p className="font-medium leading-tight text-[var(--text)]">{title}</p>
+          <p className="text-sm text-[var(--muted)]">{description}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 sm:min-w-[220px]">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(event) => onChange(Number(event.target.value))}
+          disabled={disabled}
+          aria-label={title}
+          className="h-2 flex-1 cursor-pointer accent-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+        />
+        <span className="w-10 text-right text-sm font-medium text-[var(--muted)]">
+          {valueLabel}
+        </span>
       </div>
     </div>
   );

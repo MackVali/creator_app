@@ -1,39 +1,60 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft } from "lucide-react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight, FilePlus2 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
+import { NoteEditorHeader } from "@/components/notes/NoteEditorHeader";
+import { NoteSlashTextarea } from "@/components/notes/NoteSlashTextarea";
 import { Button } from "@/components/ui/button";
 import {
   createMonumentNote,
   getMonumentNote,
+  getMonumentNotes,
   updateMonumentNote,
 } from "@/lib/monumentNotesStorage";
 import type { MonumentNote } from "@/lib/types/monument-note";
 
-function splitNoteText(text: string) {
-  const normalized = text.replace(/\r\n/g, "\n");
-  const lines = normalized.split("\n");
-  const firstLineIndex = lines.findIndex((line) => line.trim().length > 0);
+const DEFAULT_NOTE_ICON = "📝";
 
-  if (firstLineIndex === -1) {
-    return { title: "", content: "" };
-  }
-
-  const title = lines[firstLineIndex].trim();
-  const content = lines.slice(firstLineIndex + 1).join("\n").trim();
-  return { title, content };
+function getMetadataIcon(metadata: Record<string, unknown> | null | undefined) {
+  return typeof metadata?.icon === "string" && metadata.icon.trim()
+    ? metadata.icon
+    : DEFAULT_NOTE_ICON;
 }
 
-function combineNoteText(note: Pick<MonumentNote, "title" | "content"> | null) {
-  if (!note) return "";
-  const title = note.title?.trim() ?? "";
-  const content = note.content?.trim() ?? "";
+function getNoteTitle(note: MonumentNote | null): string {
+  if (!note) return "Untitled";
+  return (
+    note.title?.trim() ||
+    note.content
+      ?.split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ||
+    "Untitled"
+  );
+}
 
-  if (!title && !content) return "";
-  if (!content) return title;
-  if (!title) return content;
-  return `${title}\n\n${content}`;
+function formatTimestamp(note: MonumentNote): string {
+  const source = note.updatedAt ?? note.createdAt;
+  if (!source) return "";
+  const parsed = new Date(source);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function createSaveSnapshot({
+  title,
+  content,
+  icon,
+  bookmarked,
+}: {
+  title: string;
+  content: string;
+  icon: string;
+  bookmarked: boolean;
+}) {
+  return JSON.stringify({ title, content, icon, bookmarked });
 }
 
 export default function MonumentNotePage() {
@@ -42,22 +63,36 @@ export default function MonumentNotePage() {
   const monumentId = params.id as string;
   const noteId = params.noteId as string;
 
-  const [noteText, setNoteText] = useState("");
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(noteId !== "new");
   const [isSaving, setIsSaving] = useState(false);
-  const [lastSavedText, setLastSavedText] = useState("");
-  const [noteIcon, setNoteIcon] = useState("📝");
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState("");
+  const [noteIcon, setNoteIcon] = useState(DEFAULT_NOTE_ICON);
   const [isBookmarked, setIsBookmarked] = useState(false);
-  const presetIcons = ["📝", "💡", "🔥", "🎯", "📚", "⚡"];
+  const [noteMetadata, setNoteMetadata] = useState<Record<string, unknown> | null>(null);
+  const [children, setChildren] = useState<MonumentNote[]>([]);
 
   useEffect(() => {
     let isMounted = true;
 
     if (noteId === "new") {
       setCurrentNoteId(null);
-      setNoteText("");
-      setLastSavedText("");
+      setNoteTitle("");
+      setNoteContent("");
+      setNoteIcon(DEFAULT_NOTE_ICON);
+      setIsBookmarked(false);
+      setNoteMetadata(null);
+      setChildren([]);
+      setLastSavedSnapshot(
+        createSaveSnapshot({
+          title: "",
+          content: "",
+          icon: DEFAULT_NOTE_ICON,
+          bookmarked: false,
+        }),
+      );
       setIsLoading(false);
       return () => {
         isMounted = false;
@@ -72,25 +107,46 @@ export default function MonumentNotePage() {
         if (!isMounted) return;
 
         if (note) {
-          const combined = combineNoteText(note);
+          const childNotes = await getMonumentNotes(monumentId, { parentNoteId: noteId });
+          if (!isMounted) return;
+
+          const savedIcon = getMetadataIcon(note.metadata);
           setCurrentNoteId(note.id);
-          setNoteText(combined);
-          setLastSavedText(combined);
-          const savedIcon =
-            typeof note.metadata?.icon === "string" ? String(note.metadata.icon) : "📝";
+          setNoteTitle(note.title ?? "");
+          setNoteContent(note.content ?? "");
           setNoteIcon(savedIcon);
           setIsBookmarked(note.metadata?.bookmarked === true);
+          setNoteMetadata(note.metadata ?? null);
+          setChildren(childNotes);
+          setLastSavedSnapshot(
+            createSaveSnapshot({
+              title: note.title ?? "",
+              content: note.content ?? "",
+              icon: savedIcon,
+              bookmarked: note.metadata?.bookmarked === true,
+            }),
+          );
         } else {
           setCurrentNoteId(null);
-          setNoteText("");
-          setLastSavedText("");
+          setNoteTitle("");
+          setNoteContent("");
+          setNoteIcon(DEFAULT_NOTE_ICON);
+          setIsBookmarked(false);
+          setNoteMetadata(null);
+          setChildren([]);
+          setLastSavedSnapshot("");
         }
       } catch (error) {
         console.error("Failed to load monument note", { error, monumentId, noteId });
         if (!isMounted) return;
         setCurrentNoteId(null);
-        setNoteText("");
-        setLastSavedText("");
+        setNoteTitle("");
+        setNoteContent("");
+        setNoteIcon(DEFAULT_NOTE_ICON);
+        setIsBookmarked(false);
+        setNoteMetadata(null);
+        setChildren([]);
+        setLastSavedSnapshot("");
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -106,32 +162,44 @@ export default function MonumentNotePage() {
   useEffect(() => {
     if (isLoading || isSaving) return;
 
-    const trimmed = noteText.trim();
-    if (!trimmed || noteText === lastSavedText) {
+    const hasDraft = noteTitle.trim().length > 0 || noteContent.trim().length > 0;
+    if (!currentNoteId && !hasDraft) {
+      return;
+    }
+
+    const nextSnapshot = createSaveSnapshot({
+      title: noteTitle,
+      content: noteContent,
+      icon: noteIcon,
+      bookmarked: isBookmarked,
+    });
+
+    if (nextSnapshot === lastSavedSnapshot) {
       return;
     }
 
     const timer = setTimeout(async () => {
       setIsSaving(true);
       try {
-        const parsed = splitNoteText(noteText);
-        const metadata = { icon: noteIcon, bookmarked: isBookmarked };
+        const metadata = { ...(noteMetadata ?? {}), icon: noteIcon, bookmarked: isBookmarked };
+        const payload = {
+          title: noteTitle.trim() || "Untitled",
+          content: noteContent,
+          metadata,
+        };
         let saved: MonumentNote | null = null;
 
         if (currentNoteId) {
-          saved = await updateMonumentNote(monumentId, currentNoteId, {
-            ...parsed,
-            metadata,
-          });
+          saved = await updateMonumentNote(monumentId, currentNoteId, payload);
         } else {
-          saved = await createMonumentNote(monumentId, { ...parsed, metadata });
+          saved = await createMonumentNote(monumentId, payload);
         }
 
         if (!saved) return;
 
-        const combined = combineNoteText(saved);
         setCurrentNoteId(saved.id);
-        setLastSavedText(combined);
+        setNoteMetadata(saved.metadata ?? metadata);
+        setLastSavedSnapshot(nextSnapshot);
 
         if (noteId === "new") {
           router.replace(`/monuments/${monumentId}/notes/${saved.id}`);
@@ -144,15 +212,57 @@ export default function MonumentNotePage() {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [currentNoteId, isBookmarked, isLoading, isSaving, lastSavedText, monumentId, noteIcon, noteId, noteText, router]);
+  }, [
+    currentNoteId,
+    isBookmarked,
+    isLoading,
+    isSaving,
+    lastSavedSnapshot,
+    monumentId,
+    noteContent,
+    noteIcon,
+    noteId,
+    noteMetadata,
+    noteTitle,
+    router,
+  ]);
 
-  const heading = useMemo(() => {
-    const { title } = splitNoteText(noteText);
-    return title || "New note";
-  }, [noteText]);
+  async function handleCreateSubpage() {
+    if (!currentNoteId) {
+      return null;
+    }
+
+    const created = await createMonumentNote(
+      monumentId,
+      {
+        title: "Untitled",
+        content: "",
+        metadata: { icon: DEFAULT_NOTE_ICON },
+      },
+      {
+        parentNoteId: currentNoteId,
+        siblingOrder: children.length,
+      },
+    );
+
+    if (!created) {
+      return null;
+    }
+
+    setChildren((current) => [...current, created]);
+    return {
+      id: created.id,
+      title: getNoteTitle(created),
+      href: `/monuments/${monumentId}/notes/${created.id}`,
+    };
+  }
+
+  function handleOpenSubpage(subpageId: string) {
+    router.push(`/monuments/${monumentId}/notes/${subpageId}`);
+  }
 
   return (
-    <main className="min-h-screen bg-[#020202] px-4 py-6 text-white">
+    <main className="min-h-screen bg-[#020202] px-4 py-5 text-white sm:py-6">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
         <div className="flex items-center justify-between">
           <Button
@@ -167,41 +277,82 @@ export default function MonumentNotePage() {
           <p className="text-xs font-medium text-white/60">{isSaving ? "Saving…" : "Autosaved"}</p>
         </div>
 
-        <section className="rounded-[20px] bg-[#0a0a0a] p-4 shadow-[0_12px_30px_-20px_rgba(0,0,0,0.9)] border border-white/10">
+        <section className="rounded-[22px] border border-white/[0.07] bg-[#050505]/92 p-4 shadow-[0_18px_42px_-30px_rgba(0,0,0,0.95)] sm:p-5">
           {isLoading ? (
             <p className="text-sm text-white/60">Loading note…</p>
           ) : (
-            <>
-              <h1 className="mb-2 text-lg font-semibold text-white">{heading}</h1>
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                {presetIcons.map((icon) => (
-                  <button
-                    key={icon}
-                    type="button"
-                    onClick={() => setNoteIcon(icon)}
-                    className={`rounded-lg border px-2 py-1 text-sm ${noteIcon === icon ? "border-white/70 bg-white/15" : "border-white/20 bg-white/5"}`}
-                  >
-                    {icon}
-                  </button>
-                ))}
-                <input
-                  value={noteIcon}
-                  onChange={(event) => setNoteIcon(event.target.value)}
-                  maxLength={4}
-                  className="h-8 w-14 rounded-lg border border-white/20 bg-white/5 px-2 text-center text-sm outline-none"
-                  aria-label="Custom note icon"
-                />
-              </div>
-              <textarea
-                value={noteText}
-                onChange={(event) => setNoteText(event.target.value)}
-                placeholder="Title\nStart typing your note…"
-                className="min-h-[70vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/35"
+            <div className="space-y-4">
+              <NoteEditorHeader
+                icon={noteIcon}
+                title={noteTitle}
+                onIconChange={setNoteIcon}
+                onTitleChange={setNoteTitle}
+              />
+
+              <NoteSlashTextarea
+                value={noteContent}
+                onValueChange={setNoteContent}
+                onCreateSubpage={handleCreateSubpage}
+                onOpenSubpage={handleOpenSubpage}
+                placeholder="Start typing, or press / for commands…"
+                className="min-h-[70vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/28"
                 aria-label="Note editor"
               />
-            </>
+            </div>
           )}
         </section>
+
+        {currentNoteId ? (
+          <section className="space-y-3 rounded-[20px] border border-white/10 bg-[#0a0a0a] p-4 shadow-[0_12px_30px_-20px_rgba(0,0,0,0.9)]">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-white/55">Sub-pages</h2>
+              <Button
+                type="button"
+                size="sm"
+                className="rounded-full bg-white/10 px-3 text-white hover:bg-white/20"
+                onClick={async () => {
+                  const created = await handleCreateSubpage();
+                  if (created) {
+                    router.push(`/monuments/${monumentId}/notes/${created.id}`);
+                  }
+                }}
+              >
+                Add sub-page
+              </Button>
+            </div>
+            {children.length > 0 ? (
+              <ul className="space-y-2">
+                {children.map((child) => {
+                  const childTitle = getNoteTitle(child);
+                  const subtitle = formatTimestamp(child);
+                  return (
+                    <li key={child.id}>
+                      <Link
+                        href={`/monuments/${monumentId}/notes/${child.id}`}
+                        className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.045] px-2.5 py-2 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition hover:border-emerald-300/20 hover:bg-white/[0.075]"
+                      >
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-black/25 text-white/55">
+                          <FilePlus2 className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium leading-4">{childTitle}</span>
+                          <span className="block truncate text-[11px] font-medium leading-4 text-white/38">
+                            {subtitle || "Subpage"}
+                          </span>
+                        </span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-white/35" />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <div className="rounded-xl bg-[#141414] px-3 py-4 text-center text-sm text-white/55">
+                No sub-pages yet.
+              </div>
+            )}
+          </section>
+        ) : null}
       </div>
     </main>
   );

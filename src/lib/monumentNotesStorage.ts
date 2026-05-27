@@ -7,6 +7,19 @@ const NOTES_TABLE = "notes";
 
 type NoteRow = Database["public"]["Tables"]["notes"]["Row"];
 
+type CreateMonumentNoteOptions = {
+  parentNoteId?: string | null;
+  siblingOrder?: number | null;
+};
+
+type UpdateMonumentNoteOptions = {
+  parentNoteId?: string | null;
+  siblingOrder?: number | null;
+};
+
+const MONUMENT_NOTE_SELECT =
+  "id, title, content, monument_id, created_at, updated_at, metadata, parent_note_id, sibling_order";
+
 function mapRowToMonumentNote(row: NoteRow): MonumentNote {
   const metadata = (row.metadata as Record<string, unknown> | null) ?? null;
   const icon = typeof metadata?.icon === "string" ? metadata.icon : null;
@@ -19,6 +32,8 @@ function mapRowToMonumentNote(row: NoteRow): MonumentNote {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     metadata,
+    parentNoteId: row.parent_note_id ?? null,
+    siblingOrder: row.sibling_order ?? null,
     icon,
     isBookmarked,
   };
@@ -31,7 +46,8 @@ function normalizeText(value: string | null | undefined) {
 }
 
 export async function getMonumentNotes(
-  monumentId: string
+  monumentId: string,
+  options?: { parentNoteId?: string | null },
 ): Promise<MonumentNote[]> {
   if (!monumentId) return [];
 
@@ -41,11 +57,24 @@ export async function getMonumentNotes(
   const userId = await getCurrentUserId();
   if (!userId) return [];
 
-  const { data, error } = await supabase
+  let query = supabase
     .from(NOTES_TABLE)
-    .select("id, title, content, monument_id, created_at, updated_at, metadata")
+    .select(MONUMENT_NOTE_SELECT)
     .eq("user_id", userId)
-    .eq("monument_id", monumentId)
+    .eq("monument_id", monumentId);
+
+  if (options && Object.prototype.hasOwnProperty.call(options, "parentNoteId")) {
+    const parentFilter = options.parentNoteId ?? null;
+    if (parentFilter === null) {
+      query = query.is("parent_note_id", null);
+    } else {
+      query = query.eq("parent_note_id", parentFilter);
+    }
+  }
+
+  const { data, error } = await query
+    .order("parent_note_id", { ascending: true, nullsFirst: true })
+    .order("sibling_order", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -70,7 +99,7 @@ export async function getMonumentNote(
 
   const { data, error } = await supabase
     .from(NOTES_TABLE)
-    .select("id, title, content, monument_id, created_at, updated_at, metadata")
+    .select(MONUMENT_NOTE_SELECT)
     .eq("user_id", userId)
     .eq("monument_id", monumentId)
     .eq("id", noteId)
@@ -90,7 +119,8 @@ export async function createMonumentNote(
     title?: string | null;
     content: string;
     metadata?: Record<string, unknown> | null;
-  }
+  },
+  options?: CreateMonumentNoteOptions,
 ): Promise<MonumentNote | null> {
   if (!monumentId) return null;
 
@@ -119,8 +149,10 @@ export async function createMonumentNote(
       title: derivedTitle,
       content: contentToStore,
       metadata: note.metadata ?? null,
+      parent_note_id: options?.parentNoteId ?? null,
+      sibling_order: options?.siblingOrder ?? null,
     })
-    .select("id, title, content, monument_id, created_at, updated_at, metadata")
+    .select(MONUMENT_NOTE_SELECT)
     .single();
 
   if (error) {
@@ -141,7 +173,8 @@ export async function updateMonumentNote(
     title?: string | null;
     content: string;
     metadata?: Record<string, unknown> | null;
-  }
+  },
+  options?: UpdateMonumentNoteOptions,
 ): Promise<MonumentNote | null> {
   if (!monumentId || !noteId) return null;
 
@@ -162,18 +195,28 @@ export async function updateMonumentNote(
   const hasMeaningfulContent = note.content.trim().length > 0;
   const contentToStore = hasMeaningfulContent ? note.content : null;
 
+  const updatePayload: Database["public"]["Tables"]["notes"]["Update"] = {
+    title: derivedTitle,
+    content: contentToStore,
+    metadata: note.metadata ?? null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (options && Object.prototype.hasOwnProperty.call(options, "parentNoteId")) {
+    updatePayload.parent_note_id = options.parentNoteId ?? null;
+  }
+
+  if (options && Object.prototype.hasOwnProperty.call(options, "siblingOrder")) {
+    updatePayload.sibling_order = options.siblingOrder ?? null;
+  }
+
   const { data, error } = await supabase
     .from(NOTES_TABLE)
-    .update({
-      title: derivedTitle,
-      content: contentToStore,
-      metadata: note.metadata ?? null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq("user_id", userId)
     .eq("monument_id", monumentId)
     .eq("id", noteId)
-    .select("id, title, content, monument_id, created_at, updated_at, metadata")
+    .select(MONUMENT_NOTE_SELECT)
     .maybeSingle();
 
   if (error) {

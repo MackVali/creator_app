@@ -14,6 +14,7 @@ import ClientProviders from "@/components/ClientProviders";
 import ErrorBoundary from "@/components/debug/ErrorBoundary";
 import AuthProvider from "@/components/auth/AuthProvider";
 import EntitlementProvider from "@/components/entitlement/EntitlementProvider";
+import { AmbientAudioProvider } from "@/lib/audio/ambientAudio";
 import React from "react";
 
 export default function RootLayout({
@@ -28,7 +29,9 @@ export default function RootLayout({
           <AuthProvider>
             <EntitlementProvider>
               <ClientProviders>
-                <main className="flex-1">{children}</main>
+                <AmbientAudioProvider>
+                  <main className="flex-1">{children}</main>
+                </AmbientAudioProvider>
               </ClientProviders>
             </EntitlementProvider>
           </AuthProvider>

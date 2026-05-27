@@ -2,31 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Plus } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarDays,
+  Grid2X2,
+  Layers3,
+  PenLine,
+  RefreshCcw,
+  SlidersHorizontal,
+  UsersRound,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import {
-  SectionHeader,
-  HabitsEmptyState,
-  Skeleton,
-} from "@/components/ui";
+import { HabitsEmptyState } from "@/components/ui";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getHabits, type Habit } from "@/lib/queries/habits";
-
-const SUMMARY_STYLES = [
-  {
-    accent: "from-emerald-500/25 via-emerald-500/5 to-transparent",
-    glow: "bg-emerald-500/40",
-  },
-  {
-    accent: "from-sky-500/25 via-sky-500/5 to-transparent",
-    glow: "bg-sky-500/40",
-  },
-  {
-    accent: "from-amber-500/25 via-amber-500/5 to-transparent",
-    glow: "bg-amber-500/40",
-  },
-];
 
 const RECURRENCE_FILTERS = [
   { value: "all", label: "ALL CADENCES" },
@@ -83,28 +75,6 @@ function formatTitleCase(value: string | null | undefined) {
     .join(" ");
 }
 
-function getHabitLocationLabel(habit: Habit) {
-  const label = habit.location_context?.label?.trim();
-  if (label) return label;
-
-  const rawValue = habit.location_context?.value?.trim();
-  if (rawValue) {
-    const formatted = formatTitleCase(rawValue);
-    return formatted ?? rawValue;
-  }
-
-  if (habit.location_context_id) {
-    return "Custom location";
-  }
-
-  return "Anywhere";
-}
-
-type HabitStreakPill = {
-  icon: string;
-  text: string;
-};
-
 function normalizeStreakDays(value?: number | null) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(0, Math.round(value));
@@ -114,29 +84,6 @@ function normalizeStreakDays(value?: number | null) {
 
 function formatStreakDays(days: number) {
   return `${days}x`;
-}
-
-function formatLastCompletionLabel(value?: string | null) {
-  if (!value) {
-    return "No check-ins yet";
-  }
-  const relative = formatRelativeTime(value);
-  if (!relative || relative === "—") {
-    return "No check-ins yet";
-  }
-  return `Last log ${relative}`;
-}
-
-function buildHabitStreakPills(habit: Habit): HabitStreakPill[] {
-  const currentStreak = normalizeStreakDays(habit.current_streak_days);
-  const longestStreak = normalizeStreakDays(habit.longest_streak_days);
-  const lastLog = formatLastCompletionLabel(habit.last_completed_at);
-
-  return [
-    { icon: "🔥", text: `${formatStreakDays(currentStreak)} current` },
-    { icon: "🏆", text: `${formatStreakDays(longestStreak)} best` },
-    { icon: "🕒", text: lastLog },
-  ];
 }
 
 const RECURRENCE_LABELS: Record<string, string> = {
@@ -210,62 +157,82 @@ function HabitCompactCard({ habit }: HabitCompactCardProps) {
   const recurrenceDisplay = recurrenceDaysLabel
     ? `${recurrenceLabel} · ${recurrenceDaysLabel}`
     : recurrenceLabel;
+  const progressWidth = `${Math.min(
+    100,
+    Math.max(18, (currentStreak / Math.max(longestStreak, currentStreak, 1)) * 100)
+  )}%`;
 
   return (
-    <article className="group relative flex aspect-square flex-col overflow-hidden rounded-[18px] border border-[#3f7bff]/80 bg-gradient-to-br from-[#0f1c46] via-[#122a6a] to-[#1c3f8c] p-4 text-white shadow-[0_30px_70px_rgba(5,10,24,0.55)] transition hover:-translate-y-1 hover:shadow-[0_40px_90px_rgba(5,10,24,0.65)] sm:p-5">
-      <div className="pointer-events-none absolute inset-0 rounded-[18px] bg-[radial-gradient(circle_at_top,_rgba(72,136,255,0.55),_transparent_60%)] opacity-100 mix-blend-screen transition group-hover:opacity-100" />
-      <div className="pointer-events-none absolute inset-x-1 top-0 h-1/2 rounded-full bg-gradient-to-br from-[#bcdcff]/70 via-transparent to-transparent blur-[40px]" />
+    <article className="group relative flex min-h-[156px] flex-col overflow-hidden rounded-[20px] border border-blue-400/28 bg-[linear-gradient(145deg,rgba(12,28,64,0.96),rgba(5,11,26,0.98)_62%,rgba(7,15,33,0.98))] p-3 text-white shadow-[0_18px_44px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:-translate-y-0.5 hover:border-blue-300/55 hover:shadow-[0_22px_62px_rgba(22,82,210,0.24)] sm:min-h-[170px] sm:p-3.5">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(69,132,255,0.34),transparent_42%)] opacity-80" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-200/60 to-transparent" />
       <div className="relative z-10 flex h-full flex-col gap-2.5">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <div
               title={avatarLabel}
               aria-label={avatarLabel}
-              className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[#2d364a] bg-gradient-to-br from-[#0b1c38] via-[#111f42] to-[#1a2f5f] text-sm font-semibold text-white shadow-[inset_0_-2px_4px_rgba(18,38,82,0.45)]"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-blue-400/55 bg-[radial-gradient(circle_at_35%_25%,rgba(126,190,255,0.38),rgba(11,31,75,0.92)_52%,rgba(3,7,18,0.98))] text-[15px] font-semibold text-white shadow-[0_0_22px_rgba(38,108,255,0.22),inset_0_0_16px_rgba(38,108,255,0.22)] sm:h-11 sm:w-11"
             >
               {avatarContent}
             </div>
-            <div>
-              <p className="text-[8px] uppercase tracking-[0.25em] text-white/60 whitespace-nowrap">
-                {routineName ? "Routine" : "Solo habit"}
+            <div className="min-w-0">
+              <p className="text-[8px] font-semibold uppercase tracking-[0.26em] text-blue-200/75 sm:text-[9px]">
+                {routineName ? "Routine Habit" : "Solo Habit"}
               </p>
-              <h3 className="text-base font-semibold leading-tight text-[#e2e6ff] break-words">
+              <h3 className="mt-0.5 line-clamp-2 break-words text-[15px] font-semibold uppercase leading-[1.05] text-[#f4f7ff] sm:text-[17px]">
                 {habit.name}
               </h3>
               {routineName && (
-                <p className="text-[11px] text-white/70">{routineName}</p>
+                <p className="mt-0.5 line-clamp-1 text-[10px] text-white/60">
+                  {routineName}
+                </p>
               )}
             </div>
           </div>
           <Link
             href={`/habits/${habit.id}/edit`}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#2d364a] bg-gradient-to-br from-[#0a1a33] via-[#102549] to-[#1a386f] px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-white shadow-[0_6px_18px_rgba(8,16,35,0.55)] transition hover:brightness-110"
+            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] font-medium text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-blue-300/50 hover:bg-blue-400/10 hover:text-white"
           >
             Edit
-            <span aria-hidden>→</span>
+            <PenLine className="h-3 w-3" aria-hidden="true" />
           </Link>
         </div>
         {habit.description && (
-          <p className="text-[11px] leading-snug text-white/75 line-clamp-2">
+          <p className="line-clamp-1 text-[10px] leading-snug text-white/60 sm:text-[11px]">
             {habit.description}
           </p>
         )}
-        <div className="mt-auto space-y-2.5 text-white">
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-white/65">
-              Recurrence
-            </p>
-            <p className="text-[12px] font-bold uppercase text-black">{recurrenceDisplay}</p>
+        <div className="mt-auto border-t border-white/10 pt-2.5">
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="min-w-0">
+              <p className="flex items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.22em] text-blue-200/75 sm:text-[9px]">
+                <CalendarDays className="h-3 w-3 text-blue-400 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+                Recurrence
+              </p>
+              <p className="mt-1 line-clamp-2 text-[11px] leading-tight text-white/90 sm:text-[12px]">
+                {recurrenceDisplay}
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="flex items-center gap-1 text-[8px] font-semibold uppercase tracking-[0.22em] text-blue-200/75 sm:text-[9px]">
+                <Zap className="h-3 w-3 text-blue-400 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+                Streak
+              </p>
+              <p className="mt-1 line-clamp-2 text-[11px] leading-tight text-white/90 sm:text-[12px]">
+                {formatStreakDays(currentStreak)} current
+                <span aria-hidden className="px-1 text-blue-300/80">
+                  ·
+                </span>
+                {formatStreakDays(longestStreak)} best
+              </p>
+            </div>
           </div>
-          <div className="rounded-lg border border-[#2d364a] bg-[#152a58]/85 p-2 text-white shadow-[0_6px_18px_rgba(5,10,24,0.5)]">
-            <p className="text-[8px] uppercase tracking-[0.35em] text-white/65">
-              Streak
-            </p>
-            <p className="flex items-center gap-1 text-sm font-semibold">
-              {formatStreakDays(currentStreak)} current
-              <span aria-hidden className="text-[#7ec8ff]">•</span>
-              {formatStreakDays(longestStreak)} best
-            </p>
+          <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-blue-400 via-sky-300 to-blue-500 shadow-[0_0_14px_rgba(59,130,246,0.85)]"
+              style={{ width: progressWidth }}
+            />
           </div>
         </div>
       </div>
@@ -424,7 +391,7 @@ export default function HabitsPage() {
           routineCount > 0
             ? `${routineCount} routine${routineCount === 1 ? "" : "s"}`
             : "No routines yet",
-        ...SUMMARY_STYLES[0],
+        icon: Layers3,
       },
       {
         id: "grouped",
@@ -442,14 +409,14 @@ export default function HabitsPage() {
                   ? ` · ${dailyHabits} daily`
                   : ""
               }`,
-        ...SUMMARY_STYLES[1],
+        icon: UsersRound,
       },
       {
         id: "recent",
         label: "Recently refreshed",
         value: formattedLatest,
         detail: "Last update",
-        ...SUMMARY_STYLES[2],
+        icon: RefreshCcw,
       },
     ];
   }, [habits, routines, standaloneHabits]);
@@ -470,8 +437,8 @@ export default function HabitsPage() {
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
     );
     const pages: Habit[][] = [];
-    for (let i = 0; i < sorted.length; i += 6) {
-      pages.push(sorted.slice(i, i + 6));
+    for (let i = 0; i < sorted.length; i += 4) {
+      pages.push(sorted.slice(i, i + 4));
     }
     return pages;
   }, [filteredHabits]);
@@ -480,55 +447,47 @@ export default function HabitsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="relative min-h-screen overflow-hidden bg-[#05040b] pb-20 text-white">
-        <div className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute inset-0 bg-gradient-to-b from-[#12040b] via-[#080304] to-[#010000]" />
-          <div className="absolute -top-40 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-rose-600/35 blur-[200px]" />
-          <div className="absolute bottom-0 right-0 h-[460px] w-[460px] translate-x-1/4 rounded-full bg-red-500/25 blur-[220px]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,80,80,0.12),_transparent_55%)] opacity-60" />
+      <div className="relative min-h-screen overflow-hidden bg-[#030711] pb-[calc(6.75rem+env(safe-area-inset-bottom,0px))] text-white">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,#030711_0%,#050914_44%,#010309_100%)]" />
+          <div className="absolute -top-44 left-1/2 h-[34rem] w-[34rem] -translate-x-1/2 rounded-full bg-blue-700/22 blur-[170px]" />
+          <div className="absolute top-28 right-[-9rem] h-[24rem] w-[24rem] rounded-full bg-cyan-500/10 blur-[150px]" />
+          <div className="absolute bottom-0 left-[-7rem] h-[28rem] w-[28rem] rounded-full bg-indigo-600/12 blur-[170px]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(96,165,250,0.08),transparent_42%)]" />
         </div>
-        <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 pb-16 pt-10 sm:px-6 lg:px-8">
-          <HabitsHeader onCreate={() => router.push("/habits/new")} stats={summaryCards} />
-
+        <div className="relative mx-auto flex w-full max-w-[59rem] flex-col gap-4 px-3.5 pb-3 pt-3 sm:gap-4 sm:px-5 sm:pt-4 lg:px-6">
+          <StreakPulse stats={summaryCards} />
           <HabitFilters value={recurrenceFilter} onChange={setRecurrenceFilter} />
 
           {error && (
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+            <div className="rounded-3xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-50 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
               {error}
             </div>
           )}
 
           {loading ? (
-            <div className="space-y-4">
-              <SectionHeader
-                title="Habits & rituals"
-                description="Pull your habits into a swipeable deck and keep streaks visible at a glance."
-                className="text-white"
-              />
-              <div className="grid auto-cols-[minmax(220px,1fr)] grid-flow-col gap-5 overflow-hidden pb-6 sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 lg:grid-cols-3">
+            <section className="space-y-2.5">
+              <BrowseHeader />
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {Array.from({ length: 4 }).map((_, index) => (
                   <div
                     key={`skeleton-${index}`}
-                    className="h-[240px] min-w-[200px] rounded-2xl border border-white/10 bg-white/[0.03] shadow-[0_20px_40px_-20px_rgba(0,0,0,0.85)]"
+                    className="h-[156px] rounded-[20px] border border-blue-300/15 bg-white/[0.035] shadow-[0_18px_45px_rgba(0,0,0,0.4)] sm:h-[170px]"
                   />
                 ))}
               </div>
-            </div>
+            </section>
           ) : hasHabits ? (
-            <div className="space-y-4">
+            <section className="space-y-2.5">
+              <BrowseHeader />
               <div className="relative">
-                <div className="pointer-events-none absolute -top-8 right-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-white/60 sm:hidden">
-                  Swipe to browse
-                  <ArrowRight className="h-3 w-3" />
-                </div>
-                <div className="grid auto-cols-[minmax(640px,1fr)] grid-flow-col gap-5 overflow-x-auto pb-6 pr-1 snap-x snap-mandatory sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 sm:snap-none lg:grid-cols-3">
+                <div className="grid auto-cols-[minmax(min(100%,calc(100vw_-_1.75rem)),1fr)] grid-flow-col gap-3 overflow-x-auto pb-2 pr-1 snap-x snap-mandatory [scrollbar-width:none] sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 sm:snap-none">
                   {habitPages.map((page, pageIndex) => (
                     <div
                       key={`habit-page-${pageIndex}`}
-                      className="snap-start sm:[scroll-snap-align:unset]"
-                      style={{ minWidth: "min(100vw-2rem, 720px)" }}
+                      className="snap-start sm:contents sm:[scroll-snap-align:unset]"
                     >
-                      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                      <div className="grid grid-cols-2 gap-3 sm:contents">
                         {page.map((habit) => (
                           <HabitCompactCard key={habit.id} habit={habit} />
                         ))}
@@ -537,9 +496,9 @@ export default function HabitsPage() {
                   ))}
                 </div>
               </div>
-            </div>
+            </section>
           ) : (
-            <div className="rounded-[32px] border border-dashed border-white/15 bg-white/[0.02] p-10 text-center backdrop-blur">
+            <div className="rounded-[30px] border border-dashed border-blue-300/20 bg-white/[0.035] p-8 text-center shadow-[0_24px_70px_rgba(0,0,0,0.38)] backdrop-blur">
               {recurrenceFilter === "all" ? (
                 <HabitsEmptyState onAction={() => router.push("/habits/new")} />
               ) : (
@@ -551,7 +510,7 @@ export default function HabitsPage() {
                   <button
                     type="button"
                     onClick={() => router.push("/habits/new")}
-                    className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-white transition hover:border-white/40 hover:bg-white/[0.08]"
+                    className="inline-flex items-center justify-center rounded-full border border-blue-300/35 bg-blue-500/15 px-4 py-2 text-sm font-semibold text-white transition hover:border-blue-200/60 hover:bg-blue-500/25"
                   >
                     Add habit
                   </button>
@@ -565,72 +524,76 @@ export default function HabitsPage() {
   );
 }
 
-interface HabitsHeaderProps {
-  onCreate(): void;
-  stats: Array<{
-    id: string;
-    label: string;
-    value: string;
-    detail: string;
-  }>;
+type StreakPulseStat = {
+  id: string;
+  label: string;
+  value: string;
+  detail: string;
+  icon: LucideIcon;
+};
+
+interface StreakPulseProps {
+  stats: StreakPulseStat[];
 }
 
-function HabitsHeader({ onCreate, stats }: HabitsHeaderProps) {
-  const heroStats = stats.slice(0, 3);
-
+function StreakPulse({ stats }: StreakPulseProps) {
   return (
-    <header className="relative overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.04] p-8 shadow-[0_40px_120px_-60px_rgba(37,99,235,0.6)]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.18),_transparent_65%)]" />
-      <div className="pointer-events-none absolute inset-0 opacity-30 mix-blend-screen">
-        <div className="h-full w-full bg-[linear-gradient(120deg,rgba(255,255,255,0.18),transparent)]" />
+    <section className="rounded-[26px] border border-blue-200/14 bg-white/[0.035] p-4 shadow-[0_20px_58px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur sm:p-5">
+      <div className="mb-3.5 flex items-center justify-between gap-3 px-0.5">
+        <p className="text-[13px] font-semibold uppercase tracking-[0.36em] text-blue-300 sm:text-[14px]">
+          Habit Hub
+        </p>
+        <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.32em] text-white/80 sm:text-[11px]">
+          <span className="h-2 w-2 rounded-full bg-blue-400 shadow-[0_0_14px_rgba(96,165,250,0.95)]" />
+          Live
+        </p>
       </div>
-      <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-5">
-          <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-white/60">Habits hub</p>
-            <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-[46px]">
-              My Habits
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm text-white/70">
-              Design routines, track streaks, and keep your cadences in sync with your energy.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              onClick={onCreate}
-              className="inline-flex items-center gap-3 rounded-full border border-blue-500/60 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_15px_45px_rgba(37,99,235,0.45)] transition hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-              style={{
-                background: "linear-gradient(120deg, #4ea9ff, #1f69ff, #040404)",
-              }}
+      <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+        {stats.map((stat) => {
+          const Icon = stat.icon;
+
+          return (
+            <div
+              key={stat.id}
+              className="relative min-h-[104px] overflow-hidden rounded-[18px] border border-blue-300/20 bg-[linear-gradient(145deg,rgba(13,28,64,0.72),rgba(5,10,24,0.78))] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:min-h-[116px] sm:p-3"
             >
-              <span className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white">
-                <Plus className="h-4 w-4" />
-              </span>
-              Add Habit
-            </button>
-          </div>
-        </div>
-        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-black/30 p-5 backdrop-blur">
-          <div className="flex items-center justify-between text-xs uppercase tracking-[0.35em] text-white/50">
-            <span>Streak pulse</span>
-            <span className="text-white">Live</span>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-3">
-            {heroStats.map(stat => (
-              <div
-                key={stat.id}
-                className="min-w-[120px] flex-1 rounded-2xl border border-white/10 bg-white/[0.08] p-2.5 text-center"
-              >
-                <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">{stat.label}</p>
-                <p className="mt-1 text-xl font-semibold text-white">{stat.value}</p>
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/40">{stat.detail}</p>
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_0%,rgba(59,130,246,0.18),transparent_52%)]" />
+              <div className="relative flex h-full flex-col justify-between gap-2">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-blue-400/45 bg-blue-500/10 text-blue-300 shadow-[inset_0_0_18px_rgba(59,130,246,0.18)] sm:h-9 sm:w-9">
+                  <Icon className="h-4 w-4 sm:h-[18px] sm:w-[18px]" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className="line-clamp-2 min-h-[22px] text-[8px] font-semibold uppercase leading-[1.35] tracking-[0.2em] text-blue-100/70 sm:text-[10px] sm:tracking-[0.26em]">
+                    {stat.label}
+                  </p>
+                  <p className="mt-1 text-[clamp(1.35rem,5.5vw,1.9rem)] font-semibold leading-none tracking-tight text-white sm:text-[2rem]">
+                    {stat.value}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-white/60 sm:text-[11px]">
+                    {stat.detail}
+                  </p>
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
+          );
+        })}
       </div>
-    </header>
+    </section>
+  );
+}
+
+function BrowseHeader() {
+  return (
+    <div className="flex items-center justify-between gap-3 px-0.5">
+      <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.36em] text-blue-400 sm:text-[12px]">
+        <Grid2X2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
+        Browse Habits
+      </p>
+      <p className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.3em] text-white/45 sm:text-[10px]">
+        Swipe to browse
+        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+      </p>
+    </div>
   );
 }
 
@@ -640,31 +603,45 @@ interface HabitFiltersProps {
 }
 
 function HabitFilters({ value, onChange }: HabitFiltersProps) {
-  const selected = RECURRENCE_FILTERS.find(option => option.value === value);
+  const selected = RECURRENCE_FILTERS.find((option) => option.value === value);
+  const cadenceOptions = RECURRENCE_FILTERS.filter((option) => option.value !== "all");
+  const allCadencesOption = RECURRENCE_FILTERS.find((option) => option.value === "all");
+
   return (
-    <section className="rounded-[32px] border border-white/10 bg-white/[0.02] p-5 shadow-[0_25px_60px_rgba(5,6,12,0.55)] backdrop-blur">
-      <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.35em] text-white/50">Recurrence</p>
-          <p className="text-sm text-white/75">Tune the habit deck by cadence so you can focus the streaks you need.</p>
+    <section className="rounded-[22px] border border-blue-200/12 bg-white/[0.03] px-5 py-5 shadow-[0_14px_42px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur sm:px-7 sm:py-6">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 gap-3">
+          <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-blue-400/30 bg-blue-500/10 text-blue-400">
+            <RefreshCcw className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-blue-400 sm:text-[11px]">
+              Recurrence
+            </p>
+            <p className="mt-0.5 max-w-[28rem] text-[11px] leading-[0.9rem] text-white/58 sm:text-[12px] sm:leading-4">
+              Tune the habit deck by cadence so you can focus the streaks you need.
+            </p>
+          </div>
         </div>
-        <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+        <div className="hidden shrink-0 items-center gap-2 pt-0.5 text-[9px] font-semibold uppercase tracking-[0.24em] text-blue-300 sm:flex">
           {selected?.label ?? "All cadences"}
-        </p>
+          <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+        </div>
       </div>
-      <div className="flex flex-wrap gap-2">
-        {RECURRENCE_FILTERS.map(option => {
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        {cadenceOptions.map((option) => {
           const isActive = option.value === value;
+
           return (
             <button
               key={option.value}
               type="button"
               aria-pressed={isActive}
               onClick={() => onChange(option.value)}
-              className={`flex-1 min-w-[140px] rounded-2xl border px-3 py-2 text-sm font-semibold transition ${
+              className={`inline-flex h-9 min-w-0 items-center justify-center rounded-full border px-1.5 text-center text-[0.58rem] font-semibold uppercase leading-none tracking-[0.06em] whitespace-nowrap transition sm:px-2 sm:text-[0.65rem] sm:tracking-[0.08em] ${
                 isActive
-                  ? "border-white bg-white text-black shadow-[0_10px_30px_rgba(255,255,255,0.3)]"
-                  : "border-white/15 bg-white/5 text-white/75 hover:border-white/40 hover:text-white"
+                  ? "border-blue-200/55 bg-[linear-gradient(135deg,#3b82f6,#1d4ed8)] text-white shadow-[0_0_18px_rgba(59,130,246,0.4),inset_0_1px_0_rgba(255,255,255,0.22)]"
+                  : "border-blue-200/16 bg-slate-950/26 text-white/68 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:border-blue-300/40 hover:bg-blue-500/10 hover:text-white"
               }`}
             >
               {option.label}
@@ -672,6 +649,20 @@ function HabitFilters({ value, onChange }: HabitFiltersProps) {
           );
         })}
       </div>
+      {allCadencesOption && (
+        <button
+          type="button"
+          aria-pressed={allCadencesOption.value === value}
+          onClick={() => onChange(allCadencesOption.value)}
+          className={`mt-2 inline-flex h-9 w-full min-w-0 items-center justify-center rounded-full border px-2 text-center text-[0.65rem] font-semibold uppercase leading-none tracking-[0.08em] whitespace-nowrap transition ${
+            allCadencesOption.value === value
+              ? "border-blue-200/55 bg-[linear-gradient(135deg,#3b82f6,#1d4ed8)] text-white shadow-[0_0_18px_rgba(59,130,246,0.4),inset_0_1px_0_rgba(255,255,255,0.22)]"
+              : "border-blue-200/16 bg-slate-950/26 text-white/68 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:border-blue-300/40 hover:bg-blue-500/10 hover:text-white"
+          }`}
+        >
+          {allCadencesOption.label}
+        </button>
+      )}
     </section>
   );
 }
