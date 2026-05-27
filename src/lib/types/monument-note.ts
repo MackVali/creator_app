@@ -6,6 +6,8 @@ export type MonumentNote = {
   createdAt?: string | null;
   updatedAt?: string | null;
   metadata?: Record<string, unknown> | null;
+  parentNoteId?: string | null;
+  siblingOrder?: number | null;
   isBookmarked?: boolean;
   icon?: string | null;
 };

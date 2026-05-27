@@ -15,6 +15,7 @@ type CreateSkillNoteOptions = {
 };
 
 type UpdateSkillNoteOptions = {
+  metadata?: Record<string, unknown> | null;
   parentNoteId?: string | null;
   siblingOrder?: number | null;
 };
@@ -215,6 +216,10 @@ export async function updateSkillNote(
     content: contentToStore,
     updated_at: new Date().toISOString(),
   };
+
+  if (options && Object.prototype.hasOwnProperty.call(options, "metadata")) {
+    updatePayload.metadata = options.metadata ?? null;
+  }
 
   if (options && Object.prototype.hasOwnProperty.call(options, "parentNoteId")) {
     updatePayload.parent_note_id = options?.parentNoteId ?? null;
