@@ -8,17 +8,19 @@ import { Button } from "@/components/ui/button";
 import type { MonumentNote } from "@/lib/types/monument-note";
 import { cn } from "@/lib/utils";
 import { getMonumentNotes, updateMonumentNote } from "@/lib/monumentNotesStorage";
-import {
-  MonumentNoteCard,
-  monumentNoteTileInnerClass,
-  monumentNoteTileOuterClass,
-} from "./MonumentNoteCard";
+import { MonumentNoteCard } from "./MonumentNoteCard";
 import { NotesHeaderControls } from "./NotesHeaderControls";
 
 interface MonumentNotesGridProps {
   monumentId: string;
   initialNotes: MonumentNote[];
 }
+
+const monumentNoteActionOuterClass =
+  "group relative block h-full overflow-hidden rounded-[22px] border border-white/[0.08] bg-[#050608]/85 p-[1px] shadow-[0_18px_36px_-28px_rgba(0,0,0,0.95),0_6px_18px_-14px_rgba(0,0,0,0.88)] transition-all duration-200 hover:-translate-y-0.5 hover:border-white/[0.12] hover:bg-[#07090d]/90 hover:shadow-[0_22px_44px_-30px_rgba(0,0,0,0.98)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60";
+
+const monumentNoteActionInnerClass =
+  "relative flex h-full overflow-hidden rounded-[21px] border border-white/[0.08] bg-[linear-gradient(135deg,rgba(18,20,25,0.92),rgba(7,8,11,0.96))] px-3 py-2.5 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-[border-color,background-color] duration-200 before:pointer-events-none before:absolute before:inset-[1px] before:rounded-[19px] before:border before:border-white/[0.04] before:content-[''] group-hover:border-white/[0.14]";
 
 export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGridProps) {
   const [showAllNotes, setShowAllNotes] = useState(false);
@@ -83,21 +85,19 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
   return (
     <div className="max-w-full space-y-3">
       <NotesHeaderControls searchQuery={searchQuery} onSearchChange={setSearchQuery} />
-      {!hasVisibleNotes && !isLoading ? (
-        <div className={cn(monumentNoteTileOuterClass, "w-full")}>
+      {hasAnyNotes && !hasVisibleNotes && !isLoading ? (
+        <div className={cn(monumentNoteActionOuterClass, "w-full")}>
           <div
             className={cn(
-              monumentNoteTileInnerClass,
-              "flex min-h-[4.5rem] flex-col justify-center gap-1 text-left"
+              monumentNoteActionInnerClass,
+              "min-h-[4rem] flex-col justify-center gap-1 text-left"
             )}
           >
             <p className="text-sm font-semibold tracking-tight text-[#f2f4f8]">
-              {hasAnyNotes ? "No matching notes" : "No notes yet"}
+              No matching notes
             </p>
             <p className="text-xs leading-5 text-[#d2d7e0]">
-              {hasAnyNotes
-                ? "Try a different search."
-                : "Capture your first thought and keep ideas close at hand."}
+              Try a different search.
             </p>
           </div>
         </div>
@@ -117,19 +117,19 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
           return (
             <Link
               href={`/monuments/${monumentId}/notes/new`}
-              className={cn(monumentNoteTileOuterClass, "w-full")}
+              className={cn(monumentNoteActionOuterClass, "w-full")}
               aria-label={hasAnyNotes ? "Add note" : "Create note"}
             >
               <div
                 className={cn(
-                  monumentNoteTileInnerClass,
+                  monumentNoteActionInnerClass,
                   "min-h-[4.25rem] items-center justify-center gap-2 text-center"
                 )}
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/35 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_9px_18px_-14px_rgba(0,0,0,0.9)]">
+                <div className="relative z-10 flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.12] bg-black/35 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_9px_18px_-14px_rgba(0,0,0,0.9)]">
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 </div>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#f2f4f8]">
+                <span className="relative z-10 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#f2f4f8]">
                   {hasAnyNotes ? "Add note" : "Create note"}
                 </span>
               </div>
@@ -144,7 +144,7 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
             type="button"
             size="sm"
             variant="ghost"
-            className="rounded-full border border-white/60 bg-white/70 px-4 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur transition hover:bg-white/80 hover:text-slate-900"
+            className="rounded-full border border-white/[0.12] bg-black/25 px-4 text-xs font-semibold text-white/80 shadow-[0_10px_24px_-18px_rgba(0,0,0,0.9)] backdrop-blur transition hover:border-white/20 hover:bg-white/[0.07] hover:text-white"
             onClick={() => setShowAllNotes(true)}
             aria-label="See more notes"
           >

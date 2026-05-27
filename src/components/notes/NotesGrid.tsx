@@ -4,14 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { NoteCard } from "./NoteCard";
+import {
+  NoteCard,
+  skillNoteTileInnerClass,
+  skillNoteTileOuterClass,
+} from "./NoteCard";
 import type { Note } from "@/lib/types/note";
 import { getNotes } from "@/lib/notesStorage";
 import { cn } from "@/lib/utils";
-import {
-  monumentNoteTileInnerClass,
-  monumentNoteTileOuterClass,
-} from "./MonumentNoteCard";
 import { NotesHeaderControls } from "./NotesHeaderControls";
 
 type MemoNoteGroup = {
@@ -31,24 +31,24 @@ function MemoFolderCard({
   const memoCount = group.notes.length;
   return (
     <div className="col-span-3 sm:col-span-2 md:col-span-3">
-      <Card className="h-full rounded-[22px] border border-white/70 bg-white/80 text-slate-900 shadow-[0_22px_48px_-32px_rgba(148,163,184,0.55)] backdrop-blur-xl">
+      <Card className="h-full rounded-[22px] border border-white/[0.08] bg-[#050608]/85 py-0 text-slate-50 shadow-[0_18px_36px_-28px_rgba(0,0,0,0.95),0_6px_18px_-14px_rgba(0,0,0,0.88)] backdrop-blur">
         <CardContent className="space-y-3 p-3">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start justify-between gap-3 rounded-[18px] border border-white/[0.06] bg-[linear-gradient(135deg,rgba(18,20,25,0.84),rgba(7,8,11,0.92))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
             <div className="space-y-1">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/45">
                 Memo habit
               </p>
-              <h3 className="text-base font-semibold leading-tight text-slate-900">
+              <h3 className="text-base font-semibold leading-tight text-[#f2f4f8]">
                 {group.habitName || "Memo habit"}
               </h3>
             </div>
             <div className="flex flex-col items-end gap-1.5">
-              <span className="rounded-full border border-white/70 bg-white/80 px-2.5 py-0.5 text-[11px] font-medium text-slate-700 shadow-sm">
+              <span className="rounded-full border border-white/[0.1] bg-black/25 px-2.5 py-0.5 text-[11px] font-medium text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                 {memoCount} memo{memoCount === 1 ? "" : "s"}
               </span>
               <Link
                 href={`/skills/${skillId}/notes/${group.containerId}`}
-                className="text-[11px] font-medium text-slate-700 underline-offset-4 transition hover:text-slate-900 hover:underline"
+                className="text-[11px] font-medium text-white/65 underline-offset-4 transition hover:text-white hover:underline"
               >
                 Open page
               </Link>
@@ -66,10 +66,10 @@ function MemoFolderCard({
                 <Link
                   key={note.id}
                   href={`/skills/${skillId}/notes/${note.id}`}
-                  className="group flex items-center justify-between rounded-xl border border-white/70 bg-white/70 px-2.5 py-1.5 text-xs text-slate-800 shadow-sm transition hover:border-white hover:bg-white/90 hover:text-slate-900"
+                  className="group flex items-center justify-between rounded-xl border border-white/[0.08] bg-[#0b0d12]/75 px-2.5 py-1.5 text-xs text-white/80 shadow-[0_8px_18px_-16px_rgba(0,0,0,0.9)] transition hover:border-white/[0.16] hover:bg-[#10131a] hover:text-white"
                 >
                   <span className="font-medium">{label}</span>
-                  <span className="text-[11px] text-slate-600 group-hover:text-slate-800">
+                  <span className="text-[11px] text-white/50 group-hover:text-white/70">
                     {dateLabel}
                   </span>
                 </Link>
@@ -257,31 +257,29 @@ export function NotesGrid({ skillId }: NotesGridProps) {
     <div className="space-y-3">
       <NotesHeaderControls searchQuery={searchQuery} onSearchChange={setSearchQuery} />
       {isLoading ? (
-        <Card className="rounded-[22px] border border-white/70 bg-white/80 text-slate-700 shadow-[0_20px_44px_-32px_rgba(148,163,184,0.55)] backdrop-blur-xl">
+        <Card className="rounded-[22px] border border-white/[0.08] bg-[#050608]/85 py-0 text-slate-50 shadow-[0_18px_36px_-28px_rgba(0,0,0,0.95),0_6px_18px_-14px_rgba(0,0,0,0.88)] backdrop-blur">
           <CardContent className="p-3">
-            <p className="text-sm font-medium text-slate-900">Loading notes…</p>
-            <p className="mt-1 text-xs text-slate-600">
-              We’re pulling your notes from Supabase.
+            <p className="text-sm font-medium text-[#f2f4f8]">Loading notes...</p>
+            <p className="mt-1 text-xs text-white/55">
+              {"We're pulling your notes from Supabase."}
             </p>
           </CardContent>
         </Card>
       ) : null}
 
-      {!hasVisibleTopLevelNotes && !isLoading ? (
-        <div className={cn(monumentNoteTileOuterClass, "col-span-3 w-full")}>
+      {hasTopLevelNotes && !hasVisibleTopLevelNotes && !isLoading ? (
+        <div className={cn(skillNoteTileOuterClass, "col-span-3 w-full")}>
           <div
             className={cn(
-              monumentNoteTileInnerClass,
-              "flex min-h-[4.5rem] flex-col justify-center gap-1 text-left"
+              skillNoteTileInnerClass,
+              "min-h-[4rem] flex-col justify-center gap-1 text-left"
             )}
           >
             <p className="text-sm font-semibold tracking-tight text-[#f2f4f8]">
-              {hasTopLevelNotes ? "No matching notes" : "No notes yet"}
+              No matching notes
             </p>
             <p className="text-xs leading-5 text-[#d2d7e0]">
-              {hasTopLevelNotes
-                ? "Try a different search."
-                : "Capture your first thought and keep ideas close at hand."}
+              Try a different search.
             </p>
           </div>
         </div>
@@ -316,20 +314,20 @@ export function NotesGrid({ skillId }: NotesGridProps) {
           return (
             <Link
               href={`/skills/${skillId}/notes/new`}
-              className={cn(monumentNoteTileOuterClass, spanClass)}
+              className={cn(skillNoteTileOuterClass, spanClass)}
               aria-label={hasTopLevelNotes ? "Add note" : "Create note"}
             >
               <div
                 className={cn(
-                  monumentNoteTileInnerClass,
+                  skillNoteTileInnerClass,
                   "items-center justify-center gap-2 text-center",
                   isBarVariant ? "min-h-[4.25rem] flex-row text-left" : "min-h-[4.25rem] flex-col"
                 )}
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
+                <div className="relative z-10 flex h-8 w-8 items-center justify-center rounded-2xl border border-white/[0.12] bg-black/35 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_9px_18px_-14px_rgba(0,0,0,0.9)]">
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 </div>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-950">
+                <span className="relative z-10 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#f2f4f8]">
                   {hasTopLevelNotes ? "Add note" : "Create note"}
                 </span>
               </div>

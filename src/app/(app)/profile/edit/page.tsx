@@ -138,9 +138,7 @@ export default function ProfileEditPage() {
   const [editorOffset, setEditorOffset] = useState({ x: 0, y: 0 });
   const [editorImageSize, setEditorImageSize] = useState({ width: 0, height: 0 });
   const [editorFrameSize, setEditorFrameSize] = useState({ width: 0, height: 0 });
-  const [editorFrameAspectRatio, setEditorFrameAspectRatio] = useState(3 / 2);
   const avatarEditorFrameRef = useRef<HTMLDivElement | null>(null);
-  const heroPhotoSurfaceRef = useRef<HTMLButtonElement | null>(null);
   const webCameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const webCameraStreamRef = useRef<MediaStream | null>(null);
   const webCameraRequestIdRef = useRef(0);
@@ -474,8 +472,9 @@ export default function ProfileEditPage() {
     return Object.keys(errors).length === 0;
   };
 
-  const MIN_EDITOR_ZOOM = 0.2;
-  const MAX_EDITOR_ZOOM = 4;
+  const MIN_EDITOR_ZOOM = 1;
+  const MAX_EDITOR_ZOOM = 3;
+  const AVATAR_EXPORT_SIZE = 1200;
 
   const getTouchDistance = (a: React.Touch, b: React.Touch) => {
     const dx = b.clientX - a.clientX;
@@ -499,14 +498,14 @@ export default function ProfileEditPage() {
         return nextOffset;
       }
 
-      const baseContainScale = Math.min(
+      const baseCoverScale = Math.max(
         editorFrameSize.width / editorImageSize.width,
         editorFrameSize.height / editorImageSize.height,
       );
-      const renderedWidth = editorImageSize.width * baseContainScale * zoomLevel;
-      const renderedHeight = editorImageSize.height * baseContainScale * zoomLevel;
-      const maxOffsetX = Math.abs(renderedWidth - editorFrameSize.width) / 2;
-      const maxOffsetY = Math.abs(renderedHeight - editorFrameSize.height) / 2;
+      const renderedWidth = editorImageSize.width * baseCoverScale * zoomLevel;
+      const renderedHeight = editorImageSize.height * baseCoverScale * zoomLevel;
+      const maxOffsetX = Math.max(0, (renderedWidth - editorFrameSize.width) / 2);
+      const maxOffsetY = Math.max(0, (renderedHeight - editorFrameSize.height) / 2);
 
       return {
         x: Math.min(maxOffsetX, Math.max(-maxOffsetX, nextOffset.x)),
@@ -523,10 +522,6 @@ export default function ProfileEditPage() {
         return false;
       }
 
-      const heroRect = heroPhotoSurfaceRef.current?.getBoundingClientRect();
-      if (heroRect?.width && heroRect?.height) {
-        setEditorFrameAspectRatio(heroRect.width / heroRect.height);
-      }
       const sourceUrl = URL.createObjectURL(file);
       setPendingAvatarSourceUrl((currentSourceUrl) => {
         if (currentSourceUrl) {
@@ -836,9 +831,68 @@ export default function ProfileEditPage() {
   };
 
   const handleEditorTouchEnd = () => {
-    if (gestureStateRef.current && gestureStateRef.current.startDistance) {
-      gestureStateRef.current = null;
+    if (!gestureStateRef.current) {
+      return;
     }
+
+    if (gestureStateRef.current.mode === "pinch") {
+      gestureStateRef.current = null;
+      return;
+    }
+
+    gestureStateRef.current = null;
+  };
+
+  const handleEditorPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch" || event.button !== 0) {
+      return;
+    }
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+    gestureStateRef.current = {
+      mode: "pan",
+      startDistance: 0,
+      startMidpoint: { x: event.clientX, y: event.clientY },
+      startZoom: editorZoom,
+      startOffset: { ...editorOffset },
+    };
+  };
+
+  const handleEditorPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch" || gestureStateRef.current?.mode !== "pan") {
+      return;
+    }
+
+    const deltaX = event.clientX - gestureStateRef.current.startMidpoint.x;
+    const deltaY = event.clientY - gestureStateRef.current.startMidpoint.y;
+    const nextOffset = clampEditorOffset(
+      {
+        x: gestureStateRef.current.startOffset.x + deltaX,
+        y: gestureStateRef.current.startOffset.y + deltaY,
+      },
+      editorZoom,
+    );
+    setEditorOffset(nextOffset);
+  };
+
+  const handleEditorPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    gestureStateRef.current = null;
+  };
+
+  const handleEditorZoomChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const nextZoom = Math.min(
+      MAX_EDITOR_ZOOM,
+      Math.max(MIN_EDITOR_ZOOM, Number(event.currentTarget.value)),
+    );
+    setEditorZoom(nextZoom);
+    setEditorOffset((currentOffset) => clampEditorOffset(currentOffset, nextZoom));
   };
 
   const handleAvatarEditorCancel = () => {
@@ -866,8 +920,8 @@ export default function ProfileEditPage() {
       const frameHeight = frameRect.height;
       if (!frameWidth || !frameHeight) return;
 
-      const outputWidth = 1200;
-      const outputHeight = Math.round((frameHeight / frameWidth) * outputWidth);
+      const outputWidth = AVATAR_EXPORT_SIZE;
+      const outputHeight = AVATAR_EXPORT_SIZE;
       const canvas = document.createElement("canvas");
       canvas.width = outputWidth;
       canvas.height = outputHeight;
@@ -882,14 +936,21 @@ export default function ProfileEditPage() {
         image.onerror = () => reject(new Error("Failed to load selected image"));
       });
 
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, outputWidth, outputHeight);
+
+      const squareFrameSize = Math.min(frameWidth, frameHeight);
       const clampedOffset = clampEditorOffset(editorOffset, editorZoom);
-      const baseContainScale = Math.min(frameWidth / editorImageSize.width, frameHeight / editorImageSize.height);
-      const renderedScale = baseContainScale * editorZoom;
+      const baseCoverScale = Math.max(
+        squareFrameSize / editorImageSize.width,
+        squareFrameSize / editorImageSize.height,
+      );
+      const renderedScale = baseCoverScale * editorZoom;
       const renderedWidth = editorImageSize.width * renderedScale;
       const renderedHeight = editorImageSize.height * renderedScale;
-      const drawX = (frameWidth - renderedWidth) / 2 + clampedOffset.x;
-      const drawY = (frameHeight - renderedHeight) / 2 + clampedOffset.y;
-      const renderToCanvasScale = outputWidth / frameWidth;
+      const drawX = (squareFrameSize - renderedWidth) / 2 + clampedOffset.x;
+      const drawY = (squareFrameSize - renderedHeight) / 2 + clampedOffset.y;
+      const renderToCanvasScale = outputWidth / squareFrameSize;
 
       ctx.drawImage(
         image,
@@ -1085,6 +1146,20 @@ export default function ProfileEditPage() {
   }, [isAvatarEditorOpen]);
 
   useEffect(() => {
+    if (!isAvatarEditorOpen || !editorImageSize.width || !editorFrameSize.width) {
+      return;
+    }
+
+    setEditorOffset((currentOffset) => clampEditorOffset(currentOffset, editorZoom));
+  }, [
+    clampEditorOffset,
+    editorFrameSize.width,
+    editorImageSize.width,
+    editorZoom,
+    isAvatarEditorOpen,
+  ]);
+
+  useEffect(() => {
     if (!isWebCameraOpen || !webCameraStream || !webCameraVideoRef.current) {
       return;
     }
@@ -1151,15 +1226,15 @@ export default function ProfileEditPage() {
     profile.name?.trim() ||
     profile.username ||
     "Your profile";
-  const editorBaseContainScale =
+  const editorBaseCoverScale =
     editorImageSize.width && editorImageSize.height && editorFrameSize.width && editorFrameSize.height
-      ? Math.min(
+      ? Math.max(
           editorFrameSize.width / editorImageSize.width,
           editorFrameSize.height / editorImageSize.height,
         )
       : 1;
-  const editorRenderedWidth = editorImageSize.width * editorBaseContainScale;
-  const editorRenderedHeight = editorImageSize.height * editorBaseContainScale;
+  const editorRenderedWidth = editorImageSize.width * editorBaseCoverScale;
+  const editorRenderedHeight = editorImageSize.height * editorBaseCoverScale;
 
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
@@ -1190,7 +1265,6 @@ export default function ProfileEditPage() {
                 <div className="relative flex shrink-0 justify-center overflow-visible">
                   <Dialog.Trigger asChild>
                     <button
-                      ref={heroPhotoSurfaceRef}
                       type="button"
                       disabled={avatarSourceLoading !== null}
                       aria-label="Change profile photo"
@@ -1347,33 +1421,38 @@ export default function ProfileEditPage() {
       >
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-[220] bg-black/80 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-[230] w-[min(95vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-white/10 bg-[#05070c] p-4 text-white shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none sm:p-5">
-            <div className="space-y-4">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[230] max-h-[calc(100dvh-1.5rem)] w-[min(94vw,460px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[28px] border border-white/10 bg-[#05070c] p-4 text-white shadow-[0_30px_80px_rgba(0,0,0,0.65)] focus:outline-none sm:p-5">
+            <div className="space-y-3.5">
               <div className="space-y-1">
                 <Dialog.Title className="text-lg font-semibold">Adjust profile photo</Dialog.Title>
                 <Dialog.Description className="text-sm text-zinc-400">
-                  Zoom and move your image so it looks perfect as a profile photo.
+                  Move and zoom to frame your avatar.
                 </Dialog.Description>
               </div>
               <div
                 ref={avatarEditorFrameRef}
-                className="relative w-full touch-none overflow-hidden rounded-[24px] border border-white/10 bg-black/70"
-                style={{ aspectRatio: editorFrameAspectRatio.toString() }}
+                className="relative mx-auto aspect-square w-full max-w-[min(100%,390px)] cursor-grab touch-none select-none overflow-hidden rounded-[26px] border border-white/10 bg-black/80 active:cursor-grabbing"
                 onTouchStart={handleEditorTouchStart}
                 onTouchMove={handleEditorTouchMove}
                 onTouchEnd={handleEditorTouchEnd}
                 onTouchCancel={handleEditorTouchEnd}
+                onPointerDown={handleEditorPointerDown}
+                onPointerMove={handleEditorPointerMove}
+                onPointerUp={handleEditorPointerEnd}
+                onPointerCancel={handleEditorPointerEnd}
               >
                 {pendingAvatarSourceUrl ? (
                   <img
                     src={pendingAvatarSourceUrl}
                     alt="Selected profile"
-                    onLoad={(event) =>
+                    onLoad={(event) => {
                       setEditorImageSize({
                         width: event.currentTarget.naturalWidth,
                         height: event.currentTarget.naturalHeight,
-                      })
-                    }
+                      });
+                      setEditorZoom(1);
+                      setEditorOffset({ x: 0, y: 0 });
+                    }}
                     className="absolute left-1/2 top-1/2 max-w-none"
                     style={{
                       width: `${Math.max(editorRenderedWidth, 1)}px`,
@@ -1383,8 +1462,34 @@ export default function ProfileEditPage() {
                     }}
                   />
                 ) : null}
-                <div className="pointer-events-none absolute inset-0 border border-white/20" />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-black/60 to-black/95" />
+                <div
+                  className="pointer-events-none absolute inset-0"
+                  style={{
+                    background:
+                      "radial-gradient(circle at center, transparent 49.25%, rgba(0,0,0,0.62) 50%)",
+                  }}
+                  aria-hidden="true"
+                />
+                <div
+                  className="pointer-events-none absolute inset-px rounded-full border border-white/75 shadow-[0_0_0_1px_rgba(0,0,0,0.45)_inset,0_0_30px_rgba(0,0,0,0.28)]"
+                  aria-hidden="true"
+                />
+              </div>
+              <div className="space-y-2 px-1">
+                <div className="flex items-center justify-between text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-zinc-500">
+                  <span>Zoom</span>
+                  <span>{editorZoom.toFixed(1)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min={MIN_EDITOR_ZOOM}
+                  max={MAX_EDITOR_ZOOM}
+                  step="0.01"
+                  value={editorZoom}
+                  onChange={handleEditorZoomChange}
+                  aria-label="Zoom profile photo"
+                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-white"
+                />
               </div>
               <div className="flex items-center justify-end gap-2 pt-1">
                 <Button type="button" variant="ghost" onClick={handleAvatarEditorCancel}>

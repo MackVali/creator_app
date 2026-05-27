@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
 import {
   MonumentDetail,
   type MonumentDetailMonument,
@@ -137,16 +135,10 @@ export function MonumentGridWithSharedTransition({
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ type: "spring", stiffness: 500, damping: 40, mass: 0.9 }}
             >
-              <Button
-                variant="secondary"
-                size="icon"
-                aria-label="Close detail"
-                onClick={() => setActiveId(null)}
-                className="absolute left-4 top-4 z-10"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-              <MonumentDetail monument={selected} />
+              <MonumentDetail
+                monument={selected}
+                onClose={() => setActiveId(null)}
+              />
             </motion.div>
           </motion.div>
         )}
