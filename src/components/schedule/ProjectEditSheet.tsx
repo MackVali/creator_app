@@ -657,6 +657,90 @@ export function ProjectEditSheet({
     }
   }, [projectId, onClose, onInstanceDeleted]);
 
+  const handleCreateLockedSchedule = async () => {
+    if (!projectId) {
+      setManualScheduleError("Project ID unavailable.");
+      return;
+    }
+    if (!manualStart || !manualEnd) {
+      setManualScheduleError("Provide both start and end times.");
+      return;
+    }
+    const startDate = new Date(manualStart);
+    const endDate = new Date(manualEnd);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      setManualScheduleError("Enter valid start and end times.");
+      return;
+    }
+    if (endDate.getTime() <= startDate.getTime()) {
+      setManualScheduleError("End time must be after the start time.");
+      return;
+    }
+
+    setManualScheduleSaving(true);
+    setManualScheduleError(null);
+
+    try {
+      if (!supabase) {
+        throw new Error("Supabase client not available.");
+      }
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) throw userError;
+      if (!user) {
+        throw new Error("You must be signed in to schedule this project.");
+      }
+
+      const durationMin = Math.max(
+        1,
+        Math.round((endDate.getTime() - startDate.getTime()) / 60000)
+      );
+      const { data: inserted, error: insertError } = await supabase
+        .from("schedule_instances")
+        .insert({
+          user_id: user.id,
+          source_type: "PROJECT",
+          source_id: projectId,
+          start_utc: startDate.toISOString(),
+          end_utc: endDate.toISOString(),
+          duration_min: durationMin,
+          status: "scheduled",
+          locked: true,
+          window_id: null,
+          day_type_time_block_id: null,
+          time_block_id: null,
+          weight_snapshot: 0,
+          energy_resolved: energy,
+        })
+        .select("*")
+        .single();
+
+      if (insertError) {
+        throw insertError;
+      }
+      if (!inserted) {
+        throw new Error("Unable to create the locked schedule.");
+      }
+
+      setLockedInstance(inserted as ScheduleInstance);
+      setManualStart(toDatetimeLocalValue(inserted.start_utc));
+      setManualEnd(toDatetimeLocalValue(inserted.end_utc));
+      await onSaved?.();
+    } catch (err) {
+      console.error("Failed to create locked schedule:", err);
+      setManualScheduleError(
+        err instanceof Error
+          ? err.message
+          : "Unable to lock the manual schedule right now."
+      );
+    } finally {
+      setManualScheduleSaving(false);
+    }
+  };
+
   const handleUpdateLockedSchedule = async () => {
     if (!projectId || !lockedInstance) {
       return;
@@ -1099,11 +1183,48 @@ export function ProjectEditSheet({
                   </div>
                 </>
               ) : (
-                <p className={FAB_FIELD_HELP_TEXT_CLASS}>
-                  This project is currently scheduled dynamically. To lock a
-                  project at a specific time, create it with manual times from
-                  the scheduler’s project workflow.
-                </p>
+                <>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-2">
+                    <div className="space-y-0.5">
+                      <Label className={FAB_FIELD_LABEL_CLASS}>Start time</Label>
+                      <Input
+                        type="datetime-local"
+                        value={manualStart}
+                        onChange={(event) => setManualStart(event.target.value)}
+                        disabled={manualScheduleSaving}
+                        className={FAB_FIELD_CONTROL_CLASS}
+                      />
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label className={FAB_FIELD_LABEL_CLASS}>End time</Label>
+                      <Input
+                        type="datetime-local"
+                        value={manualEnd}
+                        onChange={(event) => setManualEnd(event.target.value)}
+                        disabled={manualScheduleSaving}
+                        className={FAB_FIELD_CONTROL_CLASS}
+                      />
+                    </div>
+                  </div>
+                  {manualScheduleError ? (
+                    <p className="text-sm text-red-300">
+                      {manualScheduleError}
+                    </p>
+                  ) : (
+                    <p className={FAB_FIELD_HELP_TEXT_CLASS}>
+                      Lock this project to an exact time. Locked blocks stay
+                      fixed when the scheduler reruns.
+                    </p>
+                  )}
+                  <Button
+                    type="button"
+                    onClick={handleCreateLockedSchedule}
+                    disabled={manualScheduleSaving}
+                    className="h-10 rounded-xl bg-white text-sm text-zinc-900 hover:bg-white/90"
+                  >
+                    {manualScheduleSaving ? "Locking…" : "Lock exact time"}
+                  </Button>
+                </>
               )}
             </div>
 

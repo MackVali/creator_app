@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   type FormEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -10,7 +11,9 @@ import {
 } from "react";
 import {
   ArrowLeft,
+  Check,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   LockKeyhole,
   Settings,
@@ -42,6 +45,8 @@ type CircleMember = {
   role: string;
   status: string;
   invited_by_user_id: string | null;
+  skill_constraint_ids: string[];
+  location_context_ids: string[];
   created_at: string;
   updated_at: string;
   profile: {
@@ -50,6 +55,24 @@ type CircleMember = {
     name: string | null;
     avatar_url: string | null;
   } | null;
+};
+
+type OwnerSkillOption = {
+  id: string;
+  name: string;
+  icon?: string | null;
+};
+
+type OwnerLocationContextOption = {
+  id: string;
+  label: string | null;
+  value: string | null;
+};
+
+type ConstraintOption = {
+  id: string;
+  label: string;
+  icon?: string | null;
 };
 
 type InviteRole = "MEMBER" | "OPERATOR" | "MANAGER" | "VIEWER";
@@ -77,6 +100,7 @@ type DetailRow = {
   username?: string | null;
   avatarUrl?: string | null;
   avatarInitials?: string;
+  workProfile?: ReactNode;
   action?: {
     label: string;
     onClick: () => void;
@@ -111,6 +135,16 @@ const inviteRoleOptions: InviteRole[] = [
   "MANAGER",
   "VIEWER",
 ];
+
+type MemberConstraintField =
+  | "skill_constraint_ids"
+  | "location_context_ids";
+
+function normalizeStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
 
 function shortenUserId(userId: string) {
   if (userId.length <= 12) {
@@ -171,11 +205,237 @@ function getMemberRow(
   };
 }
 
+function getConstraintSummary(
+  selectedIds: string[],
+  optionById: Map<string, ConstraintOption>,
+  emptyLabel: string
+) {
+  if (selectedIds.length === 0) {
+    return emptyLabel;
+  }
+
+  const labels = selectedIds.map(
+    (id) => optionById.get(id)?.label ?? shortenUserId(id)
+  );
+  const visibleLabels = labels.slice(0, 2).join(", ");
+  const hiddenCount = labels.length - 2;
+
+  return hiddenCount > 0
+    ? `${visibleLabels}, +${hiddenCount}`
+    : visibleLabels;
+}
+
+function getConstraintOptionLabel(
+  id: string,
+  optionById: Map<string, ConstraintOption>
+) {
+  return optionById.get(id)?.label ?? shortenUserId(id);
+}
+
+function ConstraintSelectionPreview({
+  selectedIds,
+  optionById,
+  emptyLabel,
+}: {
+  selectedIds: string[];
+  optionById: Map<string, ConstraintOption>;
+  emptyLabel: string;
+}) {
+  if (selectedIds.length === 0) {
+    return (
+      <span className="inline-flex min-h-7 max-w-full items-center rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] font-semibold text-white/58">
+        {emptyLabel}
+      </span>
+    );
+  }
+
+  const visibleIds = selectedIds.slice(0, 2);
+  const hiddenCount = selectedIds.length - visibleIds.length;
+
+  return (
+    <div className="flex min-w-0 flex-wrap gap-1.5">
+      {visibleIds.map((id) => {
+        const option = optionById.get(id);
+
+        return (
+          <span
+            key={id}
+            className="inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] font-semibold text-white/62"
+          >
+            {option?.icon ? (
+              <span className="shrink-0 text-xs" aria-hidden="true">
+                {option.icon}
+              </span>
+            ) : null}
+            <span className="truncate">
+              {getConstraintOptionLabel(id, optionById)}
+            </span>
+          </span>
+        );
+      })}
+      {hiddenCount > 0 ? (
+        <span className="inline-flex min-h-7 items-center rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] font-semibold text-white/50">
+          +{hiddenCount} more
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function ConstraintMultiSelect({
+  label,
+  options,
+  selectedIds,
+  emptyLabel,
+  noOptionsLabel,
+  canEdit,
+  isSaving,
+  onChange,
+}: {
+  label: string;
+  options: ConstraintOption[];
+  selectedIds: string[];
+  emptyLabel: string;
+  noOptionsLabel: string;
+  canEdit: boolean;
+  isSaving: boolean;
+  onChange: (nextIds: string[]) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const optionById = useMemo(
+    () => new Map(options.map((option) => [option.id, option])),
+    [options]
+  );
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const summary = getConstraintSummary(selectedIds, optionById, emptyLabel);
+  const canOpen = canEdit && !isSaving && options.length > 0;
+  const canReset = canEdit && !isSaving && selectedIds.length > 0;
+
+  useEffect(() => {
+    if (!canOpen) {
+      setIsOpen(false);
+    }
+  }, [canOpen]);
+
+  return (
+    <div className="relative min-w-0 rounded-xl border border-white/10 bg-black/30 p-3">
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">
+            {label}
+          </p>
+          <p className="mt-1 truncate text-xs font-semibold text-white/75">
+            {isSaving ? "Saving..." : summary}
+          </p>
+        </div>
+        {canEdit ? (
+          <div className="flex shrink-0 items-center gap-1.5">
+            {canReset ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  onChange([]);
+                }}
+                className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] font-semibold text-white/55 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
+              >
+                Reset
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                if (canOpen) {
+                  setIsOpen((current) => !current);
+                }
+              }}
+              disabled={!canOpen}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/55 transition enabled:hover:border-white/20 enabled:hover:bg-white/[0.08] enabled:hover:text-white disabled:cursor-default disabled:opacity-40"
+              aria-label={`Edit ${label}`}
+              aria-haspopup="listbox"
+              aria-expanded={isOpen}
+            >
+              <ChevronDown
+                className={`h-4 w-4 transition ${isOpen ? "rotate-180" : ""}`}
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-2">
+        <ConstraintSelectionPreview
+          selectedIds={selectedIds}
+          optionById={optionById}
+          emptyLabel={emptyLabel}
+        />
+      </div>
+
+      {options.length === 0 ? (
+        <p className="mt-2 text-xs font-medium text-white/38">
+          {noOptionsLabel}
+        </p>
+      ) : null}
+
+      {isOpen && canOpen ? (
+        <div
+          className="absolute left-0 top-full z-30 mt-2 max-h-56 w-full min-w-56 overflow-y-auto rounded-xl border border-white/10 bg-zinc-950/95 p-1 shadow-2xl shadow-black/50 ring-1 ring-white/5"
+          role="listbox"
+          aria-label={label}
+        >
+          {options.map((option) => {
+            const isSelected = selectedSet.has(option.id);
+
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => {
+                  const nextIds = isSelected
+                    ? selectedIds.filter((id) => id !== option.id)
+                    : [...selectedIds, option.id];
+
+                  onChange(nextIds);
+                }}
+                className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-white/75 transition hover:bg-white/[0.07]"
+                role="option"
+                aria-selected={isSelected}
+              >
+                <span
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                    isSelected
+                      ? "border-emerald-300/60 bg-emerald-300/20 text-emerald-100"
+                      : "border-white/15 bg-white/[0.03] text-transparent"
+                  }`}
+                  aria-hidden="true"
+                >
+                  <Check className="h-3 w-3" />
+                </span>
+                {option.icon ? (
+                  <span className="shrink-0 text-sm" aria-hidden="true">
+                    {option.icon}
+                  </span>
+                ) : null}
+                <span className="truncate">{option.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function CircleDetailClient({
   circleId,
 }: CircleDetailClientProps) {
   const [circle, setCircle] = useState<Circle | null>(null);
   const [members, setMembers] = useState<CircleMember[]>([]);
+  const [ownerSkills, setOwnerSkills] = useState<OwnerSkillOption[]>([]);
+  const [ownerLocationContexts, setOwnerLocationContexts] = useState<
+    OwnerLocationContextOption[]
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInviteForm, setShowInviteForm] = useState(false);
@@ -197,6 +457,9 @@ export default function CircleDetailClient({
   const [memberActionError, setMemberActionError] = useState<string | null>(
     null
   );
+  const [memberConstraintActionId, setMemberConstraintActionId] = useState<
+    string | null
+  >(null);
 
   const loadCircle = useCallback(
     async (signal?: AbortSignal) => {
@@ -222,11 +485,25 @@ export default function CircleDetailClient({
         const data = (await response.json()) as {
           circle: Circle;
           viewerCanManageMembers?: boolean;
+          ownerSkills?: OwnerSkillOption[];
+          ownerLocationContexts?: OwnerLocationContextOption[];
           members?: CircleMember[];
         };
 
         setCircle(data.circle);
-        setMembers(data.members ?? []);
+        setMembers(
+          (data.members ?? []).map((member) => ({
+            ...member,
+            skill_constraint_ids: normalizeStringArray(
+              member.skill_constraint_ids
+            ),
+            location_context_ids: normalizeStringArray(
+              member.location_context_ids
+            ),
+          }))
+        );
+        setOwnerSkills(data.ownerSkills ?? []);
+        setOwnerLocationContexts(data.ownerLocationContexts ?? []);
         setViewerCanManageMembers(data.viewerCanManageMembers ?? false);
       } catch (loadError) {
         if (loadError instanceof DOMException && loadError.name === "AbortError") {
@@ -235,6 +512,8 @@ export default function CircleDetailClient({
 
         setCircle(null);
         setMembers([]);
+        setOwnerSkills([]);
+        setOwnerLocationContexts([]);
         setViewerCanManageMembers(false);
         setError(
           loadError instanceof Error
@@ -424,6 +703,82 @@ export default function CircleDetailClient({
     [circleId, loadCircle]
   );
 
+  const handleMemberConstraintChange = useCallback(
+    async (
+      member: CircleMember,
+      field: MemberConstraintField,
+      nextIds: string[]
+    ) => {
+      const previousMembers = members;
+      const actionId = `${member.id}:${field}`;
+
+      try {
+        setMemberConstraintActionId(actionId);
+        setMemberActionError(null);
+        setMembers((currentMembers) =>
+          currentMembers.map((currentMember) =>
+            currentMember.id === member.id
+              ? { ...currentMember, [field]: nextIds }
+              : currentMember
+          )
+        );
+
+        const response = await fetch(
+          `/api/circles/${encodeURIComponent(
+            circleId
+          )}/members/${encodeURIComponent(member.id)}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ [field]: nextIds }),
+          }
+        );
+
+        if (!response.ok) {
+          const data = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(data?.error ?? "Unable to update member profile.");
+        }
+
+        const data = (await response.json()) as {
+          member?: CircleMember;
+        };
+
+        if (data.member) {
+          setMembers((currentMembers) =>
+            currentMembers.map((currentMember) =>
+              currentMember.id === member.id
+                ? {
+                    ...currentMember,
+                    skill_constraint_ids: normalizeStringArray(
+                      data.member?.skill_constraint_ids
+                    ),
+                    location_context_ids: normalizeStringArray(
+                      data.member?.location_context_ids
+                    ),
+                    updated_at: data.member?.updated_at ?? currentMember.updated_at,
+                  }
+                : currentMember
+            )
+          );
+        }
+      } catch (updateError) {
+        setMembers(previousMembers);
+        setMemberActionError(
+          updateError instanceof Error
+            ? updateError.message
+            : "Unable to update member profile."
+        );
+      } finally {
+        setMemberConstraintActionId(null);
+      }
+    },
+    [circleId, members]
+  );
+
   const activeMembers = useMemo(
     () => members.filter((member) => member.status === "ACTIVE"),
     [members]
@@ -434,13 +789,35 @@ export default function CircleDetailClient({
     [members]
   );
 
+  const skillConstraintOptions = useMemo(
+    () =>
+      ownerSkills.map((skill) => ({
+        id: skill.id,
+        label: skill.name,
+        icon: skill.icon ?? null,
+      })),
+    [ownerSkills]
+  );
+
+  const locationContextOptions = useMemo(
+    () =>
+      ownerLocationContexts.map((locationContext) => ({
+        id: locationContext.id,
+        label:
+          locationContext.label?.trim() ||
+          locationContext.value?.trim() ||
+          "Untitled location",
+      })),
+    [ownerLocationContexts]
+  );
+
   const activeMemberRows = useMemo(() => {
     if (isLoading) {
       return memberPlaceholderRows;
     }
 
-    return activeMembers.map((member) =>
-      getMemberRow(
+    return activeMembers.map((member) => {
+      const row = getMemberRow(
         member,
         viewerCanManageMembers && member.role !== "OWNER"
           ? {
@@ -449,13 +826,78 @@ export default function CircleDetailClient({
               disabled: memberActionId !== null,
             }
           : undefined
-      )
-    );
+      );
+      const skillActionId = `${member.id}:skill_constraint_ids`;
+      const locationActionId = `${member.id}:location_context_ids`;
+      const isConstraintSaving = memberConstraintActionId !== null;
+
+      return {
+        ...row,
+        workProfile: (
+          <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">
+                  Work Profile
+                </p>
+                <p className="mt-1 text-xs leading-5 text-white/48">
+                  Empty skills allow all owner skills. Empty locations grant no
+                  location access.
+                </p>
+              </div>
+              {!viewerCanManageMembers ? (
+                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/35">
+                  Read only
+                </span>
+              ) : null}
+            </div>
+            <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+              <ConstraintMultiSelect
+                label="Skill constraints"
+                options={skillConstraintOptions}
+                selectedIds={normalizeStringArray(member.skill_constraint_ids)}
+                emptyLabel="All skills"
+                noOptionsLabel="No owner skills yet"
+                canEdit={viewerCanManageMembers && !isConstraintSaving}
+                isSaving={memberConstraintActionId === skillActionId}
+                onChange={(nextIds) =>
+                  void handleMemberConstraintChange(
+                    member,
+                    "skill_constraint_ids",
+                    nextIds
+                  )
+                }
+              />
+              <ConstraintMultiSelect
+                label="Location contexts"
+                options={locationContextOptions}
+                selectedIds={normalizeStringArray(member.location_context_ids)}
+                emptyLabel="No locations granted"
+                noOptionsLabel="No locations yet"
+                canEdit={viewerCanManageMembers && !isConstraintSaving}
+                isSaving={memberConstraintActionId === locationActionId}
+                onChange={(nextIds) =>
+                  void handleMemberConstraintChange(
+                    member,
+                    "location_context_ids",
+                    nextIds
+                  )
+                }
+              />
+            </div>
+          </div>
+        ),
+      };
+    });
   }, [
     activeMembers,
     handleMemberAction,
+    handleMemberConstraintChange,
     isLoading,
     memberActionId,
+    memberConstraintActionId,
+    locationContextOptions,
+    skillConstraintOptions,
     viewerCanManageMembers,
   ]);
 
@@ -793,54 +1235,57 @@ export default function CircleDetailClient({
                   section.rows.map((row) => (
                     <div
                       key={row.key ?? `${section.title}-${row.label}`}
-                      className="flex items-center justify-between gap-3 rounded-xl bg-white/[0.04] px-3 py-2 ring-1 ring-white/5"
+                      className="rounded-xl bg-white/[0.04] px-3 py-2 ring-1 ring-white/5"
                     >
-                      <div className="flex min-w-0 items-center gap-3">
-                        {section.showAvatars ? (
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-zinc-950 text-xs font-semibold uppercase text-white/75 ring-1 ring-white/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_18px_rgba(0,0,0,0.35)]">
-                            {row.avatarUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={row.avatarUrl}
-                                alt=""
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              row.avatarInitials
-                            )}
-                          </div>
-                        ) : null}
-                        <span className="min-w-0 text-sm font-medium text-white/80">
-                          <span className="block truncate">{row.label}</span>
-                          {row.username ? (
-                            <span className="mt-0.5 block truncate text-xs font-medium text-white/45">
-                              {row.username}
-                            </span>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          {section.showAvatars ? (
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-zinc-950 text-xs font-semibold uppercase text-white/75 ring-1 ring-white/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_18px_rgba(0,0,0,0.35)]">
+                              {row.avatarUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={row.avatarUrl}
+                                  alt=""
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                row.avatarInitials
+                              )}
+                            </div>
                           ) : null}
-                        </span>
-                      </div>
-                      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-                        {row.value ? (
-                          <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-white/45">
-                            {row.value}
+                          <span className="min-w-0 text-sm font-medium text-white/80">
+                            <span className="block truncate">{row.label}</span>
+                            {row.username ? (
+                              <span className="mt-0.5 block truncate text-xs font-medium text-white/45">
+                                {row.username}
+                              </span>
+                            ) : null}
                           </span>
-                        ) : (
-                          <CheckCircle2
-                            className="h-4 w-4 shrink-0 text-emerald-300/80"
-                            aria-hidden="true"
-                          />
-                        )}
-                        {row.action ? (
-                          <button
-                            type="button"
-                            onClick={row.action.onClick}
-                            disabled={row.action.disabled}
-                            className="inline-flex h-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] px-3 text-xs font-semibold text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {row.action.label}
-                          </button>
-                        ) : null}
+                        </div>
+                        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                          {row.value ? (
+                            <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-white/45">
+                              {row.value}
+                            </span>
+                          ) : (
+                            <CheckCircle2
+                              className="h-4 w-4 shrink-0 text-emerald-300/80"
+                              aria-hidden="true"
+                            />
+                          )}
+                          {row.action ? (
+                            <button
+                              type="button"
+                              onClick={row.action.onClick}
+                              disabled={row.action.disabled}
+                              className="inline-flex h-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] px-3 text-xs font-semibold text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {row.action.label}
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
+                      {row.workProfile ? row.workProfile : null}
                     </div>
                   ))
                 ) : (

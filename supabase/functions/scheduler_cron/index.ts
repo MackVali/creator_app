@@ -163,6 +163,9 @@ async function scheduleBacklog(
   baseDate: Date,
   timeZoneValue?: string | null
 ) {
+  // Obsolete mirror path: web scheduling now delegates to src/lib/scheduler/reschedule.ts,
+  // which owns exact-time habit materialization. Keep this disabled until the cron
+  // function is rebuilt against the shared scheduler implementation.
   throw new Error("[SCHEDULER_ENTRY] reschedule.ts rebuild path reached");
 
   const missed = await fetchMissedInstances(client, userId);

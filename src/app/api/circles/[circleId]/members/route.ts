@@ -8,7 +8,7 @@ import { getSupabaseServer } from "@/lib/supabase";
 const circleColumns = "id";
 
 const memberColumns =
-  "id, circle_id, user_id, role, status, invited_by_user_id, created_at, updated_at";
+  "id, circle_id, user_id, role, status, invited_by_user_id, skill_constraint_ids, location_context_ids, created_at, updated_at";
 
 const profileColumns = "user_id, username, name, avatar_url";
 
@@ -27,6 +27,8 @@ type CircleMemberRow = {
   role: string;
   status: string;
   invited_by_user_id: string | null;
+  skill_constraint_ids: string[] | null;
+  location_context_ids: string[] | null;
   created_at: string;
   updated_at: string;
 };
@@ -223,6 +225,8 @@ export async function POST(
         role,
         status: "INVITED",
         invited_by_user_id: user.id,
+        skill_constraint_ids: [],
+        location_context_ids: [],
         updated_at: new Date().toISOString(),
       })
       .eq("id", existingMember.id)
@@ -251,6 +255,8 @@ export async function POST(
       {
         member: {
           ...updatedMember,
+          skill_constraint_ids: updatedMember.skill_constraint_ids ?? [],
+          location_context_ids: updatedMember.location_context_ids ?? [],
           profile: targetProfile,
         },
       },
@@ -273,6 +279,8 @@ export async function POST(
       role,
       status: "INVITED",
       invited_by_user_id: user.id,
+      skill_constraint_ids: [],
+      location_context_ids: [],
     })
     .select(memberColumns)
     .single<CircleMemberRow>();
@@ -296,6 +304,8 @@ export async function POST(
     {
       member: {
         ...member,
+        skill_constraint_ids: member.skill_constraint_ids ?? [],
+        location_context_ids: member.location_context_ids ?? [],
         profile: targetProfile,
       },
     },

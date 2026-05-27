@@ -62,6 +62,9 @@ export interface Database {
           current_streak_days: number;
           longest_streak_days: number;
           next_due_override: string | null;
+          fixed_start_local: string | null;
+          fixed_end_local: string | null;
+          fixed_timezone: string | null;
           recurrence_mode: string;
           anchor_type: string | null;
           anchor_value: string | null;
@@ -91,6 +94,9 @@ export interface Database {
           current_streak_days?: number;
           longest_streak_days?: number;
           next_due_override?: string | null;
+          fixed_start_local?: string | null;
+          fixed_end_local?: string | null;
+          fixed_timezone?: string | null;
           recurrence_mode?: string;
           anchor_type?: string | null;
           anchor_value?: string | null;
@@ -119,6 +125,9 @@ export interface Database {
           current_streak_days?: number;
           longest_streak_days?: number;
           next_due_override?: string | null;
+          fixed_start_local?: string | null;
+          fixed_end_local?: string | null;
+          fixed_timezone?: string | null;
           recurrence_mode?: string;
           anchor_type?: string | null;
           anchor_value?: string | null;

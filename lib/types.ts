@@ -33,6 +33,9 @@ export interface Habits extends BaseTable {
   window_id?: string | null;
   skill_id?: string | null;
   energy?: string | null;
+  fixed_start_local?: string | null;
+  fixed_end_local?: string | null;
+  fixed_timezone?: string | null;
 }
 
 export interface Skills extends BaseTable {

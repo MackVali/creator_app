@@ -133,34 +133,34 @@ describe('describeEmptyWindowReport', () => {
     let result
     try {
       result = describeEmptyWindowReport({
-      windowLabel: 'Evening sprint',
-      energyLabel: 'HIGH',
-      durationMinutes: 120,
-      unscheduledProjects: [],
-      schedulerFailureByProjectId: {},
-      diagnosticsAvailable: true,
-      runStartedAt,
-      windowStart,
-      windowEnd,
-      futurePlacements: [
-        {
-          projectId: 'proj-a',
-          projectName: 'Project A',
-          sameDay: true,
-          fits: true,
-          durationMinutes: 120,
-          start: makeDate('2024-05-05T18:00:00Z'),
-        },
-      ],
-      segmentStart: windowStart,
-      segmentEnd: windowEnd,
-      window: makeWindow('breakable', '15:00', '17:00'),
+        windowLabel: 'Evening sprint',
+        energyLabel: 'HIGH',
+        durationMinutes: 120,
+        unscheduledProjects: [],
+        schedulerFailureByProjectId: {},
+        diagnosticsAvailable: true,
+        runStartedAt,
+        windowStart,
+        windowEnd,
+        futurePlacements: [
+          {
+            projectId: 'proj-a',
+            projectName: 'Project A',
+            sameDay: true,
+            fits: true,
+            durationMinutes: 120,
+            start: makeDate('2024-05-05T18:00:00Z'),
+          },
+        ],
+        segmentStart: windowStart,
+        segmentEnd: windowEnd,
+        window: makeWindow('breakable', '15:00', '17:00'),
       })
     } finally {
       vi.useRealTimers()
     }
 
-    expect(result.summary).toMatch(/had only/i)
+    expect(result.summary).toMatch(/only 1h 30m was left/i)
     expect(result.summary).toMatch(/scheduler ran/i)
     expect(result.details).toHaveLength(1)
     expect(result.details[0]).toContain('Project A')
@@ -193,48 +193,67 @@ describe('describeEmptyWindowReport', () => {
     expect(result.details).toHaveLength(0)
   })
 
-  it('documents constraints for day-type time blocks', async () => {
+  it('documents constraints for day-type time blocks without exposing raw ids', async () => {
     const { describeEmptyWindowReport } = await loadWindowReports()
     const windowStart = makeDate('2024-05-05T14:00:00Z')
     const windowEnd = makeDate('2024-05-05T15:00:00Z')
     const constrainedWindow = makeWindow('constraint-window', '14:00', '15:00')
     constrainedWindow.dayTypeTimeBlockId = 'dttb-1'
-    constrainedWindow.location_context_name = 'Home office'
+    constrainedWindow.location_context_id = '0b15f4a9-8145-43d1-8bd6-268f0174afdf'
     constrainedWindow.allowAllHabitTypes = false
     constrainedWindow.allowedHabitTypes = ['HABIT', 'FOCUS']
     constrainedWindow.allowAllSkills = false
-    constrainedWindow.allowedSkillIds = ['skill-a']
+    constrainedWindow.allowedSkillIds = [
+      '42ee1e43-8aa8-47ce-bc10-222d740ebf53',
+      '624f9725-98a6-40a9-a5b9-78ad21289857',
+    ]
     constrainedWindow.allowAllMonuments = false
-    constrainedWindow.allowedMonumentIds = ['mon-1']
+    constrainedWindow.allowedMonumentIds = ['d827668e-21e5-4bdc-8e23-8f89d73a245cc']
 
-    const result = describeEmptyWindowReport({
-      windowLabel: 'Constraints block',
-      energyLabel: 'NO',
-      durationMinutes: 60,
-      unscheduledProjects: [],
-      schedulerFailureByProjectId: {},
-      diagnosticsAvailable: false,
-      runStartedAt: null,
-      windowStart,
-      windowEnd,
-      futurePlacements: [],
-      segmentStart: windowStart,
-      segmentEnd: windowEnd,
-      window: constrainedWindow,
-    })
+    vi.useFakeTimers()
+    vi.setSystemTime(makeDate('2024-05-05T13:00:00Z'))
+    let result
+    try {
+      result = describeEmptyWindowReport({
+        windowLabel: 'Constraints block',
+        energyLabel: 'NO',
+        durationMinutes: 60,
+        unscheduledProjects: [],
+        schedulerFailureByProjectId: {},
+        diagnosticsAvailable: false,
+        runStartedAt: null,
+        windowStart,
+        windowEnd,
+        futurePlacements: [],
+        segmentStart: windowStart,
+        segmentEnd: windowEnd,
+        window: constrainedWindow,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
 
     expect(result.details.some(detail => detail.includes('Day-type time block constraints'))).toBe(true)
-    expect(result.details.some(detail => detail.includes('Requires location context'))).toBe(true)
+    expect(result.details.some(detail => detail.includes('Requires a selected location context'))).toBe(true)
     expect(result.details.some(detail => detail.includes('Habit types limited to'))).toBe(true)
-    expect(result.details.some(detail => detail.includes('Skills must match'))).toBe(true)
-      expect(result.details.some(detail => detail.includes('Monuments must match'))).toBe(true)
+    expect(result.details.some(detail => detail.includes('Skills are limited to 2 selected skill(s).'))).toBe(true)
+    expect(result.details.some(detail => detail.includes('Monuments are limited to 1 selected monument(s).'))).toBe(true)
+    expect(result.details.join('\n')).not.toMatch(
+      /0b15f4a9-8145-43d1-8bd6-268f0174afdf|42ee1e43-8aa8-47ce-bc10-222d740ebf53|624f9725-98a6-40a9-a5b9-78ad21289857|d827668e-21e5-4bdc-8e23-8f89d73a245cc/
+    )
   })
 
-  it('labels historical windows as past entries', async () => {
+  it('labels historical windows as past entries without constraint details', async () => {
     const { describeEmptyWindowReport } = await loadWindowReports()
     const windowStart = makeDate('2024-05-05T08:00:00Z')
     const windowEnd = makeDate('2024-05-05T09:00:00Z')
     const window = makeWindow('history-window', '08:00', '09:00')
+    window.dayTypeTimeBlockId = 'dttb-1'
+    window.location_context_id = '0b15f4a9-8145-43d1-8bd6-268f0174afdf'
+    window.allowAllSkills = false
+    window.allowedSkillIds = ['42ee1e43-8aa8-47ce-bc10-222d740ebf53']
+    window.allowAllMonuments = false
+    window.allowedMonumentIds = ['d827668e-21e5-4bdc-8e23-8f89d73a245cc']
 
     const result = describeEmptyWindowReport({
       windowLabel: 'Morning block',
@@ -253,6 +272,7 @@ describe('describeEmptyWindowReport', () => {
     })
 
     expect(result.summary).toMatch(/past/)
+    expect(result.details).toHaveLength(0)
   })
 })
 

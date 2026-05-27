@@ -77,6 +77,7 @@ import {
   formatDateKeyInTimeZone,
   getDateTimeParts,
   makeZonedDate,
+  normalizeTimeZone,
   setTimeInTimeZone,
   startOfDayInTimeZone,
   weekdayInTimeZone,
@@ -1090,6 +1091,20 @@ type HabitReservation = {
   availableStartLocal: Date;
   clipped: boolean;
   availabilitySnapshot?: { front: Date; back: Date } | null;
+};
+
+type FixedHabitRange = {
+  start: Date;
+  end: Date;
+  durationMin: number;
+  timeZone: string;
+};
+
+type FixedHabitPersistResult = {
+  instance: ScheduleInstance | null;
+  decision: HabitDraftPlacement["decision"];
+  error: unknown | null;
+  range: FixedHabitRange | null;
 };
 
 type HabitAuditSamples = {
@@ -4375,6 +4390,74 @@ export async function scheduleBacklog(
             firstDay = false;
             continue;
           }
+          if (hasFixedHabitLocalTime(habit)) {
+            const fixedRange = buildFixedHabitRange(habit, cursorDay, timeZone);
+            if (!fixedRange) {
+              return { instance: null, startLocalDay: null };
+            }
+            if (firstDay && fixedRange.end.getTime() <= minStartDate.getTime()) {
+              cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
+              firstDay = false;
+              continue;
+            }
+            const fixedMetadata = mergeNonDailyMetadata(
+              params.reuseInstance?.metadata,
+              {
+                role: params.role,
+                dueAtUtc: params.dueAtUtc,
+                anchorCompletedAtUtc: plan.anchor.completedAtUtc,
+                chainKey,
+              }
+            );
+            const fixedResult = await upsertFixedHabitInstance({
+              client: supabase,
+              userId,
+              habit,
+              day: cursorDay,
+              timeZone,
+              existingInstance: params.reuseInstance ?? null,
+              metadata: fixedMetadata,
+            });
+            if (fixedResult.error || !fixedResult.instance || !fixedResult.range) {
+              if (fixedResult.error) {
+                result.failures.push({
+                  itemId: habit.id,
+                  reason: "error",
+                  detail: fixedResult.error,
+                });
+              }
+              cursorDay = addDaysInTimeZone(cursorDay, 1, timeZone);
+              firstDay = false;
+              continue;
+            }
+            const persisted = fixedResult.instance;
+            if (persisted?.id) {
+              createdThisRun.add(persisted.id);
+              nonDailyReplacementInstanceIds.add(persisted.id);
+            }
+            registerInstanceForOffsets(persisted);
+            recordHabitScheduledStart(habit.id, persisted.start_utc ?? "");
+            addHabitBlocker(persisted);
+            result.placed.push(persisted);
+            result.timeline.push({
+              type: "HABIT",
+              habit: {
+                id: habit.id,
+                name: habit.name,
+                windowId: null,
+                windowLabel: null,
+                startUTC:
+                  persisted.start_utc ?? fixedResult.range.start.toISOString(),
+                endUTC:
+                  persisted.end_utc ?? fixedResult.range.end.toISOString(),
+                durationMin: fixedResult.range.durationMin,
+                energyResolved: persisted.energy_resolved ?? null,
+              },
+              decision: fixedResult.decision,
+              scheduledDayOffset: offset,
+            });
+            return { instance: persisted, startLocalDay: cursorDay };
+          }
           await prepareWindowsForDay(cursorDay);
           const existingInstancesForDay = getDayInstances(offset);
           const sunlightOptions =
@@ -6939,7 +7022,13 @@ async function reserveMandatoryHabitsForDay(params: {
     return false;
   };
 
-  if (!windows || windows.length === 0) {
+  const hasFixedTimeHabit = habits.some((habit) => {
+    const normalizedType =
+      habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
+    return normalizedType !== "SYNC" && hasFixedHabitLocalTime(habit);
+  });
+
+  if ((!windows || windows.length === 0) && !hasFixedTimeHabit) {
     if (auditEnabled) {
       for (const habit of habits) {
         const normalizedType = normalizeHabitTypeValue(habit.habitType);
@@ -8618,7 +8707,13 @@ async function scheduleHabitsForDay(params: {
     windowCache.set(cacheKey, windows);
   }
 
-  if (!windows || windows.length === 0) {
+  const hasFixedTimeHabit = habits.some((habit) => {
+    const normalizedType =
+      habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
+    return normalizedType !== "SYNC" && hasFixedHabitLocalTime(habit);
+  });
+
+  if ((!windows || windows.length === 0) && !hasFixedTimeHabit) {
     if (auditEnabled) {
       for (const habit of habits) {
         const windowDays = habit.windowId ? null : habit.window?.days ?? null;
@@ -8647,6 +8742,7 @@ async function scheduleHabitsForDay(params: {
     await clearHabitOverrides();
     return result;
   }
+  windows = windows ?? [];
 
   const windowsById = new Map<string, WindowLite>();
   for (const win of windows) {
@@ -8665,6 +8761,11 @@ async function scheduleHabitsForDay(params: {
     if (!habitId) continue;
     const habit = habitMap.get(habitId);
     if (!habit) continue;
+    const normalizedHabitType =
+      habitTypeById.get(habitId) ?? normalizeHabitTypeValue(habit.habitType);
+    if (normalizedHabitType !== "SYNC" && hasFixedHabitLocalTime(habit)) {
+      continue;
+    }
     const windowRecord = instance.window_id
       ? (windowsById.get(instance.window_id) ?? null)
       : null;
@@ -9264,6 +9365,74 @@ async function scheduleHabitsForDay(params: {
       postAnchorSyncRetry,
       existingByHabitId: scheduleInstanceAuditPayload(existingInstance),
     });
+    const normalizedType =
+      habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
+    const isSyncHabit = normalizedType === "SYNC";
+    if (hasFixedHabitLocalTime(habit) && !isSyncHabit) {
+      if (!allowScheduling && !existingInstance) {
+        continue;
+      }
+      const fixedResult = await upsertFixedHabitInstance({
+        client,
+        userId,
+        habit,
+        day,
+        timeZone: zone,
+        existingInstance,
+      });
+      if (fixedResult.error || !fixedResult.instance || !fixedResult.range) {
+        result.failures.push({
+          itemId: habit.id,
+          reason: "error",
+          detail: fixedResult.error,
+        });
+        failedHabitIds.add(habit.id);
+        continue;
+      }
+
+      const persisted = fixedResult.instance;
+      if (persisted.id && fixedResult.decision !== "kept") {
+        createdThisRun.add(persisted.id);
+        result.instances.push(persisted);
+      }
+      existingByHabitId.set(habit.id, persisted);
+      registerInstance(persisted);
+      upsertInstance(dayInstances, persisted);
+      if (!placedSoFar.some((instance) => instance.id === persisted.id)) {
+        placedSoFar.push(persisted);
+      }
+      recordHabitScheduledStart(habit.id, persisted.start_utc ?? "");
+      const startUTC =
+        persisted.start_utc ?? fixedResult.range.start.toISOString();
+      const endUTC = persisted.end_utc ?? fixedResult.range.end.toISOString();
+      if (auditEnabled) {
+        audit.report.scheduling.dueScheduledSuccessfullyToday += 1;
+      }
+      onPersistedHabit?.(persisted);
+      result.placements.push({
+        type: "HABIT",
+        habit: {
+          id: habit.id,
+          name: habit.name,
+          windowId: null,
+          windowLabel: null,
+          startUTC,
+          endUTC,
+          durationMin: fixedResult.range.durationMin,
+          energyResolved: persisted.energy_resolved ?? null,
+          practiceContextId:
+            normalizedType === "PRACTICE"
+              ? (persisted.practice_context_monument_id ?? null)
+              : null,
+        },
+        decision: fixedResult.decision,
+        scheduledDayOffset: offset,
+        availableStartLocal: startUTC,
+        windowStartLocal: startUTC,
+        instanceId: persisted.id,
+      });
+      continue;
+    }
     const rawDuration = Number(habit.durationMinutes ?? 0);
     let durationMin =
       Number.isFinite(rawDuration) && rawDuration > 0
@@ -9377,9 +9546,6 @@ async function scheduleHabitsForDay(params: {
             next: sunlightNext,
           }
         : null;
-    const normalizedType =
-      habitTypeById.get(habit.id) ?? normalizeHabitTypeValue(habit.habitType);
-    const isSyncHabit = normalizedType === "SYNC";
     const allowsHabitOverlap = isSyncHabit;
     const anchorRaw = habit.windowEdgePreference
       ? String(habit.windowEdgePreference).toUpperCase().trim()
@@ -10612,6 +10778,163 @@ function placementKey(entry: ScheduleDraftPlacement) {
     return `PROJECT:${id}`;
   }
   return `HABIT:${entry.habit.id}`;
+}
+
+function parseFixedLocalClock(value?: string | null) {
+  if (!value) return null;
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(value.trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = Number(match[3] ?? "0");
+  if (
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    !Number.isInteger(second) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59 ||
+    second < 0 ||
+    second > 59
+  ) {
+    return null;
+  }
+  return { hour, minute, second };
+}
+
+function hasFixedHabitLocalTime(habit: HabitScheduleItem | null | undefined) {
+  return Boolean(
+    parseFixedLocalClock(habit?.fixedStartLocal) &&
+      parseFixedLocalClock(habit?.fixedEndLocal)
+  );
+}
+
+function buildFixedHabitRange(
+  habit: HabitScheduleItem,
+  day: Date,
+  fallbackTimeZone: string
+): FixedHabitRange | null {
+  const startClock = parseFixedLocalClock(habit.fixedStartLocal);
+  const endClock = parseFixedLocalClock(habit.fixedEndLocal);
+  if (!startClock || !endClock) return null;
+  const timeZone = normalizeTimeZone(habit.fixedTimezone ?? fallbackTimeZone);
+  const start = setTimeInTimeZone(
+    day,
+    timeZone,
+    startClock.hour,
+    startClock.minute
+  );
+  const end = setTimeInTimeZone(day, timeZone, endClock.hour, endClock.minute);
+  if (end.getTime() <= start.getTime()) return null;
+  return {
+    start,
+    end,
+    durationMin: Math.max(
+      1,
+      Math.round((end.getTime() - start.getTime()) / 60000)
+    ),
+    timeZone,
+  };
+}
+
+async function upsertFixedHabitInstance(params: {
+  client: Client;
+  userId: string;
+  habit: HabitScheduleItem;
+  day: Date;
+  timeZone: string;
+  existingInstance?: ScheduleInstance | null;
+  metadata?: ScheduleInstance["metadata"] | null;
+}): Promise<FixedHabitPersistResult> {
+  const { client, userId, habit, day, timeZone, existingInstance, metadata } =
+    params;
+  const range = buildFixedHabitRange(habit, day, timeZone);
+  if (!range) {
+    return {
+      instance: null,
+      decision: "skipped",
+      error: new Error("Invalid fixed habit time range"),
+      range: null,
+    };
+  }
+
+  const startUTC = range.start.toISOString();
+  const endUTC = range.end.toISOString();
+  const energyResolved = resolveHabitExplicitEnergy(habit) ?? "NO";
+  const normalizedType = normalizeHabitTypeValue(habit.habitType);
+  const practiceContextId =
+    normalizedType === "PRACTICE" ? (habit.skillMonumentId ?? null) : null;
+  const updatePayload = {
+    start_utc: startUTC,
+    end_utc: endUTC,
+    duration_min: range.durationMin,
+    status: "scheduled",
+    locked: true,
+    window_id: null,
+    day_type_time_block_id: null,
+    time_block_id: null,
+    energy_resolved: energyResolved,
+    event_name: habit.name ?? null,
+    practice_context_monument_id: practiceContextId,
+    ...(metadata ? { metadata } : {}),
+  } satisfies Database["public"]["Tables"]["schedule_instances"]["Update"];
+
+  if (
+    existingInstance?.id &&
+    !metadata &&
+    existingInstance.start_utc === startUTC &&
+    existingInstance.end_utc === endUTC &&
+    existingInstance.duration_min === range.durationMin &&
+    existingInstance.locked === true &&
+    existingInstance.status === "scheduled" &&
+    existingInstance.window_id === null &&
+    existingInstance.time_block_id === null &&
+    (existingInstance.energy_resolved ?? "NO").toUpperCase() ===
+      energyResolved.toUpperCase()
+  ) {
+    return {
+      instance: existingInstance,
+      decision: "kept",
+      error: null,
+      range,
+    };
+  }
+
+  if (existingInstance?.id) {
+    const { data, error } = await client
+      .from("schedule_instances")
+      .update(updatePayload)
+      .eq("id", existingInstance.id)
+      .eq("user_id", userId)
+      .select("*")
+      .single();
+    return {
+      instance: error ? null : ((data as ScheduleInstance | null) ?? null),
+      decision: "rescheduled",
+      error,
+      range,
+    };
+  }
+
+  const insertPayload = {
+    user_id: userId,
+    source_type: "HABIT",
+    source_id: habit.id,
+    weight_snapshot: 0,
+    ...updatePayload,
+  } satisfies Database["public"]["Tables"]["schedule_instances"]["Insert"];
+  const { data, error } = await client
+    .from("schedule_instances")
+    .insert(insertPayload)
+    .select("*")
+    .single();
+  return {
+    instance: error ? null : ((data as ScheduleInstance | null) ?? null),
+    decision: "new",
+    error,
+    range,
+  };
 }
 
 function upsertInstance(list: ScheduleInstance[], instance: ScheduleInstance) {

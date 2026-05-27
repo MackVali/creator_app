@@ -241,6 +241,11 @@ type FabProjectScheduleInstanceRow = {
   duration_min: number | null;
   energy_resolved: string | null;
 };
+type FabLockedScheduleInstanceRow = {
+  id: string;
+  start_utc: string | null;
+  end_utc: string | null;
+};
 type FabTaskEditRow = {
   id: string;
   name: string | null;
@@ -283,6 +288,26 @@ type FabTag = {
   name: string;
   normalized_name: string;
   color: string | null;
+};
+type FabTagInsertPayload = {
+  user_id: string;
+  name: string;
+  normalized_name: string;
+};
+type FabTagFilterBuilder = {
+  eq: (column: string, value: string) => FabTagFilterBuilder;
+  maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
+};
+type FabTagInsertBuilder = {
+  select: (columns: string) => {
+    single: () => Promise<{ data: unknown; error: unknown }>;
+  };
+};
+type FabTagTableClient = {
+  from: (table: "tags") => {
+    insert: (payload: FabTagInsertPayload) => FabTagInsertBuilder;
+    select: (columns: string) => FabTagFilterBuilder;
+  };
 };
 
 type DraftProjectChild = {
@@ -911,6 +936,19 @@ type OverlayPlacement = {
   sourceId: string;
 };
 
+type FabSupabaseClient = NonNullable<ReturnType<typeof getSupabaseBrowser>>;
+type ExactScheduleSourceType = "PROJECT" | "TASK";
+type ParsedExactSchedule = {
+  startIso: string;
+  endIso: string;
+  durationMin: number;
+};
+type ParsedHabitFixedTime = {
+  fixed_start_local: string | null;
+  fixed_end_local: string | null;
+  fixed_timezone: string | null;
+};
+
 const createOverlayPlacementId = () =>
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
@@ -927,6 +965,12 @@ const formatTimeInputValue = (date: Date) =>
     date.getMinutes(),
   ).padStart(2, "0")}`;
 
+const formatDateInputValue = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+
 const formatDateTimeLocalInputValue = (value?: string | null) => {
   if (!value) return "";
   const parsed = new Date(value);
@@ -935,6 +979,262 @@ const formatDateTimeLocalInputValue = (value?: string | null) => {
   }
   const local = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 16);
+};
+
+const parseExactSchedule = (
+  hasExactDate: boolean,
+  dateValue: string,
+  startTimeValue: string,
+  endTimeValue: string,
+  fallbackDateValue = "",
+): { schedule: ParsedExactSchedule | null; error: string | null } => {
+  const startTime = startTimeValue.trim();
+  const endTime = endTimeValue.trim();
+  if (!startTime && !endTime) {
+    return { schedule: null, error: null };
+  }
+  if (!startTime || !endTime) {
+    return {
+      schedule: null,
+      error:
+        "Provide both exact start and end times, or leave both blank.",
+    };
+  }
+
+  const date = hasExactDate
+    ? dateValue.trim()
+    : fallbackDateValue.trim() || formatDateInputValue(new Date());
+  if (hasExactDate && !date) {
+    return {
+      schedule: null,
+      error: "Provide an exact date, or turn exact date off.",
+    };
+  }
+
+  const startDate = new Date(`${date}T${startTime}`);
+  const endDate = new Date(`${date}T${endTime}`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return {
+      schedule: null,
+      error: "Enter valid exact schedule values.",
+    };
+  }
+  if (endDate.getTime() <= startDate.getTime()) {
+    return {
+      schedule: null,
+      error: "Exact schedule end time must be after the start time.",
+    };
+  }
+
+  return {
+    schedule: {
+      startIso: startDate.toISOString(),
+      endIso: endDate.toISOString(),
+      durationMin: Math.max(
+        1,
+        Math.round((endDate.getTime() - startDate.getTime()) / 60000),
+      ),
+    },
+    error: null,
+  };
+};
+
+const normalizeLocalTimeForDb = (value: string) => {
+  const trimmed = value.trim();
+  const match = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = Number(match[3] ?? "0");
+  if (
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    !Number.isInteger(second) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59 ||
+    second < 0 ||
+    second > 59
+  ) {
+    return null;
+  }
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(
+    2,
+    "0",
+  )}:${String(second).padStart(2, "0")}`;
+};
+
+const getBrowserTimeZone = () => {
+  if (typeof Intl === "undefined") return null;
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+};
+
+const parseHabitFixedTime = (
+  startTimeValue: string,
+  endTimeValue: string,
+): { schedule: ParsedHabitFixedTime | null; error: string | null } => {
+  const rawStart = startTimeValue.trim();
+  const rawEnd = endTimeValue.trim();
+  if (!rawStart && !rawEnd) {
+    return {
+      schedule: {
+        fixed_start_local: null,
+        fixed_end_local: null,
+        fixed_timezone: null,
+      },
+      error: null,
+    };
+  }
+  if (!rawStart || !rawEnd) {
+    return {
+      schedule: null,
+      error: "Provide both habit start and end times, or leave both blank.",
+    };
+  }
+  const fixedStart = normalizeLocalTimeForDb(rawStart);
+  const fixedEnd = normalizeLocalTimeForDb(rawEnd);
+  if (!fixedStart || !fixedEnd) {
+    return {
+      schedule: null,
+      error: "Enter valid habit start and end times.",
+    };
+  }
+  if (fixedEnd <= fixedStart) {
+    return {
+      schedule: null,
+      error: "Habit end time must be after the start time.",
+    };
+  }
+  return {
+    schedule: {
+      fixed_start_local: fixedStart,
+      fixed_end_local: fixedEnd,
+      fixed_timezone: getBrowserTimeZone(),
+    },
+    error: null,
+  };
+};
+
+const formatLocalTimeInputValue = (value?: string | null) => {
+  if (!value) return "";
+  const normalized = normalizeLocalTimeForDb(value);
+  return normalized ? normalized.slice(0, 5) : "";
+};
+
+const getSplitExactScheduleInputValues = (
+  startUtc?: string | null,
+  endUtc?: string | null,
+) => {
+  if (!startUtc || !endUtc) {
+    return {
+      hasExactDate: false,
+      date: "",
+      startTime: "",
+      endTime: "",
+    };
+  }
+
+  const startDate = new Date(startUtc);
+  const endDate = new Date(endUtc);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return {
+      hasExactDate: false,
+      date: "",
+      startTime: "",
+      endTime: "",
+    };
+  }
+
+  return {
+    hasExactDate: true,
+    date: formatDateInputValue(startDate),
+    startTime: formatTimeInputValue(startDate),
+    endTime: formatTimeInputValue(endDate),
+  };
+};
+
+const upsertLockedScheduleInstance = async ({
+  supabase,
+  userId,
+  sourceType,
+  sourceId,
+  exactSchedule,
+  removeWhenBlank,
+}: {
+  supabase: FabSupabaseClient;
+  userId: string;
+  sourceType: ExactScheduleSourceType;
+  sourceId: string;
+  exactSchedule: ParsedExactSchedule | null;
+  removeWhenBlank: boolean;
+}) => {
+  if (!exactSchedule) {
+    if (!removeWhenBlank) return;
+    const { error } = await supabase
+      .from("schedule_instances")
+      .delete()
+      .eq("user_id", userId)
+      .eq("source_type", sourceType)
+      .eq("source_id", sourceId)
+      .eq("locked", true);
+    if (error) throw error;
+    return;
+  }
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("schedule_instances")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("source_type", sourceType)
+    .eq("source_id", sourceId)
+    .eq("locked", true)
+    .order("start_utc", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (fetchError) throw fetchError;
+
+  if (existing?.id) {
+    const { error: updateError } = await supabase
+      .from("schedule_instances")
+      .update({
+        start_utc: exactSchedule.startIso,
+        end_utc: exactSchedule.endIso,
+        duration_min: exactSchedule.durationMin,
+        status: "scheduled",
+        locked: true,
+        window_id: null,
+        day_type_time_block_id: null,
+        time_block_id: null,
+      })
+      .eq("id", existing.id)
+      .eq("user_id", userId);
+    if (updateError) throw updateError;
+    return;
+  }
+
+  const { error: insertError } = await supabase
+    .from("schedule_instances")
+    .insert({
+      user_id: userId,
+      source_type: sourceType,
+      source_id: sourceId,
+      start_utc: exactSchedule.startIso,
+      end_utc: exactSchedule.endIso,
+      duration_min: exactSchedule.durationMin,
+      status: "scheduled",
+      locked: true,
+      window_id: null,
+      day_type_time_block_id: null,
+      time_block_id: null,
+      weight_snapshot: 0,
+      energy_resolved: "NO",
+    });
+  if (insertError) throw insertError;
 };
 
 const formatDurationLabel = (minutes: number) => {
@@ -3146,6 +3446,11 @@ export function Fab({
   const [projectSkillIds, setProjectSkillIds] = useState<string[]>([]);
   const [projectGoalId, setProjectGoalId] = useState<string | null>(null);
   const [projectDue, setProjectDue] = useState("");
+  const [projectHasExactDate, setProjectHasExactDate] = useState(false);
+  const [projectExactDate, setProjectExactDate] = useState("");
+  const [projectExactFallbackDate, setProjectExactFallbackDate] = useState("");
+  const [projectExactStartTime, setProjectExactStartTime] = useState("");
+  const [projectExactEndTime, setProjectExactEndTime] = useState("");
   const [showGoalFilters, setShowGoalFilters] = useState(false);
   const projectedRankState = useProjectedGlobalRank({
     goalId: projectGoalId,
@@ -3220,6 +3525,11 @@ export function Fab({
   const [taskSkillId, setTaskSkillId] = useState<string | "">("");
   const [taskNotes, setTaskNotes] = useState("");
   const [taskDue, setTaskDue] = useState("");
+  const [taskHasExactDate, setTaskHasExactDate] = useState(false);
+  const [taskExactDate, setTaskExactDate] = useState("");
+  const [taskExactFallbackDate, setTaskExactFallbackDate] = useState("");
+  const [taskExactStartTime, setTaskExactStartTime] = useState("");
+  const [taskExactEndTime, setTaskExactEndTime] = useState("");
   const [projectDraftTasks, setProjectDraftTasks] = useState<DraftTaskChild[]>(
     [],
   );
@@ -3242,6 +3552,8 @@ export function Fab({
   const [habitWindowEdgePreference, setHabitWindowEdgePreference] =
     useState("FRONT");
   const [habitNextDueOverride, setHabitNextDueOverride] = useState("");
+  const [habitFixedStartTime, setHabitFixedStartTime] = useState("");
+  const [habitFixedEndTime, setHabitFixedEndTime] = useState("");
   const [habitRoutineId, setHabitRoutineId] = useState<string | "">("");
   const [habitCircleId, setHabitCircleId] = useState<string | "">("");
   const [habitRoutines, setHabitRoutines] = useState<
@@ -3299,6 +3611,11 @@ export function Fab({
     setSkillSearch("");
     setProjectGoalId(null);
     setProjectDue("");
+    setProjectHasExactDate(false);
+    setProjectExactDate("");
+    setProjectExactFallbackDate("");
+    setProjectExactStartTime("");
+    setProjectExactEndTime("");
     setShowDurationPicker(false);
     setDurationPosition(null);
   }, []);
@@ -3332,6 +3649,8 @@ export function Fab({
     setHabitDaylightPreference("ALL_DAY");
     setHabitWindowEdgePreference("FRONT");
     setHabitNextDueOverride("");
+    setHabitFixedStartTime("");
+    setHabitFixedEndTime("");
     setHabitRoutineId("");
     setHabitCircleId("");
     setIsCreatingHabitRoutineInline(false);
@@ -3350,6 +3669,11 @@ export function Fab({
     setTaskSkillId("");
     setTaskNotes("");
     setTaskDue("");
+    setTaskHasExactDate(false);
+    setTaskExactDate("");
+    setTaskExactFallbackDate("");
+    setTaskExactStartTime("");
+    setTaskExactEndTime("");
     setShowTaskDurationPicker(false);
     setTaskDurationPosition(null);
   }, []);
@@ -3773,6 +4097,7 @@ export function Fab({
           const [
             { data: projectRow, error: projectError },
             { data: instanceRow, error: instanceError },
+            { data: lockedScheduleRow, error: lockedScheduleError },
             { data: skillRows, error: skillError },
             { data: tagRows, error: tagError },
           ] = await Promise.all([
@@ -3793,6 +4118,16 @@ export function Fab({
                   .maybeSingle()
               : Promise.resolve({ data: null, error: null }),
             supabase
+              .from("schedule_instances")
+              .select("id, start_utc, end_utc")
+              .eq("user_id", user.id)
+              .eq("source_type", "PROJECT")
+              .eq("source_id", entityId)
+              .eq("locked", true)
+              .order("start_utc", { ascending: true })
+              .limit(1)
+              .maybeSingle(),
+            supabase
               .from("project_skills")
               .select("skill_id")
               .eq("project_id", entityId)
@@ -3807,6 +4142,7 @@ export function Fab({
 
           if (projectError) throw projectError;
           if (instanceError) throw instanceError;
+          if (lockedScheduleError) throw lockedScheduleError;
           if (skillError) throw skillError;
           if (tagError) throw tagError;
           if (cancelled) return;
@@ -3814,6 +4150,8 @@ export function Fab({
           const projectData = projectRow as FabProjectEditRow | null;
           const instanceData =
             instanceRow as FabProjectScheduleInstanceRow | null;
+          const lockedScheduleData =
+            lockedScheduleRow as FabLockedScheduleInstanceRow | null;
           const resolvedProjectEnergy =
             typeof instanceData?.energy_resolved === "string" &&
             instanceData.energy_resolved.trim().length > 0
@@ -3848,6 +4186,15 @@ export function Fab({
               ? projectData.due_date.slice(0, 10)
               : "",
           );
+          const projectExactSchedule = getSplitExactScheduleInputValues(
+            lockedScheduleData?.start_utc,
+            lockedScheduleData?.end_utc,
+          );
+          setProjectHasExactDate(projectExactSchedule.hasExactDate);
+          setProjectExactDate(projectExactSchedule.date);
+          setProjectExactFallbackDate(projectExactSchedule.date);
+          setProjectExactStartTime(projectExactSchedule.startTime);
+          setProjectExactEndTime(projectExactSchedule.endTime);
           setProjectSkillIds(primarySkillId ? [primarySkillId] : []);
           setSelectedTagIds(
             Array.isArray(tagRows)
@@ -3987,6 +4334,20 @@ export function Fab({
                 : null,
             ),
           );
+          setHabitFixedStartTime(
+            formatLocalTimeInputValue(
+              typeof habitRowRecord.fixed_start_local === "string"
+                ? habitRowRecord.fixed_start_local
+                : null,
+            ),
+          );
+          setHabitFixedEndTime(
+            formatLocalTimeInputValue(
+              typeof habitRowRecord.fixed_end_local === "string"
+                ? habitRowRecord.fixed_end_local
+                : null,
+            ),
+          );
           setHabitRoutineId(
             typeof habitRowRecord.routine_id === "string"
               ? habitRowRecord.routine_id
@@ -4011,6 +4372,7 @@ export function Fab({
           hydrationSelect = taskEditHydrationSelect;
           const [
             { data: taskRowData, error: taskError },
+            { data: lockedScheduleRowData, error: lockedScheduleError },
             { data: tagRowsData, error: tagError },
           ] = await Promise.all([
             supabase
@@ -4020,6 +4382,16 @@ export function Fab({
               .eq("user_id", user.id)
               .single(),
             supabase
+              .from("schedule_instances")
+              .select("id, start_utc, end_utc")
+              .eq("user_id", user.id)
+              .eq("source_type", "TASK")
+              .eq("source_id", entityId)
+              .eq("locked", true)
+              .order("start_utc", { ascending: true })
+              .limit(1)
+              .maybeSingle(),
+            supabase
               .from("event_tags")
               .select("tag_id")
               .eq("user_id", user.id)
@@ -4028,10 +4400,13 @@ export function Fab({
           ]);
 
           if (taskError) throw taskError;
+          if (lockedScheduleError) throw lockedScheduleError;
           if (tagError) throw tagError;
           if (cancelled) return;
 
           const taskRow = taskRowData as FabTaskEditRow | null;
+          const lockedScheduleRow =
+            lockedScheduleRowData as FabLockedScheduleInstanceRow | null;
           const tagRows = tagRowsData as FabTagRelationRow[] | null;
 
           setTaskName(taskRow?.name ?? "");
@@ -4054,6 +4429,15 @@ export function Fab({
           );
           setTaskSkillId(taskRow?.skill_id ?? "");
           setTaskNotes(taskRow?.why ?? "");
+          const taskExactSchedule = getSplitExactScheduleInputValues(
+            lockedScheduleRow?.start_utc,
+            lockedScheduleRow?.end_utc,
+          );
+          setTaskHasExactDate(taskExactSchedule.hasExactDate);
+          setTaskExactDate(taskExactSchedule.date);
+          setTaskExactFallbackDate(taskExactSchedule.date);
+          setTaskExactStartTime(taskExactSchedule.startTime);
+          setTaskExactEndTime(taskExactSchedule.endTime);
           setSelectedTagIds(
             Array.isArray(tagRows)
               ? tagRows
@@ -5377,6 +5761,11 @@ export function Fab({
     setProjectSkillIds([]);
     setProjectGoalId(null);
     setProjectDue("");
+    setProjectHasExactDate(false);
+    setProjectExactDate("");
+    setProjectExactFallbackDate("");
+    setProjectExactStartTime("");
+    setProjectExactEndTime("");
 
     setGoalName("");
     setGoalMonumentId("");
@@ -5403,6 +5792,11 @@ export function Fab({
     setTaskSkillId("");
     setTaskNotes("");
     setTaskDue("");
+    setTaskHasExactDate(false);
+    setTaskExactDate("");
+    setTaskExactFallbackDate("");
+    setTaskExactStartTime("");
+    setTaskExactEndTime("");
 
     setHabitName("");
     setHabitType(defaultHabitType);
@@ -5416,6 +5810,8 @@ export function Fab({
     setHabitDaylightPreference("ALL_DAY");
     setHabitWindowEdgePreference("FRONT");
     setHabitNextDueOverride("");
+    setHabitFixedStartTime("");
+    setHabitFixedEndTime("");
     setHabitRoutineId("");
     setHabitCircleId("");
     setIsCreatingHabitRoutineInline(false);
@@ -6071,8 +6467,9 @@ export function Fab({
       }
 
       let resolvedTag: FabTag | null = null;
-      const { data, error } = await supabase
-        .from("tags" as any)
+      const tagTableClient = supabase as unknown as FabTagTableClient;
+      const { data, error } = await tagTableClient
+        .from("tags")
         .insert({
           user_id: user.id,
           name: displayName,
@@ -6082,12 +6479,13 @@ export function Fab({
         .single();
 
       if (error) {
-        const { data: existingData, error: existingError } = await supabase
-          .from("tags" as any)
-          .select("id, user_id, name, normalized_name, color")
-          .eq("user_id", user.id)
-          .eq("normalized_name", normalizedName)
-          .maybeSingle();
+        const { data: existingData, error: existingError } =
+          await tagTableClient
+            .from("tags")
+            .select("id, user_id, name, normalized_name, color")
+            .eq("user_id", user.id)
+            .eq("normalized_name", normalizedName)
+            .maybeSingle();
         if (existingError) throw existingError;
         if (!existingData) throw error;
         resolvedTag = existingData as FabTag;
@@ -6183,18 +6581,22 @@ export function Fab({
     label,
     footer,
     density = "default",
+    fillExpanded = true,
   }: {
     label: string;
     footer?: React.ReactNode;
     density?: "default" | "compact";
+    fillExpanded?: boolean;
   }) => (
     <div
       className={cn(
         "grid rounded-2xl border border-white/10 bg-white/[0.04] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5",
         density === "compact" ? "gap-3 px-4 py-3.5" : "gap-4 px-4 py-4",
-        expanded && "min-h-full grid-rows-[auto_minmax(0,1fr)] content-start",
+        expanded &&
+          fillExpanded &&
+          "min-h-full grid-rows-[auto_minmax(0,1fr)] content-start",
       )}
-      style={secondaryCreationPanelStyle}
+      style={fillExpanded ? secondaryCreationPanelStyle : undefined}
     >
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold leading-none text-white">
@@ -6273,16 +6675,7 @@ export function Fab({
                 );
               })}
             </div>
-          ) : (
-            <div
-              className={cn(
-                "grid place-items-center rounded-2xl border border-dashed border-white/10 bg-black/15 px-4 text-center",
-                density === "compact" ? "min-h-[88px]" : "min-h-full",
-              )}
-            >
-              <p className="text-sm text-white/55">No tags yet.</p>
-            </div>
-          )}
+          ) : null}
         </div>
 
         <div className={cn("flex items-center gap-2", density === "compact" && "self-start")}>
@@ -6327,6 +6720,159 @@ export function Fab({
       </div>
     </div>
   );
+
+  const renderFlatAdvancedPanel = ({
+    dueDateId,
+    dueDateValue,
+    onDueDateChange,
+    hasExactDate,
+    onHasExactDateChange,
+    exactDateId,
+    exactDateValue,
+    onExactDateChange,
+    exactStartTimeId,
+    exactStartTimeValue,
+    onExactStartTimeChange,
+    exactEndTimeId,
+    exactEndTimeValue,
+    onExactEndTimeChange,
+    tagLabel,
+  }: {
+    dueDateId: string;
+    dueDateValue: string;
+    onDueDateChange: (value: string) => void;
+    hasExactDate: boolean;
+    onHasExactDateChange: (value: boolean) => void;
+    exactDateId: string;
+    exactDateValue: string;
+    onExactDateChange: (value: string) => void;
+    exactStartTimeId: string;
+    exactStartTimeValue: string;
+    onExactStartTimeChange: (value: string) => void;
+    exactEndTimeId: string;
+    exactEndTimeValue: string;
+    onExactEndTimeChange: (value: string) => void;
+    tagLabel: string;
+  }) => {
+    const toggleExactDate = () => {
+      const nextValue = !hasExactDate;
+      onHasExactDateChange(nextValue);
+      if (!nextValue) {
+        onExactDateChange("");
+      }
+    };
+
+    return (
+      <div
+        className={cn("grid gap-3 content-start", expanded && "min-h-full")}
+        style={secondaryCreationPanelStyle}
+      >
+        {renderTagPickerPanel({
+          label: tagLabel,
+          density: "compact",
+          fillExpanded: false,
+        })}
+
+        <section className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5">
+          <p className={FAB_ADVANCED_LABEL_CLASS}>Exact schedule</p>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={hasExactDate}
+            aria-label="Use exact date"
+            onClick={toggleExactDate}
+            className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-left text-xs text-white transition-colors hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+          >
+            <span>Use exact date</span>
+            <span
+              aria-hidden="true"
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-white/10 transition-colors",
+                hasExactDate
+                  ? "border-white/25 bg-white/70"
+                  : "bg-white/10",
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block h-[18px] w-[18px] rounded-full shadow transition-transform",
+                  hasExactDate
+                    ? "translate-x-[21px] bg-neutral-950"
+                    : "translate-x-1 bg-white",
+                )}
+              />
+            </span>
+          </button>
+          {hasExactDate ? (
+            <div className="grid gap-1.5">
+              <Label htmlFor={exactDateId} className={FAB_ADVANCED_LABEL_CLASS}>
+                Date
+              </Label>
+              <Input
+                id={exactDateId}
+                type="date"
+                value={exactDateValue}
+                onChange={(event) => onExactDateChange(event.target.value)}
+                className={FAB_ADVANCED_INPUT_CLASS}
+              />
+            </div>
+          ) : null}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-1.5">
+              <Label
+                htmlFor={exactStartTimeId}
+                className={FAB_ADVANCED_LABEL_CLASS}
+              >
+                Start time
+              </Label>
+              <Input
+                id={exactStartTimeId}
+                type="time"
+                value={exactStartTimeValue}
+                onChange={(event) =>
+                  onExactStartTimeChange(event.target.value)
+                }
+                className={FAB_ADVANCED_INPUT_CLASS}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label
+                htmlFor={exactEndTimeId}
+                className={FAB_ADVANCED_LABEL_CLASS}
+              >
+                End time
+              </Label>
+              <Input
+                id={exactEndTimeId}
+                type="time"
+                value={exactEndTimeValue}
+                onChange={(event) => onExactEndTimeChange(event.target.value)}
+                className={FAB_ADVANCED_INPUT_CLASS}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="grid gap-1.5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-sm md:px-5">
+          <div className="grid gap-1">
+            <Label htmlFor={dueDateId} className={FAB_ADVANCED_LABEL_CLASS}>
+              Due date
+            </Label>
+            <p className="text-[10px] leading-snug text-white/45">
+              A deadline for priority, separate from exact schedule.
+            </p>
+          </div>
+          <Input
+            id={dueDateId}
+            type="date"
+            value={dueDateValue}
+            onChange={(event) => onDueDateChange(event.target.value)}
+            className={FAB_ADVANCED_INPUT_CLASS}
+          />
+        </section>
+      </div>
+    );
+  };
 
   const associatedEditCardStyle: React.CSSProperties = {
     boxShadow:
@@ -9111,48 +9657,41 @@ export function Fab({
                 renderProjectTasksPanel()}
 
               {selected === "PROJECT" && activeCreationMode === "advanced" &&
-                renderTagPickerPanel({
-                  label: "Project Advanced",
-                  density: "compact",
-                  footer: (
-                    <div className="grid gap-1.5">
-                      <Label
-                        htmlFor="project-advanced-due-date"
-                        className={FAB_ADVANCED_LABEL_CLASS}
-                      >
-                        Due date
-                      </Label>
-                      <Input
-                        id="project-advanced-due-date"
-                        type="date"
-                        value={projectDue}
-                        onChange={(event) => setProjectDue(event.target.value)}
-                        className={FAB_ADVANCED_INPUT_CLASS}
-                      />
-                    </div>
-                  ),
+                renderFlatAdvancedPanel({
+                  dueDateId: "project-advanced-due-date",
+                  dueDateValue: projectDue,
+                  onDueDateChange: setProjectDue,
+                  hasExactDate: projectHasExactDate,
+                  onHasExactDateChange: setProjectHasExactDate,
+                  exactDateId: "project-advanced-exact-date",
+                  exactDateValue: projectExactDate,
+                  onExactDateChange: setProjectExactDate,
+                  exactStartTimeId: "project-advanced-exact-start-time",
+                  exactStartTimeValue: projectExactStartTime,
+                  onExactStartTimeChange: setProjectExactStartTime,
+                  exactEndTimeId: "project-advanced-exact-end-time",
+                  exactEndTimeValue: projectExactEndTime,
+                  onExactEndTimeChange: setProjectExactEndTime,
+                  tagLabel: "Project Tags",
                 })}
 
               {selected === "TASK" && activeCreationMode === "advanced" &&
-                renderTagPickerPanel({
-                  label: "Task Advanced",
-                  footer: (
-                    <div className="grid gap-1.5">
-                      <Label
-                        htmlFor="task-advanced-due-date"
-                        className={FAB_ADVANCED_LABEL_CLASS}
-                      >
-                        Due date
-                      </Label>
-                      <Input
-                        id="task-advanced-due-date"
-                        type="date"
-                        value={taskDue}
-                        onChange={(event) => setTaskDue(event.target.value)}
-                        className={FAB_ADVANCED_INPUT_CLASS}
-                      />
-                    </div>
-                  ),
+                renderFlatAdvancedPanel({
+                  dueDateId: "task-advanced-due-date",
+                  dueDateValue: taskDue,
+                  onDueDateChange: setTaskDue,
+                  hasExactDate: taskHasExactDate,
+                  onHasExactDateChange: setTaskHasExactDate,
+                  exactDateId: "task-advanced-exact-date",
+                  exactDateValue: taskExactDate,
+                  onExactDateChange: setTaskExactDate,
+                  exactStartTimeId: "task-advanced-exact-start-time",
+                  exactStartTimeValue: taskExactStartTime,
+                  onExactStartTimeChange: setTaskExactStartTime,
+                  exactEndTimeId: "task-advanced-exact-end-time",
+                  exactEndTimeValue: taskExactEndTime,
+                  onExactEndTimeChange: setTaskExactEndTime,
+                  tagLabel: "Task Tags",
                 })}
 
               {selected === "HABIT" && activeCreationMode === "advanced" &&
@@ -9160,6 +9699,45 @@ export function Fab({
                   label: "Habit Advanced",
                   footer: (
                     <>
+                      <div className="grid gap-2">
+                        <p className={FAB_ADVANCED_LABEL_CLASS}>Exact time</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="grid gap-1.5">
+                            <Label
+                              htmlFor="habit-advanced-fixed-start-time"
+                              className={FAB_ADVANCED_LABEL_CLASS}
+                            >
+                              Start time
+                            </Label>
+                            <Input
+                              id="habit-advanced-fixed-start-time"
+                              type="time"
+                              value={habitFixedStartTime}
+                              onChange={(event) =>
+                                setHabitFixedStartTime(event.target.value)
+                              }
+                              className={FAB_ADVANCED_INPUT_CLASS}
+                            />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label
+                              htmlFor="habit-advanced-fixed-end-time"
+                              className={FAB_ADVANCED_LABEL_CLASS}
+                            >
+                              End time
+                            </Label>
+                            <Input
+                              id="habit-advanced-fixed-end-time"
+                              type="time"
+                              value={habitFixedEndTime}
+                              onChange={(event) =>
+                                setHabitFixedEndTime(event.target.value)
+                              }
+                              className={FAB_ADVANCED_INPUT_CLASS}
+                            />
+                          </div>
+                        </div>
+                      </div>
                       <div className="grid gap-1.5">
                         <Label
                           htmlFor="habit-advanced-location-context"
@@ -9498,14 +10076,16 @@ export function Fab({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    (window as any).__CREATOR_FAB_IS_OPEN__ = isOpen;
+    (window as Window & { __CREATOR_FAB_IS_OPEN__?: boolean }).__CREATOR_FAB_IS_OPEN__ =
+      isOpen;
     if (!isOpen) return;
     window.dispatchEvent(new CustomEvent("tour:fab-opened"));
   }, [isOpen]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    (window as any).__CREATOR_FAB_AI_IS_OPEN__ = aiOpen;
+    (window as Window & { __CREATOR_FAB_AI_IS_OPEN__?: boolean }).__CREATOR_FAB_AI_IS_OPEN__ =
+      aiOpen;
     if (!aiOpen) return;
     window.dispatchEvent(new CustomEvent("tour:fab-ai-opened"));
   }, [aiOpen]);
@@ -9655,7 +10235,7 @@ export function Fab({
     } catch (error) {
       const isAbort =
         (error instanceof DOMException && error.name === "AbortError") ||
-        (error as any)?.name === "AbortError";
+        (error as { name?: string })?.name === "AbortError";
       if (isAbort) {
         console.error("ILAV overlay timeout", error);
         setAiError("ILAV timed out. Try again (or send a shorter message).");
@@ -9984,7 +10564,7 @@ export function Fab({
 
       // Never force-focus on touch/pencil: on iOS Safari this can consume the first tap,
       // which makes fields feel like they require a second tap before typing.
-      const pt = (event as any).pointerType as string | undefined;
+      const pt = event.pointerType;
       if (pt && pt !== "mouse") {
         return;
       }
@@ -11550,6 +12130,47 @@ export function Fab({
           return;
         }
       }
+      let exactSchedule: ParsedExactSchedule | null = null;
+      if (selected === "PROJECT") {
+        const parsed = parseExactSchedule(
+          projectHasExactDate,
+          projectExactDate,
+          projectExactStartTime,
+          projectExactEndTime,
+          projectExactFallbackDate,
+        );
+        if (parsed.error) {
+          setSaveError(parsed.error);
+          return;
+        }
+        exactSchedule = parsed.schedule;
+      }
+      if (selected === "TASK") {
+        const parsed = parseExactSchedule(
+          taskHasExactDate,
+          taskExactDate,
+          taskExactStartTime,
+          taskExactEndTime,
+          taskExactFallbackDate,
+        );
+        if (parsed.error) {
+          setSaveError(parsed.error);
+          return;
+        }
+        exactSchedule = parsed.schedule;
+      }
+      let habitFixedTime: ParsedHabitFixedTime | null = null;
+      if (selected === "HABIT") {
+        const parsed = parseHabitFixedTime(
+          habitFixedStartTime,
+          habitFixedEndTime,
+        );
+        if (parsed.error) {
+          setSaveError(parsed.error);
+          return;
+        }
+        habitFixedTime = parsed.schedule;
+      }
       setIsSavingFab(true);
       try {
         const throwIfLimitError = (error: unknown) => {
@@ -11898,6 +12519,15 @@ export function Fab({
             console.error("Failed to update tags after project edit", error);
           }
 
+          await upsertLockedScheduleInstance({
+            supabase,
+            userId: user.id,
+            sourceType: "PROJECT",
+            sourceId: activeEditTarget.entityId,
+            exactSchedule,
+            removeWhenBlank: true,
+          });
+
           dispatchCreatorEntitySaved({
             entityType: "PROJECT",
             entityId: activeEditTarget.entityId,
@@ -11949,6 +12579,15 @@ export function Fab({
             tagAttachmentFailed = true;
             console.error("Failed to update tags after task edit", error);
           }
+
+          await upsertLockedScheduleInstance({
+            supabase,
+            userId: user.id,
+            sourceType: "TASK",
+            sourceId: activeEditTarget.entityId,
+            exactSchedule,
+            removeWhenBlank: true,
+          });
 
           dispatchCreatorEntitySaved({
             entityType: "TASK",
@@ -12028,6 +12667,9 @@ export function Fab({
               next_due_override: habitNextDueOverride
                 ? new Date(habitNextDueOverride).toISOString()
                 : null,
+              fixed_start_local: habitFixedTime?.fixed_start_local ?? null,
+              fixed_end_local: habitFixedTime?.fixed_end_local ?? null,
+              fixed_timezone: habitFixedTime?.fixed_timezone ?? null,
             })
             .eq("id", activeEditTarget.entityId)
             .eq("user_id", user.id);
@@ -12151,6 +12793,16 @@ export function Fab({
             .single();
           if (error) throwIfLimitError(error);
           createdEntityId = projectData?.id ?? null;
+          if (projectData?.id && exactSchedule) {
+            await upsertLockedScheduleInstance({
+              supabase,
+              userId: user.id,
+              sourceType: "PROJECT",
+              sourceId: projectData.id,
+              exactSchedule,
+              removeWhenBlank: false,
+            });
+          }
           if (projectData?.id && projectSkillIds.length > 0) {
             const { error: projectSkillsError } = await supabase
               .from("project_skills")
@@ -12180,6 +12832,16 @@ export function Fab({
             .single();
           if (error) throwIfLimitError(error);
           createdEntityId = taskData?.id ?? null;
+          if (taskData?.id && exactSchedule) {
+            await upsertLockedScheduleInstance({
+              supabase,
+              userId: user.id,
+              sourceType: "TASK",
+              sourceId: taskData.id,
+              exactSchedule,
+              removeWhenBlank: false,
+            });
+          }
         } else if (selected === "HABIT") {
           try {
             await enforceHabitLimit({ supabase, userId: user.id });
@@ -12241,6 +12903,9 @@ export function Fab({
               next_due_override: habitNextDueOverride
                 ? new Date(habitNextDueOverride).toISOString()
                 : null,
+              fixed_start_local: habitFixedTime?.fixed_start_local ?? null,
+              fixed_end_local: habitFixedTime?.fixed_end_local ?? null,
+              fixed_timezone: habitFixedTime?.fixed_timezone ?? null,
             })
             .select("id")
             .single();
@@ -12432,6 +13097,8 @@ export function Fab({
     habitCircleId,
     habitDaylightPreference,
     habitEnergy,
+    habitFixedEndTime,
+    habitFixedStartTime,
     habitGoalId,
     habitInlineRoutineDescription,
     habitInlineRoutineName,
@@ -12463,7 +13130,12 @@ export function Fab({
     projectDuration,
     projectDue,
     projectEnergy,
+    projectExactDate,
+    projectExactEndTime,
+    projectExactFallbackDate,
+    projectExactStartTime,
     projectGoalId,
+    projectHasExactDate,
     projectName,
     projectPriority,
     projectSkillIds,
@@ -12475,6 +13147,11 @@ export function Fab({
     selectedTagIds,
     selected,
     taskEnergy,
+    taskExactDate,
+    taskExactEndTime,
+    taskExactFallbackDate,
+    taskExactStartTime,
+    taskHasExactDate,
     taskName,
     taskNotes,
     taskPriority,
