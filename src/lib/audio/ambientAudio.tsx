@@ -14,6 +14,7 @@ export const AMBIENT_AUDIO_PUBLIC_PATH = "/public/sounds/ambient/creator-aura.mp
 export const AMBIENT_AUDIO_SRC = "/sounds/ambient/creator-aura.mp3";
 export const AMBIENT_AUDIO_STORAGE_KEY = "creator:ambient-audio";
 
+const DEBUG_AMBIENT_AUDIO = true;
 const DEFAULT_AMBIENT_VOLUME = 0.35;
 const AMBIENT_AUDIO_PLAYBACK_VOLUME_CAP = 0.3;
 const UNLOCK_EVENTS = ["pointerdown", "touchstart", "keydown", "click"] as const;
@@ -92,8 +93,17 @@ function writeStoredPreference(preference: AmbientAudioPreference) {
   }
 }
 
+function debugAmbientAudio(message: string, details?: Record<string, unknown>) {
+  if (!DEBUG_AMBIENT_AUDIO) {
+    return;
+  }
+
+  console.debug(`[ambient-audio] ${message}`, details ?? "");
+}
+
 export function AmbientAudioProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const isPlayAttemptPendingRef = useRef(false);
   const [enabled, setEnabled] = useState(true);
   const [volume, setVolumeState] = useState(DEFAULT_AMBIENT_VOLUME);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -113,6 +123,11 @@ export function AmbientAudioProvider({ children }: { children: React.ReactNode }
       audio.addEventListener("pause", () => setIsPlaying(false));
       audio.addEventListener("error", () => setIsPlaying(false));
       audioRef.current = audio;
+      debugAmbientAudio("audio element created", {
+        src: AMBIENT_AUDIO_SRC,
+        publicPath: AMBIENT_AUDIO_PUBLIC_PATH,
+        readyState: audio.readyState,
+      });
     }
 
     audioRef.current.loop = true;
@@ -121,18 +136,43 @@ export function AmbientAudioProvider({ children }: { children: React.ReactNode }
   }, [volume]);
 
   const startPlayback = useCallback(async () => {
+    if (isPlayAttemptPendingRef.current) {
+      return false;
+    }
+
     const audio = ensureAudio();
     if (!audio) {
-      return;
+      return false;
     }
+
+    isPlayAttemptPendingRef.current = true;
 
     try {
       audio.loop = true;
       audio.volume = getAmbientPlaybackVolume(volume);
+      audio.load();
+      debugAmbientAudio("play attempted", {
+        src: audio.currentSrc || audio.src || AMBIENT_AUDIO_SRC,
+        volume,
+        playbackVolume: audio.volume,
+        loop: audio.loop,
+        readyState: audio.readyState,
+      });
       await audio.play();
       setIsPlaying(true);
-    } catch {
+      debugAmbientAudio("play success", {
+        readyState: audio.readyState,
+      });
+      return true;
+    } catch (error) {
       setIsPlaying(false);
+      debugAmbientAudio("play failure", {
+        error,
+        readyState: audio.readyState,
+      });
+      return false;
+    } finally {
+      isPlayAttemptPendingRef.current = false;
     }
   }, [ensureAudio, volume]);
 
@@ -192,6 +232,12 @@ export function AmbientAudioProvider({ children }: { children: React.ReactNode }
       return;
     }
 
+    debugAmbientAudio("enabled state", {
+      enabled,
+      isPlaying,
+      src: AMBIENT_AUDIO_SRC,
+    });
+
     if (!enabled) {
       stopPlayback();
       return;
@@ -201,21 +247,51 @@ export function AmbientAudioProvider({ children }: { children: React.ReactNode }
       return;
     }
 
-    const unlockAudio = () => {
+    let isUnlockActive = true;
+    let isListeningForUnlock = false;
+
+    function removeUnlockListeners() {
+      isListeningForUnlock = false;
       UNLOCK_EVENTS.forEach((eventName) => {
         window.removeEventListener(eventName, unlockAudio);
       });
-      void startPlayback();
-    };
+    }
 
-    UNLOCK_EVENTS.forEach((eventName) => {
-      window.addEventListener(eventName, unlockAudio, { once: true, passive: true });
-    });
+    function addUnlockListeners() {
+      if (isListeningForUnlock) {
+        return;
+      }
+
+      isListeningForUnlock = true;
+      UNLOCK_EVENTS.forEach((eventName) => {
+        window.addEventListener(eventName, unlockAudio, { once: true, passive: true });
+      });
+    }
+
+    function unlockAudio(event: Event) {
+      removeUnlockListeners();
+      debugAmbientAudio("gesture detected", {
+        type: event.type,
+        src: AMBIENT_AUDIO_SRC,
+        readyState: audioRef.current?.readyState,
+      });
+
+      void startPlayback().then((didStart) => {
+        if (didStart) {
+          return;
+        }
+
+        if (isUnlockActive) {
+          addUnlockListeners();
+        }
+      });
+    }
+
+    addUnlockListeners();
 
     return () => {
-      UNLOCK_EVENTS.forEach((eventName) => {
-        window.removeEventListener(eventName, unlockAudio);
-      });
+      isUnlockActive = false;
+      removeUnlockListeners();
     };
   }, [enabled, isHydrated, isPlaying, startPlayback, stopPlayback]);
 
