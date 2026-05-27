@@ -173,6 +173,9 @@ function buildHabitSelectColumns(includeGoalMetadata: boolean) {
     "location_context_id",
     "last_completed_at",
     "next_due_override",
+    "fixed_start_local",
+    "fixed_end_local",
+    "fixed_timezone",
     "created_at",
     "updated_at",
   ].join(", ");
@@ -225,6 +228,44 @@ function fromDateTimeLocalInput(value?: string | null) {
   }
 
   return localDate.toISOString();
+}
+
+function normalizeLocalTimeForDb(value: string) {
+  const match = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value.trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = Number(match[3] ?? "0");
+  if (
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    !Number.isInteger(second) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59 ||
+    second < 0 ||
+    second > 59
+  ) {
+    return null;
+  }
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(
+    2,
+    "0"
+  )}:${String(second).padStart(2, "0")}`;
+}
+
+function toTimeInput(value?: string | null) {
+  const normalized = value ? normalizeLocalTimeForDb(value) : null;
+  return normalized ? normalized.slice(0, 5) : "";
+}
+
+function getLocalTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
 }
 
 function formatDateTimeDisplay(value?: string | null) {
@@ -363,6 +404,8 @@ export function HabitEditSheet({
   const [nextDueOverrideOriginal, setNextDueOverrideOriginal] = useState<
     string | null
   >(null);
+  const [fixedStartTime, setFixedStartTime] = useState("");
+  const [fixedEndTime, setFixedEndTime] = useState("");
   const [advancedResetKey, setAdvancedResetKey] = useState(0);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [habitWindowDays, setHabitWindowDays] = useState<number[] | null>(null);
@@ -419,6 +462,8 @@ export function HabitEditSheet({
     setError(null);
     setNextDueOverrideInput("");
     setNextDueOverrideOriginal(null);
+    setFixedStartTime("");
+    setFixedEndTime("");
     originalSchedulingSnapshotRef.current = null;
   }, []);
 
@@ -1081,6 +1126,16 @@ export function HabitEditSheet({
                 : null,
             skill_id: typeof data.skill_id === "string" ? data.skill_id : null,
             next_due_override: nextDueOverrideValue,
+            fixed_start_local:
+              typeof data.fixed_start_local === "string"
+                ? data.fixed_start_local
+                : null,
+            fixed_end_local:
+              typeof data.fixed_end_local === "string"
+                ? data.fixed_end_local
+                : null,
+            fixed_timezone:
+              typeof data.fixed_timezone === "string" ? data.fixed_timezone : null,
             daylight_preference:
               typeof data.daylight_preference === "string"
                 ? data.daylight_preference
@@ -1103,6 +1158,20 @@ export function HabitEditSheet({
           };
           setNextDueOverrideOriginal(nextDueOverrideValue);
           setNextDueOverrideInput(toDateTimeLocalInput(nextDueOverrideValue));
+          setFixedStartTime(
+            toTimeInput(
+              typeof data.fixed_start_local === "string"
+                ? data.fixed_start_local
+                : null
+            )
+          );
+          setFixedEndTime(
+            toTimeInput(
+              typeof data.fixed_end_local === "string"
+                ? data.fixed_end_local
+                : null
+            )
+          );
           setName(data.name ?? "");
           setDescription(data.description ?? "");
           setHabitType(data.habit_type ?? HABIT_TYPE_OPTIONS[0].value);
@@ -1497,10 +1566,40 @@ export function HabitEditSheet({
           nextDueOverrideValue = parsedOverride;
         }
 
+        const rawFixedStart = fixedStartTime.trim();
+        const rawFixedEnd = fixedEndTime.trim();
+        if ((rawFixedStart && !rawFixedEnd) || (!rawFixedStart && rawFixedEnd)) {
+          setError("Provide both exact start and end times, or leave both blank.");
+          setSaving(false);
+          return;
+        }
+        const fixedStartLocal = rawFixedStart
+          ? normalizeLocalTimeForDb(rawFixedStart)
+          : null;
+        const fixedEndLocal = rawFixedEnd
+          ? normalizeLocalTimeForDb(rawFixedEnd)
+          : null;
+        if (
+          (rawFixedStart && !fixedStartLocal) ||
+          (rawFixedEnd && !fixedEndLocal)
+        ) {
+          setError("Choose valid exact start and end times.");
+          setSaving(false);
+          return;
+        }
+        if (fixedStartLocal && fixedEndLocal && fixedEndLocal <= fixedStartLocal) {
+          setError("Exact end time must be after the start time.");
+          setSaving(false);
+          return;
+        }
+
         const payload: Record<string, unknown> = {
           ...basePayload,
           location_context_id: resolvedLocationContextId,
           next_due_override: nextDueOverrideValue,
+          fixed_start_local: fixedStartLocal,
+          fixed_end_local: fixedEndLocal,
+          fixed_timezone: fixedStartLocal && fixedEndLocal ? getLocalTimeZone() : null,
         };
 
         const shouldResetFutureSchedule = didHabitSchedulingChange(
@@ -1567,6 +1666,8 @@ export function HabitEditSheet({
       goalMetadataSupported,
       goalId,
       completionTarget,
+      fixedEndTime,
+      fixedStartTime,
       nextDueOverrideInput,
       onSaved,
       onClose,
@@ -1746,6 +1847,37 @@ export function HabitEditSheet({
                       <p className={FAB_FIELD_HELP_TEXT_CLASS}>
                         Last completed + next due follow the cadence below.
                       </p>
+                    </div>
+                    <div className="space-y-2">
+                      <p className={FAB_SECTION_HEADING_TEXT_CLASS}>Exact time</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-2">
+                          <Label className={FAB_FIELD_LABEL_CLASS}>
+                            Start time
+                          </Label>
+                          <Input
+                            type="time"
+                            value={fixedStartTime}
+                            onChange={(event) =>
+                              setFixedStartTime(event.target.value)
+                            }
+                            className={FAB_FIELD_CONTROL_CLASS}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className={FAB_FIELD_LABEL_CLASS}>
+                            End time
+                          </Label>
+                          <Input
+                            type="time"
+                            value={fixedEndTime}
+                            onChange={(event) =>
+                              setFixedEndTime(event.target.value)
+                            }
+                            className={FAB_FIELD_CONTROL_CLASS}
+                          />
+                        </div>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">

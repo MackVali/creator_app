@@ -174,11 +174,14 @@ export function describeEmptyWindowReport({
   const constraintNotes = describeWindowConstraints(window)
   const finalizeReport = (
     summary: string,
-    detailItems: string[] = details
+    detailItems: string[] = details,
+    options: { includeConstraints?: boolean } = {}
   ): { summary: string; details: string[] } => ({
     summary,
     details:
-      constraintNotes.length > 0 ? [...detailItems, ...constraintNotes] : detailItems,
+      (options.includeConstraints ?? true) && constraintNotes.length > 0
+        ? [...detailItems, ...constraintNotes]
+        : detailItems,
   })
 
   if (window.window_kind === 'BREAK') {
@@ -193,7 +196,9 @@ export function describeEmptyWindowReport({
   const segmentEndMs = effectiveSegmentEnd.getTime()
   if (segmentEndMs <= Date.now()) {
     return finalizeReport(
-      `${windowLabel} is in the past, so nothing new can be scheduled within it.`
+      `${windowLabel} is in the past, so nothing new can be scheduled within it.`,
+      details,
+      { includeConstraints: false }
     )
   }
 
@@ -396,10 +401,12 @@ function describeWindowConstraints(window: RepoWindow): string[] {
   const locationLabel =
     window.location_context_name?.trim() ||
     window.location_context_value?.trim() ||
-    (window.location_context_id ? `ID ${window.location_context_id}` : '')
+    ''
 
   if (locationLabel) {
     notes.push(`Requires location context "${locationLabel}".`)
+  } else if (window.location_context_id) {
+    notes.push('Requires a selected location context.')
   }
 
   const habitTypes = normalizeConstraintValues(
@@ -419,7 +426,7 @@ function describeWindowConstraints(window: RepoWindow): string[] {
   if (window.allowAllSkills === false || skillIds.length > 0) {
     notes.push(
       skillIds.length > 0
-        ? `Skills must match: ${skillIds.join(', ')}.`
+        ? `Skills are limited to ${skillIds.length} selected skill(s).`
         : 'Specific skills are required for this block.'
     )
   }
@@ -430,7 +437,7 @@ function describeWindowConstraints(window: RepoWindow): string[] {
   if (window.allowAllMonuments === false || monumentIds.length > 0) {
     notes.push(
       monumentIds.length > 0
-        ? `Monuments must match: ${monumentIds.join(', ')}.`
+        ? `Monuments are limited to ${monumentIds.length} selected monument(s).`
         : 'Specific monuments are required for this block.'
     )
   }

@@ -33,6 +33,9 @@ export type HabitScheduleItem = {
   daylightPreference: string | null;
   windowEdgePreference: string | null;
   nextDueOverride?: string | null;
+  fixedStartLocal?: string | null;
+  fixedEndLocal?: string | null;
+  fixedTimezone?: string | null;
   window: {
     id: string;
     label: string | null;
@@ -93,6 +96,9 @@ type HabitRecord = {
     } | null;
   } | null;
   next_due_override?: string | null;
+  fixed_start_local?: string | null;
+  fixed_end_local?: string | null;
+  fixed_timezone?: string | null;
 };
 
 type Client = SupabaseClient<Database>;
@@ -141,7 +147,7 @@ export async function fetchHabitsForSchedule(
   const locationJoin = "location_context:location_contexts(id, value, label)";
   const windowJoin = `window:windows(id, label, energy, start_local, end_local, days, location_context_id, ${locationJoin})`;
   const skillJoin = "skill:skills(monument_id)";
-  const baseColumns = `id, name, duration_minutes, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, window_id, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, ${skillJoin}, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, next_due_override, ${windowJoin}`;
+  const baseColumns = `id, name, duration_minutes, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, window_id, energy, recurrence, recurrence_days, recurrence_mode, anchor_type, anchor_value, anchor_start_date, skill_id, ${skillJoin}, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, next_due_override, fixed_start_local, fixed_end_local, fixed_timezone, ${windowJoin}`;
   const extendedColumns = `${baseColumns}, goal_id, completion_target`;
 
   let supportsGoalMetadata = cachedGoalMetadataSupport !== "unsupported";
@@ -257,6 +263,9 @@ export async function fetchHabitsForSchedule(
     daylightPreference: record.daylight_preference ?? null,
     windowEdgePreference: record.window_edge_preference ?? null,
     nextDueOverride: record.next_due_override ?? null,
+    fixedStartLocal: record.fixed_start_local ?? null,
+    fixedEndLocal: record.fixed_end_local ?? null,
+    fixedTimezone: record.fixed_timezone ?? null,
     window: record.window
       ? {
           id: record.window.id ?? "",

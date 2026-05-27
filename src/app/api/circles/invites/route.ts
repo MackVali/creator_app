@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServer } from "@/lib/supabase";
 
 const memberColumns =
-  "id, circle_id, user_id, role, status, invited_by_user_id, created_at, updated_at";
+  "id, circle_id, user_id, role, status, invited_by_user_id, skill_constraint_ids, location_context_ids, created_at, updated_at";
 
 const circleColumns =
   "id, owner_user_id, name, circle_type, status, description, created_at, updated_at";
@@ -30,6 +30,8 @@ type CircleMemberRow = {
   role: string;
   status: string;
   invited_by_user_id: string | null;
+  skill_constraint_ids: string[] | null;
+  location_context_ids: string[] | null;
   created_at: string;
   updated_at: string;
 };

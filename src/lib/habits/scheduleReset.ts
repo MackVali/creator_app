@@ -18,6 +18,9 @@ export type HabitSchedulingSnapshot = Pick<
   | "location_context_id"
   | "skill_id"
   | "next_due_override"
+  | "fixed_start_local"
+  | "fixed_end_local"
+  | "fixed_timezone"
   | "daylight_preference"
   | "window_edge_preference"
   | "anchor_type"
@@ -37,6 +40,9 @@ const SCHEDULING_FIELDS = [
   "location_context_id",
   "skill_id",
   "next_due_override",
+  "fixed_start_local",
+  "fixed_end_local",
+  "fixed_timezone",
   "daylight_preference",
   "window_edge_preference",
   "anchor_type",

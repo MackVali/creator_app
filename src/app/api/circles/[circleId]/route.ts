@@ -10,7 +10,7 @@ const circleColumns =
   "id, owner_user_id, name, icon_emoji, circle_type, status, description, created_at, updated_at";
 
 const memberColumns =
-  "id, circle_id, user_id, role, status, invited_by_user_id, created_at, updated_at";
+  "id, circle_id, user_id, role, status, invited_by_user_id, skill_constraint_ids, location_context_ids, created_at, updated_at";
 
 const habitColumns =
   "id, circle_id, name, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at";
@@ -36,6 +36,8 @@ type CircleMemberRow = {
   role: string;
   status: string;
   invited_by_user_id: string | null;
+  skill_constraint_ids: string[] | null;
+  location_context_ids: string[] | null;
   created_at: string;
   updated_at: string;
 };
@@ -57,6 +59,18 @@ type ProfileRow = {
   username: string | null;
   name: string | null;
   avatar_url: string | null;
+};
+
+type OwnerSkillRow = {
+  id: string;
+  name: string | null;
+  icon: string | null;
+};
+
+type OwnerLocationContextRow = {
+  id: string;
+  label: string | null;
+  value: string | null;
 };
 
 type UpdateCircleBody = {
@@ -164,6 +178,45 @@ export async function GET(_request: Request, context: CircleDetailParams) {
     }
   }
 
+  let ownerSkills: OwnerSkillRow[] = [];
+  const { data: skillOptions, error: skillOptionsError } = await supabase
+    .from("skills")
+    .select("id, name, icon")
+    .eq("user_id", circle.owner_user_id)
+    .order("name", { ascending: true })
+    .returns<OwnerSkillRow[]>();
+
+  if (skillOptionsError) {
+    console.error("Failed to load circle owner skills", skillOptionsError);
+  } else {
+    ownerSkills = (skillOptions ?? []).map((skill) => ({
+      id: skill.id,
+      name: skill.name?.trim() || "Untitled skill",
+      icon: skill.icon ?? null,
+    }));
+  }
+
+  let ownerLocationContexts: OwnerLocationContextRow[] = [];
+  const { data: locationOptions, error: locationOptionsError } = await supabase
+    .from("location_contexts")
+    .select("id, label, value")
+    .eq("user_id", circle.owner_user_id)
+    .order("label", { ascending: true })
+    .returns<OwnerLocationContextRow[]>();
+
+  if (locationOptionsError) {
+    console.error(
+      "Failed to load circle owner location contexts",
+      locationOptionsError
+    );
+  } else {
+    ownerLocationContexts = (locationOptions ?? []).map((locationContext) => ({
+      id: locationContext.id,
+      label: locationContext.label ?? null,
+      value: locationContext.value ?? null,
+    }));
+  }
+
   const { data: habits, error: habitsError } = await supabase
     .from("habits")
     .select(habitColumns)
@@ -184,8 +237,12 @@ export async function GET(_request: Request, context: CircleDetailParams) {
       circle,
       viewerCanManageMembers: circle.owner_user_id === user.id,
       habits: habits ?? [],
+      ownerSkills,
+      ownerLocationContexts,
       members: circleMembers.map((member) => ({
         ...member,
+        skill_constraint_ids: member.skill_constraint_ids ?? [],
+        location_context_ids: member.location_context_ids ?? [],
         profile: profileByUserId.get(member.user_id) ?? null,
       })),
     },

@@ -5,6 +5,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseServer } from "@/lib/supabase";
 import {
+  memberWorkProfileAllowsWork,
+  type CommandWorkCandidate,
+} from "@/lib/command/memberWorkProfile";
+import {
   formatDateKeyInTimeZone,
   getDatePartsInTimeZone,
   makeDateInTimeZone,
@@ -16,6 +20,11 @@ const commandBlockColumns =
 
 const commandBlockRuleColumns =
   "id, offer_id, circle_id, member_id, user_id, mode, status, starts_on, ends_on, days_of_week, start_local, end_local, required_minutes_per_day, required_minutes_per_week, timezone, terms, created_at, updated_at";
+
+const circleMemberWorkProfileColumns =
+  "id, skill_constraint_ids, location_context_ids";
+
+const commandWorkColumns = "id, circle_id, skill_id, location_context_id";
 
 const weekdayValues = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
@@ -58,6 +67,17 @@ type CircleDisplayRow = {
   id: string;
   name: string;
   icon_emoji: string | null;
+};
+
+type CircleMemberWorkProfileRow = {
+  id: string;
+  skill_constraint_ids: string[] | null;
+  location_context_ids: string[] | null;
+};
+
+type CommandWorkRow = CommandWorkCandidate & {
+  id: string;
+  circle_id: string | null;
 };
 
 type CommandBlockOccurrence = CommandBlockRow & {
@@ -366,6 +386,13 @@ export async function GET(request: Request) {
     )
   );
   const circleById = new Map<string, CircleDisplayRow>();
+  const memberIds = Array.from(
+    new Set(
+      [...rows, ...ruleRows].map((row) => row.member_id).filter(Boolean)
+    )
+  );
+  const memberById = new Map<string, CircleMemberWorkProfileRow>();
+  const commandWorkByCircleId = new Map<string, CommandWorkRow[]>();
 
   if (circleIds.length > 0) {
     const { data: circles, error: circlesError } = await admin
@@ -380,6 +407,47 @@ export async function GET(request: Request) {
       for (const circle of circles ?? []) {
         circleById.set(circle.id, circle);
       }
+    }
+
+    const { data: commandWork, error: commandWorkError } = await admin
+      .from("habits")
+      .select(commandWorkColumns)
+      .in("circle_id", circleIds)
+      .returns<CommandWorkRow[]>();
+
+    if (commandWorkError) {
+      console.error("Failed to load command block work", commandWorkError);
+      return NextResponse.json(
+        { error: "Unable to load command block work." },
+        { status: 500 }
+      );
+    }
+
+    for (const work of commandWork ?? []) {
+      if (!work.circle_id) continue;
+      const existing = commandWorkByCircleId.get(work.circle_id) ?? [];
+      existing.push(work);
+      commandWorkByCircleId.set(work.circle_id, existing);
+    }
+  }
+
+  if (memberIds.length > 0) {
+    const { data: members, error: membersError } = await admin
+      .from("circle_members")
+      .select(circleMemberWorkProfileColumns)
+      .in("id", memberIds)
+      .returns<CircleMemberWorkProfileRow[]>();
+
+    if (membersError) {
+      console.error("Failed to load command block members", membersError);
+      return NextResponse.json(
+        { error: "Unable to load command block members." },
+        { status: 500 }
+      );
+    }
+
+    for (const member of members ?? []) {
+      memberById.set(member.id, member);
     }
   }
 
@@ -398,27 +466,49 @@ export async function GET(request: Request) {
     const key = getCommandBlockDedupKey(row);
     return !key || !ruleOccurrenceKeys.has(key);
   });
+  const getEligibleCommandWorkCount = (
+    row: Pick<CommandBlockRow, "circle_id" | "member_id">
+  ) => {
+    const member = memberById.get(row.member_id);
+    if (!member) return 0;
+
+    return (commandWorkByCircleId.get(row.circle_id) ?? []).filter((work) =>
+      memberWorkProfileAllowsWork(member, work)
+    ).length;
+  };
+  const commandBlockCanScheduleWork = (
+    row: Pick<CommandBlockRow, "circle_id" | "member_id">
+  ) => getEligibleCommandWorkCount(row) > 0;
+  const eligibleCompatibilityRows = compatibilityRows.filter(
+    commandBlockCanScheduleWork
+  );
+  const eligibleCommandBlockRuleOccurrences =
+    commandBlockRuleOccurrences.filter(commandBlockCanScheduleWork);
 
   return NextResponse.json(
     {
-      commandBlocks: compatibilityRows.map((row) => {
+      commandBlocks: eligibleCompatibilityRows.map((row) => {
         const circle = circleById.get(row.circle_id);
 
         return {
           ...row,
           circle_name: circle?.name ?? null,
           circle_icon_emoji: circle?.icon_emoji ?? null,
+          eligible_command_work_count: getEligibleCommandWorkCount(row),
         };
       }),
-      commandBlockRuleOccurrences: commandBlockRuleOccurrences.map((row) => {
-        const circle = circleById.get(row.circle_id);
+      commandBlockRuleOccurrences: eligibleCommandBlockRuleOccurrences.map(
+        (row) => {
+          const circle = circleById.get(row.circle_id);
 
-        return {
-          ...row,
-          circle_name: circle?.name ?? null,
-          circle_icon_emoji: circle?.icon_emoji ?? null,
-        };
-      }),
+          return {
+            ...row,
+            circle_name: circle?.name ?? null,
+            circle_icon_emoji: circle?.icon_emoji ?? null,
+            eligible_command_work_count: getEligibleCommandWorkCount(row),
+          };
+        }
+      ),
     },
     { status: 200 }
   );

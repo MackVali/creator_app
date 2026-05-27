@@ -5,13 +5,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import { getSupabaseServer } from "@/lib/supabase";
 
-const circleColumns = "id";
+const circleColumns = "id, owner_user_id";
 
 const memberColumns =
-  "id, circle_id, user_id, role, status, invited_by_user_id, created_at, updated_at";
+  "id, circle_id, user_id, role, status, invited_by_user_id, skill_constraint_ids, location_context_ids, created_at, updated_at";
 
 type CircleRow = {
   id: string;
+  owner_user_id: string;
 };
 
 type CircleMemberRow = {
@@ -21,15 +22,32 @@ type CircleMemberRow = {
   role: string;
   status: string;
   invited_by_user_id: string | null;
+  skill_constraint_ids: string[] | null;
+  location_context_ids: string[] | null;
   created_at: string;
   updated_at: string;
 };
 
 type UpdateCircleMemberBody = {
   action?: unknown;
+  skill_constraint_ids?: unknown;
+  location_context_ids?: unknown;
 };
 
 type CircleMemberAction = "remove" | "cancel_invite";
+
+type ConstraintValidationResult =
+  | {
+      ids: string[];
+      error: null;
+    }
+  | {
+      ids: null;
+      error: string;
+    };
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type CircleMemberParams = {
   params: Promise<{
@@ -55,6 +73,79 @@ function normalizeAction(value: unknown): CircleMemberAction | null {
   return normalized === "remove" || normalized === "cancel_invite"
     ? normalized
     : null;
+}
+
+function hasOwn(body: UpdateCircleMemberBody, key: keyof UpdateCircleMemberBody) {
+  return Object.prototype.hasOwnProperty.call(body, key);
+}
+
+function normalizeUuidArray(
+  value: unknown,
+  label: string
+): ConstraintValidationResult {
+  if (!Array.isArray(value)) {
+    return { ids: null, error: `${label} must be an array.` };
+  }
+
+  const ids: string[] = [];
+  const seen = new Set<string>();
+
+  for (const rawId of value) {
+    if (typeof rawId !== "string") {
+      return { ids: null, error: `${label} must only contain strings.` };
+    }
+
+    const id = rawId.trim();
+
+    if (!uuidPattern.test(id)) {
+      return { ids: null, error: `${label} contains an invalid id.` };
+    }
+
+    const normalizedId = id.toLowerCase();
+
+    if (!seen.has(normalizedId)) {
+      ids.push(normalizedId);
+      seen.add(normalizedId);
+    }
+  }
+
+  return { ids, error: null };
+}
+
+async function validateOwnedIds(
+  supabase: SupabaseClient,
+  tableName: "skills" | "location_contexts",
+  ids: string[],
+  ownerUserId: string,
+  label: string
+) {
+  if (ids.length === 0) return null;
+
+  const { data, error } = await supabase
+    .from(tableName)
+    .select("id")
+    .eq("user_id", ownerUserId)
+    .in("id", ids)
+    .returns<{ id: string }[]>();
+
+  if (error) {
+    console.error(`Failed to validate ${label}`, error);
+    return NextResponse.json(
+      { error: `Unable to validate ${label}.` },
+      { status: 500 }
+    );
+  }
+
+  const ownedIds = new Set((data ?? []).map((row) => row.id));
+
+  if (ids.some((id) => !ownedIds.has(id))) {
+    return NextResponse.json(
+      { error: `${label} must belong to the Circle owner.` },
+      { status: 400 }
+    );
+  }
+
+  return null;
 }
 
 export async function PATCH(request: Request, context: CircleMemberParams) {
@@ -85,8 +176,15 @@ export async function PATCH(request: Request, context: CircleMemberParams) {
     () => ({})
   )) as UpdateCircleMemberBody;
   const action = normalizeAction(body.action);
+  const hasAction = hasOwn(body, "action");
+  const hasSkillConstraints = hasOwn(body, "skill_constraint_ids");
+  const hasLocationContexts = hasOwn(body, "location_context_ids");
 
-  if (!action) {
+  if (hasAction && !action) {
+    return NextResponse.json({ error: "Invalid action." }, { status: 400 });
+  }
+
+  if (!action && !hasSkillConstraints && !hasLocationContexts) {
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }
 
@@ -136,7 +234,7 @@ export async function PATCH(request: Request, context: CircleMemberParams) {
     );
   }
 
-  if (member.role === "OWNER") {
+  if (action && member.role === "OWNER") {
     return NextResponse.json(
       { error: "Circle owner cannot be removed." },
       { status: 400 }
@@ -154,6 +252,113 @@ export async function PATCH(request: Request, context: CircleMemberParams) {
     return NextResponse.json(
       { error: "Only pending invites can be canceled." },
       { status: 400 }
+    );
+  }
+
+  if (!action) {
+    if (!["ACTIVE", "INVITED"].includes(member.status)) {
+      return NextResponse.json(
+        { error: "Only active members or pending invites can be updated." },
+        { status: 400 }
+      );
+    }
+
+    const updateValues: {
+      updated_at: string;
+      skill_constraint_ids?: string[];
+      location_context_ids?: string[];
+    } = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (hasSkillConstraints) {
+      const validation = normalizeUuidArray(
+        body.skill_constraint_ids,
+        "Skill constraints"
+      );
+
+      if (validation.error) {
+        return NextResponse.json(
+          { error: validation.error },
+          { status: 400 }
+        );
+      }
+
+      const ownershipError = await validateOwnedIds(
+        supabase,
+        "skills",
+        validation.ids,
+        circle.owner_user_id,
+        "skill constraints"
+      );
+
+      if (ownershipError) {
+        return ownershipError;
+      }
+
+      updateValues.skill_constraint_ids = validation.ids;
+    }
+
+    if (hasLocationContexts) {
+      const validation = normalizeUuidArray(
+        body.location_context_ids,
+        "Location contexts"
+      );
+
+      if (validation.error) {
+        return NextResponse.json(
+          { error: validation.error },
+          { status: 400 }
+        );
+      }
+
+      const ownershipError = await validateOwnedIds(
+        supabase,
+        "location_contexts",
+        validation.ids,
+        circle.owner_user_id,
+        "location contexts"
+      );
+
+      if (ownershipError) {
+        return ownershipError;
+      }
+
+      updateValues.location_context_ids = validation.ids;
+    }
+
+    const { data: updatedMember, error: updateError } = await supabase
+      .from("circle_members")
+      .update(updateValues)
+      .eq("id", member.id)
+      .eq("circle_id", circleId)
+      .select(memberColumns)
+      .maybeSingle<CircleMemberRow>();
+
+    if (updateError) {
+      console.error("Failed to update circle member constraints", updateError);
+      return NextResponse.json(
+        { error: "Unable to update circle member." },
+        { status: 500 }
+      );
+    }
+
+    if (!updatedMember) {
+      return NextResponse.json(
+        { error: "Circle member can no longer be updated." },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        member: {
+          ...updatedMember,
+          skill_constraint_ids: updatedMember.skill_constraint_ids ?? [],
+          location_context_ids: updatedMember.location_context_ids ?? [],
+        },
+      },
+      { status: 200 }
     );
   }
 
@@ -191,5 +396,14 @@ export async function PATCH(request: Request, context: CircleMemberParams) {
     );
   }
 
-  return NextResponse.json({ member: updatedMember }, { status: 200 });
+  return NextResponse.json(
+    {
+      member: {
+        ...updatedMember,
+        skill_constraint_ids: updatedMember.skill_constraint_ids ?? [],
+        location_context_ids: updatedMember.location_context_ids ?? [],
+      },
+    },
+    { status: 200 }
+  );
 }
