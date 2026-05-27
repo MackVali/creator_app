@@ -10,6 +10,7 @@ import {
   Target,
   Timer,
   MoreHorizontal,
+  X,
 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { SkillProjectsList } from "@/components/skills/SkillProjectsList";
@@ -1179,126 +1180,138 @@ export default function SkillDetailPage() {
         onClose={() => setFocusPomoSource(null)}
       />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-6 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-8">
-          <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
-            <button
-              type="button"
-              aria-label={`Start focus pomo for ${skill.name}`}
-              onClick={handleStartFocusPomo}
-              className="rounded-full border border-white/10 bg-white/5 p-2 text-white/70 transition hover:border-white/20 hover:bg-white/10"
+        <div className="flex flex-col gap-2">
+          <div className="flex min-h-10 items-center justify-between px-1">
+            <Link
+              href="/skills"
+              aria-label="Back to skills"
+              className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
             >
-              <Timer className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <DropdownMenu
-              open={actionsMenuOpen}
-              onOpenChange={(open) => {
-                setActionsMenuOpen(open);
-                if (!open) {
-                  setDeleteConfirmationOpen(false);
-                }
-              }}
-            >
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="Skill actions"
-                  className="rounded-full border border-white/10 bg-white/5 p-2 text-white/70 transition hover:border-white/20 hover:bg-white/10"
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuItem
-                  disabled={skill.is_locked}
-                  onSelect={() => setEditDrawerOpen(true)}
-                >
-                  Edit skill
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={skill.is_locked || isDeleting}
-                  className={
-                    deleteConfirmationOpen ? "text-amber-200 focus:text-amber-100" : ""
-                  }
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    if (deleteConfirmationOpen) {
-                      void handleDeleteSkill();
-                      return;
-                    }
-                    setDeleteConfirmationOpen(true);
-                  }}
-                >
-                  {isDeleting
-                    ? "Removing..."
-                    : deleteConfirmationOpen
-                      ? "Are you sure? Remove"
-                      : "Remove skill"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          <div className="absolute inset-0">
-            <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
-            <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.12),_transparent_65%)] blur-3xl" />
-          </div>
-          <div className="relative flex flex-col gap-8 md:flex-row md:items-center">
-            <div className="flex items-start gap-5">
-              <span
-                className="flex h-[88px] w-[88px] items-center justify-center rounded-3xl bg-white/10 text-5xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/20"
-                role="img"
-                aria-label={`Skill: ${skill.name}`}
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Link>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label={`Start focus pomo for ${skill.name}`}
+                onClick={handleStartFocusPomo}
+                className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
               >
-                {icon}
-              </span>
-              <div className="space-y-3">
-                <h1 id="skill-overview" className="text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
-                  {skill.name}
-                </h1>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <div className="flex items-center gap-1 text-lg leading-none">
-                    {skillBadges.length > 0 ? (
-                      skillBadges.map((badge) => (
-                        <span
-                          key={badge.id}
-                          role="img"
-                          aria-label={badge.label}
-                          title={badge.label}
-                          className="drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]"
-                        >
-                          {badge.emoji}
+                <Timer className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <DropdownMenu
+                open={actionsMenuOpen}
+                onOpenChange={(open) => {
+                  setActionsMenuOpen(open);
+                  if (!open) {
+                    setDeleteConfirmationOpen(false);
+                  }
+                }}
+              >
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Skill actions"
+                    className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                  >
+                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem
+                    disabled={skill.is_locked}
+                    onSelect={() => setEditDrawerOpen(true)}
+                  >
+                    Edit skill
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={skill.is_locked || isDeleting}
+                    className={
+                      deleteConfirmationOpen ? "text-amber-200 focus:text-amber-100" : ""
+                    }
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      if (deleteConfirmationOpen) {
+                        void handleDeleteSkill();
+                        return;
+                      }
+                      setDeleteConfirmationOpen(true);
+                    }}
+                  >
+                    {isDeleting
+                      ? "Removing..."
+                      : deleteConfirmationOpen
+                        ? "Are you sure? Remove"
+                        : "Remove skill"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
+          <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-4 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-5 md:p-6">
+            <div className="absolute inset-0">
+              <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
+              <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.12),_transparent_65%)] blur-3xl" />
+            </div>
+            <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
+              <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+                <span
+                  className="flex h-[68px] w-[68px] shrink-0 items-center justify-center rounded-2xl bg-white/10 text-4xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/20 sm:h-[76px] sm:w-[76px] sm:text-[2.75rem]"
+                  role="img"
+                  aria-label={`Skill: ${skill.name}`}
+                >
+                  {icon}
+                </span>
+                <div className="min-w-0 space-y-2">
+                  <h1 id="skill-overview" className="break-words text-2xl font-semibold tracking-tight text-white sm:text-3xl md:text-4xl">
+                    {skill.name}
+                  </h1>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1 text-lg leading-none">
+                      {skillBadges.length > 0 ? (
+                        skillBadges.map((badge) => (
+                          <span
+                            key={badge.id}
+                            role="img"
+                            aria-label={badge.label}
+                            title={badge.label}
+                            className="drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]"
+                          >
+                            {badge.emoji}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[10px] font-medium uppercase tracking-[0.28em] text-white/35">
+                          No badges yet
                         </span>
-                      ))
-                    ) : (
-                      <span className="text-[10px] font-medium uppercase tracking-[0.28em] text-white/35">
-                        No badges yet
-                      </span>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-          <div className="relative mt-8 grid grid-cols-2 gap-2">
-            {stats.map(({ label, value, icon: Icon }) => (
-              <div
-                key={label}
-                className="group flex min-w-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/5 px-2 py-1 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10"
-              >
-                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80">
-                  <Icon className="size-2.5" aria-hidden="true" />
-                </span>
-                <div className="flex min-w-0 flex-col leading-[1.05]">
-                  <span className="text-[7px] font-semibold uppercase tracking-[0.2em] text-white/50">
-                    {label}
-                  </span>
-                  <span className="break-words text-[9px] font-semibold text-white">
-                    {value}
-                  </span>
-                </div>
+              <div className="grid w-full grid-cols-2 gap-2 md:w-[320px] md:shrink-0">
+                {stats.map(({ label, value, icon: Icon }) => (
+                  <div
+                    key={label}
+                    className="group flex min-w-0 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 px-2 py-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10 sm:px-2.5"
+                  >
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80">
+                      <Icon className="size-2.5" aria-hidden="true" />
+                    </span>
+                    <div className="flex min-w-0 flex-col leading-[1.08]">
+                      <span className="text-[7px] font-semibold uppercase tracking-[0.18em] text-white/50">
+                        {label}
+                      </span>
+                      <span className="break-words text-[9px] font-semibold text-white">
+                        {value}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </section>
+            </div>
+          </section>
+        </div>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101010] to-[#1a1a1a] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.75)] sm:p-7">
