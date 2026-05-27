@@ -15,8 +15,8 @@ export const AMBIENT_AUDIO_SRC = "/sounds/ambient/creator-aura.mp3";
 export const AMBIENT_AUDIO_STORAGE_KEY = "creator:ambient-audio";
 
 const DEBUG_AMBIENT_AUDIO = true;
-const DEFAULT_AMBIENT_VOLUME = 0.35;
-const AMBIENT_AUDIO_PLAYBACK_VOLUME_CAP = 0.3;
+const DEFAULT_AMBIENT_VOLUME = 0.2;
+const AMBIENT_AUDIO_PLAYBACK_VOLUME_CAP = 0.18;
 const UNLOCK_EVENTS = ["pointerdown", "touchstart", "keydown", "click"] as const;
 
 type AmbientAudioPreference = {
@@ -101,9 +101,38 @@ function debugAmbientAudio(message: string, details?: Record<string, unknown>) {
   console.debug(`[ambient-audio] ${message}`, details ?? "");
 }
 
+function clearMediaSessionState() {
+  if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+    return;
+  }
+
+  try {
+    const mediaSession = navigator.mediaSession;
+    mediaSession.metadata = null;
+    mediaSession.playbackState = "none";
+    const mediaActions: MediaSessionAction[] = [
+      "play",
+      "pause",
+      "seekbackward",
+      "seekforward",
+      "previoustrack",
+      "nexttrack",
+      "stop",
+      "seekto",
+      "skipad",
+    ];
+    mediaActions.forEach((action) => {
+      mediaSession.setActionHandler(action, null);
+    });
+  } catch {
+    // Media Session API support varies by browser/version.
+  }
+}
+
 export function AmbientAudioProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const isPlayAttemptPendingRef = useRef(false);
+  const resumeRequiresInteractionRef = useRef(false);
   const [enabled, setEnabled] = useState(true);
   const [volume, setVolumeState] = useState(DEFAULT_AMBIENT_VOLUME);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -117,6 +146,7 @@ export function AmbientAudioProvider({ children }: { children: React.ReactNode }
     if (!audioRef.current) {
       const audio = new Audio(AMBIENT_AUDIO_SRC);
       audio.loop = true;
+      audio.autoplay = false;
       audio.preload = "none";
       audio.volume = getAmbientPlaybackVolume(volume);
       audio.addEventListener("ended", () => setIsPlaying(false));
@@ -159,6 +189,7 @@ export function AmbientAudioProvider({ children }: { children: React.ReactNode }
         readyState: audio.readyState,
       });
       await audio.play();
+      clearMediaSessionState();
       setIsPlaying(true);
       debugAmbientAudio("play success", {
         readyState: audio.readyState,
@@ -182,6 +213,7 @@ export function AmbientAudioProvider({ children }: { children: React.ReactNode }
       audio.pause();
       audio.currentTime = 0;
     }
+    clearMediaSessionState();
     setIsPlaying(false);
   }, []);
 
@@ -228,6 +260,45 @@ export function AmbientAudioProvider({ children }: { children: React.ReactNode }
   }, [enabled, isHydrated, volume]);
 
   useEffect(() => {
+    clearMediaSessionState();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    function suspendForBackground(reason: string) {
+      if (!enabled || !isPlaying) {
+        return;
+      }
+
+      resumeRequiresInteractionRef.current = true;
+      debugAmbientAudio("suspended due to background", { reason });
+      stopPlayback();
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        suspendForBackground(`visibility:${document.visibilityState}`);
+      }
+    };
+
+    const onPageHide = () => suspendForBackground("pagehide");
+    const onWindowBlur = () => suspendForBackground("blur");
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("blur", onWindowBlur);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+  }, [enabled, isPlaying, stopPlayback]);
+
+  useEffect(() => {
     if (!isHydrated) {
       return;
     }
@@ -244,6 +315,10 @@ export function AmbientAudioProvider({ children }: { children: React.ReactNode }
     }
 
     if (isPlaying) {
+      return;
+    }
+    if (resumeRequiresInteractionRef.current) {
+      debugAmbientAudio("resume blocked pending interaction", { enabled, isPlaying });
       return;
     }
 
@@ -270,6 +345,7 @@ export function AmbientAudioProvider({ children }: { children: React.ReactNode }
 
     function unlockAudio(event: Event) {
       removeUnlockListeners();
+      resumeRequiresInteractionRef.current = false;
       debugAmbientAudio("gesture detected", {
         type: event.type,
         src: AMBIENT_AUDIO_SRC,
