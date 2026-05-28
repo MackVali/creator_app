@@ -2,6 +2,7 @@ import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
+import { hapticTap } from "@/lib/haptics/creatorHaptics"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
@@ -59,17 +60,43 @@ function Button({
   variant,
   size,
   asChild = false,
+  haptic,
+  onPointerDown,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
+    haptic?: boolean
   }) {
   const Comp = asChild ? Slot : "button"
+  const isDisabled =
+    props.disabled === true ||
+    props["aria-disabled"] === true ||
+    props["aria-disabled"] === "true"
+  const shouldUseHaptic =
+    !asChild &&
+    haptic !== false &&
+    variant !== "destructive" &&
+    variant !== "cancelSquare" &&
+    !isDisabled
+
+  const handlePointerDown: React.PointerEventHandler<HTMLButtonElement> = (
+    event
+  ) => {
+    onPointerDown?.(event)
+
+    if (event.defaultPrevented || !shouldUseHaptic) {
+      return
+    }
+
+    void hapticTap()
+  }
 
   return (
     <Comp
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
+      onPointerDown={handlePointerDown}
       {...props}
     />
   )

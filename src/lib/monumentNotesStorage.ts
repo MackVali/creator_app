@@ -2,12 +2,15 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCurrentUserId } from "@/lib/auth";
 import type { MonumentNote } from "@/lib/types/monument-note";
 import type { Database } from "@/types/supabase";
+import type { Json } from "../../types/supabase";
 
 const NOTES_TABLE = "notes";
 
 type NoteRow = Database["public"]["Tables"]["notes"]["Row"];
+type NoteInsert = Database["public"]["Tables"]["notes"]["Insert"];
 
 type CreateMonumentNoteOptions = {
+  metadata?: Record<string, unknown> | null;
   parentNoteId?: string | null;
   siblingOrder?: number | null;
 };
@@ -43,6 +46,61 @@ function normalizeText(value: string | null | undefined) {
   if (value == null) return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function toJsonMetadata(metadata: Record<string, unknown> | null | undefined): Json | null {
+  return (metadata ?? null) as Json | null;
+}
+
+function getSupabaseErrorFields(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return {
+      message: error instanceof Error ? error.message : String(error),
+      details: undefined,
+      hint: undefined,
+      code: undefined,
+    };
+  }
+
+  const candidate = error as {
+    message?: unknown;
+    details?: unknown;
+    hint?: unknown;
+    code?: unknown;
+  };
+
+  return {
+    message: typeof candidate.message === "string" ? candidate.message : undefined,
+    details: typeof candidate.details === "string" ? candidate.details : undefined,
+    hint: typeof candidate.hint === "string" ? candidate.hint : undefined,
+    code: typeof candidate.code === "string" ? candidate.code : undefined,
+  };
+}
+
+function getSafeMetadataSnapshot(metadata: NoteInsert["metadata"]) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return metadata ?? null;
+  }
+
+  const record = metadata as Record<string, unknown>;
+  return {
+    keys: Object.keys(record),
+    icon: typeof record.icon === "string" ? record.icon : undefined,
+    bookmarked: typeof record.bookmarked === "boolean" ? record.bookmarked : undefined,
+  };
+}
+
+function getSafeNoteInsertSnapshot(payload: NoteInsert) {
+  return {
+    user_id: payload.user_id ? "[present]" : null,
+    monument_id: payload.monument_id ?? null,
+    skill_id: payload.skill_id ?? null,
+    title: payload.title ?? null,
+    content_length: payload.content?.length ?? 0,
+    metadata: getSafeMetadataSnapshot(payload.metadata),
+    parent_note_id: payload.parent_note_id ?? null,
+    sibling_order: payload.sibling_order ?? null,
+  };
 }
 
 export async function getMonumentNotes(
@@ -140,25 +198,29 @@ export async function createMonumentNote(
 
   const hasMeaningfulContent = note.content.trim().length > 0;
   const contentToStore = hasMeaningfulContent ? note.content : null;
+  const insertPayload: NoteInsert = {
+    user_id: userId,
+    monument_id: monumentId,
+    title: derivedTitle,
+    content: contentToStore,
+    metadata: toJsonMetadata(options?.metadata ?? note.metadata),
+    parent_note_id: options?.parentNoteId ?? null,
+    sibling_order: options?.siblingOrder ?? null,
+  };
 
   const { data, error } = await supabase
     .from(NOTES_TABLE)
-    .insert({
-      user_id: userId,
-      monument_id: monumentId,
-      title: derivedTitle,
-      content: contentToStore,
-      metadata: note.metadata ?? null,
-      parent_note_id: options?.parentNoteId ?? null,
-      sibling_order: options?.siblingOrder ?? null,
-    })
+    .insert(insertPayload)
     .select(MONUMENT_NOTE_SELECT)
     .single();
 
   if (error) {
     console.error("Failed to create monument note", {
-      error,
+      error: getSupabaseErrorFields(error),
       monumentId,
+      insertPayload: getSafeNoteInsertSnapshot(insertPayload),
+      parentNoteId: insertPayload.parent_note_id ?? null,
+      siblingOrder: insertPayload.sibling_order ?? null,
     });
     return null;
   }
@@ -198,7 +260,7 @@ export async function updateMonumentNote(
   const updatePayload: Database["public"]["Tables"]["notes"]["Update"] = {
     title: derivedTitle,
     content: contentToStore,
-    metadata: note.metadata ?? null,
+    metadata: toJsonMetadata(note.metadata),
     updated_at: new Date().toISOString(),
   };
 
