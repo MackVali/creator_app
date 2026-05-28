@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -52,7 +53,6 @@ interface MixedRoadmapCardProps {
 
 function getCampaignStateClasses(state?: string | null): {
   shell: string;
-  badge: string;
   countBadge: string;
   title: string;
   description: string;
@@ -61,44 +61,36 @@ function getCampaignStateClasses(state?: string | null): {
     case "ACTIVE":
       return {
         shell:
-          "border-white/10 bg-[linear-gradient(180deg,rgba(78,78,78,0.28)_0%,rgba(58,58,58,0.34)_14%,rgba(42,42,42,0.96)_48%,rgba(28,28,28,0.99)_100%)] shadow-[0_18px_44px_-26px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_24px_rgba(0,0,0,0.16)]",
-        badge:
-          "border-white/10 bg-white/[0.05] text-white/62",
+          "border-white/[0.07] bg-[#101112] shadow-[0_18px_45px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)]",
         countBadge:
-          "border-white/8 bg-black/28 text-white/56",
+          "border-white/[0.08] bg-white/[0.045] text-white/58",
         title: "text-white",
         description: "text-white/48",
       };
     case "PAUSED":
       return {
         shell:
-          "border-white/8 bg-[linear-gradient(180deg,rgba(70,70,70,0.22)_0%,rgba(54,54,54,0.28)_16%,rgba(40,40,40,0.95)_50%,rgba(26,26,26,0.99)_100%)] opacity-90 shadow-[0_18px_44px_-26px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-18px_24px_rgba(0,0,0,0.14)]",
-        badge:
-          "border-amber-200/16 bg-amber-200/8 text-amber-50/80",
+          "border-white/[0.06] bg-[#0D0E10] opacity-90 shadow-[0_16px_40px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]",
         countBadge:
-          "border-white/8 bg-black/24 text-white/48",
+          "border-white/[0.07] bg-white/[0.035] text-white/48",
         title: "text-white/88",
         description: "text-white/42",
       };
     case "COMPLETED":
       return {
         shell:
-          "border-white/8 bg-[linear-gradient(180deg,rgba(64,64,64,0.2)_0%,rgba(50,50,50,0.24)_16%,rgba(38,38,38,0.94)_50%,rgba(24,24,24,0.99)_100%)] shadow-[0_16px_36px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.02),inset_0_-16px_22px_rgba(0,0,0,0.12)]",
-        badge:
-          "border-white/10 bg-white/[0.04] text-white/58",
+          "border-white/[0.055] bg-[#0B0C0D] shadow-[0_14px_34px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.035)]",
         countBadge:
-          "border-white/8 bg-black/20 text-white/40",
+          "border-white/[0.06] bg-white/[0.03] text-white/40",
         title: "text-white/76",
         description: "text-white/38",
       };
     default:
       return {
         shell:
-          "border-white/10 bg-[linear-gradient(180deg,rgba(78,78,78,0.28)_0%,rgba(58,58,58,0.34)_14%,rgba(42,42,42,0.96)_48%,rgba(28,28,28,0.99)_100%)] shadow-[0_18px_44px_-26px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_24px_rgba(0,0,0,0.16)]",
-        badge:
-          "border-white/10 bg-white/[0.05] text-white/62",
+          "border-white/[0.07] bg-[#101112] shadow-[0_18px_45px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)]",
         countBadge:
-          "border-white/8 bg-black/28 text-white/56",
+          "border-white/[0.08] bg-white/[0.045] text-white/58",
         title: "text-white",
         description: "text-white/48",
       };
@@ -146,9 +138,13 @@ const COMPLETED_ROADMAP_GOAL_CLASS =
 const ROADMAP_GOAL_HANDLE_CLASS =
   "isolate overflow-visible border-white/14 bg-[linear-gradient(180deg,rgba(52,52,52,0.96)_0%,rgba(20,20,20,0.98)_32%,rgba(8,8,8,0.99)_100%)] text-white/88 shadow-[0_8px_18px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(0,0,0,0.18)] backdrop-blur-sm hover:border-white/22 hover:bg-[linear-gradient(180deg,rgba(66,66,66,0.98)_0%,rgba(26,26,26,0.99)_32%,rgba(10,10,10,1)_100%)] hover:text-white";
 const ROADMAP_GOAL_CARD_HANDLE_CLASS =
-  "isolate overflow-visible border-white/16 bg-[linear-gradient(180deg,rgba(56,56,56,0.96)_0%,rgba(22,22,22,0.98)_32%,rgba(8,8,8,0.99)_100%)] text-white shadow-[0_10px_22px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_0_1px_rgba(0,0,0,0.2)] backdrop-blur-sm hover:border-white/24 hover:bg-[linear-gradient(180deg,rgba(70,70,70,0.98)_0%,rgba(28,28,28,0.99)_32%,rgba(10,10,10,1)_100%)] hover:text-white";
+  "border-white/[0.08] bg-white/[0.04] text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white";
 const ROADMAP_GOAL_IDENTITY_CLASS =
   "inline-flex items-center justify-center leading-none translate-y-[0.5px]";
+const STANDALONE_ROADMAP_GOAL_CLASS =
+  "border-white/[0.07] bg-[#0D0E10] text-white shadow-[0_14px_34px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]";
+const COMPLETED_STANDALONE_ROADMAP_GOAL_CLASS =
+  "border-emerald-200/[0.12] bg-[#0B0C0D] text-white shadow-[0_14px_34px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.04)]";
 const COMPLETED_ROADMAP_GOAL_BADGE_CLASS =
   "border-emerald-50/28 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]";
 const COMPLETED_ROADMAP_GOAL_META_CLASS =
@@ -211,6 +207,12 @@ function isLegacyFallbackGoalItem(item: RoadmapMixedItem): boolean {
 function getNestedCampaignGoalIds(items: RoadmapMixedItem[]): Set<string> {
   return new Set(
     items.flatMap((item) => item.campaign?.goals.map((goal) => goal.id) ?? [])
+  );
+}
+
+function getCampaignIds(items: RoadmapMixedItem[]): string[] {
+  return items.flatMap((item) =>
+    item.item_type === "CAMPAIGN" && item.campaign ? [item.campaign.id] : []
   );
 }
 
@@ -434,30 +436,30 @@ function MixedRoadmapItemContent({
 
     return (
       <div
-        className={`relative min-w-0 flex-1 overflow-hidden rounded-[20px] border p-2.5 sm:rounded-[24px] sm:p-3.5 ${campaignStateClasses.shell}`}
+        className={`relative min-w-0 flex-1 overflow-hidden rounded-2xl border p-2.5 sm:rounded-[20px] sm:p-3.5 ${campaignStateClasses.shell}`}
       >
-        <div className="pointer-events-none absolute inset-x-2.5 top-0 h-12 rounded-b-[24px] bg-[radial-gradient(85%_100%_at_50%_0%,rgba(255,255,255,0.08),rgba(255,255,255,0.02)_44%,transparent_78%)] sm:inset-x-3 sm:h-14 sm:rounded-b-[28px]" />
-        <div className="pointer-events-none absolute inset-x-3.5 bottom-2.5 h-7 rounded-full bg-[radial-gradient(60%_100%_at_50%_100%,rgba(0,0,0,0.18),transparent_76%)] blur-md sm:inset-x-4 sm:bottom-3 sm:h-8" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/[0.08]" />
         <div className="space-y-2 sm:space-y-3">
           <div className="flex items-start gap-1.5 sm:gap-2.5">
             <DragHandle
               attributes={topLevelHandle.attributes}
               listeners={topLevelHandle.listeners}
               label={`Reorder campaign ${campaignName}`}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/14 bg-[linear-gradient(180deg,rgba(96,96,96,0.16)_0%,rgba(56,56,56,0.28)_28%,rgba(32,32,32,0.82)_100%)] text-[11px] font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.04)] transition hover:border-white/24 hover:bg-[linear-gradient(180deg,rgba(108,108,108,0.18)_0%,rgba(62,62,62,0.3)_28%,rgba(36,36,36,0.86)_100%)] hover:text-white sm:h-10 sm:w-10 sm:rounded-2xl sm:text-sm"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[11px] font-semibold text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white sm:h-10 sm:w-10 sm:rounded-xl sm:text-sm"
             >
               <span aria-hidden>{campaignIdentity}</span>
             </DragHandle>
-            <div className="min-w-0 flex-1 space-y-1.5 sm:space-y-2">
+            <div className="min-w-0 flex-1 space-y-1 sm:space-y-1.5">
               <div className="flex items-start justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                  <span
-                    className={`rounded-full border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] sm:px-2 sm:py-1 sm:text-[10px] sm:tracking-[0.18em] ${campaignStateClasses.badge}`}
+                <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
+                  <p
+                    className={`min-w-0 truncate font-semibold leading-tight ${campaignStateClasses.title} ${compact ? "text-[13px] sm:text-sm" : "text-[14px] sm:text-[15px]"}`}
+                    title={campaignName}
                   >
-                    {item.campaign.scheduling_state}
-                  </span>
+                    {campaignName}
+                  </p>
                   <span
-                    className={`rounded-full border px-1.5 py-0.5 text-[9px] font-medium sm:px-2 sm:py-1 sm:text-[10px] ${campaignStateClasses.countBadge}`}
+                    className={`shrink-0 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none sm:px-2 sm:py-1 sm:text-[10px] ${campaignStateClasses.countBadge}`}
                   >
                     {goals.length} goal{goals.length === 1 ? "" : "s"}
                   </span>
@@ -481,11 +483,6 @@ function MixedRoadmapItemContent({
                 ) : null}
               </div>
               <div className="space-y-0.5 sm:space-y-1">
-                <p
-                  className={`font-semibold leading-tight ${campaignStateClasses.title} ${compact ? "text-[13px] sm:text-sm" : "text-[14px] sm:text-[15px]"}`}
-                >
-                  {campaignName}
-                </p>
                 {item.campaign.description ? (
                   <p
                     className={`line-clamp-1 text-[12px] leading-4 sm:line-clamp-2 sm:text-[13px] sm:leading-5 ${campaignStateClasses.description}`}
@@ -528,20 +525,19 @@ function MixedRoadmapItemContent({
 
     return (
       <div
-        className={`relative min-w-0 flex-1 overflow-hidden rounded-[20px] border p-2.5 sm:rounded-[22px] sm:p-3.5 ${
+        className={`relative min-w-0 flex-1 overflow-hidden rounded-2xl border p-2.5 sm:rounded-[18px] sm:p-3 ${
           isCompleted
-            ? `${COMPLETED_ROADMAP_GOAL_CLASS} ${COMPLETED_ROADMAP_GOAL_SHADOW}`
-            : "border-white/10 bg-[linear-gradient(180deg,rgba(76,76,76,0.24)_0%,rgba(58,58,58,0.3)_14%,rgba(40,40,40,0.94)_54%,rgba(24,24,24,0.99)_100%)] shadow-[0_22px_40px_-28px_rgba(0,0,0,0.96),0_6px_12px_-10px_rgba(255,255,255,0.03),inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-18px_24px_rgba(0,0,0,0.16)]"
+            ? COMPLETED_STANDALONE_ROADMAP_GOAL_CLASS
+            : STANDALONE_ROADMAP_GOAL_CLASS
         }`}
       >
-        <div className="pointer-events-none absolute inset-x-2.5 top-0 h-10 rounded-b-[20px] bg-[radial-gradient(80%_100%_at_50%_0%,rgba(255,255,255,0.08),rgba(255,255,255,0.02)_46%,transparent_78%)] sm:inset-x-3 sm:h-12 sm:rounded-b-[24px]" />
-        <div className="pointer-events-none absolute inset-x-4 bottom-2.5 h-6 rounded-full bg-[radial-gradient(55%_100%_at_50%_100%,rgba(0,0,0,0.2),transparent_76%)] blur-md sm:inset-x-5 sm:bottom-3 sm:h-7" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/[0.08]" />
         <div className="flex items-start gap-1.5 sm:gap-2.5">
           <DragHandle
             attributes={topLevelHandle.attributes}
             listeners={topLevelHandle.listeners}
             label={`Reorder goal ${goal.name}`}
-            className={`flex h-7 w-7 items-center justify-center rounded-lg border text-[11px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.04)] transition sm:h-10 sm:w-10 sm:rounded-2xl sm:text-sm ${ROADMAP_GOAL_CARD_HANDLE_CLASS}`}
+            className={`flex h-7 w-7 items-center justify-center rounded-lg border text-[11px] font-semibold transition sm:h-9 sm:w-9 sm:rounded-xl sm:text-sm ${ROADMAP_GOAL_CARD_HANDLE_CLASS}`}
           >
             <span aria-hidden className={ROADMAP_GOAL_IDENTITY_CLASS}>{goalIdentity}</span>
           </DragHandle>
@@ -667,8 +663,11 @@ function MixedRoadmapCardImpl({
   enableCampaignCollapse = false,
 }: MixedRoadmapCardProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const knownCampaignIdsRef = useRef<Set<string>>(
+    new Set(getCampaignIds(roadmap.items))
+  );
   const [collapsedCampaignIds, setCollapsedCampaignIds] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(knownCampaignIdsRef.current)
   );
   const [orderedItems, setOrderedItems] = useState<RoadmapMixedItem[]>(() =>
     buildOrderedItems(roadmap.items)
@@ -678,6 +677,24 @@ function MixedRoadmapCardImpl({
 
   useEffect(() => {
     setOrderedItems(buildOrderedItems(roadmap.items));
+  }, [roadmap.items]);
+
+  useEffect(() => {
+    const nextKnownCampaignIds = new Set(getCampaignIds(roadmap.items));
+
+    setCollapsedCampaignIds((currentIds) => {
+      const nextIds = new Set<string>();
+
+      for (const campaignId of nextKnownCampaignIds) {
+        const isNewCampaign = !knownCampaignIdsRef.current.has(campaignId);
+        if (isNewCampaign || currentIds.has(campaignId)) {
+          nextIds.add(campaignId);
+        }
+      }
+
+      return nextIds;
+    });
+    knownCampaignIdsRef.current = nextKnownCampaignIds;
   }, [roadmap.items]);
 
   useEffect(() => {

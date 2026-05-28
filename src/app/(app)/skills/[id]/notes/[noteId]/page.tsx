@@ -5,7 +5,11 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, FilePlus2 } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { NoteEditorHeader } from "@/components/notes/NoteEditorHeader";
-import { NoteSlashTextarea } from "@/components/notes/NoteSlashTextarea";
+import {
+  NoteSlashTextarea,
+  type NoteDatabaseDefinitions,
+  type NoteDatabaseEntries,
+} from "@/components/notes/NoteSlashTextarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import {
@@ -46,22 +50,50 @@ function getMetadataIcon(metadata: Record<string, unknown> | null | undefined) {
     : DEFAULT_NOTE_ICON;
 }
 
+function getMetadataDatabases(
+  metadata: Record<string, unknown> | null | undefined,
+): NoteDatabaseDefinitions {
+  const databases = metadata?.databases;
+  return databases && typeof databases === "object" && !Array.isArray(databases)
+    ? (databases as NoteDatabaseDefinitions)
+    : {};
+}
+
+function getMetadataDatabaseEntries(
+  metadata: Record<string, unknown> | null | undefined,
+): NoteDatabaseEntries {
+  const databaseEntries = metadata?.databaseEntries;
+  return databaseEntries && typeof databaseEntries === "object" && !Array.isArray(databaseEntries)
+    ? (databaseEntries as NoteDatabaseEntries)
+    : {};
+}
+
+function buildNoteMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+  icon: string,
+): Record<string, unknown> {
+  return { ...(metadata ?? {}), icon };
+}
+
 function createSaveSnapshot({
   title,
   content,
   icon,
   parentNoteId,
+  metadata,
 }: {
   title: string;
   content: string;
   icon: string;
   parentNoteId: string | null;
+  metadata: Record<string, unknown> | null;
 }) {
   return JSON.stringify({
     title,
     content,
     icon,
     parentNoteId,
+    metadata,
   });
 }
 
@@ -106,6 +138,7 @@ export default function NotePage() {
           content: "",
           icon: DEFAULT_NOTE_ICON,
           parentNoteId: normalizedParentFromQuery,
+          metadata: buildNoteMetadata(null, DEFAULT_NOTE_ICON),
         }),
       );
       setIsLoading(false);
@@ -137,6 +170,7 @@ export default function NotePage() {
               content: result.note.content ?? "",
               icon,
               parentNoteId: result.note.parentNoteId ?? null,
+              metadata: buildNoteMetadata(result.note.metadata, icon),
             }),
           );
         } else {
@@ -245,6 +279,7 @@ export default function NotePage() {
       content: noteContent,
       icon: noteIcon,
       parentNoteId: selectedParentId,
+      metadata: buildNoteMetadata(noteMetadata, noteIcon),
     });
 
     if (nextSnapshot === lastSavedSnapshot) {
@@ -254,7 +289,7 @@ export default function NotePage() {
     const timer = setTimeout(async () => {
       setIsSaving(true);
       try {
-        const metadata = { ...(noteMetadata ?? {}), icon: noteIcon };
+        const metadata = buildNoteMetadata(noteMetadata, noteIcon);
         const payload = {
           title: noteTitle.trim() || "Untitled",
           content: noteContent,
@@ -345,8 +380,94 @@ export default function NotePage() {
     };
   }
 
+  async function handleSubpageCreated(
+    subpage: { id: string; title: string; href?: string },
+    parentContent: string,
+  ) {
+    const href = subpage.href ?? `/skills/${skillId}/notes/${subpage.id}`;
+
+    if (!currentNoteId) {
+      console.error("Cannot save skill parent marker before opening subpage", {
+        skillId,
+        currentNoteId,
+        selectedParentId,
+        subpageId: subpage.id,
+        href,
+        parentContentLength: parentContent.length,
+      });
+      router.push(href);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const metadata = buildNoteMetadata(noteMetadata, noteIcon);
+      const saved = await updateSkillNote(
+        skillId,
+        currentNoteId,
+        {
+          title: noteTitle.trim() || "Untitled",
+          content: parentContent,
+        },
+        { metadata },
+      );
+
+      if (!saved) {
+        console.error("Failed to save skill parent marker before opening subpage", {
+          skillId,
+          currentNoteId,
+          selectedParentId,
+          subpageId: subpage.id,
+          href,
+          parentContentLength: parentContent.length,
+        });
+      } else {
+        setNoteMetadata(saved.metadata ?? metadata);
+        setLastSavedSnapshot(
+          createSaveSnapshot({
+            title: noteTitle,
+            content: parentContent,
+            icon: noteIcon,
+            parentNoteId: selectedParentId,
+            metadata: buildNoteMetadata(saved.metadata ?? metadata, noteIcon),
+          }),
+        );
+      }
+    } catch (error) {
+      console.error("Failed to save parent note before opening subpage", {
+        error,
+        skillId,
+        currentNoteId,
+        selectedParentId,
+        subpageId: subpage.id,
+        href,
+        parentContentLength: parentContent.length,
+      });
+    } finally {
+      setIsSaving(false);
+      router.push(href);
+    }
+  }
+
   function handleOpenSubpage(subpageId: string) {
     router.push(`/skills/${skillId}/notes/${subpageId}`);
+  }
+
+  function handleDatabaseDefinitionsChange(databases: NoteDatabaseDefinitions) {
+    setNoteMetadata((current) => ({ ...(current ?? {}), databases }));
+  }
+
+  function handleDatabaseEntriesChange(databaseEntries: NoteDatabaseEntries) {
+    setNoteMetadata((current) => ({ ...(current ?? {}), databaseEntries }));
+  }
+
+  function handleBack() {
+    if (selectedParentId) {
+      router.push(`/skills/${skillId}/notes/${selectedParentId}`);
+      return;
+    }
+
+    router.push(`/skills/${skillId}`);
   }
 
   return (
@@ -357,7 +478,7 @@ export default function NotePage() {
             type="button"
             variant="ghost"
             className="h-9 rounded-full px-3 text-sm text-white/80 hover:bg-white/10"
-            onClick={() => router.push(`/skills/${skillId}`)}
+            onClick={handleBack}
           >
             <ChevronLeft className="mr-1 h-4 w-4" />
             Back
@@ -406,7 +527,12 @@ export default function NotePage() {
               <NoteSlashTextarea
                 value={noteContent}
                 onValueChange={setNoteContent}
+                databaseDefinitions={getMetadataDatabases(noteMetadata)}
+                onDatabaseDefinitionsChange={handleDatabaseDefinitionsChange}
+                databaseEntries={getMetadataDatabaseEntries(noteMetadata)}
+                onDatabaseEntriesChange={handleDatabaseEntriesChange}
                 onCreateSubpage={handleCreateSubpage}
+                onSubpageCreated={handleSubpageCreated}
                 onOpenSubpage={handleOpenSubpage}
                 placeholder="Start typing, or press / for commands…"
                 className="min-h-[62vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/28"

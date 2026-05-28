@@ -5,7 +5,11 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, FilePlus2 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { NoteEditorHeader } from "@/components/notes/NoteEditorHeader";
-import { NoteSlashTextarea } from "@/components/notes/NoteSlashTextarea";
+import {
+  NoteSlashTextarea,
+  type NoteDatabaseDefinitions,
+  type NoteDatabaseEntries,
+} from "@/components/notes/NoteSlashTextarea";
 import { Button } from "@/components/ui/button";
 import {
   createMonumentNote,
@@ -21,6 +25,32 @@ function getMetadataIcon(metadata: Record<string, unknown> | null | undefined) {
   return typeof metadata?.icon === "string" && metadata.icon.trim()
     ? metadata.icon
     : DEFAULT_NOTE_ICON;
+}
+
+function getMetadataDatabases(
+  metadata: Record<string, unknown> | null | undefined,
+): NoteDatabaseDefinitions {
+  const databases = metadata?.databases;
+  return databases && typeof databases === "object" && !Array.isArray(databases)
+    ? (databases as NoteDatabaseDefinitions)
+    : {};
+}
+
+function getMetadataDatabaseEntries(
+  metadata: Record<string, unknown> | null | undefined,
+): NoteDatabaseEntries {
+  const databaseEntries = metadata?.databaseEntries;
+  return databaseEntries && typeof databaseEntries === "object" && !Array.isArray(databaseEntries)
+    ? (databaseEntries as NoteDatabaseEntries)
+    : {};
+}
+
+function buildNoteMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+  icon: string,
+  bookmarked: boolean,
+): Record<string, unknown> {
+  return { ...(metadata ?? {}), icon, bookmarked };
 }
 
 function getNoteTitle(note: MonumentNote | null): string {
@@ -48,13 +78,17 @@ function createSaveSnapshot({
   content,
   icon,
   bookmarked,
+  parentNoteId,
+  metadata,
 }: {
   title: string;
   content: string;
   icon: string;
   bookmarked: boolean;
+  parentNoteId: string | null;
+  metadata: Record<string, unknown> | null;
 }) {
-  return JSON.stringify({ title, content, icon, bookmarked });
+  return JSON.stringify({ title, content, icon, bookmarked, parentNoteId, metadata });
 }
 
 export default function MonumentNotePage() {
@@ -72,6 +106,7 @@ export default function MonumentNotePage() {
   const [noteIcon, setNoteIcon] = useState(DEFAULT_NOTE_ICON);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [noteMetadata, setNoteMetadata] = useState<Record<string, unknown> | null>(null);
+  const [parentNoteId, setParentNoteId] = useState<string | null>(null);
   const [children, setChildren] = useState<MonumentNote[]>([]);
 
   useEffect(() => {
@@ -84,6 +119,7 @@ export default function MonumentNotePage() {
       setNoteIcon(DEFAULT_NOTE_ICON);
       setIsBookmarked(false);
       setNoteMetadata(null);
+      setParentNoteId(null);
       setChildren([]);
       setLastSavedSnapshot(
         createSaveSnapshot({
@@ -91,6 +127,8 @@ export default function MonumentNotePage() {
           content: "",
           icon: DEFAULT_NOTE_ICON,
           bookmarked: false,
+          parentNoteId: null,
+          metadata: buildNoteMetadata(null, DEFAULT_NOTE_ICON, false),
         }),
       );
       setIsLoading(false);
@@ -117,6 +155,7 @@ export default function MonumentNotePage() {
           setNoteIcon(savedIcon);
           setIsBookmarked(note.metadata?.bookmarked === true);
           setNoteMetadata(note.metadata ?? null);
+          setParentNoteId(note.parentNoteId ?? null);
           setChildren(childNotes);
           setLastSavedSnapshot(
             createSaveSnapshot({
@@ -124,6 +163,12 @@ export default function MonumentNotePage() {
               content: note.content ?? "",
               icon: savedIcon,
               bookmarked: note.metadata?.bookmarked === true,
+              parentNoteId: note.parentNoteId ?? null,
+              metadata: buildNoteMetadata(
+                note.metadata,
+                savedIcon,
+                note.metadata?.bookmarked === true,
+              ),
             }),
           );
         } else {
@@ -133,6 +178,7 @@ export default function MonumentNotePage() {
           setNoteIcon(DEFAULT_NOTE_ICON);
           setIsBookmarked(false);
           setNoteMetadata(null);
+          setParentNoteId(null);
           setChildren([]);
           setLastSavedSnapshot("");
         }
@@ -145,6 +191,7 @@ export default function MonumentNotePage() {
         setNoteIcon(DEFAULT_NOTE_ICON);
         setIsBookmarked(false);
         setNoteMetadata(null);
+        setParentNoteId(null);
         setChildren([]);
         setLastSavedSnapshot("");
       } finally {
@@ -172,6 +219,8 @@ export default function MonumentNotePage() {
       content: noteContent,
       icon: noteIcon,
       bookmarked: isBookmarked,
+      parentNoteId,
+      metadata: buildNoteMetadata(noteMetadata, noteIcon, isBookmarked),
     });
 
     if (nextSnapshot === lastSavedSnapshot) {
@@ -181,18 +230,17 @@ export default function MonumentNotePage() {
     const timer = setTimeout(async () => {
       setIsSaving(true);
       try {
-        const metadata = { ...(noteMetadata ?? {}), icon: noteIcon, bookmarked: isBookmarked };
+        const metadata = buildNoteMetadata(noteMetadata, noteIcon, isBookmarked);
         const payload = {
           title: noteTitle.trim() || "Untitled",
           content: noteContent,
-          metadata,
         };
         let saved: MonumentNote | null = null;
 
         if (currentNoteId) {
-          saved = await updateMonumentNote(monumentId, currentNoteId, payload);
+          saved = await updateMonumentNote(monumentId, currentNoteId, { ...payload, metadata });
         } else {
-          saved = await createMonumentNote(monumentId, payload);
+          saved = await createMonumentNote(monumentId, payload, { metadata });
         }
 
         if (!saved) return;
@@ -224,6 +272,7 @@ export default function MonumentNotePage() {
     noteId,
     noteMetadata,
     noteTitle,
+    parentNoteId,
     router,
   ]);
 
@@ -237,9 +286,9 @@ export default function MonumentNotePage() {
       {
         title: "Untitled",
         content: "",
-        metadata: { icon: DEFAULT_NOTE_ICON },
       },
       {
+        metadata: { icon: DEFAULT_NOTE_ICON },
         parentNoteId: currentNoteId,
         siblingOrder: children.length,
       },
@@ -257,8 +306,91 @@ export default function MonumentNotePage() {
     };
   }
 
+  async function handleSubpageCreated(
+    subpage: { id: string; title: string; href?: string },
+    parentContent: string,
+  ) {
+    const href = subpage.href ?? `/monuments/${monumentId}/notes/${subpage.id}`;
+
+    if (!currentNoteId) {
+      console.error("Cannot save monument parent marker before opening subpage", {
+        monumentId,
+        currentNoteId,
+        selectedParentId: parentNoteId,
+        subpageId: subpage.id,
+        href,
+        parentContentLength: parentContent.length,
+      });
+      router.push(href);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const metadata = buildNoteMetadata(noteMetadata, noteIcon, isBookmarked);
+      const saved = await updateMonumentNote(monumentId, currentNoteId, {
+        title: noteTitle.trim() || "Untitled",
+        content: parentContent,
+        metadata,
+      });
+
+      if (!saved) {
+        console.error("Failed to save monument parent marker before opening subpage", {
+          monumentId,
+          currentNoteId,
+          selectedParentId: parentNoteId,
+          subpageId: subpage.id,
+          href,
+          parentContentLength: parentContent.length,
+        });
+      } else {
+        setNoteMetadata(saved.metadata ?? metadata);
+        setLastSavedSnapshot(
+          createSaveSnapshot({
+            title: noteTitle,
+            content: parentContent,
+            icon: noteIcon,
+            bookmarked: isBookmarked,
+            parentNoteId,
+            metadata: buildNoteMetadata(saved.metadata ?? metadata, noteIcon, isBookmarked),
+          }),
+        );
+      }
+    } catch (error) {
+      console.error("Failed to save parent monument note before opening subpage", {
+        error,
+        monumentId,
+        currentNoteId,
+        selectedParentId: parentNoteId,
+        subpageId: subpage.id,
+        href,
+        parentContentLength: parentContent.length,
+      });
+    } finally {
+      setIsSaving(false);
+      router.push(href);
+    }
+  }
+
   function handleOpenSubpage(subpageId: string) {
     router.push(`/monuments/${monumentId}/notes/${subpageId}`);
+  }
+
+  function handleDatabaseDefinitionsChange(databases: NoteDatabaseDefinitions) {
+    setNoteMetadata((current) => ({ ...(current ?? {}), databases }));
+  }
+
+  function handleDatabaseEntriesChange(databaseEntries: NoteDatabaseEntries) {
+    setNoteMetadata((current) => ({ ...(current ?? {}), databaseEntries }));
+  }
+
+  function handleBack() {
+    if (parentNoteId) {
+      router.push(`/monuments/${monumentId}/notes/${parentNoteId}`);
+      return;
+    }
+
+    router.push(`/monuments/${monumentId}`);
   }
 
   return (
@@ -269,7 +401,7 @@ export default function MonumentNotePage() {
             type="button"
             variant="ghost"
             className="h-9 rounded-full px-3 text-sm text-white/80 hover:bg-white/10"
-            onClick={() => router.push(`/monuments/${monumentId}`)}
+            onClick={handleBack}
           >
             <ChevronLeft className="mr-1 h-4 w-4" />
             Back
@@ -292,7 +424,12 @@ export default function MonumentNotePage() {
               <NoteSlashTextarea
                 value={noteContent}
                 onValueChange={setNoteContent}
+                databaseDefinitions={getMetadataDatabases(noteMetadata)}
+                onDatabaseDefinitionsChange={handleDatabaseDefinitionsChange}
+                databaseEntries={getMetadataDatabaseEntries(noteMetadata)}
+                onDatabaseEntriesChange={handleDatabaseEntriesChange}
                 onCreateSubpage={handleCreateSubpage}
+                onSubpageCreated={handleSubpageCreated}
                 onOpenSubpage={handleOpenSubpage}
                 placeholder="Start typing, or press / for commands…"
                 className="min-h-[70vh] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/28"

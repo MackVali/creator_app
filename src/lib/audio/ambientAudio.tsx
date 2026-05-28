@@ -6,7 +6,6 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -14,10 +13,7 @@ export const AMBIENT_AUDIO_PUBLIC_PATH = "/public/sounds/ambient/creator-aura.mp
 export const AMBIENT_AUDIO_SRC = "/sounds/ambient/creator-aura.mp3";
 export const AMBIENT_AUDIO_STORAGE_KEY = "creator:ambient-audio";
 
-const DEBUG_AMBIENT_AUDIO = true;
-const DEFAULT_AMBIENT_VOLUME = 0.35;
-const AMBIENT_AUDIO_PLAYBACK_VOLUME_CAP = 0.3;
-const UNLOCK_EVENTS = ["pointerdown", "touchstart", "keydown", "click"] as const;
+const DEFAULT_AMBIENT_VOLUME = 0.08;
 
 type AmbientAudioPreference = {
   enabled: boolean;
@@ -37,7 +33,7 @@ const noopAsync = async () => undefined;
 const noop = () => undefined;
 
 const AmbientAudioContext = createContext<AmbientAudioContextValue>({
-  enabled: true,
+  enabled: false,
   volume: DEFAULT_AMBIENT_VOLUME,
   isPlaying: false,
   isHydrated: false,
@@ -54,30 +50,26 @@ function clampVolume(volume: number) {
   return Math.min(1, Math.max(0, volume));
 }
 
-export function getAmbientPlaybackVolume(volume: number) {
-  return clampVolume(volume) * AMBIENT_AUDIO_PLAYBACK_VOLUME_CAP;
-}
-
 function readStoredPreference(): AmbientAudioPreference {
   if (typeof window === "undefined") {
-    return { enabled: true, volume: DEFAULT_AMBIENT_VOLUME };
+    return { enabled: false, volume: DEFAULT_AMBIENT_VOLUME };
   }
 
   try {
     const rawValue = window.localStorage.getItem(AMBIENT_AUDIO_STORAGE_KEY);
     if (!rawValue) {
-      return { enabled: true, volume: DEFAULT_AMBIENT_VOLUME };
+      return { enabled: false, volume: DEFAULT_AMBIENT_VOLUME };
     }
 
     const parsed = JSON.parse(rawValue) as Partial<AmbientAudioPreference>;
     return {
-      enabled: parsed.enabled !== false,
+      enabled: false,
       volume: clampVolume(
         typeof parsed.volume === "number" ? parsed.volume : DEFAULT_AMBIENT_VOLUME
       ),
     };
   } catch {
-    return { enabled: true, volume: DEFAULT_AMBIENT_VOLUME };
+    return { enabled: false, volume: DEFAULT_AMBIENT_VOLUME };
   }
 }
 
@@ -87,134 +79,38 @@ function writeStoredPreference(preference: AmbientAudioPreference) {
   }
 
   try {
-    window.localStorage.setItem(AMBIENT_AUDIO_STORAGE_KEY, JSON.stringify(preference));
+    window.localStorage.setItem(
+      AMBIENT_AUDIO_STORAGE_KEY,
+      JSON.stringify({ ...preference, enabled: false })
+    );
   } catch {
     // Local persistence is best-effort only.
   }
 }
 
-function debugAmbientAudio(message: string, details?: Record<string, unknown>) {
-  if (!DEBUG_AMBIENT_AUDIO) {
-    return;
-  }
-
-  console.debug(`[ambient-audio] ${message}`, details ?? "");
-}
-
 export function AmbientAudioProvider({ children }: { children: React.ReactNode }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const isPlayAttemptPendingRef = useRef(false);
-  const [enabled, setEnabled] = useState(true);
   const [volume, setVolumeState] = useState(DEFAULT_AMBIENT_VOLUME);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
 
-  const ensureAudio = useCallback(() => {
-    if (typeof window === "undefined") {
-      return null;
-    }
-
-    if (!audioRef.current) {
-      const audio = new Audio(AMBIENT_AUDIO_SRC);
-      audio.loop = true;
-      audio.preload = "none";
-      audio.volume = getAmbientPlaybackVolume(volume);
-      audio.addEventListener("ended", () => setIsPlaying(false));
-      audio.addEventListener("pause", () => setIsPlaying(false));
-      audio.addEventListener("error", () => setIsPlaying(false));
-      audioRef.current = audio;
-      debugAmbientAudio("audio element created", {
-        src: AMBIENT_AUDIO_SRC,
-        publicPath: AMBIENT_AUDIO_PUBLIC_PATH,
-        readyState: audio.readyState,
-      });
-    }
-
-    audioRef.current.loop = true;
-    audioRef.current.volume = getAmbientPlaybackVolume(volume);
-    return audioRef.current;
-  }, [volume]);
-
-  const startPlayback = useCallback(async () => {
-    if (isPlayAttemptPendingRef.current) {
-      return false;
-    }
-
-    const audio = ensureAudio();
-    if (!audio) {
-      return false;
-    }
-
-    isPlayAttemptPendingRef.current = true;
-
-    try {
-      audio.loop = true;
-      audio.volume = getAmbientPlaybackVolume(volume);
-      audio.load();
-      debugAmbientAudio("play attempted", {
-        src: audio.currentSrc || audio.src || AMBIENT_AUDIO_SRC,
-        volume,
-        playbackVolume: audio.volume,
-        loop: audio.loop,
-        readyState: audio.readyState,
-      });
-      await audio.play();
-      setIsPlaying(true);
-      debugAmbientAudio("play success", {
-        readyState: audio.readyState,
-      });
-      return true;
-    } catch (error) {
-      setIsPlaying(false);
-      debugAmbientAudio("play failure", {
-        error,
-        readyState: audio.readyState,
-      });
-      return false;
-    } finally {
-      isPlayAttemptPendingRef.current = false;
-    }
-  }, [ensureAudio, volume]);
-
-  const stopPlayback = useCallback(() => {
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      audio.currentTime = 0;
-    }
-    setIsPlaying(false);
+  const start = useCallback(async () => {
+    // TODO: Revisit ambient audio through a native iOS path, such as a Capacitor
+    // native audio plugin, before enabling any app-wide background sound again.
   }, []);
 
-  const start = useCallback(async () => {
-    setEnabled(true);
-    await startPlayback();
-  }, [startPlayback]);
-
   const stop = useCallback(() => {
-    setEnabled(false);
-    stopPlayback();
-  }, [stopPlayback]);
+    // Ambient background playback is intentionally disabled.
+  }, []);
 
   const toggle = useCallback(async () => {
-    if (enabled) {
-      stop();
-      return;
-    }
-
-    await start();
-  }, [enabled, start, stop]);
+    // Ambient background playback is intentionally disabled.
+  }, []);
 
   const setVolume = useCallback((nextVolume: number) => {
-    const clampedVolume = clampVolume(nextVolume);
-    setVolumeState(clampedVolume);
-    if (audioRef.current) {
-      audioRef.current.volume = getAmbientPlaybackVolume(clampedVolume);
-    }
+    setVolumeState(clampVolume(nextVolume));
   }, []);
 
   useEffect(() => {
     const storedPreference = readStoredPreference();
-    setEnabled(storedPreference.enabled);
     setVolumeState(storedPreference.volume);
     setIsHydrated(true);
   }, []);
@@ -224,102 +120,21 @@ export function AmbientAudioProvider({ children }: { children: React.ReactNode }
       return;
     }
 
-    writeStoredPreference({ enabled, volume });
-  }, [enabled, isHydrated, volume]);
-
-  useEffect(() => {
-    if (!isHydrated) {
-      return;
-    }
-
-    debugAmbientAudio("enabled state", {
-      enabled,
-      isPlaying,
-      src: AMBIENT_AUDIO_SRC,
-    });
-
-    if (!enabled) {
-      stopPlayback();
-      return;
-    }
-
-    if (isPlaying) {
-      return;
-    }
-
-    let isUnlockActive = true;
-    let isListeningForUnlock = false;
-
-    function removeUnlockListeners() {
-      isListeningForUnlock = false;
-      UNLOCK_EVENTS.forEach((eventName) => {
-        window.removeEventListener(eventName, unlockAudio);
-      });
-    }
-
-    function addUnlockListeners() {
-      if (isListeningForUnlock) {
-        return;
-      }
-
-      isListeningForUnlock = true;
-      UNLOCK_EVENTS.forEach((eventName) => {
-        window.addEventListener(eventName, unlockAudio, { once: true, passive: true });
-      });
-    }
-
-    function unlockAudio(event: Event) {
-      removeUnlockListeners();
-      debugAmbientAudio("gesture detected", {
-        type: event.type,
-        src: AMBIENT_AUDIO_SRC,
-        readyState: audioRef.current?.readyState,
-      });
-
-      void startPlayback().then((didStart) => {
-        if (didStart) {
-          return;
-        }
-
-        if (isUnlockActive) {
-          addUnlockListeners();
-        }
-      });
-    }
-
-    addUnlockListeners();
-
-    return () => {
-      isUnlockActive = false;
-      removeUnlockListeners();
-    };
-  }, [enabled, isHydrated, isPlaying, startPlayback, stopPlayback]);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = getAmbientPlaybackVolume(volume);
-    }
-  }, [volume]);
-
-  useEffect(() => {
-    return () => {
-      stopPlayback();
-      audioRef.current = null;
-    };
-  }, [stopPlayback]);
+    writeStoredPreference({ enabled: false, volume });
+  }, [isHydrated, volume]);
 
   const value = useMemo<AmbientAudioContextValue>(
     () => ({
-      enabled,
+      enabled: false,
       volume,
-      isPlaying,
+      isPlaying: false,
       isHydrated,
       start,
       stop,
       toggle,
       setVolume,
     }),
-    [enabled, isHydrated, isPlaying, setVolume, start, stop, toggle, volume]
+    [isHydrated, setVolume, start, stop, toggle, volume]
   );
 
   return (
