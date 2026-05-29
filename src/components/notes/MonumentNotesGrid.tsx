@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 
@@ -17,22 +17,27 @@ interface MonumentNotesGridProps {
 }
 
 const monumentNoteActionOuterClass =
-  "group relative block h-full overflow-hidden rounded-[22px] border border-white/[0.08] bg-[#050608]/85 p-[1px] shadow-[0_18px_36px_-28px_rgba(0,0,0,0.95),0_6px_18px_-14px_rgba(0,0,0,0.88)] transition-all duration-200 hover:-translate-y-0.5 hover:border-white/[0.12] hover:bg-[#07090d]/90 hover:shadow-[0_22px_44px_-30px_rgba(0,0,0,0.98)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60";
+  "group relative block h-full overflow-hidden rounded-[22px] border border-white/[0.07] bg-[#050608] p-[1px] shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),0_8px_18px_-16px_rgba(0,0,0,0.9)] transition-all duration-200 hover:-translate-y-px hover:border-white/[0.12] hover:shadow-[0_22px_42px_-32px_rgba(0,0,0,0.98),0_10px_20px_-18px_rgba(0,0,0,0.92)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60";
 
 const monumentNoteActionInnerClass =
-  "relative flex h-full overflow-hidden rounded-[21px] border border-white/[0.08] bg-[linear-gradient(135deg,rgba(18,20,25,0.92),rgba(7,8,11,0.96))] px-3 py-2.5 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-[border-color,background-color] duration-200 before:pointer-events-none before:absolute before:inset-[1px] before:rounded-[19px] before:border before:border-white/[0.04] before:content-[''] group-hover:border-white/[0.14]";
+  "relative flex h-full overflow-hidden rounded-[21px] border border-white/[0.08] bg-[#07080A] px-3 py-2.5 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-16px_26px_rgba(0,0,0,0.22)] transition-[border-color,background-color] duration-200 before:pointer-events-none before:absolute before:inset-[1px] before:rounded-[19px] before:border before:border-white/[0.035] before:content-[''] after:pointer-events-none after:absolute after:inset-x-4 after:top-0 after:h-px after:bg-white/[0.08] after:content-[''] group-hover:border-white/[0.13] group-hover:bg-[#0B0C0F]";
 
 export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGridProps) {
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [notes, setNotes] = useState<MonumentNote[]>(initialNotes ?? []);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const initialNoteCount = initialNotes?.length ?? 0;
+  const latestInitialNotesRef = useRef(initialNotes ?? []);
+
+  useEffect(() => {
+    latestInitialNotesRef.current = initialNotes ?? [];
+  }, [initialNotes]);
 
   useEffect(() => {
     setShowAllNotes(false);
-    setNotes(initialNotes ?? []);
-  }, [monumentId, initialNotes]);
+    setSearchQuery("");
+    setNotes(latestInitialNotesRef.current);
+  }, [monumentId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -41,17 +46,20 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
       setIsLoading(true);
       const fetched = await getMonumentNotes(monumentId);
       if (!isMounted) return;
-      const shouldReplace = fetched.length > 0 || initialNoteCount === 0;
-      if (shouldReplace) {
-        setNotes(fetched);
-      }
+      setNotes((currentNotes) => {
+        if (fetched.length > 0) return fetched;
+        if (currentNotes.length > 0 || latestInitialNotesRef.current.length > 0) {
+          return currentNotes;
+        }
+        return fetched;
+      });
       setIsLoading(false);
     }
     loadNotes();
     return () => {
       isMounted = false;
     };
-  }, [monumentId, initialNoteCount]);
+  }, [monumentId]);
 
   const filteredNotes = notes.filter((note) => {
     const title = note.title?.toLowerCase() ?? "";
@@ -93,10 +101,10 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
               "min-h-[4rem] flex-col justify-center gap-1 text-left"
             )}
           >
-            <p className="text-sm font-semibold tracking-tight text-[#f2f4f8]">
+            <p className="text-sm font-semibold tracking-tight text-white/90">
               No matching notes
             </p>
-            <p className="text-xs leading-5 text-[#d2d7e0]">
+            <p className="text-xs leading-5 text-white/50">
               Try a different search.
             </p>
           </div>
@@ -126,10 +134,10 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
                   "min-h-[4.25rem] items-center justify-center gap-2 text-center"
                 )}
               >
-                <div className="relative z-10 flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.12] bg-black/35 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_9px_18px_-14px_rgba(0,0,0,0.9)]">
+                <div className="relative z-10 flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.1] bg-[#101114] text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_9px_18px_-14px_rgba(0,0,0,0.9)]">
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 </div>
-                <span className="relative z-10 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#f2f4f8]">
+                <span className="relative z-10 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">
                   {hasAnyNotes ? "Add note" : "Create note"}
                 </span>
               </div>

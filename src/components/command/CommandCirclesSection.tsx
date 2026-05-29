@@ -29,7 +29,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { Fab, type FabEditTarget } from "@/components/ui/Fab";
+import { LazyFab } from "@/components/ui/LazyFab";
+import type { FabEditTarget } from "@/components/ui/Fab";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -3620,7 +3621,7 @@ function CircleCommandDetail({
           />
         </div>
       </main>
-      <Fab
+      <LazyFab
         editTarget={fabEditTarget}
         onEditTargetChange={(target) => setFabEditTarget(target)}
         onEditClose={() => setFabEditTarget(null)}

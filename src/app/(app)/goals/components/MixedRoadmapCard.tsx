@@ -7,7 +7,10 @@ import {
   useMemo,
   useRef,
   useState,
+  type FormEvent,
   type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import {
@@ -33,10 +36,12 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, GripVertical } from "lucide-react";
 
+import { useAuth } from "@/components/auth/AuthProvider";
 import {
   createTopLevelGoalRoadmapItem,
   saveCampaignGoalOrder,
   saveRoadmapItemOrder,
+  updateCampaignDetails,
   type RoadmapCampaignGoal,
   type RoadmapMixedItem,
   type RoadmapWithItems,
@@ -50,6 +55,16 @@ interface MixedRoadmapCardProps {
   onGoalOpen?: (goalId: string) => void;
   onReorderSaved?: () => void | Promise<void>;
   enableCampaignCollapse?: boolean;
+}
+
+interface CampaignDetails {
+  id: string;
+  name: string;
+  emoji: string | null;
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 function getCampaignStateClasses(state?: string | null): {
@@ -401,6 +416,8 @@ function MixedRoadmapItemContent({
   enableCampaignCollapse,
   collapsedCampaignIds,
   onCampaignCollapseToggle,
+  userId,
+  onCampaignDetailsSaved,
 }: {
   item: RoadmapMixedItem;
   compact: boolean;
@@ -421,7 +438,162 @@ function MixedRoadmapItemContent({
   enableCampaignCollapse?: boolean;
   collapsedCampaignIds: Set<string>;
   onCampaignCollapseToggle?: (campaignId: string) => void;
+  userId?: string | null;
+  onCampaignDetailsSaved?: (
+    campaignId: string,
+    details: CampaignDetails
+  ) => void | Promise<void>;
 }) {
+  const campaign = item.item_type === "CAMPAIGN" ? item.campaign : null;
+  const [isEditMenuOpen, setIsEditMenuOpen] = useState(false);
+  const [draftCampaignName, setDraftCampaignName] = useState("");
+  const [draftCampaignEmoji, setDraftCampaignEmoji] = useState("");
+  const [isSavingCampaignDetails, setIsSavingCampaignDetails] = useState(false);
+  const [campaignEditError, setCampaignEditError] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressNextCampaignClickRef = useRef(false);
+  const campaignCardRef = useRef<HTMLDivElement | null>(null);
+  const campaignEditMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const suppressCampaignHeaderClickBriefly = useCallback(() => {
+    suppressNextCampaignClickRef.current = true;
+    window.setTimeout(() => {
+      suppressNextCampaignClickRef.current = false;
+    }, 3000);
+  }, []);
+
+  const clearCampaignLongPressTimer = useCallback(() => {
+    if (!longPressTimerRef.current) {
+      return;
+    }
+
+    clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  }, []);
+
+  const openCampaignEditMenu = useCallback(() => {
+    if (!campaign) {
+      return;
+    }
+
+    setDraftCampaignName(campaign.name);
+    setDraftCampaignEmoji(campaign.emoji ?? "");
+    setCampaignEditError(null);
+    setIsEditMenuOpen(true);
+  }, [campaign]);
+
+  const closeCampaignEditMenu = useCallback(() => {
+    if (isSavingCampaignDetails) {
+      return;
+    }
+
+    setIsEditMenuOpen(false);
+    setCampaignEditError(null);
+  }, [isSavingCampaignDetails]);
+
+  useEffect(() => {
+    return clearCampaignLongPressTimer;
+  }, [clearCampaignLongPressTimer]);
+
+  useEffect(() => {
+    if (!isEditMenuOpen) {
+      return;
+    }
+
+    const handleDocumentPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        campaignEditMenuRef.current?.contains(target)
+      ) {
+        return;
+      }
+
+      if (
+        target instanceof Node &&
+        campaignCardRef.current?.contains(target)
+      ) {
+        suppressCampaignHeaderClickBriefly();
+      }
+
+      closeCampaignEditMenu();
+    };
+
+    const handleDocumentKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeCampaignEditMenu();
+      }
+    };
+
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [
+    closeCampaignEditMenu,
+    isEditMenuOpen,
+    suppressCampaignHeaderClickBriefly,
+  ]);
+
+  const handleCampaignHeaderPointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>
+  ) => {
+    if (!campaign || isAnyDragging || isEditMenuOpen) {
+      return;
+    }
+    if (event.pointerType === "mouse" && event.button !== 0) {
+      return;
+    }
+
+    clearCampaignLongPressTimer();
+    longPressTimerRef.current = setTimeout(() => {
+      suppressNextCampaignClickRef.current = true;
+      openCampaignEditMenu();
+      longPressTimerRef.current = null;
+    }, 500);
+  };
+
+  const handleSaveCampaignDetails = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!campaign) {
+      return;
+    }
+
+    if (!userId) {
+      setCampaignEditError("Sign in required to edit this campaign.");
+      return;
+    }
+
+    const nextName = draftCampaignName.trim();
+    if (!nextName) {
+      setCampaignEditError("Campaign name is required.");
+      return;
+    }
+
+    setIsSavingCampaignDetails(true);
+    setCampaignEditError(null);
+
+    try {
+      const details = await updateCampaignDetails(userId, campaign.id, {
+        name: draftCampaignName,
+        emoji: draftCampaignEmoji,
+      });
+      await onCampaignDetailsSaved?.(campaign.id, details);
+      setIsEditMenuOpen(false);
+      setCampaignEditError(null);
+    } catch (error) {
+      setCampaignEditError(
+        getErrorMessage(error, "Unable to update campaign.")
+      );
+    } finally {
+      setIsSavingCampaignDetails(false);
+    }
+  };
+
   if (item.item_type === "CAMPAIGN" && item.campaign) {
     const campaignId = item.campaign.id;
     const campaignName = item.campaign.name;
@@ -443,10 +615,33 @@ function MixedRoadmapItemContent({
 
       onCampaignCollapseToggle?.(campaignId);
     };
+    const handleCampaignHeaderClick = (event: MouseEvent<HTMLDivElement>) => {
+      if (suppressNextCampaignClickRef.current || isEditMenuOpen) {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressNextCampaignClickRef.current = false;
+        return;
+      }
+
+      toggleCampaignCollapse();
+    };
     const handleCampaignHeaderKeyDown = (
       event: KeyboardEvent<HTMLDivElement>
     ) => {
-      if (!canToggleCampaign || event.target !== event.currentTarget) {
+      if (event.target !== event.currentTarget) {
+        return;
+      }
+
+      if (event.key === "Enter" && event.shiftKey) {
+        event.preventDefault();
+        openCampaignEditMenu();
+        return;
+      }
+
+      if (!canToggleCampaign || isEditMenuOpen) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+        }
         return;
       }
 
@@ -458,20 +653,26 @@ function MixedRoadmapItemContent({
 
     return (
       <div
+        ref={campaignCardRef}
         className={`relative min-w-0 flex-1 overflow-hidden rounded-2xl border p-2.5 sm:rounded-[20px] sm:p-3.5 ${campaignStateClasses.shell}`}
       >
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/[0.08]" />
         <div className="space-y-2 sm:space-y-3">
           <div
-            className={`flex items-start gap-1.5 rounded-[14px] transition-colors sm:gap-2.5 sm:rounded-[18px] ${
+            className={`flex select-none items-start gap-1.5 rounded-[14px] transition-colors sm:gap-2.5 sm:rounded-[18px] ${
               canToggleCampaign
                 ? "cursor-pointer active:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 sm:hover:bg-white/[0.025]"
                 : ""
             }`}
-            onClick={toggleCampaignCollapse}
+            onPointerDown={handleCampaignHeaderPointerDown}
+            onPointerUp={clearCampaignLongPressTimer}
+            onPointerLeave={clearCampaignLongPressTimer}
+            onPointerCancel={clearCampaignLongPressTimer}
+            onClick={handleCampaignHeaderClick}
             onKeyDown={handleCampaignHeaderKeyDown}
             role={canToggleCampaign ? "button" : undefined}
             tabIndex={canToggleCampaign ? 0 : undefined}
+            aria-keyshortcuts="Shift+Enter"
             aria-expanded={canToggleCampaign ? !isCampaignCollapsed : undefined}
             aria-controls={canToggleCampaign ? campaignGoalsId : undefined}
             aria-label={
@@ -480,7 +681,10 @@ function MixedRoadmapItemContent({
                 : undefined
             }
           >
-            <div onClick={(event) => event.stopPropagation()}>
+            <div
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
               <DragHandle
                 attributes={topLevelHandle.attributes}
                 listeners={topLevelHandle.listeners}
@@ -508,6 +712,7 @@ function MixedRoadmapItemContent({
                 {enableCampaignCollapse ? (
                   <button
                     type="button"
+                    onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
                       onCampaignCollapseToggle?.(campaignId);
@@ -537,6 +742,62 @@ function MixedRoadmapItemContent({
               </div>
             </div>
           </div>
+          {isEditMenuOpen ? (
+            <div
+              ref={campaignEditMenuRef}
+              className="absolute left-3 right-3 top-3 z-50 rounded-2xl border border-white/10 bg-[#090A0C] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.62),inset_0_1px_0_rgba(255,255,255,0.06)] sm:left-14 sm:right-4 sm:top-4 sm:p-3.5"
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <form className="space-y-3" onSubmit={handleSaveCampaignDetails}>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/62">
+                    Edit campaign
+                  </p>
+                  <button
+                    type="button"
+                    onClick={closeCampaignEditMenu}
+                    className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-white/58 transition hover:border-white/18 hover:bg-white/[0.07] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <input
+                    aria-label="Campaign emoji"
+                    value={draftCampaignEmoji}
+                    onChange={(event) => setDraftCampaignEmoji(event.target.value)}
+                    maxLength={2}
+                    placeholder="◆"
+                    className="h-11 w-11 shrink-0 rounded-xl border border-white/12 bg-white/[0.05] text-center text-lg text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] outline-none transition placeholder:text-white/28 focus:border-white/28 focus:bg-white/[0.08] focus:ring-2 focus:ring-white/10"
+                  />
+                  <input
+                    aria-label="Campaign name"
+                    value={draftCampaignName}
+                    onChange={(event) => setDraftCampaignName(event.target.value)}
+                    placeholder="Campaign name"
+                    className="h-11 min-w-0 flex-1 rounded-xl border border-white/12 bg-white/[0.05] px-3 text-sm font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] outline-none transition placeholder:text-white/30 focus:border-white/28 focus:bg-white/[0.08] focus:ring-2 focus:ring-white/10"
+                  />
+                </div>
+                {campaignEditError ? (
+                  <p className="rounded-xl border border-red-400/18 bg-red-500/10 px-2.5 py-2 text-[12px] leading-4 text-red-100/88">
+                    {campaignEditError}
+                  </p>
+                ) : null}
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="submit"
+                    disabled={
+                      isSavingCampaignDetails || draftCampaignName.trim().length === 0
+                    }
+                    className="rounded-full border border-white/14 bg-white/[0.1] px-3 py-1.5 text-[12px] font-semibold text-white transition hover:border-white/24 hover:bg-white/[0.16] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {isSavingCampaignDetails ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : null}
           {goals.length > 0 && !isCampaignCollapsed ? (
             <div
               id={campaignGoalsId}
@@ -639,6 +900,8 @@ function SortableMixedRoadmapItemRow({
   enableCampaignCollapse,
   collapsedCampaignIds,
   onCampaignCollapseToggle,
+  userId,
+  onCampaignDetailsSaved,
 }: {
   item: RoadmapMixedItem;
   compact: boolean;
@@ -655,6 +918,11 @@ function SortableMixedRoadmapItemRow({
   enableCampaignCollapse?: boolean;
   collapsedCampaignIds: Set<string>;
   onCampaignCollapseToggle?: (campaignId: string) => void;
+  userId?: string | null;
+  onCampaignDetailsSaved?: (
+    campaignId: string,
+    details: CampaignDetails
+  ) => void | Promise<void>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
@@ -687,6 +955,8 @@ function SortableMixedRoadmapItemRow({
           enableCampaignCollapse={enableCampaignCollapse}
           collapsedCampaignIds={collapsedCampaignIds}
           onCampaignCollapseToggle={onCampaignCollapseToggle}
+          userId={userId}
+          onCampaignDetailsSaved={onCampaignDetailsSaved}
         />
       </div>
     </div>
@@ -706,6 +976,7 @@ function MixedRoadmapCardImpl({
   onReorderSaved,
   enableCampaignCollapse = false,
 }: MixedRoadmapCardProps) {
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const knownCampaignIdsRef = useRef<Set<string>>(
     new Set(getCampaignIds(roadmap.items))
@@ -813,6 +1084,30 @@ function MixedRoadmapCardImpl({
       return nextIds;
     });
   }, []);
+
+  const handleCampaignDetailsSaved = useCallback(
+    async (campaignId: string, details: CampaignDetails) => {
+      setOrderedItems((currentItems) =>
+        currentItems.map((item) => {
+          if (item.item_type !== "CAMPAIGN" || item.campaign?.id !== campaignId) {
+            return item;
+          }
+
+          return {
+            ...item,
+            campaign: {
+              ...item.campaign,
+              name: details.name,
+              emoji: details.emoji,
+            },
+          };
+        })
+      );
+
+      await onReorderSaved?.();
+    },
+    [onReorderSaved]
+  );
 
   const campaignCount = useMemo(
     () => orderedItems.filter((item) => item.item_type === "CAMPAIGN").length,
@@ -1061,6 +1356,8 @@ function MixedRoadmapCardImpl({
                       enableCampaignCollapse={enableCampaignCollapse}
                       collapsedCampaignIds={collapsedCampaignIds}
                       onCampaignCollapseToggle={handleCampaignCollapseToggle}
+                      userId={user?.id ?? null}
+                      onCampaignDetailsSaved={handleCampaignDetailsSaved}
                     />
                   ))}
                 </div>

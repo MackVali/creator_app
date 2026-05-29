@@ -10,7 +10,8 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Fab, type FabEditTarget } from "@/components/ui/Fab";
+import { LazyFab } from "@/components/ui/LazyFab";
+import type { FabEditTarget } from "@/components/ui/Fab";
 import { cn } from "@/lib/utils";
 import { DayTimeline } from "./DayTimeline";
 
@@ -43,7 +44,7 @@ export function FocusTimelineFab({
   }
 
   return createPortal(
-    <Fab
+    <LazyFab
       data-testid="focus-timeline-fab"
       className="fixed bottom-6 right-6 z-[2147483647] sm:bottom-8 sm:right-8"
       menuVariant="timeline"

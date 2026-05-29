@@ -9,11 +9,16 @@ import type { SourceListing } from "@/types/source"
 const PUBLIC_PRODUCT_FIELDS =
   "id, type, title, description, price, currency, status, metadata, published_at, created_at, updated_at"
 
+type ProfileLookupRow = {
+  user_id?: unknown
+}
+
 export async function GET(
   _: Request,
-  context: { params?: { username?: string } },
+  context: { params: Promise<{ username?: string }> },
 ) {
-  const username = (context.params?.username ?? "").trim()
+  const { username: rawUsername = "" } = await context.params
+  const username = rawUsername.trim()
   if (!username) {
     return NextResponse.json(
       { listings: [] },
@@ -36,9 +41,10 @@ export async function GET(
     .ilike("username", username)
     .maybeSingle()
 
+  const profileRow = profile as ProfileLookupRow | null
   const userId =
-    profile && typeof profile.user_id === "string" && profile.user_id.trim()
-      ? profile.user_id
+    profileRow && typeof profileRow.user_id === "string" && profileRow.user_id.trim()
+      ? profileRow.user_id
       : null
 
   if (lookupError || !userId) {

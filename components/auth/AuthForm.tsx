@@ -36,6 +36,18 @@ export default function AuthForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = getSupabaseBrowser();
+  const authSubtitle =
+    tab === "signin"
+      ? "Sign in to continue building your system."
+      : "Create your account and start building your system.";
+  const labelClassName =
+    "mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-zinc-400";
+  const inputClassName =
+    "h-12 w-full rounded-2xl border border-white/10 bg-[#0B0B0C] px-4 text-sm text-white placeholder-zinc-600 shadow-inner shadow-black/30 outline-none transition-all duration-200 focus:border-zinc-300/35 focus:ring-2 focus:ring-zinc-300/10 disabled:cursor-not-allowed disabled:opacity-60";
+  const statusClassName =
+    "mb-5 rounded-2xl border px-4 py-3 text-sm leading-relaxed";
+  const submitClassName =
+    "h-12 w-full rounded-2xl border border-white/15 bg-[#151515] px-4 text-sm font-bold text-white shadow-[0_14px_34px_rgba(0,0,0,0.35)] transition-all duration-200 hover:border-white/25 hover:bg-[#1A1A1A] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-zinc-900 disabled:text-zinc-500 disabled:shadow-none";
 
   // Reset lockout after duration - placed before any early returns to fix hooks rules
   useEffect(() => {
@@ -51,20 +63,22 @@ export default function AuthForm() {
   // Add this check at the beginning of your component
   if (!supabase) {
     return (
-      <div className="w-full max-w-md mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-5xl font-black tracking-widest text-white mb-4">
+      <div className="relative z-10 mx-auto w-full max-w-[25rem]">
+        <div className="mb-6 text-center">
+          <h1 className="mb-2 text-4xl font-black uppercase tracking-[0.16em] text-white">
             CREATOR
           </h1>
-          <p className="text-lg text-zinc-300">Level up your life!</p>
+          <p className="text-sm font-medium text-zinc-400">
+            Turn your life into a system.
+          </p>
         </div>
 
-        <div className="bg-[#1E1E1E] rounded-3xl border border-[#333] shadow-2xl p-8">
+        <div className="rounded-[1.75rem] border border-white/10 bg-[#101010]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] sm:p-6">
           <div className="text-center">
-            <div className="text-red-400 bg-red-900/20 p-4 rounded-xl border border-red-500/30 mb-4">
-              ⚠️ Configuration Error
+            <div className="mb-4 rounded-2xl border border-red-400/20 bg-red-950/20 p-4 text-sm font-semibold text-red-300">
+              Configuration Error
             </div>
-            <p className="text-zinc-300 mb-4">
+            <p className="mb-4 text-sm text-zinc-300">
               Supabase is not properly configured. Please check your environment
               variables.
             </p>
@@ -256,43 +270,45 @@ export default function AuthForm() {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto">
+    <div className="relative z-10 mx-auto w-full max-w-[25rem]">
       {/* Header */}
-      <div className="text-center mb-10">
-        <h1 className="text-5xl font-black tracking-widest text-white mb-4">
+      <div className="mb-6 text-center">
+        <h1 className="mb-2 text-4xl font-black uppercase tracking-[0.16em] text-white sm:text-[2.65rem]">
           CREATOR
         </h1>
-        <p className="text-lg text-zinc-300">Level up your life!</p>
+        <p className="text-sm font-medium text-zinc-400">
+          Turn your life into a system.
+        </p>
       </div>
 
       {/* Main Card */}
-      <div className="bg-[#1E1E1E] rounded-3xl border border-[#333] shadow-2xl p-8">
+      <div className="rounded-[1.75rem] border border-white/10 bg-[#101010]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur sm:p-6">
         {/* Welcome Section */}
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-white mb-3">Welcome</h2>
-          <p className="text-base text-zinc-300">
-            Sign in to your account or create a new one
-          </p>
+        <div className="mb-6">
+          <h2 className="mb-2 text-2xl font-bold text-white">Welcome back</h2>
+          <p className="text-sm leading-6 text-zinc-400">{authSubtitle}</p>
         </div>
 
         {/* Tab System */}
-        <div className="flex bg-[#2C2C2C] rounded-xl p-1.5 mb-8">
+        <div className="mb-6 flex rounded-2xl border border-white/[0.06] bg-black/35 p-1.5">
           <button
+            type="button"
             onClick={() => setTab("signin")}
-            className={`flex-1 py-3 px-6 rounded-lg text-sm font-semibold transition-all duration-200 ${
+            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 ${
               tab === "signin"
-                ? "bg-[#1E1E1E] text-white shadow-lg"
-                : "text-zinc-400 hover:text-zinc-300"
+                ? "border border-white/10 bg-zinc-800/70 text-white shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
+                : "border border-transparent text-zinc-500 hover:text-zinc-300"
             }`}
           >
             Sign In
           </button>
           <button
+            type="button"
             onClick={() => setTab("signup")}
-            className={`flex-1 py-3 px-6 rounded-lg text-sm font-semibold transition-all duration-200 ${
+            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 ${
               tab === "signup"
-                ? "bg-[#1E1E1E] text-white shadow-lg"
-                : "text-zinc-400 hover:text-zinc-300"
+                ? "border border-white/10 bg-zinc-800/70 text-white shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
+                : "border border-transparent text-zinc-500 hover:text-zinc-300"
             }`}
           >
             Sign Up
@@ -301,16 +317,18 @@ export default function AuthForm() {
 
         {/* Success Message */}
         {success && (
-          <div className="text-sm text-green-400 bg-green-900/20 p-4 rounded-xl border border-green-500/30 mb-6">
-            ✅ {success}
+          <div
+            className={`${statusClassName} border-zinc-300/20 bg-zinc-900/45 text-zinc-200`}
+          >
+            {success}
           </div>
         )}
 
         {/* Sign In Form */}
         {tab === "signin" && (
-          <form onSubmit={handleSignIn} className="space-y-6">
+          <form onSubmit={handleSignIn} className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">
+              <label className={labelClassName}>
                 Email
               </label>
               <input
@@ -320,13 +338,13 @@ export default function AuthForm() {
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setEmail(e.target.value)
                 }
-                className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
+                className={inputClassName}
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">
+              <label className={labelClassName}>
                 Password
               </label>
               <input
@@ -336,31 +354,35 @@ export default function AuthForm() {
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setPassword(e.target.value)
                 }
-                className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
+                className={inputClassName}
                 required
               />
             </div>
 
-            <label className="flex items-center gap-4 text-sm text-white cursor-pointer">
+            <label className="flex cursor-pointer items-center gap-3 text-sm text-zinc-400">
               <input
                 type="checkbox"
                 checked={stay}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setStay(e.target.checked)
                 }
-                className="h-5 w-5 rounded border-[#333] bg-[#2C2C2C] text-white focus:ring-2 focus:ring-zinc-500 focus:ring-offset-0 focus:ring-offset-transparent"
+                className="h-4 w-4 rounded border-white/10 bg-black/40 text-zinc-300 focus:ring-2 focus:ring-zinc-300/15 focus:ring-offset-0 focus:ring-offset-transparent"
               />
               <span>Remain signed in</span>
             </label>
 
             {isLockedOut && (
-              <div className="text-sm text-orange-400 bg-orange-900/20 p-4 rounded-xl border border-orange-500/30">
-                ⚠️ Account temporarily locked. Please wait 5 minutes.
+              <div
+                className={`${statusClassName} border-amber-300/20 bg-amber-950/20 text-amber-200`}
+              >
+                Account temporarily locked. Please wait 5 minutes.
               </div>
             )}
 
             {error && !isLockedOut && (
-              <div className="text-sm text-red-400 bg-red-900/20 p-4 rounded-xl border border-red-500/30">
+              <div
+                className={`${statusClassName} border-red-400/20 bg-red-950/20 text-red-200`}
+              >
                 {error}
               </div>
             )}
@@ -368,7 +390,7 @@ export default function AuthForm() {
             <button
               type="submit"
               disabled={loading || Boolean(isLockedOut)}
-              className="w-full bg-white text-[#1E1E1E] font-bold py-4 rounded-xl hover:bg-zinc-100 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+              className={submitClassName}
             >
               {loading
                 ? "Signing in…"
@@ -381,7 +403,7 @@ export default function AuthForm() {
               <button
                 type="button"
                 onClick={handleForgotPassword}
-                className="text-sm text-zinc-400 hover:text-zinc-300 transition-colors"
+                className="text-sm text-zinc-500 transition-colors hover:text-zinc-300"
               >
                 Forgot your password?
               </button>
@@ -391,9 +413,9 @@ export default function AuthForm() {
 
         {/* Sign Up Form */}
         {tab === "signup" && (
-          <form onSubmit={handleSignUp} className="space-y-6">
+          <form onSubmit={handleSignUp} className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">
+              <label className={labelClassName}>
                 Full Name
               </label>
               <input
@@ -403,13 +425,13 @@ export default function AuthForm() {
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setFullName(e.target.value)
                 }
-                className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
+                className={inputClassName}
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">
+              <label className={labelClassName}>
                 Email
               </label>
               <input
@@ -419,13 +441,13 @@ export default function AuthForm() {
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setEmail(e.target.value)
                 }
-                className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
+                className={inputClassName}
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">
+              <label className={labelClassName}>
                 Password
               </label>
               <input
@@ -435,16 +457,16 @@ export default function AuthForm() {
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setPassword(e.target.value)
                 }
-                className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
+                className={inputClassName}
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-white mb-4">
+              <label className={labelClassName}>
                 Choose Your Role
               </label>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <RoleOption
                   title="CREATOR"
                   desc="Build habits, track goals, and level up your life"
@@ -469,13 +491,17 @@ export default function AuthForm() {
             </div>
 
             {isLockedOut && (
-              <div className="text-sm text-orange-400 bg-orange-900/20 p-4 rounded-xl border border-orange-500/30">
-                ⚠️ Account temporarily locked. Please wait 5 minutes.
+              <div
+                className={`${statusClassName} border-amber-300/20 bg-amber-950/20 text-amber-200`}
+              >
+                Account temporarily locked. Please wait 5 minutes.
               </div>
             )}
 
             {error && !isLockedOut && (
-              <div className="text-sm text-red-400 bg-red-900/20 p-4 rounded-xl border border-red-500/30">
+              <div
+                className={`${statusClassName} border-red-400/20 bg-red-950/20 text-red-200`}
+              >
                 {error}
               </div>
             )}
@@ -483,7 +509,7 @@ export default function AuthForm() {
             <button
               type="submit"
               disabled={loading || Boolean(isLockedOut)}
-              className="w-full bg-white text-[#1E1E1E] font-bold py-4 rounded-xl hover:bg-zinc-100 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+              className={submitClassName}
             >
               {loading
                 ? "Creating…"

@@ -158,7 +158,7 @@ function DebugPanel({
   );
 }
 
-interface FabProps extends HTMLAttributes<HTMLDivElement> {
+export interface FabProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
   menuVariant?: "default" | "timeline";
   swipeUpToOpen?: boolean;
@@ -169,6 +169,7 @@ interface FabProps extends HTMLAttributes<HTMLDivElement> {
   onEditSaved?: (target: FabEditTarget) => void;
   hideLauncher?: boolean;
   portalToBody?: boolean;
+  openOnMount?: boolean;
 }
 
 type CreationType = "GOAL" | "PROJECT" | "TASK" | "HABIT";
@@ -2206,10 +2207,12 @@ export function Fab({
   onEditSaved,
   hideLauncher = false,
   portalToBody = false,
+  openOnMount = false,
   ...wrapperProps
 }: FabProps) {
   void onEditTargetConsumed;
   const [isOpen, setIsOpen] = useState(false);
+  const openOnMountConsumedRef = useRef(false);
   const toast = useToastHelpers();
   const [aiOpen, setAiOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -10073,6 +10076,22 @@ export function Fab({
     }
     setAiOpen(true);
   };
+
+  useEffect(() => {
+    if (!openOnMount || openOnMountConsumedRef.current) {
+      return;
+    }
+
+    openOnMountConsumedRef.current = true;
+    if (isOpen) {
+      return;
+    }
+
+    setPressedCreationType(null);
+    setCreationSpawnOrigin(null);
+    setCreationRevealGeometry(null);
+    setIsOpen(true);
+  }, [isOpen, openOnMount]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

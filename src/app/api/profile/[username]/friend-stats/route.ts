@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export async function GET(_: Request, context: { params?: { username?: string } }) {
-  const username = (context.params?.username ?? "").trim().toLowerCase();
+export async function GET(
+  _: Request,
+  context: { params: Promise<{ username?: string }> },
+) {
+  const { username: rawUsername = "" } = await context.params;
+  const username = rawUsername.trim().toLowerCase();
 
   if (!username) {
     return NextResponse.json(
