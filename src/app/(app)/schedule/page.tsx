@@ -33,7 +33,6 @@ import clsx from "clsx";
 import { Lock } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useHasExistingTimeBlocks } from "@/lib/hooks/useHasExistingTimeBlocks";
 import {
   DayTimeline,
   TIMELINE_CARD_LEFT_FALLBACK,
@@ -148,6 +147,11 @@ import { createMemoNoteForHabit } from "@/lib/notesStorage";
 import { MemoNoteSheet } from "@/components/schedule/MemoNoteSheet";
 import { scheduleTourSteps } from "@/lib/tours/scheduleTour";
 import { useTour } from "@/components/tour/TourProvider";
+import {
+  SCHEDULE_TOUR_COMPLETED_KEY,
+  SCHEDULE_TOUR_PENDING_KEY,
+  completeCreatorTourState,
+} from "@/lib/tours/creatorTourState";
 import { useProfile } from "@/lib/hooks/useProfile";
 import { applyStatusTargets, type StatusTarget } from "./statusMutations";
 import {
@@ -160,7 +164,7 @@ import { useToastHelpers } from "@/components/ui/toast";
 function safeDateTimeFormat(
   locale: string | undefined,
   tz: string | null | undefined,
-  options: any
+  options: Intl.DateTimeFormatOptions
 ) {
   const effectiveTz = typeof tz === "string" && tz.trim() ? tz : "UTC";
   return new Intl.DateTimeFormat(locale, { ...options, timeZone: effectiveTz });
@@ -232,6 +236,26 @@ type ManualPlacementCandidate = {
   habitType?: string | null;
   currentStreakDays?: number | null;
   globalRank?: number | null;
+};
+
+type ManualPlacementRequestDetail = {
+  result?: {
+    scheduleInstanceId?: string;
+    durationMinutes?: number;
+    nextScheduledAt?: string;
+    name?: string;
+    type?: string;
+    energy?: string;
+    goalName?: string;
+    habitType?: string;
+    currentStreakDays?: number;
+    global_rank?: number;
+  };
+  pointer?: {
+    clientX?: number;
+    clientY?: number;
+    pointerId?: number;
+  };
 };
 
 type ManualPlacementDragGhost = {
@@ -2602,16 +2626,14 @@ export default function SchedulePage() {
   }, [effectiveTimeZone]);
   const prefersReducedMotion = useReducedMotion();
   const { user } = useAuth();
-  const { hasExistingTimeBlocks, isLoading: isLoadingExistingTimeBlocks } =
-    useHasExistingTimeBlocks();
   const userId = user?.id ?? null;
+  const hasStartedScheduleTourRef = useRef(false);
   const habitCompletionStorageKey = useMemo(
     () => (userId ? `${HABIT_COMPLETION_STORAGE_PREFIX}:${userId}` : null),
     [userId]
   );
   const handleScheduleTourComplete = useCallback(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("tour:schedule:completed", "1");
+    completeCreatorTourState("schedule");
   }, []);
   const { start: startScheduleTour } = useTour(
     scheduleTourSteps,
@@ -2620,23 +2642,13 @@ export default function SchedulePage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (isLoadingExistingTimeBlocks) return;
-
-    if (hasExistingTimeBlocks) {
-      window.localStorage.setItem("tour:schedule:completed", "1");
-      window.localStorage.removeItem("tour:schedule:pending");
-      window.localStorage.removeItem("tour:day-types:pending");
-      return;
-    }
-
-    if (window.localStorage.getItem("tour:schedule:pending") !== "1") return;
-    window.localStorage.removeItem("tour:schedule:pending");
+    if (hasStartedScheduleTourRef.current) return;
+    if (window.localStorage.getItem(SCHEDULE_TOUR_PENDING_KEY) !== "1") return;
+    window.localStorage.removeItem(SCHEDULE_TOUR_PENDING_KEY);
+    if (window.localStorage.getItem(SCHEDULE_TOUR_COMPLETED_KEY) === "1") return;
+    hasStartedScheduleTourRef.current = true;
     startScheduleTour();
-  }, [
-    hasExistingTimeBlocks,
-    isLoadingExistingTimeBlocks,
-    startScheduleTour,
-  ]);
+  }, [startScheduleTour]);
 
   const initialViewParam = searchParams.get("view") as ScheduleView | null;
   const initialView: ScheduleView =
@@ -2874,7 +2886,7 @@ export default function SchedulePage() {
   const pendingLongPressActionRef = useRef<{
     action: () => void;
     instanceId: string;
-    originData: any;
+    originData: ScheduleEditOrigin | null;
   } | null>(null);
   const [peekModels, setPeekModels] = useState<{
     previous?: DayTimelineModel | null;
@@ -3492,7 +3504,7 @@ export default function SchedulePage() {
 
   useEffect(() => {
     const handleManualPlacementRequest = (event: Event) => {
-      const detail = (event as CustomEvent<any>)?.detail;
+      const detail = (event as CustomEvent<ManualPlacementRequestDetail>).detail;
       const result = detail?.result;
       if (!result || !result.scheduleInstanceId) {
         toast.error(
@@ -3873,7 +3885,7 @@ export default function SchedulePage() {
     async function fetchOverlayWindows() {
       try {
         const { data, error } = await supabase
-          .from("overlay_windows" as any)
+          .from("overlay_windows" as never)
           .select("id,start_utc,end_utc,label")
           .eq("user_id", userId)
           .lt("start_utc", dayEndIso)

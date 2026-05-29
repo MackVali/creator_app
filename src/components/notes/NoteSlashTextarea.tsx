@@ -1,6 +1,22 @@
 "use client";
 
 import {
+  closestCenter,
+  DndContext,
+  PointerSensor,
+  type DragEndEvent,
+  type DragStartEvent,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   ChevronRight,
   Eye,
   EyeOff,
@@ -18,8 +34,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
+  type CSSProperties,
+  Fragment,
   type KeyboardEvent,
+  type ReactNode,
+  forwardRef,
+  useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -238,6 +260,12 @@ type NoteSlashTextareaProps = {
   "aria-label"?: string;
 };
 
+export type NoteTextFormatCommand = "bold" | "italic" | "underline";
+
+export type NoteSlashTextareaHandle = {
+  applyTextFormat: (command: NoteTextFormatCommand) => void;
+};
+
 type NoteTextSegment = {
   type: "text";
   text: string;
@@ -287,17 +315,592 @@ type PendingSelection =
       type: "text";
       segmentIndex: number;
       caretPosition: number;
+      selectionEnd?: number;
     }
   | {
       type: "checklist";
       segmentIndex: number;
       caretPosition: number;
+      selectionEnd?: number;
     }
   | {
       type: "list";
       segmentIndex: number;
       caretPosition: number;
+      selectionEnd?: number;
+    }
+  | {
+      type: "block";
+      segmentIndex: number;
     };
+
+type EditableTextSelection = {
+  type: "text" | "checklist" | "list";
+  segmentId: string;
+  segmentIndex: number;
+  selectionStart: number;
+  selectionEnd: number;
+  control: EditableTextControl | null;
+};
+
+type EditableTextControl = HTMLDivElement;
+
+type InlineFormatNode =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "format";
+      format: NoteTextFormatCommand;
+      children: InlineFormatNode[];
+    };
+
+const NOTE_TEXT_FORMAT_MARKERS: Record<NoteTextFormatCommand, [string, string]> = {
+  bold: ["**", "**"],
+  italic: ["*", "*"],
+  underline: ["<u>", "</u>"],
+};
+
+const NOTE_SEGMENT_DRAG_ID_PREFIX = "note-segment-";
+const NOTE_TEXT_ACTION_BAR_SELECTOR = "[data-note-text-action-bar]";
+
+function buildEditableSegmentId(type: EditableTextSelection["type"], segmentIndex: number) {
+  return `${type}-${segmentIndex}`;
+}
+
+function getClosestElement(target: EventTarget | null) {
+  return target instanceof Element ? target : null;
+}
+
+function isNoteTextActionBarTarget(target: EventTarget | null) {
+  return Boolean(getClosestElement(target)?.closest(NOTE_TEXT_ACTION_BAR_SELECTOR));
+}
+
+function getInlineFormatMarkerAt(text: string, index: number): NoteTextFormatCommand | null {
+  if (text.startsWith("**", index)) return "bold";
+  if (text.startsWith("<u>", index) || text.startsWith("</u>", index)) return "underline";
+  if (text[index] === "*" && text[index - 1] !== "*" && text[index + 1] !== "*") {
+    return "italic";
+  }
+
+  return null;
+}
+
+function getInlineFormatMarkerLength(text: string, index: number) {
+  if (text.startsWith("**", index)) return 2;
+  if (text.startsWith("<u>", index)) return 3;
+  if (text.startsWith("</u>", index)) return 4;
+  if (text[index] === "*") return 1;
+  return 0;
+}
+
+function findSingleAsterisk(text: string, startIndex: number) {
+  for (let index = startIndex; index < text.length; index += 1) {
+    if (text[index] === "*" && text[index - 1] !== "*" && text[index + 1] !== "*") {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function findNextInlineFormatMatch(text: string, startIndex: number) {
+  const candidates: Array<{
+    format: NoteTextFormatCommand;
+    start: number;
+    end: number;
+    prefix: string;
+    suffix: string;
+  }> = [];
+  const boldStart = text.indexOf("**", startIndex);
+  if (boldStart !== -1) {
+    const boldEnd = text.indexOf("**", boldStart + 2);
+    if (boldEnd !== -1) {
+      candidates.push({
+        format: "bold",
+        start: boldStart,
+        end: boldEnd,
+        prefix: "**",
+        suffix: "**",
+      });
+    }
+  }
+
+  const underlineStart = text.indexOf("<u>", startIndex);
+  if (underlineStart !== -1) {
+    const underlineEnd = text.indexOf("</u>", underlineStart + 3);
+    if (underlineEnd !== -1) {
+      candidates.push({
+        format: "underline",
+        start: underlineStart,
+        end: underlineEnd,
+        prefix: "<u>",
+        suffix: "</u>",
+      });
+    }
+  }
+
+  const italicStart = findSingleAsterisk(text, startIndex);
+  if (italicStart !== -1) {
+    const italicEnd = findSingleAsterisk(text, italicStart + 1);
+    if (italicEnd !== -1) {
+      candidates.push({
+        format: "italic",
+        start: italicStart,
+        end: italicEnd,
+        prefix: "*",
+        suffix: "*",
+      });
+    }
+  }
+
+  return candidates
+    .filter((candidate) => candidate.end > candidate.start)
+    .sort((first, second) => first.start - second.start || second.prefix.length - first.prefix.length)[0] ?? null;
+}
+
+function parseInlineFormatting(text: string): InlineFormatNode[] {
+  const nodes: InlineFormatNode[] = [];
+  let index = 0;
+
+  while (index < text.length) {
+    const match = findNextInlineFormatMatch(text, index);
+
+    if (!match) {
+      nodes.push({ type: "text", text: text.slice(index) });
+      break;
+    }
+
+    if (match.start > index) {
+      nodes.push({ type: "text", text: text.slice(index, match.start) });
+    }
+
+    const contentStart = match.start + match.prefix.length;
+    const content = text.slice(contentStart, match.end);
+    nodes.push({
+      type: "format",
+      format: match.format,
+      children: parseInlineFormatting(content),
+    });
+    index = match.end + match.suffix.length;
+  }
+
+  return nodes;
+}
+
+function renderInlineFormattingNodes(nodes: InlineFormatNode[], keyPrefix: string): ReactNode[] {
+  return nodes.map((node, index) => {
+    const key = `${keyPrefix}-${index}`;
+
+    if (node.type === "text") {
+      return <Fragment key={key}>{node.text}</Fragment>;
+    }
+
+    const className =
+      node.format === "bold"
+        ? "font-bold"
+        : node.format === "italic"
+          ? "italic"
+          : "underline decoration-white/75 underline-offset-2";
+
+    return (
+      <span key={key} data-note-inline-format={node.format} className={className}>
+        {renderInlineFormattingNodes(node.children, key)}
+      </span>
+    );
+  });
+}
+
+function serializeEditableNodeList(nodes: NodeListOf<ChildNode> | ChildNode[]) {
+  let serialized = "";
+
+  Array.from(nodes).forEach((node, index) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      serialized += node.textContent ?? "";
+      return;
+    }
+
+    if (!(node instanceof HTMLElement)) return;
+
+    const tagName = node.tagName.toLowerCase();
+    if (tagName === "br") {
+      serialized += "\n";
+      return;
+    }
+
+    const isBlock = tagName === "div" || tagName === "p" || tagName === "li";
+    if (isBlock && index > 0 && serialized.length > 0 && !serialized.endsWith("\n")) {
+      serialized += "\n";
+    }
+
+    const childSerialized = serializeEditableNodeList(node.childNodes);
+    const format = node.dataset.noteInlineFormat as NoteTextFormatCommand | undefined;
+    const markers = format ? NOTE_TEXT_FORMAT_MARKERS[format] : null;
+
+    serialized += markers ? `${markers[0]}${childSerialized}${markers[1]}` : childSerialized;
+
+    if (isBlock && index < nodes.length - 1 && !serialized.endsWith("\n")) {
+      serialized += "\n";
+    }
+  });
+
+  return serialized.replace(/\u00a0/g, " ");
+}
+
+function readSerializedEditableText(control: EditableTextControl) {
+  return serializeEditableNodeList(control.childNodes);
+}
+
+function readPlainEditableNodeList(nodes: NodeListOf<ChildNode> | ChildNode[]) {
+  let plainText = "";
+
+  Array.from(nodes).forEach((node, index) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      plainText += node.textContent ?? "";
+      return;
+    }
+
+    if (!(node instanceof HTMLElement)) return;
+
+    const tagName = node.tagName.toLowerCase();
+    if (tagName === "br") {
+      plainText += "\n";
+      return;
+    }
+
+    const isBlock = tagName === "div" || tagName === "p" || tagName === "li";
+    if (isBlock && index > 0 && plainText.length > 0 && !plainText.endsWith("\n")) {
+      plainText += "\n";
+    }
+
+    plainText += readPlainEditableNodeList(node.childNodes);
+
+    if (isBlock && index < nodes.length - 1 && !plainText.endsWith("\n")) {
+      plainText += "\n";
+    }
+  });
+
+  return plainText.replace(/\u00a0/g, " ");
+}
+
+function serializedOffsetFromPlainOffset(serializedText: string, plainOffset: number) {
+  const clampedPlainOffset = Math.max(0, plainOffset);
+  const openFormats: NoteTextFormatCommand[] = [];
+  let currentPlainOffset = 0;
+  let index = 0;
+
+  while (index < serializedText.length) {
+    const format = getInlineFormatMarkerAt(serializedText, index);
+    const markerLength = getInlineFormatMarkerLength(serializedText, index);
+
+    if (format && markerLength > 0) {
+      const isClosing = openFormats[openFormats.length - 1] === format;
+
+      if (currentPlainOffset === clampedPlainOffset && isClosing) {
+        return index;
+      }
+
+      if (isClosing) {
+        openFormats.pop();
+      } else {
+        openFormats.push(format);
+      }
+
+      index += markerLength;
+      continue;
+    }
+
+    if (currentPlainOffset === clampedPlainOffset) {
+      return index;
+    }
+
+    currentPlainOffset += 1;
+    index += 1;
+  }
+
+  return serializedText.length;
+}
+
+function getPlainTextOffsetInEditable(control: EditableTextControl, node: Node, offset: number) {
+  const range = document.createRange();
+  range.selectNodeContents(control);
+  range.setEnd(node, offset);
+  const fragment = range.cloneContents();
+  return readPlainEditableNodeList(Array.from(fragment.childNodes)).length;
+}
+
+function getSerializedSelectionFromEditable(
+  control: EditableTextControl,
+  serializedText: string,
+) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return {
+      selectionStart: serializedText.length,
+      selectionEnd: serializedText.length,
+    };
+  }
+
+  const range = selection.getRangeAt(0);
+  if (
+    !control.contains(range.startContainer) ||
+    !control.contains(range.endContainer)
+  ) {
+    return {
+      selectionStart: serializedText.length,
+      selectionEnd: serializedText.length,
+    };
+  }
+
+  const plainStart = getPlainTextOffsetInEditable(
+    control,
+    range.startContainer,
+    range.startOffset,
+  );
+  const plainEnd = getPlainTextOffsetInEditable(control, range.endContainer, range.endOffset);
+  const selectionStart = serializedOffsetFromPlainOffset(serializedText, Math.min(plainStart, plainEnd));
+  const selectionEnd = serializedOffsetFromPlainOffset(serializedText, Math.max(plainStart, plainEnd));
+
+  return { selectionStart, selectionEnd };
+}
+
+function getEditableTextBoundary(control: HTMLElement, plainOffset: number) {
+  const clampedPlainOffset = Math.max(0, plainOffset);
+  const walker = document.createTreeWalker(control, NodeFilter.SHOW_TEXT);
+  let currentOffset = 0;
+  let currentNode = walker.nextNode();
+
+  while (currentNode) {
+    const textLength = currentNode.textContent?.length ?? 0;
+    const nextOffset = currentOffset + textLength;
+
+    if (clampedPlainOffset <= nextOffset) {
+      return {
+        node: currentNode,
+        offset: Math.max(0, Math.min(clampedPlainOffset - currentOffset, textLength)),
+      };
+    }
+
+    currentOffset = nextOffset;
+    currentNode = walker.nextNode();
+  }
+
+  return { node: control, offset: control.childNodes.length };
+}
+
+function getSerializedEditableNodeLength(node: ChildNode): number {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent?.length ?? 0;
+  if (!(node instanceof HTMLElement)) return 0;
+  if (node.tagName.toLowerCase() === "br") return 1;
+
+  const childrenLength = Array.from(node.childNodes).reduce<number>(
+    (total, childNode) => total + getSerializedEditableNodeLength(childNode),
+    0,
+  );
+  const format = node.dataset.noteInlineFormat as NoteTextFormatCommand | undefined;
+  const markers = format ? NOTE_TEXT_FORMAT_MARKERS[format] : null;
+
+  return childrenLength + (markers ? markers[0].length + markers[1].length : 0);
+}
+
+function getSerializedEditableBoundary(
+  parent: Node,
+  nodes: NodeListOf<ChildNode>,
+  serializedOffset: number,
+): { node: Node; offset: number } {
+  const clampedOffset = Math.max(0, serializedOffset);
+  let currentOffset = 0;
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    if (!node) continue;
+
+    const nodeLength = getSerializedEditableNodeLength(node);
+    if (clampedOffset > currentOffset + nodeLength) {
+      currentOffset += nodeLength;
+      continue;
+    }
+
+    if (node.nodeType === Node.TEXT_NODE) {
+      return {
+        node,
+        offset: Math.max(0, Math.min(clampedOffset - currentOffset, node.textContent?.length ?? 0)),
+      };
+    }
+
+    if (!(node instanceof HTMLElement)) {
+      return { node: parent, offset: index };
+    }
+
+    const format = node.dataset.noteInlineFormat as NoteTextFormatCommand | undefined;
+    const markers = format ? NOTE_TEXT_FORMAT_MARKERS[format] : null;
+    if (!markers) {
+      return getSerializedEditableBoundary(
+        node,
+        node.childNodes,
+        clampedOffset - currentOffset,
+      );
+    }
+
+    const contentStart = currentOffset + markers[0].length;
+    const contentEnd =
+      contentStart +
+      Array.from(node.childNodes).reduce<number>(
+        (total, childNode) => total + getSerializedEditableNodeLength(childNode),
+        0,
+      );
+
+    if (clampedOffset <= contentStart) {
+      return getEditableTextBoundary(node, 0);
+    }
+
+    if (clampedOffset <= contentEnd) {
+      return getSerializedEditableBoundary(node, node.childNodes, clampedOffset - contentStart);
+    }
+
+    return { node: parent, offset: index + 1 };
+  }
+
+  return { node: parent, offset: nodes.length };
+}
+
+function setSerializedSelectionInEditable(
+  control: EditableTextControl,
+  selectionStart: number,
+  selectionEnd: number,
+) {
+  const startBoundary = getSerializedEditableBoundary(control, control.childNodes, selectionStart);
+  const endBoundary = getSerializedEditableBoundary(control, control.childNodes, selectionEnd);
+  const range = document.createRange();
+
+  range.setStart(startBoundary.node, startBoundary.offset);
+  range.setEnd(endBoundary.node, endBoundary.offset);
+
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function buildNoteSegmentDragId(segmentIndex: number) {
+  return `${NOTE_SEGMENT_DRAG_ID_PREFIX}${segmentIndex}`;
+}
+
+function parseNoteSegmentDragId(id: string | number) {
+  const idString = String(id);
+  if (!idString.startsWith(NOTE_SEGMENT_DRAG_ID_PREFIX)) return null;
+
+  const index = Number(idString.slice(NOTE_SEGMENT_DRAG_ID_PREFIX.length));
+  return Number.isInteger(index) && index >= 0 ? index : null;
+}
+
+function getNoteSegmentDragLabel(segment: NoteSegment) {
+  if (segment.type === "text") return segment.text.trim() ? "text" : "empty text";
+  if (segment.type === "divider") return "divider";
+  if (segment.type === "checklist") return "checklist";
+  if (segment.type === "list") return segment.kind === "bullet" ? "bullet list" : "dash list";
+  if (segment.type === "subpage") return "subpage";
+  return "database";
+}
+
+function preventTouchScrollWhileDragging(event: TouchEvent) {
+  event.preventDefault();
+}
+
+type SortableNoteSegmentProps = {
+  id: string;
+  label: string;
+  lockedDragSize: NoteSegmentDragSize | null;
+  children: ReactNode;
+};
+
+type NoteSegmentDragSize = {
+  id: string;
+  width: number;
+  height: number;
+};
+
+function SortableNoteSegment({ id, label, lockedDragSize, children }: SortableNoteSegmentProps) {
+  const nodeRef = useRef<HTMLDivElement | null>(null);
+  const [fallbackDragSize, setFallbackDragSize] = useState<NoteSegmentDragSize | null>(null);
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+  const setSortableNodeRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      nodeRef.current = node;
+      setNodeRef(node);
+    },
+    [setNodeRef],
+  );
+  const transformStyle = transform ? CSS.Translate.toString(transform) : undefined;
+  const activeDragSize =
+    isDragging && lockedDragSize?.id === id ? lockedDragSize : fallbackDragSize;
+  const style: CSSProperties = {
+    ...(transformStyle ? { transform: transformStyle } : undefined),
+    transition,
+    ...(isDragging && activeDragSize
+      ? {
+          boxSizing: "border-box",
+          height: activeDragSize.height,
+          minHeight: activeDragSize.height,
+          width: activeDragSize.width,
+          willChange: "transform",
+        }
+      : undefined),
+  };
+
+  useLayoutEffect(() => {
+    if (!isDragging) {
+      setFallbackDragSize(null);
+      return;
+    }
+
+    if (lockedDragSize?.id === id) {
+      setFallbackDragSize(null);
+      return;
+    }
+
+    const rect = nodeRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    setFallbackDragSize({
+      id,
+      width: rect.width,
+      height: rect.height,
+    });
+  }, [id, isDragging, lockedDragSize]);
+
+  return (
+    <div
+      ref={setSortableNodeRef}
+      style={style}
+      className={`group/note-sortable relative grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-0 rounded-lg transition-[background-color,box-shadow,opacity] duration-150 sm:grid-cols-[0.875rem_minmax(0,1fr)] ${
+        isDragging
+          ? "z-30 bg-white/[0.045] shadow-[0_18px_45px_-28px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/[0.08]"
+          : "hover:bg-white/[0.012]"
+      }`}
+    >
+      <button
+        type="button"
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        aria-label={`Reorder ${label} block`}
+        className="-ml-2 mt-0.5 flex h-8 w-6 cursor-grab touch-none select-none items-center justify-center rounded-md text-white/18 opacity-60 outline-none transition hover:bg-white/[0.055] hover:text-white/62 hover:opacity-100 active:cursor-grabbing active:bg-white/[0.07] active:text-white/72 active:opacity-100 focus-visible:bg-white/[0.075] focus-visible:text-white/72 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-white/18 sm:-ml-1 sm:h-6 sm:w-4 sm:opacity-0 sm:group-hover/note-sortable:opacity-100 sm:group-focus-within/note-sortable:opacity-100 [-webkit-touch-callout:none]"
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
 
 function buildStandaloneLineInsertion(marker: string, beforeSlash: string, afterCommand: string) {
   const currentLineStart = beforeSlash.lastIndexOf("\n") + 1;
@@ -868,13 +1471,8 @@ function findListSelectionForCaret(nextSegments: NoteSegment[], caretOffset: num
   return null;
 }
 
-function resizeTextarea(textarea: HTMLTextAreaElement | null) {
-  if (!textarea) return;
-  textarea.style.height = "auto";
-  textarea.style.height = `${textarea.scrollHeight}px`;
-}
-
-export function NoteSlashTextarea({
+export const NoteSlashTextarea = forwardRef<NoteSlashTextareaHandle, NoteSlashTextareaProps>(
+function NoteSlashTextarea({
   value,
   onValueChange,
   databaseDefinitions,
@@ -887,18 +1485,37 @@ export function NoteSlashTextarea({
   placeholder,
   className,
   "aria-label": ariaLabel,
-}: NoteSlashTextareaProps) {
-  const textareaRefs = useRef(new Map<number, HTMLTextAreaElement>());
-  const lineInputRefs = useRef(new Map<number, HTMLInputElement>());
+}: NoteSlashTextareaProps, ref) {
+  const textareaRefs = useRef(new Map<number, EditableTextControl>());
+  const lineInputRefs = useRef(new Map<number, EditableTextControl>());
+  const blockButtonRefs = useRef(new Map<number, HTMLButtonElement>());
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const activeTextSelectionRef = useRef<EditableTextSelection | null>(null);
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger>(null);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
   const [activeDatabaseId, setActiveDatabaseId] = useState<string | null>(null);
   const [activeEntryDatabaseId, setActiveEntryDatabaseId] = useState<string | null>(null);
   const [entryFormValues, setEntryFormValues] = useState<Record<string, string>>({});
+  const [activeSegmentDragId, setActiveSegmentDragId] = useState<string | null>(null);
+  const [activeSegmentDragSize, setActiveSegmentDragSize] = useState<NoteSegmentDragSize | null>(
+    null,
+  );
   const isMenuOpen = slashTrigger !== null;
+  const dragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        delay: 220,
+        tolerance: 8,
+      },
+    }),
+  );
 
   const segments = useMemo(() => parseNoteSegments(value), [value]);
+  const segmentDragIds = useMemo(
+    () => segments.map((_, index) => buildNoteSegmentDragId(index)),
+    [segments],
+  );
   const normalizedDatabaseDefinitions = useMemo(
     () => normalizeDatabaseDefinitionsForSegments(segments, databaseDefinitions).definitions,
     [databaseDefinitions, segments],
@@ -943,6 +1560,212 @@ export function NoteSlashTextarea({
     ? getActiveDatabaseView(activeDatabaseDefinition)
     : null;
 
+  const rememberEditableSelection = useCallback(
+    (
+      type: EditableTextSelection["type"],
+      segmentIndex: number,
+      control: EditableTextControl,
+    ) => {
+      const segment = segments[segmentIndex];
+      const serializedText =
+        segment?.type === type && "text" in segment ? segment.text : readSerializedEditableText(control);
+      const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(
+        control,
+        serializedText,
+      );
+
+      const nextSelection = {
+        type,
+        segmentId: buildEditableSegmentId(type, segmentIndex),
+        segmentIndex,
+        selectionStart: Math.min(selectionStart, selectionEnd),
+        selectionEnd: Math.max(selectionStart, selectionEnd),
+        control,
+      };
+
+      activeTextSelectionRef.current = nextSelection;
+      return nextSelection;
+    },
+    [segments],
+  );
+
+  const getEditableSelectionFromControl = useCallback(
+    (control: EditableTextControl): EditableTextSelection | null => {
+      for (const [segmentIndex, textarea] of textareaRefs.current.entries()) {
+        if (textarea !== control) continue;
+        const segment = segments[segmentIndex];
+        if (segment?.type !== "text") return null;
+        const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(
+          textarea,
+          segment.text,
+        );
+
+        return {
+          type: "text",
+          segmentId: buildEditableSegmentId("text", segmentIndex),
+          segmentIndex,
+          selectionStart,
+          selectionEnd,
+          control: textarea,
+        };
+      }
+
+      for (const [segmentIndex, input] of lineInputRefs.current.entries()) {
+        if (input !== control) continue;
+
+        const segment = segments[segmentIndex];
+        if (segment?.type !== "checklist" && segment?.type !== "list") {
+          return null;
+        }
+        const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(
+          input,
+          segment.text,
+        );
+
+        return {
+          type: segment.type,
+          segmentId: buildEditableSegmentId(segment.type, segmentIndex),
+          segmentIndex,
+          selectionStart,
+          selectionEnd,
+          control: input,
+        };
+      }
+
+      return null;
+    },
+    [segments],
+  );
+
+  const getLiveEditableSelection = useCallback(() => {
+    const activeElement = document.activeElement;
+
+    if (activeElement instanceof HTMLDivElement) {
+      const activeControlSelection = getEditableSelectionFromControl(activeElement);
+      if (activeControlSelection) return activeControlSelection;
+    }
+
+    if (activeElement && rootRef.current?.contains(activeElement)) {
+      return null;
+    }
+
+    const cachedSelection = activeTextSelectionRef.current;
+    if (!cachedSelection?.control?.isConnected) return null;
+
+    const currentControlSelection = getEditableSelectionFromControl(cachedSelection.control);
+    if (!currentControlSelection) return null;
+
+    return {
+      ...currentControlSelection,
+      selectionStart: cachedSelection.selectionStart,
+      selectionEnd: cachedSelection.selectionEnd,
+    };
+  }, [getEditableSelectionFromControl]);
+
+  const applyTextFormat = useCallback(
+    (command: NoteTextFormatCommand) => {
+      const liveSelection = getLiveEditableSelection();
+      if (!liveSelection) return;
+
+      const segment = segments[liveSelection.segmentIndex];
+      if (segment?.type !== liveSelection.type) return;
+
+      liveSelection.control?.focus({ preventScroll: true });
+
+      const [prefix, suffix] = NOTE_TEXT_FORMAT_MARKERS[command];
+      const selectionStart = Math.max(
+        0,
+        Math.min(liveSelection.selectionStart, segment.text.length),
+      );
+      const selectionEnd = Math.max(
+        selectionStart,
+        Math.min(liveSelection.selectionEnd, segment.text.length),
+      );
+      if (selectionStart === selectionEnd) {
+        if (liveSelection.control) {
+          setSerializedSelectionInEditable(
+            liveSelection.control,
+            selectionStart,
+            selectionEnd,
+          );
+        }
+        return;
+      }
+
+      const selectedText = segment.text.slice(selectionStart, selectionEnd);
+      const nextText =
+        segment.text.slice(0, selectionStart) +
+        prefix +
+        selectedText +
+        suffix +
+        segment.text.slice(selectionEnd);
+      const nextSegments = segments.map((currentSegment, index) =>
+        index === liveSelection.segmentIndex && currentSegment.type === liveSelection.type
+          ? { ...currentSegment, text: nextText }
+          : currentSegment,
+      );
+      const nextCaretPosition = selectionStart + prefix.length + selectedText.length + suffix.length;
+      const nextSelection: PendingSelection = {
+        type: liveSelection.type,
+        segmentIndex: liveSelection.segmentIndex,
+        caretPosition: nextCaretPosition,
+      };
+
+      if (liveSelection.control) {
+        setSerializedSelectionInEditable(
+          liveSelection.control,
+          selectionStart,
+          selectionEnd,
+        );
+      }
+      activeTextSelectionRef.current = {
+        type: liveSelection.type,
+        segmentId: liveSelection.segmentId,
+        segmentIndex: liveSelection.segmentIndex,
+        selectionStart: nextCaretPosition,
+        selectionEnd: nextCaretPosition,
+        control: liveSelection.control,
+      };
+      onValueChange(serializeNoteSegments(nextSegments));
+      setPendingSelection(nextSelection);
+      setSlashTrigger(null);
+      setSelectedCommandIndex(0);
+    },
+    [getLiveEditableSelection, onValueChange, segments],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      applyTextFormat,
+    }),
+    [applyTextFormat],
+  );
+
+  useEffect(() => {
+    function keepOrClearEditableSelection(event: PointerEvent | FocusEvent) {
+      if (isNoteTextActionBarTarget(event.target)) return;
+
+      const target = event.target;
+      if (target instanceof Element) {
+        const editableTarget = target.closest("[data-note-editable-segment-id]");
+        if (editableTarget instanceof HTMLDivElement && getEditableSelectionFromControl(editableTarget)) {
+          return;
+        }
+      }
+
+      activeTextSelectionRef.current = null;
+    }
+
+    document.addEventListener("pointerdown", keepOrClearEditableSelection, true);
+    document.addEventListener("focusin", keepOrClearEditableSelection, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", keepOrClearEditableSelection, true);
+      document.removeEventListener("focusin", keepOrClearEditableSelection, true);
+    };
+  }, [getEditableSelectionFromControl]);
+
   useEffect(() => {
     if (!isMenuOpen) return;
 
@@ -959,27 +1782,77 @@ export function NoteSlashTextarea({
     };
   }, [isMenuOpen]);
 
+  useEffect(() => {
+    if (!activeSegmentDragId) return;
+
+    const { body, documentElement } = document;
+    const bodyStyle = body.style as CSSStyleDeclaration & {
+      webkitTouchCallout: string;
+      webkitUserSelect: string;
+    };
+    const previousBodyUserSelect = bodyStyle.userSelect;
+    const previousBodyWebkitUserSelect = bodyStyle.webkitUserSelect;
+    const previousBodyWebkitTouchCallout = bodyStyle.webkitTouchCallout;
+    const previousDocumentOverscrollBehavior = documentElement.style.overscrollBehavior;
+
+    bodyStyle.userSelect = "none";
+    bodyStyle.webkitUserSelect = "none";
+    bodyStyle.webkitTouchCallout = "none";
+    documentElement.style.overscrollBehavior = "none";
+    window.addEventListener("touchmove", preventTouchScrollWhileDragging, {
+      passive: false,
+    });
+
+    return () => {
+      bodyStyle.userSelect = previousBodyUserSelect;
+      bodyStyle.webkitUserSelect = previousBodyWebkitUserSelect;
+      bodyStyle.webkitTouchCallout = previousBodyWebkitTouchCallout;
+      documentElement.style.overscrollBehavior = previousDocumentOverscrollBehavior;
+      window.removeEventListener("touchmove", preventTouchScrollWhileDragging);
+    };
+  }, [activeSegmentDragId]);
+
   useLayoutEffect(() => {
     if (pendingSelection === null) return;
 
+    if (pendingSelection.type === "block") {
+      const button = blockButtonRefs.current.get(pendingSelection.segmentIndex);
+      if (!button) return;
+
+      button.focus();
+      setPendingSelection(null);
+      return;
+    }
+
     if (pendingSelection.type === "checklist" || pendingSelection.type === "list") {
       const input = lineInputRefs.current.get(pendingSelection.segmentIndex);
+      const segment = segments[pendingSelection.segmentIndex];
       if (!input) return;
+      if (segment?.type !== pendingSelection.type) return;
 
       input.focus();
-      input.setSelectionRange(pendingSelection.caretPosition, pendingSelection.caretPosition);
+      setSerializedSelectionInEditable(
+        input,
+        pendingSelection.caretPosition,
+        pendingSelection.selectionEnd ?? pendingSelection.caretPosition,
+      );
       setPendingSelection(null);
       return;
     }
 
     const textarea = textareaRefs.current.get(pendingSelection.segmentIndex);
+    const segment = segments[pendingSelection.segmentIndex];
     if (!textarea) return;
+    if (segment?.type !== "text") return;
 
-    resizeTextarea(textarea);
     textarea.focus();
-    textarea.setSelectionRange(pendingSelection.caretPosition, pendingSelection.caretPosition);
+    setSerializedSelectionInEditable(
+      textarea,
+      pendingSelection.caretPosition,
+      pendingSelection.selectionEnd ?? pendingSelection.caretPosition,
+    );
     setPendingSelection(null);
-  }, [pendingSelection, value]);
+  }, [pendingSelection, segments, value]);
 
   useEffect(() => {
     if (!slashTrigger) return;
@@ -1056,11 +1929,138 @@ export function NoteSlashTextarea({
     onValueChange(serializeNoteSegments(nextSegments));
   }
 
+  function getSelectionAtSegmentEnd(
+    nextSegments: NoteSegment[],
+    segmentIndex: number,
+  ): PendingSelection | null {
+    const segment = nextSegments[segmentIndex];
+    if (!segment) return null;
+
+    if (segment.type === "text") {
+      return {
+        type: "text",
+        segmentIndex,
+        caretPosition: segment.text.length,
+      };
+    }
+
+    if (segment.type === "checklist") {
+      return {
+        type: "checklist",
+        segmentIndex,
+        caretPosition: segment.text.length,
+      };
+    }
+
+    if (segment.type === "list") {
+      return {
+        type: "list",
+        segmentIndex,
+        caretPosition: segment.text.length,
+      };
+    }
+
+    return {
+      type: "block",
+      segmentIndex,
+    };
+  }
+
+  function getSelectionAtSegmentStart(
+    nextSegments: NoteSegment[],
+    segmentIndex: number,
+  ): PendingSelection | null {
+    const segment = nextSegments[segmentIndex];
+    if (!segment) return null;
+
+    if (segment.type === "text") {
+      return {
+        type: "text",
+        segmentIndex,
+        caretPosition: 0,
+      };
+    }
+
+    if (segment.type === "checklist") {
+      return {
+        type: "checklist",
+        segmentIndex,
+        caretPosition: 0,
+      };
+    }
+
+    if (segment.type === "list") {
+      return {
+        type: "list",
+        segmentIndex,
+        caretPosition: 0,
+      };
+    }
+
+    return {
+      type: "block",
+      segmentIndex,
+    };
+  }
+
+  function findNearestEditableSelection(nextSegments: NoteSegment[], targetIndex: number) {
+    for (let index = Math.min(targetIndex, nextSegments.length - 1); index >= 0; index -= 1) {
+      const selection = getSelectionAtSegmentEnd(nextSegments, index);
+      if (selection?.type !== "block") return selection;
+    }
+
+    for (let index = targetIndex; index < nextSegments.length; index += 1) {
+      const selection = getSelectionAtSegmentEnd(nextSegments, index);
+      if (selection?.type !== "block") return selection;
+    }
+
+    return null;
+  }
+
+  function removeTextLineFromSegment(
+    nextSegments: NoteSegment[],
+    segmentIndex: number,
+    lineStart: number,
+    lineEnd: number,
+  ) {
+    const segment = nextSegments[segmentIndex];
+    if (segment?.type !== "text") return nextSegments;
+
+    if (segment.text.length === 0) {
+      return nextSegments.length > 1
+        ? nextSegments.filter((_, index) => index !== segmentIndex)
+        : nextSegments;
+    }
+
+    const removeStart = lineStart;
+    const removeEnd = lineEnd < segment.text.length ? lineEnd + 1 : lineEnd;
+    const nextText = segment.text.slice(0, removeStart) + segment.text.slice(removeEnd);
+
+    return nextSegments.map((currentSegment, index) =>
+      index === segmentIndex && currentSegment.type === "text"
+        ? { type: "text" as const, text: nextText }
+        : currentSegment,
+    );
+  }
+
+  function commitSegments(
+    nextSegments: NoteSegment[],
+    nextSelection: PendingSelection | null,
+  ) {
+    const nextValue = serializeNoteSegments(nextSegments);
+    onValueChange(nextValue);
+
+    if (nextSelection) {
+      setPendingSelection(nextSelection);
+    }
+  }
+
   function removeSegment(segmentIndex: number) {
     const removedSegment = segments[segmentIndex];
     const nextSegments = segments.filter((_, index) => index !== segmentIndex);
-    const focusIndex = findNearestTextSegmentIndex(nextSegments, segmentIndex);
-    onValueChange(serializeNoteSegments(nextSegments));
+    const nextValue = serializeNoteSegments(nextSegments);
+    const parsedNextSegments = parseNoteSegments(nextValue);
+    onValueChange(nextValue);
 
     if (removedSegment?.type === "database" && databaseDefinitions?.[removedSegment.databaseId]) {
       const nextDefinitions = { ...databaseDefinitions };
@@ -1074,14 +2074,7 @@ export function NoteSlashTextarea({
       onDatabaseEntriesChange?.(nextEntries);
     }
 
-    if (focusIndex !== null) {
-      const focusSegment = nextSegments[focusIndex];
-      setPendingSelection({
-        type: "text",
-        segmentIndex: focusIndex,
-        caretPosition: focusSegment.type === "text" ? focusSegment.text.length : 0,
-      });
-    }
+    setPendingSelection(findNearestEditableSelection(parsedNextSegments, segmentIndex));
   }
 
   function updateChecklistSegment(
@@ -1160,16 +2153,92 @@ export function NoteSlashTextarea({
     });
   }
 
-  function findNearestTextSegmentIndex(nextSegments: NoteSegment[], removedIndex: number) {
-    for (let index = Math.min(removedIndex, nextSegments.length - 1); index >= 0; index -= 1) {
-      if (nextSegments[index]?.type === "text") return index;
+  function getTextLineBounds(text: string, caretPosition: number) {
+    const lineStart = text.lastIndexOf("\n", Math.max(0, caretPosition - 1)) + 1;
+    const nextLineBreak = text.indexOf("\n", caretPosition);
+    const lineEnd = nextLineBreak === -1 ? text.length : nextLineBreak;
+
+    return {
+      lineStart,
+      lineEnd,
+      lineText: text.slice(lineStart, lineEnd),
+    };
+  }
+
+  function handleEmptyTextLineBackspace(
+    event: KeyboardEvent<EditableTextControl>,
+    segmentIndex: number,
+  ) {
+    if (event.key !== "Backspace" || event.nativeEvent.isComposing) return false;
+
+    const segment = segments[segmentIndex];
+    if (segment?.type !== "text") return false;
+
+    const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(
+      event.currentTarget,
+      segment.text,
+    );
+    if (selectionStart !== selectionEnd) return false;
+
+    const { lineStart, lineEnd, lineText } = getTextLineBounds(segment.text, selectionStart);
+    const previousSegmentIndex = segmentIndex - 1;
+    if (lineText.length > 0 || lineStart > 0) return false;
+
+    event.preventDefault();
+    closeMenu();
+
+    if (previousSegmentIndex < 0) {
+      const hasLaterBodyContent = segment.text.length > 0 || segments.length > 1;
+
+      if (!hasLaterBodyContent) {
+        setPendingSelection({
+          type: "text",
+          segmentIndex,
+          caretPosition: 0,
+        });
+        return true;
+      }
+
+      const nextSegments = removeTextLineFromSegment(
+        [...segments],
+        segmentIndex,
+        lineStart,
+        lineEnd,
+      );
+      const parsedNextSegments = parseNoteSegments(serializeNoteSegments(nextSegments));
+      commitSegments(
+        nextSegments,
+        getSelectionAtSegmentStart(parsedNextSegments, 0) ??
+          findNearestEditableSelection(parsedNextSegments, 0),
+      );
+      return true;
     }
 
-    for (let index = removedIndex; index < nextSegments.length; index += 1) {
-      if (nextSegments[index]?.type === "text") return index;
+    const previousSegment = segments[previousSegmentIndex];
+    let nextSegments = removeTextLineFromSegment([...segments], segmentIndex, lineStart, lineEnd);
+
+    if (
+      (previousSegment?.type === "checklist" || previousSegment?.type === "list") &&
+      previousSegment.text.trim().length === 0
+    ) {
+      nextSegments = nextSegments.filter((_, index) => index !== previousSegmentIndex);
+      const parsedNextSegments = parseNoteSegments(serializeNoteSegments(nextSegments));
+      const previousRowIndex = Math.max(0, previousSegmentIndex - 1);
+      commitSegments(
+        nextSegments,
+        getSelectionAtSegmentEnd(parsedNextSegments, previousRowIndex) ??
+          findNearestEditableSelection(parsedNextSegments, previousRowIndex),
+      );
+      return true;
     }
 
-    return null;
+    const parsedNextSegments = parseNoteSegments(serializeNoteSegments(nextSegments));
+    const nextSelection =
+      getSelectionAtSegmentEnd(parsedNextSegments, previousSegmentIndex) ??
+      findNearestEditableSelection(parsedNextSegments, previousSegmentIndex);
+
+    commitSegments(nextSegments, nextSelection);
+    return true;
   }
 
   function openSubpage(subpageId: string | null) {
@@ -1365,11 +2434,6 @@ export function NoteSlashTextarea({
     const activeSegment = segments[slashTrigger.segmentIndex];
     if (activeSegment?.type !== "text") return;
 
-    const textarea = textareaRefs.current.get(slashTrigger.segmentIndex);
-    const selectionEnd = textarea?.selectionEnd ?? slashTrigger.triggerIndex + 1;
-    const replacementEnd = Math.max(selectionEnd, slashTrigger.triggerIndex + 1);
-    const before = activeSegment.text.slice(0, slashTrigger.triggerIndex);
-    const after = activeSegment.text.slice(replacementEnd);
     let replacement = command.replacement;
     let createdSubpage: { id: string; title: string; href?: string } | null = null;
     let createdDatabaseDefinition: NoteDatabaseDefinition | null = null;
@@ -1405,6 +2469,14 @@ export function NoteSlashTextarea({
       "subpage",
       "database",
     ].includes(command.id);
+    const editableControl = textareaRefs.current.get(slashTrigger.segmentIndex);
+    const liveSelection = editableControl
+      ? getSerializedSelectionFromEditable(editableControl, activeSegment.text)
+      : null;
+    const selectionEnd = liveSelection?.selectionEnd ?? slashTrigger.triggerIndex + 1;
+    const replacementEnd = Math.max(selectionEnd, slashTrigger.triggerIndex + 1);
+    const before = activeSegment.text.slice(0, slashTrigger.triggerIndex);
+    const after = activeSegment.text.slice(replacementEnd);
     const {
       caretPosition,
       markerStart,
@@ -1453,10 +2525,12 @@ export function NoteSlashTextarea({
     }
   }
 
-  function handleTextKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (!isMenuOpen) {
+  function handleTextKeyDown(event: KeyboardEvent<EditableTextControl>, segmentIndex: number) {
+    if (handleEmptyTextLineBackspace(event, segmentIndex)) {
       return;
     }
+
+    if (!isMenuOpen) return;
 
     if (event.key === "Escape") {
       event.preventDefault();
@@ -1487,17 +2561,23 @@ export function NoteSlashTextarea({
   function handleBlockKeyDown(event: KeyboardEvent<HTMLButtonElement>, segmentIndex: number) {
     if (event.key !== "Backspace" && event.key !== "Delete") return;
     event.preventDefault();
+    if (segments[segmentIndex]?.type === "subpage") return;
     removeSegment(segmentIndex);
   }
 
   function handleInlineRowKeyDown(
-    event: KeyboardEvent<HTMLInputElement>,
+    event: KeyboardEvent<EditableTextControl>,
     segmentIndex: number,
   ) {
+    const segment = segments[segmentIndex];
+    if (segment?.type !== "checklist" && segment?.type !== "list") return;
+
     if (event.key === "Backspace" || event.key === "Delete") {
-      const selectionStart = event.currentTarget.selectionStart ?? 0;
-      const selectionEnd = event.currentTarget.selectionEnd ?? 0;
-      const isEmptyRow = event.currentTarget.value.length === 0;
+      const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(
+        event.currentTarget,
+        segment.text,
+      );
+      const isEmptyRow = segment.text.length === 0;
       const isCollapsedAtStart = selectionStart === 0 && selectionEnd === 0;
 
       if (isEmptyRow && isCollapsedAtStart) {
@@ -1511,36 +2591,208 @@ export function NoteSlashTextarea({
     if (event.key !== "Enter") return;
 
     event.preventDefault();
+    const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(
+      event.currentTarget,
+      segment.text,
+    );
     splitInlineRow(
       segmentIndex,
-      event.currentTarget.selectionStart ?? event.currentTarget.value.length,
-      event.currentTarget.selectionEnd ?? event.currentTarget.value.length,
+      selectionStart,
+      selectionEnd,
+    );
+  }
+
+  function handleEditableTextInput(
+    type: EditableTextSelection["type"],
+    segmentIndex: number,
+    control: EditableTextControl,
+  ) {
+    const nextText = readSerializedEditableText(control);
+    const { selectionStart, selectionEnd } = getSerializedSelectionFromEditable(control, nextText);
+
+    if (type === "text") {
+      updateTextSegment(segmentIndex, nextText);
+      syncSlashTrigger(segmentIndex, nextText, selectionStart);
+    } else if (type === "checklist") {
+      updateChecklistSegment(segmentIndex, { text: nextText });
+    } else {
+      updateListSegment(segmentIndex, { text: nextText });
+    }
+
+    activeTextSelectionRef.current = {
+      type,
+      segmentId: buildEditableSegmentId(type, segmentIndex),
+      segmentIndex,
+      selectionStart,
+      selectionEnd,
+      control,
+    };
+    setPendingSelection({
+      type,
+      segmentIndex,
+      caretPosition: selectionStart,
+      selectionEnd,
+    });
+  }
+
+  function renderEditableTextControl(
+    type: EditableTextSelection["type"],
+    segmentIndex: number,
+    text: string,
+    options: {
+      placeholder?: string;
+      className: string;
+      ariaLabel?: string;
+      ariaControls?: string;
+      multiline?: boolean;
+    },
+  ) {
+    const editableId = buildEditableSegmentId(type, segmentIndex);
+
+    return (
+      <div
+        key={`${segmentIndex}-${type}`}
+        ref={(node) => {
+          const refs = type === "text" ? textareaRefs : lineInputRefs;
+          if (node) {
+            refs.current.set(segmentIndex, node);
+          } else {
+            refs.current.delete(segmentIndex);
+          }
+        }}
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        spellCheck
+        data-note-editable-segment-id={editableId}
+        data-placeholder={options.placeholder}
+        aria-label={options.ariaLabel}
+        aria-controls={options.ariaControls}
+        aria-multiline={options.multiline ?? false}
+        onInput={(event) => handleEditableTextInput(type, segmentIndex, event.currentTarget)}
+        onKeyDown={(event) =>
+          type === "text"
+            ? handleTextKeyDown(event, segmentIndex)
+            : handleInlineRowKeyDown(event, segmentIndex)
+        }
+        onKeyUp={(event) => rememberEditableSelection(type, segmentIndex, event.currentTarget)}
+        onFocus={(event) => rememberEditableSelection(type, segmentIndex, event.currentTarget)}
+        onClick={(event) => rememberEditableSelection(type, segmentIndex, event.currentTarget)}
+        onPointerUp={(event) => rememberEditableSelection(type, segmentIndex, event.currentTarget)}
+        onSelect={(event) => {
+          const nextSelection = rememberEditableSelection(type, segmentIndex, event.currentTarget);
+          if (type === "text" && nextSelection) {
+            syncSlashTrigger(segmentIndex, text, nextSelection.selectionStart);
+          }
+        }}
+        onBlur={type === "text" ? closeMenu : undefined}
+        className={`${options.className} whitespace-pre-wrap break-words empty:before:pointer-events-none empty:before:text-white/28 empty:before:content-[attr(data-placeholder)]`}
+      >
+        {renderInlineFormattingNodes(parseInlineFormatting(text), editableId)}
+      </div>
+    );
+  }
+
+  function handleSegmentDragStart(event: DragStartEvent) {
+    const activeId = String(event.active.id);
+    const activeRect = event.active.rect.current.initial;
+
+    closeMenu();
+    setActiveSegmentDragId(activeId);
+    setActiveSegmentDragSize(
+      activeRect
+        ? {
+            id: activeId,
+            width: activeRect.width,
+            height: activeRect.height,
+          }
+        : null,
+    );
+  }
+
+  function handleSegmentDragCancel() {
+    setActiveSegmentDragId(null);
+    setActiveSegmentDragSize(null);
+  }
+
+  function handleSegmentDragEnd(event: DragEndEvent) {
+    setActiveSegmentDragId(null);
+    setActiveSegmentDragSize(null);
+
+    const fromIndex = parseNoteSegmentDragId(event.active.id);
+    const toIndex = event.over ? parseNoteSegmentDragId(event.over.id) : null;
+    if (fromIndex === null || toIndex === null || fromIndex === toIndex) return;
+    if (!segments[fromIndex] || !segments[toIndex]) return;
+
+    const nextSegments = arrayMove(segments, fromIndex, toIndex);
+    const nextValue = serializeNoteSegments(nextSegments);
+    const parsedNextSegments = parseNoteSegments(nextValue);
+    const targetSelection = getSelectionAtSegmentStart(parsedNextSegments, toIndex);
+
+    onValueChange(nextValue);
+    setPendingSelection(
+      targetSelection?.type === "block"
+        ? findNearestEditableSelection(parsedNextSegments, toIndex) ?? targetSelection
+        : targetSelection ?? findNearestEditableSelection(parsedNextSegments, toIndex),
+    );
+  }
+
+  function renderSortableSegment(index: number, segment: NoteSegment, children: ReactNode) {
+    return (
+      <SortableNoteSegment
+        key={segmentDragIds[index]}
+        id={segmentDragIds[index] ?? buildNoteSegmentDragId(index)}
+        label={getNoteSegmentDragLabel(segment)}
+        lockedDragSize={activeSegmentDragSize}
+      >
+        {children}
+      </SortableNoteSegment>
     );
   }
 
   return (
     <div
+      ref={rootRef}
       className={`${className ?? ""} relative flex flex-col gap-1 overflow-visible`}
       aria-label={ariaLabel}
     >
-      {segments.map((segment, index) => {
-        if (segment.type === "divider") {
-          return (
+      <DndContext
+        sensors={dragSensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleSegmentDragStart}
+        onDragCancel={handleSegmentDragCancel}
+        onDragEnd={handleSegmentDragEnd}
+      >
+        <SortableContext items={segmentDragIds} strategy={verticalListSortingStrategy}>
+          {segments.map((segment, index) => {
+            if (segment.type === "divider") {
+              return renderSortableSegment(
+                index,
+                segment,
             <div key={`${index}-divider`} className="flex min-h-7 items-center py-1">
               <button
                 type="button"
+                ref={(node) => {
+                  if (node) {
+                    blockButtonRefs.current.set(index, node);
+                  } else {
+                    blockButtonRefs.current.delete(index);
+                  }
+                }}
                 aria-label="Divider block. Press Backspace or Delete to remove."
                 onKeyDown={(event) => handleBlockKeyDown(event, index)}
                 className="group flex h-5 w-full items-center rounded-md outline-none focus-visible:bg-white/[0.035]"
               >
                 <span className={NOTE_DIVIDER_LINE_CLASS} />
               </button>
-            </div>
-          );
-        }
+            </div>,
+              );
+            }
 
-        if (segment.type === "checklist") {
-          return (
+            if (segment.type === "checklist") {
+              return renderSortableSegment(
+                index,
+                segment,
             <div key={`${index}-checklist`} className="group flex min-h-7 items-center gap-2 py-0">
               <button
                 type="button"
@@ -1560,29 +2812,21 @@ export function NoteSlashTextarea({
               >
                 <X className="h-3 w-3 stroke-[2.4]" />
               </button>
-              <input
-                ref={(node) => {
-                  if (node) {
-                    lineInputRefs.current.set(index, node);
-                  } else {
-                    lineInputRefs.current.delete(index);
-                  }
-                }}
-                value={segment.text}
-                onChange={(event) => updateChecklistSegment(index, { text: event.target.value })}
-                onKeyDown={(event) => handleInlineRowKeyDown(event, index)}
-                placeholder="Item text"
-                className={`min-w-0 flex-1 border-0 bg-transparent p-0 text-base leading-7 outline-none placeholder:text-white/24 selection:bg-emerald-300/25 selection:text-white ${
+              {renderEditableTextControl("checklist", index, segment.text, {
+                placeholder: "Item text",
+                className: `min-h-7 min-w-0 flex-1 border-0 bg-transparent p-0 text-base leading-7 outline-none selection:bg-emerald-300/25 selection:text-white ${
                   segment.checked ? "text-white/58" : "text-white"
-                }`}
-                aria-label="Checklist item text"
-              />
-            </div>
-          );
-        }
+                }`,
+                ariaLabel: "Checklist item text",
+              })}
+            </div>,
+              );
+            }
 
-        if (segment.type === "list") {
-          return (
+            if (segment.type === "list") {
+              return renderSortableSegment(
+                index,
+                segment,
             <div key={`${index}-list`} className="group flex min-h-7 items-center gap-2 py-0">
               <span
                 className="flex h-7 w-[18px] shrink-0 items-center justify-center text-base font-semibold leading-7 text-white/72"
@@ -1590,34 +2834,35 @@ export function NoteSlashTextarea({
               >
                 {segment.kind === "bullet" ? "•" : "-"}
               </span>
-              <input
-                ref={(node) => {
-                  if (node) {
-                    lineInputRefs.current.set(index, node);
-                  } else {
-                    lineInputRefs.current.delete(index);
-                  }
-                }}
-                value={segment.text}
-                onChange={(event) => updateListSegment(index, { text: event.target.value })}
-                onKeyDown={(event) => handleInlineRowKeyDown(event, index)}
-                placeholder="List item"
-                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/24 selection:bg-emerald-300/25 selection:text-white"
-                aria-label={segment.kind === "bullet" ? "Bullet list item text" : "Dash list item text"}
-              />
-            </div>
-          );
-        }
+              {renderEditableTextControl("list", index, segment.text, {
+                placeholder: "List item",
+                className: "min-h-7 min-w-0 flex-1 border-0 bg-transparent p-0 text-base leading-7 text-white outline-none selection:bg-emerald-300/25 selection:text-white",
+                ariaLabel:
+                  segment.kind === "bullet" ? "Bullet list item text" : "Dash list item text",
+              })}
+            </div>,
+              );
+            }
 
-        if (segment.type === "subpage") {
-          const canOpenSubpage = Boolean(segment.subpageId && onOpenSubpage);
+            if (segment.type === "subpage") {
+              const canOpenSubpage = Boolean(segment.subpageId && onOpenSubpage);
 
-          return (
+              return renderSortableSegment(
+                index,
+                segment,
             <div key={`${index}-subpage`} className="flex min-h-9 items-center py-1">
               <div className="group flex w-full max-w-[28rem] items-center gap-1">
                 <button
                   type="button"
-                  disabled={!canOpenSubpage}
+                  ref={(node) => {
+                    if (node) {
+                      blockButtonRefs.current.set(index, node);
+                    } else {
+                      blockButtonRefs.current.delete(index);
+                    }
+                  }}
+                  aria-disabled={!canOpenSubpage}
+                  tabIndex={canOpenSubpage ? undefined : -1}
                   aria-label={
                     canOpenSubpage ? `Open subpage ${segment.title}` : `Subpage ${segment.title}`
                   }
@@ -1651,21 +2896,23 @@ export function NoteSlashTextarea({
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-            </div>
-          );
-        }
+            </div>,
+              );
+            }
 
-        if (segment.type === "database") {
-          const definition =
-            normalizedDatabaseDefinitions[segment.databaseId] ??
-            createDefaultDatabaseDefinition(segment);
-          const displayTitle = getDatabaseDisplayTitle(definition?.title ?? segment.title);
-          const entries = databaseEntries?.[segment.databaseId] ?? [];
-          const activeView = getActiveDatabaseView(definition);
-          const visibleFields = getVisibleDatabaseFields(definition);
-          const titleField = getDatabaseTitleField(definition);
+            if (segment.type === "database") {
+              const definition =
+                normalizedDatabaseDefinitions[segment.databaseId] ??
+                createDefaultDatabaseDefinition(segment);
+              const displayTitle = getDatabaseDisplayTitle(definition?.title ?? segment.title);
+              const entries = databaseEntries?.[segment.databaseId] ?? [];
+              const activeView = getActiveDatabaseView(definition);
+              const visibleFields = getVisibleDatabaseFields(definition);
+              const titleField = getDatabaseTitleField(definition);
 
-          return (
+              return renderSortableSegment(
+                index,
+                segment,
             <div key={`${index}-database`} className="flex min-h-[4.25rem] items-center py-1.5">
               <div className="group flex w-full max-w-[42rem] items-center gap-1">
                 <div className="min-w-0 flex-1 rounded-lg border border-white/[0.1] bg-[linear-gradient(180deg,rgba(255,255,255,0.065),rgba(255,255,255,0.035))] px-3 py-2.5 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_12px_34px_-28px_rgba(0,0,0,0.95)]">
@@ -1828,6 +3075,13 @@ export function NoteSlashTextarea({
                     <button
                       type="button"
                       aria-label={`Open database builder for ${displayTitle}. Press Backspace or Delete to remove.`}
+                      ref={(node) => {
+                        if (node) {
+                          blockButtonRefs.current.set(index, node);
+                        } else {
+                          blockButtonRefs.current.delete(index);
+                        }
+                      }}
                       onClick={() => openDatabaseBuilder(segment)}
                       onKeyDown={(event) => handleBlockKeyDown(event, index)}
                       className="flex h-8 items-center justify-center rounded-md border border-white/[0.08] bg-black/20 px-2.5 text-xs font-semibold text-white/60 outline-none transition hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-white/78 focus-visible:border-emerald-300/35 focus-visible:bg-white/[0.075]"
@@ -1845,45 +3099,25 @@ export function NoteSlashTextarea({
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-            </div>
-          );
-        }
-
-        return (
-          <textarea
-            key={`${index}-text`}
-            ref={(node) => {
-              if (node) {
-                textareaRefs.current.set(index, node);
-                resizeTextarea(node);
-              } else {
-                textareaRefs.current.delete(index);
-              }
-            }}
-            value={segment.text}
-            rows={Math.max(1, segment.text.split("\n").length)}
-            onChange={(event) => {
-              const nextText = event.target.value;
-              updateTextSegment(index, nextText);
-              resizeTextarea(event.currentTarget);
-              syncSlashTrigger(index, nextText, event.target.selectionStart ?? nextText.length);
-            }}
-            onKeyDown={handleTextKeyDown}
-            onSelect={(event) => {
-              syncSlashTrigger(
-                index,
-                segment.text,
-                event.currentTarget.selectionStart ?? segment.text.length,
+            </div>,
               );
-            }}
-            onBlur={closeMenu}
-            placeholder={segments.length === 1 ? placeholder : undefined}
-            className="w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-base leading-7 text-white outline-none placeholder:text-white/28 caret-white selection:bg-emerald-300/25 selection:text-white"
-            aria-label={ariaLabel}
-            aria-controls={isMenuOpen ? "note-slash-command-menu" : undefined}
-          />
-        );
-      })}
+            }
+
+            return renderSortableSegment(
+              index,
+              segment,
+              renderEditableTextControl("text", index, segment.text, {
+                placeholder: segments.length === 1 ? placeholder : undefined,
+                className:
+                  "min-h-7 w-full border-0 bg-transparent p-0 text-base leading-7 text-white outline-none caret-white selection:bg-emerald-300/25 selection:text-white",
+                ariaLabel,
+                ariaControls: isMenuOpen ? "note-slash-command-menu" : undefined,
+                multiline: true,
+              }),
+            );
+          })}
+        </SortableContext>
+      </DndContext>
 
       {isMenuOpen ? (
         <div
@@ -2248,4 +3482,6 @@ export function NoteSlashTextarea({
       ) : null}
     </div>
   );
-}
+});
+
+NoteSlashTextarea.displayName = "NoteSlashTextarea";

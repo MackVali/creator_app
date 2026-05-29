@@ -9,14 +9,20 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type MouseEvent,
-  type PointerEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { dayTypesTourSteps } from "@/lib/tours/dayTypesTour";
-import { useHasExistingTimeBlocks } from "@/lib/hooks/useHasExistingTimeBlocks";
+import {
+  DAY_TYPES_TOUR_COMPLETED_KEY,
+  DAY_TYPES_TOUR_PENDING_KEY,
+  clearCreatorTourPendingState,
+  completeCreatorTourState,
+  resolveCreatorTourIdFromFirstStep,
+} from "@/lib/tours/creatorTourState";
 
 export type TourStep = {
   id: string;
@@ -25,8 +31,12 @@ export type TourStep = {
   body: string;
   requiresClick?: boolean;
   allowNext?: boolean;
-  canSkip?: boolean;
+  canAdvance?: () => boolean;
+  disabledReason?: string | (() => string);
+  showSkip?: boolean;
   blockOutsideClicks?: boolean;
+  allowTargetInteraction?: boolean;
+  advanceOnAnyTap?: boolean;
   onBeforeNext?: () => Promise<void> | void;
   waitForSelector?: boolean;
   advanceOnEvent?: { type: "click" | "custom"; eventName?: string };
@@ -57,18 +67,48 @@ const TARGET_Z_INDEX = OVERLAY_Z_INDEX + 2;
 const TOOLTIP_Z_INDEX = OVERLAY_Z_INDEX + 3;
 const TOOLTIP_PADDING = 12;
 const TOOLTIP_WIDTH = 260;
+const TOUR_CONTROL_SELECTOR = '[data-tour-control="true"]';
+
+type CreatorTourWindow = Window & {
+  __CREATOR_FAB_IS_OPEN__?: boolean;
+  __CREATOR_FAB_AI_IS_OPEN__?: boolean;
+  __CREATOR_TOUR_ACTIVE__?: boolean;
+};
 
 const hasFabEventAlreadyFired = (eventName?: string) => {
   if (typeof window === "undefined" || !eventName) {
     return false;
   }
+  const creatorWindow = window as CreatorTourWindow;
   if (eventName === "tour:fab-opened") {
-    return Boolean((window as any).__CREATOR_FAB_IS_OPEN__);
+    return Boolean(creatorWindow.__CREATOR_FAB_IS_OPEN__);
   }
   if (eventName === "tour:fab-ai-opened") {
-    return Boolean((window as any).__CREATOR_FAB_AI_IS_OPEN__);
+    return Boolean(creatorWindow.__CREATOR_FAB_AI_IS_OPEN__);
   }
   return false;
+};
+
+const isTourControlEvent = (event: Event) => {
+  if (typeof Element === "undefined") {
+    return false;
+  }
+  const target = event.target;
+  const element =
+    target instanceof Element
+      ? target
+      : typeof Node !== "undefined" && target instanceof Node
+        ? target.parentElement
+        : null;
+  return Boolean(element?.closest(TOUR_CONTROL_SELECTOR));
+};
+
+const swallowTourAdvanceEvent = (event: Event) => {
+  if (event.cancelable) {
+    event.preventDefault();
+  }
+  event.stopPropagation();
+  event.stopImmediatePropagation();
 };
 
 export function TourProvider({ children }: { children: ReactNode }) {
@@ -84,19 +124,60 @@ export function TourProvider({ children }: { children: ReactNode }) {
   const [isAdvancing, setIsAdvancing] = useState(false);
   const [lookupKey, setLookupKey] = useState(0);
   const [missingTarget, setMissingTarget] = useState(false);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const router = useRouter();
   const pathname = usePathname();
-  const { hasExistingTimeBlocks, isLoading: isLoadingExistingTimeBlocks } =
-    useHasExistingTimeBlocks();
   const advancingRef = useRef(false);
   const clickedThisStepRef = useRef(false);
   const pendingFinishRef = useRef<(() => void) | null>(null);
+  const swallowClickUntilRef = useRef(0);
+  const previousPathnameRef = useRef(pathname);
+  const previousSessionRef = useRef<TourSession | null>(null);
   const setTourActive = useCallback((active: boolean) => {
     if (typeof window === "undefined") {
       return;
     }
-    (window as any).__CREATOR_TOUR_ACTIVE__ = active;
+    (window as CreatorTourWindow).__CREATOR_TOUR_ACTIVE__ = active;
   }, []);
+
+  const resetTourBlockingGlobals = useCallback(
+    (closeFab: boolean) => {
+      swallowClickUntilRef.current = 0;
+      advancingRef.current = false;
+      clickedThisStepRef.current = false;
+      setTourActive(false);
+
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      const creatorWindow = window as CreatorTourWindow & {
+        __CREATOR_FAB_KEYBOARD_ACTIVE_OWNERS__?: Set<string>;
+        __CREATOR_FAB_PANEL_ACTIVE_OWNERS__?: Set<string>;
+      };
+      creatorWindow.__CREATOR_TOUR_ACTIVE__ = false;
+
+      if (!closeFab) {
+        return;
+      }
+
+      window.dispatchEvent(new CustomEvent("tour:fab-request-close"));
+      creatorWindow.__CREATOR_FAB_IS_OPEN__ = false;
+      creatorWindow.__CREATOR_FAB_AI_IS_OPEN__ = false;
+      creatorWindow.__CREATOR_FAB_KEYBOARD_ACTIVE_OWNERS__?.clear();
+      creatorWindow.__CREATOR_FAB_PANEL_ACTIVE_OWNERS__?.clear();
+
+      if (typeof document !== "undefined") {
+        document.body.classList.remove(
+          "fab-keyboard-active",
+          "fab-panel-active",
+          "tour-active",
+          "tour-blocking",
+        );
+      }
+    },
+    [setTourActive],
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -104,18 +185,9 @@ export function TourProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return () => {
-      setTourActive(false);
+      resetTourBlockingGlobals(true);
     };
-  }, [setTourActive]);
-
-  const finishTour = useCallback(() => {
-    setSession((prev) => {
-      if (!prev) return null;
-      pendingFinishRef.current = prev.onFinish ?? null;
-      return null;
-    });
-    setTourActive(false);
-  }, [setTourActive]);
+  }, [resetTourBlockingGlobals]);
 
   const goToNextStep = useCallback(() => {
     setSession((prev) => {
@@ -148,29 +220,37 @@ export function TourProvider({ children }: { children: ReactNode }) {
     if (typeof window === "undefined") return;
     if (session) return;
     if (pathname !== "/schedule/day-types/new") return;
-    if (isLoadingExistingTimeBlocks) return;
 
-    if (hasExistingTimeBlocks) {
-      window.localStorage.removeItem("tour:day-types:pending");
+    const pending = window.localStorage.getItem(DAY_TYPES_TOUR_PENDING_KEY);
+    if (pending !== "1") return;
+    window.localStorage.removeItem(DAY_TYPES_TOUR_PENDING_KEY);
+    if (window.localStorage.getItem(DAY_TYPES_TOUR_COMPLETED_KEY) === "1") {
       return;
     }
-
-    const pending = window.localStorage.getItem("tour:day-types:pending");
-    if (pending !== "1") return;
-    window.localStorage.removeItem("tour:day-types:pending");
-    startTour(dayTypesTourSteps);
-  }, [
-    hasExistingTimeBlocks,
-    isLoadingExistingTimeBlocks,
-    pathname,
-    session,
-    startTour,
-  ]);
+    startTour(dayTypesTourSteps, () => completeCreatorTourState("day-types"));
+  }, [pathname, session, startTour]);
 
   const currentStep = session?.steps[session.currentIndex] ?? null;
-  const shouldBlockOutsideClicks = currentStep?.blockOutsideClicks ?? true;
+  const currentStepId = currentStep?.id ?? null;
+  const currentStepRequiresClick = currentStep?.requiresClick ?? false;
+  const currentStepSelector = currentStep?.selector ?? null;
+  const currentStepNavigateTo = currentStep?.navigateTo ?? null;
+  const currentStepAdvancesOnAnyTap = Boolean(
+    session && currentStep?.advanceOnAnyTap,
+  );
+  const shouldBlockOutsideClicks = Boolean(
+    session && currentStep && currentStep.blockOutsideClicks === true,
+  );
+  const shouldAllowTargetInteraction =
+    !session || !currentStep ? true : currentStep.allowTargetInteraction !== false;
+  const shouldInstallInteractionBlocker = Boolean(
+    session &&
+      currentStep &&
+      (shouldBlockOutsideClicks || !shouldAllowTargetInteraction),
+  );
+  const shouldShowSkipButton = currentStep?.showSkip ?? false;
   const shouldAdvanceAfterCustomEvent = Boolean(
-    currentStep?.requiresClick &&
+    currentStepRequiresClick &&
       currentStep?.allowNext === false &&
       currentStep?.advanceOnEvent?.type === "custom"
   );
@@ -196,6 +276,49 @@ export function TourProvider({ children }: { children: ReactNode }) {
   }, [advanceStep]);
 
   useEffect(() => {
+    if (!session || !currentStep) return;
+    if (!currentStepAdvancesOnAnyTap) return;
+    if (typeof document === "undefined") return;
+
+    const advanceFromEvent = (event: Event) => {
+      if (!session || !currentStep) {
+        return;
+      }
+      if (isTourControlEvent(event)) {
+        return;
+      }
+      if (
+        event.type === "click" &&
+        Date.now() <= swallowClickUntilRef.current
+      ) {
+        swallowTourAdvanceEvent(event);
+        swallowClickUntilRef.current = 0;
+        return;
+      }
+      swallowTourAdvanceEvent(event);
+      if (event.type === "pointerdown") {
+        swallowClickUntilRef.current = Date.now() + 750;
+      }
+      void advanceStep();
+    };
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      advanceFromEvent(event);
+    };
+
+    const handleClick = (event: globalThis.MouseEvent) => {
+      advanceFromEvent(event);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("click", handleClick, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("click", handleClick, true);
+    };
+  }, [advanceStep, currentStep, currentStepAdvancesOnAnyTap, session]);
+
+  useEffect(() => {
     if (!currentStep?.navigateTo) return;
     if (currentStep.navigateTo !== pathname) {
       router.push(currentStep.navigateTo);
@@ -203,21 +326,38 @@ export function TourProvider({ children }: { children: ReactNode }) {
   }, [currentStep, pathname, router]);
 
   useEffect(() => {
+    if (previousPathnameRef.current === pathname) {
+      return;
+    }
+    previousPathnameRef.current = pathname;
+    if (!session) {
+      return;
+    }
+    if (currentStepNavigateTo === pathname) {
+      return;
+    }
+    pendingFinishRef.current = null;
+    resetTourBlockingGlobals(true);
+    setSession(null);
+  }, [currentStepNavigateTo, pathname, resetTourBlockingGlobals, session]);
+
+  useEffect(() => {
     advancingRef.current = false;
     clickedThisStepRef.current = false;
-    setAwaitingClick(currentStep?.requiresClick ?? false);
+    setAwaitingClick(currentStepRequiresClick);
     setTargetElement(null);
     setHighlightRect(null);
     setTooltipPosition(null);
     setMissingTarget(false);
-    if (currentStep) {
+    setValidationMessage(null);
+    if (currentStepId) {
       setLookupKey((prev) => prev + 1);
     }
   }, [
-    currentStep?.id,
-    currentStep?.requiresClick,
-    currentStep?.selector,
-    currentStep?.navigateTo,
+    currentStepId,
+    currentStepRequiresClick,
+    currentStepSelector,
+    currentStepNavigateTo,
   ]);
 
   useEffect(() => {
@@ -472,7 +612,58 @@ export function TourProvider({ children }: { children: ReactNode }) {
   }, [targetElement]);
 
   useEffect(() => {
+    if (!session || !currentStep) return;
+    if (!shouldInstallInteractionBlocker) return;
+    if (typeof document === "undefined") return;
+
+    const blockUnsafeInteraction = (event: Event) => {
+      if (!session || !currentStep) {
+        return;
+      }
+      if (isTourControlEvent(event)) {
+        return;
+      }
+      const eventTarget = event.target;
+      const targetNode = eventTarget instanceof Node ? eventTarget : null;
+      const isTargetInteraction = Boolean(
+        targetElement && targetNode && targetElement.contains(targetNode),
+      );
+
+      if (isTargetInteraction && shouldAllowTargetInteraction) {
+        return;
+      }
+
+      if (!isTargetInteraction && !shouldBlockOutsideClicks) {
+        return;
+      }
+
+      swallowTourAdvanceEvent(event);
+    };
+
+    document.addEventListener("pointerdown", blockUnsafeInteraction, true);
+    document.addEventListener("mousedown", blockUnsafeInteraction, true);
+    document.addEventListener("touchstart", blockUnsafeInteraction, true);
+    document.addEventListener("click", blockUnsafeInteraction, true);
+    document.addEventListener("keydown", blockUnsafeInteraction, true);
+    return () => {
+      document.removeEventListener("pointerdown", blockUnsafeInteraction, true);
+      document.removeEventListener("mousedown", blockUnsafeInteraction, true);
+      document.removeEventListener("touchstart", blockUnsafeInteraction, true);
+      document.removeEventListener("click", blockUnsafeInteraction, true);
+      document.removeEventListener("keydown", blockUnsafeInteraction, true);
+    };
+  }, [
+    currentStep,
+    session,
+    shouldAllowTargetInteraction,
+    shouldBlockOutsideClicks,
+    shouldInstallInteractionBlocker,
+    targetElement,
+  ]);
+
+  useEffect(() => {
     if (!targetElement || !(targetElement instanceof HTMLElement)) return;
+    if (!shouldAllowTargetInteraction) return;
     const previousPointerEvents = targetElement.style.pointerEvents;
     const previousZIndex = targetElement.style.zIndex;
     targetElement.style.pointerEvents = "auto";
@@ -481,7 +672,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
       targetElement.style.pointerEvents = previousPointerEvents;
       targetElement.style.zIndex = previousZIndex;
     };
-  }, [targetElement]);
+  }, [shouldAllowTargetInteraction, targetElement]);
 
   useEffect(() => {
     if (!currentStep?.requiresClick || !targetElement) return;
@@ -560,19 +751,24 @@ export function TourProvider({ children }: { children: ReactNode }) {
   ]);
 
   useEffect(() => {
-    if (!session) {
-      setHighlightRect(null);
-      setTooltipPosition(null);
-      setTargetElement(null);
-      setAwaitingClick(false);
-      setIsAdvancing(false);
-      advancingRef.current = false;
-      clickedThisStepRef.current = false;
-      setMissingTarget(false);
-      setLookupKey(0);
-      setTourActive(false);
+    if (session) {
+      previousSessionRef.current = session;
+      setTourActive(true);
+      return;
     }
-  }, [session, setTourActive]);
+
+    const hadActiveSession = previousSessionRef.current !== null;
+    setHighlightRect(null);
+    setTooltipPosition(null);
+    setTargetElement(null);
+    setAwaitingClick(false);
+    setIsAdvancing(false);
+    setValidationMessage(null);
+    setMissingTarget(false);
+    setLookupKey(0);
+    resetTourBlockingGlobals(hadActiveSession);
+    previousSessionRef.current = null;
+  }, [resetTourBlockingGlobals, session, setTourActive]);
 
   const contextValue = useMemo(() => ({ startTour }), [startTour]);
 
@@ -599,10 +795,47 @@ export function TourProvider({ children }: { children: ReactNode }) {
   const waitingForGuidedAction =
     Boolean(currentStep?.requiresClick && awaitingClick);
   const nextDisabled = waitingForGuidedAction || isAdvancing;
+  const getDisabledReason = useCallback(() => {
+    const reason = currentStep?.disabledReason;
+    if (typeof reason === "function") {
+      return reason();
+    }
+    return reason ?? "Complete this step first.";
+  }, [currentStep]);
   const handleNextClick = () => {
     if (nextDisabled) return;
+    if (currentStep?.canAdvance && !currentStep.canAdvance()) {
+      setValidationMessage(getDisabledReason());
+      return;
+    }
+    setValidationMessage(null);
     void advanceStep();
   };
+  const handleSkipClick = useCallback(() => {
+    if (!session) return;
+    const tourId = resolveCreatorTourIdFromFirstStep(session.steps[0]?.id);
+
+    pendingFinishRef.current = null;
+    resetTourBlockingGlobals(true);
+
+    clearCreatorTourPendingState();
+    if (tourId) {
+      completeCreatorTourState(tourId);
+    }
+
+    setSession(null);
+  }, [resetTourBlockingGlobals, session]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleSkipTour = () => {
+      handleSkipClick();
+    };
+    window.addEventListener("tour:skip", handleSkipTour);
+    return () => {
+      window.removeEventListener("tour:skip", handleSkipTour);
+    };
+  }, [handleSkipClick]);
 
   const retryFindingTarget = () => {
     if (!currentStep) return;
@@ -620,7 +853,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
   };
 
   const stopOverlayInteraction = useCallback(
-    (event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>) => {
+    (event: ReactPointerEvent<HTMLDivElement> | ReactMouseEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.stopPropagation();
     },
@@ -628,14 +861,14 @@ export function TourProvider({ children }: { children: ReactNode }) {
   );
 
   const handleOverlayPointerDown = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
+    (event: ReactPointerEvent<HTMLDivElement>) => {
       stopOverlayInteraction(event);
     },
     [stopOverlayInteraction]
   );
 
   const handleOverlayMouseDown = useCallback(
-    (event: MouseEvent<HTMLDivElement>) => {
+    (event: ReactMouseEvent<HTMLDivElement>) => {
       stopOverlayInteraction(event);
     },
     [stopOverlayInteraction]
@@ -751,6 +984,20 @@ export function TourProvider({ children }: { children: ReactNode }) {
                           zIndex: OVERLAY_Z_INDEX,
                         }}
                       />
+                      {!shouldAllowTargetInteraction ? (
+                        <div
+                          className="pointer-events-auto absolute bg-transparent"
+                          onMouseDown={handleOverlayMouseDown}
+                          onPointerDown={handleOverlayPointerDown}
+                          style={{
+                            top: highlightRect.top,
+                            left: highlightRect.left,
+                            width: Math.max(0, highlightRect.width),
+                            height: Math.max(0, highlightRect.height),
+                            zIndex: TARGET_Z_INDEX,
+                          }}
+                        />
+                      ) : null}
                     </>
                   ) : null}
                   <div
@@ -775,7 +1022,18 @@ export function TourProvider({ children }: { children: ReactNode }) {
                       I can’t find the highlighted element. The UI may not be ready.
                     </p>
                     <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                      {shouldShowSkipButton ? (
+                        <button
+                          data-tour-control="true"
+                          type="button"
+                          onClick={handleSkipClick}
+                          className="rounded-full border border-white/30 bg-transparent px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70 transition hover:text-white"
+                        >
+                          Skip
+                        </button>
+                      ) : null}
                       <button
+                        data-tour-control="true"
                         type="button"
                         onClick={retryFindingTarget}
                         className="rounded-full border border-white/30 bg-transparent px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70 transition hover:text-white"
@@ -783,6 +1041,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
                         Retry
                       </button>
                       <button
+                        data-tour-control="true"
                         type="button"
                         onClick={handleContinueFromMissing}
                         disabled={isAdvancing}
@@ -809,10 +1068,26 @@ export function TourProvider({ children }: { children: ReactNode }) {
                       <p className="text-xs leading-relaxed text-white/80">
                         {currentStep.body}
                       </p>
+                      {validationMessage ? (
+                        <p className="rounded-lg border border-amber-300/20 bg-amber-300/10 px-2.5 py-2 text-[11px] leading-snug text-amber-100/90">
+                          {validationMessage}
+                        </p>
+                      ) : null}
                     </div>
-                    <div className="mt-4 flex items-center justify-end gap-2">
+                    <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                      {shouldShowSkipButton ? (
+                        <button
+                          data-tour-control="true"
+                          type="button"
+                          onClick={handleSkipClick}
+                          className="rounded-full border border-white/30 bg-transparent px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70 transition hover:text-white"
+                        >
+                          Skip
+                        </button>
+                      ) : null}
                       {showNextButton ? (
                         <button
+                          data-tour-control="true"
                           type="button"
                           onClick={handleNextClick}
                           disabled={nextDisabled}

@@ -10084,6 +10084,24 @@ export function Fab({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const handleTourFabRequestClose = () => {
+      setAiOpen(false);
+      setIsOpen(false);
+      const creatorWindow = window as Window & {
+        __CREATOR_FAB_IS_OPEN__?: boolean;
+        __CREATOR_FAB_AI_IS_OPEN__?: boolean;
+      };
+      creatorWindow.__CREATOR_FAB_IS_OPEN__ = false;
+      creatorWindow.__CREATOR_FAB_AI_IS_OPEN__ = false;
+    };
+    window.addEventListener("tour:fab-request-close", handleTourFabRequestClose);
+    return () => {
+      window.removeEventListener("tour:fab-request-close", handleTourFabRequestClose);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     (window as Window & { __CREATOR_FAB_AI_IS_OPEN__?: boolean }).__CREATOR_FAB_AI_IS_OPEN__ =
       aiOpen;
     if (!aiOpen) return;
@@ -13990,6 +14008,7 @@ export function Fab({
                 }
               >
                 <motion.div
+                  data-tour="fab-panel"
                   data-fab-overlay
                   ref={(node) => {
                     menuRef.current = node;

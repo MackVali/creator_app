@@ -239,7 +239,7 @@ export function DayType24hPreview({
                   isSelected
                     ? "border border-emerald-200/70 bg-emerald-300/20 text-emerald-50 ring-1 ring-emerald-200/30"
                     : segment.overlapped
-                      ? "border border-white/24 bg-white/10 text-white/75"
+                      ? "border border-red-300/70 bg-red-500/18 text-red-50 ring-1 ring-red-300/25"
                       : isConstrained
                         ? "border border-emerald-200/55 bg-emerald-400/16 text-emerald-50 ring-1 ring-white/10"
                         : isBreak
@@ -258,7 +258,7 @@ export function DayType24hPreview({
                     className={cn(
                       "font-semibold truncate",
                       segment.overlapped
-                        ? "text-white/75"
+                        ? "text-red-50"
                         : isConstrained
                           ? "text-emerald-50"
                           : isBreak
