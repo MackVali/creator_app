@@ -7,10 +7,10 @@ import { cn } from "@/lib/utils";
 import type { MonumentNote } from "@/lib/types/monument-note";
 
 export const monumentNoteTileOuterClass =
-  "group relative block h-full overflow-hidden rounded-[23px] border border-[#08090c] bg-gradient-to-b from-[#1a1b1f] via-[#111216] to-[#07080b] p-[3px] shadow-[0_20px_38px_-28px_rgba(0,0,0,0.95),0_7px_14px_rgba(0,0,0,0.52)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_26px_50px_-28px_rgba(0,0,0,0.98),0_10px_18px_rgba(0,0,0,0.55)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 after:pointer-events-none after:absolute after:inset-[1px] after:rounded-[20px] after:border after:border-white/5";
+  "group relative block h-full overflow-hidden rounded-[22px] border border-white/[0.07] bg-[#050608] p-[1px] shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),0_8px_18px_-16px_rgba(0,0,0,0.9)] transition-all duration-200 hover:-translate-y-px hover:border-white/[0.11] hover:shadow-[0_22px_42px_-32px_rgba(0,0,0,0.98),0_10px_20px_-18px_rgba(0,0,0,0.92)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60";
 
 export const monumentNoteTileInnerClass =
-  "relative flex h-full min-h-[4.75rem] overflow-hidden rounded-[20px] border border-white/12 bg-[linear-gradient(120deg,#5f636c_0%,#484d56_42%,#3c414a_76%,#343943_100%)] px-3 py-2.5 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-10px_18px_rgba(19,22,28,0.32)] transition-[border-color,transform] duration-200 before:pointer-events-none before:absolute before:inset-[1px] before:rounded-[17px] before:border before:border-white/10 before:opacity-80 before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:bg-[radial-gradient(circle_at_18%_18%,rgba(255,255,255,0.16),transparent_36%)] after:opacity-65 group-hover:border-white/20";
+  "relative flex h-full min-h-[4.75rem] overflow-hidden rounded-[21px] border border-white/[0.08] bg-[#0B0C0F] px-3 py-2.5 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-18px_28px_rgba(0,0,0,0.24)] transition-[border-color,background-color] duration-200 before:pointer-events-none before:absolute before:inset-[1px] before:rounded-[19px] before:border before:border-white/[0.035] before:content-[''] after:pointer-events-none after:absolute after:inset-x-4 after:top-0 after:h-px after:bg-white/[0.08] after:content-[''] group-hover:border-white/[0.12] group-hover:bg-[#101114]";
 
 interface MonumentNoteCardProps {
   note: MonumentNote;
@@ -36,19 +36,19 @@ export function MonumentNoteCard({ note, monumentId, onToggleBookmark }: Monumen
       className={monumentNoteTileOuterClass}
     >
       <div className={cn(monumentNoteTileInnerClass, "items-center gap-2.5 sm:gap-3")}>
-        <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(22,24,30,0.45))] text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_8px_14px_-10px_rgba(0,0,0,0.8)]">
+        <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.09] bg-[#07080A] text-sm text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_8px_16px_-14px_rgba(0,0,0,0.9)]">
           {icon.length <= 2 ? icon : <FileText className="h-4 w-4" />}
         </div>
         <div className="relative z-10 min-w-0 flex-1 pr-1">
-          <p className="truncate text-[15px] font-semibold leading-tight text-[#f2f4f8]">
+          <p className="truncate text-[15px] font-semibold leading-tight text-white/90">
             {titleLine}
           </p>
-          <p className="mt-0.5 line-clamp-1 text-xs leading-5 text-[#d5d9e1] sm:line-clamp-2">
+          <p className="mt-0.5 line-clamp-1 text-xs leading-5 text-white/55 sm:line-clamp-2">
             {preview}
           </p>
         </div>
         <div className="relative z-10 ml-auto flex shrink-0 items-center gap-1.5 pl-1">
-          <span className="hidden text-[10px] font-medium text-[#c4c9d3] sm:inline">
+          <span className="hidden text-[10px] font-medium text-white/40 sm:inline">
             {dateLabel}
           </span>
           <button
@@ -57,13 +57,13 @@ export function MonumentNoteCard({ note, monumentId, onToggleBookmark }: Monumen
               event.preventDefault();
               onToggleBookmark?.(note.id);
             }}
-            className="rounded-full p-1 hover:bg-white/12"
+            className="rounded-full p-1 text-white/45 transition hover:bg-white/[0.06] hover:text-white/70"
             aria-label={note.isBookmarked ? "Unbookmark note" : "Bookmark note"}
           >
             <Bookmark
               className={cn(
                 "h-3.5 w-3.5",
-                note.isBookmarked ? "fill-[#eef1f8] text-[#eef1f8]" : "text-[#c5cad4]"
+                note.isBookmarked ? "fill-white/75 text-white/75" : "text-current"
               )}
             />
           </button>

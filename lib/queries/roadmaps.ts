@@ -634,6 +634,46 @@ export async function createCampaign(
   };
 }
 
+export async function updateCampaignDetails(
+  userId: string,
+  campaignId: string,
+  input: { name: string; emoji?: string | null }
+): Promise<{ id: string; name: string; emoji: string | null }> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const name = input.name.trim();
+  if (!name) {
+    throw new Error("Campaign name is required.");
+  }
+
+  const emoji = input.emoji?.trim() || null;
+
+  const { data, error } = await supabase
+    .from("campaigns")
+    .update({
+      name,
+      emoji,
+    })
+    .eq("id", campaignId)
+    .eq("user_id", userId)
+    .select("id, name, emoji")
+    .single();
+
+  if (error) {
+    console.error("Error updating campaign details:", error);
+    throw error;
+  }
+
+  return {
+    id: data.id,
+    name: data.name,
+    emoji: data.emoji ?? null,
+  };
+}
+
 export async function addCampaignToRoadmap(
   userId: string,
   input: {

@@ -3051,8 +3051,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           ? over
             ? "relative flex min-w-0 items-center gap-2 border border-red-300/15 bg-red-500/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(239,68,68,0.025),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3"
             : "relative flex min-w-0 items-center gap-2 border border-emerald-300/15 bg-emerald-500/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(16,185,129,0.025),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3"
-          : "relative flex min-w-0 items-center gap-2 border border-white/10 bg-white/[0.03] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3"
-        : "flex min-w-0 items-center gap-2 border-t border-white/[0.10] px-3 py-2.5 opacity-70 sm:gap-3 sm:px-4 sm:py-3";
+          : "relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.03] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3"
+        : "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-70 sm:gap-3 sm:px-4 sm:py-3";
     const statusClassName = completed
       ? over
         ? "text-red-200/85"
@@ -3066,7 +3066,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
     return (
       <div key={session.id} className={rowClassName}>
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
           <span aria-hidden="true">
             {session.icon ?? initialsFallback(session.title, "•")}
           </span>
@@ -3095,13 +3095,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           </div>
 
           <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1 sm:mt-1 sm:gap-1.5">
-            <span className="inline-flex max-w-full items-center rounded-md border border-white/10 bg-black/30 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.1em] text-zinc-300/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:text-[9px] sm:tracking-[0.12em]">
+            <span className="inline-flex max-w-full items-center rounded-md border border-black/60 bg-black/30 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.1em] text-zinc-300/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:text-[9px] sm:tracking-[0.12em]">
               <span className="min-w-0 truncate">{session.workTypeLabel}</span>
             </span>
             {session.relationLabel ? (
-              <span className="inline-flex min-w-0 max-w-[9.5rem] items-center gap-1 rounded-md border border-white/10 bg-black/20 px-1.5 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] sm:max-w-[13rem] sm:gap-1.5">
+              <span className="inline-flex min-w-0 max-w-[9.5rem] items-center gap-1 rounded-md border border-black/60 bg-black/20 px-1.5 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] sm:max-w-[13rem] sm:gap-1.5">
                 {session.relationIcon ? (
-                  <span className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[7px] font-semibold text-zinc-200 sm:size-4 sm:text-[8px]">
+                  <span className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[7px] font-semibold text-zinc-200 sm:size-4 sm:text-[8px]">
                     {session.relationIcon}
                   </span>
                 ) : null}
@@ -3477,7 +3477,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(255,255,255,0.08),transparent_32%),linear-gradient(180deg,rgba(24,24,27,0.36),rgba(0,0,0,0.82)),repeating-linear-gradient(120deg,rgba(255,255,255,0.025)_0px,rgba(255,255,255,0.025)_1px,transparent_1px,transparent_9px)]" />
           <motion.div
-            className="relative flex min-h-dvh w-full flex-col overflow-visible bg-[#050707] px-3 py-3 shadow-[0_40px_110px_-70px_rgba(0,0,0,0.82)] sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-4xl sm:overflow-y-auto sm:rounded-[22px] sm:border sm:border-white/10 sm:px-7 sm:py-6"
+            className="relative flex min-h-dvh w-full flex-col overflow-visible bg-[#050707] px-3 py-3 shadow-[0_40px_110px_-70px_rgba(0,0,0,0.82)] sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-4xl sm:overflow-y-auto sm:rounded-[22px] sm:border sm:border-black/70 sm:px-7 sm:py-6"
             initial={
               prefersReducedMotion
                 ? { opacity: 0 }
@@ -3498,7 +3498,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
               ease: [0.22, 1, 0.36, 1],
             }}
           >
-            <div className="pointer-events-none absolute inset-0 rounded-[inherit] border border-white/[0.035] bg-[linear-gradient(145deg,rgba(255,255,255,0.07),transparent_24%,rgba(255,255,255,0.025)_72%,rgba(0,0,0,0.38)),radial-gradient(circle_at_25%_35%,rgba(255,255,255,0.04),transparent_28%)]" />
+            <div className="pointer-events-none absolute inset-0 rounded-[inherit] border border-black/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),transparent_24%,rgba(255,255,255,0.025)_72%,rgba(0,0,0,0.38)),radial-gradient(circle_at_25%_35%,rgba(255,255,255,0.04),transparent_28%)]" />
             <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
             <div className="relative z-10 flex flex-1 flex-col gap-3 sm:gap-6">
               <header className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-4">
@@ -3510,7 +3510,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 <div
                   role="group"
                   aria-label="Focus pomo mode"
-                  className="grid h-7 w-[7rem] shrink-0 grid-cols-2 overflow-hidden rounded-lg border border-white/10 bg-black/35 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] sm:h-8 sm:w-[8.75rem]"
+                  className="grid h-7 w-[7rem] shrink-0 grid-cols-2 overflow-hidden rounded-lg border border-black/60 bg-black/35 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] sm:h-8 sm:w-[8.75rem]"
                 >
                   {modeOptions.map((option) => {
                     const selected = mode === option.value;
@@ -3524,7 +3524,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                         className={
                           selected
                             ? "rounded-md border border-emerald-300/35 bg-emerald-500/14 px-1 text-[8px] font-semibold uppercase tracking-[0.1em] text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition disabled:cursor-not-allowed disabled:opacity-70 sm:text-[9px] sm:tracking-[0.14em]"
-                            : "rounded-md border border-transparent px-1 text-[8px] font-semibold uppercase tracking-[0.1em] text-zinc-500 transition hover:border-white/10 hover:bg-white/[0.04] hover:text-zinc-200 disabled:cursor-not-allowed disabled:hover:border-transparent disabled:hover:bg-transparent disabled:hover:text-zinc-500 sm:text-[9px] sm:tracking-[0.14em]"
+                            : "rounded-md border border-transparent px-1 text-[8px] font-semibold uppercase tracking-[0.1em] text-zinc-500 transition hover:border-black/50 hover:bg-white/[0.04] hover:text-zinc-200 disabled:cursor-not-allowed disabled:hover:border-transparent disabled:hover:bg-transparent disabled:hover:text-zinc-500 sm:text-[9px] sm:tracking-[0.14em]"
                         }
                         aria-pressed={selected}
                       >
@@ -3547,13 +3547,13 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
               <main className="flex flex-1 flex-col gap-3 sm:gap-5">
                 {!hasRunStarted ? (
-                  <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-zinc-700/50 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
-                    <div className="overflow-hidden rounded-[17px] border border-white/[0.06] bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]">
+                  <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
+                    <div className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]">
                   <AnimatePresence initial={false}>
                     {scopeOpen ? (
                       <motion.div
                         id={executionScopePanelId}
-                        className="overflow-hidden border-b border-white/[0.10] bg-black/25 px-3 py-3 sm:px-4 sm:py-4"
+                        className="overflow-hidden border-b border-black/40 bg-black/25 px-3 py-3 sm:px-4 sm:py-4"
                         initial={
                           prefersReducedMotion
                             ? { opacity: 0 }
@@ -3583,7 +3583,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                               <button
                                 type="button"
                                 onClick={resetExecutionFilters}
-                                className="shrink-0 rounded-lg border border-white/12 bg-black/30 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/24 hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:px-3 sm:text-[10px] sm:tracking-[0.16em]"
+                                className="shrink-0 rounded-lg border border-black/60 bg-black/30 px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-black/40 hover:bg-white/[0.07] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:px-3 sm:text-[10px] sm:tracking-[0.16em]"
                               >
                                 Reset filters
                               </button>
@@ -3611,11 +3611,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                       }
                                       className={
                                         selected
-                                          ? "inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                          : "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                          ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                          : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
                                       }
                                     >
-                                      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                                      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                         {option.icon ??
                                           scopeOptionFallback(
                                             "monument",
@@ -3628,7 +3628,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                 })}
                               </div>
                             ) : (
-                              <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                              <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                 No monuments available.
                               </p>
                             )}
@@ -3653,11 +3653,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                       onClick={() => toggleSkillScope(option.id)}
                                       className={
                                         selected
-                                          ? "inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                          : "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                          ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                          : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
                                       }
                                     >
-                                      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                                      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                         {option.icon ??
                                           scopeOptionFallback(
                                             "skill",
@@ -3670,7 +3670,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                 })}
                               </div>
                             ) : (
-                              <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                              <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                 No skills available.
                               </p>
                             )}
@@ -3694,8 +3694,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                     onClick={() => toggleItemType(option.value)}
                                     className={
                                       selected
-                                        ? "inline-flex min-h-8 items-center rounded-full border border-white/20 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
-                                        : "inline-flex min-h-8 items-center rounded-full border border-white/10 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                                        ? "inline-flex min-h-8 items-center rounded-full border border-black/50 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                                        : "inline-flex min-h-8 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
                                     }
                                   >
                                     {option.label}
@@ -3731,10 +3731,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                       }
                                       className={
                                         lockedOff
-                                          ? "inline-flex min-h-8 cursor-not-allowed items-center rounded-full border border-white/10 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-600 opacity-70 sm:min-h-9 sm:px-3 sm:text-xs"
+                                          ? "inline-flex min-h-8 cursor-not-allowed items-center rounded-full border border-black/50 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-600 opacity-70 sm:min-h-9 sm:px-3 sm:text-xs"
                                           : selected
-                                            ? "inline-flex min-h-8 items-center rounded-full border border-white/20 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
-                                            : "inline-flex min-h-8 items-center rounded-full border border-white/10 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                                            ? "inline-flex min-h-8 items-center rounded-full border border-black/50 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                                            : "inline-flex min-h-8 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
                                       }
                                     >
                                       {option.label}
@@ -3770,8 +3770,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                         }
                                         className={
                                           selected
-                                            ? "inline-flex min-h-8 items-center rounded-full border border-white/20 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
-                                            : "inline-flex min-h-8 items-center rounded-full border border-white/10 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                                            ? "inline-flex min-h-8 items-center rounded-full border border-black/50 bg-white/10 px-2.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
+                                            : "inline-flex min-h-8 items-center rounded-full border border-black/60 bg-black/30 px-2.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:px-3 sm:text-xs"
                                       }
                                     >
                                       {option.name}
@@ -3780,7 +3780,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   })}
                                 </div>
                               ) : (
-                                <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                                <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                   No tags available.
                                 </p>
                               )}
@@ -3798,7 +3798,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                     <div key={group.key}>
                                       <div className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500 sm:gap-2 sm:text-[11px]">
                                         {group.icon ? (
-                                          <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] text-zinc-200 sm:size-5 sm:text-[10px]">
+                                          <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] text-zinc-200 sm:size-5 sm:text-[10px]">
                                             {group.icon}
                                           </span>
                                         ) : null}
@@ -3827,11 +3827,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                                 }
                                                 className={
                                                   selected
-                                                    ? "inline-flex min-h-8 max-w-[12rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-white/20 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:max-w-[16rem] sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                                    : "inline-flex min-h-8 max-w-[12rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:max-w-[16rem] sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                                    ? "inline-flex min-h-8 max-w-[12rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:max-w-[16rem] sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                                    : "inline-flex min-h-8 max-w-[12rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-9 sm:max-w-[16rem] sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
                                                 }
                                               >
-                                                <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                                                <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                                   {option.icon ??
                                                     initialsFallback(
                                                       option.name,
@@ -3850,7 +3850,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   ))}
                                 </div>
                               ) : (
-                                <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                                <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                   No goals available.
                                 </p>
                               )}
@@ -3881,11 +3881,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                         }
                                         className={
                                           selected
-                                            ? "inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                            : "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                            ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                            : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
                                         }
                                       >
-                                        <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                                        <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                           {option.icon ?? "C"}
                                         </span>
                                         <span>{option.name}</span>
@@ -3894,7 +3894,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   })}
                                 </div>
                               ) : (
-                                <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                                <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                   No campaigns available.
                                 </p>
                               )}
@@ -3925,11 +3925,11 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                         }
                                         className={
                                           selected
-                                            ? "inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
-                                            : "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                            ? "inline-flex items-center gap-1.5 rounded-full border border-black/50 bg-white/10 px-2 py-1.5 text-[11px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10)] transition focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
+                                            : "inline-flex items-center gap-1.5 rounded-full border border-black/60 bg-black/30 px-2 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:gap-2 sm:px-2.5 sm:py-2 sm:text-xs"
                                         }
                                       >
-                                        <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                                        <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                           {option.icon ?? "R"}
                                         </span>
                                         <span>{option.name}</span>
@@ -3938,7 +3938,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   })}
                                 </div>
                               ) : (
-                                <p className="mt-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
+                                <p className="mt-1.5 rounded-lg border border-black/60 bg-black/25 px-2.5 py-1.5 text-xs text-zinc-400 sm:mt-2 sm:px-3 sm:py-2 sm:text-sm">
                                   No routines available.
                                 </p>
                               )}
@@ -3948,19 +3948,19 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       </motion.div>
                     ) : null}
                   </AnimatePresence>
-                      <div className="border-b border-white/[0.10] bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
+                      <div className="border-b border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
                         <button
                           type="button"
                           onClick={() => setScopeOpen((current) => !current)}
                           aria-expanded={scopeOpen}
                           aria-controls={executionScopePanelId}
-                          className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-white/18 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                          className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
                         >
                           {scopeOpen ? "Done" : "Adjust"}
                         </button>
                       </div>
-                      <div className="relative flex min-w-0 items-center gap-2 border border-white/10 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-3">
-                        <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
+                      <div className="relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-3">
+                        <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
                           {displaySource.icon ? (
                             <span aria-hidden="true">{displaySource.icon}</span>
                           ) : (
@@ -3986,8 +3986,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 ) : null}
 
                 {hasRunStarted ? (
-                  <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-zinc-700/45 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(113,113,122,0.12)_32%,rgba(39,39,42,0.26)_60%,rgba(255,255,255,0.04))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
-                    <div className="overflow-hidden rounded-[17px] border border-white/[0.055] bg-zinc-950/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-18px_30px_rgba(0,0,0,0.32)] sm:rounded-[21px]">
+                  <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(113,113,122,0.12)_32%,rgba(39,39,42,0.26)_60%,rgba(255,255,255,0.04))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_36px_rgba(0,0,0,0.34)] sm:rounded-[22px]">
+                    <div className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_30px_rgba(0,0,0,0.32)] sm:rounded-[21px]">
                       {latestRunResult ? (
                         <>
                           {isRunLogExpanded && earlierRunResultsCount > 0 ? (
@@ -3998,7 +3998,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             </div>
                           ) : null}
 
-                          <div className="border-t border-white/[0.10] bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
+                          <div className="border-t border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
                             {earlierRunResultsCount > 0 ? (
                               <button
                                 type="button"
@@ -4006,7 +4006,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                   setIsRunLogExpanded((current) => !current)
                                 }
                                 aria-expanded={isRunLogExpanded}
-                                className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-white/18 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                                className="inline-flex min-h-7 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.025] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.055] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/30 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
                               >
                                 {isRunLogExpanded ? "See less" : "See more"}
                               </button>
@@ -4014,7 +4014,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                               <button
                                 type="button"
                                 disabled
-                                className="inline-flex min-h-7 w-full cursor-default items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.012] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-600 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                                className="inline-flex min-h-7 w-full cursor-default items-center justify-center rounded-lg border border-black/50 bg-white/[0.012] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-600 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
                               >
                                 See more
                               </button>
@@ -4025,18 +4025,18 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                         </>
                       ) : (
                         <>
-                          <div className="border-t border-white/[0.10] bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
+                          <div className="border-t border-black/40 bg-black/20 px-2.5 py-1.5 sm:px-3 sm:py-2">
                             <button
                               type="button"
                               disabled
-                              className="inline-flex min-h-7 w-full cursor-default items-center justify-center rounded-lg border border-white/[0.055] bg-white/[0.012] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-600 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
+                              className="inline-flex min-h-7 w-full cursor-default items-center justify-center rounded-lg border border-black/50 bg-white/[0.012] px-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-600 sm:min-h-8 sm:text-[10px] sm:tracking-[0.14em]"
                             >
                               See more
                             </button>
                           </div>
 
-                          <div className="relative flex min-w-0 items-center gap-2 border border-white/10 bg-white/[0.03] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3">
-                            <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-zinc-400 sm:size-8 sm:rounded-lg">
+                          <div className="relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.03] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_18px_rgba(255,255,255,0.014),inset_0_-12px_20px_rgba(0,0,0,0.16)] sm:gap-3 sm:px-4 sm:py-3">
+                            <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-zinc-400 sm:size-8 sm:rounded-lg">
                               <Play
                                 className="size-3 fill-current sm:size-3.5"
                                 aria-hidden="true"
@@ -4062,8 +4062,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                   </section>
                 ) : null}
 
-                <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[20px] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),rgba(113,113,122,0.18)_28%,rgba(39,39,42,0.42)_55%,rgba(82,82,91,0.14)_78%,rgba(255,255,255,0.08))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_0_32px_rgba(255,255,255,0.025),0_20px_70px_rgba(0,0,0,0.55)] sm:rounded-[26px]">
-                  <div className="relative overflow-hidden rounded-[19px] border border-zinc-500/20 bg-zinc-950/80 px-3 pb-3 pt-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_28px_rgba(255,255,255,0.025),inset_0_-20px_36px_rgba(0,0,0,0.48)] sm:rounded-[25px] sm:px-6 sm:py-5">
+                <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[20px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),rgba(113,113,122,0.18)_28%,rgba(39,39,42,0.42)_55%,rgba(82,82,91,0.14)_78%,rgba(255,255,255,0.08))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_32px_rgba(255,255,255,0.025),0_20px_70px_rgba(0,0,0,0.55)] sm:rounded-[26px]">
+                  <div className="relative overflow-hidden rounded-[19px] border border-black/60 bg-zinc-950/80 px-3 pb-3 pt-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_28px_rgba(255,255,255,0.025),inset_0_-20px_36px_rgba(0,0,0,0.48)] sm:rounded-[25px] sm:px-6 sm:py-5">
                     <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(135deg,rgba(255,255,255,0.065),transparent_24%,rgba(255,255,255,0.022)_74%,rgba(0,0,0,0.32)),radial-gradient(circle_at_18%_0%,rgba(255,255,255,0.045),transparent_34%)]" />
                     <div className="pointer-events-none absolute inset-x-10 top-0 h-px rounded-full bg-gradient-to-r from-transparent via-white/28 to-transparent" />
 
@@ -4072,9 +4072,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       <div className="min-w-0">
                         <div className="flex min-w-0 items-start gap-2.5 sm:gap-4">
                           {activeCardLoading ? (
-                            <div className="flex size-10 shrink-0 animate-pulse items-center justify-center rounded-lg border border-white/10 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-12px_18px_rgba(0,0,0,0.28)] sm:size-14 sm:rounded-xl" />
+                            <div className="flex size-10 shrink-0 animate-pulse items-center justify-center rounded-lg border border-black/60 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-12px_18px_rgba(0,0,0,0.28)] sm:size-14 sm:rounded-xl" />
                           ) : currentItemIcon ? (
-                            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.045] text-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-12px_18px_rgba(0,0,0,0.28)] sm:size-14 sm:rounded-xl sm:text-2xl">
+                            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-black/60 bg-white/[0.045] text-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-12px_18px_rgba(0,0,0,0.28)] sm:size-14 sm:rounded-xl sm:text-2xl">
                               <span aria-hidden="true">{currentItemIcon}</span>
                             </div>
                           ) : null}
@@ -4119,8 +4119,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             className="mt-2 flex w-full flex-wrap items-center gap-1.5 sm:mt-3 sm:w-fit sm:gap-2"
                             aria-hidden="true"
                           >
-                            <div className="h-5 w-20 animate-pulse rounded-md border border-white/10 bg-white/[0.07] sm:h-7 sm:w-24 sm:rounded-lg" />
-                            <div className="h-5 w-36 animate-pulse rounded-md border border-white/10 bg-white/[0.045] sm:h-7 sm:w-44 sm:rounded-lg" />
+                            <div className="h-5 w-20 animate-pulse rounded-md border border-black/60 bg-white/[0.07] sm:h-7 sm:w-24 sm:rounded-lg" />
+                            <div className="h-5 w-36 animate-pulse rounded-md border border-black/60 bg-white/[0.045] sm:h-7 sm:w-44 sm:rounded-lg" />
                           </div>
                         ) : (
                           <div
@@ -4134,7 +4134,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                               className={
                                 cardState.tone === "error"
                                   ? "inline-flex min-w-0 items-center justify-center rounded-md border border-red-300/25 bg-red-950/25 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-red-100/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
-                                  : "inline-flex min-w-0 items-center justify-center rounded-md border border-white/10 bg-black/40 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-zinc-300/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
+                                  : "inline-flex min-w-0 items-center justify-center rounded-md border border-black/60 bg-black/40 px-1.5 py-0.5 text-center text-[9px] font-semibold uppercase tracking-[0.1em] text-zinc-300/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:justify-start sm:rounded-lg sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.18em]"
                               }
                             >
                               <span className="min-w-0 truncate">
@@ -4142,8 +4142,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                               </span>
                             </div>
                             {currentMetaDisplay ? (
-                              <div className="inline-flex min-w-0 max-w-[calc(100%-3.5rem)] items-center justify-start gap-1.5 rounded-md border border-white/10 bg-black/25 px-2 py-0.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:max-w-[13rem] sm:gap-2 sm:rounded-lg sm:px-2.5 sm:py-1">
-                                <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
+                              <div className="inline-flex min-w-0 max-w-[calc(100%-3.5rem)] items-center justify-start gap-1.5 rounded-md border border-black/60 bg-black/25 px-2 py-0.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] sm:max-w-[13rem] sm:gap-2 sm:rounded-lg sm:px-2.5 sm:py-1">
+                                <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-black/60 bg-white/5 text-[9px] font-semibold text-zinc-200 sm:size-5 sm:text-[10px]">
                                   {currentMetaDisplay.icon}
                                 </span>
                                 <span className="min-w-0 truncate text-[10px] font-semibold text-zinc-400 sm:text-[11px]">
@@ -4158,7 +4158,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                           <button
                             type="button"
                             onClick={resetExecutionFilters}
-                            className="mt-2 inline-flex min-h-9 items-center justify-center rounded-lg border border-white/12 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-white/24 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:mt-3 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
+                            className="mt-2 inline-flex min-h-9 items-center justify-center rounded-lg border border-black/60 bg-white/[0.055] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-10px_18px_rgba(0,0,0,0.24)] transition hover:border-black/40 hover:bg-white/[0.09] focus:outline-none focus:ring-2 focus:ring-white/35 sm:mt-3 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
                           >
                             Reset filters
                           </button>
@@ -4166,8 +4166,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       </div>
 
                       <div className="hidden justify-self-end md:block">
-                        <div className="relative flex size-24 rotate-3 items-center justify-center border border-white/10 bg-[#0b0e11] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-18px_28px_rgba(0,0,0,0.44),0_18px_34px_-26px_rgba(0,0,0,0.9)] [clip-path:polygon(18%_0,88%_7%,100%_55%,74%_100%,8%_90%,0_34%)]">
-                          <div className="flex size-14 -rotate-3 items-center justify-center rounded-xl border border-white/10 bg-white/[0.045] text-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-12px_18px_rgba(0,0,0,0.28)]">
+                        <div className="relative flex size-24 rotate-3 items-center justify-center border border-black/60 bg-[#0b0e11] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-18px_28px_rgba(0,0,0,0.44),0_18px_34px_-26px_rgba(0,0,0,0.9)] [clip-path:polygon(18%_0,88%_7%,100%_55%,74%_100%,8%_90%,0_34%)]">
+                          <div className="flex size-14 -rotate-3 items-center justify-center rounded-xl border border-black/60 bg-white/[0.045] text-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-12px_18px_rgba(0,0,0,0.28)]">
                             {activeCardLoading ? (
                               <span className="size-8 animate-pulse rounded-lg bg-white/10" />
                             ) : (
@@ -4184,12 +4184,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       <div
                         role="group"
                         aria-label="Current item actions"
-                        className="mt-3 grid w-full grid-cols-2 gap-2 border-t border-white/[0.08] pt-3 sm:mt-5 sm:max-w-sm sm:pt-4"
+                        className="mt-3 grid w-full grid-cols-2 gap-2 border-t border-black/40 pt-3 sm:mt-5 sm:max-w-sm sm:pt-4"
                       >
                         {activeCardLoading ? (
                           <>
-                            <div className="min-h-9 animate-pulse rounded-lg border border-white/10 bg-white/[0.035] sm:min-h-10 sm:rounded-xl" />
-                            <div className="min-h-9 animate-pulse rounded-lg border border-white/12 bg-white/[0.05] sm:min-h-10 sm:rounded-xl" />
+                            <div className="min-h-9 animate-pulse rounded-lg border border-black/60 bg-white/[0.035] sm:min-h-10 sm:rounded-xl" />
+                            <div className="min-h-9 animate-pulse rounded-lg border border-black/60 bg-white/[0.05] sm:min-h-10 sm:rounded-xl" />
                           </>
                         ) : (
                           <>
@@ -4197,7 +4197,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                               type="button"
                               aria-label="Skip current item"
                               onClick={handleSkip}
-                              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.035] px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
+                              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-black/60 bg-white/[0.035] px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
                             >
                               Skip
                             </button>
@@ -4210,7 +4210,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                               className={
                                 canCompleteCurrentRun
                                   ? "inline-flex min-h-9 items-center justify-center rounded-lg border border-emerald-300/45 bg-[linear-gradient(180deg,rgba(16,185,129,0.74),rgba(5,150,105,0.82)_48%,rgba(6,78,59,0.98))] px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.32),inset_0_-5px_0_rgba(4,120,87,0.88),0_20px_42px_-30px_rgba(16,185,129,0.95)] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
-                                  : "inline-flex min-h-9 cursor-not-allowed items-center justify-center rounded-lg border border-white/12 bg-zinc-900/90 px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
+                                  : "inline-flex min-h-9 cursor-not-allowed items-center justify-center rounded-lg border border-black/60 bg-zinc-900/90 px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-10 sm:rounded-xl sm:px-3 sm:text-[11px] sm:tracking-[0.14em]"
                               }
                             >
                               Complete
@@ -4225,10 +4225,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 </section>
 
                 {currentItem || activeCardLoading ? (
-                  <div className="relative overflow-hidden rounded-[18px] border border-zinc-700/50 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
+                  <div className="relative overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
                     <motion.div
                       layout
-                      className="overflow-hidden rounded-[17px] border border-white/[0.06] bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]"
+                      className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]"
                       transition={{
                         duration: prefersReducedMotion ? 0.01 : 0.18,
                         ease: [0.22, 1, 0.36, 1],
@@ -4253,12 +4253,12 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                                 key={`queue-skeleton-${index}`}
                                 className={
                                   index === 0
-                                    ? "relative flex min-w-0 items-center gap-2 border border-white/10 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-4"
-                                    : "flex min-w-0 items-center gap-2 border-t border-white/[0.10] px-3 py-2.5 opacity-60 sm:gap-3 sm:border-l sm:border-t-0 sm:px-4 sm:py-4"
+                                    ? "relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-4"
+                                    : "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-60 sm:gap-3 sm:border-l sm:border-t-0 sm:px-4 sm:py-4"
                                 }
                               >
-                                <div className="size-7 shrink-0 animate-pulse rounded-md border border-white/12 bg-white/[0.045] sm:size-8 sm:rounded-lg" />
-                                <div className="size-7 shrink-0 animate-pulse rounded-md border border-white/10 bg-white/[0.04] sm:size-8 sm:rounded-lg" />
+                                <div className="size-7 shrink-0 animate-pulse rounded-md border border-black/60 bg-white/[0.045] sm:size-8 sm:rounded-lg" />
+                                <div className="size-7 shrink-0 animate-pulse rounded-md border border-black/60 bg-white/[0.04] sm:size-8 sm:rounded-lg" />
                                 <div className="min-w-0 flex-1 space-y-1.5">
                                   <div className="h-3.5 w-10/12 animate-pulse rounded-full bg-white/10 sm:h-4" />
                                   <div className="h-2.5 w-20 animate-pulse rounded-full bg-white/[0.06] sm:h-3" />
@@ -4280,17 +4280,17 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                               key={item.id}
                               className={
                                 selected
-                                  ? "relative flex min-w-0 items-center gap-2 border border-white/10 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-4"
+                                  ? "relative flex min-w-0 items-center gap-2 border border-black/60 bg-white/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_0_18px_rgba(255,255,255,0.018),inset_0_-12px_20px_rgba(0,0,0,0.18)] sm:gap-3 sm:px-4 sm:py-4"
                                   : isQueueExpanded
-                                    ? "flex min-w-0 items-center gap-2 border-t border-white/[0.10] px-3 py-2.5 opacity-60 sm:gap-3 sm:px-4 sm:py-3.5"
-                                    : "flex min-w-0 items-center gap-2 border-t border-white/[0.10] px-3 py-2.5 opacity-60 sm:gap-3 sm:border-l sm:border-t-0 sm:px-4 sm:py-4"
+                                    ? "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-60 sm:gap-3 sm:px-4 sm:py-3.5"
+                                    : "flex min-w-0 items-center gap-2 border-t border-black/40 px-3 py-2.5 opacity-60 sm:gap-3 sm:border-l sm:border-t-0 sm:px-4 sm:py-4"
                               }
                             >
-                              <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/12 bg-white/[0.045] text-[11px] font-semibold text-white/78 sm:size-8 sm:rounded-lg sm:text-xs">
+                              <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.045] text-[11px] font-semibold text-white/78 sm:size-8 sm:rounded-lg sm:text-xs">
                                 {position}
                               </div>
                               {previewIcon ? (
-                                <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
+                                <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-black/60 bg-white/[0.04] text-sm sm:size-8 sm:rounded-lg sm:text-base">
                                   <span aria-hidden="true">{previewIcon}</span>
                                 </div>
                               ) : null}
@@ -4315,7 +4315,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       </motion.div>
 
                       {hasMoreQueueItems ? (
-                        <div className="border-t border-white/[0.10] bg-black/25 px-2.5 py-2 sm:px-3 sm:py-3">
+                        <div className="border-t border-black/40 bg-black/25 px-2.5 py-2 sm:px-3 sm:py-3">
                           <button
                             type="button"
                             onClick={() =>
@@ -4323,7 +4323,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                             }
                             aria-expanded={isQueueExpanded}
                             aria-controls={queueListId}
-                            className="inline-flex min-h-9 w-full items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-white/18 hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
+                            className="inline-flex min-h-9 w-full items-center justify-center rounded-lg border border-black/60 bg-white/[0.03] px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition hover:border-black/40 hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 sm:min-h-10 sm:px-4 sm:text-[11px] sm:tracking-[0.16em]"
                           >
                             {isQueueExpanded
                               ? "See less"
@@ -4337,9 +4337,9 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
               </main>
 
-              <div className="mt-auto rounded-[18px] border border-white/12 bg-[#080a0d] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-18px_32px_rgba(0,0,0,0.42),0_22px_64px_-50px_rgba(0,0,0,0.85)] sm:rounded-[22px] sm:p-4">
+              <div className="mt-auto rounded-[18px] border border-black/70 bg-[#080a0d] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_32px_rgba(0,0,0,0.42),0_22px_64px_-50px_rgba(0,0,0,0.85)] sm:rounded-[22px] sm:p-4">
                 <div className="grid grid-cols-[minmax(6rem,1fr)_minmax(0,2fr)] items-stretch gap-2.5 sm:grid-cols-[minmax(12rem,18rem)_1fr] sm:items-center sm:gap-4">
-                  <div className="flex min-w-0 overflow-hidden flex-col justify-center gap-1 rounded-xl border border-white/[0.08] bg-white/[0.025] px-1.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:border-0 sm:border-r sm:bg-transparent sm:px-0 sm:py-0 sm:pr-5">
+                  <div className="flex min-w-0 overflow-hidden flex-col justify-center gap-1 rounded-xl border border-black/50 bg-white/[0.025] px-1.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:border-0 sm:border-r sm:bg-transparent sm:px-0 sm:py-0 sm:pr-5">
                     <div className="flex min-w-0 items-center gap-1 sm:gap-3">
                       <svg
                         aria-hidden="true"
@@ -4390,10 +4390,10 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                       aria-disabled={!isRunning && !currentItem}
                       className={
                         isRunning
-                          ? "inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-white/12 bg-zinc-900/90 px-5 text-sm font-semibold uppercase tracking-[0.12em] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition hover:bg-zinc-800/90 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.18em]"
+                          ? "inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-black/60 bg-zinc-900/90 px-5 text-sm font-semibold uppercase tracking-[0.12em] text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition hover:bg-zinc-800/90 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.18em]"
                           : currentItem
                             ? "inline-flex min-h-12 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-300/45 bg-[linear-gradient(180deg,rgba(16,185,129,0.74),rgba(5,150,105,0.82)_48%,rgba(6,78,59,0.98))] px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.32),inset_0_-5px_0_rgba(4,120,87,0.88),0_20px_42px_-30px_rgba(16,185,129,0.95)] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.22em]"
-                            : "inline-flex min-h-12 w-full flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-white/12 bg-zinc-900/90 px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.22em]"
+                            : "inline-flex min-h-12 w-full flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-black/60 bg-zinc-900/90 px-5 text-sm font-semibold uppercase tracking-[0.14em] text-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),inset_0_-4px_0_rgba(0,0,0,0.38),0_18px_34px_-28px_rgba(0,0,0,0.95)] transition focus:outline-none focus:ring-2 focus:ring-white/35 focus:ring-offset-2 focus:ring-offset-zinc-950 sm:min-h-16 sm:gap-3 sm:rounded-[16px] sm:px-7 sm:text-base sm:tracking-[0.22em]"
                       }
                     >
                       {isRunning ? (

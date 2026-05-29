@@ -17,7 +17,7 @@ export { Sidebar } from "./Sidebar";
 export { Topbar } from "./Topbar";
 export { TimeGrid } from "./TimeGrid";
 export { EventCard } from "./EventCard";
-export { Fab } from "./Fab";
+export { LazyFab } from "./LazyFab";
 export { CreateSheet } from "./CreateSheet";
 export { QuickPeek } from "./QuickPeek";
 export { MobileNav } from "../mobile-nav";

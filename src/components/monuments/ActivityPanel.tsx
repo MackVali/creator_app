@@ -19,15 +19,15 @@ const EVENT_STYLES: Record<MonumentActivityEvent["type"], { icon: ComponentType<
   = {
     note: {
       icon: NotebookPen,
-      badge: "bg-white/10 text-white/85",
+      badge: "border-white/[0.08] bg-[#101114] text-white/75",
     },
     xp: {
       icon: Sparkles,
-      badge: "bg-zinc-200/15 text-zinc-100",
+      badge: "border-white/[0.08] bg-[#101114] text-white/70",
     },
     goal: {
       icon: CheckCircle2,
-      badge: "bg-zinc-50/15 text-zinc-100",
+      badge: "border-white/[0.10] bg-[#14161A] text-white/78",
     },
   };
 
@@ -240,51 +240,51 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
   const thermometerHeight = Math.max(chargePercent, hasEvents ? 6 : 0);
 
   return (
-    <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101011] to-[#1d1c20] p-6 text-white shadow-[0_30px_110px_-48px_rgba(0,0,0,0.82)] sm:p-7">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.12),_transparent_58%)]" />
-      <div className="absolute -top-24 right-10 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
+    <Card className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[#050608] p-6 text-white shadow-[0_28px_80px_-46px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)] sm:p-7">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.03),_transparent_52%)]" />
+      <div className="pointer-events-none absolute -right-20 top-0 h-52 w-52 rounded-full bg-white/[0.025] blur-3xl" />
       <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.32em] text-white/80">
-              Momentum
+            <span className="rounded-full border border-white/[0.08] bg-[#101114] px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.32em] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              Build log
             </span>
-            <p className="text-[9px] font-semibold uppercase tracking-[0.32em] text-white/50">
-              Activity
+            <p className="text-[9px] font-semibold uppercase tracking-[0.32em] text-white/40">
+              Monument activity
             </p>
           </div>
           <h3 className="text-sm font-semibold text-white sm:text-base">
-            Momentum build log
+            Monument build log
           </h3>
-          <p className="text-[11px] text-white/70 sm:text-xs">
-            Completed goals, fresh notes, and XP surges roll into a curated timeline so you can see how the monument is taking shape.
+          <p className="text-[11px] text-white/55 sm:text-xs">
+            Goals, notes, and XP activity collected into one timeline.
           </p>
         </div>
         {summary.lastUpdated ? (
-          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[9px] font-medium uppercase tracking-[0.24em] text-white/50">
+          <div className="rounded-full border border-white/[0.08] bg-[#0B0C0F] px-3 py-1 text-[9px] font-medium uppercase tracking-[0.24em] text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             Updated {formatRelativeTime(new Date(summary.lastUpdated))}
           </div>
         ) : null}
       </div>
 
       <div className="relative mt-6 grid gap-6 2xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
-        <div className="relative rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 via-white/5 to-transparent p-5 backdrop-blur">
-          <div className="absolute inset-0 rounded-3xl bg-[radial-gradient(circle_at_top_left,_rgba(148,163,184,0.14),_transparent_55%)]" />
+        <div className="relative rounded-3xl border border-white/[0.08] bg-[#08090B] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_18px_46px_-36px_rgba(0,0,0,0.95)]">
+          <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-white/[0.06]" />
           {loading ? (
             <div className="flex flex-col gap-4">
               {Array.from({ length: 3 }).map((_, index) => (
                 <div
                   key={index}
-                  className="animate-pulse rounded-2xl border border-white/10 bg-white/5 px-4 py-5"
+                  className="animate-pulse rounded-2xl border border-white/[0.08] bg-[#07080A] px-4 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
                 >
-                  <div className="h-3 w-20 rounded-full bg-white/20" />
-                  <div className="mt-3 h-4 w-3/4 rounded-full bg-white/10" />
-                  <div className="mt-2 h-3 w-1/2 rounded-full bg-white/10" />
+                  <div className="h-3 w-20 rounded-full bg-white/[0.08]" />
+                  <div className="mt-3 h-4 w-3/4 rounded-full bg-white/[0.055]" />
+                  <div className="mt-2 h-3 w-1/2 rounded-full bg-white/[0.045]" />
                 </div>
               ))}
             </div>
           ) : error ? (
-            <div className="flex items-center gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-5 text-sm text-red-200">
+            <div className="flex items-center gap-3 rounded-2xl border border-red-400/20 bg-red-950/20 px-4 py-5 text-sm text-red-200">
               <TriangleAlert className="size-5" aria-hidden="true" />
               <div>
                 <p className="font-semibold">Couldn&apos;t load activity</p>
@@ -294,15 +294,15 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
           ) : hasPinnedNotes || hasEvents ? (
             <div className="relative space-y-6">
               {hasPinnedNotes ? (
-                <section className="rounded-2xl border border-white/20 bg-white/5 px-4 py-4 text-zinc-100 shadow-[0_10px_45px_-30px_rgba(255,255,255,0.35)]">
+                <section className="rounded-2xl border border-white/[0.08] bg-[#0B0C0F] px-4 py-4 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]">
                   <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/75">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/55">
                         Pinned insights
                       </p>
-                      <h4 className="text-sm font-semibold">Keep these blueprints within reach</h4>
+                      <h4 className="text-sm font-semibold text-white/90">Keep these blueprints within reach</h4>
                     </div>
-                    <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-white/60">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-white/40">
                       {pinnedNotes.length} saved
                     </p>
                   </header>
@@ -314,10 +314,10 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                         : formatTimeLabel(updatedAt);
                       return (
                         <li key={note.id} className="group relative">
-                          <article className="flex h-full flex-col gap-3 rounded-2xl border border-white/20 bg-black/30 px-4 py-4">
+                          <article className="flex h-full flex-col gap-3 rounded-2xl border border-white/[0.08] bg-[#07080A] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition group-hover:border-white/[0.12] group-hover:bg-[#0B0C0F]">
                             <div className="flex items-start justify-between gap-3">
                               <div className="space-y-1">
-                                <p className="text-sm font-semibold text-white">
+                                <p className="text-sm font-semibold text-white/90">
                                   {note.title || "Pinned note"}
                                 </p>
                                 {updatedLabel ? (
@@ -329,13 +329,13 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                               <button
                                 type="button"
                                 onClick={() => togglePin(note.id)}
-                                className="rounded-full border border-white/25 bg-white/10 p-2 text-white transition hover:border-white/60 hover:bg-white/20"
+                                className="rounded-full border border-white/[0.10] bg-white/[0.04] p-2 text-white/60 transition hover:border-white/[0.16] hover:bg-white/[0.07] hover:text-white/78"
                                 aria-label="Unpin insight"
                               >
                                 <Pin className="size-4 -rotate-45" aria-hidden="true" />
                               </button>
                             </div>
-                            <p className="text-xs text-white/70">
+                            <p className="text-xs leading-relaxed text-white/58">
                               {summarizeNoteContent(note)}
                             </p>
                           </article>
@@ -347,40 +347,39 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
               ) : null}
 
               {hasEvents ? (
-                <div className="relative rounded-2xl border border-white/10 bg-black/20 px-4 py-5">
+                <div className="relative rounded-2xl border border-white/[0.08] bg-[#07080A] px-4 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                   <div className="mb-4 flex items-center justify-between">
-                    <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/55">
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/45">
                       Timeline
                     </p>
-                    <p className="text-[9px] font-medium uppercase tracking-[0.28em] text-white/40">
+                    <p className="text-[9px] font-medium uppercase tracking-[0.28em] text-white/35">
                       {events.length} moments
                     </p>
                   </div>
-                  <div className="absolute left-[22px] top-5 bottom-5 w-px bg-gradient-to-b from-white/0 via-white/20 to-white/0" aria-hidden="true" />
+                  <div className="pointer-events-none absolute left-[22px] top-5 bottom-5 w-px bg-white/[0.08]" aria-hidden="true" />
                   <div className="space-y-6">
                     {groupedEvents.map(({ label, items }) => (
                       <section key={label} className="relative pl-12">
                         <div className="mb-4 flex items-center gap-3">
-                          <span className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/50">
+                          <span className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/42">
                             {label}
                           </span>
-                          <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+                          <span className="h-px flex-1 bg-white/[0.08]" aria-hidden="true" />
                         </div>
                         <ul className="space-y-4">
                           {items.map((event) => {
                             const style = EVENT_STYLES[event.type];
                             const Icon = style.icon;
                             const isPinned = event.noteId ? pinnedSet.has(event.noteId) : false;
-                            const attributionLabel = event.attribution
-                              ? `Logged by ${event.attribution}`
-                              : "Logged by you";
                             return (
                               <li key={event.id} className="relative">
-                                <span className="absolute -left-[30px] top-6 flex h-3 w-3 items-center justify-center">
-                                  <span className="size-3 rounded-full bg-white/70 shadow-[0_0_12px_rgba(255,255,255,0.35)]" />
+                                <span className="pointer-events-none absolute -left-[30px] top-6 flex h-3 w-3 items-center justify-center">
+                                  <span className="flex size-3 items-center justify-center rounded-full border border-white/[0.12] bg-[#14161A]">
+                                    <span className="size-1 rounded-full bg-white/45" />
+                                  </span>
                                 </span>
-                                <article className="flex gap-2 rounded-2xl border border-white/10 bg-white/5 px-2.5 py-2 transition hover:border-white/20 hover:bg-white/10 sm:gap-3 sm:px-4 sm:py-4">
-                                  <span className={cn("mt-0.5 flex h-7 w-7 items-center justify-center rounded-full sm:h-10 sm:w-10", style.badge)}>
+                                <article className="flex gap-2 rounded-2xl border border-white/[0.08] bg-[#0B0C0F] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition hover:border-white/[0.12] hover:bg-[#101114] sm:gap-3 sm:px-4 sm:py-4">
+                                  <span className={cn("mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border sm:h-10 sm:w-10", style.badge)}>
                                     <Icon className="size-3 sm:size-4" aria-hidden="true" />
                                   </span>
                                   <div className="flex-1 space-y-1.5 sm:space-y-2">
@@ -394,9 +393,6 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                                             {event.detail}
                                           </p>
                                         ) : null}
-                                        <p className="text-[9px] font-medium uppercase tracking-[0.22em] text-white/35 sm:text-[10px] sm:tracking-[0.24em]">
-                                          {attributionLabel}
-                                        </p>
                                       </div>
                                       <div className="flex flex-wrap items-center gap-2">
                                         {event.noteId ? (
@@ -406,8 +402,8 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                                             className={cn(
                                               "rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.24em] transition sm:px-3 sm:text-[10px] sm:tracking-[0.28em]",
                                               isPinned
-                                                ? "border-sky-300/70 bg-sky-500/20 text-sky-100 shadow-[0_10px_30px_-18px_rgba(56,189,248,0.75)]"
-                                                : "border-white/15 bg-white/0 text-white/50 hover:border-sky-200/60 hover:bg-sky-400/10 hover:text-sky-100"
+                                                ? "border-white/[0.16] bg-white/[0.07] text-white/82"
+                                                : "border-white/[0.10] bg-transparent text-white/45 hover:border-white/[0.16] hover:bg-white/[0.04] hover:text-white/70"
                                             )}
                                             aria-label={isPinned ? "Unpin note" : "Pin note"}
                                             aria-pressed={isPinned}
@@ -440,18 +436,18 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                   </div>
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-5 py-6 text-sm text-white/70">
-                  <p className="text-sm font-semibold text-white">No activity yet</p>
-                  <p className="mt-2 text-xs text-white/60">
+                <div className="rounded-2xl border border-dashed border-white/[0.10] bg-[#07080A] px-5 py-6 text-sm text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+                  <p className="text-sm font-semibold text-white/82">No activity yet</p>
+                  <p className="mt-2 text-xs text-white/50">
                     Complete a goal, log a note, or earn XP linked to this monument to begin the construction log.
                   </p>
                 </div>
               )}
             </div>
           ) : (
-            <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-5 py-6 text-sm text-white/70">
-              <p className="text-sm font-semibold text-white">No activity yet</p>
-              <p className="mt-2 text-xs text-white/60">
+            <div className="rounded-2xl border border-dashed border-white/[0.10] bg-[#07080A] px-5 py-6 text-sm text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+              <p className="text-sm font-semibold text-white/82">No activity yet</p>
+              <p className="mt-2 text-xs text-white/50">
                 Complete a goal, log a note, or earn XP linked to this monument to begin the construction log.
               </p>
             </div>
@@ -459,25 +455,24 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
         </div>
 
         <aside className="space-y-4 2xl:sticky 2xl:top-6">
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent p-5 backdrop-blur">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.25),_transparent_70%)]" />
+          <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[#08090B] p-5 shadow-[0_18px_46px_-36px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.045)]">
+            <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-white/[0.06]" />
             <div className="relative space-y-4">
               <header className="space-y-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/48">
                   Charge Thermometer
                 </p>
                 <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
                   <p className="text-3xl font-semibold text-white">{chargePercent}%</p>
-                  <p className="text-xs text-white/60">
+                  <p className="text-xs text-white/48">
                     charged from the past month of linked completions
                   </p>
                 </div>
               </header>
-              <div className="relative h-40 rounded-[22px] border border-white/10 bg-black/30 p-3">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(255,255,255,0.18),_transparent_70%)]" aria-hidden="true" />
+              <div className="relative h-40 rounded-[22px] border border-white/[0.08] bg-[#07080A] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                 <div className="relative flex h-full items-end justify-center">
                   <div
-                    className="w-12 rounded-full bg-gradient-to-t from-zinc-700/90 via-zinc-300/80 to-white/95 shadow-[0_0_25px_rgba(255,255,255,0.28)] transition-all"
+                    className="w-12 rounded-full border border-white/[0.10] bg-gradient-to-t from-zinc-950 via-zinc-700/65 to-zinc-200/70 shadow-[0_10px_24px_-18px_rgba(255,255,255,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] transition-all"
                     style={{ height: `${thermometerHeight}%` }}
                     aria-hidden="true"
                   />
@@ -492,8 +487,8 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                       className={cn(
                         "flex items-start gap-3 rounded-2xl border px-4 py-3",
                         reached
-                          ? "border-white/35 bg-white/10 text-white"
-                          : "border-white/10 bg-white/5 text-white/70"
+                          ? "border-white/[0.14] bg-white/[0.06] text-white/82"
+                          : "border-white/[0.08] bg-[#07080A] text-white/45"
                       )}
                     >
                       <span className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-current/40">
@@ -517,36 +512,36 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-white/60">
+            <div className="rounded-2xl border border-white/[0.08] bg-[#07080A] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-white/45">
                 XP logged (last 30 days)
               </p>
               <div className="mt-2 flex items-end gap-2">
                 <p className="text-2xl font-semibold text-white">{summary.totalXp}</p>
-                <span className="text-xs text-white/60">across {summary.xpEvents} completions</span>
+                <span className="text-xs text-white/45">across {summary.xpEvents} completions</span>
               </div>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-white/60">
+            <div className="rounded-2xl border border-white/[0.08] bg-[#07080A] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-white/45">
                 Goals completed
               </p>
               <div className="mt-2 flex items-end gap-2">
                 <p className="text-2xl font-semibold text-white">
                   {summary.completedGoals}
-                  <span className="text-base text-white/60">
+                  <span className="text-base text-white/45">
                     /{summary.totalGoals}
                   </span>
                 </p>
-                <span className="text-xs text-white/60">fueling this monument</span>
+                <span className="text-xs text-white/45">fueling this monument</span>
               </div>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:col-span-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-white/60">
+            <div className="rounded-2xl border border-white/[0.08] bg-[#07080A] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:col-span-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-white/45">
                 Notes captured
               </p>
               <div className="mt-2 flex items-end gap-2">
                 <p className="text-2xl font-semibold text-white">{summary.notesLogged}</p>
-                <span className="text-xs text-white/60">structured ideas in the archive</span>
+                <span className="text-xs text-white/45">structured ideas in the archive</span>
               </div>
             </div>
           </div>

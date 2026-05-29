@@ -1,4 +1,3 @@
-import React from "react";
 import { headers } from "next/headers";
 import DashboardClient from "./DashboardClient";
 
@@ -15,9 +14,6 @@ export default async function DashboardPage() {
   if (!response.ok) {
     return <DashboardClient />;
   }
-
-  const data = await response.json();
-  await response.json();
 
   return <DashboardClient />;
 }

@@ -11,9 +11,15 @@ export interface BottomBarNavProps {
   items: BottomBarNavItem[];
   currentPath: string;
   onNavigate?: (href: string) => void;
+  onPrefetch?: (href: string) => void;
 }
 
-export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavProps) {
+export function BottomBarNav({
+  items,
+  currentPath,
+  onNavigate,
+  onPrefetch,
+}: BottomBarNavProps) {
   const renderItem = (item: BottomBarNavItem) => {
     const isActive =
       item.href === currentPath ||
@@ -33,6 +39,9 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
             onNavigate(item.href);
           }
         }}
+        onPointerEnter={() => onPrefetch?.(item.href)}
+        onFocus={() => onPrefetch?.(item.href)}
+        onTouchStart={() => onPrefetch?.(item.href)}
         data-tour={item.href === "/schedule" ? "nav-schedule" : undefined}
         className="flex min-w-0 flex-1 items-center justify-center"
       >

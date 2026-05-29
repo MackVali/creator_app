@@ -18,7 +18,8 @@ import type { ProjectCardMorphOrigin } from "@/app/(app)/goals/components/Projec
 import type { Goal, Project, Task } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Fab, type FabEditTarget } from "@/components/ui/Fab";
+import { LazyFab } from "@/components/ui/LazyFab";
+import type { FabEditTarget } from "@/components/ui/Fab";
 import {
   projectWeight,
   taskWeight,
@@ -2070,7 +2071,7 @@ export function MonumentGoalsList({
   return (
     <div className="monument-goals-list">
       {content}
-      <Fab
+      <LazyFab
         editTarget={fabEditTarget}
         onEditTargetChange={(target) => setFabEditTarget(target)}
         onEditClose={() => setFabEditTarget(null)}

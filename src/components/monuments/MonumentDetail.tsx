@@ -83,7 +83,7 @@ export function MonumentDetail({
   }, [id]);
 
   const containerShell =
-    "relative w-full overflow-hidden rounded-3xl border border-white/10";
+    "relative w-full rounded-3xl border border-white/10";
   const sectionBackground =
     "bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)]";
   const overviewBackground =
@@ -117,7 +117,7 @@ export function MonumentDetail({
   };
 
   return (
-    <main className="overflow-x-hidden px-2.5 py-4 sm:px-6 sm:py-6 lg:px-8">
+    <main className="min-h-dvh overflow-x-hidden px-2.5 pb-6 pt-2 sm:px-6 sm:pb-8 sm:pt-4 lg:px-8">
       <MonumentEditDialog
         open={editDialogOpen}
         monumentId={id}
@@ -133,7 +133,7 @@ export function MonumentDetail({
         source={focusPomoSource}
         onClose={() => setFocusPomoSource(null)}
       />
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
+      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
         <div className="flex flex-col gap-2">
           <div className="flex min-h-10 items-center justify-between px-1">
             {onClose ? (
@@ -186,11 +186,11 @@ export function MonumentDetail({
             className={cn(
               containerShell,
               overviewBackground,
-              "px-3 py-3 text-white sm:p-7",
+              "overflow-hidden px-3 py-3 text-white sm:p-7",
               "min-h-0 sm:min-h-[210px]"
             )}
           >
-            <div className="absolute inset-0">
+            <div className="pointer-events-none absolute inset-0">
               <div className="absolute inset-x-12 -top-16 h-48 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.18),_transparent_70%)] blur-3xl" />
               <div className="absolute bottom-0 right-0 h-56 w-56 translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.06),_transparent_60%)] blur-3xl" />
             </div>
@@ -241,18 +241,18 @@ export function MonumentDetail({
           </section>
         </div>
 
-        <div className="grid w-full grid-cols-1 gap-5 lg:gap-6 xl:auto-rows-min xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <div className="grid w-full grid-cols-1 items-start gap-5 lg:gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
           <section
             className={cn(
               containerShell,
               sectionBackground,
               "px-3 py-4 sm:p-7",
               "min-h-[260px]",
-              "overflow-visible sm:overflow-hidden"
+              "z-0 overflow-visible"
             )}
           >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
-            <header className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
+            <header className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div
                 className="inline-flex w-full rounded-lg border border-white/10 bg-[#050506]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur sm:w-auto"
                 aria-label="Monument view"
@@ -280,7 +280,7 @@ export function MonumentDetail({
                 ))}
               </div>
             </header>
-            <div className="relative mt-3 overflow-visible sm:mt-4">
+            <div className="relative z-10 mt-3 overflow-visible sm:mt-4">
               <MonumentGoalsList
                 monumentId={id}
                 monumentEmoji={monument.emoji}
@@ -298,16 +298,16 @@ export function MonumentDetail({
               sectionBackground,
               "p-4 sm:p-5",
               "min-h-[220px]",
-              "overflow-visible sm:overflow-hidden"
+              "z-[1] overflow-visible"
             )}
           >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
-            <div className="relative">
+            <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
+            <div className="relative z-10">
               <MonumentNotesGrid monumentId={id} initialNotes={notes} />
             </div>
           </section>
 
-          <div className="w-full xl:col-span-2">
+          <div className="relative z-[1] w-full xl:col-span-2">
             <ActivityPanel monumentId={id} />
           </div>
         </div>
