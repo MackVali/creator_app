@@ -1,165 +1,100 @@
 import type { TourStep } from "@/components/tour/TourProvider";
 
 const TIME_BLOCK_SAVED_EVENT = "tour:time-block-saved";
-const CONSTRAINTS_OPENED_EVENT = "tour:constraints-opened";
-const CONSTRAINTS_SAVED_EVENT = "tour:constraints-saved";
+const TIME_BLOCK_CREATE_OPENED_EVENT = "tour:time-block-create-opened";
+
+const getInputValue = (selector: string) => {
+  if (typeof document === "undefined") return "";
+  const element = document.querySelector(selector);
+  if (!(element instanceof HTMLInputElement)) return "";
+  return element.value.trim();
+};
+
+const hasTimeValue = (selector: string) => {
+  if (typeof document === "undefined") return false;
+  const element = document.querySelector(selector);
+  if (!(element instanceof HTMLInputElement)) return false;
+  return element.value.trim().length > 0 && element.validity.valid;
+};
+
+const hasSelectedDay = () => {
+  if (typeof document === "undefined") return false;
+  const wrapper = document.querySelector('[data-tour="selected-time-block-days"]');
+  if (wrapper?.getAttribute("data-tour-valid-days") === "true") {
+    return true;
+  }
+  return Boolean(
+    wrapper?.querySelector('button[aria-pressed="true"]')
+  );
+};
 
 export const dayTypesTourSteps: TourStep[] = [
   {
-    id: "day-types-create",
-    selector: '[data-tour="day-type-create"]',
-    title: "Create a new day type",
-    body: "Tap here to unlock the day type builder so you can craft today’s schedule template.",
-    requiresClick: true,
-    allowNext: false,
-    canSkip: false,
-    blockOutsideClicks: false,
-  },
-  {
-    id: "day-types-add-block-work",
+    id: "day-types-create-time-block",
     selector: '[data-tour="day-type-add-block"]',
-    title: "Add your first block",
-    body: "Click to begin building the WORK block that will form the backbone of this day type.",
+    title: "Create a Time Block",
+    body: "Time Blocks are the parts of your day CREATOR is allowed to schedule inside. Empty time stays unavailable.",
     requiresClick: true,
     allowNext: false,
-    blockOutsideClicks: false,
+    advanceOnEvent: { type: "custom", eventName: TIME_BLOCK_CREATE_OPENED_EVENT },
   },
   {
-    id: "day-types-block-name-work",
+    id: "day-types-set-up-time-block",
+    selector: '[data-tour="time-block-create-panel"]',
+    title: "Set up the block",
+    body: "This form creates one available window CREATOR can use for scheduling.",
+    allowNext: true,
+    blockOutsideClicks: true,
+    showSkip: true,
+    waitForSelector: true,
+  },
+  {
+    id: "day-types-name-time-block",
     selector: '[data-tour="selected-time-block-name"]',
-    title: "Label it WORK",
-    body: "Type exactly WORK so the scheduler knows this block is for focused energy.",
+    title: "Name the block",
+    body: "Add a clear name before continuing.",
     allowNext: true,
-    blockOutsideClicks: false,
+    blockOutsideClicks: true,
+    showSkip: true,
+    canAdvance: () =>
+      getInputValue('[data-tour="selected-time-block-name"]').length > 0,
+    disabledReason: "Name the Time Block first.",
   },
   {
-    id: "day-types-block-start-work",
-    selector: '[data-tour="selected-time-block-start"]',
-    title: "Set the start time",
-    body: "Set the exact time that work begins so the schedule matches your day.",
+    id: "day-types-set-time",
+    selector: '[data-tour="selected-time-block-time-range"]',
+    title: "Set the time",
+    body: "Choose when this block starts and ends before continuing.",
     allowNext: true,
-    blockOutsideClicks: false,
+    blockOutsideClicks: true,
+    showSkip: true,
+    canAdvance: () =>
+      hasTimeValue('[data-tour="selected-time-block-start"]') &&
+      hasTimeValue('[data-tour="selected-time-block-end"]'),
+    disabledReason: "Add both start and end times first.",
   },
   {
-    id: "day-types-block-end-work",
-    selector: '[data-tour="selected-time-block-end"]',
-    title: "Set the end time",
-    body: "Pick when work finishes so this block stops where your rest can start.",
+    id: "day-types-choose-days",
+    selector: '[data-tour="selected-time-block-days"]',
+    title: "Choose the days",
+    body: "Pick at least one weekday for this Time Block.",
     allowNext: true,
-    blockOutsideClicks: false,
+    blockOutsideClicks: true,
+    showSkip: true,
+    canAdvance: hasSelectedDay,
+    disabledReason: "Choose at least one day first.",
+    waitForSelector: true,
   },
   {
-    id: "day-types-block-save-work",
+    id: "day-types-save-time-block",
     selector: '[data-tour="selected-time-block-save"]',
     title: "Save the block",
-    body: "Save this block so it becomes part of the day type.",
+    body: "Save this Time Block so CREATOR has real space to schedule into.",
     requiresClick: true,
     allowNext: false,
-    blockOutsideClicks: false,
+    blockOutsideClicks: true,
+    showSkip: true,
     advanceOnEvent: { type: "custom", eventName: TIME_BLOCK_SAVED_EVENT },
     waitForSelector: true,
-  },
-  {
-    id: "day-types-constraints-panel-work",
-    selector: '[data-tour="selected-time-block-constraints-panel"]',
-    title: "Set Location context",
-    body:
-      "On the constraints menu, set Location Context to WORK so this block only scheduled your work related events",
-    allowNext: true,
-    blockOutsideClicks: false,
-    waitForSelector: true,
-    advanceOnEvent: { type: "custom", eventName: "tour:location-work-selected" },
-  },
-  {
-    id: "day-types-constraints-save-work",
-    selector: '[data-tour="constraints-save"]',
-    title: "Save constraints",
-    body: "Close the panel to keep the Work location bound to this block.",
-    requiresClick: false,
-    allowNext: true,
-    blockOutsideClicks: false,
-    advanceOnEvent: { type: "custom", eventName: CONSTRAINTS_SAVED_EVENT },
-  },
-  {
-    id: "day-types-add-block-sleep",
-    selector: '[data-tour="day-type-add-block"]',
-    title: "Add the SLEEP block",
-    body: "Add another block so you can capture rest hours and cover the entire day.",
-    requiresClick: true,
-    allowNext: false,
-    blockOutsideClicks: false,
-  },
-  {
-    id: "day-types-block-name-sleep",
-    selector: '[data-tour="selected-time-block-name"]',
-    title: "Label it SLEEP",
-    body: "Type exactly SLEEP so the scheduler knows this block represents downtime.",
-    allowNext: true,
-    blockOutsideClicks: false,
-  },
-  {
-    id: "day-types-block-start-sleep",
-    selector: '[data-tour="selected-time-block-start"]',
-    title: "Set the start time",
-    body: "Set when sleep begins (for example, 23:00).",
-    allowNext: true,
-    blockOutsideClicks: false,
-  },
-  {
-    id: "day-types-block-end-sleep",
-    selector: '[data-tour="selected-time-block-end"]',
-    title: "Set the end time",
-    body: "Set when sleep ends (for example, 07:00).",
-    allowNext: true,
-    blockOutsideClicks: false,
-  },
-  {
-    id: "day-types-block-save-sleep",
-    selector: '[data-tour="selected-time-block-save"]',
-    title: "Save the SLEEP block",
-    body: "Save this block so the break block is added to your day type.",
-    requiresClick: true,
-    allowNext: false,
-    blockOutsideClicks: false,
-    advanceOnEvent: { type: "custom", eventName: TIME_BLOCK_SAVED_EVENT },
-  },
-  {
-    id: "day-types-constraints-type-sleep",
-    selector: '[data-tour="selected-time-block-type"]',
-    title: "Open the block type dropdown",
-    body: "Open the dropdown now that the constraints panel is open so you can pick BREAK.",
-    requiresClick: false,
-    allowNext: true,
-    blockOutsideClicks: false,
-    advanceOnEvent: { type: "custom", eventName: "tour:block-type-break-selected" },
-    waitForSelector: true,
-  },
-  {
-    id: "day-types-constraints-save-sleep",
-    selector: '[data-tour="constraints-save"]',
-    title: "Save constraints",
-    body: "Close the panel to keep the break constraint for sleep.",
-    requiresClick: false,
-    allowNext: true,
-    blockOutsideClicks: false,
-  },
-  {
-    id: "day-types-energy-input",
-    selector: '[data-tour="selected-time-block-energy"]',
-    title: "Review block energy",
-    body:
-      "Use the flame icon on each block card to step through NO → LOW → MEDIUM → HIGH. Spend as much time as you need updating every block’s energy rating before pressing Next to continue.",
-    requiresClick: false,
-    allowNext: true,
-    blockOutsideClicks: false,
-    waitForSelector: true,
-  },
-  {
-    id: "day-types-coverage-reminder",
-    selector: '[data-tour="day-type-coverage"]',
-    title: "Cover all 24 hours",
-    body: "Blocks must cover the full 24 hours before you can save the day type, so keep adding blocks or adjust times until it says “Covers full 24 hours.”",
-    allowNext: true,
-    blockOutsideClicks: false,
   },
 ];

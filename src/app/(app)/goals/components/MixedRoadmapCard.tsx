@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import {
@@ -433,6 +434,27 @@ function MixedRoadmapItemContent({
     const campaignStateClasses = getCampaignStateClasses(
       item.campaign.scheduling_state
     );
+    const canToggleCampaign =
+      enableCampaignCollapse && Boolean(onCampaignCollapseToggle);
+    const toggleCampaignCollapse = () => {
+      if (!canToggleCampaign) {
+        return;
+      }
+
+      onCampaignCollapseToggle?.(campaignId);
+    };
+    const handleCampaignHeaderKeyDown = (
+      event: KeyboardEvent<HTMLDivElement>
+    ) => {
+      if (!canToggleCampaign || event.target !== event.currentTarget) {
+        return;
+      }
+
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleCampaignCollapse();
+      }
+    };
 
     return (
       <div
@@ -440,15 +462,34 @@ function MixedRoadmapItemContent({
       >
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/[0.08]" />
         <div className="space-y-2 sm:space-y-3">
-          <div className="flex items-start gap-1.5 sm:gap-2.5">
-            <DragHandle
-              attributes={topLevelHandle.attributes}
-              listeners={topLevelHandle.listeners}
-              label={`Reorder campaign ${campaignName}`}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[11px] font-semibold text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white sm:h-10 sm:w-10 sm:rounded-xl sm:text-sm"
-            >
-              <span aria-hidden>{campaignIdentity}</span>
-            </DragHandle>
+          <div
+            className={`flex items-start gap-1.5 rounded-[14px] transition-colors sm:gap-2.5 sm:rounded-[18px] ${
+              canToggleCampaign
+                ? "cursor-pointer active:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 sm:hover:bg-white/[0.025]"
+                : ""
+            }`}
+            onClick={toggleCampaignCollapse}
+            onKeyDown={handleCampaignHeaderKeyDown}
+            role={canToggleCampaign ? "button" : undefined}
+            tabIndex={canToggleCampaign ? 0 : undefined}
+            aria-expanded={canToggleCampaign ? !isCampaignCollapsed : undefined}
+            aria-controls={canToggleCampaign ? campaignGoalsId : undefined}
+            aria-label={
+              canToggleCampaign
+                ? `${isCampaignCollapsed ? "Expand" : "Collapse"} campaign ${campaignName}`
+                : undefined
+            }
+          >
+            <div onClick={(event) => event.stopPropagation()}>
+              <DragHandle
+                attributes={topLevelHandle.attributes}
+                listeners={topLevelHandle.listeners}
+                label={`Reorder campaign ${campaignName}`}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[11px] font-semibold text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white sm:h-10 sm:w-10 sm:rounded-xl sm:text-sm"
+              >
+                <span aria-hidden>{campaignIdentity}</span>
+              </DragHandle>
+            </div>
             <div className="min-w-0 flex-1 space-y-1 sm:space-y-1.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
@@ -467,7 +508,10 @@ function MixedRoadmapItemContent({
                 {enableCampaignCollapse ? (
                   <button
                     type="button"
-                    onClick={() => onCampaignCollapseToggle?.(campaignId)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onCampaignCollapseToggle?.(campaignId);
+                    }}
                     className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] p-1.5 text-white/70 transition hover:border-white/18 hover:bg-white/[0.07] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
                     aria-expanded={!isCampaignCollapsed}
                     aria-controls={campaignGoalsId}

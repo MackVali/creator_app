@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, Calendar, Link, DollarSign } from "lucide-react";
+import { Blocks, Calendar, LayoutDashboard, Link } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import BottomBarNav from "./BottomBarNav";
 import { Fab } from "@/components/ui/Fab";
@@ -11,10 +11,10 @@ export default function BottomNav() {
   const router = useRouter();
   const shouldHideNav = shouldHideBottomChrome(pathname);
   const items = [
-    { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: <Home className="h-6 w-6" /> },
-    { key: "schedule", label: "Schedule", href: "/schedule", icon: <Calendar className="h-6 w-6" /> },
+    { key: "dashboard", label: "COMMAND", href: "/dashboard", icon: <LayoutDashboard className="h-6 w-6" /> },
     { key: "friends", label: "CONNECT", href: "/friends", icon: <Link className="h-6 w-6" /> },
-    { key: "source", label: "Source", href: "/source", icon: <DollarSign className="h-6 w-6" /> },
+    { key: "schedule", label: "Schedule", href: "/schedule", icon: <Calendar className="h-6 w-6" /> },
+    { key: "source", label: "Source", href: "/source", icon: <Blocks className="h-6 w-6" /> },
   ];
 
   if (shouldHideNav) {
@@ -23,7 +23,10 @@ export default function BottomNav() {
 
   return (
     <>
-      <div className="fixed bottom-0 left-0 right-0 z-50" data-bottom-nav>
+      <div
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+8px)]"
+        data-bottom-nav
+      >
         <div className="relative">
           <div data-bottom-nav-bar>
             <BottomBarNav
@@ -33,7 +36,7 @@ export default function BottomNav() {
             />
           </div>
           <div
-            className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-6"
+            className="pointer-events-auto absolute left-1/2 top-0 -translate-x-1/2 -translate-y-6"
             data-bottom-nav-fab-launcher
           >
             <Fab />

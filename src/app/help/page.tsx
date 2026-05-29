@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { resetCreatorTourStateForRestart } from "@/lib/tours/creatorTourState";
 
 export default function HelpPage() {
   const router = useRouter();
 
   const handleRestart = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("dashboardTourCompleted", "false");
-    }
+    resetCreatorTourStateForRestart();
     router.push("/dashboard");
   }, [router]);
 

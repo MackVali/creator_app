@@ -1,4 +1,5 @@
 import type { TourStep } from "@/components/tour/TourProvider";
+import { DAY_TYPES_TOUR_PENDING_KEY } from "@/lib/tours/creatorTourState";
 
 export const scheduleTourSteps: TourStep[] = [
   {
@@ -19,23 +20,21 @@ export const scheduleTourSteps: TourStep[] = [
     id: "schedule-jump-to-date",
     selector: '[data-tour="jump-to-date"]',
     title: "Jump to a day",
-    body: "Use this to jump dates and set up Day Types.",
+    body: "Use this to jump dates and set up scheduling windows.",
     requiresClick: true,
     allowNext: false,
-    canSkip: false,
   },
   {
     id: "schedule-create-day-type",
     selector: '[data-tour="create-day-type"]',
-    title: "Create your first Day Type",
-    body: "Day Types are templates for how your day is structured. Create one to start scheduling.",
+    title: "Create your first Time Block",
+    body: "Time Blocks tell CREATOR when it is allowed to schedule work. Create one to start scheduling.",
     requiresClick: true,
     allowNext: false,
     onBeforeNext: () => {
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("tour:day-types:pending", "1");
+        window.localStorage.setItem(DAY_TYPES_TOUR_PENDING_KEY, "1");
       }
     },
-    canSkip: false,
   },
 ];

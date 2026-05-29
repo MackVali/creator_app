@@ -13,7 +13,7 @@ export default function AppMain({ children }: { children: ReactNode }) {
       className={
         isFocusedEditor
           ? "flex-1 pb-[env(safe-area-inset-bottom)]"
-          : "flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))]"
+          : "flex-1 pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"
       }
     >
       {children}

@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type UIEvent,
+} from "react";
 import Link from "next/link";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { cn } from "@/lib/utils";
@@ -53,6 +61,12 @@ type TimeBlock = {
   day_type_id?: string | null;
 };
 
+type TimeBlockListMode = "selected-day-type" | "all-blocks";
+type TimeBlockEditScope = "only-day-type" | "everywhere";
+type TimeBlockEditContext =
+  | { mode: "selected-day-type"; dayTypeId: string; sourceBlockId: string }
+  | { mode: "all-blocks"; sourceBlockId: string };
+
 type DayTypeBlockLink = {
   id?: string;
   day_type_id: string;
@@ -62,6 +76,12 @@ type DayTypeBlockLink = {
   allow_all_habit_types?: boolean | null;
   allow_all_skills?: boolean | null;
   allow_all_monuments?: boolean | null;
+};
+
+type TimeBlockOverlapConflict = {
+  dayKey: string;
+  dayType: DayType;
+  overlappingBlock: TimeBlock;
 };
 
 const getDayTypeBlockStateKey = (dayTypeId: string | null | undefined, blockId: string | null | undefined) =>
@@ -89,6 +109,7 @@ const BLOCK_TYPE_LABEL: Record<BlockType, string> = {
   PRACTICE: "Practice",
 };
 const DEFAULT_WEEKDAY_LINK_ENERGY: FlameLevel = "MEDIUM";
+const OVERLAP_CREATE_ERROR_PREFIX = "This Time Block overlaps another block";
 const DAYS_OF_WEEK = [
   { key: "sun", label: "S", index: 0 },
   { key: "mon", label: "M", index: 1 },
@@ -108,6 +129,7 @@ const DAY_PREVIEWS = [
   { key: "sat", shortLabel: "Sat", fullLabel: "Saturday", index: 6 },
   { key: "sun", shortLabel: "Sun", fullLabel: "Sunday", index: 0 },
 ];
+const DAY_PREVIEW_SWIPE_THRESHOLD_PX = 48;
 
 const SHOW_INTERNAL_DAY_TYPE_CONTROLS = false;
 
@@ -124,6 +146,10 @@ const DAY_INDEX_TO_LABEL = DAYS_OF_WEEK.reduce<Record<number, string>>((acc, day
 }, {});
 const DAY_KEY_TO_FULL_LABEL = DAY_PREVIEWS.reduce<Record<string, string>>((acc, day) => {
   acc[day.key] = day.fullLabel;
+  return acc;
+}, {});
+const DAY_PREVIEW_KEY_TO_POSITION = DAY_PREVIEWS.reduce<Record<string, number>>((acc, day, index) => {
+  acc[day.key] = index;
   return acc;
 }, {});
 
@@ -227,6 +253,38 @@ function sortTimeBlocks(blocks: TimeBlock[]): TimeBlock[] {
   });
 }
 
+function findDayTypeForWeekday(dayKey: string, dayTypes: DayType[]): DayType | null {
+  const dayIndex = DAY_KEY_TO_INDEX[dayKey];
+  if (typeof dayIndex !== "number") return null;
+  return (
+    dayTypes.find((dt) => dt.is_default && dt.days.includes(dayIndex)) ??
+    dayTypes.find((dt) => dt.days.includes(dayIndex)) ??
+    null
+  );
+}
+
+function getDayPreviewKeyByOffset(dayKey: string, offset: number): string {
+  const currentPosition = DAY_PREVIEW_KEY_TO_POSITION[dayKey] ?? 0;
+  const nextPosition =
+    (currentPosition + offset + DAY_PREVIEWS.length) % DAY_PREVIEWS.length;
+  return DAY_PREVIEWS[nextPosition]?.key ?? DEFAULT_DAY_PREVIEW.key;
+}
+
+function timeBlocksOverlap(
+  proposed: Pick<TimeBlock, "start_local" | "end_local">,
+  existing: Pick<TimeBlock, "start_local" | "end_local">
+): boolean {
+  const proposedSegments = blockToSegments(proposed);
+  const existingSegments = blockToSegments(existing);
+  return proposedSegments.some((proposedSegment) =>
+    existingSegments.some(
+      (existingSegment) =>
+        proposedSegment.startMin < existingSegment.endMin &&
+        proposedSegment.endMin > existingSegment.startMin
+    )
+  );
+}
+
 function nudgeTime(value: string, deltaMinutes: number): string {
   const minutes = parseTimeToMinutes(value);
   if (minutes === null) return value;
@@ -297,11 +355,11 @@ async function resolveLocationIdsForBlocks({
 
 function TimeInput({ label, value, onChange, helper, ariaLabel, dataTour }: TimeInputProps) {
   return (
-    <label className="group relative flex flex-col gap-1 text-sm text-white/70">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/50">
+    <label className="group relative flex flex-col gap-0.5 text-xs text-white/70">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50">
         {label}
       </span>
-      <div className="flex items-stretch gap-2">
+      <div className="flex items-stretch gap-1.5">
         <input
           type="time"
           step={1800}
@@ -309,29 +367,29 @@ function TimeInput({ label, value, onChange, helper, ariaLabel, dataTour }: Time
           onChange={(e) => onChange(e.target.value)}
           aria-label={ariaLabel ?? label}
           data-tour={dataTour}
-          className="flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white placeholder:text-white/35 transition group-hover:border-white/20 group-focus-within:border-white/25 focus:outline-none"
+          className="min-h-9 flex-1 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-sm text-white placeholder:text-white/35 transition group-hover:border-white/20 group-focus-within:border-white/25 focus:outline-none"
         />
         <div className="flex flex-col overflow-hidden rounded-lg border border-white/12 bg-white/5 shadow-[0_6px_16px_rgba(0,0,0,0.28)]">
           <button
             type="button"
             onClick={() => onChange(nudgeTime(value, 30))}
-            className="flex h-8 items-center justify-center px-2 text-white/85 transition hover:bg-white/10 active:translate-y-[0.5px]"
+            className="flex h-[18px] items-center justify-center px-2 text-white/85 transition hover:bg-white/10 active:translate-y-[0.5px]"
             aria-label={`Increase ${label} by 30 minutes`}
           >
-            <ChevronUp className="h-4 w-4" />
+            <ChevronUp className="h-3.5 w-3.5" />
           </button>
           <div className="h-px bg-white/10" />
           <button
             type="button"
             onClick={() => onChange(nudgeTime(value, -30))}
-            className="flex h-8 items-center justify-center px-2 text-white/70 transition hover:bg-white/10 active:translate-y-[0.5px]"
+            className="flex h-[18px] items-center justify-center px-2 text-white/70 transition hover:bg-white/10 active:translate-y-[0.5px]"
             aria-label={`Decrease ${label} by 30 minutes`}
           >
-            <ChevronDown className="h-4 w-4" />
+            <ChevronDown className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
-      {helper ? <span className="text-[11px] text-white/35">{helper}</span> : null}
+      {helper ? <span className="text-[9px] leading-tight text-white/35">{helper}</span> : null}
     </label>
   );
 }
@@ -353,11 +411,18 @@ export default function NewDayTypePage() {
   const [days, setDays] = useState<Set<string>>(() => new Set([DEFAULT_DAY_PREVIEW.key]));
   const [selectedDayTypeId, setSelectedDayTypeId] = useState<string | null>(null);
   const [focusedDayKey, setFocusedDayKey] = useState(DEFAULT_DAY_PREVIEW.key);
+  const dayPreviewScrollerRef = useRef<HTMLDivElement | null>(null);
+  const dayPreviewScrollFrameRef = useRef<number | null>(null);
+  const dayPreviewScrollSyncTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const dayPreviewPointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dayPreviewPointerDraggingRef = useRef(false);
+  const dayPreviewSuppressClickRef = useRef(false);
   const [isCreatingDayType, setIsCreatingDayType] = useState(false);
   const [isEditingExisting, setIsEditingExisting] = useState(false);
-  const [showCreateForm, setShowCreateForm] = useState(true);
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [createState, setCreateState] = useState(DEFAULT_FORM);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [dayTypeCreateError, setDayTypeCreateError] = useState<string | null>(null);
   const [savingBlock, setSavingBlock] = useState(false);
   const [dayTypeName, setDayTypeName] = useState("Default day");
   const [hasDefaultDayType, setHasDefaultDayType] = useState(false);
@@ -367,8 +432,13 @@ export default function NewDayTypePage() {
   const [saving, setSaving] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const [editingBlockContext, setEditingBlockContext] = useState<TimeBlockEditContext | null>(null);
+  const [editScope, setEditScope] = useState<TimeBlockEditScope>("everywhere");
+  const [timeBlockListMode, setTimeBlockListMode] = useState<TimeBlockListMode>("selected-day-type");
+  const [attachConflictBlockId, setAttachConflictBlockId] = useState<string | null>(null);
   const [constraintsTarget, setConstraintsTarget] = useState<TimeBlock | null>(null);
   const [tourEnergyHighlightId, setTourEnergyHighlightId] = useState<string | null>(null);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [blockEnergy, setBlockEnergy] = useState<Map<string, FlameLevel>>(() => new Map());
   const [blockLocation, setBlockLocation] = useState<Map<string, LocationContextOption | null>>(
@@ -475,10 +545,17 @@ export default function NewDayTypePage() {
       typeof DAY_KEY_TO_INDEX[focusedDayKey] === "number"
         ? focusedDayKey
         : DEFAULT_DAY_PREVIEW.key;
+    setIsCreatingDayType(false);
+    setIsEditingExisting(false);
+    setSaveMessage(null);
+    setDayTypeCreateError(null);
     setEditingBlockId(null);
+    setEditingBlockContext(null);
+    setEditScope("everywhere");
     setConstraintsTarget(null);
     setCreateState(DEFAULT_FORM);
     setCreateError(null);
+    setConfirmingDeleteId(null);
     setDays(new Set([defaultDayKey]));
     setShowCreateForm(true);
   }, [focusedDayKey]);
@@ -494,6 +571,29 @@ export default function NewDayTypePage() {
             next.delete(key);
           }
         });
+        return next;
+      });
+    };
+
+    prune(setBlockEnergy);
+    prune(setBlockLocation);
+    prune(setBlockType);
+    prune(setBlockAllowAllHabitTypes);
+    prune(setBlockAllowAllSkills);
+    prune(setBlockAllowAllMonuments);
+    prune(setBlockAllowedHabitTypes);
+    prune(setBlockAllowedSkillIds);
+    prune(setBlockAllowedMonumentIds);
+  };
+
+  const removeCompositeStateEntryForDayTypeBlock = (dayTypeId: string, blockId: string) => {
+    const stateKey = getDayTypeBlockStateKey(dayTypeId, blockId);
+    if (!stateKey) return;
+    const prune = <T,>(setter: (updater: (prev: Map<string, T>) => Map<string, T>) => void) => {
+      setter((prev) => {
+        if (!prev.has(stateKey)) return prev;
+        const next = new Map(prev);
+        next.delete(stateKey);
         return next;
       });
     };
@@ -553,6 +653,43 @@ export default function NewDayTypePage() {
     moveEntries(setBlockAllowedHabitTypes, (value) => new Set(value));
     moveEntries(setBlockAllowedSkillIds, (value) => new Set(value));
     moveEntries(setBlockAllowedMonumentIds, (value) => new Set(value));
+  };
+
+  const moveDayTypeBlockStateKey = (
+    dayTypeId: string | null | undefined,
+    fromBlockId: string,
+    toBlockId: string
+  ) => {
+    const fromKey = getDayTypeBlockStateKey(dayTypeId, fromBlockId);
+    const toKey = getDayTypeBlockStateKey(dayTypeId, toBlockId);
+    if (!fromKey || !toKey || fromKey === toKey) return;
+
+    const moveEntry = <T,>(
+      setter: (updater: (prev: Map<string, T>) => Map<string, T>) => void,
+      cloneFn?: (value: T) => T
+    ) => {
+      setter((prev) => {
+        const next = new Map(prev);
+        const value = prev.get(fromKey);
+        next.delete(fromKey);
+        if (value !== undefined) {
+          next.set(toKey, cloneFn ? cloneFn(value) : value);
+        }
+        return next;
+      });
+    };
+
+    moveEntry(setBlockEnergy);
+    moveEntry(setBlockLocation, (value) =>
+      value ? { ...value } : (value as LocationContextOption | null)
+    );
+    moveEntry(setBlockType);
+    moveEntry(setBlockAllowAllHabitTypes);
+    moveEntry(setBlockAllowAllSkills);
+    moveEntry(setBlockAllowAllMonuments);
+    moveEntry(setBlockAllowedHabitTypes, (value) => new Set(value));
+    moveEntry(setBlockAllowedSkillIds, (value) => new Set(value));
+    moveEntry(setBlockAllowedMonumentIds, (value) => new Set(value));
   };
 
   const ensureDayTypeBlockSettings = (
@@ -622,6 +759,11 @@ export default function NewDayTypePage() {
     if (typeof window === "undefined") return;
     window.dispatchEvent(new CustomEvent("tour:time-block-saved"));
   };
+
+  const emitTimeBlockCreateOpenedEvent = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent("tour:time-block-create-opened"));
+  }, []);
 
   const emitConstraintsSavedEvent = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -1175,11 +1317,14 @@ export default function NewDayTypePage() {
       setSaveMessage(null);
       setIsEditingExisting(false);
       setEditingBlockId(null);
+      setEditingBlockContext(null);
+      setEditScope("everywhere");
       setConstraintsTarget(null);
       setMenuOpenId(null);
       setCreateError(null);
       setCreateState(DEFAULT_FORM);
       setSelectedDayTypeId(dayType.id);
+      setTimeBlockListMode("selected-day-type");
       setDayTypeName(dayType.name);
       setIsDefault(dayType.is_default);
       setSchedulerMode(dayType.scheduler_mode ?? "REGULAR");
@@ -1203,6 +1348,8 @@ export default function NewDayTypePage() {
     setIsCreatingDayType(false);
     setIsEditingExisting(false);
     setEditingBlockId(null);
+    setEditingBlockContext(null);
+    setEditScope("everywhere");
     setConstraintsTarget(null);
     setMenuOpenId(null);
     setCreateError(null);
@@ -1210,27 +1357,10 @@ export default function NewDayTypePage() {
   }, []);
 
   useEffect(() => {
-    if (!hasBlocks && isCreatingDayType) {
-      startCreateBlock();
-    }
-  }, [hasBlocks, isCreatingDayType, startCreateBlock]);
-
-  useEffect(() => {
     if (isCreatingDayType) return;
-    if (!selectedDayTypeId && dayTypes.length > 0) {
-      const focusedOwnerId = dayOwnership.get(focusedDayKey);
-      const focusedDefaultType = focusedOwnerId
-        ? dayTypes.find((dt) => dt.id === focusedOwnerId)
-        : null;
-      if (!focusedDefaultType) {
-        resetVisibleDaySelection(focusedDayKey);
-        return;
-      }
-      loadDayTypeSelection(focusedDefaultType);
-      return;
-    }
     if (dayTypes.length === 0) {
       setSelectedDayTypeId(null);
+      setTimeBlockListMode("all-blocks");
       setDayTypeName("");
       setIsDefault(true);
       setSchedulerMode("REGULAR");
@@ -1241,9 +1371,19 @@ export default function NewDayTypePage() {
       setConstraintsTarget(null);
       setCreateError(null);
       setCreateState(DEFAULT_FORM);
+      return;
+    }
+
+    const focusedDayType = findDayTypeForWeekday(focusedDayKey, dayTypes);
+    if (!focusedDayType) {
+      resetVisibleDaySelection(focusedDayKey);
+      return;
+    }
+
+    if (selectedDayTypeId !== focusedDayType.id) {
+      loadDayTypeSelection(focusedDayType);
     }
   }, [
-    dayOwnership,
     dayTypes,
     focusedDayKey,
     isCreatingDayType,
@@ -1271,25 +1411,37 @@ export default function NewDayTypePage() {
     setSelectedIds(new Set(matching ?? []));
   }, [dayTypeBlockMap, isCreatingDayType, selectedDayTypeId]);
 
-  const startCreateDayType = useCallback(() => {
-    const availableForNewDefault = DAYS_OF_WEEK.filter((day) => !dayOwnership.get(day.key)).map(
-      (day) => day.key
-    );
-    const nextIsDefault = availableForNewDefault.length > 0;
-    const preferredDays = availableForNewDefault.includes(focusedDayKey)
-      ? [focusedDayKey]
-      : availableForNewDefault;
+  useEffect(() => {
+    if (!selectedDayTypeId) {
+      setTimeBlockListMode("all-blocks");
+    }
+  }, [selectedDayTypeId]);
 
+  useEffect(() => {
+    setAttachConflictBlockId(null);
+  }, [focusedDayKey, selectedDayTypeId]);
+
+  const startCreateDayType = useCallback(() => {
     setIsCreatingDayType(true);
     setSelectedDayTypeId(makeId());
     setSelectedIds(new Set());
     setDayTypeName("");
     setSchedulerMode("REGULAR");
-    setIsDefault(nextIsDefault);
-    setSelectedDays(nextIsDefault ? new Set(preferredDays) : new Set());
+    setIsDefault(true);
+    setSelectedDays(new Set([focusedDayKey]));
     setSaveMessage(null);
+    setDayTypeCreateError(null);
     setIsEditingExisting(false);
-  }, [dayOwnership, focusedDayKey]);
+    setShowCreateForm(false);
+    setCreateError(null);
+    setCreateState(DEFAULT_FORM);
+    setEditingBlockId(null);
+    setEditingBlockContext(null);
+    setEditScope("everywhere");
+    setConstraintsTarget(null);
+    setConfirmingDeleteId(null);
+    setMenuOpenId(null);
+  }, [focusedDayKey]);
 
   const availableDayKeys = useMemo(
     () =>
@@ -1311,25 +1463,196 @@ export default function NewDayTypePage() {
     [dayOwnership, selectedDayTypeId, selectedDays]
   );
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
   const resetBlockForm = () => {
     setCreateState(DEFAULT_FORM);
     setCreateError(null);
     setShowCreateForm(false);
     setEditingBlockId(null);
+    setEditingBlockContext(null);
+    setEditScope("everywhere");
+    setConfirmingDeleteId(null);
     setMenuOpenId(null);
   };
+
+  const getCreateOverlapConflicts = useCallback(
+    (
+      proposed: Pick<TimeBlock, "start_local" | "end_local">,
+      selectedDayKeys: string[]
+    ): TimeBlockOverlapConflict[] => {
+      return selectedDayKeys.flatMap((dayKey) => {
+        const dayType = findDayTypeForWeekday(dayKey, dayTypes);
+        if (!dayType) return [];
+        const blockIds = dayTypeBlockMap.get(dayType.id);
+        if (!blockIds?.size) return [];
+
+        const overlappingBlock = timeBlocks.find(
+          (block) => blockIds.has(block.id) && timeBlocksOverlap(proposed, block)
+        );
+        return overlappingBlock ? [{ dayKey, dayType, overlappingBlock }] : [];
+      });
+    },
+    [dayTypeBlockMap, dayTypes, timeBlocks]
+  );
+
+  const resetDayTypeCreateForm = useCallback(() => {
+    setIsCreatingDayType(false);
+    setIsEditingExisting(false);
+    setSelectedDayTypeId(null);
+    setSelectedIds(new Set());
+    setDayTypeName("");
+    setIsDefault(true);
+    setSchedulerMode("REGULAR");
+    setSelectedDays(new Set());
+    setSaveMessage(null);
+    setDayTypeCreateError(null);
+    setEditingBlockId(null);
+    setEditingBlockContext(null);
+    setEditScope("everywhere");
+    setConstraintsTarget(null);
+    setConfirmingDeleteId(null);
+    setMenuOpenId(null);
+  }, []);
+
+  const handleSubmitDayType = useCallback(async () => {
+    setDayTypeCreateError(null);
+    setSaveMessage(null);
+
+    const name = normalizeLabel(dayTypeName);
+    if (!name) {
+      setDayTypeCreateError("Name this Day Type.");
+      return;
+    }
+
+    const selectedDayKeys = Array.from(selectedDays).filter(
+      (dayKey) => typeof DAY_KEY_TO_INDEX[dayKey] === "number"
+    );
+    const selectedDayIndexes = selectedDayKeys
+      .map((dayKey) => DAY_KEY_TO_INDEX[dayKey])
+      .filter((dayIndex): dayIndex is number => typeof dayIndex === "number");
+    const selectedDayIndexSet = new Set(selectedDayIndexes);
+    const shouldAssignWeekdays = selectedDayIndexes.length > 0;
+
+    setSaving(true);
+    try {
+      const locallyCreated: DayType = {
+        id: makeId(),
+        name,
+        is_default: shouldAssignWeekdays,
+        days: selectedDayIndexes,
+        scheduler_mode: "REGULAR",
+      };
+      let created = locallyCreated;
+
+      if (supabase) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          setDayTypeCreateError("You must be signed in to create a Day Type.");
+          return;
+        }
+
+        const { data: inserted, error: insertError } = await supabase
+          .from("day_types")
+          .insert({
+            user_id: user.id,
+            name,
+            is_default: shouldAssignWeekdays,
+            days: selectedDayIndexes,
+            scheduler_mode: "REGULAR",
+          })
+          .select("id,name,is_default,days,scheduler_mode")
+          .single();
+        if (insertError) throw insertError;
+
+        created = normalizeDayTypeRow(inserted as DayType);
+
+        if (shouldAssignWeekdays) {
+          const conflictingDefaults = dayTypes.filter(
+            (dayType) =>
+              dayType.id !== created.id &&
+              dayType.is_default &&
+              dayType.days.some((dayIndex) => selectedDayIndexSet.has(dayIndex))
+          );
+
+          for (const dayType of conflictingDefaults) {
+            const remainingDays = dayType.days.filter(
+              (dayIndex) => !selectedDayIndexSet.has(dayIndex)
+            );
+            const { error: updateError } = await supabase
+              .from("day_types")
+              .update({
+                days: remainingDays,
+                is_default: remainingDays.length > 0,
+              })
+              .eq("id", dayType.id)
+              .eq("user_id", user.id);
+            if (updateError) throw updateError;
+          }
+        }
+      }
+
+      const nextDayTypes = [
+        ...dayTypes.map((dayType) => {
+          if (!shouldAssignWeekdays || dayType.id === created.id || !dayType.is_default) {
+            return dayType;
+          }
+          const daysForType = dayType.days.filter(
+            (dayIndex) => !selectedDayIndexSet.has(dayIndex)
+          );
+          return {
+            ...dayType,
+            days: daysForType,
+            is_default: daysForType.length > 0,
+          };
+        }),
+        created,
+      ];
+      setDayTypes(nextDayTypes);
+      setHasDefaultDayType(
+        nextDayTypes.some((dayType) => dayType.is_default && dayType.days.length > 0)
+      );
+      setDayTypeBlockMap((prev) => {
+        const next = new Map(prev);
+        next.set(created.id, new Set());
+        return next;
+      });
+
+      if (selectedDayKeys[0]) {
+        setFocusedDayKey(selectedDayKeys[0]);
+      }
+      setSelectedDayTypeId(created.id);
+      setSelectedIds(new Set());
+      setDayTypeName(created.name);
+      setIsDefault(created.is_default);
+      setSchedulerMode(created.scheduler_mode ?? "REGULAR");
+      setSelectedDays(
+        new Set(
+          created.days
+            .map((dayIndex) => DAY_INDEX_TO_KEY[dayIndex])
+            .filter((dayKey): dayKey is string => Boolean(dayKey))
+        )
+      );
+      setTimeBlockListMode("selected-day-type");
+      setIsCreatingDayType(false);
+      setIsEditingExisting(false);
+      setShowCreateForm(false);
+      setCreateError(null);
+      setCreateState(DEFAULT_FORM);
+      setEditingBlockId(null);
+      setEditingBlockContext(null);
+      setEditScope("everywhere");
+      setConstraintsTarget(null);
+      setConfirmingDeleteId(null);
+      setMenuOpenId(null);
+      setSaveMessage(`Created Day Type: ${created.name}`);
+    } catch (err) {
+      console.error(err);
+      setDayTypeCreateError("Unable to create Day Type right now.");
+    } finally {
+      setSaving(false);
+    }
+  }, [dayTypeName, dayTypes, selectedDays, supabase]);
 
   const handleSubmitBlock = async () => {
     setCreateError(null);
@@ -1351,6 +1674,16 @@ export default function NewDayTypePage() {
       setCreateError("Pick at least one day for this block.");
       return;
     }
+    if (!isEditingBlock) {
+      const normalizedProposed = {
+        start_local: normalizeTimeLabel(createState.start_local),
+        end_local: normalizeTimeLabel(createState.end_local),
+      };
+      const overlapConflicts = getCreateOverlapConflicts(normalizedProposed, selectedDayKeys);
+      if (overlapConflicts.length > 0) {
+        return;
+      }
+    }
     setSavingBlock(true);
     try {
       if (isEditingBlock && editingBlockId) {
@@ -1362,19 +1695,48 @@ export default function NewDayTypePage() {
           day_type_id: timeBlocks.find((block) => block.id === editingBlockId)?.day_type_id ?? null,
         };
 
+        const shouldUpdateOnlyDayType =
+          editingBlockContext?.mode === "selected-day-type" && editScope === "only-day-type";
+        const selectedEditDayTypeId =
+          editingBlockContext?.mode === "selected-day-type" ? editingBlockContext.dayTypeId : null;
+
         if (!supabase) {
-          setTimeBlocks((prev) =>
-            sortTimeBlocks(
-              prev.map((block) => (block.id === editingBlockId ? optimisticUpdated : block))
-            )
-          );
-          setBlockEnergy((prev) => {
-            const next = new Map(prev);
-            if (!next.has(editingBlockId)) {
-              next.set(editingBlockId, "NO");
-            }
-            return next;
-          });
+          if (shouldUpdateOnlyDayType && selectedEditDayTypeId) {
+            const cloned: TimeBlock = {
+              ...optimisticUpdated,
+              id: makeId(),
+              day_type_id: null,
+            };
+            setTimeBlocks((prev) => sortTimeBlocks([...prev, cloned]));
+            setDayTypeBlockMap((prev) => {
+              const next = new Map(prev);
+              const ids = new Set(next.get(selectedEditDayTypeId) ?? []);
+              ids.delete(editingBlockId);
+              ids.add(cloned.id);
+              next.set(selectedEditDayTypeId, ids);
+              return next;
+            });
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              next.delete(editingBlockId);
+              next.add(cloned.id);
+              return next;
+            });
+            moveDayTypeBlockStateKey(selectedEditDayTypeId, editingBlockId, cloned.id);
+          } else {
+            setTimeBlocks((prev) =>
+              sortTimeBlocks(
+                prev.map((block) => (block.id === editingBlockId ? optimisticUpdated : block))
+              )
+            );
+            setBlockEnergy((prev) => {
+              const next = new Map(prev);
+              if (!next.has(editingBlockId)) {
+                next.set(editingBlockId, "NO");
+              }
+              return next;
+            });
+          }
           resetBlockForm();
           return;
         }
@@ -1387,32 +1749,95 @@ export default function NewDayTypePage() {
           return;
         }
 
-        const { data, error: updateError } = await supabase
-          .from("time_blocks")
-          .update({
-            label,
-            start_local: optimisticUpdated.start_local,
-            end_local: optimisticUpdated.end_local,
-          })
-          .eq("id", editingBlockId)
-          .eq("user_id", user.id)
-          .select("id,label,start_local,end_local,day_type_id")
-          .single();
+        if (shouldUpdateOnlyDayType && selectedEditDayTypeId) {
+          const { data: insertedData, error: insertError } = await supabase
+            .from("time_blocks")
+            .insert({
+              user_id: user.id,
+              label,
+              start_local: optimisticUpdated.start_local,
+              end_local: optimisticUpdated.end_local,
+            })
+            .select("id,label,start_local,end_local,day_type_id")
+            .single();
+          if (insertError) throw insertError;
 
-        if (updateError) throw updateError;
+          const insertedRaw = (insertedData as TimeBlock) ?? {
+            ...optimisticUpdated,
+            id: makeId(),
+            day_type_id: null,
+          };
+          const inserted = {
+            ...insertedRaw,
+            label: normalizeLabel(insertedRaw.label) ?? "TIME BLOCK",
+            start_local: normalizeTimeLabel(insertedRaw.start_local),
+            end_local: normalizeTimeLabel(insertedRaw.end_local),
+            day_type_id: insertedRaw.day_type_id ?? null,
+          };
 
-        const updatedRaw = (data as TimeBlock) ?? optimisticUpdated;
-        const updated = {
-          ...updatedRaw,
-          label: normalizeLabel(updatedRaw.label) ?? "TIME BLOCK",
-          start_local: normalizeTimeLabel(updatedRaw.start_local),
-          end_local: normalizeTimeLabel(updatedRaw.end_local),
-          day_type_id: updatedRaw.day_type_id ?? optimisticUpdated.day_type_id ?? null,
-        };
+          const { data: relinked, error: relinkError } = await supabase
+            .from("day_type_time_blocks")
+            .update({ time_block_id: inserted.id })
+            .eq("user_id", user.id)
+            .eq("day_type_id", selectedEditDayTypeId)
+            .eq("time_block_id", editingBlockId)
+            .select("id")
+            .maybeSingle();
 
-        setTimeBlocks((prev) =>
-          sortTimeBlocks(prev.map((block) => (block.id === editingBlockId ? updated : block)))
-        );
+          if (relinkError || !relinked) {
+            await supabase
+              .from("time_blocks")
+              .delete()
+              .eq("id", inserted.id)
+              .eq("user_id", user.id);
+            if (relinkError) throw relinkError;
+            throw new Error("No selected Day Type link found for this time block.");
+          }
+
+          setTimeBlocks((prev) => sortTimeBlocks([...prev, inserted]));
+          setDayTypeBlockMap((prev) => {
+            const next = new Map(prev);
+            const ids = new Set(next.get(selectedEditDayTypeId) ?? []);
+            ids.delete(editingBlockId);
+            ids.add(inserted.id);
+            next.set(selectedEditDayTypeId, ids);
+            return next;
+          });
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(editingBlockId);
+            next.add(inserted.id);
+            return next;
+          });
+          moveDayTypeBlockStateKey(selectedEditDayTypeId, editingBlockId, inserted.id);
+        } else {
+          const { data, error: updateError } = await supabase
+            .from("time_blocks")
+            .update({
+              label,
+              start_local: optimisticUpdated.start_local,
+              end_local: optimisticUpdated.end_local,
+            })
+            .eq("id", editingBlockId)
+            .eq("user_id", user.id)
+            .select("id,label,start_local,end_local,day_type_id")
+            .single();
+
+          if (updateError) throw updateError;
+
+          const updatedRaw = (data as TimeBlock) ?? optimisticUpdated;
+          const updated = {
+            ...updatedRaw,
+            label: normalizeLabel(updatedRaw.label) ?? "TIME BLOCK",
+            start_local: normalizeTimeLabel(updatedRaw.start_local),
+            end_local: normalizeTimeLabel(updatedRaw.end_local),
+            day_type_id: updatedRaw.day_type_id ?? optimisticUpdated.day_type_id ?? null,
+          };
+
+          setTimeBlocks((prev) =>
+            sortTimeBlocks(prev.map((block) => (block.id === editingBlockId ? updated : block)))
+          );
+        }
         resetBlockForm();
         emitTimeBlockSavedEvent();
         return;
@@ -1602,25 +2027,26 @@ export default function NewDayTypePage() {
     }
   };
 
-  const beginEditBlock = (block: TimeBlock) => {
+  const beginEditBlock = (
+    block: TimeBlock,
+    context: TimeBlockEditContext = { mode: "all-blocks", sourceBlockId: block.id },
+    options?: { openConstraints?: boolean }
+  ) => {
     setEditingBlockId(block.id);
+    setEditingBlockContext(context);
+    setEditScope(context.mode === "selected-day-type" ? "only-day-type" : "everywhere");
     setCreateState({
       label: block.label ?? "",
       start_local: block.start_local,
       end_local: block.end_local,
     });
     setCreateError(null);
-    setConstraintsTarget(null);
+    setConfirmingDeleteId(null);
+    setConstraintsTarget(options?.openConstraints ? block : null);
     setShowCreateForm(true);
   };
 
   const handleDeleteBlock = async (id: string) => {
-    const target = timeBlocks.find((block) => block.id === id);
-    const label = normalizeLabel(target?.label) ?? "time block";
-    const confirmed = window.confirm(
-      `Delete ${label}? This will remove it from every saved scheduling window.`
-    );
-    if (!confirmed) return;
     setDeletingId(id);
     setCreateError(null);
     try {
@@ -1661,6 +2087,7 @@ export default function NewDayTypePage() {
         });
       removeCompositeStateEntriesForBlock(id);
       setConstraintsTarget((prev) => (prev?.id === id ? null : prev));
+      setConfirmingDeleteId((prev) => (prev === id ? null : prev));
       if (editingBlockId === id) {
         resetBlockForm();
       }
@@ -1673,14 +2100,211 @@ export default function NewDayTypePage() {
     }
   };
 
+  const handleRemoveBlockFromDayType = async (blockId: string, dayTypeId: string) => {
+    setCreateError(null);
+    setSaveMessage(null);
+    setAttachConflictBlockId(null);
+    const unlinkLocally = () => {
+      setDayTypeBlockMap((prev) => {
+        const next = new Map(prev);
+        const ids = new Set(next.get(dayTypeId) ?? []);
+        ids.delete(blockId);
+        next.set(dayTypeId, ids);
+        return next;
+      });
+      if (selectedDayTypeId === dayTypeId) {
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(blockId);
+          return next;
+        });
+      }
+    };
+    const relinkLocally = () => {
+      setDayTypeBlockMap((prev) => {
+        const next = new Map(prev);
+        const ids = new Set(next.get(dayTypeId) ?? []);
+        ids.add(blockId);
+        next.set(dayTypeId, ids);
+        return next;
+      });
+      if (selectedDayTypeId === dayTypeId) {
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          next.add(blockId);
+          return next;
+        });
+      }
+    };
+
+    unlinkLocally();
+
+    try {
+      if (supabase) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          relinkLocally();
+          setCreateError("You must be signed in to update a Day Type.");
+          return;
+        }
+
+        const { error: deleteError } = await supabase
+          .from("day_type_time_blocks")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("day_type_id", dayTypeId)
+          .eq("time_block_id", blockId);
+        if (deleteError) throw deleteError;
+      }
+
+      removeCompositeStateEntryForDayTypeBlock(dayTypeId, blockId);
+      setConstraintsTarget((prev) => (prev?.id === blockId ? null : prev));
+      setConfirmingDeleteId((prev) => (prev === blockId ? null : prev));
+      setMenuOpenId((prev) => (prev === blockId ? null : prev));
+      if (editingBlockId === blockId && editingBlockContext?.mode === "selected-day-type") {
+        resetBlockForm();
+      }
+    } catch (err) {
+      console.error(err);
+      relinkLocally();
+      setCreateError("Unable to remove this block from the selected Day Type.");
+    }
+  };
+
+  const handleToggleBlockForSelectedDayType = async (block: TimeBlock, nextChecked: boolean) => {
+    setCreateError(null);
+    setSaveMessage(null);
+
+    if (!selectedDayTypeId) return;
+
+    const dayTypeId = selectedDayTypeId;
+    const currentBlockIds = dayTypeBlockMap.get(dayTypeId) ?? new Set<string>();
+    const alreadyLinked = currentBlockIds.has(block.id);
+
+    if (!nextChecked) {
+      if (!alreadyLinked) return;
+      await handleRemoveBlockFromDayType(block.id, dayTypeId);
+      return;
+    }
+
+    setAttachConflictBlockId(null);
+    if (alreadyLinked) return;
+
+    const hasOverlap = timeBlocks.some(
+      (existing) =>
+        currentBlockIds.has(existing.id) &&
+        existing.id !== block.id &&
+        timeBlocksOverlap(block, existing)
+    );
+    if (hasOverlap) {
+      setAttachConflictBlockId(block.id);
+      return;
+    }
+
+    const linkLocally = () => {
+      setDayTypeBlockMap((prev) => {
+        const next = new Map(prev);
+        const ids = new Set(next.get(dayTypeId) ?? []);
+        ids.add(block.id);
+        next.set(dayTypeId, ids);
+        return next;
+      });
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.add(block.id);
+        return next;
+      });
+      ensureDayTypeBlockSettings(block.id, dayTypeId, DEFAULT_WEEKDAY_LINK_ENERGY);
+    };
+    const unlinkLocally = () => {
+      setDayTypeBlockMap((prev) => {
+        const next = new Map(prev);
+        const ids = new Set(next.get(dayTypeId) ?? []);
+        ids.delete(block.id);
+        next.set(dayTypeId, ids);
+        return next;
+      });
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(block.id);
+        return next;
+      });
+      removeCompositeStateEntryForDayTypeBlock(dayTypeId, block.id);
+    };
+
+    linkLocally();
+
+    try {
+      if (supabase) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          unlinkLocally();
+          setCreateError("You must be signed in to update a Day Type.");
+          return;
+        }
+
+        const stateKey = getDayTypeBlockStateKey(dayTypeId, block.id);
+        const { error: upsertError } = await supabase
+          .from("day_type_time_blocks")
+          .upsert(
+            {
+              user_id: user.id,
+              day_type_id: dayTypeId,
+              time_block_id: block.id,
+              energy: stateKey ? blockEnergy.get(stateKey) ?? DEFAULT_WEEKDAY_LINK_ENERGY : DEFAULT_WEEKDAY_LINK_ENERGY,
+              block_type: stateKey ? blockType.get(stateKey) ?? "FOCUS" : "FOCUS",
+              location_context_id: null,
+              allow_all_habit_types: stateKey ? blockAllowAllHabitTypes.get(stateKey) ?? true : true,
+              allow_all_skills: stateKey ? blockAllowAllSkills.get(stateKey) ?? true : true,
+              allow_all_monuments: stateKey ? blockAllowAllMonuments.get(stateKey) ?? true : true,
+            },
+            { onConflict: "day_type_id,time_block_id" }
+          );
+        if (upsertError) throw upsertError;
+      }
+    } catch (err) {
+      console.error(err);
+      unlinkLocally();
+      setCreateError("Unable to add this block to the selected Day Type.");
+    }
+  };
+
   const handleConstraintsClick = useCallback(
     (block: TimeBlock) => {
       setConstraintsTarget(block);
+      setConfirmingDeleteId(null);
       setMenuOpenId(null);
       emitConstraintsOpenedEvent();
     },
     [emitConstraintsOpenedEvent]
   );
+
+  const openTimeBlockCard = (block: TimeBlock, dayTypeId: string | null | undefined) => {
+    const selectedContext =
+      timeBlockListMode === "selected-day-type" && dayTypeId
+        ? ({
+            mode: "selected-day-type",
+            dayTypeId,
+            sourceBlockId: block.id,
+          } as TimeBlockEditContext)
+        : ({
+            mode: "all-blocks",
+            sourceBlockId: block.id,
+          } as TimeBlockEditContext);
+
+    if (selectedContext.mode === "selected-day-type") {
+      ensureDayTypeBlockSettings(block.id, selectedContext.dayTypeId);
+    }
+
+    setConfirmingDeleteId(null);
+    beginEditBlock(block, selectedContext, { openConstraints: true });
+    setMenuOpenId(null);
+    emitConstraintsOpenedEvent();
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1697,21 +2321,87 @@ export default function NewDayTypePage() {
   }, [findWorkBlock, handleConstraintsClick]);
 
   const selectedBlocks = useMemo(
-    () => timeBlocks.filter((block) => selectedIds.has(block.id)),
-    [selectedIds, timeBlocks]
+    () => {
+      if (!selectedDayTypeId) return [];
+      const blockIds = dayTypeBlockMap.get(selectedDayTypeId);
+      if (!blockIds?.size) return [];
+      return timeBlocks.filter((block) => blockIds.has(block.id));
+    },
+    [dayTypeBlockMap, selectedDayTypeId, timeBlocks]
+  );
+
+  const selectedDayType = useMemo(
+    () => dayTypes.find((dayType) => dayType.id === selectedDayTypeId) ?? null,
+    [dayTypes, selectedDayTypeId]
+  );
+
+  const getSelectedDayTypeBlockIds = useCallback(() => {
+    if (!selectedDayTypeId) return new Set<string>();
+    return new Set(dayTypeBlockMap.get(selectedDayTypeId) ?? []);
+  }, [dayTypeBlockMap, selectedDayTypeId]);
+
+  const selectedDayTypeBlockIds = useMemo(
+    () => getSelectedDayTypeBlockIds(),
+    [getSelectedDayTypeBlockIds]
   );
 
   const visibleWindowBlocks = useMemo(
-    () => (isCreatingDayType ? timeBlocks : selectedBlocks),
-    [isCreatingDayType, selectedBlocks, timeBlocks]
+    () =>
+      timeBlockListMode === "all-blocks"
+        ? timeBlocks
+        : timeBlocks.filter((block) => selectedDayTypeBlockIds.has(block.id)),
+    [selectedDayTypeBlockIds, timeBlockListMode, timeBlocks]
   );
 
   const hasVisibleWindowBlocks = visibleWindowBlocks.length > 0;
 
-  const focusedWeekday = useMemo(
-    () => DAY_PREVIEWS.find((day) => day.key === focusedDayKey) ?? DEFAULT_DAY_PREVIEW,
-    [focusedDayKey]
+  const selectedCreateDayKeys = useMemo(
+    () =>
+      Array.from(days).filter((dayKey) => typeof DAY_KEY_TO_INDEX[dayKey] === "number"),
+    [days]
   );
+
+  const proposedCreateBlock = useMemo<TimeBlock | null>(() => {
+    if (!showCreateForm || isCreatingDayType || isEditingBlock) return null;
+    const start = parseTimeToMinutes(createState.start_local);
+    const end = parseTimeToMinutes(createState.end_local);
+    if (start === null || end === null) return null;
+    return {
+      id: "__proposed-time-block__",
+      label: normalizeLabel(createState.label) ?? "TIME BLOCK",
+      start_local: normalizeTimeLabel(createState.start_local),
+      end_local: normalizeTimeLabel(createState.end_local),
+      day_type_id: null,
+    };
+  }, [
+    createState.end_local,
+    createState.label,
+    createState.start_local,
+    isCreatingDayType,
+    isEditingBlock,
+    showCreateForm,
+  ]);
+
+  const createOverlapConflicts = useMemo(
+    () =>
+      proposedCreateBlock
+        ? getCreateOverlapConflicts(proposedCreateBlock, selectedCreateDayKeys)
+        : [],
+    [getCreateOverlapConflicts, proposedCreateBlock, selectedCreateDayKeys]
+  );
+  const hasCreateOverlapConflict = createOverlapConflicts.length > 0;
+
+  const proposedAttachConflictBlock = useMemo(
+    () => timeBlocks.find((block) => block.id === attachConflictBlockId) ?? null,
+    [attachConflictBlockId, timeBlocks]
+  );
+
+  useEffect(() => {
+    if (hasCreateOverlapConflict) return;
+    setCreateError((prev) =>
+      prev?.startsWith(OVERLAP_CREATE_ERROR_PREFIX) ? null : prev
+    );
+  }, [hasCreateOverlapConflict]);
 
   const handleFocusWeekday = useCallback(
     (dayKey: string) => {
@@ -1725,16 +2415,14 @@ export default function NewDayTypePage() {
         return;
       }
 
-      const ownerId = dayOwnership.get(dayKey);
-      const owner = ownerId ? dayTypes.find((dt) => dt.id === ownerId) : null;
-      if (owner) {
-        loadDayTypeSelection(owner);
+      const dayType = findDayTypeForWeekday(dayKey, dayTypes);
+      if (dayType) {
+        loadDayTypeSelection(dayType);
       } else {
         resetVisibleDaySelection(dayKey);
       }
     },
     [
-      dayOwnership,
       dayTypes,
       isCreatingDayType,
       isDefault,
@@ -1743,30 +2431,142 @@ export default function NewDayTypePage() {
     ]
   );
 
-  const startCreateWindowBlock = useCallback(() => {
-    if (!selectedDayTypeId) {
-      const internalId = makeId();
-      setSelectedDayTypeId(internalId);
-      setIsCreatingDayType(true);
-      setDayTypeName(`${focusedWeekday.fullLabel} windows`.toUpperCase());
-      setIsDefault(true);
-      setSelectedDays(new Set([focusedDayKey]));
+  const handleDayPreviewScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (dayPreviewPointerDraggingRef.current || dayPreviewSuppressClickRef.current) {
+        return;
+      }
+
+      const scroller = event.currentTarget;
+      if (dayPreviewScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(dayPreviewScrollFrameRef.current);
+      }
+
+      dayPreviewScrollFrameRef.current = window.requestAnimationFrame(() => {
+        const scrollerRect = scroller.getBoundingClientRect();
+        const scrollerCenter = scrollerRect.left + scrollerRect.width / 2;
+        let closestDayKey = focusedDayKey;
+        let closestDistance = Number.POSITIVE_INFINITY;
+
+        scroller.querySelectorAll<HTMLElement>("[data-day-preview-key]").forEach((preview) => {
+          const previewRect = preview.getBoundingClientRect();
+          const previewCenter = previewRect.left + previewRect.width / 2;
+          const distance = Math.abs(previewCenter - scrollerCenter);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestDayKey = preview.dataset.dayPreviewKey ?? focusedDayKey;
+          }
+        });
+
+        dayPreviewScrollFrameRef.current = null;
+        if (closestDayKey !== focusedDayKey) {
+          handleFocusWeekday(closestDayKey);
+        }
+      });
+    },
+    [focusedDayKey, handleFocusWeekday]
+  );
+
+  const scrollFocusedDayPreviewIntoView = useCallback(() => {
+    const scroller = dayPreviewScrollerRef.current;
+    if (!scroller) return;
+    const preview = scroller.querySelector<HTMLElement>(
+      `[data-day-preview-key="${focusedDayKey}"]`
+    );
+    if (!preview) return;
+
+    const nextScrollLeft =
+      preview.offsetLeft - (scroller.clientWidth - preview.offsetWidth) / 2;
+    dayPreviewSuppressClickRef.current = true;
+    scroller.scrollTo({
+      left: Math.max(0, nextScrollLeft),
+      behavior: "auto",
+    });
+
+    if (dayPreviewScrollSyncTimeoutRef.current !== null) {
+      window.clearTimeout(dayPreviewScrollSyncTimeoutRef.current);
     }
+    dayPreviewScrollSyncTimeoutRef.current = window.setTimeout(() => {
+      dayPreviewSuppressClickRef.current = false;
+      dayPreviewScrollSyncTimeoutRef.current = null;
+    }, 260);
+  }, [focusedDayKey]);
+
+  useEffect(() => {
+    scrollFocusedDayPreviewIntoView();
+  }, [scrollFocusedDayPreviewIntoView]);
+
+  const handleDayPreviewPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    dayPreviewPointerStartRef.current = { x: event.clientX, y: event.clientY };
+    dayPreviewPointerDraggingRef.current = true;
+  }, []);
+
+  const clearDayPreviewPointer = useCallback(() => {
+    dayPreviewPointerStartRef.current = null;
+    dayPreviewPointerDraggingRef.current = false;
+  }, []);
+
+  const handleDayPreviewPointerUp = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const start = dayPreviewPointerStartRef.current;
+      clearDayPreviewPointer();
+      if (!start) return;
+
+      const deltaX = start.x - event.clientX;
+      const deltaY = start.y - event.clientY;
+      if (
+        Math.abs(deltaX) < DAY_PREVIEW_SWIPE_THRESHOLD_PX ||
+        Math.abs(deltaX) < Math.abs(deltaY)
+      ) {
+        return;
+      }
+
+      dayPreviewSuppressClickRef.current = true;
+      if (dayPreviewScrollSyncTimeoutRef.current !== null) {
+        window.clearTimeout(dayPreviewScrollSyncTimeoutRef.current);
+      }
+      dayPreviewScrollSyncTimeoutRef.current = window.setTimeout(() => {
+        dayPreviewSuppressClickRef.current = false;
+        dayPreviewScrollSyncTimeoutRef.current = null;
+      }, 260);
+      handleFocusWeekday(getDayPreviewKeyByOffset(focusedDayKey, deltaX > 0 ? 1 : -1));
+    },
+    [clearDayPreviewPointer, focusedDayKey, handleFocusWeekday]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (dayPreviewScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(dayPreviewScrollFrameRef.current);
+      }
+      if (dayPreviewScrollSyncTimeoutRef.current !== null) {
+        window.clearTimeout(dayPreviewScrollSyncTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const startCreateWindowBlock = useCallback(() => {
+    setIsCreatingDayType(false);
+    setIsEditingExisting(false);
+    setDayTypeCreateError(null);
+    setSaveMessage(null);
     startCreateBlock();
-  }, [focusedDayKey, focusedWeekday.fullLabel, selectedDayTypeId, startCreateBlock]);
+    emitTimeBlockCreateOpenedEvent();
+  }, [emitTimeBlockCreateOpenedEvent, startCreateBlock]);
 
   const dayPreviewItems = useMemo(
     () =>
       DAY_PREVIEWS.map((day) => {
         const ownerId = dayOwnership.get(day.key) ?? null;
-        const assignedDayType = dayTypes.find((dt) => dt.days.includes(day.index)) ?? null;
+        const assignedDayType = findDayTypeForWeekday(day.key, dayTypes);
         const patternName = assignedDayType?.name.trim() || null;
         const isFocused = day.key === focusedDayKey;
-        const sourceDayTypeId = isFocused ? selectedDayTypeId : ownerId;
+        const sourceDayTypeId = isFocused ? selectedDayTypeId : assignedDayType?.id ?? ownerId;
         const sourceBlocks = isFocused
           ? selectedBlocks
           : timeBlocks.filter((block) => {
-              const ids = ownerId ? dayTypeBlockMap.get(ownerId) : null;
+              const ids = sourceDayTypeId ? dayTypeBlockMap.get(sourceDayTypeId) : null;
               return ids?.has(block.id) ?? false;
             });
         const blocks = sourceBlocks
@@ -1788,13 +2588,44 @@ export default function NewDayTypePage() {
             };
           })
           .filter((entry) => entry.start_local && entry.end_local);
+        const includesProposedBlock = Boolean(
+          proposedCreateBlock && selectedCreateDayKeys.includes(day.key)
+        );
+        const includesAttachConflictBlock = Boolean(
+          proposedAttachConflictBlock && isFocused && sourceDayTypeId === selectedDayTypeId
+        );
+        const previewBlocks = [...blocks];
+        if (includesProposedBlock) {
+          previewBlocks.push({
+            id: proposedCreateBlock?.id,
+            label: proposedCreateBlock?.label,
+            start_local: proposedCreateBlock?.start_local ?? "",
+            end_local: proposedCreateBlock?.end_local ?? "",
+            blockType: "FOCUS" as const,
+            hasConstraints: false,
+          });
+        }
+        if (includesAttachConflictBlock) {
+          previewBlocks.push({
+            id: proposedAttachConflictBlock?.id,
+            label: proposedAttachConflictBlock?.label,
+            start_local: proposedAttachConflictBlock?.start_local ?? "",
+            end_local: proposedAttachConflictBlock?.end_local ?? "",
+            blockType: "FOCUS" as const,
+            hasConstraints: false,
+          });
+        }
+        const hasCreateConflict = createOverlapConflicts.some(
+          (conflict) => conflict.dayKey === day.key
+        );
 
         return {
           ...day,
-          blocks,
-          blockCount: sourceBlocks.length,
+          blocks: previewBlocks,
+          blockCount: previewBlocks.length,
           active: isFocused,
           patternName,
+          hasCreateConflict,
         };
       }),
     [
@@ -1802,11 +2633,15 @@ export default function NewDayTypePage() {
       blockAllowAllSkills,
       blockAllowedHabitTypes,
       blockType,
+      createOverlapConflicts,
       dayOwnership,
       dayTypes,
       dayTypeBlockMap,
       focusedDayKey,
+      proposedCreateBlock,
+      proposedAttachConflictBlock,
       selectedBlocks,
+      selectedCreateDayKeys,
       selectedDayTypeId,
       timeBlocks,
     ]
@@ -2203,6 +3038,8 @@ export default function NewDayTypePage() {
           nextDayTypes.some((dt) => dt.is_default && dt.days.length > 0)
         );
         setEditingBlockId(null);
+        setEditingBlockContext(null);
+        setEditScope("everywhere");
         setConstraintsTarget(null);
         setMenuOpenId(null);
         setCreateError(null);
@@ -2309,6 +3146,8 @@ export default function NewDayTypePage() {
         setSelectedDayTypeId(inserted.id);
         setSchedulerMode(normalizeSchedulerMode(inserted.scheduler_mode as string | null));
         setEditingBlockId(null);
+        setEditingBlockContext(null);
+        setEditScope("everywhere");
         setConstraintsTarget(null);
         setMenuOpenId(null);
         setCreateError(null);
@@ -2356,7 +3195,7 @@ export default function NewDayTypePage() {
           <div className="flex items-center justify-between">
             <Link
               href="/schedule"
-              className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-gradient-to-b from-white/16 to-white/6 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_6px_14px_rgba(0,0,0,0.35)] transition hover:border-white/30 hover:from-white/20 hover:to-white/10 hover:text-white"
+              className="inline-flex items-center gap-1.5 rounded-full border border-black/65 bg-black/35 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/72 shadow-[0_6px_14px_rgba(0,0,0,0.28)] transition hover:border-white/16 hover:bg-black/25 hover:text-white/88"
             >
               ← Back to schedule
             </Link>
@@ -2370,48 +3209,130 @@ export default function NewDayTypePage() {
             </p>
           </div>
 
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                  Day previews
+                </h2>
+              </div>
+              <span className="shrink-0 text-[11px] uppercase tracking-[0.14em] text-white/40">
+                Swipe
+              </span>
+            </div>
+            <div
+              ref={dayPreviewScrollerRef}
+              className="-mx-3 flex snap-x snap-mandatory gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4"
+              onScroll={handleDayPreviewScroll}
+              onPointerDown={handleDayPreviewPointerDown}
+              onPointerUp={handleDayPreviewPointerUp}
+              onPointerCancel={clearDayPreviewPointer}
+            >
+              {dayPreviewItems.map((day) => (
+                <article
+                  key={day.key}
+                  data-day-preview-key={day.key}
+                  role="button"
+                  tabIndex={0}
+                  aria-current={day.active ? "date" : undefined}
+                  onClick={() => {
+                    if (dayPreviewSuppressClickRef.current) return;
+                    handleFocusWeekday(day.key);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    handleFocusWeekday(day.key);
+                  }}
+                  className={cn(
+                    "min-w-[86%] snap-center rounded-2xl border bg-gradient-to-b from-[#141820] to-[#0d0f14] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_42px_rgba(0,0,0,0.42)] sm:min-w-[21rem]",
+                    day.hasCreateConflict
+                      ? "border-red-400/45"
+                      : day.active
+                        ? "border-black/70"
+                        : "border-black/45"
+                  )}
+                >
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-white">
+                        {day.fullLabel}
+                      </h3>
+                      <p className="mt-1 text-xs text-white/50">
+                        {day.blockCount === 0
+                          ? "No scheduling windows"
+                          : `${day.blockCount} ${day.blockCount === 1 ? "window" : "windows"}`}
+                      </p>
+                    </div>
+                    {day.patternName ? (
+                      <div className="max-w-[48%] text-right text-[10px] font-semibold uppercase leading-tight tracking-[0.14em] text-white/48">
+                        {day.patternName}
+                      </div>
+                    ) : null}
+                  </div>
+                  <DayType24hPreview blocks={day.blocks} />
+                </article>
+              ))}
+            </div>
+          </section>
+
           <section className="space-y-2">
-            {!showCreateForm ? (
+            {!isEditingBlock ? (
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={startCreateWindowBlock}
                   data-tour="day-type-add-block"
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 text-xs font-semibold text-white/80 transition hover:border-white/25 hover:bg-white/10 hover:text-white sm:px-3"
+                  className={cn(
+                    "inline-flex h-9 items-center justify-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold transition hover:border-white/25 hover:bg-white/10 hover:text-white focus-visible:border-white/30 focus-visible:bg-white/10 focus-visible:outline-none sm:px-3",
+                    showCreateForm && !isCreatingDayType
+                      ? "border-white/20 bg-white/10 text-white/90"
+                      : "border-white/15 bg-white/5 text-white/80"
+                  )}
                 >
-                  <Plus className="h-3.5 w-3.5 text-emerald-300/80" aria-hidden="true" />
+                  <Plus className="h-3.5 w-3.5 text-white/60" aria-hidden="true" />
                   <span>add TIME BLOCK</span>
                 </button>
                 <button
                   type="button"
                   onClick={startCreateDayType}
                   data-tour="day-type-create"
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-white/15 bg-black/25 px-2.5 text-xs font-semibold text-white/80 transition hover:border-white/25 hover:bg-white/10 hover:text-white sm:px-3"
+                  className={cn(
+                    "inline-flex h-9 items-center justify-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold transition hover:border-white/25 hover:bg-white/10 hover:text-white focus-visible:border-white/30 focus-visible:bg-white/10 focus-visible:outline-none sm:px-3",
+                    isCreatingDayType
+                      ? "border-white/20 bg-white/10 text-white/90"
+                      : "border-white/15 bg-black/25 text-white/80"
+                  )}
                 >
-                  <Plus className="h-3.5 w-3.5 text-emerald-300/80" aria-hidden="true" />
+                  <Plus className="h-3.5 w-3.5 text-white/60" aria-hidden="true" />
                   <span>add DAY TYPE</span>
                 </button>
               </div>
             ) : null}
 
-            {showCreateForm ? (
-              <div className="rounded-2xl border border-white/12 bg-gradient-to-b from-[#171920] to-[#101218] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_20px_48px_rgba(0,0,0,0.48)] sm:p-5">
+            {showCreateForm && !isCreatingDayType ? (
+              <div
+                className="rounded-2xl border border-black/80 bg-gradient-to-b from-[#171920] to-[#101218] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_20px_48px_rgba(0,0,0,0.52)] sm:p-5"
+                data-tour="time-block-create-panel"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="space-y-1">
                     <div className="text-[11px] uppercase tracking-[0.16em] text-white/50">
                       {isEditingBlock ? "Edit time block" : "New time block"}
                     </div>
-                    {isEditingBlock ? (
-                      <div className="text-xs text-white/60">
-                        Updating {normalizeLabel(createState.label) ?? "time block"}
-                      </div>
-                    ) : null}
-                  </div>
+	                    {isEditingBlock ? (
+	                      <div className="text-xs text-white/60">
+	                        {editingBlockContext?.mode === "selected-day-type"
+	                          ? `Editing ${selectedDayType?.name ?? "selected Day Type"}`
+	                          : "Editing the master block"}
+	                      </div>
+	                    ) : null}
+	                  </div>
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={resetBlockForm}
-                      className="rounded-full border border-white/16 bg-gradient-to-b from-white/10 to-white/4 px-3 py-1.5 text-xs font-semibold text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_8px_18px_rgba(0,0,0,0.3)] transition hover:border-white/28 hover:from-white/14 hover:to-white/6 sm:px-4 sm:py-2 sm:text-sm"
+                      className="rounded-full border border-black/65 bg-black/35 px-3 py-1.5 text-xs font-semibold text-white/72 shadow-[0_6px_14px_rgba(0,0,0,0.28)] transition hover:border-white/16 hover:bg-black/25 hover:text-white/88 sm:px-4 sm:py-2 sm:text-sm"
                     >
                       Cancel
                     </button>
@@ -2420,7 +3341,7 @@ export default function NewDayTypePage() {
                       onClick={handleSubmitBlock}
                       disabled={savingBlock}
                       data-tour="selected-time-block-save"
-                      className="rounded-full border border-white/20 bg-gradient-to-b from-white/20 to-white/10 px-3 py-1.5 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_10px_24px_rgba(0,0,0,0.4)] transition hover:border-white/35 hover:from-white/26 hover:to-white/14 disabled:opacity-60 sm:px-4 sm:py-2 sm:text-sm"
+                      className="rounded-full border border-white/14 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90 shadow-[0_8px_18px_rgba(0,0,0,0.34)] transition hover:border-white/22 hover:bg-white/14 hover:text-white disabled:opacity-60 sm:px-4 sm:py-2 sm:text-sm"
                     >
                       {savingBlock
                         ? isEditingBlock
@@ -2430,9 +3351,42 @@ export default function NewDayTypePage() {
                           ? "Update block"
                           : "Add block"}
                     </button>
-                  </div>
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-[1.2fr_1fr_1fr]">
+	                  </div>
+	                </div>
+	                {isEditingBlock && editingBlockContext?.mode === "selected-day-type" ? (
+	                  <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-2.5">
+	                    <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+	                      Update scope
+	                    </div>
+	                    <div className="grid grid-cols-2 gap-1 rounded-full border border-black/55 bg-black/35 p-1">
+	                      {[
+	                        { value: "only-day-type", label: "Only this Day Type" },
+	                        { value: "everywhere", label: "Update everywhere" },
+	                      ].map((option) => {
+	                        const active = editScope === option.value;
+	                        return (
+	                          <button
+	                            key={option.value}
+	                            type="button"
+	                            onClick={() => setEditScope(option.value as TimeBlockEditScope)}
+	                            className={cn(
+	                              "min-h-8 rounded-full px-2 text-[11px] font-semibold transition",
+	                              active
+	                                ? "bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
+	                                : "text-white/55 hover:bg-white/7 hover:text-white/80"
+	                            )}
+	                          >
+	                            {option.label}
+	                          </button>
+	                        );
+	                      })}
+	                    </div>
+	                    <p className="mt-2 text-[11px] leading-snug text-white/48">
+	                      Only this Day Type saves a separate linked block for this preset. Update everywhere edits the master block and every Day Type using it.
+	                    </p>
+	                  </div>
+	                ) : null}
+	                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-[1.2fr_1fr_1fr]">
                   <label className="group relative col-span-2 flex flex-col gap-1 text-sm text-white/70 sm:col-span-1">
                     <input
                       type="text"
@@ -2444,33 +3398,44 @@ export default function NewDayTypePage() {
                         }))
                       }
                       data-tour="selected-time-block-name"
+                      data-tour-valid-name={String(Boolean(createState.label.trim()))}
                       placeholder="Focus block"
-                      className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white placeholder:text-white/35 transition group-hover:border-white/20 group-focus-within:border-white/25 focus:outline-none"
+                      className="min-h-9 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-sm text-white placeholder:text-white/35 transition group-hover:border-white/20 group-focus-within:border-white/25 focus:outline-none"
                     />
                   </label>
-                  <TimeInput
-                    label="Start time"
-                    ariaLabel="Start time"
-                    value={createState.start_local}
-                    onChange={(next) => setCreateState((prev) => ({ ...prev, start_local: next }))}
-                    dataTour="selected-time-block-start"
-                    helper="HH:MM — we’ll handle overnight."
-                  />
-                  <TimeInput
-                    label="End time"
-                    ariaLabel="End time"
-                    value={createState.end_local}
-                    onChange={(next) => setCreateState((prev) => ({ ...prev, end_local: next }))}
-                    dataTour="selected-time-block-end"
-                    helper="Ends before start? We wrap past midnight."
-                  />
+                  <div
+                    className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-2"
+                    data-tour="selected-time-block-time-range"
+                    data-tour-valid-time={String(Boolean(createState.start_local && createState.end_local))}
+                  >
+                    <TimeInput
+                      label="Start time"
+                      ariaLabel="Start time"
+                      value={createState.start_local}
+                      onChange={(next) => setCreateState((prev) => ({ ...prev, start_local: next }))}
+                      dataTour="selected-time-block-start"
+                      helper="HH:MM - we'll handle overnight."
+                    />
+                    <TimeInput
+                      label="End time"
+                      ariaLabel="End time"
+                      value={createState.end_local}
+                      onChange={(next) => setCreateState((prev) => ({ ...prev, end_local: next }))}
+                      dataTour="selected-time-block-end"
+                      helper="Ends before start? We wrap past midnight."
+                    />
+                  </div>
                 </div>
                 {!isEditingBlock ? (
-                  <div className="mt-3 flex flex-col gap-2">
+                  <div
+                    className="mt-3 flex flex-col gap-2"
+                    data-tour="selected-time-block-days"
+                    data-tour-valid-days={String(days.size > 0)}
+                  >
                     <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/50">
                       Days
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="grid grid-cols-7 gap-1">
                       {DAY_PREVIEWS.map((day) => {
                         const active = days.has(day.key);
                         return (
@@ -2490,10 +3455,10 @@ export default function NewDayTypePage() {
                             }
                             aria-pressed={active}
                             className={cn(
-                              "h-7 rounded-full border px-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition",
+                              "h-7 min-w-0 rounded-full border px-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] transition",
                               active
-                                ? "border-white/40 bg-white/16 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]"
-                                : "border-white/12 bg-black/25 text-white/55 hover:border-white/24 hover:bg-white/10 hover:text-white/80"
+                                ? "border-black/45 bg-white/10 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
+                                : "border-black/45 bg-black/35 text-white/48 hover:border-white/16 hover:bg-black/20 hover:text-white/75"
                             )}
                           >
                             {day.shortLabel}
@@ -2503,8 +3468,96 @@ export default function NewDayTypePage() {
                     </div>
                   </div>
                 ) : null}
-                {createError ? (
-                  <div className="mt-3 text-sm text-white/70">{createError}</div>
+                {createError && !createError.startsWith(OVERLAP_CREATE_ERROR_PREFIX) ? (
+                  <div className="mt-3 text-sm text-red-100/90">{createError}</div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {isCreatingDayType && !showCreateForm ? (
+              <div
+                className="rounded-2xl border border-white/12 bg-gradient-to-b from-[#171920] to-[#101218] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_20px_48px_rgba(0,0,0,0.52)] sm:p-5"
+                data-tour="day-type-create-panel"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-white/50">
+                      New day type
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={resetDayTypeCreateForm}
+                      className="rounded-full border border-black/65 bg-black/35 px-3 py-1.5 text-xs font-semibold text-white/72 shadow-[0_6px_14px_rgba(0,0,0,0.28)] transition hover:border-white/16 hover:bg-black/25 hover:text-white/88 sm:px-4 sm:py-2 sm:text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSubmitDayType}
+                      disabled={saving}
+                      data-tour="day-type-save"
+                      className="rounded-full border border-white/14 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90 shadow-[0_8px_18px_rgba(0,0,0,0.34)] transition hover:border-white/22 hover:bg-white/14 hover:text-white disabled:opacity-60 sm:px-4 sm:py-2 sm:text-sm"
+                    >
+                      {saving ? "Creating…" : "Add day type"}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="group relative flex flex-col gap-1 text-sm text-white/70">
+                    <input
+                      type="text"
+                      value={dayTypeName}
+                      onChange={(e) => setDayTypeName(e.target.value.toUpperCase())}
+                      data-tour="day-type-name"
+                      placeholder="WORKDAY"
+                      className="min-h-9 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-sm text-white placeholder:text-white/35 transition group-hover:border-white/20 group-focus-within:border-white/25 focus:outline-none"
+                    />
+                  </label>
+                  <p className="mt-2 text-[11px] leading-snug text-white/48">
+                    Choose the weekdays that should use this Day Type.
+                  </p>
+                </div>
+                <div className="mt-3 flex flex-col gap-2" data-tour="day-type-days">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/50">
+                    Days
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {DAY_PREVIEWS.map((day) => {
+                      const active = selectedDays.has(day.key);
+                      return (
+                        <button
+                          key={day.key}
+                          type="button"
+                          onClick={() => {
+                            setFocusedDayKey(day.key);
+                            setSelectedDays((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(day.key)) {
+                                next.delete(day.key);
+                              } else {
+                                next.add(day.key);
+                              }
+                              return next;
+                            });
+                          }}
+                          aria-pressed={active}
+                          className={cn(
+                            "h-7 min-w-0 rounded-full border px-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] transition",
+                            active
+                              ? "border-black/45 bg-white/10 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
+                              : "border-black/45 bg-black/35 text-white/48 hover:border-white/16 hover:bg-black/20 hover:text-white/75"
+                          )}
+                        >
+                          {day.shortLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {dayTypeCreateError ? (
+                  <div className="mt-3 text-sm text-white/70">{dayTypeCreateError}</div>
                 ) : null}
               </div>
             ) : null}
@@ -2529,9 +3582,11 @@ export default function NewDayTypePage() {
                       setSelectedDayTypeId(null);
                       setShowCreateForm(false);
                       setSaveMessage(null);
-                      setIsEditingExisting(false);
-                      setEditingBlockId(null);
-                      setConstraintsTarget(null);
+	                      setIsEditingExisting(false);
+	                      setEditingBlockId(null);
+	                      setEditingBlockContext(null);
+	                      setEditScope("everywhere");
+	                      setConstraintsTarget(null);
                       setMenuOpenId(null);
                       setCreateError(null);
                       setCreateState(DEFAULT_FORM);
@@ -2614,7 +3669,8 @@ export default function NewDayTypePage() {
                             <button
                               key={day.key}
                               type="button"
-                              onClick={() =>
+                              onClick={() => {
+                                setFocusedDayKey(day.key);
                                 setSelectedDays((prev) => {
                                   const next = new Set(prev);
                                   if (next.has(day.key)) {
@@ -2623,8 +3679,8 @@ export default function NewDayTypePage() {
                                     next.add(day.key);
                                   }
                                   return next;
-                                })
-                              }
+                                });
+                              }}
                               className={cn(
                                 "flex h-6 w-6 items-center justify-center rounded-full border text-[10px] font-semibold transition",
                                 conflict && active
@@ -2813,77 +3869,50 @@ export default function NewDayTypePage() {
           </section>
           ) : null}
 
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                  Day previews
-                </h2>
-              </div>
-              <span className="shrink-0 text-[11px] uppercase tracking-[0.14em] text-white/40">
-                Swipe
-              </span>
-            </div>
-            <div className="-mx-3 flex snap-x snap-mandatory gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4">
-              {dayPreviewItems.map((day) => (
-                <article
-                  key={day.key}
-                  className={cn(
-                    "min-w-[86%] snap-center rounded-2xl border bg-gradient-to-b from-[#141820] to-[#0d0f14] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_42px_rgba(0,0,0,0.42)] sm:min-w-[21rem]",
-                    day.active ? "border-white/28" : "border-white/12"
-                  )}
-                >
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-white">
-                        {day.fullLabel}
-                      </h3>
-                      {day.patternName ? (
-                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/45">
-                          {day.patternName}
-                        </p>
-                      ) : null}
-                      <p className="mt-1 text-xs text-white/50">
-                        {day.blockCount === 0
-                          ? "No scheduling windows"
-                          : `${day.blockCount} ${day.blockCount === 1 ? "window" : "windows"}`}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleFocusWeekday(day.key)}
-                      className={cn(
-                        "rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] transition",
-                        day.active
-                          ? "border-white/16 bg-white/10 text-white/70"
-                          : "border-white/12 bg-white/5 text-white/55 hover:border-white/24 hover:text-white"
-                      )}
-                    >
-                      {day.active ? "Selected" : "View"}
-                    </button>
-                  </div>
-                  <DayType24hPreview blocks={day.blocks} />
-                </article>
-              ))}
-            </div>
-          </section>
-
-	          <section className="space-y-3 sm:space-y-4">
-	                <div className="flex items-center justify-between">
-	                  <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-	                    {focusedWeekday.fullLabel} windows
-	                  </h2>
-		                  {!showCreateForm ? (
-		                    <button
-		                      type="button"
-		                      onClick={startCreateWindowBlock}
-	                      data-tour="day-type-add-block"
-	                      className="rounded-full border border-white/18 bg-gradient-to-b from-white/14 to-white/6 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_18px_rgba(0,0,0,0.35)] transition hover:border-white/30 hover:from-white/20 hover:to-white/9 sm:px-3 sm:py-1.5 sm:text-xs"
+		          <section className="space-y-3 sm:space-y-4">
+	            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+	              <div>
+	                <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+	                  Time blocks
+	                </h2>
+	                <p className="mt-1 text-[11px] text-white/45">
+	                  {timeBlockListMode === "selected-day-type"
+	                    ? selectedDayType
+	                      ? `${selectedDayType.name} blocks`
+	                      : "No Day Type selected"
+	                    : "All saved blocks"}
+	                </p>
+	              </div>
+	              <div className="grid grid-cols-2 gap-1 rounded-full border border-black/55 bg-black/35 p-1">
+	                {[
+	                  { value: "selected-day-type", label: "Selected Day Type" },
+	                  { value: "all-blocks", label: "All Blocks" },
+	                ].map((option) => {
+	                  const active = timeBlockListMode === option.value;
+	                  const disabled = option.value === "selected-day-type" && !selectedDayTypeId;
+	                  return (
+	                    <button
+	                      key={option.value}
+	                      type="button"
+	                      disabled={disabled}
+	                      onClick={() => {
+                          setAttachConflictBlockId(null);
+                          setTimeBlockListMode(option.value as TimeBlockListMode);
+                        }}
+	                      className={cn(
+	                        "h-8 rounded-full px-3 text-[11px] font-semibold transition",
+	                        active
+	                          ? "bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
+	                          : "text-white/55 hover:bg-white/7 hover:text-white/80",
+	                        disabled && "cursor-not-allowed opacity-40 hover:bg-transparent hover:text-white/55"
+	                      )}
 	                    >
-	                  Create time block
-	                </button>
-	              ) : null}
-            </div>
+	                      {option.label}
+	                    </button>
+	                  );
+	                })}
+	              </div>
+	            </div>
 
             {error ? (
               <div className="rounded-2xl border border-white/12 bg-gradient-to-b from-white/10 to-white/5 px-4 py-3 text-sm text-white/75 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_24px_rgba(0,0,0,0.35)]">
@@ -2891,53 +3920,66 @@ export default function NewDayTypePage() {
               </div>
             ) : null}
 
-	            {!hasVisibleWindowBlocks ? (
-	              <div className="rounded-2xl border border-white/12 bg-gradient-to-b from-[#17191f] to-[#101116] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_40px_rgba(0,0,0,0.45)] sm:p-6">
-	                <div className="space-y-2 text-center">
-	                  <h3 className="text-base font-semibold text-white sm:text-lg">
-	                    No windows for {focusedWeekday.fullLabel} yet
-	                  </h3>
-	                  <p className="text-xs text-white/60 sm:text-sm">
-	                    Add time blocks to let CREATOR schedule on this day. Empty time stays unavailable.
-	                  </p>
-		                {!showCreateForm ? (
-		                  <div className="mt-4 flex justify-center">
-		                  <button
-		                    type="button"
-	                    onClick={startCreateWindowBlock}
-	                    data-tour="day-type-add-block"
-	                    className="rounded-full border border-white/18 bg-gradient-to-b from-white/16 to-white/7 px-3 py-1.5 text-xs font-semibold text-white/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_10px_24px_rgba(0,0,0,0.38)] transition hover:border-white/30 hover:from-white/22 hover:to-white/10 sm:px-4 sm:py-2 sm:text-sm"
-	                  >
-	                    Create time block
-	                    </button>
-	                  </div>
-	                ) : null}
-	                </div>
-	              </div>
-	            ) : null}
+		            {!hasVisibleWindowBlocks ? (
+		              <div className="rounded-2xl border border-white/12 bg-gradient-to-b from-[#17191f] to-[#101116] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_40px_rgba(0,0,0,0.45)] sm:p-6">
+		                <div className="space-y-3 text-center">
+		                  <h3 className="text-base font-semibold text-white sm:text-lg">
+		                    {timeBlockListMode === "selected-day-type"
+		                      ? "No blocks linked to this Day Type"
+		                      : "No Time Blocks yet"}
+		                  </h3>
+		                  <p className="text-xs text-white/60 sm:text-sm">
+		                    {timeBlockListMode === "selected-day-type"
+		                      ? "Use All Blocks to edit saved blocks or create a new block for this day."
+		                      : "Add time blocks to let CREATOR schedule inside them."}
+		                  </p>
+		                  {timeBlockListMode === "selected-day-type" && hasBlocks ? (
+		                    <button
+		                      type="button"
+		                      onClick={() => setTimeBlockListMode("all-blocks")}
+		                      className="rounded-full border border-white/14 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white/80 transition hover:border-white/24 hover:bg-white/12 hover:text-white"
+		                    >
+		                      View All Blocks
+		                    </button>
+		                  ) : null}
+		                </div>
+		              </div>
+		            ) : null}
 
 		            {hasVisibleWindowBlocks ? (
 	              <div className="grid gap-3 sm:grid-cols-2">
 	                {visibleWindowBlocks.map((block) => {
-                  const selected = selectedIds.has(block.id);
-                  const isConstraintsTargetBlock = constraintsTarget?.id === block.id;
-                  const tourHighlightBlock = isConstraintsTargetBlock || editingBlockId === block.id;
-                  const label = normalizeLabel(block.label) ?? "TIME BLOCK";
-                  const focusedOwnerId = dayOwnership.get(focusedDayKey) ?? null;
                   const selectedDayTypeHasBlock = selectedDayTypeId
                     ? dayTypeBlockMap.get(selectedDayTypeId)?.has(block.id) ?? false
                     : false;
+	                  const selected =
+                    timeBlockListMode === "all-blocks"
+                      ? selectedDayTypeHasBlock
+                      : selectedDayTypeBlockIds.has(block.id);
+	                  const isConstraintsTargetBlock = constraintsTarget?.id === block.id;
+	                  const isConfirmingDelete = confirmingDeleteId === block.id;
+	                  const tourHighlightBlock = isConstraintsTargetBlock || editingBlockId === block.id;
+                  const label = normalizeLabel(block.label) ?? "TIME BLOCK";
+                  const focusedOwnerId = dayOwnership.get(focusedDayKey) ?? null;
                   const focusedDayTypeHasBlock = focusedOwnerId
                     ? dayTypeBlockMap.get(focusedOwnerId)?.has(block.id) ?? false
                     : false;
-                  const visibleDayTypeId = isCreatingDayType
-                    ? selectedDayTypeId
-                    : selectedDayTypeHasBlock
-                      ? selectedDayTypeId
-                      : focusedDayTypeHasBlock
-                        ? focusedOwnerId
-                        : selectedDayTypeId ?? focusedOwnerId;
-                  const stateKey = getDayTypeBlockStateKey(visibleDayTypeId, block.id);
+	                  const visibleDayTypeId = isCreatingDayType
+	                    ? selectedDayTypeId
+	                    : selectedDayTypeHasBlock
+	                      ? selectedDayTypeId
+	                      : focusedDayTypeHasBlock
+	                        ? focusedOwnerId
+	                        : selectedDayTypeId ?? focusedOwnerId;
+                  const cardEditContext: TimeBlockEditContext =
+                    timeBlockListMode === "selected-day-type" && visibleDayTypeId
+                      ? {
+	                          mode: "selected-day-type",
+	                          dayTypeId: visibleDayTypeId,
+	                          sourceBlockId: block.id,
+	                        }
+	                      : { mode: "all-blocks", sourceBlockId: block.id };
+	                  const stateKey = getDayTypeBlockStateKey(visibleDayTypeId, block.id);
                   const energyLevel = stateKey ? blockEnergy.get(stateKey) ?? "NO" : "NO";
                   const locationOption = stateKey ? blockLocation.get(stateKey) : null;
                   const allowAllHabits = stateKey ? blockAllowAllHabitTypes.get(stateKey) ?? true : true;
@@ -2964,26 +4006,44 @@ export default function NewDayTypePage() {
                     )
                     .sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
                   return (
-                    <div
-                      key={block.id}
-                      data-tour={tourHighlightBlock ? "selected-time-block" : undefined}
-                      className={cn(
-                        "flex w-full flex-col gap-3 rounded-2xl border px-4 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_32px_rgba(0,0,0,0.35)] transition",
-                        "border-white/12 bg-gradient-to-b from-[#151820] to-[#0f1117] hover:border-white/24",
-                        selected && "border-white/30 bg-gradient-to-b from-white/16 to-white/8"
+	                    <div
+	                      key={block.id}
+	                      role="button"
+	                      tabIndex={0}
+	                      data-tour={tourHighlightBlock ? "selected-time-block" : undefined}
+	                      onClick={() =>
+	                        openTimeBlockCard(
+	                          block,
+	                          cardEditContext.mode === "selected-day-type" ? cardEditContext.dayTypeId : null
+	                        )
+	                      }
+	                      onKeyDown={(event) => {
+	                        if (event.key === "Enter" || event.key === " ") {
+	                          event.preventDefault();
+	                          openTimeBlockCard(
+	                            block,
+	                            cardEditContext.mode === "selected-day-type" ? cardEditContext.dayTypeId : null
+	                          );
+	                        }
+	                      }}
+	                      className={cn(
+	                        "flex w-full cursor-pointer flex-col gap-3 rounded-2xl border px-4 py-3 text-left shadow-[0_12px_28px_rgba(0,0,0,0.34)] transition focus:outline-none focus:ring-1 focus:ring-black/70",
+                        "border-black/55 bg-[#101219] hover:border-black/75 hover:bg-[#13151c]",
+                        selected && "border-black/85 bg-[#18191d]",
+                        isConstraintsTargetBlock && "border-black bg-[#17191d]"
                       )}
                     >
                       <div className="flex w-full items-center gap-2">
-	                        {isCreatingDayType ? (
-	                        <DropdownMenu
-	                          open={menuOpenId === block.id}
-	                          onOpenChange={(open) => setMenuOpenId(open ? block.id : null)}
-	                        >
+		                        <DropdownMenu
+		                          open={menuOpenId === block.id}
+		                          onOpenChange={(open) => setMenuOpenId(open ? block.id : null)}
+		                        >
                           <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={(event) => event.stopPropagation()}
-                              data-tour={isConstraintsTargetBlock ? "selected-time-block-menu" : undefined}
+	                            <button
+	                              type="button"
+	                              onClick={(event) => event.stopPropagation()}
+	                              onKeyDown={(event) => event.stopPropagation()}
+	                              data-tour={isConstraintsTargetBlock ? "selected-time-block-menu" : undefined}
                               className="rounded-md px-1.5 py-1 text-white/60 transition hover:text-white focus:outline-none focus:ring-1 focus:ring-white/30 focus:ring-offset-0"
                               aria-label={`Open actions for ${label}`}
                             >
@@ -2997,68 +4057,59 @@ export default function NewDayTypePage() {
                             onClick={(event) => event.stopPropagation()}
                           >
                             <DropdownMenuItem
-                              className="flex items-center gap-2 focus:bg-white/10 focus:text-white"
-                              onSelect={(event) => {
-                                event.preventDefault();
-                                beginEditBlock(block);
-                                setMenuOpenId(null);
-                              }}
+	                              className="flex items-center gap-2 focus:bg-white/10 focus:text-white"
+	                              onSelect={(event) => {
+	                                event.preventDefault();
+	                                beginEditBlock(block, cardEditContext);
+	                                setMenuOpenId(null);
+	                              }}
                             >
                               <Pencil className="h-4 w-4" />
                               Edit block
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="flex items-center gap-2 focus:bg-white/10 focus:text-white"
-                              data-tour={isConstraintsTargetBlock ? "selected-time-block-constraints" : undefined}
-                              onSelect={(event) => {
-                                event.preventDefault();
-                                handleConstraintsClick(block);
-                              }}
+	                              data-tour={isConstraintsTargetBlock ? "selected-time-block-constraints" : undefined}
+	                              onSelect={(event) => {
+	                                event.preventDefault();
+	                                beginEditBlock(block, cardEditContext, { openConstraints: true });
+	                                emitConstraintsOpenedEvent();
+	                                setMenuOpenId(null);
+	                              }}
                             >
                               <Wand2 className="h-4 w-4" />
                               Add constraints
                             </DropdownMenuItem>
                             <DropdownMenuSeparator className="bg-white/10" />
                             <DropdownMenuItem
-                              className="flex items-center gap-2 text-rose-200 focus:bg-rose-500/15 focus:text-rose-50"
-                              onSelect={(event) => {
-                                event.preventDefault();
-                                handleDeleteBlock(block.id);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              {deletingId === block.id ? "Deleting…" : "Delete"}
-                            </DropdownMenuItem>
+	                              className="flex items-center gap-2 text-rose-200 focus:bg-rose-500/15 focus:text-rose-50"
+	                              onSelect={(event) => {
+	                                event.preventDefault();
+	                                setConfirmingDeleteId(block.id);
+	                                setConstraintsTarget(null);
+	                                setMenuOpenId(null);
+	                              }}
+	                            >
+	                              <Trash2 className="h-4 w-4" />
+	                              Delete
+	                            </DropdownMenuItem>
                           </DropdownMenuContent>
-	                        </DropdownMenu>
-	                        ) : null}
-                        <div
-	                          role="button"
-	                          tabIndex={0}
-	                          onClick={() => {
-	                            if (isCreatingDayType) {
-	                              toggleSelect(block.id);
-	                            }
-	                          }}
-	                          onKeyDown={(event) => {
-	                            if (isCreatingDayType && (event.key === "Enter" || event.key === " ")) {
-	                              event.preventDefault();
-	                              toggleSelect(block.id);
-	                            }
-	                          }}
-	                          className="flex flex-1 items-center justify-between text-left focus:outline-none"
-                          aria-pressed={selected}
-                        >
-                          <div className="space-y-1">
-                            <div className="text-sm font-semibold text-white/90">{label}</div>
-                            <div className="text-xs uppercase tracking-[0.18em] text-white/50">
-                              {block.start_local} → {block.end_local}
-                            </div>
-                            <div className="flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-white/45">
-                              <MapPin className="h-3 w-3 text-white/55" />
-                              <span className="truncate">
-                                {(locationOption?.label || locationOption?.value || "Anywhere").toString()}
-                              </span>
+		                        </DropdownMenu>
+	                        <div
+		                          className="flex flex-1 items-center justify-between text-left focus:outline-none"
+	                        >
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="truncate text-sm font-semibold text-white/90">{label}</div>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <div className="shrink-0 text-xs uppercase tracking-[0.18em] text-white/50">
+                                {block.start_local} → {block.end_local}
+                              </div>
+                              <div className="flex min-w-0 items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-white/45">
+                                <MapPin className="h-3 w-3 shrink-0 text-white/55" />
+                                <span className="truncate">
+                                  {(locationOption?.label || locationOption?.value || "Anywhere").toString()}
+                                </span>
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -3089,23 +4140,81 @@ export default function NewDayTypePage() {
                             >
                               <FlameEmber level={energyLevel} size="sm" />
                             </button>
-                            <span
+                            <button
+                              type="button"
+                              disabled={!selectedDayTypeId}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                void handleToggleBlockForSelectedDayType(block, !selected);
+                              }}
+                              onKeyDown={(event) => {
+                                event.stopPropagation();
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  void handleToggleBlockForSelectedDayType(block, !selected);
+                                }
+                              }}
                               className={cn(
-                                "ml-1 flex h-5 w-5 items-center justify-center rounded-full border border-white/20 text-[10px] font-bold",
-                                selected ? "bg-white/60 text-black" : "bg-transparent text-white/50"
+                                "ml-1 flex h-7 w-7 items-center justify-center rounded-full border shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition focus:outline-none focus:ring-1 focus:ring-white/35 disabled:cursor-not-allowed disabled:opacity-45",
+                                selected
+                                  ? "border-white/25 bg-white/12 text-white/75 hover:border-white/35 hover:bg-white/16 hover:text-white/85"
+                                  : "border-white/15 bg-black/25 text-white/45 hover:border-white/25 hover:bg-white/8 hover:text-white/70"
                               )}
-                              aria-hidden="true"
+                              role="checkbox"
+                              aria-checked={selected}
+                              aria-label={
+                                selected
+                                  ? `Remove ${label} from selected day type`
+                                  : `Add ${label} to selected day type`
+                              }
                             >
-                              {selected ? "✓" : ""}
-                            </span>
+                              {selected ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                            </button>
                           </div>
-                        </div>
-                      </div>
-                      {constraintsTarget?.id === block.id ? (
-                        <div
-                          className="rounded-2xl border border-white/12 bg-gradient-to-b from-[#1a1c23] to-[#111319] px-4 py-3 text-sm text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_12px_28px_rgba(0,0,0,0.38)]"
-                          data-tour={isConstraintsTargetBlock ? "selected-time-block-constraints-panel" : undefined}
-                        >
+	                        </div>
+	                      </div>
+	                      {isConfirmingDelete ? (
+	                        <div
+	                          className="rounded-xl border border-black/75 bg-black/35 p-3 shadow-[0_8px_18px_rgba(0,0,0,0.28)]"
+	                          onClick={(event) => event.stopPropagation()}
+	                          onKeyDown={(event) => event.stopPropagation()}
+	                        >
+	                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+	                            <div className="min-w-0">
+	                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-white/78">
+	                                Delete {label}?
+	                              </div>
+	                              <div className="mt-1 text-[11px] leading-snug text-white/48">
+	                                This removes it from every saved scheduling window.
+	                              </div>
+	                            </div>
+	                            <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+	                              <button
+	                                type="button"
+	                                onClick={() => setConfirmingDeleteId(null)}
+	                                className="rounded-full border border-black/70 bg-black/30 px-3 py-1.5 text-xs font-semibold text-white/70 transition hover:border-black hover:bg-black/20 hover:text-white/90"
+	                              >
+	                                Cancel
+	                              </button>
+	                              <button
+	                                type="button"
+	                                disabled={deletingId === block.id}
+	                                onClick={() => void handleDeleteBlock(block.id)}
+	                                className="rounded-full border border-black/70 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:border-black hover:bg-rose-500/16 hover:text-rose-50 disabled:opacity-55"
+	                              >
+	                                {deletingId === block.id ? "Deleting..." : "Delete"}
+	                              </button>
+	                            </div>
+	                          </div>
+	                        </div>
+	                      ) : null}
+	                      {constraintsTarget?.id === block.id ? (
+	                        <div
+	                          className="rounded-2xl border border-black/60 bg-[#0d0f14] px-4 py-3 text-sm text-white/85 shadow-[0_10px_24px_rgba(0,0,0,0.34)]"
+	                          data-tour={isConstraintsTargetBlock ? "selected-time-block-constraints-panel" : undefined}
+	                          onClick={(event) => event.stopPropagation()}
+	                        >
                           <div className="flex items-start justify-between gap-3">
                             <div className="space-y-4">
                               <div className="text-[11px] uppercase tracking-[0.16em] text-white/55">
@@ -3541,11 +4650,11 @@ export default function NewDayTypePage() {
                             <button
                               type="button"
                               data-tour="constraints-save"
-                              onClick={() => {
-                                setConstraintsTarget(null);
-                              }}
-                              className="rounded-full border border-white/20 bg-gradient-to-b from-white/16 to-white/7 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_8px_18px_rgba(0,0,0,0.32)] transition hover:border-white/32 hover:from-white/22 hover:to-white/10"
-                            >
+	                              onClick={() => {
+	                                setConstraintsTarget(null);
+	                              }}
+	                              className="rounded-full border border-black/70 bg-black/35 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white/78 shadow-[0_6px_14px_rgba(0,0,0,0.28)] transition hover:border-black hover:bg-black/25 hover:text-white/90"
+	                            >
                               Close
                             </button>
                           </div>

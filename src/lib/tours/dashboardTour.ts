@@ -1,4 +1,5 @@
 import type { TourStep } from "@/components/tour/TourProvider";
+import { SCHEDULE_TOUR_PENDING_KEY } from "@/lib/tours/creatorTourState";
 
 export const dashboardTourSteps: TourStep[] = [
   {
@@ -13,11 +14,12 @@ export const dashboardTourSteps: TourStep[] = [
   },
   {
     id: "fab-menu",
-    selector: '[data-tour="fab-swipe"]',
-    title: "Choose your focus",
-    body: "With the FAB open you can quickly set up goals, projects, tasks, and habits before diving in.",
+    selector: '[data-tour="fab-panel"]',
+    title: "Create from here",
+    body: "This is where you add goals, projects, tasks, habits, and AI-planned work.",
     requiresClick: false,
     allowNext: true,
+    advanceOnAnyTap: true,
     waitForSelector: true,
     waitForEvent: { type: "custom", eventName: "tour:fab-opened" },
     onBeforeNext: () => {
@@ -51,7 +53,7 @@ export const dashboardTourSteps: TourStep[] = [
     allowNext: false,
     onBeforeNext: () => {
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("tour:schedule:pending", "1");
+        window.localStorage.setItem(SCHEDULE_TOUR_PENDING_KEY, "1");
       }
     },
   },

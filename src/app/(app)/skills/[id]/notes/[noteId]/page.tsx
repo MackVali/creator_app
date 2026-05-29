@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ChevronLeft, ChevronRight, FilePlus2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { NoteEditorHeader } from "@/components/notes/NoteEditorHeader";
+import { NoteTextActionBar } from "@/components/notes/NoteTextActionBar";
 import {
   NoteSlashTextarea,
   type NoteDatabaseDefinitions,
   type NoteDatabaseEntries,
+  type NoteSlashTextareaHandle,
 } from "@/components/notes/NoteSlashTextarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
@@ -34,14 +35,6 @@ function getNoteTitle(note: Note | null): string {
       .find((line) => line.length > 0) ||
     "Untitled"
   );
-}
-
-function formatTimestamp(note: Note): string {
-  const source = note.updatedAt ?? note.createdAt;
-  if (!source) return "";
-  const parsed = new Date(source);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function getMetadataIcon(metadata: Record<string, unknown> | null | undefined) {
@@ -105,6 +98,7 @@ export default function NotePage() {
   const noteId = params.noteId as string;
   const parentFromQuery = searchParams?.get("parent");
   const normalizedParentFromQuery = parentFromQuery ? String(parentFromQuery) : null;
+  const noteTextareaRef = useRef<NoteSlashTextareaHandle | null>(null);
 
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
@@ -471,19 +465,21 @@ export default function NotePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#020202] px-4 py-5 text-white sm:py-6">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
-        <div className="flex items-center justify-between">
+    <main className="min-h-screen bg-[#020202] px-4 pb-[calc(10rem_+_env(safe-area-inset-bottom,0px))] pt-2 text-white sm:pb-[calc(9rem_+_env(safe-area-inset-bottom,0px))] sm:pt-3">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 sm:gap-3">
+        <div className="flex min-h-7 items-center justify-between">
           <Button
             type="button"
             variant="ghost"
-            className="h-9 rounded-full px-3 text-sm text-white/80 hover:bg-white/10"
+            className="h-7 gap-1 rounded-full px-2 py-0 text-xs font-medium text-white/55 hover:bg-white/[0.06] hover:text-white/80"
             onClick={handleBack}
           >
-            <ChevronLeft className="mr-1 h-4 w-4" />
+            <ChevronLeft className="size-3.5" />
             Back
           </Button>
-          <p className="text-xs font-medium text-white/60">{isSaving ? "Saving…" : "Autosaved"}</p>
+          <p className="text-[11px] font-medium leading-none text-white/38">
+            {isSaving ? "Saving…" : "Autosaved"}
+          </p>
         </div>
 
         <section className="rounded-[22px] border border-white/[0.07] bg-[#050505]/92 p-4 shadow-[0_18px_42px_-30px_rgba(0,0,0,0.95)] sm:p-5">
@@ -525,6 +521,7 @@ export default function NotePage() {
               />
 
               <NoteSlashTextarea
+                ref={noteTextareaRef}
                 value={noteContent}
                 onValueChange={setNoteContent}
                 databaseDefinitions={getMetadataDatabases(noteMetadata)}
@@ -542,51 +539,10 @@ export default function NotePage() {
           )}
         </section>
 
-        {currentNoteId ? (
-          <section className="space-y-3 rounded-[20px] border border-white/10 bg-[#0a0a0a] p-4 shadow-[0_12px_30px_-20px_rgba(0,0,0,0.9)]">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-white/55">Sub-pages</h2>
-              <Button
-                type="button"
-                size="sm"
-                className="rounded-full bg-white/10 px-3 text-white hover:bg-white/20"
-                onClick={() => router.push(`/skills/${skillId}/notes/new?parent=${currentNoteId}`)}
-              >
-                Add sub-page
-              </Button>
-            </div>
-            {children.length > 0 ? (
-              <ul className="space-y-2">
-                {children.map((child) => {
-                  const childTitle = getNoteTitle(child);
-                  const subtitle = formatTimestamp(child);
-                  return (
-                    <li key={child.id}>
-                      <Link
-                        href={`/skills/${skillId}/notes/${child.id}`}
-                        className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.045] px-2.5 py-2 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition hover:border-emerald-300/20 hover:bg-white/[0.075]"
-                      >
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-black/25 text-white/55">
-                          <FilePlus2 className="h-3.5 w-3.5" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-medium leading-4">{childTitle}</span>
-                          <span className="block truncate text-[11px] font-medium leading-4 text-white/38">
-                            {subtitle || "Subpage"}
-                          </span>
-                        </span>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-white/35" />
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <div className="rounded-xl bg-[#141414] px-3 py-4 text-center text-sm text-white/55">
-                No sub-pages yet.
-              </div>
-            )}
-          </section>
+        {!isLoading ? (
+          <NoteTextActionBar
+            onFormat={(command) => noteTextareaRef.current?.applyTextFormat(command)}
+          />
         ) : null}
       </div>
     </main>
