@@ -3532,7 +3532,7 @@ function CircleCommandDetail({
       layoutId={`command-circle-card-${circle.id}`}
       role="dialog"
       aria-modal="true"
-      className="relative h-[calc(100dvh-1.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] w-full max-w-[min(100vw-1.25rem,420px)] overflow-hidden rounded-2xl border border-white/5 bg-[#0B0E13] shadow-[0_6px_24px_rgba(0,0,0,0.35)] overscroll-contain sm:h-[calc(100dvh-3rem)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
+      className="relative h-[100dvh] max-h-none w-full max-w-[min(100vw,420px)] overflow-hidden rounded-2xl border border-white/5 bg-[#0B0E13] shadow-[0_6px_24px_rgba(0,0,0,0.35)] overscroll-contain sm:max-w-[min(100vw,640px)] md:rounded-3xl lg:max-w-[min(100vw,960px)] xl:max-w-[min(100vw,1160px)]"
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
