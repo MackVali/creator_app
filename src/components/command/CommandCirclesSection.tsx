@@ -119,9 +119,7 @@ type CommandCirclesSectionProps = {
 };
 
 type CircleDetailView = "goals" | "roadmap";
-type MemberConstraintField =
-  | "skill_constraint_ids"
-  | "location_context_ids";
+type MemberConstraintField = "skill_constraint_ids" | "location_context_ids";
 type OfferMode = "FIXED" | "FLEXIBLE";
 
 type OwnerSkillOption = {
@@ -299,7 +297,7 @@ function formatCommandAccessDays(daysOfWeek: string[] | null) {
   }
 
   const selectedDays = new Set(
-    daysOfWeek.map((day) => day.trim().toUpperCase()).filter(Boolean)
+    daysOfWeek.map((day) => day.trim().toUpperCase()).filter(Boolean),
   );
 
   if (selectedDays.size === offerWeekdays.length) {
@@ -309,8 +307,7 @@ function formatCommandAccessDays(daysOfWeek: string[] | null) {
   const weekdaysOnly = offerWeekdays
     .filter((day) => day.value !== "SAT" && day.value !== "SUN")
     .every((day) => selectedDays.has(day.value));
-  const weekendSelected =
-    selectedDays.has("SAT") || selectedDays.has("SUN");
+  const weekendSelected = selectedDays.has("SAT") || selectedDays.has("SUN");
 
   if (selectedDays.size === 5 && weekdaysOnly && !weekendSelected) {
     return "Weekdays";
@@ -338,7 +335,7 @@ function formatCommandAccessDate(value: string | null) {
 
 function formatCommandAccessDateRange(
   startsOn: string | null,
-  endsOn: string | null
+  endsOn: string | null,
 ) {
   const startLabel = formatCommandAccessDate(startsOn);
   const endLabel = formatCommandAccessDate(endsOn);
@@ -429,16 +426,12 @@ function parseDateInputValue(dateValue: string) {
 function getFirstSelectedDateInRange(
   dateStart: string,
   dateEnd: string | null,
-  daysOfWeek: OfferWeekdayValue[]
+  daysOfWeek: OfferWeekdayValue[],
 ) {
   const start = parseDateInputValue(dateStart);
   const end = dateEnd ? parseDateInputValue(dateEnd) : null;
 
-  if (
-    !start ||
-    (dateEnd && !end) ||
-    (end && end.getTime() < start.getTime())
-  ) {
+  if (!start || (dateEnd && !end) || (end && end.getTime() < start.getTime())) {
     return null;
   }
 
@@ -585,7 +578,9 @@ function formatPendingOfferTimeRange(terms: CommandOfferTerms | null) {
     return formatOfferDuration(terms.requiredMinutes);
   }
 
-  const startLabel = formatCommandAccessLocalTime(terms?.fixedStartLocal ?? null);
+  const startLabel = formatCommandAccessLocalTime(
+    terms?.fixedStartLocal ?? null,
+  );
   const endLabel = formatCommandAccessLocalTime(terms?.fixedEndLocal ?? null);
 
   if (startLabel && endLabel) {
@@ -635,9 +630,7 @@ function formatHabitRecurrence(habit: CircleHabit) {
 
   const normalized = recurrence.toLowerCase();
   const interval = Array.isArray(habit.recurrence_days)
-    ? habit.recurrence_days.find(
-        (day) => Number.isInteger(day) && day > 0
-      )
+    ? habit.recurrence_days.find((day) => Number.isInteger(day) && day > 0)
     : null;
 
   if (normalized === "every x days" && interval) {
@@ -703,7 +696,7 @@ function normalizeFullMember(member: CircleMember): CircleMemberDisplay {
 }
 
 function normalizePreviewMember(
-  member: CircleMemberPreview
+  member: CircleMemberPreview,
 ): CircleMemberDisplay {
   return {
     id: member.userId,
@@ -772,7 +765,7 @@ function MemberAvatar({
       aria-label={member.displayName}
       className={cn(
         "flex shrink-0 items-center justify-center rounded-full border border-white/15 bg-zinc-800 bg-cover bg-center text-xs font-semibold text-white shadow-lg shadow-black/35 ring-1 ring-white/10",
-        className
+        className,
       )}
       style={
         member.avatarUrl
@@ -806,7 +799,7 @@ function CircleCard({
       onClick={onSelect}
       className={cn(
         "group relative min-h-[156px] overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.13),transparent_32%),linear-gradient(145deg,rgba(25,25,28,0.96),rgba(5,5,6,0.98))] p-4 text-left shadow-[0_24px_70px_rgba(0,0,0,0.42)] transition hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
-        isSelected && "border-white/30"
+        isSelected && "border-white/30",
       )}
     >
       <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
@@ -835,7 +828,7 @@ function CircleCard({
       <div
         className={cn(
           "flex items-center justify-between gap-4",
-          circle.description?.trim() ? "mt-6" : "mt-8"
+          circle.description?.trim() ? "mt-6" : "mt-8",
         )}
       >
         <div className="flex items-center gap-3">
@@ -847,7 +840,7 @@ function CircleCard({
         <span
           className={cn(
             "flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-white/55 transition group-hover:border-white/20 group-hover:text-white",
-            circleIcon && "px-1 text-center text-sm font-semibold leading-none"
+            circleIcon && "px-1 text-center text-sm font-semibold leading-none",
           )}
           aria-label={circleIcon ? `Circle icon: ${circleIcon}` : undefined}
         >
@@ -862,11 +855,7 @@ function CircleCard({
   );
 }
 
-function PlaceholderAction({
-  children,
-}: {
-  children: ReactNode;
-}) {
+function PlaceholderAction({ children }: { children: ReactNode }) {
   return (
     <button
       type="button"
@@ -908,14 +897,14 @@ function MemberDetailEmptyRow({
 function getConstraintSummary(
   selectedIds: string[],
   optionById: Map<string, ConstraintOption>,
-  emptyLabel: string
+  emptyLabel: string,
 ) {
   if (selectedIds.length === 0) {
     return emptyLabel;
   }
 
   const labels = selectedIds.map(
-    (id) => optionById.get(id)?.label ?? shortenUserId(id)
+    (id) => optionById.get(id)?.label ?? shortenUserId(id),
   );
   const visibleLabels = labels.slice(0, 2).join(", ");
   const hiddenCount = labels.length - 2;
@@ -927,7 +916,7 @@ function getConstraintSummary(
 
 function getConstraintOptionLabel(
   id: string,
-  optionById: Map<string, ConstraintOption>
+  optionById: Map<string, ConstraintOption>,
 ) {
   return optionById.get(id)?.label ?? shortenUserId(id);
 }
@@ -1006,7 +995,7 @@ function WorkProfileConstraintMultiSelect({
   const [isOpen, setIsOpen] = useState(false);
   const optionById = useMemo(
     () => new Map(options.map((option) => [option.id, option])),
-    [options]
+    [options],
   );
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const summary = getConstraintSummary(selectedIds, optionById, emptyLabel);
@@ -1114,7 +1103,7 @@ function WorkProfileConstraintMultiSelect({
                     "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
                     isSelected
                       ? "border-emerald-300/60 bg-emerald-300/20 text-emerald-100"
-                      : "border-white/15 bg-white/[0.03] text-transparent"
+                      : "border-white/15 bg-white/[0.03] text-transparent",
                   )}
                   aria-hidden="true"
                 >
@@ -1150,7 +1139,7 @@ function WorkProfileConstraintReadOnly({
 }) {
   const optionById = useMemo(
     () => new Map(options.map((option) => [option.id, option])),
-    [options]
+    [options],
   );
 
   return (
@@ -1239,7 +1228,7 @@ function CommandAccessAvailabilityRow({
                           <p className="text-[11px] font-medium leading-4 text-white/42 sm:text-right">
                             {formatCommandAccessDateRange(
                               rule.starts_on,
-                              rule.ends_on
+                              rule.ends_on,
                             )}
                           </p>
                         </div>
@@ -1389,14 +1378,14 @@ function MakeOfferModal({
     const firstSelectedDate = getFirstSelectedDateInRange(
       dateStart,
       hasEndDate ? dateEnd : null,
-      daysOfWeek
+      daysOfWeek,
     );
 
     if (!firstSelectedDate) {
       setError(
         hasEndDate
           ? "Select a day that occurs during the offer length."
-          : "Select at least one day."
+          : "Select at least one day.",
       );
       return;
     }
@@ -1488,9 +1477,9 @@ function MakeOfferModal({
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(data?.error ?? "Unable to create offer.");
       }
 
@@ -1499,7 +1488,7 @@ function MakeOfferModal({
       setError(
         submitError instanceof Error
           ? submitError.message
-          : "Unable to create offer."
+          : "Unable to create offer.",
       );
     } finally {
       setIsSubmitting(false);
@@ -1508,7 +1497,7 @@ function MakeOfferModal({
 
   return (
     <motion.div
-      className="absolute inset-0 z-20 flex items-end justify-center p-3 sm:items-center"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -1593,7 +1582,7 @@ function MakeOfferModal({
                           "flex min-h-8 justify-between gap-3 rounded px-2 py-1.5 text-xs font-semibold text-white outline-none transition focus:bg-zinc-900 focus:text-white",
                           option.disabled
                             ? "text-white/35 data-[disabled]:opacity-100"
-                            : "cursor-default data-[highlighted]:bg-zinc-900 data-[highlighted]:text-white"
+                            : "cursor-default data-[highlighted]:bg-zinc-900 data-[highlighted]:text-white",
                         )}
                       >
                         <span>{option.label}</span>
@@ -1659,7 +1648,7 @@ function MakeOfferModal({
 
                         if (nextHasEndDate) {
                           setDateEnd(
-                            (currentEndDate) => currentEndDate || dateStart
+                            (currentEndDate) => currentEndDate || dateStart,
                           );
                         }
 
@@ -1670,7 +1659,7 @@ function MakeOfferModal({
                         "relative h-4 w-7 shrink-0 rounded-md border transition disabled:cursor-not-allowed disabled:opacity-60",
                         hasEndDate
                           ? "border-white/35 bg-zinc-200"
-                          : "border-white/12 bg-zinc-800"
+                          : "border-white/12 bg-zinc-800",
                       )}
                     >
                       <span
@@ -1678,7 +1667,7 @@ function MakeOfferModal({
                           "absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-sm transition",
                           hasEndDate
                             ? "left-[13px] bg-black"
-                            : "left-0.5 bg-zinc-500"
+                            : "left-0.5 bg-zinc-500",
                         )}
                       />
                     </button>
@@ -1712,7 +1701,7 @@ function MakeOfferModal({
 
                       if (nextHasEndDate) {
                         setDateEnd(
-                          (currentEndDate) => currentEndDate || dateStart
+                          (currentEndDate) => currentEndDate || dateStart,
                         );
                       }
 
@@ -1723,7 +1712,7 @@ function MakeOfferModal({
                       "relative h-4 w-7 shrink-0 rounded-md border transition disabled:cursor-not-allowed disabled:opacity-60",
                       hasEndDate
                         ? "border-white/35 bg-zinc-200"
-                        : "border-white/12 bg-zinc-800"
+                        : "border-white/12 bg-zinc-800",
                     )}
                   >
                     <span
@@ -1731,7 +1720,7 @@ function MakeOfferModal({
                         "absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-sm transition",
                         hasEndDate
                           ? "left-[13px] bg-black"
-                          : "left-0.5 bg-zinc-500"
+                          : "left-0.5 bg-zinc-500",
                       )}
                     />
                   </button>
@@ -1758,7 +1747,7 @@ function MakeOfferModal({
                     "h-7 rounded-md px-3 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
                     mode === modeOption
                       ? "border border-white/14 bg-zinc-800 text-white shadow-[0_8px_18px_rgba(0,0,0,0.22)]"
-                      : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200"
+                      : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200",
                   )}
                   aria-pressed={mode === modeOption}
                 >
@@ -1784,7 +1773,7 @@ function MakeOfferModal({
                       setDaysOfWeek((currentDays) =>
                         currentDays.includes(weekday.value)
                           ? currentDays.filter((day) => day !== weekday.value)
-                          : [...currentDays, weekday.value]
+                          : [...currentDays, weekday.value],
                       );
                       setError(null);
                     }}
@@ -1793,7 +1782,7 @@ function MakeOfferModal({
                       "h-9 min-w-0 rounded-md border px-0 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
                       isSelected
                         ? "border-white/20 bg-zinc-800 text-white"
-                        : "border-white/10 bg-zinc-950/70 text-white/58 hover:border-white/22 hover:bg-zinc-900 hover:text-white"
+                        : "border-white/10 bg-zinc-950/70 text-white/58 hover:border-white/22 hover:bg-zinc-900 hover:text-white",
                     )}
                     aria-pressed={isSelected}
                     aria-label={weekday.label}
@@ -1929,7 +1918,7 @@ function CircleMemberFloatingDetail({
   onConstraintChange: (
     member: CircleMemberDisplay,
     field: MemberConstraintField,
-    nextIds: string[]
+    nextIds: string[],
   ) => void;
   onClose: () => void;
 }) {
@@ -1950,7 +1939,7 @@ function CircleMemberFloatingDetail({
     error: null,
   });
   const [cancellingOfferId, setCancellingOfferId] = useState<string | null>(
-    null
+    null,
   );
   const [cancelOfferError, setCancelOfferError] = useState<string | null>(null);
 
@@ -1974,18 +1963,18 @@ function CircleMemberFloatingDetail({
 
         const response = await fetch(
           `/api/circles/${encodeURIComponent(
-            circle.id
+            circle.id,
           )}/members/${encodeURIComponent(member.id)}/offers`,
           {
             cache: "no-store",
             signal,
-          }
+          },
         );
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const data = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(data?.error ?? "Unable to load pending offers.");
         }
 
@@ -1999,7 +1988,10 @@ function CircleMemberFloatingDetail({
           error: null,
         });
       } catch (loadError) {
-        if (loadError instanceof DOMException && loadError.name === "AbortError") {
+        if (
+          loadError instanceof DOMException &&
+          loadError.name === "AbortError"
+        ) {
           return;
         }
 
@@ -2013,7 +2005,7 @@ function CircleMemberFloatingDetail({
         });
       }
     },
-    [circle.id, member.id, member.isPreview]
+    [circle.id, member.id, member.isPreview],
   );
 
   useEffect(() => {
@@ -2035,19 +2027,19 @@ function CircleMemberFloatingDetail({
 
         const response = await fetch(
           `/api/circles/${encodeURIComponent(
-            circle.id
+            circle.id,
           )}/members/${encodeURIComponent(
-            member.id
+            member.id,
           )}/offers/${encodeURIComponent(offerId)}/cancel`,
           {
             method: "POST",
-          }
+          },
         );
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const data = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(data?.error ?? "Unable to cancel pending offer.");
         }
 
@@ -2060,13 +2052,13 @@ function CircleMemberFloatingDetail({
         setCancelOfferError(
           cancelError instanceof Error
             ? cancelError.message
-            : "Unable to cancel pending offer."
+            : "Unable to cancel pending offer.",
         );
       } finally {
         setCancellingOfferId(null);
       }
     },
-    [cancellingOfferId, circle.id, member.id, member.isPreview]
+    [cancellingOfferId, circle.id, member.id, member.isPreview],
   );
 
   useEffect(() => {
@@ -2094,18 +2086,18 @@ function CircleMemberFloatingDetail({
 
         const response = await fetch(
           `/api/circles/${encodeURIComponent(
-            circle.id
+            circle.id,
           )}/members/${encodeURIComponent(member.id)}/command-access`,
           {
             cache: "no-store",
             signal: controller.signal,
-          }
+          },
         );
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const data = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(data?.error ?? "Unable to load command access.");
         }
 
@@ -2119,7 +2111,10 @@ function CircleMemberFloatingDetail({
           error: null,
         });
       } catch (loadError) {
-        if (loadError instanceof DOMException && loadError.name === "AbortError") {
+        if (
+          loadError instanceof DOMException &&
+          loadError.name === "AbortError"
+        ) {
           return;
         }
 
@@ -2156,7 +2151,7 @@ function CircleMemberFloatingDetail({
       role="dialog"
       aria-modal="true"
       aria-labelledby={`circle-member-profile-${member.id}`}
-      className="relative z-10 flex max-h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)] max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#08090c]/95 shadow-[0_38px_120px_rgba(0,0,0,0.76)] ring-1 ring-white/[0.06] backdrop-blur-xl sm:max-h-[calc(100%-3rem)]"
+      className="relative z-10 flex h-[100dvh] max-h-none w-[calc(100%-1.5rem)] max-w-2xl flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#08090c]/95 shadow-[0_38px_120px_rgba(0,0,0,0.76)] ring-1 ring-white/[0.06] backdrop-blur-xl"
       initial={{ opacity: 0, y: 22, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 18, scale: 0.97 }}
@@ -2216,7 +2211,10 @@ function CircleMemberFloatingDetail({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-white/55" aria-hidden="true" />
+                <ShieldCheck
+                  className="h-4 w-4 text-white/55"
+                  aria-hidden="true"
+                />
                 <h5 className="text-sm font-semibold text-white">
                   Role & Access
                 </h5>
@@ -2228,7 +2226,9 @@ function CircleMemberFloatingDetail({
                 </span>
               </p>
             </div>
-            {isOwner ? <PlaceholderAction>Change Role</PlaceholderAction> : null}
+            {isOwner ? (
+              <PlaceholderAction>Change Role</PlaceholderAction>
+            ) : null}
           </div>
         </section>
 
@@ -2253,11 +2253,7 @@ function CircleMemberFloatingDetail({
                   canEdit={!member.isPreview && !isConstraintSaving}
                   isSaving={constraintActionId === skillActionId}
                   onChange={(nextIds) =>
-                    onConstraintChange(
-                      member,
-                      "skill_constraint_ids",
-                      nextIds
-                    )
+                    onConstraintChange(member, "skill_constraint_ids", nextIds)
                   }
                 />
                 <WorkProfileConstraintMultiSelect
@@ -2270,11 +2266,7 @@ function CircleMemberFloatingDetail({
                   canEdit={!member.isPreview && !isConstraintSaving}
                   isSaving={constraintActionId === locationActionId}
                   onChange={(nextIds) =>
-                    onConstraintChange(
-                      member,
-                      "location_context_ids",
-                      nextIds
-                    )
+                    onConstraintChange(member, "location_context_ids", nextIds)
                   }
                 />
               </>
@@ -2325,7 +2317,10 @@ function CircleMemberFloatingDetail({
 
         <section className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
           <div className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-white/55" aria-hidden="true" />
+            <CalendarDays
+              className="h-4 w-4 text-white/55"
+              aria-hidden="true"
+            />
             <h5 className="text-sm font-semibold text-white">
               Scheduled Circle Events
             </h5>
@@ -2407,7 +2402,9 @@ function CircleMembersPanel({
 
         {members.length === 0 && !isLoading ? (
           <div className="rounded-2xl border border-dashed border-white/12 bg-white/[0.03] p-5">
-            <p className="text-sm font-semibold text-white">No active members.</p>
+            <p className="text-sm font-semibold text-white">
+              No active members.
+            </p>
             <p className="mt-2 text-sm leading-6 text-white/48">
               Active Circle members will appear here.
             </p>
@@ -2427,7 +2424,7 @@ function CircleMembersPanel({
                   "rounded-2xl border bg-[#0A0C10]/88 p-3 shadow-[0_18px_44px_rgba(0,0,0,0.36)] transition",
                   isSelected
                     ? "border-white/28 ring-1 ring-white/18"
-                    : "border-white/[0.08]"
+                    : "border-white/[0.08]",
                 )}
               >
                 <button
@@ -2436,7 +2433,9 @@ function CircleMembersPanel({
                   className="flex w-full items-center gap-3 rounded-xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/65"
                   aria-haspopup="dialog"
                   aria-controls={
-                    isSelected ? `circle-member-profile-${member.id}` : undefined
+                    isSelected
+                      ? `circle-member-profile-${member.id}`
+                      : undefined
                   }
                 >
                   <MemberAvatar member={member} className="h-11 w-11" />
@@ -2482,10 +2481,7 @@ function IncomingOffersSection({
   respondingResponse: "ACCEPTED" | "DECLINED" | null;
   responseErrorOfferId: string | null;
   responseError: string | null;
-  onRespond: (
-    offer: IncomingOffer,
-    response: "ACCEPTED" | "DECLINED"
-  ) => void;
+  onRespond: (offer: IncomingOffer, response: "ACCEPTED" | "DECLINED") => void;
 }) {
   if (!isLoading && !error && offers.length === 0) {
     return null;
@@ -2655,7 +2651,7 @@ function CircleViewToggle({
             "min-h-8 flex-1 rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-[0.12em] transition sm:flex-none",
             value === option.value
               ? "bg-zinc-800/90 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_8px_18px_rgba(0,0,0,0.25)]"
-              : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-200"
+              : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-200",
           )}
           aria-pressed={value === option.value}
         >
@@ -2673,7 +2669,8 @@ function CircleRoadmapEmptyState() {
         No Circle work linked yet
       </h2>
       <p className="mt-1 max-w-sm text-xs leading-5 text-[#A7B0BD]">
-        Add habits, roles, or command blocks to this Circle to build its roadmap.
+        Add habits, roles, or command blocks to this Circle to build its
+        roadmap.
       </p>
     </div>
   );
@@ -3010,13 +3007,13 @@ function EditCircleModal({
             name: trimmedName,
             icon_emoji: trimmedIconEmoji || null,
           }),
-        }
+        },
       );
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(data?.error ?? "Unable to update Circle.");
       }
 
@@ -3026,12 +3023,12 @@ function EditCircleModal({
           id: circle.id,
           name: trimmedName,
           icon_emoji: trimmedIconEmoji || null,
-        }
+        },
       );
       onClose();
     } catch (error) {
       setSaveError(
-        error instanceof Error ? error.message : "Unable to update Circle."
+        error instanceof Error ? error.message : "Unable to update Circle.",
       );
     } finally {
       setIsSaving(false);
@@ -3054,13 +3051,13 @@ function EditCircleModal({
         `/api/circles/${encodeURIComponent(circle.id)}`,
         {
           method: "DELETE",
-        }
+        },
       );
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(data?.error ?? "Unable to delete Circle.");
       }
 
@@ -3068,7 +3065,7 @@ function EditCircleModal({
       onDeleted(circle.id);
     } catch (error) {
       setDeleteError(
-        error instanceof Error ? error.message : "Unable to delete Circle."
+        error instanceof Error ? error.message : "Unable to delete Circle.",
       );
     } finally {
       if (!didDelete) {
@@ -3079,7 +3076,7 @@ function EditCircleModal({
 
   return (
     <motion.div
-      className="absolute inset-0 z-40 flex items-end justify-center p-3 sm:items-center sm:p-6"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -3247,7 +3244,7 @@ function CircleCommandDetail({
   const role = circle.viewerRole?.toUpperCase() ?? "MEMBER";
   const [circleView, setCircleView] = useState<CircleDetailView>("goals");
   const [detailMembers, setDetailMembers] = useState<CircleMember[] | null>(
-    null
+    null,
   );
   const [detailHabits, setDetailHabits] = useState<CircleHabit[] | null>(null);
   const [ownerSkills, setOwnerSkills] = useState<OwnerSkillOption[]>([]);
@@ -3262,7 +3259,7 @@ function CircleCommandDetail({
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
-    null
+    null,
   );
   const detailScrollRef = useRef<HTMLElement | null>(null);
 
@@ -3273,7 +3270,8 @@ function CircleCommandDetail({
 
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow;
-    const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+    const previousHtmlOverscroll =
+      document.documentElement.style.overscrollBehavior;
     const previousBodyOverscroll = document.body.style.overscrollBehavior;
 
     document.body.style.overflow = "hidden";
@@ -3282,7 +3280,8 @@ function CircleCommandDetail({
 
     return () => {
       document.body.style.overflow = previousBodyOverflow;
-      document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
+      document.documentElement.style.overscrollBehavior =
+        previousHtmlOverscroll;
       document.body.style.overscrollBehavior = previousBodyOverscroll;
     };
   }, []);
@@ -3310,13 +3309,13 @@ function CircleCommandDetail({
           {
             cache: "no-store",
             signal,
-          }
+          },
         );
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const data = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(data?.error ?? "Unable to load Circle members.");
         }
 
@@ -3330,18 +3329,21 @@ function CircleCommandDetail({
           (data.members ?? []).map((member) => ({
             ...member,
             skill_constraint_ids: normalizeStringArray(
-              member.skill_constraint_ids
+              member.skill_constraint_ids,
             ),
             location_context_ids: normalizeStringArray(
-              member.location_context_ids
+              member.location_context_ids,
             ),
-          }))
+          })),
         );
         setDetailHabits(data.habits ?? []);
         setOwnerSkills(data.ownerSkills ?? []);
         setOwnerLocationContexts(data.ownerLocationContexts ?? []);
       } catch (loadError) {
-        if (loadError instanceof DOMException && loadError.name === "AbortError") {
+        if (
+          loadError instanceof DOMException &&
+          loadError.name === "AbortError"
+        ) {
           return;
         }
 
@@ -3352,7 +3354,7 @@ function CircleCommandDetail({
         setMembersError(
           loadError instanceof Error
             ? loadError.message
-            : "Unable to load Circle members."
+            : "Unable to load Circle members.",
         );
       } finally {
         if (!signal?.aborted) {
@@ -3360,7 +3362,7 @@ function CircleCommandDetail({
         }
       }
     },
-    [circle.id]
+    [circle.id],
   );
 
   useEffect(() => {
@@ -3386,14 +3388,14 @@ function CircleCommandDetail({
         void loadCircleDetail();
       }
     },
-    [loadCircleDetail]
+    [loadCircleDetail],
   );
 
   const handleMemberConstraintChange = useCallback(
     async (
       member: CircleMemberDisplay,
       field: MemberConstraintField,
-      nextIds: string[]
+      nextIds: string[],
     ) => {
       if (member.isPreview || memberConstraintActionId) {
         return;
@@ -3409,13 +3411,13 @@ function CircleCommandDetail({
           (currentMembers ?? []).map((currentMember) =>
             currentMember.id === member.id
               ? { ...currentMember, [field]: nextIds }
-              : currentMember
-          )
+              : currentMember,
+          ),
         );
 
         const response = await fetch(
           `/api/circles/${encodeURIComponent(
-            circle.id
+            circle.id,
           )}/members/${encodeURIComponent(member.id)}`,
           {
             method: "PATCH",
@@ -3423,13 +3425,13 @@ function CircleCommandDetail({
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ [field]: nextIds }),
-          }
+          },
         );
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const data = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(data?.error ?? "Unable to update member profile.");
         }
 
@@ -3444,15 +3446,16 @@ function CircleCommandDetail({
                 ? {
                     ...currentMember,
                     skill_constraint_ids: normalizeStringArray(
-                      data.member?.skill_constraint_ids
+                      data.member?.skill_constraint_ids,
                     ),
                     location_context_ids: normalizeStringArray(
-                      data.member?.location_context_ids
+                      data.member?.location_context_ids,
                     ),
-                    updated_at: data.member?.updated_at ?? currentMember.updated_at,
+                    updated_at:
+                      data.member?.updated_at ?? currentMember.updated_at,
                   }
-                : currentMember
-            )
+                : currentMember,
+            ),
           );
         }
       } catch (updateError) {
@@ -3460,13 +3463,13 @@ function CircleCommandDetail({
         setMembersError(
           updateError instanceof Error
             ? updateError.message
-            : "Unable to update member profile."
+            : "Unable to update member profile.",
         );
       } finally {
         setMemberConstraintActionId(null);
       }
     },
-    [circle.id, detailMembers, memberConstraintActionId]
+    [circle.id, detailMembers, memberConstraintActionId],
   );
 
   const activeMembers =
@@ -3482,7 +3485,7 @@ function CircleCommandDetail({
         label: skill.name,
         icon: skill.icon ?? null,
       })),
-    [ownerSkills]
+    [ownerSkills],
   );
   const locationContextOptions = useMemo(
     () =>
@@ -3493,13 +3496,13 @@ function CircleCommandDetail({
           locationContext.value?.trim() ||
           "Untitled location",
       })),
-    [ownerLocationContexts]
+    [ownerLocationContexts],
   );
   const selectedMember = selectedMemberId
-    ? activeMembers.find(
+    ? (activeMembers.find(
         (member) =>
-          member.id === selectedMemberId || member.userId === selectedMemberId
-      ) ?? null
+          member.id === selectedMemberId || member.userId === selectedMemberId,
+      ) ?? null)
     : null;
   const isOwner = role === "OWNER";
   const canMakeOffer = elevatedRoles.has(role);
@@ -3538,7 +3541,7 @@ function CircleCommandDetail({
       <main
         key={circle.id}
         ref={detailScrollRef}
-        className="h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-4 sm:px-6 sm:py-6 lg:px-8"
+        className="h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-6 sm:py-6 lg:px-8"
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
           <div className="flex items-center justify-between px-1">
@@ -3585,7 +3588,7 @@ function CircleCommandDetail({
                   className={cn(
                     "relative z-10 drop-shadow-[0_6px_12px_rgba(0,0,0,0.5)]",
                     circleIcon &&
-                      "max-w-10 truncate text-center text-base leading-none sm:max-w-11 sm:text-lg"
+                      "max-w-10 truncate text-center text-base leading-none sm:max-w-11 sm:text-lg",
                   )}
                 >
                   {circleIcon ?? getCircleInitials(circle.name)}
@@ -3614,10 +3617,7 @@ function CircleCommandDetail({
             <section className="relative min-h-[260px] overflow-visible rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] px-3 py-4 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:overflow-hidden sm:p-7">
               <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
               <div className="relative z-10 space-y-4">
-                <CircleViewToggle
-                  value={circleView}
-                  onChange={setCircleView}
-                />
+                <CircleViewToggle value={circleView} onChange={setCircleView} />
                 <div className="mt-3 overflow-visible">
                   <CircleWorkRenderer
                     view={circleView}
@@ -3673,7 +3673,7 @@ function CircleCommandDetail({
       <AnimatePresence>
         {selectedMember ? (
           <motion.div
-            className="absolute inset-0 z-30 flex items-end justify-center p-3 sm:items-center sm:p-6"
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -3704,7 +3704,9 @@ function CircleCommandDetail({
   );
 }
 
-export function CommandCirclesSection({ className }: CommandCirclesSectionProps) {
+export function CommandCirclesSection({
+  className,
+}: CommandCirclesSectionProps) {
   const toast = useToastHelpers();
   const [circles, setCircles] = useState<CommandCircle[]>([]);
   const [incomingOffers, setIncomingOffers] = useState<IncomingOffer[]>([]);
@@ -3713,13 +3715,13 @@ export function CommandCirclesSection({ className }: CommandCirclesSectionProps)
   const [error, setError] = useState<string | null>(null);
   const [offersError, setOffersError] = useState<string | null>(null);
   const [respondingOfferId, setRespondingOfferId] = useState<string | null>(
-    null
+    null,
   );
   const [respondingOfferResponse, setRespondingOfferResponse] = useState<
     "ACCEPTED" | "DECLINED" | null
   >(null);
   const [offerResponseError, setOfferResponseError] = useState<string | null>(
-    null
+    null,
   );
   const [offerResponseErrorId, setOfferResponseErrorId] = useState<
     string | null
@@ -3741,26 +3743,31 @@ export function CommandCirclesSection({ className }: CommandCirclesSectionProps)
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(data?.error ?? "Unable to load Circles.");
       }
 
       const data = (await response.json()) as { circles?: CommandCircle[] };
       setCircles(
-        (data.circles ?? []).filter(
-          (circle) => elevatedRoles.has(circle.viewerRole?.toUpperCase() ?? "")
-        )
+        (data.circles ?? []).filter((circle) =>
+          elevatedRoles.has(circle.viewerRole?.toUpperCase() ?? ""),
+        ),
       );
     } catch (loadError) {
-      if (loadError instanceof DOMException && loadError.name === "AbortError") {
+      if (
+        loadError instanceof DOMException &&
+        loadError.name === "AbortError"
+      ) {
         return;
       }
 
       setCircles([]);
       setError(
-        loadError instanceof Error ? loadError.message : "Unable to load Circles."
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load Circles.",
       );
     } finally {
       if (!signal?.aborted) {
@@ -3780,22 +3787,27 @@ export function CommandCirclesSection({ className }: CommandCirclesSectionProps)
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(data?.error ?? "Unable to load offers.");
       }
 
       const data = (await response.json()) as { offers?: IncomingOffer[] };
       setIncomingOffers(data.offers ?? []);
     } catch (loadError) {
-      if (loadError instanceof DOMException && loadError.name === "AbortError") {
+      if (
+        loadError instanceof DOMException &&
+        loadError.name === "AbortError"
+      ) {
         return;
       }
 
       setIncomingOffers([]);
       setOffersError(
-        loadError instanceof Error ? loadError.message : "Unable to load offers."
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load offers.",
       );
     } finally {
       if (!signal?.aborted) {
@@ -3830,35 +3842,35 @@ export function CommandCirclesSection({ className }: CommandCirclesSectionProps)
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ response: responseValue }),
-          }
+          },
         );
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const data = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(data?.error ?? "Unable to respond to offer.");
         }
 
         setIncomingOffers((currentOffers) =>
-          currentOffers.filter((currentOffer) => currentOffer.id !== offer.id)
+          currentOffers.filter((currentOffer) => currentOffer.id !== offer.id),
         );
         toast.success(
-          responseValue === "ACCEPTED" ? "Offer accepted" : "Offer declined"
+          responseValue === "ACCEPTED" ? "Offer accepted" : "Offer declined",
         );
       } catch (respondError) {
         setOfferResponseErrorId(offer.id);
         setOfferResponseError(
           respondError instanceof Error
             ? respondError.message
-            : "Unable to respond to offer."
+            : "Unable to respond to offer.",
         );
       } finally {
         setRespondingOfferId(null);
         setRespondingOfferResponse(null);
       }
     },
-    [respondingOfferId, toast]
+    [respondingOfferId, toast],
   );
 
   useEffect(() => {
@@ -3986,14 +3998,14 @@ export function CommandCirclesSection({ className }: CommandCirclesSectionProps)
                   currentCircles.map((circle) =>
                     circle.id === updatedCircle.id
                       ? { ...circle, ...updatedCircle }
-                      : circle
-                  )
+                      : circle,
+                  ),
                 );
               }}
               onCircleDeleted={(circleId) => {
                 setActiveCircleId(null);
                 setCircles((currentCircles) =>
-                  currentCircles.filter((circle) => circle.id !== circleId)
+                  currentCircles.filter((circle) => circle.id !== circleId),
                 );
               }}
             />

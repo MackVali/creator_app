@@ -61,9 +61,7 @@ export function BottomBarNav({
           </div>
           <span
             className={`whitespace-nowrap text-[0.6rem] font-bold uppercase leading-none tracking-[0.08em] ${
-              isActive
-                ? "drop-shadow-[0_0_4px_rgba(255,255,255,0.6)]"
-                : ""
+              isActive ? "drop-shadow-[0_0_4px_rgba(255,255,255,0.6)]" : ""
             }`}
           >
             {item.label}
@@ -77,7 +75,7 @@ export function BottomBarNav({
   const leftItems = items.slice(0, mid);
   const rightItems = items.slice(mid);
   return (
-    <nav className="pointer-events-auto mx-auto w-full max-w-md rounded-[22px] border border-white/[0.08] bg-[#08090A]/95 text-gray-400 shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+    <nav className="pointer-events-auto mx-auto w-full max-w-md rounded-[22px] border border-white/[0.08] bg-[#08090A]/95 text-gray-400 shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl pb-[env(safe-area-inset-bottom,0px)]">
       <div className="grid h-16 w-full grid-cols-[1fr_3.5rem_1fr] items-center">
         <div className="flex h-full min-w-0 items-center justify-evenly">
           {leftItems.map(renderItem)}
