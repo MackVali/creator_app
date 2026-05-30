@@ -3541,10 +3541,10 @@ function CircleCommandDetail({
       <main
         key={circle.id}
         ref={detailScrollRef}
-        className="h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom,0px))] sm:pt-0 lg:px-8"
+        className="h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom,0px))] sm:pt-0 lg:px-8" style={{ paddingTop: 0 }}
       >
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
-          <div className="flex items-center justify-between px-1">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden pt-0 sm:gap-6">
+          <div className="flex items-center justify-between px-1 pt-0">
             <button
               type="button"
               aria-label="Close Circle detail"
@@ -3984,7 +3984,7 @@ export function CommandCirclesSection({
         {activeCircle ? (
           <motion.div
             key="command-circle-overlay"
-            className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/65 px-2.5 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.5rem+env(safe-area-inset-top,0px))] backdrop-blur-md sm:px-6 sm:pb-6 sm:pt-6"
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/65 px-0 pb-0 pt-0 backdrop-blur-md sm:px-0 sm:pb-0 sm:pt-0"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
