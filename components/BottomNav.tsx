@@ -3,7 +3,7 @@
 import { Blocks, Calendar, LayoutDashboard, Link } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import type { ComponentType } from "react";
-import { useEffect, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import BottomBarNav from "./BottomBarNav";
 import { LazyFab } from "@/components/ui/LazyFab";
 import { shouldHideBottomChrome } from "@/components/appChromeVisibility";
@@ -45,6 +45,14 @@ export default function BottomNav() {
     });
   }, [router]);
 
+  const [isIos, setIsIos] = useState(false);
+  useEffect(() => {
+    const ua =
+      typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+    const isIosUa = /iPhone|iPad|iPod/.test(ua);
+    setIsIos(isIosUa);
+  }, []);
+
   if (shouldHideNav) {
     return null;
   }
@@ -52,7 +60,7 @@ export default function BottomNav() {
   return (
     <>
       <div
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-3 pb-0"
+        className={`pointer-events-none fixed inset-x-0 bottom-0 z-50 px-3 pb-0 ${isIos ? "transform translate-y-1" : ""}`}
         data-bottom-nav
         aria-busy={isPending}
       >
@@ -70,7 +78,7 @@ export default function BottomNav() {
             />
           </div>
           <div
-            className="pointer-events-auto absolute left-1/2 top-0 -translate-x-1/2 -translate-y-6"
+            className={`pointer-events-auto absolute left-1/2 top-0 -translate-x-1/2 ${isIos ? "-translate-y-7" : "-translate-y-6"}`}
             data-bottom-nav-fab-launcher
           >
             <LazyFab />
