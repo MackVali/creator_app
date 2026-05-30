@@ -24,7 +24,9 @@ export function MonumentGridWithSharedTransition({
 }: MonumentGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const isEmpty = monuments.length === 0;
-  const selected = isEmpty ? null : monuments.find((m) => m.id === activeId) || null;
+  const selected = isEmpty
+    ? null
+    : monuments.find((m) => m.id === activeId) || null;
   const allowNewMonumentCard = showNewCard && monuments.length < MAX_MONUMENTS;
 
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -119,7 +121,7 @@ export function MonumentGridWithSharedTransition({
         {!isEmpty && selected && (
           <motion.div
             key="overlay"
-            className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/60 px-2.5 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.5rem+env(safe-area-inset-top,0px))] backdrop-blur-md sm:px-6 sm:pb-6 sm:pt-6"
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -129,11 +131,16 @@ export function MonumentGridWithSharedTransition({
               layoutId={`card-${selected.id}`}
               role="dialog"
               aria-modal="true"
-              className="relative h-[calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] w-full max-w-[min(100vw-1.25rem,420px)] overflow-y-auto rounded-2xl border border-white/5 bg-[#0B0E13] shadow-[0_6px_24px_rgba(0,0,0,0.35)] sm:h-[calc(100dvh-3rem)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
+              className="relative h-[100dvh] max-h-none w-full max-w-[min(100vw-1.25rem,420px)] overflow-y-auto rounded-2xl border border-white/5 bg-[#0B0E13] shadow-[0_6px_24px_rgba(0,0,0,0.35)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 500, damping: 40, mass: 0.9 }}
+              transition={{
+                type: "spring",
+                stiffness: 500,
+                damping: 40,
+                mass: 0.9,
+              }}
             >
               <MonumentDetail
                 monument={selected}

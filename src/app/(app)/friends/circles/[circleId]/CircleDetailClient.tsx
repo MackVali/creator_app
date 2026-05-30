@@ -108,8 +108,7 @@ type DetailRow = {
   };
 };
 
-const defaultBody =
-  "Manage people, roles, invites, and trust for this Circle.";
+const defaultBody = "Manage people, roles, invites, and trust for this Circle.";
 
 const memberPlaceholderRows = [
   { label: "You", value: "Owner / Active" },
@@ -136,9 +135,7 @@ const inviteRoleOptions: InviteRole[] = [
   "VIEWER",
 ];
 
-type MemberConstraintField =
-  | "skill_constraint_ids"
-  | "location_context_ids";
+type MemberConstraintField = "skill_constraint_ids" | "location_context_ids";
 
 function normalizeStringArray(value: unknown) {
   return Array.isArray(value)
@@ -180,13 +177,14 @@ function inviteTextMatchesProfile(value: string, profile: InviteProfile) {
 
   return (
     normalizedValue.length > 0 &&
-    (normalizedValue === normalizedUsername || normalizedValue === normalizedName)
+    (normalizedValue === normalizedUsername ||
+      normalizedValue === normalizedName)
   );
 }
 
 function getMemberRow(
   member: CircleMember,
-  action?: DetailRow["action"]
+  action?: DetailRow["action"],
 ): DetailRow {
   const shortenedUserId = shortenUserId(member.user_id);
   const profileName = member.profile?.name?.trim();
@@ -208,26 +206,24 @@ function getMemberRow(
 function getConstraintSummary(
   selectedIds: string[],
   optionById: Map<string, ConstraintOption>,
-  emptyLabel: string
+  emptyLabel: string,
 ) {
   if (selectedIds.length === 0) {
     return emptyLabel;
   }
 
   const labels = selectedIds.map(
-    (id) => optionById.get(id)?.label ?? shortenUserId(id)
+    (id) => optionById.get(id)?.label ?? shortenUserId(id),
   );
   const visibleLabels = labels.slice(0, 2).join(", ");
   const hiddenCount = labels.length - 2;
 
-  return hiddenCount > 0
-    ? `${visibleLabels}, +${hiddenCount}`
-    : visibleLabels;
+  return hiddenCount > 0 ? `${visibleLabels}, +${hiddenCount}` : visibleLabels;
 }
 
 function getConstraintOptionLabel(
   id: string,
-  optionById: Map<string, ConstraintOption>
+  optionById: Map<string, ConstraintOption>,
 ) {
   return optionById.get(id)?.label ?? shortenUserId(id);
 }
@@ -304,7 +300,7 @@ function ConstraintMultiSelect({
   const [isOpen, setIsOpen] = useState(false);
   const optionById = useMemo(
     () => new Map(options.map((option) => [option.id, option])),
-    [options]
+    [options],
   );
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const summary = getConstraintSummary(selectedIds, optionById, emptyLabel);
@@ -448,14 +444,14 @@ export default function CircleDetailClient({
   >([]);
   const [isSearchingInvitees, setIsSearchingInvitees] = useState(false);
   const [inviteSearchError, setInviteSearchError] = useState<string | null>(
-    null
+    null,
   );
   const [selectedInviteProfile, setSelectedInviteProfile] =
     useState<InviteProfile | null>(null);
   const [viewerCanManageMembers, setViewerCanManageMembers] = useState(false);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [memberActionError, setMemberActionError] = useState<string | null>(
-    null
+    null,
   );
   const [memberConstraintActionId, setMemberConstraintActionId] = useState<
     string | null
@@ -472,13 +468,13 @@ export default function CircleDetailClient({
           {
             cache: "no-store",
             signal,
-          }
+          },
         );
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const data = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(data?.error ?? "Unable to load circle.");
         }
 
@@ -495,18 +491,21 @@ export default function CircleDetailClient({
           (data.members ?? []).map((member) => ({
             ...member,
             skill_constraint_ids: normalizeStringArray(
-              member.skill_constraint_ids
+              member.skill_constraint_ids,
             ),
             location_context_ids: normalizeStringArray(
-              member.location_context_ids
+              member.location_context_ids,
             ),
-          }))
+          })),
         );
         setOwnerSkills(data.ownerSkills ?? []);
         setOwnerLocationContexts(data.ownerLocationContexts ?? []);
         setViewerCanManageMembers(data.viewerCanManageMembers ?? false);
       } catch (loadError) {
-        if (loadError instanceof DOMException && loadError.name === "AbortError") {
+        if (
+          loadError instanceof DOMException &&
+          loadError.name === "AbortError"
+        ) {
           return;
         }
 
@@ -518,7 +517,7 @@ export default function CircleDetailClient({
         setError(
           loadError instanceof Error
             ? loadError.message
-            : "Unable to load circle."
+            : "Unable to load circle.",
         );
       } finally {
         if (!signal?.aborted) {
@@ -526,7 +525,7 @@ export default function CircleDetailClient({
         }
       }
     },
-    [circleId]
+    [circleId],
   );
 
   useEffect(() => {
@@ -567,13 +566,13 @@ export default function CircleDetailClient({
           {
             cache: "no-store",
             signal: controller.signal,
-          }
+          },
         );
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const data = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(data?.error ?? "Unable to search profiles.");
         }
 
@@ -594,7 +593,7 @@ export default function CircleDetailClient({
         setInviteSearchError(
           searchError instanceof Error
             ? searchError.message
-            : "Unable to search profiles."
+            : "Unable to search profiles.",
         );
       } finally {
         if (!controller.signal.aborted) {
@@ -635,13 +634,13 @@ export default function CircleDetailClient({
             username: submittedUsername,
             role: inviteRole,
           }),
-        }
+        },
       );
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(data?.error ?? "Unable to send invite.");
       }
 
@@ -656,7 +655,7 @@ export default function CircleDetailClient({
       setInviteError(
         submitError instanceof Error
           ? submitError.message
-          : "Unable to send invite."
+          : "Unable to send invite.",
       );
     } finally {
       setIsInviting(false);
@@ -671,7 +670,7 @@ export default function CircleDetailClient({
 
         const response = await fetch(
           `/api/circles/${encodeURIComponent(
-            circleId
+            circleId,
           )}/members/${encodeURIComponent(member.id)}`,
           {
             method: "PATCH",
@@ -679,13 +678,13 @@ export default function CircleDetailClient({
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ action }),
-          }
+          },
         );
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const data = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(data?.error ?? "Unable to update member.");
         }
 
@@ -694,20 +693,20 @@ export default function CircleDetailClient({
         setMemberActionError(
           updateError instanceof Error
             ? updateError.message
-            : "Unable to update member."
+            : "Unable to update member.",
         );
       } finally {
         setMemberActionId(null);
       }
     },
-    [circleId, loadCircle]
+    [circleId, loadCircle],
   );
 
   const handleMemberConstraintChange = useCallback(
     async (
       member: CircleMember,
       field: MemberConstraintField,
-      nextIds: string[]
+      nextIds: string[],
     ) => {
       const previousMembers = members;
       const actionId = `${member.id}:${field}`;
@@ -719,13 +718,13 @@ export default function CircleDetailClient({
           currentMembers.map((currentMember) =>
             currentMember.id === member.id
               ? { ...currentMember, [field]: nextIds }
-              : currentMember
-          )
+              : currentMember,
+          ),
         );
 
         const response = await fetch(
           `/api/circles/${encodeURIComponent(
-            circleId
+            circleId,
           )}/members/${encodeURIComponent(member.id)}`,
           {
             method: "PATCH",
@@ -733,13 +732,13 @@ export default function CircleDetailClient({
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ [field]: nextIds }),
-          }
+          },
         );
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const data = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           throw new Error(data?.error ?? "Unable to update member profile.");
         }
 
@@ -754,15 +753,16 @@ export default function CircleDetailClient({
                 ? {
                     ...currentMember,
                     skill_constraint_ids: normalizeStringArray(
-                      data.member?.skill_constraint_ids
+                      data.member?.skill_constraint_ids,
                     ),
                     location_context_ids: normalizeStringArray(
-                      data.member?.location_context_ids
+                      data.member?.location_context_ids,
                     ),
-                    updated_at: data.member?.updated_at ?? currentMember.updated_at,
+                    updated_at:
+                      data.member?.updated_at ?? currentMember.updated_at,
                   }
-                : currentMember
-            )
+                : currentMember,
+            ),
           );
         }
       } catch (updateError) {
@@ -770,23 +770,23 @@ export default function CircleDetailClient({
         setMemberActionError(
           updateError instanceof Error
             ? updateError.message
-            : "Unable to update member profile."
+            : "Unable to update member profile.",
         );
       } finally {
         setMemberConstraintActionId(null);
       }
     },
-    [circleId, members]
+    [circleId, members],
   );
 
   const activeMembers = useMemo(
     () => members.filter((member) => member.status === "ACTIVE"),
-    [members]
+    [members],
   );
 
   const pendingInvites = useMemo(
     () => members.filter((member) => member.status === "INVITED"),
-    [members]
+    [members],
   );
 
   const skillConstraintOptions = useMemo(
@@ -796,7 +796,7 @@ export default function CircleDetailClient({
         label: skill.name,
         icon: skill.icon ?? null,
       })),
-    [ownerSkills]
+    [ownerSkills],
   );
 
   const locationContextOptions = useMemo(
@@ -808,7 +808,7 @@ export default function CircleDetailClient({
           locationContext.value?.trim() ||
           "Untitled location",
       })),
-    [ownerLocationContexts]
+    [ownerLocationContexts],
   );
 
   const activeMemberRows = useMemo(() => {
@@ -825,7 +825,7 @@ export default function CircleDetailClient({
               onClick: () => void handleMemberAction(member, "remove"),
               disabled: memberActionId !== null,
             }
-          : undefined
+          : undefined,
       );
       const skillActionId = `${member.id}:skill_constraint_ids`;
       const locationActionId = `${member.id}:location_context_ids`;
@@ -864,7 +864,7 @@ export default function CircleDetailClient({
                   void handleMemberConstraintChange(
                     member,
                     "skill_constraint_ids",
-                    nextIds
+                    nextIds,
                   )
                 }
               />
@@ -880,7 +880,7 @@ export default function CircleDetailClient({
                   void handleMemberConstraintChange(
                     member,
                     "location_context_ids",
-                    nextIds
+                    nextIds,
                   )
                 }
               />
@@ -916,8 +916,8 @@ export default function CircleDetailClient({
               onClick: () => void handleMemberAction(member, "cancel_invite"),
               disabled: memberActionId !== null,
             }
-          : undefined
-      )
+          : undefined,
+      ),
     );
   }, [
     handleMemberAction,
@@ -964,14 +964,14 @@ export default function CircleDetailClient({
         ],
       },
     ],
-    [activeMemberRows, circle, pendingInviteRows]
+    [activeMemberRows, circle, pendingInviteRows],
   );
 
   const title = circle?.name ?? "Household";
   const body = circle?.description?.trim() || defaultBody;
 
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] pt-6 text-white">
+    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-2 text-white">
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.14),transparent_34%),linear-gradient(135deg,rgba(18,18,18,0.96),rgba(0,0,0,0.92))] p-6 shadow-2xl shadow-black/50 sm:p-8">
         <Link
           href="/friends"
@@ -1021,10 +1021,7 @@ export default function CircleDetailClient({
           >
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_auto_auto] sm:items-start">
               <div className="relative min-w-0">
-                <label
-                  className="sr-only"
-                  htmlFor="circle-member-search-query"
-                >
+                <label className="sr-only" htmlFor="circle-member-search-query">
                   Username
                 </label>
                 <input
@@ -1080,7 +1077,7 @@ export default function CircleDetailClient({
                               onClick={() => {
                                 setSelectedInviteProfile(profile);
                                 setInviteUsername(
-                                  username ? `@${username}` : displayName
+                                  username ? `@${username}` : displayName,
                                 );
                                 setInviteSearchError(null);
                                 setInviteError(null);
