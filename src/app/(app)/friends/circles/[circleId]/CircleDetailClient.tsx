@@ -971,7 +971,7 @@ export default function CircleDetailClient({
   const body = circle?.description?.trim() || defaultBody;
 
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 pb-10 pt-6 text-white">
+    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] pt-6 text-white">
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.14),transparent_34%),linear-gradient(135deg,rgba(18,18,18,0.96),rgba(0,0,0,0.92))] p-6 shadow-2xl shadow-black/50 sm:p-8">
         <Link
           href="/friends"
