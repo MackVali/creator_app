@@ -3541,7 +3541,7 @@ function CircleCommandDetail({
       <main
         key={circle.id}
         ref={detailScrollRef}
-        className="h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-6 sm:py-6 lg:px-8"
+        className="h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom,0px))] sm:pt-0 lg:px-8"
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
           <div className="flex items-center justify-between px-1">
@@ -3566,7 +3566,7 @@ function CircleCommandDetail({
             ) : null}
           </div>
 
-          <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#0f0f10] to-[#1b1b1d] px-3 py-3 text-white shadow-[0_24px_70px_-42px_rgba(0,0,0,0.82)] sm:px-4 sm:py-3.5 md:rounded-3xl">
+          <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#0f0f10] to-[#1b1b1d] px-3 pb-3 pt-1.5 text-white shadow-[0_24px_70px_-42px_rgba(0,0,0,0.82)] sm:px-4 sm:pb-3.5 sm:pt-2 md:rounded-3xl">
             <div className="pointer-events-none absolute inset-0 z-0">
               <div className="absolute inset-x-16 -top-20 h-40 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.14),_transparent_70%)] blur-3xl" />
               <div className="absolute bottom-0 right-0 h-40 w-40 translate-x-1/4 translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.045),_transparent_60%)] blur-3xl" />
