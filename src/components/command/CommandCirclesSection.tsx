@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -3263,6 +3264,28 @@ function CircleCommandDetail({
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
     null
   );
+  const detailScrollRef = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    detailScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [circle.id]);
+
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+    const previousBodyOverscroll = document.body.style.overscrollBehavior;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "none";
+    document.body.style.overscrollBehavior = "none";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
+      document.body.style.overscrollBehavior = previousBodyOverscroll;
+    };
+  }, []);
 
   useEffect(() => {
     setCircleView("goals");
@@ -3506,13 +3529,17 @@ function CircleCommandDetail({
       layoutId={`command-circle-card-${circle.id}`}
       role="dialog"
       aria-modal="true"
-      className="relative h-full w-full max-h-[min(100vh-3rem,960px)] max-w-[min(100vw-3rem,420px)] overflow-hidden rounded-2xl border border-white/5 bg-[#0B0E13] shadow-[0_6px_24px_rgba(0,0,0,0.35)] sm:max-h-[min(100vh-4rem,1000px)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
+      className="relative h-full w-full max-h-[calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] max-w-[min(100vw-1.25rem,420px)] overflow-hidden rounded-2xl border border-white/5 bg-[#0B0E13] shadow-[0_6px_24px_rgba(0,0,0,0.35)] overscroll-contain sm:max-h-[calc(100dvh-3rem)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ type: "spring", stiffness: 480, damping: 42, mass: 0.9 }}
     >
-      <main className="h-full overflow-y-auto overflow-x-hidden px-2.5 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <main
+        key={circle.id}
+        ref={detailScrollRef}
+        className="h-full overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 py-4 sm:px-6 sm:py-6 lg:px-8"
+      >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
           <div className="flex items-center justify-between px-1">
             <button
@@ -3945,7 +3972,7 @@ export function CommandCirclesSection({ className }: CommandCirclesSectionProps)
         {activeCircle ? (
           <motion.div
             key="command-circle-overlay"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-md sm:p-6"
+            className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/65 px-2.5 pb-[env(safe-area-inset-bottom,0px)] pt-[env(safe-area-inset-top,0px)] backdrop-blur-md sm:items-center sm:p-6"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

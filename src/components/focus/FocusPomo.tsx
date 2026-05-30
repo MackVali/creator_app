@@ -3469,7 +3469,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className="fixed inset-0 z-[80] flex items-stretch justify-center overflow-y-auto bg-black/95 p-0 text-white backdrop-blur-xl sm:items-center sm:p-5"
+          className="fixed inset-0 z-[80] flex items-stretch justify-center overflow-y-auto bg-black/95 px-0 pb-0 pt-[calc(env(safe-area-inset-top,0px)+10px)] text-white backdrop-blur-xl sm:items-center sm:p-5"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
