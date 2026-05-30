@@ -3529,7 +3529,7 @@ function CircleCommandDetail({
       layoutId={`command-circle-card-${circle.id}`}
       role="dialog"
       aria-modal="true"
-      className="relative h-full w-full max-h-[calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] max-w-[min(100vw-1.25rem,420px)] overflow-hidden rounded-2xl border border-white/5 bg-[#0B0E13] shadow-[0_6px_24px_rgba(0,0,0,0.35)] overscroll-contain sm:max-h-[calc(100dvh-3rem)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
+      className="relative h-[calc(100dvh-1.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] w-full max-w-[min(100vw-1.25rem,420px)] overflow-hidden rounded-2xl border border-white/5 bg-[#0B0E13] shadow-[0_6px_24px_rgba(0,0,0,0.35)] overscroll-contain sm:h-[calc(100dvh-3rem)] sm:max-w-[min(100vw-4rem,640px)] md:rounded-3xl lg:max-w-[min(100vw-6rem,960px)] xl:max-w-[min(100vw-8rem,1160px)]"
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
@@ -3538,7 +3538,7 @@ function CircleCommandDetail({
       <main
         key={circle.id}
         ref={detailScrollRef}
-        className="h-full overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 py-4 sm:px-6 sm:py-6 lg:px-8"
+        className="h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 py-4 sm:px-6 sm:py-6 lg:px-8"
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden sm:gap-6">
           <div className="flex items-center justify-between px-1">
@@ -3564,11 +3564,11 @@ function CircleCommandDetail({
           </div>
 
           <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#0f0f10] to-[#1b1b1d] px-3 py-3 text-white shadow-[0_24px_70px_-42px_rgba(0,0,0,0.82)] sm:px-4 sm:py-3.5 md:rounded-3xl">
-            <div className="absolute inset-0">
+            <div className="pointer-events-none absolute inset-0 z-0">
               <div className="absolute inset-x-16 -top-20 h-40 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.14),_transparent_70%)] blur-3xl" />
               <div className="absolute bottom-0 right-0 h-40 w-40 translate-x-1/4 translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.045),_transparent_60%)] blur-3xl" />
             </div>
-            <div className="relative flex flex-row items-center gap-3 sm:gap-4 sm:pl-10 sm:pr-10 lg:pl-9 lg:pr-9">
+            <div className="relative z-10 flex flex-row items-center gap-3 sm:gap-4 sm:pl-10 sm:pr-10 lg:pl-9 lg:pr-9">
               <span
                 className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/18 bg-gradient-to-b from-[#040404] via-[#08080a] to-black text-lg font-semibold text-white shadow-[0_18px_34px_rgba(0,0,0,0.58)] sm:h-14 sm:w-14 sm:text-xl"
                 aria-label={`Circle: ${circle.name}`}
@@ -3612,8 +3612,8 @@ function CircleCommandDetail({
 
           <div className="grid w-full grid-cols-1 gap-5 lg:gap-6 xl:auto-rows-min xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
             <section className="relative min-h-[260px] overflow-visible rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] px-3 py-4 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:overflow-hidden sm:p-7">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
-              <div className="relative space-y-4">
+              <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
+              <div className="relative z-10 space-y-4">
                 <CircleViewToggle
                   value={circleView}
                   onChange={setCircleView}
@@ -3972,7 +3972,7 @@ export function CommandCirclesSection({ className }: CommandCirclesSectionProps)
         {activeCircle ? (
           <motion.div
             key="command-circle-overlay"
-            className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/65 px-2.5 pb-[env(safe-area-inset-bottom,0px)] pt-[env(safe-area-inset-top,0px)] backdrop-blur-md sm:items-center sm:p-6"
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/65 px-2.5 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.5rem+env(safe-area-inset-top,0px))] backdrop-blur-md sm:px-6 sm:pb-6 sm:pt-6"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

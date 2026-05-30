@@ -19,6 +19,12 @@ import type { MonumentNote } from "@/lib/types/monument-note";
 import { cn } from "@/lib/utils";
 import MonumentEditDialog from "@/components/monuments/MonumentEditDialog";
 import {
+  segmentedToggleActiveClassName,
+  segmentedToggleButtonClassName,
+  segmentedToggleContainerClassName,
+  segmentedToggleInactiveClassName,
+} from "@/components/ui/segmented-toggle-styles";
+import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
@@ -254,7 +260,7 @@ export function MonumentDetail({
             <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
             <header className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div
-                className="inline-flex w-full rounded-lg border border-white/10 bg-[#050506]/80 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur sm:w-auto"
+                className={segmentedToggleContainerClassName}
                 aria-label="Monument view"
               >
                 {(
@@ -268,10 +274,10 @@ export function MonumentDetail({
                     type="button"
                     onClick={() => setMonumentView(option.value)}
                     className={cn(
-                      "min-h-8 flex-1 rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-[0.12em] transition sm:flex-none",
+                      segmentedToggleButtonClassName,
                       monumentView === option.value
-                        ? "bg-zinc-800/90 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_8px_18px_rgba(0,0,0,0.25)]"
-                        : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-200"
+                        ? segmentedToggleActiveClassName
+                        : segmentedToggleInactiveClassName
                     )}
                     aria-pressed={monumentView === option.value}
                   >

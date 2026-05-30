@@ -5,6 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { parseSupabaseError } from "@/lib/error-handling";
 import RoleOption from "@/components/auth/RoleOption";
+import {
+  segmentedToggleActiveClassName,
+  segmentedToggleButtonClassName,
+  segmentedToggleContainerClassName,
+  segmentedToggleInactiveClassName,
+} from "@/components/ui/segmented-toggle-styles";
+import { cn } from "@/lib/utils";
 
 // Password validation function - relaxed requirements
 const validatePassword = (password: string): string | null => {
@@ -36,18 +43,24 @@ export default function AuthForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = getSupabaseBrowser();
-  const authSubtitle =
+  const authCopy =
     tab === "signin"
-      ? "Sign in to continue building your system."
-      : "Create your account and start building your system.";
+      ? {
+          title: "Welcome back!",
+          subtitle: "Sign in to continue building your future.",
+        }
+      : {
+          title: "Create your account",
+          subtitle: "Start building goals, systems, and momentum.",
+        };
   const labelClassName =
     "mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-zinc-400";
   const inputClassName =
-    "h-12 w-full rounded-2xl border border-white/10 bg-[#0B0B0C] px-4 text-sm text-white placeholder-zinc-600 shadow-inner shadow-black/30 outline-none transition-all duration-200 focus:border-zinc-300/35 focus:ring-2 focus:ring-zinc-300/10 disabled:cursor-not-allowed disabled:opacity-60";
+    "h-12 w-full rounded-2xl border border-transparent bg-[#0B0C0F] px-4 text-sm text-white placeholder-zinc-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.045),inset_0_-18px_32px_rgba(0,0,0,0.28)] outline-none transition-all duration-200 focus:border-transparent focus:ring-2 focus:ring-zinc-300/10 disabled:cursor-not-allowed disabled:opacity-60";
   const statusClassName =
     "mb-5 rounded-2xl border px-4 py-3 text-sm leading-relaxed";
   const submitClassName =
-    "h-12 w-full rounded-2xl border border-white/15 bg-[#151515] px-4 text-sm font-bold text-white shadow-[0_14px_34px_rgba(0,0,0,0.35)] transition-all duration-200 hover:border-white/25 hover:bg-[#1A1A1A] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-zinc-900 disabled:text-zinc-500 disabled:shadow-none";
+    "h-12 w-full rounded-2xl border border-transparent bg-zinc-800/90 px-4 text-sm font-bold text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_14px_34px_rgba(0,0,0,0.35)] transition-all duration-200 hover:bg-zinc-700/80 hover:text-white disabled:cursor-not-allowed disabled:border-transparent disabled:bg-zinc-900/80 disabled:text-zinc-500 disabled:shadow-none";
 
   // Reset lockout after duration - placed before any early returns to fix hooks rules
   useEffect(() => {
@@ -73,7 +86,7 @@ export default function AuthForm() {
           </p>
         </div>
 
-        <div className="rounded-[1.75rem] border border-white/10 bg-[#101010]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] sm:p-6">
+        <div className="rounded-[1.75rem] border border-white/[0.04] bg-[#0B0C0F]/95 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.035)] sm:p-6">
           <div className="text-center">
             <div className="mb-4 rounded-2xl border border-red-400/20 bg-red-950/20 p-4 text-sm font-semibold text-red-300">
               Configuration Error
@@ -282,37 +295,45 @@ export default function AuthForm() {
       </div>
 
       {/* Main Card */}
-      <div className="rounded-[1.75rem] border border-white/10 bg-[#101010]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur sm:p-6">
+      <div className="rounded-[1.75rem] border border-white/[0.04] bg-[#0B0C0F]/95 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur sm:p-6">
         {/* Welcome Section */}
         <div className="mb-6">
-          <h2 className="mb-2 text-2xl font-bold text-white">Welcome back</h2>
-          <p className="text-sm leading-6 text-zinc-400">{authSubtitle}</p>
+          <h2 className="mb-2 text-2xl font-bold text-white">
+            {authCopy.title}
+          </h2>
+          <p className="text-sm leading-6 text-zinc-400">
+            {authCopy.subtitle}
+          </p>
         </div>
 
         {/* Tab System */}
-        <div className="mb-6 flex rounded-2xl border border-white/[0.06] bg-black/35 p-1.5">
-          <button
-            type="button"
-            onClick={() => setTab("signin")}
-            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 ${
-              tab === "signin"
-                ? "border border-white/10 bg-zinc-800/70 text-white shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
-                : "border border-transparent text-zinc-500 hover:text-zinc-300"
-            }`}
+        <div className="mb-6">
+          <div
+            className={segmentedToggleContainerClassName}
+            aria-label="Auth mode"
           >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("signup")}
-            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 ${
-              tab === "signup"
-                ? "border border-white/10 bg-zinc-800/70 text-white shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
-                : "border border-transparent text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            Sign Up
-          </button>
+            {(
+              [
+                { value: "signin", label: "Sign In" },
+                { value: "signup", label: "Sign Up" },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setTab(option.value)}
+                className={cn(
+                  segmentedToggleButtonClassName,
+                  tab === option.value
+                    ? segmentedToggleActiveClassName
+                    : segmentedToggleInactiveClassName
+                )}
+                aria-pressed={tab === option.value}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Success Message */}
