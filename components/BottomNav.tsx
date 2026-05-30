@@ -52,7 +52,7 @@ export default function BottomNav() {
   return (
     <>
       <div
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+8px)]"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-3 pb-[max(4px,env(safe-area-inset-bottom,0px))]"
         data-bottom-nav
         aria-busy={isPending}
       >
