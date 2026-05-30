@@ -18,12 +18,12 @@ export default function RoleOption({
       disabled={disabled}
       onClick={onSelect}
       className={[
-        "w-full rounded-lg border p-4 text-left transition-all",
+        "w-full rounded-lg border border-transparent p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all",
         disabled
-          ? "border-[#333] text-zinc-500 bg-[#2C2C2C] cursor-not-allowed"
+          ? "cursor-not-allowed bg-[#0B0C0F]/70 text-zinc-500 opacity-75"
           : selected
-          ? "border-[#333] bg-[#1E1E1E]"
-          : "border-[#333] bg-[#2C2C2C] hover:border-zinc-500 hover:bg-[#1E1E1E]",
+          ? "bg-zinc-800/90 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_8px_18px_rgba(0,0,0,0.25)]"
+          : "bg-[#0B0C0F] hover:bg-[#111216]",
       ].join(" ")}
     >
       <div className="flex items-center justify-between mb-2">
