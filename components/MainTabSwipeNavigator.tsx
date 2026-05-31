@@ -28,14 +28,10 @@ type SwipeTargetRoute = MainTabRouteHref;
 const AXIS_LOCK_DISTANCE = 10;
 const EDGE_RESISTANCE = 0.2;
 const DRAG_FOLLOW = 1;
-const MIN_COMMIT_DISTANCE = 64;
-const MAX_COMMIT_DISTANCE = 110;
-const COMMIT_DISTANCE_RATIO = 0.22;
-const MIN_FLICK_DISTANCE = 34;
-const COMMIT_VELOCITY = 0.62;
-const PREVIEW_MIN_OPACITY = 0.82;
-const PREVIEW_MAX_SCALE_DELTA = 0.018;
-const PREVIEW_ENTRY_OFFSET_RATIO = 0.35;
+const MIN_COMMIT_DISTANCE = 110;
+const COMMIT_DISTANCE_RATIO = 0.35;
+const MIN_FLICK_DISTANCE = 110;
+const COMMIT_VELOCITY = 1.6;
 const COMMIT_ANIMATION_DURATION = 0.12;
 const COMMIT_FALLBACK_TIMEOUT_MS = 2200;
 
@@ -120,10 +116,7 @@ function getAdjacentSwipeTargets(hostRoute: SwipeHostRoute) {
 }
 
 function getCommitDistance(width: number) {
-  return Math.min(
-    MAX_COMMIT_DISTANCE,
-    Math.max(MIN_COMMIT_DISTANCE, width * COMMIT_DISTANCE_RATIO)
-  );
+  return Math.max(MIN_COMMIT_DISTANCE, width * COMMIT_DISTANCE_RATIO);
 }
 
 function hasActiveOverlay() {
@@ -173,16 +166,39 @@ function clampDrag(rawDeltaX: number, width: number, hasAdjacentRoute: boolean) 
   return Math.max(Math.min(rawDeltaX * DRAG_FOLLOW, limit), -limit);
 }
 
-function getPreviewInitialX(direction: SwipeDirection, width: number) {
-  const previewSide = direction === "left" ? 1 : -1;
-  return previewSide * width * PREVIEW_ENTRY_OFFSET_RATIO;
+function getTrackX(direction: SwipeDirection, deltaX: number, width: number) {
+  return direction === "left" ? deltaX : -width + deltaX;
 }
 
-function getPreviewX(direction: SwipeDirection, deltaX: number, width: number) {
-  const previewSide = direction === "left" ? 1 : -1;
-  const progress = Math.min(Math.abs(deltaX) / Math.max(width, 1), 1);
-  const startOffset = width * PREVIEW_ENTRY_OFFSET_RATIO;
-  return previewSide * startOffset * (1 - progress);
+function getRestingTrackX(direction: SwipeDirection, width: number) {
+  return direction === "left" ? 0 : -width;
+}
+
+function getCommittedTrackX(direction: SwipeDirection, width: number) {
+  return direction === "left" ? -width : 0;
+}
+
+function isSwipeDirectionForDelta(direction: SwipeDirection, deltaX: number) {
+  return direction === "left" ? deltaX < 0 : deltaX > 0;
+}
+
+function isVelocityInSwipeDirection(direction: SwipeDirection, velocityX: number) {
+  return direction === "left" ? velocityX < 0 : velocityX > 0;
+}
+
+function isIntentionalFlick(
+  direction: SwipeDirection,
+  deltaX: number,
+  velocityX: number,
+  targetRoute: SwipeTargetRoute | null
+) {
+  return Boolean(
+    targetRoute &&
+      Math.abs(deltaX) >= MIN_FLICK_DISTANCE &&
+      Math.abs(velocityX) >= COMMIT_VELOCITY &&
+      isSwipeDirectionForDelta(direction, deltaX) &&
+      isVelocityInSwipeDirection(direction, velocityX)
+  );
 }
 
 function waitForAnimation(animation: AnimationPlaybackControls) {
@@ -233,9 +249,6 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
     cancel: (event: PointerEvent) => void;
   } | null>(null);
   const x = useMotionValue(0);
-  const peekOpacity = useMotionValue(0);
-  const peekX = useMotionValue(0);
-  const peekScale = useMotionValue(1 - PREVIEW_MAX_SCALE_DELTA);
   const [peekState, setPeekState] = useState<PeekState | null>(null);
   const [committedPreviewRoute, setCommittedPreviewRoute] =
     useState<SwipeTargetRoute | null>(null);
@@ -246,6 +259,7 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
   const swipeHostRoute = useMemo(() => getSwipeHostRoute(pathname), [pathname]);
   const isEnabledRoute = swipeHostRoute !== null;
   const activePreviewRoute = committedPreviewRoute ?? peekState?.targetHref ?? null;
+  const activeSwipeDirection = peekState?.direction ?? null;
 
   const clearCommitFallbackTimeout = useCallback(() => {
     if (!commitFallbackTimeoutRef.current) return;
@@ -282,12 +296,9 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
     x.set(0);
     peekAnimationRef.current.forEach((animation) => animation.stop());
     peekAnimationRef.current = [];
-    peekOpacity.set(0);
-    peekX.set(0);
-    peekScale.set(1 - PREVIEW_MAX_SCALE_DELTA);
     peekStateRef.current = null;
     setPeekState(null);
-  }, [clearCommitFallbackTimeout, peekOpacity, peekScale, peekX, x]);
+  }, [clearCommitFallbackTimeout, x]);
 
   function stopAnimation() {
     animationRef.current?.stop();
@@ -330,22 +341,15 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
     stopPeekAnimation();
     const currentPeek = peekStateRef.current;
     const width = rootRef.current?.offsetWidth || window.innerWidth || 390;
-    const animations = [
-      animate(peekOpacity, 0, {
-        duration: reduceMotion ? 0.01 : 0.16,
-        ease: [0.4, 0, 0.2, 1],
-      }),
-    ];
+    const animations: AnimationPlaybackControls[] = [];
 
     if (currentPeek) {
       animations.push(
-        animate(peekX, getPreviewInitialX(currentPeek.direction, width), {
-          duration: reduceMotion ? 0.01 : 0.2,
-          ease: [0.4, 0, 0.2, 1],
-        }),
-        animate(peekScale, 1 - PREVIEW_MAX_SCALE_DELTA, {
-          duration: reduceMotion ? 0.01 : 0.18,
-          ease: [0.4, 0, 0.2, 1],
+        animate(x, getRestingTrackX(currentPeek.direction, width), {
+          type: "spring",
+          stiffness: reduceMotion ? 900 : 620,
+          damping: reduceMotion ? 60 : 48,
+          mass: 0.68,
         })
       );
     }
@@ -360,9 +364,7 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
 
   function resetPeek() {
     stopPeekAnimation();
-    peekOpacity.set(0);
-    peekX.set(0);
-    peekScale.set(1 - PREVIEW_MAX_SCALE_DELTA);
+    x.set(0);
     setPeek(null);
   }
 
@@ -374,33 +376,19 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
   ) {
     if (!targetHref) {
       setPeek(null);
-      peekOpacity.set(0);
-      peekX.set(0);
-      peekScale.set(1 - PREVIEW_MAX_SCALE_DELTA);
       return;
     }
 
     stopPeekAnimation();
     setPeek({ direction, targetHref });
     prefetchRoute(targetHref);
-
-    const progress = Math.min(Math.abs(deltaX) / Math.max(width, 1), 1);
-
-    peekOpacity.set(PREVIEW_MIN_OPACITY + progress * (1 - PREVIEW_MIN_OPACITY));
-    peekX.set(getPreviewX(direction, deltaX, width));
-    peekScale.set(1 - PREVIEW_MAX_SCALE_DELTA * (1 - progress));
+    x.set(getTrackX(direction, deltaX, width));
   }
 
   function springBack() {
     if (isCommittingRef.current) return;
     stopAnimation();
     hidePeek();
-    animationRef.current = animate(x, 0, {
-      type: "spring",
-      stiffness: reduceMotion ? 900 : 620,
-      damping: reduceMotion ? 60 : 48,
-      mass: 0.68,
-    });
   }
 
   function finishNavigation(targetHref: string, direction: SwipeDirection, width: number) {
@@ -424,39 +412,18 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
 
     stopAnimation();
     stopPeekAnimation();
-    const exitX = direction === "left" ? -width : width;
+    const currentDeltaX = direction === "right" ? x.get() + width : x.get();
+    x.set(getTrackX(direction, currentDeltaX, width));
+    const completedX = getCommittedTrackX(direction, width);
     const duration = reduceMotion ? 0.01 : COMMIT_ANIMATION_DURATION;
 
-    if (peekOpacity.get() === 0) {
-      peekX.set(getPreviewInitialX(direction, width));
-      peekScale.set(1 - PREVIEW_MAX_SCALE_DELTA);
-    }
-
-    const currentAnimation = animate(x, exitX, {
-      duration,
-      ease: [0.25, 0.8, 0.25, 1],
-    });
-    const previewAnimation = animate(peekX, 0, {
-      duration,
-      ease: [0.25, 0.8, 0.25, 1],
-    });
-    const opacityAnimation = animate(peekOpacity, 1, {
-      duration: reduceMotion ? 0.01 : 0.12,
-      ease: [0.25, 0.8, 0.25, 1],
-    });
-    const scaleAnimation = animate(peekScale, 1, {
+    const trackAnimation = animate(x, completedX, {
       duration,
       ease: [0.25, 0.8, 0.25, 1],
     });
 
-    animationRef.current = currentAnimation;
-    peekAnimationRef.current = [previewAnimation, opacityAnimation, scaleAnimation];
-    void Promise.all([
-      waitForAnimation(currentAnimation),
-      waitForAnimation(previewAnimation),
-      waitForAnimation(opacityAnimation),
-      waitForAnimation(scaleAnimation),
-    ]).then(() => {
+    animationRef.current = trackAnimation;
+    void waitForAnimation(trackAnimation).then(() => {
       setIsCurrentLayerSuppressed(true);
 
       try {
@@ -504,20 +471,20 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
     const direction: SwipeDirection = deltaX < 0 ? "left" : "right";
     const targetRoute = getSwipeTarget(gesture.hostRoute, direction);
     const nextX = clampDrag(deltaX, gesture.width, Boolean(targetRoute));
-    x.set(nextX);
     updatePeek(targetRoute, direction, nextX, gesture.width);
 
     if (event.cancelable) {
       event.preventDefault();
     }
 
-    const isCommittedByVelocity =
-      targetRoute &&
-      absX >= MIN_FLICK_DISTANCE &&
-      Math.abs(gesture.velocityX) >= COMMIT_VELOCITY &&
-      Math.sign(gesture.velocityX) === Math.sign(deltaX);
+    const isCommittedByVelocity = isIntentionalFlick(
+      direction,
+      deltaX,
+      gesture.velocityX,
+      targetRoute
+    );
 
-    if (isCommittedByVelocity) {
+    if (targetRoute && isCommittedByVelocity) {
       clearGesture();
       finishNavigation(targetRoute, direction, gesture.width);
     }
@@ -540,10 +507,12 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
     const targetRoute = getSwipeTarget(gesture.hostRoute, direction);
     const distanceThreshold = getCommitDistance(gesture.width);
     const isCommittedByDistance = absX >= distanceThreshold;
-    const isCommittedByVelocity =
-      absX >= MIN_FLICK_DISTANCE &&
-      Math.abs(gesture.velocityX) >= COMMIT_VELOCITY &&
-      Math.sign(gesture.velocityX) === Math.sign(deltaX);
+    const isCommittedByVelocity = isIntentionalFlick(
+      direction,
+      deltaX,
+      gesture.velocityX,
+      targetRoute
+    );
 
     if (targetRoute && (isCommittedByDistance || isCommittedByVelocity)) {
       finishNavigation(targetRoute, direction, gesture.width);
@@ -607,9 +576,6 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
     x.set(0);
     peekAnimationRef.current.forEach((animation) => animation.stop());
     peekAnimationRef.current = [];
-    peekOpacity.set(0);
-    peekX.set(0);
-    peekScale.set(1 - PREVIEW_MAX_SCALE_DELTA);
     peekStateRef.current = null;
     setPeekState(null);
     gestureRef.current = null;
@@ -622,7 +588,7 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
     window.removeEventListener("pointerup", listeners.end);
     window.removeEventListener("pointercancel", listeners.cancel);
     listenersRef.current = null;
-  }, [clearCommittedPreview, pathname, peekOpacity, peekScale, peekX, x]);
+  }, [clearCommittedPreview, pathname, x]);
 
   useEffect(() => {
     if (!isEnabledRoute) return;
@@ -660,23 +626,45 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
       style={{ touchAction: "pan-y pinch-zoom" }}
       className="relative min-h-full overflow-hidden bg-[#050505]"
     >
-      {activePreviewRoute ? (
+      {activePreviewRoute && activeSwipeDirection ? (
         <motion.div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-0 overflow-hidden bg-[#050505] will-change-transform"
-          style={{ opacity: peekOpacity, scale: peekScale, x: peekX }}
+          style={{ x }}
+          className="relative z-10 flex min-h-full w-[200%] bg-[#050505] will-change-transform"
         >
-          <DestinationPreview route={activePreviewRoute} />
+          {activeSwipeDirection === "right" ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none min-h-full w-1/2 min-w-0 shrink-0 bg-[#050505]"
+            >
+              <DestinationPreview route={activePreviewRoute} />
+            </div>
+          ) : null}
+          <div
+            className={`min-h-full w-1/2 min-w-0 shrink-0 bg-[#050505] ${
+              isCurrentLayerSuppressed ? "invisible pointer-events-none" : ""
+            }`}
+          >
+            {children}
+          </div>
+          {activeSwipeDirection === "left" ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none min-h-full w-1/2 min-w-0 shrink-0 bg-[#050505]"
+            >
+              <DestinationPreview route={activePreviewRoute} />
+            </div>
+          ) : null}
         </motion.div>
-      ) : null}
-      <motion.div
-        style={{ x }}
-        className={`relative z-10 min-h-full bg-[#050505] will-change-transform ${
-          isCurrentLayerSuppressed ? "invisible pointer-events-none" : ""
-        }`}
-      >
-        {children}
-      </motion.div>
+      ) : (
+        <motion.div
+          style={{ x }}
+          className={`relative z-10 min-h-full bg-[#050505] will-change-transform ${
+            isCurrentLayerSuppressed ? "invisible pointer-events-none" : ""
+          }`}
+        >
+          {children}
+        </motion.div>
+      )}
     </div>
   );
 }

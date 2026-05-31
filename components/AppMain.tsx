@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   shouldHideBottomChrome,
   shouldUseFocusedEditorSpacing,
+  shouldUseCompactTopSpacing,
 } from "@/components/appChromeVisibility";
 import MainTabSwipeNavigator from "@/components/MainTabSwipeNavigator";
 
@@ -12,14 +13,15 @@ export default function AppMain({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const shouldHideBottomNav = shouldHideBottomChrome(pathname);
   const isFocusedEditor = shouldUseFocusedEditorSpacing(pathname);
+  const isCompactTop = shouldUseCompactTopSpacing(pathname);
 
   return (
     <main
-      className={
+      className={`flex-1 ${
         shouldHideBottomNav || isFocusedEditor
-          ? "flex-1 pb-[env(safe-area-inset-bottom)]"
-          : "flex-1 pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"
-      }
+          ? "pb-[env(safe-area-inset-bottom)]"
+          : "pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"
+      } ${isCompactTop ? "pt-0" : ""}`}
     >
       <MainTabSwipeNavigator>{children}</MainTabSwipeNavigator>
     </main>
