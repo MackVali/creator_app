@@ -296,8 +296,7 @@ export function MonumentDetail({
       pullStartY === null ||
       pullStartX === null ||
       !pullGestureAllowedRef.current ||
-      pullPointerIdRef.current !== event.pointerId ||
-      !isAtTop()
+      pullPointerIdRef.current !== event.pointerId
     ) {
       return;
     }
@@ -319,11 +318,16 @@ export function MonumentDetail({
         return;
       }
 
+      if (!isAtTop() && deltaY <= PULL_EXIT_ACTIVATION_PX) {
+        return;
+      }
+
       if (deltaY <= PULL_EXIT_ACTIVATION_PX) {
         return;
       }
 
       pullDragActiveRef.current = true;
+      event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
     }
 
@@ -384,16 +388,40 @@ export function MonumentDetail({
     snapPullExitBack();
   };
 
+  const handleTopPullExitStart = (event: PointerEvent<HTMLElement>) => {
+    event.stopPropagation();
+    handlePullExitStart(event);
+  };
+
+  const handleTopPullExitMove = (event: PointerEvent<HTMLElement>) => {
+    event.stopPropagation();
+    handlePullExitMove(event);
+  };
+
+  const handleTopPullExitEnd = (event: PointerEvent<HTMLElement>) => {
+    event.stopPropagation();
+    handlePullExitEnd(event);
+  };
+
   return (
     <motion.main
       ref={detailSurfaceRef}
-      className="overflow-x-hidden px-2.5 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-6 sm:pb-10 sm:pt-4 lg:px-8"
+      className="relative overflow-x-hidden px-2.5 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-6 sm:pb-10 sm:pt-4 lg:px-8"
       style={{ y: pullY, touchAction: "pan-y", willChange: "transform" }}
       onPointerDown={handlePullExitStart}
       onPointerMove={handlePullExitMove}
       onPointerUp={handlePullExitEnd}
       onPointerCancel={handlePullExitEnd}
     >
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 z-20 h-5 touch-none sm:hidden"
+        style={{ touchAction: "none" }}
+        onPointerDown={handleTopPullExitStart}
+        onPointerMove={handleTopPullExitMove}
+        onPointerUp={handleTopPullExitEnd}
+        onPointerCancel={handleTopPullExitEnd}
+      />
       <MonumentEditDialog
         open={editDialogOpen}
         monumentId={id}

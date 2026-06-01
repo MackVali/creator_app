@@ -3469,7 +3469,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className="fixed inset-0 z-[80] flex items-stretch justify-center overflow-y-auto bg-black/95 px-0 pb-0 pt-[calc(env(safe-area-inset-top,0px)+10px)] text-white backdrop-blur-xl sm:items-center sm:p-5"
+          className="fixed inset-0 z-[80] flex items-stretch justify-center overflow-hidden bg-black/95 p-0 text-white backdrop-blur-xl sm:items-center sm:p-5"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -3477,7 +3477,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(255,255,255,0.08),transparent_32%),linear-gradient(180deg,rgba(24,24,27,0.36),rgba(0,0,0,0.82)),repeating-linear-gradient(120deg,rgba(255,255,255,0.025)_0px,rgba(255,255,255,0.025)_1px,transparent_1px,transparent_9px)]" />
           <motion.div
-            className="relative flex min-h-dvh w-full flex-col overflow-visible bg-[#050707] px-3 py-3 shadow-[0_40px_110px_-70px_rgba(0,0,0,0.82)] sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-4xl sm:overflow-y-auto sm:rounded-[22px] sm:border sm:border-black/70 sm:px-7 sm:py-6"
+            className="relative flex h-dvh w-full flex-col overflow-hidden bg-[#050707] px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] shadow-[0_40px_110px_-70px_rgba(0,0,0,0.82)] sm:h-auto sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-4xl sm:rounded-[22px] sm:border sm:border-black/70 sm:px-7 sm:pb-6 sm:pt-6"
             initial={
               prefersReducedMotion
                 ? { opacity: 0 }
@@ -3500,8 +3500,8 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
           >
             <div className="pointer-events-none absolute inset-0 rounded-[inherit] border border-black/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),transparent_24%,rgba(255,255,255,0.025)_72%,rgba(0,0,0,0.38)),radial-gradient(circle_at_25%_35%,rgba(255,255,255,0.04),transparent_28%)]" />
             <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
-            <div className="relative z-10 flex flex-1 flex-col gap-3 sm:gap-6">
-              <header className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-4">
+            <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3 sm:gap-6">
+              <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-4">
                 <div className="min-w-0">
                   <p className="truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-600 sm:text-sm sm:tracking-[0.28em]">
                     FOCUSPOMO
@@ -3545,7 +3545,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
                 </div>
               </header>
 
-              <main className="flex flex-1 flex-col gap-3 sm:gap-5">
+              <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-1 sm:gap-5 sm:pb-0">
                 {!hasRunStarted ? (
                   <section className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-[18px] border border-black/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.10),rgba(113,113,122,0.14)_30%,rgba(39,39,42,0.34)_58%,rgba(255,255,255,0.055))] p-px shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_45px_rgba(0,0,0,0.45)] sm:rounded-[22px]">
                     <div className="overflow-hidden rounded-[17px] border border-black/60 bg-zinc-950/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_0_22px_rgba(255,255,255,0.02),inset_0_-20px_34px_rgba(0,0,0,0.38)] sm:rounded-[21px]">
@@ -4337,7 +4337,7 @@ export default function FocusPomo({ open, source, onClose }: FocusPomoProps) {
 
               </main>
 
-              <div className="mt-auto rounded-[18px] border border-black/70 bg-[#080a0d] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_32px_rgba(0,0,0,0.42),0_22px_64px_-50px_rgba(0,0,0,0.85)] sm:rounded-[22px] sm:p-4">
+              <div className="shrink-0 rounded-[18px] border border-black/70 bg-[#080a0d] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-18px_32px_rgba(0,0,0,0.42),0_22px_64px_-50px_rgba(0,0,0,0.85)] sm:rounded-[22px] sm:p-4">
                 <div className="grid grid-cols-[minmax(6rem,1fr)_minmax(0,2fr)] items-stretch gap-2.5 sm:grid-cols-[minmax(12rem,18rem)_1fr] sm:items-center sm:gap-4">
                   <div className="flex min-w-0 overflow-hidden flex-col justify-center gap-1 rounded-xl border border-black/50 bg-white/[0.025] px-1.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:border-0 sm:border-r sm:bg-transparent sm:px-0 sm:py-0 sm:pr-5">
                     <div className="flex min-w-0 items-center gap-1 sm:gap-3">

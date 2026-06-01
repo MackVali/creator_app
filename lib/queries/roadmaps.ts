@@ -87,6 +87,24 @@ export interface CampaignGoalRecord {
   position: number;
 }
 
+export interface GoalCampaignCardGoal {
+  id: string;
+  position: number;
+}
+
+export interface GoalCampaignCardData {
+  id: string;
+  name: string;
+  emoji: string | null;
+  description: string | null;
+  scheduling_state: CampaignSchedulingState;
+  position: number | null;
+  roadmap_id: string | null;
+  primary_monument_id: string | null;
+  primary_circle_id: string | null;
+  goals: GoalCampaignCardGoal[];
+}
+
 export interface MonumentRoadmapReconciliationResult {
   roadmapId: string | null;
   insertedCount: number;
@@ -578,6 +596,69 @@ export async function createRoadmap(
     circle_id: data.circle_id ?? null,
     goals: (data.goals ?? []).map(goal => normalizeRoadmapGoal(goal as RoadmapGoalRow)),
   };
+}
+
+export async function listGoalCampaignCards(
+  userId: string
+): Promise<GoalCampaignCardData[]> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const { data: campaignRows, error: campaignsError } = await supabase
+    .from("campaigns")
+    .select(
+      "id, name, description, emoji, scheduling_state, position, roadmap_id, primary_monument_id, primary_circle_id"
+    )
+    .eq("user_id", userId)
+    .order("position", { ascending: true, nullsFirst: false })
+    .order("name", { ascending: true });
+
+  if (campaignsError) {
+    console.error("Error fetching goal campaign cards:", campaignsError);
+    throw campaignsError;
+  }
+
+  if (!campaignRows || campaignRows.length === 0) {
+    return [];
+  }
+
+  const campaignIds = campaignRows.map(campaign => campaign.id);
+  const { data: campaignGoalRows, error: campaignGoalsError } = await supabase
+    .from("campaign_goals")
+    .select("campaign_id, goal_id, position")
+    .eq("user_id", userId)
+    .in("campaign_id", campaignIds)
+    .order("position", { ascending: true });
+
+  if (campaignGoalsError) {
+    console.error("Error fetching goal campaign card goals:", campaignGoalsError);
+    throw campaignGoalsError;
+  }
+
+  const goalsByCampaignId = new Map<string, GoalCampaignCardGoal[]>();
+  for (const campaignGoal of campaignGoalRows ?? []) {
+    const goals = goalsByCampaignId.get(campaignGoal.campaign_id) ?? [];
+    goals.push({
+      id: campaignGoal.goal_id,
+      position: campaignGoal.position,
+    });
+    goalsByCampaignId.set(campaignGoal.campaign_id, goals);
+  }
+
+  return campaignRows.map(campaign => ({
+    id: campaign.id,
+    name: campaign.name,
+    emoji: campaign.emoji ?? null,
+    description: campaign.description ?? null,
+    scheduling_state: campaign.scheduling_state as CampaignSchedulingState,
+    position: campaign.position ?? null,
+    roadmap_id: campaign.roadmap_id ?? null,
+    primary_monument_id: campaign.primary_monument_id ?? null,
+    primary_circle_id: campaign.primary_circle_id ?? null,
+    goals: goalsByCampaignId.get(campaign.id) ?? [],
+  }));
 }
 
 export async function createCampaign(
