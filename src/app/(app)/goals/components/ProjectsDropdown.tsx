@@ -14,7 +14,7 @@ interface ProjectsDropdownProps {
   onProjectLongPress?: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   projectTasksOnly?: boolean;
-  onAddProject?: () => void;
+  onAddProject?: (originRect?: DOMRect) => void;
   addingProject?: boolean;
   onTaskToggleCompletion?: (
     goalId: string,
@@ -111,7 +111,9 @@ export function ProjectsDropdown({
         )}
         <button
           type="button"
-          onClick={onAddProject}
+          onClick={(event) => {
+            onAddProject?.(event.currentTarget.getBoundingClientRect());
+          }}
           disabled={addingProject || !onAddProject}
           className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.07] px-3 py-2.5 text-xs font-semibold uppercase tracking-[0.24em] text-white/80 transition hover:border-white/30 hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
         >

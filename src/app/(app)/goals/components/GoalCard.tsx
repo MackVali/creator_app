@@ -193,11 +193,11 @@ function GoalCardImpl({
   const open = isControlled ? (openProp as boolean) : internalOpen;
   const [loading] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const fabCreation = useFabCreation();
   const [editingProjectOrigin, setEditingProjectOrigin] =
     useState<ProjectCardMorphOrigin | null>(null);
   const [addingProject, setAddingProject] = useState(false);
   const prefersReducedMotion = useReducedMotion();
-  const fabCreation = useFabCreation();
 
   const setOpen = useCallback(
     (value: boolean) => {
@@ -261,7 +261,7 @@ function GoalCardImpl({
     projectLongPressTriggeredRef.current = false;
   }, [cancelProjectLongPress]);
 
-  const handleAddProject = useCallback(async () => {
+  const handleAddProject = useCallback(async (originRect?: DOMRect) => {
     if (addingProject) return;
     setAddingProject(true);
     try {
@@ -269,7 +269,7 @@ function GoalCardImpl({
         await onAddTask?.(goal.id);
         return;
       }
-      fabCreation?.requestProjectCreation(goal.id);
+      fabCreation?.requestProjectCreation(goal.id, originRect ?? null);
     } finally {
       setAddingProject(false);
     }

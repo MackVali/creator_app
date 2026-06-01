@@ -128,7 +128,10 @@ export function LazyFab(props: LazyFabProps) {
     return (
       <DynamicFab
         {...fabProps}
+        className={className}
         editTarget={editTarget}
+        hideLauncher={hideLauncher}
+        creationRequest={creationRequest}
         openOnMount={openOnMount || openWhenReady || Boolean(editTarget)}
       />
     );
