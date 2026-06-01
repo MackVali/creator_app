@@ -77,6 +77,7 @@ interface GoalCardProps {
   showWeight?: boolean;
   showCreatedAt?: boolean;
   showEmojiPrefix?: boolean;
+  hideEnergyPill?: boolean;
   monumentContext?: boolean;
   variant?: "default" | "compact";
   showEnergyInCompact?: boolean;
@@ -172,6 +173,7 @@ function GoalCardImpl({
   showWeight = true,
   showCreatedAt = true,
   showEmojiPrefix = false,
+  hideEnergyPill = false,
   variant = "default",
   showEnergyInCompact = false,
   monumentContext = false,
@@ -614,15 +616,17 @@ function GoalCardImpl({
                 </div>
                 <div className="flex-1">
                   <div className="flex flex-wrap items-center gap-1 text-[9px] uppercase tracking-[0.14em] sm:gap-1.5 sm:text-[10px] sm:tracking-[0.18em]">
-                    <span className="flex items-center gap-1 rounded-full border border-white/10 px-1.5 py-0.5 text-white/80">
-                      <FlameEmber
-                        level={goal.energy.toUpperCase() as FlameLevel}
-                        size="xs"
-                      />
-                      <span className="text-[9px] uppercase tracking-[0.14em] sm:text-[10px] sm:tracking-[0.2em]">
-                        {goal.energy}
+                    {hideEnergyPill ? null : (
+                      <span className="flex items-center gap-1 rounded-full border border-white/10 px-1.5 py-0.5 text-white/80">
+                        <FlameEmber
+                          level={goal.energy.toUpperCase() as FlameLevel}
+                          size="xs"
+                        />
+                        <span className="text-[9px] uppercase tracking-[0.14em] sm:text-[10px] sm:tracking-[0.2em]">
+                          {goal.energy}
+                        </span>
                       </span>
-                    </span>
+                    )}
                     {showWeight ? (
                       <span className="rounded-full border border-white/20 px-1.5 py-0.5 text-[9px] text-white/70 sm:text-[10px]">
                         wt {goal.weight ?? 0}
@@ -1057,6 +1061,7 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     prev.showWeight === next.showWeight &&
     prev.showCreatedAt === next.showCreatedAt &&
     prev.showEmojiPrefix === next.showEmojiPrefix &&
+    prev.hideEnergyPill === next.hideEnergyPill &&
     prev.variant === next.variant &&
     prev.open === next.open &&
     prev.completeWhenProjectsDone === next.completeWhenProjectsDone &&
