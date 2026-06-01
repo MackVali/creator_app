@@ -1,7 +1,7 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, GripVertical } from "lucide-react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
@@ -93,6 +93,7 @@ function DraggableGoalCard({
   onGoalDelete,
   onProjectEditOpen,
   monumentContext,
+  hideEnergyPill,
 }: {
   goal: Goal;
   index: number;
@@ -108,6 +109,7 @@ function DraggableGoalCard({
     origin: ProjectCardMorphOrigin | null
   ) => void;
   monumentContext?: boolean;
+  hideEnergyPill?: boolean;
 }) {
   const prefersReducedMotion = useReducedMotion();
   const {
@@ -118,11 +120,17 @@ function DraggableGoalCard({
     transition,
     isDragging,
   } = useSortable({ id: goal.id });
+  const wasDraggingRef = useRef(false);
 
   // Debug logging for drag start
   useEffect(() => {
     if (isDragging) {
       console.log(`🎯 Drag started for goal: ${goal.id}`);
+      wasDraggingRef.current = true;
+    } else if (wasDraggingRef.current) {
+      window.setTimeout(() => {
+        wasDraggingRef.current = false;
+      }, 0);
     }
   }, [isDragging, goal.id]);
 
@@ -163,31 +171,16 @@ function DraggableGoalCard({
         transition,
       }}
       className={`relative ${isDragging ? "scale-105 shadow-2xl z-50" : ""}`}
-      {...attributes}
     >
-      {/* Drag Handle */}
-      <div className="absolute left-1 top-1.5 z-10 flex items-center gap-1 sm:top-2 sm:gap-1.5">
-        <span className="min-w-[2ch] select-none text-[13px] font-black text-white/55 sm:text-base">
-          {index + 1}.
-        </span>
-        <button
-          type="button"
-          className="flex h-4 w-4 items-center justify-center rounded-md transition-colors hover:bg-white/10 cursor-grab active:cursor-grabbing sm:h-[18px] sm:w-[18px]"
-          {...listeners}
-          aria-label="Drag to reorder"
-        >
-          <GripVertical className="h-2.5 w-2.5 text-white/60 sm:h-3 sm:w-3" />
-        </button>
-      </div>
-
       {/* Goal Card with inline expansion */}
-      <div className="ml-6 sm:ml-8">
+      <div>
         {isOpen ? (
           <GoalCard
             goal={goal}
             showWeight={false}
             showCreatedAt={false}
             showEmojiPrefix={false}
+            hideEnergyPill={hideEnergyPill}
             variant="default"
             open={true}
             onOpenChange={onOpenChange}
@@ -218,11 +211,19 @@ function DraggableGoalCard({
             {...shellMotionProps}
           >
             <div
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] sm:h-8 sm:w-8 sm:text-[11px] ${
+              className={`flex h-7 w-7 shrink-0 touch-none items-center justify-center rounded-lg text-[10px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] cursor-grab active:cursor-grabbing sm:h-8 sm:w-8 sm:text-[11px] ${
                 isCompleted
                   ? "border border-emerald-300/50 bg-emerald-950/35 text-emerald-50"
                   : "border border-white/10 bg-white/[0.04] text-white/80"
               }`}
+              {...attributes}
+              {...listeners}
+              aria-label="Drag goal to reorder"
+              onClickCapture={(event) => {
+                if (!wasDraggingRef.current) return;
+                event.preventDefault();
+                event.stopPropagation();
+              }}
             >
               {displayEmoji}
             </div>
@@ -235,6 +236,11 @@ function DraggableGoalCard({
             >
               {goal.title}
             </p>
+
+            <ChevronDown
+              aria-hidden="true"
+              className="h-4 w-4 shrink-0 text-white/45"
+            />
 
             <span
               className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${
@@ -594,11 +600,6 @@ function CompactGoalsOverlay({
   const prefersReducedMotion = useReducedMotion();
   const [localGoals, setLocalGoals] = useState(goals);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
-  const selectedGoal = useMemo(
-    () => localGoals.find((goal) => goal.id === openGoalId) ?? null,
-    [localGoals, openGoalId]
-  );
-
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -657,12 +658,6 @@ function CompactGoalsOverlay({
     };
   }, []);
 
-  const handleSelectedGoalEdit = useCallback(() => {
-    if (!selectedGoal || !onGoalEdit) return;
-    onGoalEdit(selectedGoal);
-    closeGoalDetailAfterFabOpen(() => setOpenGoalId(null));
-  }, [onGoalEdit, selectedGoal]);
-
   if (typeof document === "undefined" || !mounted) return null;
 
   const regionId = `roadmap-${roadmap.id}`;
@@ -709,119 +704,63 @@ function CompactGoalsOverlay({
 
   const listArea = (
     <div className="mt-2.5 max-h-[60vh] overflow-y-auto pb-1.5 sm:mt-4 sm:pb-3 sm:max-h-[70vh]">
-      {selectedGoal ? (
-        <GoalCard
-          goal={selectedGoal}
-          variant="default"
-          showWeight={false}
-          showCreatedAt={false}
-          showEmojiPrefix={false}
-          hideEnergyPill
-          open={true}
-          onOpenChange={(isOpen) => {
-            if (!isOpen) setOpenGoalId(null);
-          }}
-          onEdit={onGoalEdit ? handleSelectedGoalEdit : undefined}
-          onToggleActive={
-            onGoalToggleActive
-              ? () => onGoalToggleActive(selectedGoal)
-              : undefined
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={(event) => {
+          console.log("🎯 Drag started:", event.active.id);
+        }}
+        onDragEnd={async (event) => {
+          console.log("🎯 Drag ended:", event);
+          const { active, over } = event;
+          if (over && active.id !== over.id) {
+            const oldIndex = localGoals.findIndex((g) => g.id === active.id);
+            const newIndex = localGoals.findIndex((g) => g.id === over.id);
+            console.log(`Moving from index ${oldIndex} to ${newIndex}`);
+            const reordered = arrayMove(localGoals, oldIndex, newIndex).map(
+              (goal, index) => ({
+                ...goal,
+                priorityRank: index + 1,
+              })
+            );
+            setLocalGoals(reordered);
+            await savePriorityRanks(reordered);
+            await onGoalsReordered?.(reordered);
           }
-          onDelete={
-            onGoalDelete
-              ? () => onGoalDelete(selectedGoal)
-              : undefined
-          }
-          onProjectEditOpen={
-            onProjectEditOpen
-              ? (target, project, origin) =>
-                  onProjectEditOpen(target, project.id, selectedGoal.id, origin)
-              : undefined
-          }
-          completeWhenProjectsDone
-          completionTheme="emerald"
-        />
-      ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={(event) => {
-            console.log("🎯 Drag started:", event.active.id);
-          }}
-          onDragEnd={async (event) => {
-            console.log("🎯 Drag ended:", event);
-            const { active, over } = event;
-            if (over && active.id !== over.id) {
-              const oldIndex = localGoals.findIndex((g) => g.id === active.id);
-              const newIndex = localGoals.findIndex((g) => g.id === over.id);
-              console.log(`Moving from index ${oldIndex} to ${newIndex}`);
-              const reordered = arrayMove(localGoals, oldIndex, newIndex).map(
-                (goal, index) => ({
-                  ...goal,
-                  priorityRank: index + 1,
-                })
-              );
-              setLocalGoals(reordered);
-              await savePriorityRanks(reordered);
-              await onGoalsReordered?.(reordered);
-            }
-          }}
-        >
-          <SortableContext items={localGoals.map((g) => g.id)}>
-            <div className="flex flex-col gap-1 sm:gap-1.5">
-              {localGoals.map((goal, index) => (
-                <DraggableGoalCard
-                  key={goal.id}
-                  goal={goal}
-                  index={index}
-                  isOpen={openGoalId === goal.id}
-                  onOpenChange={(isOpen) => {
-                    if (isOpen) {
-                      setOpenGoalId(goal.id);
-                    } else if (openGoalId === goal.id) {
-                      setOpenGoalId(null);
-                    }
-                  }}
-                  onGoalEdit={onGoalEdit}
-                  onGoalToggleActive={onGoalToggleActive}
-                  onGoalDelete={onGoalDelete}
-                  onProjectEditOpen={onProjectEditOpen}
-                  monumentContext={monumentContext}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
-      )}
+        }}
+      >
+        <SortableContext items={localGoals.map((g) => g.id)}>
+          <div className="flex flex-col gap-1 sm:gap-1.5">
+            {localGoals.map((goal, index) => (
+              <DraggableGoalCard
+                key={goal.id}
+                goal={goal}
+                index={index}
+                isOpen={openGoalId === goal.id}
+                onOpenChange={(isOpen) => {
+                  if (isOpen) {
+                    setOpenGoalId(goal.id);
+                  } else if (openGoalId === goal.id) {
+                    setOpenGoalId(null);
+                  }
+                }}
+                onGoalEdit={onGoalEdit}
+                onGoalToggleActive={onGoalToggleActive}
+                onGoalDelete={onGoalDelete}
+                onProjectEditOpen={onProjectEditOpen}
+                monumentContext={monumentContext}
+                hideEnergyPill
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
     </div>
   );
 
   const panelPadding = "p-2 sm:p-4";
   const basePanelClass =
     "relative w-full max-w-full overflow-hidden rounded-[22px] border border-white/10 bg-[#07080A]/92 shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9)] backdrop-blur-sm text-white/90 sm:rounded-[28px] sm:border-white/12";
-  const goalCardContent = selectedGoal ? (
-    <GoalCard
-      goal={selectedGoal}
-      variant="default"
-      showWeight={false}
-      showCreatedAt={false}
-      showEmojiPrefix={false}
-      open={true}
-      onOpenChange={(isOpen) => {
-        if (!isOpen) setOpenGoalId(null);
-      }}
-      onProjectEditOpen={
-        onProjectEditOpen
-          ? (target, project, origin) =>
-              onProjectEditOpen(target, project.id, selectedGoal.id, origin)
-          : undefined
-      }
-      monumentContext={monumentContext}
-      completeWhenProjectsDone
-      completionTheme="emerald"
-    />
-  ) : null;
-
   return createPortal(
     <>
       <motion.button
@@ -859,7 +798,6 @@ function CompactGoalsOverlay({
           </motion.div>
         </motion.div>
       </div>
-      {goalCardContent}
     </>,
     document.body
   );
