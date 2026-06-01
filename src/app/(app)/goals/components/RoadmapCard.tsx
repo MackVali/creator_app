@@ -20,7 +20,6 @@ import { useSortable } from "@dnd-kit/sortable";
 import type { Roadmap } from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { FabEditTarget } from "@/components/ui/Fab";
-import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import {
   getGoalStatusLabel,
   normalizeGoalStatus,
@@ -29,9 +28,6 @@ import {
 import type { Goal } from "../types";
 import { GoalCard } from "./GoalCard";
 import type { ProjectCardMorphOrigin } from "./ProjectRow";
-
-const formatPriorityLabel = (priority: Goal["priority"]) =>
-  priority === "Ultra-Critical" ? "Ultra" : priority;
 
 const cardSpringTransition = {
   type: "spring",
@@ -135,9 +131,6 @@ function DraggableGoalCard({
     (goal.emoji ?? goal.monumentEmoji)?.trim().length
       ? (goal.emoji ?? goal.monumentEmoji)!.trim()
       : goal.title.slice(0, 2).toUpperCase();
-  const flameLevel = (goal.energyCode ? goal.energyCode : goal.energy ?? "No")
-    .toString()
-    .toUpperCase() as FlameLevel;
   const allProjectsCompleted =
     goal.projects.length > 0 &&
     goal.projects.every(
@@ -148,16 +141,6 @@ function DraggableGoalCard({
     );
   const normalizedStatus = normalizeGoalStatus(goal.status, goal.active);
   const isCompleted = normalizedStatus === "COMPLETED" || allProjectsCompleted;
-  const statusLabel = isCompleted
-    ? "Completed"
-    : getGoalStatusLabel(normalizedStatus);
-  const cardSurfaceClass = isCompleted
-    ? "border border-emerald-400/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] shadow-[0_18px_38px_-24px_rgba(4,47,39,0.8),inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 ring-emerald-300/50"
-    : "ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]";
-  const overlayGlowClass =
-    isCompleted
-      ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.18),transparent_60%)]"
-      : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
   const shellMotionProps = prefersReducedMotion
     ? {}
     : {
@@ -204,7 +187,7 @@ function DraggableGoalCard({
             goal={goal}
             showWeight={false}
             showCreatedAt={false}
-            showEmojiPrefix
+            showEmojiPrefix={false}
             variant="default"
             open={true}
             onOpenChange={onOpenChange}
@@ -227,64 +210,41 @@ function DraggableGoalCard({
           <motion.button
             type="button"
             onClick={() => onOpenChange?.(true)}
-            className={`relative flex w-full items-start gap-2 rounded-[20px] px-2.5 py-2 text-left text-white transition-all hover:-translate-y-0.5 hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:rounded-[22px] sm:px-3 sm:py-2.5 ${cardSurfaceClass}`}
+            className={`relative flex w-full items-center gap-2 rounded-xl border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:rounded-2xl sm:px-2.5 sm:py-2 ${
+              isCompleted
+                ? "border-emerald-400/55 bg-[linear-gradient(135deg,rgba(6,78,59,0.72),rgba(5,46,39,0.86))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+            }`}
             {...shellMotionProps}
           >
             <div
-              className={`pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
-            />
-            <div
-              className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] sm:h-8 sm:w-8 sm:text-[11px] ${
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] sm:h-8 sm:w-8 sm:text-[11px] ${
                 isCompleted
-                  ? "border border-emerald-300/60 bg-emerald-950/40 text-emerald-50"
-                  : "border border-white/10 bg-white/5"
+                  ? "border border-emerald-300/50 bg-emerald-950/35 text-emerald-50"
+                  : "border border-white/10 bg-white/[0.04] text-white/80"
               }`}
             >
               {displayEmoji}
             </div>
-            <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-0.5 pr-0.5 sm:pr-1">
-              <p className="line-clamp-1 break-words text-[11px] font-semibold leading-[0.95rem] text-white sm:line-clamp-2 sm:text-[13px] sm:leading-[1rem]">
-                {typeof (goal.emoji ?? goal.monumentEmoji) === "string" &&
-                (goal.emoji ?? goal.monumentEmoji)?.trim().length ? (
-                  <span className="mr-2 inline" aria-hidden>
-                    {(goal.emoji ?? goal.monumentEmoji)?.trim()}
-                  </span>
-                ) : null}
-                {goal.title}
-              </p>
-              <div
-                className={`flex flex-wrap items-center gap-1 text-[9px] sm:gap-1.5 sm:text-[10px] ${
-                  isCompleted ? "text-emerald-50/80" : "text-white/60"
-                }`}
-              >
-                <FlameEmber level={flameLevel} size="xs" />
-                <span className="uppercase tracking-[0.16em] sm:tracking-[0.24em]">{goal.energy}</span>
-                <span className="text-white/30">•</span>
-                <span className="uppercase tracking-[0.16em] sm:tracking-[0.24em]">
-                  {formatPriorityLabel(goal.priority)}
-                </span>
-                {goal.dueDate && (
-                  <>
-                    <span className="text-white/30">•</span>
-                    <span className="whitespace-nowrap text-[8px] text-white/60 normal-case sm:text-[9px]">
-                      Due {new Date(goal.dueDate).toLocaleDateString()}
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="relative z-10 flex shrink-0 flex-col items-end gap-0 whitespace-nowrap pt-0.5 text-right text-[9px] sm:gap-0.5 sm:text-[10px]">
-              <span className="text-[12px] font-semibold text-white sm:text-[13px]">
-                {Math.round(Math.min(100, goal.progress))}%
-              </span>
-              <span
-                className={`text-[9px] uppercase tracking-[0.16em] sm:text-[10px] sm:tracking-[0.24em] ${
-                  isCompleted ? "text-emerald-50/80" : "text-white/70"
-                }`}
-              >
-                {statusLabel}
-              </span>
-            </div>
+
+            <p
+              className={`min-w-0 flex-1 truncate text-[12px] font-medium leading-tight sm:text-[13px] ${
+                isCompleted ? "text-emerald-50" : "text-white/84"
+              }`}
+              title={goal.title}
+            >
+              {goal.title}
+            </p>
+
+            <span
+              className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${
+                isCompleted
+                  ? "border-emerald-300/35 bg-emerald-300/10 text-emerald-50/85"
+                  : "border-white/8 bg-white/[0.03] text-white/42"
+              }`}
+            >
+              {index + 1}
+            </span>
           </motion.button>
         )}
       </div>
@@ -756,6 +716,7 @@ function CompactGoalsOverlay({
           showWeight={false}
           showCreatedAt={false}
           showEmojiPrefix={false}
+          hideEnergyPill
           open={true}
           onOpenChange={(isOpen) => {
             if (!isOpen) setOpenGoalId(null);
@@ -807,7 +768,7 @@ function CompactGoalsOverlay({
           }}
         >
           <SortableContext items={localGoals.map((g) => g.id)}>
-            <div className="flex flex-col gap-1.5 sm:gap-3">
+            <div className="flex flex-col gap-1 sm:gap-1.5">
               {localGoals.map((goal, index) => (
                 <DraggableGoalCard
                   key={goal.id}
@@ -835,9 +796,9 @@ function CompactGoalsOverlay({
     </div>
   );
 
-  const panelPadding = "p-1.5 sm:p-5";
+  const panelPadding = "p-2 sm:p-4";
   const basePanelClass =
-    "relative w-full max-w-full overflow-hidden rounded-[24px] border border-white/12 bg-black/[0.64] shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9)] backdrop-blur-sm text-white/90 sm:rounded-[30px] sm:border-white/15 sm:bg-black/[0.68]";
+    "relative w-full max-w-full overflow-hidden rounded-[22px] border border-white/10 bg-[#07080A]/92 shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9)] backdrop-blur-sm text-white/90 sm:rounded-[28px] sm:border-white/12";
   const goalCardContent = selectedGoal ? (
     <GoalCard
       goal={selectedGoal}
