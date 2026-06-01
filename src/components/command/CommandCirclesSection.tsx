@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type PointerEvent,
   type ReactNode,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -233,6 +234,19 @@ const offerTypeOptions = [
   { label: "Collaboration", value: "COLLABORATION", disabled: true },
   { label: "Template", value: "TEMPLATE", disabled: true },
 ] as const;
+
+const PULL_EXIT_THRESHOLD_PX = 56;
+
+function isInteractivePullTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(
+      target.closest(
+        "a,button,input,select,textarea,[role='button'],[role='menuitem']",
+      ),
+    )
+  );
+}
 
 type OfferWeekdayValue = (typeof offerWeekdays)[number]["value"];
 
@@ -3262,6 +3276,9 @@ function CircleCommandDetail({
     null,
   );
   const detailScrollRef = useRef<HTMLElement | null>(null);
+  const pullStartYRef = useRef<number | null>(null);
+  const pullExitTriggeredRef = useRef(false);
+  const pullPointerIdRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     detailScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -3508,6 +3525,66 @@ function CircleCommandDetail({
   const canMakeOffer = elevatedRoles.has(role);
   const canEditWorkProfile = role === "OWNER" || role === "MANAGER";
   const circleIcon = getCircleIconDisplay(circle.icon_emoji);
+  const pullExitBlocked =
+    isEditOpen || Boolean(selectedMember) || Boolean(fabEditTarget);
+
+  const isDetailAtTop = useCallback(
+    () => (detailScrollRef.current?.scrollTop ?? 0) <= 2,
+    [],
+  );
+
+  const resetPullExit = useCallback(() => {
+    pullStartYRef.current = null;
+    pullExitTriggeredRef.current = false;
+    pullPointerIdRef.current = null;
+  }, []);
+
+  const handlePullExitStart = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (
+        pullExitBlocked ||
+        (event.pointerType !== "touch" && event.pointerType !== "mouse") ||
+        !isDetailAtTop() ||
+        isInteractivePullTarget(event.target)
+      ) {
+        resetPullExit();
+        return;
+      }
+
+      pullStartYRef.current = event.clientY;
+      pullExitTriggeredRef.current = false;
+      pullPointerIdRef.current = event.pointerId;
+    },
+    [isDetailAtTop, pullExitBlocked, resetPullExit],
+  );
+
+  const handlePullExitMove = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      const pullStartY = pullStartYRef.current;
+
+      if (
+        pullExitBlocked ||
+        pullStartY === null ||
+        pullExitTriggeredRef.current ||
+        pullPointerIdRef.current !== event.pointerId ||
+        !isDetailAtTop()
+      ) {
+        return;
+      }
+
+      const pullDistance = event.clientY - pullStartY;
+
+      if (pullDistance > PULL_EXIT_THRESHOLD_PX) {
+        pullExitTriggeredRef.current = true;
+        pullStartYRef.current = null;
+        pullPointerIdRef.current = null;
+        onClose();
+      }
+    },
+    [isDetailAtTop, onClose, pullExitBlocked],
+  );
+
+  const handlePullExitEnd = resetPullExit;
 
   useEffect(() => {
     if (!selectedMemberId) {
@@ -3542,30 +3619,12 @@ function CircleCommandDetail({
         key={circle.id}
         ref={detailScrollRef}
         className="h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] pt-0 sm:px-6 sm:pb-[calc(8rem+env(safe-area-inset-bottom,0px))] sm:pt-0 lg:px-8" style={{ paddingTop: 0 }}
+        onPointerDown={handlePullExitStart}
+        onPointerMove={handlePullExitMove}
+        onPointerUp={handlePullExitEnd}
+        onPointerCancel={handlePullExitEnd}
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 overflow-x-hidden pt-0 sm:gap-6">
-          <div className="flex items-center justify-between px-1 pt-0">
-            <button
-              type="button"
-              aria-label="Close Circle detail"
-              onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/55 text-white/70 backdrop-blur transition hover:border-white/25 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-
-            {isOwner ? (
-              <button
-                type="button"
-                aria-label="Edit Circle"
-                onClick={() => setIsEditOpen(true)}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/55 text-white/70 backdrop-blur transition hover:border-white/25 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-              >
-                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-              </button>
-            ) : null}
-          </div>
-
           <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#0f0f10] to-[#1b1b1d] px-3 pb-3 pt-1.5 text-white shadow-[0_24px_70px_-42px_rgba(0,0,0,0.82)] sm:px-4 sm:pb-3.5 sm:pt-2 md:rounded-3xl">
             <div className="pointer-events-none absolute inset-0 z-0">
               <div className="absolute inset-x-16 -top-20 h-40 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.14),_transparent_70%)] blur-3xl" />
@@ -3594,21 +3653,34 @@ function CircleCommandDetail({
                   {circleIcon ?? getCircleInitials(circle.name)}
                 </span>
               </span>
-              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <div className="min-w-0">
-                  <motion.h2
-                    layoutId={`command-circle-title-${circle.id}`}
-                    className="truncate text-xl font-semibold tracking-tight text-white sm:text-2xl"
+              <div className="flex min-w-0 flex-1 items-start gap-3">
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <div className="min-w-0">
+                    <motion.h2
+                      layoutId={`command-circle-title-${circle.id}`}
+                      className="truncate text-xl font-semibold tracking-tight text-white sm:text-2xl"
+                    >
+                      {circle.name}
+                    </motion.h2>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <AvatarStack members={members} fallbackName={circle.name} />
+                    <span className="truncate text-xs font-semibold text-white/68 sm:text-sm">
+                      {formatMemberCount(memberCount)}
+                    </span>
+                  </div>
+                </div>
+
+                {isOwner ? (
+                  <button
+                    type="button"
+                    aria-label="Edit Circle"
+                    onClick={() => setIsEditOpen(true)}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/55 text-white/70 backdrop-blur transition hover:border-white/25 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
                   >
-                    {circle.name}
-                  </motion.h2>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <AvatarStack members={members} fallbackName={circle.name} />
-                  <span className="text-xs font-semibold text-white/68 sm:text-sm">
-                    {formatMemberCount(memberCount)}
-                  </span>
-                </div>
+                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                ) : null}
               </div>
             </div>
           </section>
@@ -3894,19 +3966,20 @@ export function CommandCirclesSection({
   }, [loadIncomingOffers]);
 
   useEffect(() => {
-    if (activeCircleId) {
-      previousFocus.current = document.activeElement as HTMLElement;
-      document.body.style.overflow = "hidden";
-      document.body.classList.add("modal-open");
-    } else {
-      document.body.style.overflow = "";
-      document.body.classList.remove("modal-open");
+    if (!activeCircleId) {
       previousFocus.current?.focus();
+      return;
     }
 
+    previousFocus.current = document.activeElement as HTMLElement;
+    const previousBodyOverflow = document.body.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.body.classList.add("command-circle-detail-open");
+
     return () => {
-      document.body.style.overflow = "";
-      document.body.classList.remove("modal-open");
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.classList.remove("command-circle-detail-open");
     };
   }, [activeCircleId]);
 
@@ -3984,7 +4057,7 @@ export function CommandCirclesSection({
         {activeCircle ? (
           <motion.div
             key="command-circle-overlay"
-            className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/65 px-0 pb-0 pt-0 backdrop-blur-md sm:px-0 sm:pb-0 sm:pt-0"
+            className="fixed inset-0 z-40 flex items-start justify-center overflow-hidden bg-black/65 px-0 pb-0 pt-0 backdrop-blur-md sm:px-0 sm:pb-0 sm:pt-0"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

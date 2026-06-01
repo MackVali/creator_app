@@ -23,7 +23,9 @@ const DynamicFab = dynamic<FabProps>(loadFab, {
   loading: () => null,
 });
 
-export type LazyFabProps = FabProps;
+export type LazyFabProps = FabProps & {
+  prewarm?: boolean;
+};
 
 const FAB_ONLY_PROP_NAMES = new Set<string>([
   "className",
@@ -37,6 +39,8 @@ const FAB_ONLY_PROP_NAMES = new Set<string>([
   "hideLauncher",
   "portalToBody",
   "openOnMount",
+  "creationRequest",
+  "prewarm",
 ]);
 
 export function LazyFab(props: LazyFabProps) {
@@ -45,11 +49,15 @@ export function LazyFab(props: LazyFabProps) {
     editTarget = null,
     openOnMount = false,
     hideLauncher = false,
+    creationRequest = null,
+    prewarm = false,
+    ...fabProps
   } = props;
   const wrapperProps = Object.fromEntries(
     Object.entries(props).filter(([key]) => !FAB_ONLY_PROP_NAMES.has(key))
   ) as React.HTMLAttributes<HTMLDivElement>;
-  const shouldOpenHeavyFab = Boolean(editTarget) || openOnMount;
+  const shouldOpenHeavyFab =
+    Boolean(editTarget) || openOnMount || Boolean(creationRequest);
   const [shouldLoadFab, setShouldLoadFab] = React.useState(shouldOpenHeavyFab);
   const [isFabReady, setIsFabReady] = React.useState(false);
   const [openWhenReady, setOpenWhenReady] = React.useState(false);
@@ -72,6 +80,34 @@ export function LazyFab(props: LazyFabProps) {
   }, [shouldOpenHeavyFab]);
 
   React.useEffect(() => {
+    if (!prewarm || shouldLoadFab) {
+      return;
+    }
+
+    const warmFab = () => {
+      setShouldLoadFab(true);
+    };
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if ("requestIdleCallback" in window) {
+      const idleCallbackId = window.requestIdleCallback(warmFab);
+
+      return () => {
+        window.cancelIdleCallback(idleCallbackId);
+      };
+    }
+
+    const timeoutId = window.setTimeout(warmFab, 300);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [prewarm, shouldLoadFab]);
+
+  React.useEffect(() => {
     if (!shouldLoadFab || isFabReady) {
       return;
     }
@@ -91,7 +127,7 @@ export function LazyFab(props: LazyFabProps) {
   if (shouldRenderHeavyFab) {
     return (
       <DynamicFab
-        {...props}
+        {...fabProps}
         editTarget={editTarget}
         openOnMount={openOnMount || openWhenReady || Boolean(editTarget)}
       />

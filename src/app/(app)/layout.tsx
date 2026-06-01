@@ -7,6 +7,7 @@ import { ToastProvider } from "@/components/ui/toast";
 import ProfileSetupPrompt from "@/components/ProfileSetupPrompt";
 import { TourProvider } from "@/components/tour/TourProvider";
 import { AppCartProvider } from "@/components/cart/AppCartProvider";
+import { FabCreationProvider } from "@/components/ui/FabCreationContext";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,11 +15,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <TourProvider>
         <ToastProvider>
           <ProfileProvider>
-            <LevelUpListener />
-            <ProfileSetupPrompt />
-            <TopNav />
-            <AppMain>{children}</AppMain>
-            <BottomNav />
+            <FabCreationProvider>
+              <LevelUpListener />
+              <ProfileSetupPrompt />
+              <TopNav />
+              <AppMain>{children}</AppMain>
+              <BottomNav />
+            </FabCreationProvider>
           </ProfileProvider>
         </ToastProvider>
       </TourProvider>

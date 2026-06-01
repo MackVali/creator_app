@@ -5,7 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
-  type TouchEvent,
+  type PointerEvent,
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -20,6 +20,7 @@ import {
 import ActivityPanel from "./ActivityPanel";
 import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
 import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
+import { MonumentRelatedHabits } from "@/components/monuments/MonumentRelatedHabits";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
 import type { MonumentNote } from "@/lib/types/monument-note";
 import { cn } from "@/lib/utils";
@@ -50,6 +51,7 @@ interface MonumentDetailProps {
 }
 
 type MonumentView = "goals" | "roadmap";
+const PULL_EXIT_THRESHOLD_PX = 56;
 
 function MonumentRoadmapEmptyState() {
   return (
@@ -83,6 +85,7 @@ export function MonumentDetail({
   const { id } = monument;
   const router = useRouter();
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [monumentView, setMonumentView] = useState<MonumentView>("goals");
   const [goalSection, setGoalSection] = useState<"active" | "completed">(
     "active"
@@ -91,6 +94,9 @@ export function MonumentDetail({
     useState<FocusPomoSource | null>(null);
   const pullStartYRef = useRef<number | null>(null);
   const pullExitTriggeredRef = useRef(false);
+  const pullPointerIdRef = useRef<number | null>(null);
+  const pullExitBlocked =
+    editDialogOpen || actionsMenuOpen || Boolean(focusPomoSource);
 
   useEffect(() => {
     setMonumentView("goals");
@@ -140,7 +146,9 @@ export function MonumentDetail({
     router.back();
   }, [onClose, router]);
 
-  const isInteractiveTouchTarget = (target: EventTarget | null) => {
+  const isAtTop = () => window.scrollY <= 2;
+
+  const isInteractivePullTarget = (target: EventTarget | null) => {
     return (
       target instanceof HTMLElement &&
       Boolean(
@@ -151,63 +159,60 @@ export function MonumentDetail({
     );
   };
 
-  const handlePullExitStart = (event: TouchEvent<HTMLElement>) => {
-    if (
-      event.touches.length !== 1 ||
-      window.scrollY > 0 ||
-      isInteractiveTouchTarget(event.target)
-    ) {
-      pullStartYRef.current = null;
-      pullExitTriggeredRef.current = false;
-      return;
-    }
-
-    const touch = event.touches.item(0);
-    if (!touch) {
-      return;
-    }
-
-    pullStartYRef.current = touch.clientY;
+  const resetPullExit = () => {
+    pullStartYRef.current = null;
     pullExitTriggeredRef.current = false;
+    pullPointerIdRef.current = null;
   };
 
-  const handlePullExitMove = (event: TouchEvent<HTMLElement>) => {
+  const handlePullExitStart = (event: PointerEvent<HTMLElement>) => {
+    if (
+      pullExitBlocked ||
+      (event.pointerType !== "touch" && event.pointerType !== "mouse") ||
+      !isAtTop() ||
+      isInteractivePullTarget(event.target)
+    ) {
+      resetPullExit();
+      return;
+    }
+
+    pullStartYRef.current = event.clientY;
+    pullExitTriggeredRef.current = false;
+    pullPointerIdRef.current = event.pointerId;
+  };
+
+  const handlePullExitMove = (event: PointerEvent<HTMLElement>) => {
     const pullStartY = pullStartYRef.current;
 
     if (
+      pullExitBlocked ||
       pullStartY === null ||
       pullExitTriggeredRef.current ||
-      window.scrollY > 0
+      pullPointerIdRef.current !== event.pointerId ||
+      !isAtTop()
     ) {
       return;
     }
 
-    const touch = event.touches.item(0);
-    if (!touch) {
-      return;
-    }
+    const pullDistance = event.clientY - pullStartY;
 
-    const pullDistance = touch.clientY - pullStartY;
-
-    if (pullDistance > 85) {
+    if (pullDistance > PULL_EXIT_THRESHOLD_PX) {
       pullExitTriggeredRef.current = true;
       pullStartYRef.current = null;
+      pullPointerIdRef.current = null;
       handleCloseOrBack();
     }
   };
 
-  const handlePullExitEnd = () => {
-    pullStartYRef.current = null;
-    pullExitTriggeredRef.current = false;
-  };
+  const handlePullExitEnd = resetPullExit;
 
   return (
     <main
-      className="min-h-dvh overflow-x-hidden px-2.5 pb-6 pt-2 sm:px-6 sm:pb-8 sm:pt-4 lg:px-8"
-      onTouchStart={handlePullExitStart}
-      onTouchMove={handlePullExitMove}
-      onTouchEnd={handlePullExitEnd}
-      onTouchCancel={handlePullExitEnd}
+      className="overflow-x-hidden px-2.5 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-6 sm:pb-10 sm:pt-4 lg:px-8"
+      onPointerDown={handlePullExitStart}
+      onPointerMove={handlePullExitMove}
+      onPointerUp={handlePullExitEnd}
+      onPointerCancel={handlePullExitEnd}
     >
       <MonumentEditDialog
         open={editDialogOpen}
@@ -239,18 +244,10 @@ export function MonumentDetail({
           </div>
           <div className="relative flex flex-row gap-4 sm:flex-row sm:items-start sm:gap-6">
             <span
-              className="relative flex h-[60px] w-[60px] items-center justify-center rounded-2xl border border-white/20 bg-gradient-to-b from-[#040404] via-[#08080a] to-black text-3xl text-white shadow-[0_25px_45px_rgba(0,0,0,0.65)] sm:h-[72px] sm:w-[72px] sm:text-4xl"
+              className="relative flex h-[60px] w-[60px] items-center justify-center rounded-2xl border border-white/10 bg-[#09090b] text-3xl text-white shadow-[0_14px_28px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)] sm:h-[72px] sm:w-[72px] sm:text-4xl"
               role="img"
               aria-label={`Monument: ${monument.title}`}
             >
-              <span
-                aria-hidden="true"
-                className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.55),_rgba(255,255,255,0.05))]"
-              />
-              <span
-                aria-hidden="true"
-                className="absolute inset-[2px] rounded-[18px] bg-gradient-to-b from-white/20 via-white/5 to-white/0 opacity-80"
-              />
               <span className="relative z-10 drop-shadow-[0_6px_12px_rgba(0,0,0,0.5)]">
                 {monument.emoji || "\uD83D\uDDFC\uFE0F"}
               </span>
@@ -269,7 +266,10 @@ export function MonumentDetail({
                   >
                     <Timer className="h-4 w-4" aria-hidden="true" />
                   </button>
-                  <DropdownMenu>
+                  <DropdownMenu
+                    open={actionsMenuOpen}
+                    onOpenChange={setActionsMenuOpen}
+                  >
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
@@ -370,20 +370,24 @@ export function MonumentDetail({
             </div>
           </section>
 
-          <section
-            className={cn(
-              containerShell,
-              sectionBackground,
-              "p-4 sm:p-5",
-              "min-h-[220px]",
-              "z-[1] overflow-visible"
-            )}
-          >
-            <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
-            <div className="relative z-10">
-              <MonumentNotesGrid monumentId={id} initialNotes={notes} />
-            </div>
-          </section>
+          <div className="relative z-[1] flex min-w-0 flex-col gap-5 lg:gap-6">
+            <MonumentRelatedHabits monumentId={id} />
+
+            <section
+              className={cn(
+                containerShell,
+                sectionBackground,
+                "p-4 sm:p-5",
+                "min-h-[220px]",
+                "z-[1] overflow-visible"
+              )}
+            >
+              <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
+              <div className="relative z-10">
+                <MonumentNotesGrid monumentId={id} initialNotes={notes} />
+              </div>
+            </section>
+          </div>
 
           <div className="relative z-[1] w-full xl:col-span-2">
             <ActivityPanel monumentId={id} />

@@ -62,9 +62,9 @@ export function ProjectsDropdown({
       aria-label={
         projectTasksOnly ? `Tasks for ${goalTitle}` : `Projects for ${goalTitle}`
       }
-      className="overflow-hidden px-5 pb-5 pt-4"
+      className="overflow-hidden px-1.5 pb-2.5 pt-1.5 sm:px-2 sm:pb-3 sm:pt-2"
     >
-      <div className="space-y-4 text-sm text-white/70">
+      <div className="space-y-2.5 text-sm text-white/70">
         {loading ? (
           <Progress
             value={100}
@@ -92,11 +92,13 @@ export function ProjectsDropdown({
             </div>
           )
         ) : projects.length > 0 ? (
-          <div className="space-y-2">
-            {projects.map((p) => (
+          <div className="space-y-1 sm:space-y-1.5">
+            {projects.map((p, index) => (
               <ProjectRow
                 key={p.id}
                 project={p}
+                projectOrder={index + 1}
+                variant="compactNested"
                 onLongPress={onProjectLongPress}
                 onUpdated={onProjectUpdated}
               />
@@ -111,7 +113,7 @@ export function ProjectsDropdown({
           type="button"
           onClick={onAddProject}
           disabled={addingProject || !onAddProject}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-3 text-xs font-semibold uppercase tracking-[0.28em] text-white/80 transition hover:border-white/30 hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.07] px-3 py-2.5 text-xs font-semibold uppercase tracking-[0.24em] text-white/80 transition hover:border-white/30 hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {addingProject
             ? projectTasksOnly

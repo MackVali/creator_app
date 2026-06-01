@@ -1111,6 +1111,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
               showCreatedAt={false}
               showEmojiPrefix={false}
               variant="compact"
+              completionTheme="border"
               projectDropdownMode="tasks-only"
               onEdit={() => handleGoalEdit(goal)}
               open={openGoalId === goal.id}
@@ -1311,32 +1312,6 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
       <style jsx global>{`
         .skill-projects-list .group { transform: none !important; will-change: auto !important; z-index: 0 !important; }
         .skill-projects-list .group:hover { transform: none !important; }
-        .skill-projects-list .goal-card.emerald-completed-compact {
-          border: 1px solid rgba(6, 78, 59, 0.7) !important;
-          background: linear-gradient(145deg, #059669 0%, #047857 48%, #065f46 100%) !important;
-          color: rgba(255, 255, 255, 0.96) !important;
-          box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.12),
-            0 10px 20px rgba(0, 0, 0, 0.34) !important;
-        }
-        .skill-projects-list .goal-card.emerald-completed-compact :is(p, span, div, button) {
-          color: rgba(255, 255, 255, 0.92);
-        }
-        .skill-projects-list .goal-card.emerald-completed-compact button > div:first-child {
-          border-color: rgba(255, 255, 255, 0.28) !important;
-          background: rgba(6, 78, 59, 0.64) !important;
-          color: rgb(255, 255, 255) !important;
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
-        }
-        .skill-projects-list .goal-card.emerald-completed-compact button > div:last-child {
-          border-color: rgba(6, 78, 59, 0.82) !important;
-          background: rgba(4, 120, 87, 0.72) !important;
-          box-shadow: inset 0 2px 3px rgba(6, 48, 37, 0.52) !important;
-        }
-        .skill-projects-list .goal-card.emerald-completed-compact button > div:last-child > div {
-          background: linear-gradient(90deg, #6ee7b7 0%, #34d399 46%, #10b981 100%) !important;
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
-        }
         @media (min-width: 640px) {
           .skill-projects-list .skill-project-card-wrapper { isolation: isolate; content-visibility: auto; contain-intrinsic-size: 300px 1px; }
         }

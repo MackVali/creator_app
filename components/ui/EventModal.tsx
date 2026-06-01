@@ -6,11 +6,13 @@ import {
   useCallback,
   useMemo,
   useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
+  Check,
   CheckSquare,
   Clock,
   ChevronDown,
@@ -44,6 +46,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  useSelectContext,
 } from "./select";
 import { Badge } from "./badge";
 import { useToastHelpers } from "./toast";
@@ -115,6 +118,145 @@ type RoutineSelectOption = {
   description?: string | null;
   disabled?: boolean;
 };
+
+const DEFAULT_ROUTINE_EMOJI = "🔁";
+
+type HabitRoutineCreateRowProps = {
+  active: boolean;
+  name: string;
+  emoji: string;
+  error: string | null;
+  onStart: () => void;
+  onNameChange: (value: string) => void;
+  onEmojiChange: (value: string) => void;
+  onSubmit: () => boolean;
+  onCancel: () => void;
+};
+
+function HabitRoutineCreateRow({
+  active,
+  name,
+  emoji,
+  error,
+  onStart,
+  onNameChange,
+  onEmojiChange,
+  onSubmit,
+  onCancel,
+}: HabitRoutineCreateRowProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const selectContext = useSelectContext();
+  const trimmedName = name.trim();
+
+  const handleFieldKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+    }
+  };
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [active]);
+
+  if (!active) {
+    return (
+      <button
+        type="button"
+        className="flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-white transition hover:bg-white/10"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onStart();
+        }}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          }
+        }}
+      >
+        <Plus className="h-4 w-4 text-white/70" aria-hidden="true" />
+        <span>Create routine</span>
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="w-full max-w-full space-y-1.5 rounded-lg border border-white/10 bg-white/[0.04] p-2"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
+    >
+      <form
+        className="flex w-full min-w-0 items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (onSubmit()) {
+            selectContext.setIsOpen?.(false);
+          }
+        }}
+      >
+        <Input
+          value={emoji}
+          onChange={(event) => onEmojiChange(event.target.value)}
+          onKeyDown={handleFieldKeyDown}
+          maxLength={8}
+          aria-label="Routine emoji"
+          className="h-9 w-11 shrink-0 rounded-lg border-white/10 bg-black/30 px-1 text-center text-lg text-white focus:border-white/30 focus-visible:ring-0"
+        />
+        <Input
+          ref={inputRef}
+          value={name}
+          onChange={(event) => onNameChange(event.target.value)}
+          onKeyDown={handleFieldKeyDown}
+          placeholder="Routine name"
+          className="h-9 min-w-0 flex-1 rounded-lg border-white/10 bg-black/30 px-2.5 text-xs text-white placeholder:text-white/35 focus:border-white/30 focus-visible:ring-0"
+        />
+        <Button
+          type="submit"
+          size="icon"
+          disabled={trimmedName.length === 0}
+          className="h-9 w-9 shrink-0 rounded-lg border border-white/10 bg-white/10 text-white hover:bg-white/15 disabled:opacity-50"
+          aria-label="Use new routine"
+        >
+          <Check className="h-4 w-4" aria-hidden="true" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onCancel();
+          }}
+          className="h-9 w-9 shrink-0 rounded-lg border border-white/10 bg-transparent text-white/75 hover:bg-white/10 hover:text-white"
+          aria-label="Cancel routine creation"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </form>
+      {error ? <p className="px-1 text-xs text-red-300">{error}</p> : null}
+    </div>
+  );
+}
 
 const formatNameValue = (value: string) => value.toUpperCase();
 const formatNameDisplay = (value?: string | null) =>
@@ -1217,7 +1359,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const energyOptionsError: string | null = null;
   const [routineId, setRoutineId] = useState<string>("none");
   const [newRoutineName, setNewRoutineName] = useState("");
-  const [newRoutineDescription, setNewRoutineDescription] = useState("");
+  const [newRoutineEmoji, setNewRoutineEmoji] = useState(
+    DEFAULT_ROUTINE_EMOJI,
+  );
+  const [isCreatingRoutineInline, setIsCreatingRoutineInline] =
+    useState(false);
+  const [routineCreateError, setRoutineCreateError] = useState<string | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
@@ -1310,6 +1459,28 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     setTaskAdvanced(initialTaskState);
   }, []);
 
+  const resetRoutineInlineCreation = useCallback(() => {
+    setIsCreatingRoutineInline(false);
+    setRoutineCreateError(null);
+    setNewRoutineName("");
+    setNewRoutineEmoji(DEFAULT_ROUTINE_EMOJI);
+    setRoutineId((current) => (current === "__create__" ? "none" : current));
+  }, []);
+
+  const handleRoutineInlineSubmit = useCallback(() => {
+    const routineName = newRoutineName.trim();
+    if (!routineName) {
+      setRoutineCreateError("Name the routine before using it.");
+      return false;
+    }
+
+    setNewRoutineEmoji((current) => current.trim() || DEFAULT_ROUTINE_EMOJI);
+    setRoutineCreateError(null);
+    setRoutineId("__create__");
+    setIsCreatingRoutineInline(false);
+    return true;
+  }, [newRoutineName]);
+
   useEffect(() => {
     if (goalForm.dueDate && !showGoalAdvanced) {
       setShowGoalAdvanced(true);
@@ -1392,7 +1563,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       setRoutinesLoading(false);
       setRoutineId("none");
       setNewRoutineName("");
-      setNewRoutineDescription("");
+      setNewRoutineEmoji(DEFAULT_ROUTINE_EMOJI);
+      setIsCreatingRoutineInline(false);
+      setRoutineCreateError(null);
       setShowProjectAdvancedOptions(false);
     }
   }, [isOpen, resetGoalWizard]);
@@ -1544,7 +1717,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       setRoutinesLoading(false);
       setRoutineId("none");
       setNewRoutineName("");
-      setNewRoutineDescription("");
+      setNewRoutineEmoji(DEFAULT_ROUTINE_EMOJI);
+      setIsCreatingRoutineInline(false);
+      setRoutineCreateError(null);
     }
   }, [eventType]);
 
@@ -1625,16 +1800,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   }, [eventType, goals, loading]);
 
   const routineSelectOptions = useMemo<RoutineSelectOption[]>(() => {
-    if (routinesLoading) {
-      return [
-        {
-          value: "none",
-          label: "Loading routines…",
-          disabled: true,
-        },
-      ];
-    }
-
     const baseOptions = routineOptions.map((routine) => ({
       value: routine.id,
       label: routine.name,
@@ -1646,11 +1811,15 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         value: "none",
         label: "No routine",
       },
-      ...baseOptions,
-      {
-        value: "__create__",
-        label: "Create a new routine",
-      },
+      ...(routinesLoading
+        ? [
+            {
+              value: "__routines_loading__",
+              label: "Loading routines…",
+              disabled: true,
+            },
+          ]
+        : baseOptions),
     ];
   }, [routineOptions, routinesLoading]);
 
@@ -2386,14 +2555,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             return;
           }
 
-          const routineDescription = newRoutineDescription.trim();
+          // TODO: Persist newRoutineEmoji when habit_routines has an emoji/icon column.
           const { data: routineData, error: routineInsertError } =
             await supabase
               .from("habit_routines")
               .insert({
                 user_id: user.id,
                 name: routineName,
-                description: routineDescription ? routineDescription : null,
               })
               .select("id")
               .single();
@@ -3071,6 +3239,15 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     goalForm.name.trim().length > 0 &&
     goalForm.monument_id.trim().length > 0;
   const saveButtonLabel = isSaving ? "Saving..." : "Save goal";
+  const selectedRoutine = routineOptions.find(
+    (routine) => routine.id === routineId,
+  );
+  const routineTriggerLabel =
+    routineId === "__create__"
+      ? newRoutineName.trim()
+      : routineId === "none"
+        ? "No routine"
+        : selectedRoutine?.name;
 
   if (!isOpen || !mounted || !eventType) {
     return null;
@@ -3964,28 +4141,78 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         <Select
                           value={routineId}
                           onValueChange={(value) => {
+                            setIsCreatingRoutineInline(false);
+                            setRoutineCreateError(null);
                             setRoutineId(value);
-                            if (value !== "__create__") {
-                              setNewRoutineName("");
-                              setNewRoutineDescription("");
-                            }
+                            setNewRoutineName("");
+                            setNewRoutineEmoji(DEFAULT_ROUTINE_EMOJI);
                           }}
-                          disabled={routinesLoading}
+                          minContentWidth={352}
+                          maxHeight={288}
                         >
                           <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                            <SelectValue placeholder="Choose a routine" />
+                            {routineTriggerLabel ? (
+                              <span className="block truncate">
+                                {routineTriggerLabel}
+                              </span>
+                            ) : (
+                              <SelectValue placeholder="Choose a routine" />
+                            )}
                           </SelectTrigger>
-                          <SelectContent className="bg-[#0b101b] text-sm text-white">
-                            {routineSelectOptions.map((option) => (
+                          <SelectContent className="max-h-72 w-[min(calc(100vw-2rem),22rem)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-white/10 bg-[#0b101b] p-2 text-sm text-white shadow-2xl shadow-black/50">
+                            {routineSelectOptions.slice(0, 1).map((option) => (
                               <SelectItem
                                 key={`${option.value}-${option.label}`}
                                 value={option.value}
                                 disabled={option.disabled}
                               >
-                                <div className="flex flex-col">
-                                  <span>{option.label}</span>
+                                <div className="flex min-w-0 flex-col">
+                                  <span className="whitespace-normal break-words leading-snug">
+                                    {option.label}
+                                  </span>
                                   {option.description ? (
-                                    <span className="text-xs text-white/60">
+                                    <span className="whitespace-normal break-words text-xs leading-snug text-white/60">
+                                      {option.description}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </SelectItem>
+                            ))}
+                            <HabitRoutineCreateRow
+                              active={isCreatingRoutineInline}
+                              name={newRoutineName}
+                              emoji={newRoutineEmoji}
+                              error={routineCreateError}
+                              onStart={() => {
+                                setIsCreatingRoutineInline(true);
+                                setNewRoutineEmoji((current) =>
+                                  current.trim() || DEFAULT_ROUTINE_EMOJI,
+                                );
+                                setRoutineCreateError(null);
+                              }}
+                              onNameChange={(value) => {
+                                setNewRoutineName(value);
+                                setRoutineCreateError(null);
+                              }}
+                              onEmojiChange={(value) => {
+                                setNewRoutineEmoji(value);
+                                setRoutineCreateError(null);
+                              }}
+                              onSubmit={handleRoutineInlineSubmit}
+                              onCancel={resetRoutineInlineCreation}
+                            />
+                            {routineSelectOptions.slice(1).map((option) => (
+                              <SelectItem
+                                key={`${option.value}-${option.label}`}
+                                value={option.value}
+                                disabled={option.disabled}
+                              >
+                                <div className="flex min-w-0 flex-col">
+                                  <span className="whitespace-normal break-words leading-snug">
+                                    {option.label}
+                                  </span>
+                                  {option.description ? (
+                                    <span className="whitespace-normal break-words text-xs leading-snug text-white/60">
                                       {option.description}
                                     </span>
                                   ) : null}
@@ -4000,46 +4227,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           </p>
                         ) : null}
                       </div>
-
-                      {routineId === "__create__" ? (
-                        <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
-                          <div className="space-y-3">
-                            <Label
-                              htmlFor="new-routine-name"
-                              className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
-                            >
-                              Routine name
-                            </Label>
-                            <Input
-                              id="new-routine-name"
-                              value={newRoutineName}
-                              onChange={(event) =>
-                                setNewRoutineName(event.target.value)
-                              }
-                              placeholder="e.g. Morning kickoff"
-                              className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
-                            />
-                          </div>
-
-                          <div className="space-y-3">
-                            <Label
-                              htmlFor="new-routine-description"
-                              className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
-                            >
-                              Description (optional)
-                            </Label>
-                            <Textarea
-                              id="new-routine-description"
-                              value={newRoutineDescription}
-                              onChange={(event) =>
-                                setNewRoutineDescription(event.target.value)
-                              }
-                              placeholder="Give your routine a purpose so future habits stay aligned."
-                              className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
-                            />
-                          </div>
-                        </div>
-                      ) : null}
                     </div>
                   }
                 />

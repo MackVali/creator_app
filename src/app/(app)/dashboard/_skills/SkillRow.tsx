@@ -1,6 +1,8 @@
 "use client";
 
+import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Skill } from "./useSkillsData";
 import type { SkillProgressData } from "./useSkillProgress";
 
@@ -17,7 +19,12 @@ interface Props {
   fillColor: string;
 }
 
+const SKILL_OPEN_PREVIEW_PREFIX = "creator.skillOpenPreview.";
+
 export default function SkillRow({ skill, progress, onColor, trackColor, fillColor }: Props) {
+  const router = useRouter();
+  const openingTimerRef = useRef<number | null>(null);
+  const [opening, setOpening] = useState(false);
   const level = progress?.level ?? skill.level;
   const prestige = progress?.prestige;
   const badges = progress?.badges ?? [];
@@ -46,11 +53,63 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
     <span className="text-[9px] font-medium uppercase tracking-[0.2em] opacity-60">No badges</span>
   );
 
+  const skillHref = `/skills/${skill.id}`;
+
+  const prefetchSkill = useCallback(() => {
+    router.prefetch(skillHref);
+  }, [router, skillHref]);
+
+  const storeOpenPreview = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.sessionStorage.setItem(
+        `${SKILL_OPEN_PREVIEW_PREFIX}${skill.id}`,
+        JSON.stringify({
+          id: skill.id,
+          name: skill.name,
+          icon: skill.emoji || null,
+          timestamp: Date.now(),
+        })
+      );
+    } catch (error) {
+      console.warn("Unable to store skill open preview", error);
+    }
+  }, [skill.emoji, skill.id, skill.name]);
+
+  const markOpening = useCallback(() => {
+    storeOpenPreview();
+    setOpening(true);
+
+    if (openingTimerRef.current !== null) {
+      window.clearTimeout(openingTimerRef.current);
+    }
+
+    openingTimerRef.current = window.setTimeout(() => {
+      setOpening(false);
+      openingTimerRef.current = null;
+    }, 180);
+  }, [storeOpenPreview]);
+
   return (
     <Link
-      href={`/skills/${skill.id}`}
-      className="rounded-2xl bg-black/15 border border-black/20 px-3 py-2.5 flex items-center gap-3 active:scale-[.98] transition-transform"
+      href={skillHref}
+      className={`rounded-2xl bg-black/15 border border-black/20 px-3 py-2.5 flex items-center gap-3 transition-[transform,filter,box-shadow,background-color,border-color] duration-150 ease-out active:scale-[.985] ${
+        opening
+          ? "scale-[.985] border-white/25 bg-white/10 brightness-110 shadow-[0_10px_30px_rgba(255,255,255,0.08)] ring-1 ring-white/15"
+          : "shadow-none"
+      }`}
       draggable={false}
+      onPointerEnter={prefetchSkill}
+      onFocus={prefetchSkill}
+      onTouchStart={() => {
+        prefetchSkill();
+        markOpening();
+      }}
+      onPointerDown={markOpening}
+      onClick={storeOpenPreview}
       onDragStart={(e) => e.preventDefault()}
       style={{ color: onColor }}
     >
@@ -89,4 +148,3 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
     </Link>
   );
 }
-

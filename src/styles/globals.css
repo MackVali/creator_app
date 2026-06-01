@@ -198,17 +198,21 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   }
 }
 
-.shimmer-border {
+.shimmer-border,
+.shimmer-border-due,
+.shimmer-border-complete {
   position: relative;
 }
 
-.shimmer-border::before {
+.shimmer-border::before,
+.shimmer-border-due::before,
+.shimmer-border-complete::before {
   content: "";
   position: absolute;
-  top: -6px;
-  left: -6px;
-  right: -6px;
-  bottom: -6px;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
   background: linear-gradient(
     45deg,
     rgba(0, 0, 0, 0.8),
@@ -220,6 +224,28 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   border-radius: inherit;
   animation: steel-shimmer 3s ease-in-out infinite;
   z-index: -1;
+}
+
+.shimmer-border-due::before {
+  background: linear-gradient(
+    45deg,
+    rgba(76, 5, 25, 0.42),
+    rgba(190, 18, 60, 0.5),
+    rgba(251, 113, 133, 0.58),
+    rgba(248, 113, 113, 0.48),
+    rgba(76, 5, 25, 0.42)
+  );
+}
+
+.shimmer-border-complete::before {
+  background: linear-gradient(
+    45deg,
+    rgba(2, 44, 34, 0.42),
+    rgba(5, 150, 105, 0.5),
+    rgba(52, 211, 153, 0.58),
+    rgba(16, 185, 129, 0.48),
+    rgba(2, 44, 34, 0.42)
+  );
 }
 
 .goal-card {
@@ -243,6 +269,44 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   border-radius: 8px;
   border: 2px solid rgba(0, 0, 0, 0.35);
   pointer-events: none;
+}
+
+.goal-card.shimmer-border-due::before,
+.goal-card.shimmer-border-complete::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border-radius: inherit;
+  border: 0;
+  background-size: 400% 400%;
+  animation: steel-shimmer 3s ease-in-out infinite;
+  z-index: -1;
+}
+
+.goal-card.shimmer-border-due {
+  overflow: visible;
+  border-color: rgba(159, 18, 57, 0.28);
+}
+
+.goal-card.shimmer-border-complete {
+  overflow: visible;
+  border-color: rgba(5, 150, 105, 0.28);
+}
+
+.goal-card.completion-border-only.shimmer-border-complete {
+  border-color: #1c1f25;
+}
+
+.goal-card.completion-border-only.shimmer-border-complete::before {
+  padding: 4px;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
 }
 
 /* Emerald faceted border effect for completed goals */

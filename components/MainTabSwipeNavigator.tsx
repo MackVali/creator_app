@@ -7,13 +7,19 @@ import type { AnimationPlaybackControls } from "framer-motion";
 import { usePathname, useRouter } from "next/navigation";
 import {
   MAIN_TAB_ROUTES,
+  PERSISTENT_MAIN_TAB_ROUTES,
+  isPersistentMainTabRoute,
+  navigateMainTabRoute,
   tabRouteConfig,
   type MainTabRouteHref,
+  type PersistentMainTabRouteHref,
 } from "@/app/(routes)/navigation";
 import CommandTabContent from "@/app/(app)/dashboard/CommandTabContent";
+import DashboardClient from "@/app/(app)/dashboard/DashboardClient";
 import ConnectTabContent from "@/app/(app)/friends/ConnectTabContent";
 import ScheduleTabContent from "@/app/(app)/schedule/ScheduleTabContent";
 import Source from "@/components/Source";
+import PlusRoute from "@/components/auth/PlusRoute";
 
 const COMMAND_ROUTE = tabRouteConfig.command.href;
 const CONNECT_ROUTE = tabRouteConfig.connect.href;
@@ -224,15 +230,67 @@ function DestinationPreview({ route }: { route: SwipeTargetRoute }) {
     >
       {route === COMMAND_ROUTE ? <CommandTabContent /> : null}
       {route === CONNECT_ROUTE ? <ConnectTabContent /> : null}
-      {route === SOURCE_ROUTE ? <Source /> : null}
+      {route === SOURCE_ROUTE ? (
+        <PlusRoute>
+          <Source />
+        </PlusRoute>
+      ) : null}
       {route === SCHEDULE_ROUTE ? <ScheduleTabContent isSwipePreview /> : null}
     </div>
+  );
+}
+
+function PersistentTabPanel({ route }: { route: PersistentMainTabRouteHref }) {
+  if (route === COMMAND_ROUTE) return <DashboardClient />;
+  if (route === CONNECT_ROUTE) return <ConnectTabContent />;
+
+  return (
+    <PlusRoute>
+      <Source />
+    </PlusRoute>
+  );
+}
+
+function PersistentMainTabPanels({
+  activeRoute,
+  mountedRoutes,
+}: {
+  activeRoute: PersistentMainTabRouteHref;
+  mountedRoutes: ReadonlySet<PersistentMainTabRouteHref>;
+}) {
+  return (
+    <>
+      {PERSISTENT_MAIN_TAB_ROUTES.map((route) => {
+        const isActive = route === activeRoute;
+        const isMounted = isActive || mountedRoutes.has(route);
+
+        if (!isMounted) return null;
+
+        return (
+          <div
+            key={route}
+            hidden={!isActive}
+            aria-hidden={!isActive}
+            data-main-tab-panel={route}
+            data-main-tab-panel-active={isActive ? "true" : "false"}
+            className="min-h-full bg-[#050505] text-white"
+          >
+            <PersistentTabPanel route={route} />
+          </div>
+        );
+      })}
+    </>
   );
 }
 
 export default function MainTabSwipeNavigator({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const normalizedPathname = normalizeMainRoute(pathname);
+  const activePersistentRoute =
+    normalizedPathname && isPersistentMainTabRoute(normalizedPathname)
+      ? normalizedPathname
+      : null;
   const reduceMotion = useReducedMotion();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const gestureRef = useRef<GestureState | null>(null);
@@ -255,11 +313,22 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
   const [isCommitting, setIsCommitting] = useState(false);
   const [pendingRoute, setPendingRoute] = useState<SwipeTargetRoute | null>(null);
   const [isCurrentLayerSuppressed, setIsCurrentLayerSuppressed] = useState(false);
+  const [mountedPersistentRoutes, setMountedPersistentRoutes] = useState<
+    Set<PersistentMainTabRouteHref>
+  >(() => (activePersistentRoute ? new Set([activePersistentRoute]) : new Set()));
 
   const swipeHostRoute = useMemo(() => getSwipeHostRoute(pathname), [pathname]);
   const isEnabledRoute = swipeHostRoute !== null;
   const activePreviewRoute = committedPreviewRoute ?? peekState?.targetHref ?? null;
   const activeSwipeDirection = peekState?.direction ?? null;
+  const currentLayerContent = activePersistentRoute ? (
+    <PersistentMainTabPanels
+      activeRoute={activePersistentRoute}
+      mountedRoutes={mountedPersistentRoutes}
+    />
+  ) : (
+    children
+  );
 
   const clearCommitFallbackTimeout = useCallback(() => {
     if (!commitFallbackTimeoutRef.current) return;
@@ -427,7 +496,7 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
       setIsCurrentLayerSuppressed(true);
 
       try {
-        router.push(typedTarget);
+        navigateMainTabRoute(typedTarget, router.push);
       } catch {
         clearCommittedPreview();
         return;
@@ -563,7 +632,6 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
   }
 
   useEffect(() => {
-    const normalizedPathname = normalizeMainRoute(pathname);
     const pendingTarget = pendingRouteRef.current;
 
     if (isCommittingRef.current && pendingTarget) {
@@ -588,7 +656,19 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
     window.removeEventListener("pointerup", listeners.end);
     window.removeEventListener("pointercancel", listeners.cancel);
     listenersRef.current = null;
-  }, [clearCommittedPreview, pathname, x]);
+  }, [clearCommittedPreview, normalizedPathname, x]);
+
+  useEffect(() => {
+    if (!activePersistentRoute) return;
+
+    setMountedPersistentRoutes((currentRoutes) => {
+      if (currentRoutes.has(activePersistentRoute)) return currentRoutes;
+
+      const nextRoutes = new Set(currentRoutes);
+      nextRoutes.add(activePersistentRoute);
+      return nextRoutes;
+    });
+  }, [activePersistentRoute]);
 
   useEffect(() => {
     if (!isEnabledRoute) return;
@@ -644,7 +724,7 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
               isCurrentLayerSuppressed ? "invisible pointer-events-none" : ""
             }`}
           >
-            {children}
+            {currentLayerContent}
           </div>
           {activeSwipeDirection === "left" ? (
             <div
@@ -662,7 +742,7 @@ export default function MainTabSwipeNavigator({ children }: { children: ReactNod
             isCurrentLayerSuppressed ? "invisible pointer-events-none" : ""
           }`}
         >
-          {children}
+          {currentLayerContent}
         </motion.div>
       )}
     </div>

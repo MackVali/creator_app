@@ -29,6 +29,8 @@ export type ProjectCardMorphOrigin = {
 
 interface ProjectRowProps {
   project: Project;
+  projectOrder?: number;
+  variant?: "default" | "compactNested";
   goalId?: string;
   onLongPress?: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
   onUpdated?: (projectId: string, updates: Partial<Project>) => void;
@@ -132,6 +134,8 @@ function buildProjectOrigin(
 
 export function ProjectRow({
   project,
+  projectOrder,
+  variant = "default",
   goalId: goalIdProp,
   onLongPress,
   onUpdated,
@@ -554,20 +558,28 @@ export function ProjectRow({
     [toggle]
   );
 
+  const projectStatusLabel = isCompleted ? "Done" : localStatus;
+  const projectEnergyLabel =
+    project.energyCode?.toString().trim() || project.energy;
+  const isCompactNested = variant === "compactNested";
   const primaryTextClass = isCompleted ? "text-emerald-50" : "text-white";
-  const secondaryTextClass = isCompleted ? "text-emerald-100/80" : "text-white/60";
-  const accentTextClass = isCompleted ? "text-emerald-100/75" : "text-white/70";
   const tertiaryTextClass = isCompleted ? "text-emerald-100/65" : "text-white/50";
   const chevronColorClass = isCompleted ? "text-emerald-100/70" : "text-white/60";
   const overlayGlowClass = isCompleted
     ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(52,211,153,0.35),transparent_55%)]"
     : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
   const cardSurfaceClass = isCompleted
-    ? "ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] shadow-[0_22px_42px_rgba(4,47,39,0.55)]"
-    : "ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]";
+    ? "border-emerald-400/55 bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] ring-1 ring-emerald-300/60 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_2px_0_0_rgba(209,250,229,0.22),inset_0_1px_0_rgba(255,255,255,0.12)]"
+    : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)] ring-1 ring-white/8 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)]";
   const tasksPanelClass = isCompleted
     ? "border-emerald-100/24 bg-emerald-950/35 ring-emerald-200/20 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-12px_18px_rgba(2,44,34,0.22)]"
     : "border-white/10 bg-[#030407] ring-white/10 text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-12px_18px_rgba(0,0,0,0.18)]";
+  const metaPillClass = isCompleted
+    ? "border-emerald-50/24 bg-emerald-950/14 text-emerald-50/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+    : "border-white/8 bg-white/[0.03] text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]";
+  const identityClass = isCompleted
+    ? "border-emerald-50/28 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
+    : "border-white/12 bg-black/25 text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)]";
   const completedTaskRowClass =
     "border-emerald-300/60 bg-[linear-gradient(135deg,rgba(6,78,59,0.96)_0%,rgba(4,120,87,0.9)_48%,rgba(16,185,129,0.84)_100%)] text-emerald-50 ring-1 ring-emerald-200/30 shadow-[0_12px_26px_-16px_rgba(16,185,129,0.72),0_0_22px_rgba(16,185,129,0.14),inset_2px_0_0_rgba(209,250,229,0.24),inset_0_1px_0_rgba(255,255,255,0.14)]";
   const incompleteTaskRowClass =
@@ -580,51 +592,76 @@ export function ProjectRow({
   return (
     <>
       <div
-        className={`relative rounded-2xl p-4 transition-transform select-none ${cardSurfaceClass} ${primaryTextClass} ${
+        className={`relative rounded-lg border px-1.5 py-1.5 transition-transform select-none sm:px-2.5 sm:py-2 ${cardSurfaceClass} ${primaryTextClass} ${
           completionPending ? "opacity-70" : ""
         }`}
         style={cardAnimationStyle}
       >
         <div
-          className={`pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
+          className={`pointer-events-none absolute inset-0 rounded-lg [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
         />
         <div
-          className={`relative z-0 flex w-full items-center gap-3 text-sm select-none ${primaryTextClass}`}
+          className={`relative z-0 flex w-full items-center gap-1 text-sm select-none sm:gap-2 ${primaryTextClass}`}
         >
           <button
             onClick={handleClick}
             type="button"
-            className={`flex min-w-0 flex-1 items-center justify-between text-left select-none ${primaryTextClass}`}
+            className={`flex min-w-0 flex-1 text-left select-none ${
+              isCompactNested
+                ? "items-center gap-2"
+                : "flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2"
+            } ${primaryTextClass}`}
             aria-disabled={completionPending}
             onPointerDown={handlePointerDown}
             onPointerUp={handlePointerEnd}
             onPointerCancel={handlePointerEnd}
           >
-            <div className={`flex min-w-0 items-center gap-3 ${primaryTextClass}`}>
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
+            <div
+              className={`flex min-w-0 items-center gap-2 ${primaryTextClass} ${
+                isCompactNested ? "flex-1" : ""
+              }`}
+            >
+              <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold leading-none sm:h-8 sm:w-8 sm:rounded-lg sm:text-[12px] ${identityClass}`}>
                 {displayEmoji}
               </div>
-              <div className="flex min-w-0 flex-col">
-                <span className="truncate font-semibold leading-tight">{project.name}</span>
-                <div className={`flex items-center gap-1.5 text-[11px] ${secondaryTextClass}`}>
-                  <FlameEmber level={flameLevel} size="xs" />
-                  <span className="uppercase tracking-[0.2em]">{project.energy}</span>
-                </div>
+              <div
+                className={`flex min-w-0 ${
+                  isCompactNested ? "flex-1 items-center gap-2" : "flex-col"
+                }`}
+              >
+                <span
+                  className={`text-[12px] font-medium leading-snug sm:text-[13px] ${
+                    isCompactNested ? "min-w-0 flex-1 truncate" : "line-clamp-2 sm:truncate"
+                  }`}
+                >
+                  {project.name}
+                </span>
+                {isCompactNested && (
+                  <FlameEmber level={flameLevel} size="sm" className="shrink-0" />
+                )}
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-3">
-              <p className={`text-[11px] ${accentTextClass}`}>{project.progress}%</p>
-              {project.dueDate && (
-                <span className={`text-xs ${secondaryTextClass}`}>
-                  {new Date(project.dueDate).toLocaleDateString()}
+            {!isCompactNested && (
+              <div className="flex w-full min-w-0 flex-wrap items-center gap-1 pl-9 sm:w-auto sm:shrink-0 sm:justify-end sm:pl-0">
+                {typeof projectOrder === "number" && (
+                  <span className={`rounded-full border px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.12em] sm:px-2 sm:py-1 sm:text-[9px] sm:tracking-[0.18em] ${metaPillClass}`}>
+                    #{projectOrder}
+                  </span>
+                )}
+                <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.12em] sm:px-2 sm:py-1 sm:text-[9px] sm:tracking-[0.18em] ${metaPillClass}`}>
+                  <FlameEmber level={flameLevel} size="xs" />
+                  <span>{projectEnergyLabel}</span>
                 </span>
-              )}
-            </div>
+                <span className={`rounded-full border px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.12em] sm:px-2 sm:py-1 sm:text-[9px] sm:tracking-[0.18em] ${metaPillClass}`}>
+                  {projectStatusLabel}
+                </span>
+              </div>
+            )}
           </button>
           {hasTasks && (
             <button
               type="button"
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none ${chevronColorClass}`}
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none sm:h-8 sm:w-8 sm:rounded-lg ${chevronColorClass}`}
               aria-expanded={open}
               aria-controls={`project-${project.id}`}
               aria-label={open ? "Collapse project tasks" : "Expand project tasks"}
@@ -641,7 +678,7 @@ export function ProjectRow({
         {hasTasks && (
           <div
             id={`project-${project.id}`}
-            className={`relative mt-3 overflow-hidden rounded-[16px] border ring-1 transition-all duration-200 ${
+            className={`relative mt-1.5 overflow-hidden rounded-lg border ring-1 transition-all duration-200 sm:mt-2 ${
               open ? "max-h-72 p-2" : "max-h-0 border-transparent p-0"
             } ${tasksPanelClass}`}
           >

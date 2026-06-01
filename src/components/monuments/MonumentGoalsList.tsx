@@ -21,6 +21,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LazyFab } from "@/components/ui/LazyFab";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import {
+  segmentedToggleActiveClassName,
+  segmentedToggleButtonClassName,
+  segmentedToggleContainerClassName,
+  segmentedToggleInactiveClassName,
+} from "@/components/ui/segmented-toggle-styles";
+import {
   projectWeight,
   taskWeight,
   type TaskLite,
@@ -266,6 +272,8 @@ const NORMALIZED_ENERGY_VALUES = new Set([
 ]);
 const GOAL_GRID_CLASS =
   "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
+const GOAL_GRID_MIN_HEIGHT_CLASS = "min-h-[240px] sm:min-h-[260px]";
+const GOAL_REVEAL_CLASS = "monument-goal-reveal";
 
 const normalizePriorityCode = (value?: string | null): string => {
   if (typeof value !== "string") return "NO";
@@ -564,6 +572,31 @@ function isRoadmapDisplayGoalCompleted(goal: {
   return (
     normalizeGoalStatus(goal.status) === "COMPLETED" ||
     goal.allProjectsCompleted === true
+  );
+}
+
+type GoalProjectForCompletion = Project & {
+  completedAt?: string | null;
+};
+
+function isProjectCompletedForGoalSection(
+  project: GoalProjectForCompletion
+): boolean {
+  return (
+    (typeof project.completedAt === "string" &&
+      project.completedAt.trim().length > 0) ||
+    isProjectStageComplete(project.stage)
+  );
+}
+
+function isGoalCompletedForSection(goal: Goal): boolean {
+  if (normalizeGoalStatus(goal.status) === "COMPLETED") {
+    return true;
+  }
+
+  return (
+    goal.projects.length > 0 &&
+    goal.projects.every(isProjectCompletedForGoalSection)
   );
 }
 
@@ -1700,20 +1733,21 @@ export function MonumentGoalsList({
   const content = useMemo(() => {
     if (loading) {
       return (
-        <div className={GOAL_GRID_CLASS}>
+        <div className={`${GOAL_GRID_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}>
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton
               key={i}
-              className="h-[100px] w-full rounded-2xl bg-white/10"
+              className="h-[100px] rounded-2xl bg-white/[0.06]"
             />
           ))}
         </div>
       );
     }
 
-    const isCompletedGoal = (goal: Goal) => goal.status === "COMPLETED";
     const filterGoalBySection = (goal: Goal) =>
-      goalSection === "completed" ? isCompletedGoal(goal) : !isCompletedGoal(goal);
+      goalSection === "completed"
+        ? isGoalCompletedForSection(goal)
+        : !isGoalCompletedForSection(goal);
     const filterRoadmapGoalBySection = (goal: {
       status?: string | null;
       allProjectsCompleted?: boolean;
@@ -1848,17 +1882,23 @@ export function MonumentGoalsList({
       }
 
       return (
-        <div className="space-y-3.5 sm:space-y-4">
+        <div
+          className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3.5 sm:space-y-4`}
+        >
           {monumentRoadmapsWithItems.map((roadmap) => (
-            <MixedRoadmapCard
+            <div
               key={roadmap.id}
-              roadmap={roadmap}
-              variant="compact"
-              defaultOpen
-              onGoalOpen={handleRoadmapGoalOpen}
-              onReorderSaved={refreshTrueRoadmaps}
-              enableCampaignCollapse
-            />
+              className="goal-card-wrapper"
+            >
+              <MixedRoadmapCard
+                roadmap={roadmap}
+                variant="compact"
+                defaultOpen
+                onGoalOpen={handleRoadmapGoalOpen}
+                onReorderSaved={refreshTrueRoadmaps}
+                enableCampaignCollapse
+              />
+            </div>
           ))}
           {roadmapOpenGoal && openGoalId === roadmapOpenGoal.id ? (
             <div
@@ -1872,6 +1912,8 @@ export function MonumentGoalsList({
                 showEmojiPrefix={false}
                 variant="compact"
                 monumentContext
+                completeWhenProjectsDone
+                completionTheme="border"
                 onEdit={() => handleGoalEdit(roadmapOpenGoal)}
                 onProjectUpdated={(projectId, updates) =>
                   handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
@@ -1915,21 +1957,26 @@ export function MonumentGoalsList({
     }
 
     return (
-      <section className="space-y-3">
+      <section
+        className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3`}
+      >
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-1">
             <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
               Goal Library
             </p>
           </div>
-          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-1">
+          <div
+            className={segmentedToggleContainerClassName}
+            aria-label="Goal section"
+          >
             <button
               type="button"
               onClick={() => onGoalSectionChange?.("active")}
-              className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
+              className={`${segmentedToggleButtonClassName} ${
                 goalSection === "active"
-                  ? "bg-[#3B3F49] text-white"
-                  : "text-[#A7B0BD] hover:text-white"
+                  ? segmentedToggleActiveClassName
+                  : segmentedToggleInactiveClassName
               }`}
               aria-pressed={goalSection === "active"}
             >
@@ -1938,10 +1985,10 @@ export function MonumentGoalsList({
             <button
               type="button"
               onClick={() => onGoalSectionChange?.("completed")}
-              className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
+              className={`${segmentedToggleButtonClassName} ${
                 goalSection === "completed"
-                  ? "bg-[#3B3F49] text-white"
-                  : "text-[#A7B0BD] hover:text-white"
+                  ? segmentedToggleActiveClassName
+                  : segmentedToggleInactiveClassName
               }`}
               aria-pressed={goalSection === "completed"}
             >
@@ -1981,6 +2028,8 @@ export function MonumentGoalsList({
                 showEmojiPrefix={false}
                 variant="compact"
                 monumentContext
+                completeWhenProjectsDone
+                completionTheme="border"
                 onEdit={() => handleGoalEdit(roadmapOpenGoal)}
                 onProjectUpdated={(projectId, updates) =>
                   handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
@@ -2020,6 +2069,8 @@ export function MonumentGoalsList({
                 showEmojiPrefix={false}
                 variant="compact"
                 monumentContext
+                completeWhenProjectsDone
+                completionTheme="border"
                 onEdit={() => handleGoalEdit(goal)}
                 onProjectUpdated={(projectId, updates) =>
                   handleProjectUpdated(goal.id, projectId, updates)
@@ -2080,6 +2131,19 @@ export function MonumentGoalsList({
         portalToBody
       />
       <style jsx global>{`
+        @keyframes monumentGoalReveal {
+          from {
+            opacity: 0;
+            transform: translateY(2px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .monument-goals-list .monument-goal-reveal {
+          animation: monumentGoalReveal 150ms ease-out both;
+        }
         /* Prevent lift/overlap across browsers */
         .monument-goals-list .group {
           transform: none !important;
@@ -2130,6 +2194,11 @@ export function MonumentGoalsList({
         @media (min-width: 640px) {
           .monument-goals-list .goal-card-wrapper {
             overflow: visible;
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .monument-goals-list .monument-goal-reveal {
+            animation: none;
           }
         }
       `}</style>
