@@ -11,6 +11,7 @@ export interface BottomBarNavProps {
   items: BottomBarNavItem[];
   currentPath: string;
   onNavigate?: (href: string) => void;
+  shouldHandleActiveClick?: (href: string) => boolean;
   onPrefetch?: (href: string) => void;
 }
 
@@ -18,6 +19,7 @@ export function BottomBarNav({
   items,
   currentPath,
   onNavigate,
+  shouldHandleActiveClick,
   onPrefetch,
 }: BottomBarNavProps) {
   const renderItem = (item: BottomBarNavItem) => {
@@ -31,8 +33,10 @@ export function BottomBarNav({
         aria-current={isActive ? "page" : undefined}
         onClick={(e) => {
           if (isActive) {
-            e.preventDefault();
-            return;
+            if (!shouldHandleActiveClick?.(item.href)) {
+              e.preventDefault();
+              return;
+            }
           }
           if (onNavigate) {
             e.preventDefault();

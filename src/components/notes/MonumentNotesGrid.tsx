@@ -17,10 +17,10 @@ interface MonumentNotesGridProps {
 }
 
 const monumentNoteActionOuterClass =
-  "group relative block h-full overflow-hidden rounded-[22px] border border-white/[0.07] bg-[#050608] p-[1px] shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),0_8px_18px_-16px_rgba(0,0,0,0.9)] transition-all duration-200 hover:-translate-y-px hover:border-white/[0.12] hover:shadow-[0_22px_42px_-32px_rgba(0,0,0,0.98),0_10px_20px_-18px_rgba(0,0,0,0.92)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60";
+  "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
 
 const monumentNoteActionInnerClass =
-  "relative flex h-full overflow-hidden rounded-[21px] border border-white/[0.08] bg-[#07080A] px-3 py-2.5 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-16px_26px_rgba(0,0,0,0.22)] transition-[border-color,background-color] duration-200 before:pointer-events-none before:absolute before:inset-[1px] before:rounded-[19px] before:border before:border-white/[0.035] before:content-[''] after:pointer-events-none after:absolute after:inset-x-4 after:top-0 after:h-px after:bg-white/[0.08] after:content-[''] group-hover:border-white/[0.13] group-hover:bg-[#0B0C0F]";
+  "relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center";
 
 export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGridProps) {
   const [showAllNotes, setShowAllNotes] = useState(false);
@@ -94,24 +94,17 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
     <div className="max-w-full space-y-3">
       <NotesHeaderControls searchQuery={searchQuery} onSearchChange={setSearchQuery} />
       {hasAnyNotes && !hasVisibleNotes && !isLoading ? (
-        <div className={cn(monumentNoteActionOuterClass, "w-full")}>
-          <div
-            className={cn(
-              monumentNoteActionInnerClass,
-              "min-h-[4rem] flex-col justify-center gap-1 text-left"
-            )}
-          >
-            <p className="text-sm font-semibold tracking-tight text-white/90">
-              No matching notes
-            </p>
-            <p className="text-xs leading-5 text-white/50">
-              Try a different search.
-            </p>
-          </div>
+        <div className="w-full rounded-2xl border border-white/[0.08] bg-[#07080A] px-3 py-3 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]">
+          <p className="text-sm font-semibold tracking-tight text-white/90">
+            No matching notes
+          </p>
+          <p className="text-xs leading-5 text-white/50">
+            Try a different search.
+          </p>
         </div>
       ) : null}
 
-      <div className="flex w-full max-w-full flex-col gap-2.5 px-0">
+      <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {visibleNotes.map((note) => (
           <MonumentNoteCard
             key={note.id}
@@ -125,21 +118,28 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
           return (
             <Link
               href={`/monuments/${monumentId}/notes/new`}
-              className={cn(monumentNoteActionOuterClass, "w-full")}
+              className={monumentNoteActionOuterClass}
               aria-label={hasAnyNotes ? "Add note" : "Create note"}
             >
               <div
                 className={cn(
                   monumentNoteActionInnerClass,
-                  "min-h-[4.25rem] items-center justify-center gap-2 text-center"
+                  "w-full min-w-0"
                 )}
               >
-                <div className="relative z-10 flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.1] bg-[#101114] text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_9px_18px_-14px_rgba(0,0,0,0.9)]">
-                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                <div className="flex w-full min-w-0 flex-col items-center justify-center gap-1.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-10 sm:w-10">
+                    <Plus className="h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4" aria-hidden="true" />
+                  </div>
+                  <div className="flex w-full min-w-0 items-center justify-center">
+                    <span
+                      className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]"
+                      style={{ hyphens: "auto" }}
+                    >
+                      {hasAnyNotes ? "Add note" : "Create note"}
+                    </span>
+                  </div>
                 </div>
-                <span className="relative z-10 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">
-                  {hasAnyNotes ? "Add note" : "Create note"}
-                </span>
               </div>
             </Link>
           );

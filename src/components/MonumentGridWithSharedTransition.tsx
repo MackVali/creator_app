@@ -7,6 +7,7 @@ import {
   type MonumentDetailMonument,
 } from "@/components/monuments/MonumentDetail";
 import { OPEN_MONUMENT_DIALOG_EVENT } from "@/components/monuments/AddMonumentDialog";
+import { CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT } from "@/components/monuments/events";
 import { MAX_MONUMENTS } from "@/lib/monuments/constants";
 
 export interface Monument extends MonumentDetailMonument {
@@ -49,6 +50,18 @@ export function MonumentGridWithSharedTransition({
       document.body.classList.remove("monument-detail-open");
     };
   }, [activeId]);
+
+  useEffect(() => {
+    const closeActiveDetail = () => setActiveId(null);
+
+    window.addEventListener(CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT, closeActiveDetail);
+    return () => {
+      window.removeEventListener(
+        CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT,
+        closeActiveDetail
+      );
+    };
+  }, []);
 
   const openDialog = () => {
     if (typeof window === "undefined") return;

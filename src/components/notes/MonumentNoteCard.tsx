@@ -3,16 +3,67 @@
 import Link from "next/link";
 import {
   Bookmark,
+  BookText,
   BookOpenText,
+  Bot,
   Brain,
+  Brush,
+  CalendarCheck,
+  CheckSquare,
+  CircleAlert,
+  CircleHelp,
+  ClipboardCheck,
+  Clock,
+  Code2,
+  Compass,
+  Cpu,
+  Crosshair,
+  Database,
+  Dumbbell,
+  Eye,
+  File,
+  FilePlus2,
+  Files,
   FileText,
+  Flame,
+  Gem,
+  Headphones,
+  KeyRound,
+  Library,
+  Leaf,
   Lightbulb,
+  ListChecks,
   ListTodo,
+  Lock,
+  Map,
   MessageSquareText,
+  MessagesSquare,
+  Mic,
+  Microscope,
+  Mountain,
+  Music,
+  Newspaper,
   NotebookPen,
+  Palette,
+  PenTool,
+  Pencil,
+  Quote,
+  Route,
+  Search,
   ScrollText,
+  Shield,
+  Shirt,
   Sparkles,
+  Sprout,
+  Star,
+  StickyNote,
   Target,
+  Telescope,
+  Terminal,
+  Timer,
+  TriangleAlert,
+  WandSparkles,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,10 +71,72 @@ import { cn } from "@/lib/utils";
 import type { MonumentNote } from "@/lib/types/monument-note";
 
 export const monumentNoteTileOuterClass =
-  "group relative block h-full overflow-hidden rounded-[22px] border border-white/[0.07] bg-[#050608] p-[1px] shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),0_8px_18px_-16px_rgba(0,0,0,0.9)] transition-all duration-200 hover:-translate-y-px hover:border-white/[0.11] hover:shadow-[0_22px_42px_-32px_rgba(0,0,0,0.98),0_10px_20px_-18px_rgba(0,0,0,0.92)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60";
+  "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl border border-zinc-300/20 bg-[radial-gradient(circle_at_0%_0%,rgba(255,255,255,0.12),transparent_56%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(18,18,21,0.96)_48%,rgba(42,42,48,0.72)_100%)] p-3 text-white shadow-[0_18px_38px_-30px_rgba(0,0,0,0.96),inset_0_1px_0_rgba(255,255,255,0.06)] transition duration-200 select-none hover:-translate-y-px hover:border-zinc-100/30 sm:p-4";
 
-export const monumentNoteTileInnerClass =
-  "relative flex h-full min-h-[4.75rem] overflow-hidden rounded-[21px] border border-white/[0.08] bg-[#0B0C0F] px-3 py-2.5 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-18px_28px_rgba(0,0,0,0.24)] transition-[border-color,background-color] duration-200 before:pointer-events-none before:absolute before:inset-[1px] before:rounded-[19px] before:border before:border-white/[0.035] before:content-[''] after:pointer-events-none after:absolute after:inset-x-4 after:top-0 after:h-px after:bg-white/[0.08] after:content-[''] group-hover:border-white/[0.12] group-hover:bg-[#101114]";
+const lucideNoteIcons: Record<string, LucideIcon> = {
+  bookopentext: BookOpenText,
+  booktext: BookText,
+  bookmark: Bookmark,
+  bot: Bot,
+  brain: Brain,
+  brush: Brush,
+  calendarcheck: CalendarCheck,
+  checksquare: CheckSquare,
+  circlealert: CircleAlert,
+  circlehelp: CircleHelp,
+  clipboardcheck: ClipboardCheck,
+  clock: Clock,
+  code2: Code2,
+  compass: Compass,
+  cpu: Cpu,
+  crosshair: Crosshair,
+  database: Database,
+  dumbbell: Dumbbell,
+  eye: Eye,
+  file: File,
+  fileplus2: FilePlus2,
+  files: Files,
+  filetext: FileText,
+  flame: Flame,
+  gem: Gem,
+  headphones: Headphones,
+  keyround: KeyRound,
+  leaf: Leaf,
+  library: Library,
+  lightbulb: Lightbulb,
+  listchecks: ListChecks,
+  listtodo: ListTodo,
+  lock: Lock,
+  map: Map,
+  messagesquaretext: MessageSquareText,
+  messagessquare: MessagesSquare,
+  mic: Mic,
+  microscope: Microscope,
+  mountain: Mountain,
+  music: Music,
+  newspaper: Newspaper,
+  notebookpen: NotebookPen,
+  palette: Palette,
+  pentool: PenTool,
+  pencil: Pencil,
+  quote: Quote,
+  route: Route,
+  scrolltext: ScrollText,
+  search: Search,
+  shield: Shield,
+  shirt: Shirt,
+  sparkles: Sparkles,
+  sprout: Sprout,
+  star: Star,
+  stickynote: StickyNote,
+  target: Target,
+  telescope: Telescope,
+  terminal: Terminal,
+  timer: Timer,
+  trianglealert: TriangleAlert,
+  wandsparkles: WandSparkles,
+  zap: Zap,
+};
 
 interface MonumentNoteCardProps {
   note: MonumentNote;
@@ -31,53 +144,57 @@ interface MonumentNoteCardProps {
   onToggleBookmark?: (noteId: string) => void;
 }
 
-function getMonumentNoteIcon(iconValue?: string | null): LucideIcon {
-  const icon = iconValue?.trim().toLowerCase();
+function getMonumentNoteIcon(
+  iconValue?: string | null
+): { kind: "lucide"; Icon: LucideIcon } | { kind: "emoji"; emoji: string } {
+  const value = iconValue?.trim();
+  const icon = value?.toLowerCase();
+
+  if (!icon) return { kind: "lucide", Icon: NotebookPen };
+
+  if (icon.startsWith("lucide:")) {
+    return {
+      kind: "lucide",
+      Icon: lucideNoteIcons[icon.slice("lucide:".length)] ?? NotebookPen,
+    };
+  }
+
+  if (/\p{Extended_Pictographic}/u.test(value ?? "")) {
+    return { kind: "emoji", emoji: value ?? "" };
+  }
 
   switch (icon) {
-    case "💡":
     case "idea":
-      return Lightbulb;
-    case "🧠":
+      return { kind: "lucide", Icon: Lightbulb };
     case "brain":
     case "thought":
     case "insight":
-      return Brain;
-    case "📓":
-    case "📔":
-    case "📖":
+      return { kind: "lucide", Icon: Brain };
     case "journal":
     case "book":
-      return BookOpenText;
-    case "📜":
+      return { kind: "lucide", Icon: BookOpenText };
     case "log":
     case "scroll":
-      return ScrollText;
-    case "💬":
+      return { kind: "lucide", Icon: ScrollText };
     case "message":
     case "chat":
-      return MessageSquareText;
-    case "✅":
-    case "☑️":
+      return { kind: "lucide", Icon: MessageSquareText };
     case "task":
     case "todo":
     case "check":
-      return ListTodo;
-    case "🎯":
+      return { kind: "lucide", Icon: ListTodo };
     case "target":
     case "goal":
-      return Target;
-    case "✨":
+      return { kind: "lucide", Icon: Target };
     case "spark":
     case "sparkles":
     case "magic":
-      return Sparkles;
+      return { kind: "lucide", Icon: Sparkles };
     case "file":
-      return FileText;
-    case "📝":
+      return { kind: "lucide", Icon: FileText };
     case "note":
     default:
-      return NotebookPen;
+      return { kind: "lucide", Icon: NotebookPen };
   }
 }
 
@@ -86,50 +203,46 @@ export function MonumentNoteCard({ note, monumentId, onToggleBookmark }: Monumen
     note.title?.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ??
     "Open this note to add a title.";
 
-  const preview =
-    note.content?.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ??
-    "Open note";
-  const dateLabel = note.updatedAt
-    ? new Date(note.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })
-    : "";
-  const NoteIcon = getMonumentNoteIcon(note.icon);
+  const noteIcon = getMonumentNoteIcon(note.icon);
+  const NoteIcon = noteIcon.kind === "lucide" ? noteIcon.Icon : null;
   return (
     <Link
       href={`/monuments/${monumentId}/notes/${note.id}`}
       className={monumentNoteTileOuterClass}
     >
-      <div className={cn(monumentNoteTileInnerClass, "items-center gap-2.5 sm:gap-3")}>
-        <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.09] bg-[#07080A] text-sm text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_8px_16px_-14px_rgba(0,0,0,0.9)]">
-          <NoteIcon className="h-4 w-4" aria-hidden="true" />
-        </div>
-        <div className="relative z-10 min-w-0 flex-1 pr-1">
-          <p className="truncate text-[15px] font-semibold leading-tight text-white/90">
-            {titleLine}
-          </p>
-          <p className="mt-0.5 line-clamp-1 text-xs leading-5 text-white/55 sm:line-clamp-2">
-            {preview}
-          </p>
-        </div>
-        <div className="relative z-10 ml-auto flex shrink-0 items-center gap-1.5 pl-1">
-          <span className="hidden text-[10px] font-medium text-white/40 sm:inline">
-            {dateLabel}
-          </span>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.preventDefault();
-              onToggleBookmark?.(note.id);
-            }}
-            className="rounded-full p-1 text-white/45 transition hover:bg-white/[0.06] hover:text-white/70"
-            aria-label={note.isBookmarked ? "Unbookmark note" : "Bookmark note"}
-          >
-            <Bookmark
-              className={cn(
-                "h-3.5 w-3.5",
-                note.isBookmarked ? "fill-white/75 text-white/75" : "text-current"
-              )}
-            />
-          </button>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.preventDefault();
+          onToggleBookmark?.(note.id);
+        }}
+        className="absolute right-2 top-2 z-[3] rounded-full p-1 text-white/38 transition hover:bg-white/[0.08] hover:text-white/75"
+        aria-label={note.isBookmarked ? "Unbookmark note" : "Bookmark note"}
+      >
+        <Bookmark
+          className={cn(
+            "h-3 w-3",
+            note.isBookmarked ? "fill-white/75 text-white/75" : "text-current"
+          )}
+        />
+      </button>
+      <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-center text-center">
+        <div className="flex w-full min-w-0 flex-col items-center justify-center gap-1.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[10px] font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-10 sm:w-10 sm:text-xs">
+            {NoteIcon ? (
+              <NoteIcon className="h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4" aria-hidden="true" />
+            ) : (
+              <span aria-hidden="true">{noteIcon.emoji}</span>
+            )}
+          </div>
+          <div className="flex w-full min-w-0 items-center justify-center">
+            <span
+              className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]"
+              style={{ hyphens: "auto" }}
+            >
+              {titleLine}
+            </span>
+          </div>
         </div>
       </div>
     </Link>

@@ -7,8 +7,10 @@ import { useEffect, useState, useTransition } from "react";
 import BottomBarNav from "./BottomBarNav";
 import { LazyFab } from "@/components/ui/LazyFab";
 import { shouldHideBottomChrome } from "@/components/appChromeVisibility";
+import { CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT } from "@/components/monuments/events";
 import {
   MAIN_TAB_ROUTES,
+  isPersistentMainTabRoute,
   navigateMainTabRoute,
   type MainTabRouteKey,
   type MainTabRouteHref,
@@ -34,6 +36,13 @@ const bottomNavItems = MAIN_TAB_ROUTES.map((item) => {
     icon: <Icon className="h-6 w-6" />,
   };
 });
+
+function isMonumentDetailOverlayOpen() {
+  return (
+    typeof document !== "undefined" &&
+    document.body.classList.contains("monument-detail-open")
+  );
+}
 
 export default function BottomNav() {
   const pathname = usePathname();
@@ -75,9 +84,26 @@ export default function BottomNav() {
             <BottomBarNav
               items={bottomNavItems}
               currentPath={pathname}
+              shouldHandleActiveClick={(href) =>
+                href === "/dashboard" && isMonumentDetailOverlayOpen()
+              }
               onNavigate={(href) => {
                 startTransition(() => {
-                  navigateMainTabRoute(href as MainTabRouteHref, router.push);
+                  const targetHref = href as MainTabRouteHref;
+
+                  if (targetHref === "/dashboard" && isMonumentDetailOverlayOpen()) {
+                    window.dispatchEvent(
+                      new CustomEvent(CLOSE_ACTIVE_MONUMENT_DETAIL_EVENT)
+                    );
+                    return;
+                  }
+
+                  if (targetHref === "/dashboard" && !isPersistentMainTabRoute(pathname)) {
+                    router.replace(targetHref);
+                    return;
+                  }
+
+                  navigateMainTabRoute(targetHref, router.push);
                 });
               }}
               onPrefetch={(href) => router.prefetch(href)}
