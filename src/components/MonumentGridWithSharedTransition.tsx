@@ -30,20 +30,23 @@ export function MonumentGridWithSharedTransition({
   const allowNewMonumentCard = showNewCard && monuments.length < MAX_MONUMENTS;
 
   const previousFocus = useRef<HTMLElement | null>(null);
+  const previousBodyOverflow = useRef<string | null>(null);
 
   useEffect(() => {
-    if (activeId) {
-      previousFocus.current = document.activeElement as HTMLElement;
-      document.body.style.overflow = "hidden";
-      document.body.classList.add("modal-open");
-    } else {
-      document.body.style.overflow = "";
-      document.body.classList.remove("modal-open");
+    if (!activeId) {
       previousFocus.current?.focus();
+      return;
     }
+
+    previousFocus.current = document.activeElement as HTMLElement;
+    previousBodyOverflow.current = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.body.classList.add("monument-detail-open");
+
     return () => {
-      document.body.style.overflow = "";
-      document.body.classList.remove("modal-open");
+      document.body.style.overflow = previousBodyOverflow.current ?? "";
+      previousBodyOverflow.current = null;
+      document.body.classList.remove("monument-detail-open");
     };
   }, [activeId]);
 
@@ -121,7 +124,7 @@ export function MonumentGridWithSharedTransition({
         {!isEmpty && selected && (
           <motion.div
             key="overlay"
-            className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
+            className="fixed inset-0 z-40 flex items-start justify-center overflow-hidden bg-black/60 px-0 pb-0 pt-0 backdrop-blur-md"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

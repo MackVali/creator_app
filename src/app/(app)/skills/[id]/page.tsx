@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { TouchEvent } from "react";
+import type { PointerEvent, TouchEvent } from "react";
 import clsx from "clsx";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -10,7 +10,6 @@ import {
   Target,
   Timer,
   MoreHorizontal,
-  X,
 } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { SkillProjectsList } from "@/components/skills/SkillProjectsList";
@@ -83,6 +82,31 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_LOOKAHEAD_DAYS = MAX_SCHEDULE_LOOKAHEAD_DAYS;
 const NO_DUE_MATCH_RANK = MAX_LOOKAHEAD_DAYS + 1;
 const RELATED_HABIT_DOUBLE_TAP_MS = 350;
+const PULL_EXIT_THRESHOLD_PX = 56;
+const SKILL_OPEN_PREVIEW_PREFIX = "creator.skillOpenPreview.";
+const SKILL_OPEN_PREVIEW_MAX_AGE_MS = 5_000;
+
+type SkillOpenPreview = {
+  id: string;
+  name: string;
+  icon: string | null;
+  timestamp: number;
+};
+
+function isInteractivePullTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(
+      target.closest(
+        "a,button,input,select,textarea,[role='button'],[role='menuitem']"
+      )
+    )
+  );
+}
+
+function isWindowAtTop() {
+  return window.scrollY <= 2;
+}
 
 type HabitDueStatus = {
   label: string;
@@ -237,21 +261,32 @@ function getHabitTypePriority(habitType: string | null | undefined): number {
 
 function getHabitCardTypeClass(habitType: string | null | undefined): string {
   const normalized = normalizeRelatedHabitType(habitType);
-  if (normalized === "CHORE") return "habit-card--type-chore";
-  if (normalized === "SYNC") return "habit-card--type-sync";
-  if (normalized === "PRACTICE") return "habit-card--type-practice";
-  if (normalized === "RELAXER") return "habit-card--type-relaxer";
-  if (normalized === "MEMO") return "habit-card--type-memo";
-  return "habit-card--type-default";
+  if (normalized === "CHORE") {
+    return "!bg-[radial-gradient(circle_at_10%_-25%,rgba(159,18,57,0.32),transparent_58%),linear-gradient(135deg,rgba(31,9,12,0.98)_0%,rgba(76,18,27,0.94)_48%,rgba(111,26,39,0.76)_100%)]";
+  }
+  if (normalized === "SYNC") {
+    return "!bg-[radial-gradient(circle_at_12%_-20%,rgba(113,113,122,0.22),transparent_58%),linear-gradient(135deg,rgba(16,18,22,0.98)_0%,rgba(39,43,51,0.94)_48%,rgba(70,77,89,0.68)_100%)]";
+  }
+  if (normalized === "PRACTICE") {
+    return "!bg-[radial-gradient(circle_at_6%_-14%,rgba(79,70,229,0.22),transparent_60%),linear-gradient(142deg,rgba(8,9,20,0.98)_0%,rgba(24,27,51,0.95)_46%,rgba(50,55,92,0.68)_100%)]";
+  }
+  if (normalized === "RELAXER") {
+    return "!bg-[radial-gradient(circle_at_8%_-18%,rgba(6,95,70,0.34),transparent_60%),linear-gradient(138deg,rgba(3,24,18,0.98)_0%,rgba(5,68,51,0.94)_48%,rgba(6,95,70,0.74)_100%)]";
+  }
+  if (normalized === "MEMO") {
+    return "!bg-[radial-gradient(circle_at_8%_-18%,rgba(126,34,206,0.26),transparent_60%),linear-gradient(138deg,rgba(24,13,38,0.98)_0%,rgba(55,29,84,0.95)_48%,rgba(88,46,128,0.72)_100%)]";
+  }
+  return "!bg-[radial-gradient(circle_at_0%_0%,rgba(82,82,91,0.2),transparent_58%),linear-gradient(140deg,rgba(8,8,10,0.98)_0%,rgba(20,20,23,0.96)_48%,rgba(50,50,57,0.72)_100%)]";
 }
 
 function getHabitCardBorderClass(habitType: string | null | undefined): string {
   const normalized = normalizeRelatedHabitType(habitType);
   if (normalized === "CHORE") return "border-rose-200/45";
-  if (normalized === "SYNC") return "border-zinc-200/35";
-  if (normalized === "RELAXER") return "border-emerald-200/50";
-  if (normalized === "MEMO") return "border-purple-300/50";
-  return "border-slate-500/50";
+  if (normalized === "SYNC") return "border-zinc-300/35";
+  if (normalized === "PRACTICE") return "border-slate-500/50";
+  if (normalized === "RELAXER") return "border-emerald-200/60";
+  if (normalized === "MEMO") return "border-purple-300/55";
+  return "border-black/70";
 }
 
 function describeLevel(level: number): string {
@@ -271,6 +306,8 @@ export default function SkillDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const [skill, setSkill] = useState<Skill | null>(null);
+  const [skillOpenPreview, setSkillOpenPreview] =
+    useState<SkillOpenPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<SkillProgressData | null>(null);
@@ -330,6 +367,14 @@ export default function SkillDetailPage() {
     new Map<string, { action: "complete" | "undo"; dateKey: string }>()
   );
   const completionStateDateKeyRef = useRef<string | null>(null);
+  const pullStartYRef = useRef<number | null>(null);
+  const pullExitTriggeredRef = useRef(false);
+  const pullPointerIdRef = useRef<number | null>(null);
+  const pullExitBlocked =
+    editDrawerOpen ||
+    actionsMenuOpen ||
+    deleteConfirmationOpen ||
+    Boolean(focusPomoSource);
   const decoratedHabits = useMemo(
     () =>
       relatedHabits
@@ -357,6 +402,48 @@ export default function SkillDetailPage() {
         }),
     [relatedHabits, timeZone]
   );
+
+  useEffect(() => {
+    if (!id || typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const rawPreview = window.sessionStorage.getItem(
+        `${SKILL_OPEN_PREVIEW_PREFIX}${id}`
+      );
+      if (!rawPreview) {
+        setSkillOpenPreview(null);
+        return;
+      }
+
+      const parsedPreview = JSON.parse(rawPreview) as Partial<SkillOpenPreview>;
+      const previewAge = Date.now() - Number(parsedPreview.timestamp);
+      if (
+        parsedPreview.id === id &&
+        typeof parsedPreview.name === "string" &&
+        previewAge >= 0 &&
+        previewAge <= SKILL_OPEN_PREVIEW_MAX_AGE_MS
+      ) {
+        setSkillOpenPreview({
+          id,
+          name: parsedPreview.name,
+          icon:
+            typeof parsedPreview.icon === "string"
+              ? parsedPreview.icon
+              : null,
+          timestamp: Number(parsedPreview.timestamp),
+        });
+        return;
+      }
+
+      window.sessionStorage.removeItem(`${SKILL_OPEN_PREVIEW_PREFIX}${id}`);
+      setSkillOpenPreview(null);
+    } catch (previewError) {
+      console.warn("Unable to read skill open preview", previewError);
+      setSkillOpenPreview(null);
+    }
+  }, [id]);
 
   useEffect(() => {
     const syncCurrentDateKey = () => {
@@ -817,6 +904,7 @@ export default function SkillDetailPage() {
       setError(null);
       setHabitsError(null);
       setCompletionError(null);
+      setSkill(null);
       setRelatedHabits([]);
       setCompletedRelatedHabitIds(new Set());
       setPendingRelatedHabitIds(new Set());
@@ -824,6 +912,8 @@ export default function SkillDetailPage() {
       pendingRelatedHabitActionsRef.current.clear();
       setHabitsLoading(true);
       setProgress(null);
+      setCategories([]);
+      setMonuments([]);
 
       try {
         const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -855,41 +945,56 @@ export default function SkillDetailPage() {
             setHabitsLoading(false);
           } else {
             setSkill(data);
-            await Promise.all([
-              fetchRelatedHabits(userId),
-              fetchSkillProgress(userId),
-              userId
-                ? Promise.all([
-                    supabase
-                      .from("cats")
-                      .select("id,name")
-                      .eq("user_id", userId)
-                      .then(({ data: catsData, error: catsError }) => {
-                        if (catsError) {
-                          console.error("Error loading categories:", catsError);
-                          return;
-                        }
-                        setCategories((catsData ?? []) as Category[]);
-                      }),
-                    supabase
-                      .from("monuments")
-                      .select("id,title")
-                      .eq("user_id", userId)
-                      .then(({ data: monumentsData, error: monumentsError }) => {
-                        if (monumentsError) {
-                          console.error("Error loading monuments:", monumentsError);
-                          return;
-                        }
-                        setMonuments(
-                          (monumentsData ?? []).map((monument) => ({
-                            id: monument.id,
-                            title: monument.title,
-                          }))
-                        );
-                      }),
-                  ])
-                : Promise.resolve(),
-            ]);
+            setLoading(false);
+            void fetchRelatedHabits(userId);
+            void fetchSkillProgress(userId);
+
+            if (userId) {
+              void supabase
+                .from("cats")
+                .select("id,name")
+                .eq("user_id", userId)
+                .then(({ data: catsData, error: catsError }) => {
+                  if (cancelled) {
+                    return;
+                  }
+                  if (catsError) {
+                    console.error("Error loading categories:", catsError);
+                    return;
+                  }
+                  setCategories((catsData ?? []) as Category[]);
+                })
+                .catch((catsError) => {
+                  if (!cancelled) {
+                    console.error("Error loading categories:", catsError);
+                  }
+                });
+
+              void supabase
+                .from("monuments")
+                .select("id,title")
+                .eq("user_id", userId)
+                .then(({ data: monumentsData, error: monumentsError }) => {
+                  if (cancelled) {
+                    return;
+                  }
+                  if (monumentsError) {
+                    console.error("Error loading monuments:", monumentsError);
+                    return;
+                  }
+                  setMonuments(
+                    (monumentsData ?? []).map((monument) => ({
+                      id: monument.id,
+                      title: monument.title,
+                    }))
+                  );
+                })
+                .catch((monumentsError) => {
+                  if (!cancelled) {
+                    console.error("Error loading monuments:", monumentsError);
+                  }
+                });
+            }
           }
         }
       } catch (err) {
@@ -911,7 +1016,62 @@ export default function SkillDetailPage() {
     };
   }, [supabase, id]);
 
+  const resetPullExit = useCallback(() => {
+    pullStartYRef.current = null;
+    pullExitTriggeredRef.current = false;
+    pullPointerIdRef.current = null;
+  }, []);
+
+  const handlePullExitStart = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (
+        pullExitBlocked ||
+        (event.pointerType !== "touch" && event.pointerType !== "mouse") ||
+        !isWindowAtTop() ||
+        isInteractivePullTarget(event.target)
+      ) {
+        resetPullExit();
+        return;
+      }
+
+      pullStartYRef.current = event.clientY;
+      pullExitTriggeredRef.current = false;
+      pullPointerIdRef.current = event.pointerId;
+    },
+    [pullExitBlocked, resetPullExit]
+  );
+
+  const handlePullExitMove = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      const pullStartY = pullStartYRef.current;
+
+      if (
+        pullExitBlocked ||
+        pullStartY === null ||
+        pullExitTriggeredRef.current ||
+        pullPointerIdRef.current !== event.pointerId ||
+        !isWindowAtTop()
+      ) {
+        return;
+      }
+
+      const pullDistance = event.clientY - pullStartY;
+
+      if (pullDistance > PULL_EXIT_THRESHOLD_PX) {
+        pullExitTriggeredRef.current = true;
+        pullStartYRef.current = null;
+        pullPointerIdRef.current = null;
+        router.back();
+      }
+    },
+    [pullExitBlocked, router]
+  );
+
+  const handlePullExitEnd = resetPullExit;
+
   if (loading) {
+    const previewIcon = skillOpenPreview?.icon || "💡";
+
     return (
       <main className="px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -922,15 +1082,35 @@ export default function SkillDetailPage() {
             </div>
             <div className="relative flex flex-col gap-8 md:flex-row md:items-center">
               <div className="flex items-start gap-5">
-                <Skeleton className="h-[88px] w-[88px] rounded-3xl border border-white/10 bg-white/10" />
-                <div className="flex flex-col gap-3">
-                  <Skeleton className="h-10 w-48 bg-white/10 sm:w-64" />
-                  <div className="flex gap-2">
-                    <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
-                    <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
-                    <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
-                  </div>
-                </div>
+                {skillOpenPreview ? (
+                  <>
+                    <span
+                      className="flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-3xl border border-white/10 bg-white/10 text-5xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
+                      role="img"
+                      aria-label={`Opening ${skillOpenPreview.name}`}
+                    >
+                      {previewIcon}
+                    </span>
+                    <div className="flex min-w-0 flex-col gap-3">
+                      <h1 className="max-w-xl break-words text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                        {skillOpenPreview.name}
+                      </h1>
+                      <Skeleton className="h-5 w-36 bg-white/10" />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Skeleton className="h-[88px] w-[88px] rounded-3xl border border-white/10 bg-white/10" />
+                    <div className="flex flex-col gap-3">
+                      <Skeleton className="h-10 w-48 bg-white/10 sm:w-64" />
+                      <div className="flex gap-2">
+                        <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
+                        <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
+                        <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
             <div className="relative mt-8 grid grid-cols-2 gap-2">
@@ -1163,7 +1343,13 @@ export default function SkillDetailPage() {
   };
 
   return (
-    <main className="px-4 py-6 sm:px-6 lg:px-8">
+    <main
+      className="px-4 pb-6 pt-3 sm:px-6 sm:pt-4 lg:px-8"
+      onPointerDown={handlePullExitStart}
+      onPointerMove={handlePullExitMove}
+      onPointerUp={handlePullExitEnd}
+      onPointerCancel={handlePullExitEnd}
+    >
       <SkillDrawer
         open={editDrawerOpen}
         onClose={() => setEditDrawerOpen(false)}
@@ -1180,75 +1366,7 @@ export default function SkillDetailPage() {
         onClose={() => setFocusPomoSource(null)}
       />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div className="flex flex-col gap-2">
-          <div className="flex min-h-10 items-center justify-between px-1">
-            <Link
-              href="/skills"
-              aria-label="Back to skills"
-              className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </Link>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-label={`Start focus pomo for ${skill.name}`}
-                onClick={handleStartFocusPomo}
-                className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
-              >
-                <Timer className="h-4 w-4" aria-hidden="true" />
-              </button>
-              <DropdownMenu
-                open={actionsMenuOpen}
-                onOpenChange={(open) => {
-                  setActionsMenuOpen(open);
-                  if (!open) {
-                    setDeleteConfirmationOpen(false);
-                  }
-                }}
-              >
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Skill actions"
-                    className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
-                  >
-                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuItem
-                    disabled={skill.is_locked}
-                    onSelect={() => setEditDrawerOpen(true)}
-                  >
-                    Edit skill
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={skill.is_locked || isDeleting}
-                    className={
-                      deleteConfirmationOpen ? "text-amber-200 focus:text-amber-100" : ""
-                    }
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      if (deleteConfirmationOpen) {
-                        void handleDeleteSkill();
-                        return;
-                      }
-                      setDeleteConfirmationOpen(true);
-                    }}
-                  >
-                    {isDeleting
-                      ? "Removing..."
-                      : deleteConfirmationOpen
-                        ? "Are you sure? Remove"
-                        : "Remove skill"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-
-          <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-4 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-5 md:p-6">
+        <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-4 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-5 md:p-6">
             <div className="absolute inset-0">
               <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
               <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.12),_transparent_65%)] blur-3xl" />
@@ -1262,10 +1380,72 @@ export default function SkillDetailPage() {
                 >
                   {icon}
                 </span>
-                <div className="min-w-0 space-y-2">
-                  <h1 id="skill-overview" className="break-words text-2xl font-semibold tracking-tight text-white sm:text-3xl md:text-4xl">
-                    {skill.name}
-                  </h1>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <h1 id="skill-overview" className="min-w-0 flex-1 break-words text-2xl font-semibold tracking-tight text-white sm:text-3xl md:text-4xl">
+                      {skill.name}
+                    </h1>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label={`Start focus pomo for ${skill.name}`}
+                        onClick={handleStartFocusPomo}
+                        className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                      >
+                        <Timer className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                      <DropdownMenu
+                        open={actionsMenuOpen}
+                        onOpenChange={(open) => {
+                          setActionsMenuOpen(open);
+                          if (!open) {
+                            setDeleteConfirmationOpen(false);
+                          }
+                        }}
+                      >
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label="Skill actions"
+                            className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                          >
+                            <MoreHorizontal
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem
+                            disabled={skill.is_locked}
+                            onSelect={() => setEditDrawerOpen(true)}
+                          >
+                            Edit skill
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={skill.is_locked || isDeleting}
+                            className={
+                              deleteConfirmationOpen ? "text-amber-200 focus:text-amber-100" : ""
+                            }
+                            onSelect={(event) => {
+                              event.preventDefault();
+                              if (deleteConfirmationOpen) {
+                                void handleDeleteSkill();
+                                return;
+                              }
+                              setDeleteConfirmationOpen(true);
+                            }}
+                          >
+                            {isDeleting
+                              ? "Removing..."
+                              : deleteConfirmationOpen
+                                ? "Are you sure? Remove"
+                                : "Remove skill"}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center gap-1 text-lg leading-none">
                       {skillBadges.length > 0 ? (
@@ -1311,7 +1491,6 @@ export default function SkillDetailPage() {
               </div>
             </div>
           </section>
-        </div>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101010] to-[#1a1a1a] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.75)] sm:p-7">
@@ -1336,18 +1515,28 @@ export default function SkillDetailPage() {
 
             <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#070707] via-[#111111] to-[#1b1b1b] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_68%)]" />
-              <CardHeader className="relative pb-2">
-                <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
-                  RELATED HABITS
-                </CardTitle>
+              <CardHeader className="relative pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+                      RELATED HABITS
+                    </CardTitle>
+                    <CardDescription className="text-xs text-white/45">
+                      Habits linked to this skill.
+                    </CardDescription>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+                    {decoratedHabits.length}
+                  </span>
+                </div>
               </CardHeader>
               <CardContent className="relative">
                 {habitsLoading ? (
-                  <div className="grid gap-2">
+                  <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                     {Array.from({ length: 3 }).map((_, index) => (
                       <Skeleton
                         key={index}
-                        className="h-[76px] rounded-2xl border border-white/10 bg-white/10"
+                        className="aspect-[5/6] min-h-[96px] rounded-2xl border border-white/10 bg-white/10"
                       />
                     ))}
                   </div>
@@ -1360,7 +1549,7 @@ export default function SkillDetailPage() {
                     {completionError ? (
                       <p className="text-xs text-white/60">{completionError}</p>
                     ) : null}
-                    <div className="grid gap-2">
+                    <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                       {decoratedHabits.map((habit) => {
                         const isHabitCompletedToday =
                           completedRelatedHabitIds.has(habit.id);
@@ -1370,20 +1559,33 @@ export default function SkillDetailPage() {
                         const streakDays = habit.currentStreakDays ?? 0;
                         const showStreakBadge = streakDays >= 2;
                         const streakLabel = `${streakDays}x`;
+                        const habitSkillIcon = skill.icon || "💡";
+                        const isHabitDue = habit.dueRank === 0;
+                        const shimmerBorderClass = isHabitCompletedToday
+                          ? "shimmer-border-complete"
+                          : isHabitDue
+                            ? "shimmer-border-due"
+                            : null;
 
                         return (
                           <div
                             key={habit.id}
                             className={clsx(
-                              "habit-card relative flex min-h-[76px] w-full flex-col justify-between gap-2 rounded-2xl border px-4 py-3 text-white backdrop-blur transition duration-150 select-none hover:-translate-y-0.5",
+                              "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl p-3 text-white transition duration-200 select-none sm:p-4",
                               isHabitCompletedToday
-                                ? "habit-card--completed habit-card--completed-gem"
-                                : "habit-card--scheduled",
-                              getHabitCardTypeClass(habit.normalizedHabitType),
-                              getHabitCardBorderClass(habit.normalizedHabitType),
+                                ? "emerald-completed-compact"
+                                : [
+                                    getHabitCardTypeClass(
+                                      habit.normalizedHabitType
+                                    ),
+                                    getHabitCardBorderClass(
+                                      habit.normalizedHabitType
+                                    ),
+                                  ],
                               isHabitPending
                                 ? "pointer-events-none cursor-default opacity-75"
-                                : "cursor-pointer"
+                                : "cursor-pointer",
+                              shimmerBorderClass
                             )}
                             role="button"
                             tabIndex={isHabitPending ? -1 : 0}
@@ -1392,13 +1594,6 @@ export default function SkillDetailPage() {
                             aria-label={`${habit.name}. ${habit.dueLabel}. Double tap to ${
                               isHabitCompletedToday ? "undo" : "complete"
                             }.`}
-                            style={{
-                              boxShadow: isHabitCompletedToday
-                                ? "0 14px 28px rgba(2, 6, 23, 0.34), inset 0 1px 0 rgba(236, 253, 245, 0.32), inset 0 0 0 1px rgba(110, 231, 183, 0.22)"
-                                : "0 18px 38px rgba(8, 12, 32, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.1)",
-                              outline: "1px solid rgba(0, 0, 0, 0.78)",
-                              outlineOffset: "-1px",
-                            }}
                             title={`${habit.name} - ${habit.dueLabel}. Double tap to ${
                               isHabitCompletedToday ? "undo" : "complete"
                             }.`}
@@ -1411,7 +1606,7 @@ export default function SkillDetailPage() {
                           >
                             {showStreakBadge ? (
                               <span
-                                className="pointer-events-none absolute right-3 top-3 z-[2] flex items-center gap-0.5 rounded-full border border-white/10 bg-white/10 px-1.5 py-[2px] text-[11px] font-semibold leading-tight text-amber-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
+                                className="pointer-events-none absolute right-2 top-2 z-[3] flex items-center gap-0.5 rounded-full border border-white/10 bg-black/20 px-1.5 py-[2px] text-[10px] font-semibold leading-tight text-amber-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
                                 aria-label={`${streakDays} habit streak`}
                               >
                                 <FlameEmber
@@ -1430,12 +1625,30 @@ export default function SkillDetailPage() {
                                 </span>
                               </span>
                             ) : null}
-                            <span className="relative z-[2] line-clamp-2 pr-14 text-sm font-semibold leading-tight text-white drop-shadow-[0_1px_8px_rgba(0,0,0,0.35)]">
-                              {habit.name}
-                            </span>
-                            <span className="relative z-[2] text-[10px] font-semibold uppercase tracking-[0.18em] text-white/65">
-                              {habit.dueLabel}
-                            </span>
+                            <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-2 text-center">
+                              <span
+                                className={clsx(
+                                  "mt-2 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
+                                  isHabitCompletedToday
+                                    ? "grayscale"
+                                    : "drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]"
+                                )}
+                                aria-hidden="true"
+                              >
+                                {habitSkillIcon}
+                              </span>
+                              <span
+                                className="line-clamp-3 max-w-full break-words px-1 text-[10px] font-semibold leading-snug text-white sm:text-[11px]"
+                                style={{ hyphens: "auto" }}
+                              >
+                                {habit.name}
+                              </span>
+                              <div className="flex w-full min-w-0 flex-col items-center gap-1">
+                                <span className="max-w-full truncate rounded-full border border-white/10 bg-white/[0.06] px-1.5 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.12em] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                                  {habit.dueLabel}
+                                </span>
+                              </div>
+                            </div>
                           </div>
                         );
                       })}

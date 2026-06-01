@@ -9,7 +9,9 @@ import { LazyFab } from "@/components/ui/LazyFab";
 import { shouldHideBottomChrome } from "@/components/appChromeVisibility";
 import {
   MAIN_TAB_ROUTES,
+  navigateMainTabRoute,
   type MainTabRouteKey,
+  type MainTabRouteHref,
 } from "@/app/(routes)/navigation";
 
 const bottomNavIconComponents: Record<
@@ -60,7 +62,9 @@ export default function BottomNav() {
   return (
     <>
       <div
-        className={`pointer-events-none fixed inset-x-0 bottom-0 z-50 px-3 pb-0 ${isIos ? "transform translate-y-1" : ""}`}
+        className={`pointer-events-none fixed inset-x-0 z-50 px-3 pb-0 ${
+          isIos ? "bottom-[max(0.5rem,env(safe-area-inset-bottom,0px))]" : "bottom-0"
+        }`}
         data-bottom-nav
         aria-busy={isPending}
       >
@@ -71,7 +75,7 @@ export default function BottomNav() {
               currentPath={pathname}
               onNavigate={(href) => {
                 startTransition(() => {
-                  router.push(href);
+                  navigateMainTabRoute(href as MainTabRouteHref, router.push);
                 });
               }}
               onPrefetch={(href) => router.prefetch(href)}

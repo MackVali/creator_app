@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { normalizeGoalStatus } from "@/lib/goals/status";
+import { calculateLevelProgress } from "@/lib/leveling";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 type NoteRow = {
@@ -27,8 +28,16 @@ type XpEventRow = {
   created_at: string | null;
   amount: number | null;
   kind: string | null;
+  skill_id?: string | null;
   source: string | null;
   schedule_instance_id: string | null;
+};
+
+type MonumentSkillRow = {
+  id: string;
+  name: string | null;
+  icon: string | null;
+  monument_id: string | null;
 };
 
 function removeCancellingScheduleXpEvents(events: XpEventRow[]): XpEventRow[] {
@@ -101,12 +110,32 @@ export interface MonumentActivitySummary {
   lastUpdated: string | null;
 }
 
+export interface MonumentLevelHistoryPoint {
+  date: string;
+  totalXp: number;
+  level: number;
+  progressPercent: number;
+  xpIntoLevel: number;
+  xpForNextLevel: number;
+}
+
+export interface MonumentXpSkillMixPoint {
+  skillId: string;
+  skillName: string;
+  skillIcon: string | null;
+  xp: number;
+  count: number;
+  percent: number;
+}
+
 interface UseMonumentActivityState {
   events: MonumentActivityEvent[];
   summary: MonumentActivitySummary;
   loading: boolean;
   error: string | null;
   notes: MonumentActivityNote[];
+  levelHistory: MonumentLevelHistoryPoint[];
+  xpSkillMix: MonumentXpSkillMixPoint[];
 }
 
 const DEFAULT_SUMMARY: MonumentActivitySummary = {
@@ -136,8 +165,113 @@ function truncate(value: string, limit = 140) {
   return `${value.slice(0, limit - 1)}…`;
 }
 
+function getXpEventAmount(event: Pick<XpEventRow, "amount" | "kind">) {
+  const amount = event.amount ?? 0;
+  if (amount > 0) return amount;
+
+  const kind = event.kind?.toLowerCase().trim();
+  if (!kind || !(kind in XP_KIND_WEIGHTS)) return 0;
+
+  return XP_KIND_WEIGHTS[kind as keyof typeof XP_KIND_WEIGHTS];
+}
+
+function buildXpSkillMix(
+  skills: MonumentSkillRow[],
+  events: XpEventRow[]
+): MonumentXpSkillMixPoint[] {
+  const groups = new Map<string, { skill: MonumentSkillRow; xp: number; count: number }>();
+
+  for (const skill of skills) {
+    groups.set(skill.id, { skill, xp: 0, count: 0 });
+  }
+
+  for (const event of events) {
+    if (!event.skill_id) continue;
+
+    const current = groups.get(event.skill_id);
+    if (!current) continue;
+
+    const amount = getXpEventAmount(event);
+    if (amount <= 0) continue;
+
+    current.xp += amount;
+    current.count += 1;
+  }
+
+  const totalXp = Array.from(groups.values()).reduce(
+    (sum, group) => sum + group.xp,
+    0
+  );
+
+  if (totalXp <= 0) return [];
+
+  return Array.from(groups.entries())
+    .map(([skillId, group]) => ({
+      skillId,
+      skillName: group.skill.name?.trim() || "Untitled skill",
+      skillIcon: group.skill.icon,
+      xp: group.xp,
+      count: group.count,
+      percent: (group.xp / totalXp) * 100,
+    }))
+    .filter((item) => item.xp > 0)
+    .sort((a, b) => b.xp - a.xp);
+}
+
+function buildLevelHistory(
+  events: XpEventRow[]
+): MonumentLevelHistoryPoint[] {
+  const sortedEvents = [...events]
+    .filter((event) => {
+      if (!event.created_at) return false;
+      return !Number.isNaN(Date.parse(event.created_at));
+    })
+    .sort((a, b) => {
+      const aTime = Date.parse(a.created_at ?? "");
+      const bTime = Date.parse(b.created_at ?? "");
+      return aTime - bTime;
+    });
+
+  const firstEvent = sortedEvents[0];
+  if (!firstEvent?.created_at) return [];
+
+  const levelHistory: MonumentLevelHistoryPoint[] = [
+    {
+      date: firstEvent.created_at,
+      totalXp: 0,
+      level: 1,
+      progressPercent: 0,
+      xpIntoLevel: 0,
+      xpForNextLevel: calculateLevelProgress(0).xpForNextLevel,
+    },
+  ];
+
+  let cumulativeXp = 0;
+
+  for (const event of sortedEvents) {
+    if (!event.created_at) continue;
+
+    const amount = getXpEventAmount(event);
+    if (amount <= 0) continue;
+
+    cumulativeXp += amount;
+    const progress = calculateLevelProgress(cumulativeXp);
+
+    levelHistory.push({
+      date: event.created_at,
+      totalXp: cumulativeXp,
+      level: progress.level,
+      progressPercent: progress.progressPercent,
+      xpIntoLevel: progress.xpIntoLevel,
+      xpForNextLevel: progress.xpForNextLevel,
+    });
+  }
+
+  return cumulativeXp > 0 ? levelHistory : [];
+}
+
 export function useMonumentActivity(monumentId: string) {
-  const [{ events, summary, loading, error, notes }, setState] =
+  const [{ events, summary, loading, error, notes, levelHistory, xpSkillMix }, setState] =
     useState<UseMonumentActivityState>(
       {
         events: [],
@@ -145,6 +279,8 @@ export function useMonumentActivity(monumentId: string) {
         loading: true,
         error: null,
         notes: [],
+        levelHistory: [],
+        xpSkillMix: [],
       }
     );
 
@@ -158,6 +294,8 @@ export function useMonumentActivity(monumentId: string) {
         loading: false,
         error: "Missing monument identifier",
         notes: [],
+        levelHistory: [],
+        xpSkillMix: [],
       });
       return;
     }
@@ -169,6 +307,8 @@ export function useMonumentActivity(monumentId: string) {
         loading: false,
         error: "Supabase client not available",
         notes: [],
+        levelHistory: [],
+        xpSkillMix: [],
       });
       return;
     }
@@ -188,7 +328,7 @@ export function useMonumentActivity(monumentId: string) {
         throw new Error("User not authenticated");
       }
 
-      const [notesRes, xpRes, goalsRes] = await Promise.all([
+      const [notesRes, xpRes, xpHistoryRes, goalsRes, skillsRes] = await Promise.all([
         supabase
           .from("notes")
           .select("id,title,content,created_at,updated_at", { count: "exact" })
@@ -204,28 +344,66 @@ export function useMonumentActivity(monumentId: string) {
           .order("created_at", { ascending: false })
           .limit(200),
         supabase
+          .from("xp_events")
+          .select("id,created_at,amount,kind,source,schedule_instance_id")
+          .eq("user_id", userId)
+          .eq("monument_id", monumentId)
+          .order("created_at", { ascending: true }),
+        supabase
           .from("goals")
           .select("id,name,status,active,created_at,updated_at", { count: "exact" })
           .eq("user_id", userId)
           .eq("monument_id", monumentId)
           .order("updated_at", { ascending: false })
           .limit(60),
+        supabase
+          .from("skills")
+          .select("id,name,icon,monument_id")
+          .eq("user_id", userId)
+          .eq("monument_id", monumentId),
       ]);
 
       const noteError = notesRes.error;
       const xpError = xpRes.error;
+      const xpHistoryError = xpHistoryRes.error;
       const goalError = goalsRes.error;
+      const skillError = skillsRes.error;
 
-      if (noteError || xpError || goalError) {
-        const firstError = noteError ?? xpError ?? goalError;
+      if (noteError || xpError || xpHistoryError || goalError || skillError) {
+        const firstError =
+          noteError ?? xpError ?? xpHistoryError ?? goalError ?? skillError;
         throw firstError;
       }
 
       const notes = (notesRes.data ?? []) as NoteRow[];
+      const monumentSkills = (skillsRes.data ?? []) as MonumentSkillRow[];
+      const skillIds = monumentSkills.map((skill) => skill.id);
+      const skillXpRes =
+        skillIds.length > 0
+          ? await supabase
+              .from("xp_events")
+              .select("id,created_at,amount,kind,skill_id,source,schedule_instance_id")
+              .eq("user_id", userId)
+              .in("skill_id", skillIds)
+              .order("created_at", { ascending: false })
+          : null;
+
+      if (skillXpRes?.error) {
+        throw skillXpRes.error;
+      }
+
       const xpEvents = removeCancellingScheduleXpEvents(
         (xpRes.data ?? []) as XpEventRow[]
       );
+      const xpHistoryEvents = removeCancellingScheduleXpEvents(
+        (xpHistoryRes.data ?? []) as XpEventRow[]
+      );
+      const skillXpEvents = removeCancellingScheduleXpEvents(
+        (skillXpRes?.data ?? []) as XpEventRow[]
+      );
       const goals = (goalsRes.data ?? []) as GoalRow[];
+      const levelHistory = buildLevelHistory(xpHistoryEvents);
+      const xpSkillMix = buildXpSkillMix(monumentSkills, skillXpEvents);
 
       const events: MonumentActivityEvent[] = [];
       const activityNotes: MonumentActivityNote[] = [];
@@ -342,6 +520,8 @@ export function useMonumentActivity(monumentId: string) {
         loading: false,
         error: null,
         notes: activityNotes,
+        levelHistory,
+        xpSkillMix,
       });
     } catch (err) {
       console.error("Failed to load monument activity", {
@@ -355,6 +535,8 @@ export function useMonumentActivity(monumentId: string) {
         error:
           err instanceof Error ? err.message : "Failed to load monument activity",
         notes: [],
+        levelHistory: [],
+        xpSkillMix: [],
       });
     }
   }, [monumentId, supabase]);
@@ -374,6 +556,8 @@ export function useMonumentActivity(monumentId: string) {
     loading,
     error,
     notes,
+    levelHistory,
+    xpSkillMix,
     refresh: loadActivity,
   };
 }

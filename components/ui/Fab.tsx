@@ -13,7 +13,7 @@ import {
   type RefObject,
   type UIEvent,
 } from "react";
-import { createPortal, flushSync } from "react-dom";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   motion,
@@ -106,6 +106,7 @@ import {
   LimitReachedError,
   getLimitCodeFromError,
 } from "@/lib/goals/persistGoalUpdate";
+import type { FabCreationRequest } from "@/components/ui/FabCreationContext";
 
 function ErrorBoundary({ children }: { children: React.ReactNode }) {
   const [err, setErr] = React.useState<Error | null>(null);
@@ -170,6 +171,7 @@ export interface FabProps extends HTMLAttributes<HTMLDivElement> {
   hideLauncher?: boolean;
   portalToBody?: boolean;
   openOnMount?: boolean;
+  creationRequest?: FabCreationRequest | null;
 }
 
 type CreationType = "GOAL" | "PROJECT" | "TASK" | "HABIT";
@@ -563,6 +565,155 @@ function GoalCampaignCreateRow({
   );
 }
 
+type FabHabitRoutineCreateRowProps = {
+  active: boolean;
+  value: string;
+  emoji: string;
+  error: string | null;
+  onStart: () => void;
+  onChange: (value: string) => void;
+  onEmojiChange: (value: string) => void;
+  onSubmit: () => boolean;
+  onCancel: () => void;
+};
+
+function FabHabitRoutineCreateRow({
+  active,
+  value,
+  emoji,
+  error,
+  onStart,
+  onChange,
+  onEmojiChange,
+  onSubmit,
+  onCancel,
+}: FabHabitRoutineCreateRowProps) {
+  const { setIsOpen } = useSelectContext();
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const trimmedValue = value.trim();
+  const stopSelectEvent = (
+    event:
+      | React.PointerEvent<HTMLElement>
+      | React.MouseEvent<HTMLElement>
+      | React.KeyboardEvent<HTMLElement>,
+  ) => {
+    event.stopPropagation();
+  };
+  const handleFieldKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+    }
+  };
+
+  React.useEffect(() => {
+    if (!active) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [active]);
+
+  if (!active) {
+    return (
+      <button
+        type="button"
+        className="flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-white/90 transition hover:bg-white/[0.06]"
+        onPointerDown={stopSelectEvent}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onStart();
+        }}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onStart();
+          }
+        }}
+      >
+        <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span>Create routine</span>
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="w-full rounded-lg border border-white/[0.06] bg-[#070a10]/90 p-1.5"
+      onPointerDown={stopSelectEvent}
+      onMouseDown={stopSelectEvent}
+      onClick={stopSelectEvent}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
+    >
+      <form
+        className="flex w-full min-w-0 items-center gap-1.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (onSubmit()) {
+            setIsOpen?.(false);
+          }
+        }}
+      >
+        <Input
+          value={emoji}
+          onChange={(event) => onEmojiChange(event.target.value)}
+          onKeyDown={handleFieldKeyDown}
+          maxLength={8}
+          aria-label="Routine emoji"
+          className="h-9 w-11 shrink-0 rounded-lg border-white/[0.08] bg-[#05070b] px-1 text-center text-lg focus:border-white/25 focus-visible:ring-0"
+        />
+        <Input
+          ref={inputRef}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={handleFieldKeyDown}
+          placeholder="Routine name"
+          aria-label="Routine name"
+          className="h-9 min-w-0 flex-1 rounded-lg border-white/[0.08] bg-[#05070b] px-2.5 text-xs focus:border-white/25 focus-visible:ring-0"
+        />
+        <Button
+          type="submit"
+          size="icon"
+          disabled={trimmedValue.length === 0}
+          className="h-9 w-9 shrink-0 rounded-lg border border-white/[0.08] bg-black/30 text-white hover:bg-white/[0.08] disabled:opacity-50"
+          aria-label="Use new routine"
+        >
+          <Check className="h-4 w-4" aria-hidden="true" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onCancel();
+          }}
+          className="h-9 w-9 shrink-0 rounded-lg border border-white/[0.08] bg-transparent text-white/75 hover:bg-white/[0.06] hover:text-white"
+          aria-label="Cancel routine creation"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </form>
+      {error ? (
+        <p className="mt-1.5 px-1 text-xs text-red-300">{error}</p>
+      ) : null}
+    </div>
+  );
+}
+
 const FAB_PAGES = ["primary", "secondary", "nexus"] as const;
 
 const FLAME_LEVELS: FlameLevel[] = [
@@ -738,6 +889,7 @@ const pickHydratedGoalEnergy = (
 
 const collapseWhitespace = (value: string) => value.trim().replace(/\s+/g, " ");
 const FAB_DEFAULT_CAMPAIGN_EMOJI = "🎯";
+const FAB_DEFAULT_ROUTINE_EMOJI = "🔁";
 
 const normalizeTagName = (value: string) =>
   collapseWhitespace(value).toLowerCase();
@@ -2208,10 +2360,12 @@ export function Fab({
   hideLauncher = false,
   portalToBody = false,
   openOnMount = false,
+  creationRequest = null,
   ...wrapperProps
 }: FabProps) {
   void onEditTargetConsumed;
   const [isOpen, setIsOpen] = useState(false);
+  const [isDirectCreationOpen, setIsDirectCreationOpen] = useState(false);
   const openOnMountConsumedRef = useRef(false);
   const toast = useToastHelpers();
   const [aiOpen, setAiOpen] = useState(false);
@@ -2313,6 +2467,8 @@ export function Fab({
   const [activeCreationMode, setActiveCreationMode] =
     useState<CreationFormMode>("main");
   const [editHydrating, setEditHydrating] = useState(false);
+  const handledCreationRequestIdRef = useRef<number | null>(null);
+  const openingCreationRequestIdRef = useRef<number | null>(null);
   useEffect(() => {
     if (!editTarget) {
       return;
@@ -2325,6 +2481,7 @@ export function Fab({
     setPendingCreationNameFocus(null);
     setActiveCreationMode("main");
     setExpanded(true);
+    setIsDirectCreationOpen(false);
     setIsOpen(false);
   }, [editTarget]);
   useLayoutEffect(() => {
@@ -2351,6 +2508,8 @@ export function Fab({
     setExpanded(false);
     setSelected(null);
     setPendingCreationNameFocus(null);
+    openingCreationRequestIdRef.current = null;
+    setIsDirectCreationOpen(false);
     setIsOpen(false);
     if (editTarget) {
       onEditClose?.();
@@ -3447,7 +3606,9 @@ export function Fab({
     adjustHabitDuration(5),
   );
   const [projectSkillIds, setProjectSkillIds] = useState<string[]>([]);
-  const [projectGoalId, setProjectGoalId] = useState<string | null>(null);
+  const [projectGoalId, setProjectGoalId] = useState<string | null>(() =>
+    creationRequest?.type === "PROJECT" ? (creationRequest.goalId ?? null) : null,
+  );
   const [projectDue, setProjectDue] = useState("");
   const [projectHasExactDate, setProjectHasExactDate] = useState(false);
   const [projectExactDate, setProjectExactDate] = useState("");
@@ -3566,6 +3727,12 @@ export function Fab({
   const [isCreatingHabitRoutineInline, setIsCreatingHabitRoutineInline] =
     useState(false);
   const [habitInlineRoutineName, setHabitInlineRoutineName] = useState("");
+  const [habitInlineRoutineEmoji, setHabitInlineRoutineEmoji] = useState(
+    FAB_DEFAULT_ROUTINE_EMOJI,
+  );
+  const [habitRoutineCreateError, setHabitRoutineCreateError] = useState<
+    string | null
+  >(null);
   const [habitInlineRoutineDescription, setHabitInlineRoutineDescription] =
     useState("");
   const selectedHabitCircle = useMemo(
@@ -3658,10 +3825,19 @@ export function Fab({
     setHabitCircleId("");
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
+    setHabitInlineRoutineEmoji(FAB_DEFAULT_ROUTINE_EMOJI);
+    setHabitRoutineCreateError(null);
     setHabitInlineRoutineDescription("");
     setShowHabitDurationPicker(false);
     setHabitDurationPosition(null);
   }, [defaultHabitRecurrence, defaultHabitType]);
+  const resetHabitRoutineInlineCreation = useCallback(() => {
+    setIsCreatingHabitRoutineInline(false);
+    setHabitInlineRoutineName("");
+    setHabitInlineRoutineEmoji(FAB_DEFAULT_ROUTINE_EMOJI);
+    setHabitRoutineCreateError(null);
+    setHabitInlineRoutineDescription("");
+  }, []);
   const resetTaskFormDraft = useCallback(() => {
     setTaskName("");
     setTaskStage("PREPARE");
@@ -5105,6 +5281,8 @@ export function Fab({
   ]);
   const isFabKeyboardActiveRaw =
     expanded && (isKeyboardVisible || (isMobileViewport && isFabInputFocused));
+  const shouldUseDirectCreationModal =
+    isDirectCreationOpen && expanded && selected !== null;
   const shouldUseAttachedFabControls =
     expanded && (isFabKeyboardActiveRaw || isFabKeyboardSettling);
   const shouldUseKeyboardConstrainedFabSizing =
@@ -5117,7 +5295,8 @@ export function Fab({
   const shouldUseStableMobileFabPanel = shouldSuppressMobileFabChrome;
   const shouldUseScrollableFabBody =
     shouldUseKeyboardConstrainedFabSizing || shouldUseStableMobileFabPanel;
-  const shouldHideOverhangButtons = expanded && shouldAttachCreationControls;
+  const shouldHideOverhangButtons =
+    expanded && (shouldAttachCreationControls || shouldUseDirectCreationModal);
 
   useEffect(() => {
     stableViewportHeightRef.current = stableViewportHeight;
@@ -5819,6 +5998,8 @@ export function Fab({
     setHabitCircleId("");
     setIsCreatingHabitRoutineInline(false);
     setHabitInlineRoutineName("");
+    setHabitInlineRoutineEmoji(FAB_DEFAULT_ROUTINE_EMOJI);
+    setHabitRoutineCreateError(null);
     setHabitInlineRoutineDescription("");
 
     setSelectedTagIds([]);
@@ -9241,14 +9422,17 @@ export function Fab({
                             setHabitRoutineId("");
                             setIsCreatingHabitRoutineInline(true);
                             setHabitInlineRoutineName("");
+                            setHabitInlineRoutineEmoji(
+                              FAB_DEFAULT_ROUTINE_EMOJI,
+                            );
                             setHabitInlineRoutineDescription("");
+                            setHabitRoutineCreateError(null);
                             return;
                           }
-                          setIsCreatingHabitRoutineInline(false);
-                          setHabitInlineRoutineName("");
-                          setHabitInlineRoutineDescription("");
+                          resetHabitRoutineInlineCreation();
                           setHabitRoutineId(value);
                         }}
+                        minContentWidth={352}
                         hideChevron
                         triggerClassName={cn(
                           "h-auto border-0 bg-transparent p-0 text-xs font-semibold shadow-none underline decoration-dotted underline-offset-4",
@@ -9266,26 +9450,67 @@ export function Fab({
                           </span>
                         }
                       >
-                        <SelectContent className="min-w-[220px]">
-                          <SelectItem value="__create__">
-                            <div className="flex items-center gap-2 text-white">
-                              <Plus className="h-4 w-4" />
-                              <span>Create new routine</span>
-                            </div>
-                          </SelectItem>
+                        <SelectContent className="max-h-72 w-[min(calc(100vw-2rem),22rem)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-white/10 bg-[#0b101b] p-2 text-sm text-white shadow-2xl shadow-black/50">
+                          <FabHabitRoutineCreateRow
+                            active={isCreatingHabitRoutineInline}
+                            value={habitInlineRoutineName}
+                            emoji={habitInlineRoutineEmoji}
+                            error={habitRoutineCreateError}
+                            onStart={() => {
+                              setHabitRoutineId("");
+                              setIsCreatingHabitRoutineInline(true);
+                              setHabitInlineRoutineEmoji((current) =>
+                                current.trim() || FAB_DEFAULT_ROUTINE_EMOJI,
+                              );
+                              setHabitInlineRoutineDescription("");
+                              setHabitRoutineCreateError(null);
+                            }}
+                            onChange={(value) => {
+                              setHabitInlineRoutineName(value);
+                              setHabitRoutineCreateError(null);
+                            }}
+                            onEmojiChange={(value) => {
+                              setHabitInlineRoutineEmoji(value);
+                              setHabitRoutineCreateError(null);
+                            }}
+                            onSubmit={() => {
+                              const routineName =
+                                habitInlineRoutineName.trim();
+                              if (!routineName) {
+                                setHabitRoutineCreateError(
+                                  "Routine name is required.",
+                                );
+                                return false;
+                              }
+                              setHabitRoutineId("");
+                              setIsCreatingHabitRoutineInline(true);
+                              setHabitInlineRoutineName(routineName);
+                              setHabitInlineRoutineDescription("");
+                              setHabitRoutineCreateError(null);
+                              return true;
+                            }}
+                            onCancel={() => {
+                              setHabitRoutineId("");
+                              resetHabitRoutineInlineCreation();
+                            }}
+                          />
                           {habitRoutinesLoading ? (
                             <SelectItem value="__loading" disabled>
                               Loading routines…
                             </SelectItem>
                           ) : habitRoutines.length > 0 ? (
                             habitRoutines.map((routine) => (
-                              <SelectItem key={routine.id} value={routine.id}>
-                                <div className="flex flex-col">
-                                  <span className="font-medium">
+                              <SelectItem
+                                key={routine.id}
+                                value={routine.id}
+                                className="min-w-0 items-stretch"
+                              >
+                                <div className="flex min-w-0 flex-1 flex-col">
+                                  <span className="truncate font-medium">
                                     {routine.name}
                                   </span>
                                   {routine.description ? (
-                                    <span className="text-xs text-white/60">
+                                    <span className="line-clamp-2 whitespace-normal break-words text-xs text-white/60">
                                       {routine.description}
                                     </span>
                                   ) : null}
@@ -9357,35 +9582,6 @@ export function Fab({
                         </SelectContent>
                       </Select>
                     </div>
-                    {isCreatingHabitRoutineInline && (
-                      <div className="grid gap-1.5">
-                        <Label htmlFor="habit-inline-routine-name">
-                          Routine name
-                        </Label>
-                        <Input
-                          id="habit-inline-routine-name"
-                          value={habitInlineRoutineName}
-                          onChange={(event) =>
-                            setHabitInlineRoutineName(event.target.value)
-                          }
-                          placeholder="Name the routine"
-                          className="h-12 md:h-12 rounded-md !border-white/10 bg-white/[0.05] focus:!border-blue-400/60 focus-visible:ring-0"
-                        />
-                        <Label htmlFor="habit-inline-routine-description">
-                          Description
-                        </Label>
-                        <Textarea
-                          id="habit-inline-routine-description"
-                          value={habitInlineRoutineDescription}
-                          onChange={(event) =>
-                            setHabitInlineRoutineDescription(event.target.value)
-                          }
-                          placeholder="Describe what this routine does (optional)"
-                          rows={2}
-                          className="min-h-[68px] rounded-md border border-white/10 bg-white/[0.05] focus-visible:ring-0"
-                        />
-                      </div>
-                    )}
                   </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 md:gap-4">
                     <div className="grid min-w-0 gap-2">
@@ -9961,6 +10157,7 @@ export function Fab({
   const handleEventClick = (
     eventType: CreationType,
     triggerElement?: HTMLElement | null,
+    options?: { skipLauncher?: boolean },
   ) => {
     const shouldAttemptNameFocus = !editTarget;
     const shouldFocusImmediatelyForMobile =
@@ -9981,6 +10178,40 @@ export function Fab({
     setIsAnimatingPageChange(false);
     pageX.set(0);
 
+    if (options?.skipLauncher) {
+      if (creationSelectionTimeoutRef.current !== null) {
+        window.clearTimeout(creationSelectionTimeoutRef.current);
+        creationSelectionTimeoutRef.current = null;
+      }
+
+      const updateSelection = () => {
+        setIsOpen(false);
+        setIsDirectCreationOpen(true);
+        setPressedCreationType(null);
+        setCreationSpawnOrigin(null);
+        setCreationRevealGeometry(null);
+        setPendingCreationNameFocus(
+          shouldAttemptNameFocus && !shouldFocusImmediatelyForMobile
+            ? eventType
+            : null,
+        );
+        setExpanded(true);
+        setSelected(eventType);
+      };
+
+      if (shouldFocusImmediatelyForMobile) {
+        updateSelection();
+        window.setTimeout(() => {
+          focusCreationNameInput(eventType, {
+            blurIfMobileKeyboardBlocked: true,
+          });
+        }, 0);
+      } else {
+        updateSelection();
+      }
+      return;
+    }
+
     if (expanded) {
       const updateSelection = () => {
         setPressedCreationType(null);
@@ -9994,10 +10225,12 @@ export function Fab({
         setSelected(eventType);
       };
       if (shouldFocusImmediatelyForMobile) {
-        flushSync(updateSelection);
-        focusCreationNameInput(eventType, {
-          blurIfMobileKeyboardBlocked: true,
-        });
+        updateSelection();
+        window.setTimeout(() => {
+          focusCreationNameInput(eventType, {
+            blurIfMobileKeyboardBlocked: true,
+          });
+        }, 0);
       } else {
         updateSelection();
       }
@@ -10032,13 +10265,13 @@ export function Fab({
           }
         : null;
     if (shouldFocusImmediatelyForMobile) {
-      flushSync(() => {
-        setCreationSpawnOrigin(nextCreationSpawnOrigin);
-        commitSelection();
-      });
-      focusCreationNameInput(eventType, {
-        blurIfMobileKeyboardBlocked: true,
-      });
+      setCreationSpawnOrigin(nextCreationSpawnOrigin);
+      commitSelection();
+      window.setTimeout(() => {
+        focusCreationNameInput(eventType, {
+          blurIfMobileKeyboardBlocked: true,
+        });
+      }, 0);
       return;
     }
     setCreationSpawnOrigin(nextCreationSpawnOrigin);
@@ -10052,6 +10285,31 @@ export function Fab({
       FAB_SELECTION_CONFIRM_MS,
     );
   };
+
+  const handleEventClickRef = useRef(handleEventClick);
+  useEffect(() => {
+    handleEventClickRef.current = handleEventClick;
+  });
+
+  useEffect(() => {
+    if (!creationRequest) return;
+    if (handledCreationRequestIdRef.current === creationRequest.id) return;
+
+    handledCreationRequestIdRef.current = creationRequest.id;
+    openingCreationRequestIdRef.current = creationRequest.id;
+    resetFabFormState();
+    setProjectGoalId(creationRequest.goalId ?? null);
+    setActiveCreationMode("main");
+    handleEventClickRef.current(creationRequest.type, null, {
+      skipLauncher: true,
+    });
+  }, [creationRequest, resetFabFormState]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    openingCreationRequestIdRef.current = null;
+    setIsDirectCreationOpen(false);
+  }, [isOpen]);
 
   const handleExtraClick = (label: string) => {
     setIsOpen(false);
@@ -10071,6 +10329,7 @@ export function Fab({
       setPressedCreationType(null);
       setCreationSpawnOrigin(null);
       setCreationRevealGeometry(null);
+      setIsDirectCreationOpen(false);
       setIsOpen(true);
       return;
     }
@@ -10577,6 +10836,7 @@ export function Fab({
     }
 
     setIsOpen(false);
+    setIsDirectCreationOpen(false);
     setExpanded(false);
     setSelected(null);
     setAiOpen(false);
@@ -11761,7 +12021,13 @@ export function Fab({
   };
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen && !isDirectCreationOpen) {
+      if (
+        creationRequest &&
+        openingCreationRequestIdRef.current === creationRequest.id
+      ) {
+        return;
+      }
       setActiveFabPage(0);
       resetPageDragState();
       if (
@@ -11777,7 +12043,14 @@ export function Fab({
       setIsDeletingEvent(false);
       searchAbortRef.current?.abort();
     }
-  }, [isOpen, resetPageDragState, resetSearchState, resetFabFormState]);
+  }, [
+    creationRequest,
+    isDirectCreationOpen,
+    isOpen,
+    resetPageDragState,
+    resetSearchState,
+    resetFabFormState,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -12484,6 +12757,7 @@ export function Fab({
             monumentId: goalRelationResolution.selectedMonumentId,
           });
           resetFabFormState();
+          setIsDirectCreationOpen(false);
           setExpanded(false);
           setSelected(null);
           setIsOpen(false);
@@ -12572,6 +12846,7 @@ export function Fab({
             monumentId: null,
           });
           resetFabFormState();
+          setIsDirectCreationOpen(false);
           setExpanded(false);
           setSelected(null);
           setIsOpen(false);
@@ -12633,6 +12908,7 @@ export function Fab({
             monumentId: null,
           });
           resetFabFormState();
+          setIsDirectCreationOpen(false);
           setExpanded(false);
           setSelected(null);
           setIsOpen(false);
@@ -12732,6 +13008,7 @@ export function Fab({
             monumentId: null,
           });
           resetFabFormState();
+          setIsDirectCreationOpen(false);
           setExpanded(false);
           setSelected(null);
           setIsOpen(false);
@@ -13080,7 +13357,9 @@ export function Fab({
                 : null,
           });
         }
+        openingCreationRequestIdRef.current = null;
         resetFabFormState();
+        setIsDirectCreationOpen(false);
         setExpanded(false);
         setSelected(null);
         setIsOpen(false);
@@ -13234,6 +13513,7 @@ export function Fab({
         monumentId: null,
       });
       resetFabFormState();
+      setIsDirectCreationOpen(false);
       setExpanded(false);
       setSelected(null);
       setIsOpen(false);
@@ -13359,7 +13639,13 @@ export function Fab({
   }, [expanded, isOpen, rescheduleTarget, aiOpen, closeAiOverlay]);
 
   useEffect(() => {
-    if (isOpen) return;
+    if (isOpen || isDirectCreationOpen) return;
+    if (
+      creationRequest &&
+      openingCreationRequestIdRef.current === creationRequest.id
+    ) {
+      return;
+    }
     if (creationSelectionTimeoutRef.current !== null) {
       window.clearTimeout(creationSelectionTimeoutRef.current);
       creationSelectionTimeoutRef.current = null;
@@ -13377,7 +13663,13 @@ export function Fab({
     if (aiOpen) {
       closeAiOverlay();
     }
-  }, [isOpen, aiOpen, closeAiOverlay]);
+  }, [
+    creationRequest,
+    isDirectCreationOpen,
+    isOpen,
+    aiOpen,
+    closeAiOverlay,
+  ]);
 
   const shouldRenderNeighbor = isDragging && dragTargetPage !== null;
   const neighborPage = shouldRenderNeighbor ? dragTargetPage : null;
@@ -13653,16 +13945,20 @@ export function Fab({
     isMobileViewport &&
     isContentSizedCreationExpanded &&
     !editTarget &&
-    !shouldUseCenteredEditModal;
+    !shouldUseCenteredEditModal &&
+    !shouldUseDirectCreationModal;
+  const shouldUseCenteredCreationPanel =
+    shouldUseDirectCreationModal || shouldUseCenteredMobileCreationPanel;
   const shouldUseCreationSpawnReveal =
     expanded &&
     !prefersReducedMotion &&
     !editTarget &&
+    !shouldUseDirectCreationModal &&
     selected !== null &&
     creationSpawnOrigin !== null &&
     creationSpawnOrigin.type === selected;
   const shouldUseFabSpawnRevealForPanel =
-    shouldUseCreationSpawnReveal && !shouldUseCenteredMobileCreationPanel;
+    shouldUseCreationSpawnReveal && !shouldUseCenteredCreationPanel;
   const isCreationRevealReady =
     shouldUseFabSpawnRevealForPanel &&
     creationSpawnOrigin !== null &&
@@ -13820,9 +14116,37 @@ export function Fab({
           minHeight: secondaryCreationPanelMinHeight,
         }
       : undefined;
-  const shouldRenderFabPanel = isOpen || expanded;
+  const directCreationModalAnimation = shouldUseDirectCreationModal
+    ? {
+        initial: { opacity: 0, scale: 0.98, y: 10 },
+        animate: {
+          opacity: 1,
+          scale: 1,
+          y: 0,
+          transition: {
+            type: "tween" as const,
+            ease: "easeOut" as const,
+            duration: 0.2,
+          },
+        },
+        exit: {
+          opacity: 0,
+          scale: 0.98,
+          y: 10,
+          transition: {
+            type: "tween" as const,
+            ease: "easeIn" as const,
+            duration: 0.16,
+          },
+        },
+      }
+    : null;
+  const shouldRenderFabPanel = isOpen || expanded || isDirectCreationOpen;
   const shouldRenderAttachedCreationControls =
-    expanded && (shouldUseCenteredEditModal || shouldAttachCreationControls);
+    expanded &&
+    (shouldUseCenteredEditModal ||
+      shouldUseDirectCreationModal ||
+      shouldAttachCreationControls);
   const attachedCreationPanelBottom =
     expanded && isKeyboardVisible
       ? Math.round(stableSafeBottom + FAB_KEYBOARD_MODAL_GAP)
@@ -13928,7 +14252,12 @@ export function Fab({
               ? createPortal(
                   <div
                     data-fab-overlay
-                    className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+                    className={cn(
+                      "fixed inset-0 bg-black/60 backdrop-blur-sm",
+                      shouldUseCenteredEditModal || shouldUseDirectCreationModal
+                        ? "z-[2147483649]"
+                        : "z-40",
+                    )}
                     style={{ touchAction: "manipulation" }}
                     onWheel={(event) => event.preventDefault()}
                     onTouchMove={(event) => {
@@ -13943,22 +14272,22 @@ export function Fab({
               const panelShell = (
                 <div
                   className={cn(
-                    shouldUseCenteredEditModal
+                    shouldUseCenteredEditModal || shouldUseDirectCreationModal
                       ? "fixed inset-0 z-[2147483650] flex items-center justify-center px-3 py-6 sm:px-4"
                       : shouldUseCenteredMobileCreationPanel
                         ? "fixed left-1/2 top-1/2 z-[2147483650] box-border -translate-x-1/2 -translate-y-1/2 pointer-events-none"
                         : "bottom-20 mb-2 z-[2147483650] flex flex-col items-stretch",
                     !shouldUseCenteredEditModal &&
-                      !shouldUseCenteredMobileCreationPanel &&
+                      !shouldUseCenteredCreationPanel &&
                       (expanded ? "fixed" : "absolute"),
                     !shouldUseCenteredEditModal &&
-                      !shouldUseCenteredMobileCreationPanel &&
+                      !shouldUseCenteredCreationPanel &&
                       menuClassName,
                   )}
                   style={
                     expanded &&
                       shouldAttachCreationControls &&
-                      !shouldUseCenteredMobileCreationPanel &&
+                      !shouldUseCenteredCreationPanel &&
                       !shouldUseCenteredEditModal
                       ? {
                           bottom: attachedCreationPanelBottom,
@@ -13978,11 +14307,11 @@ export function Fab({
                 }
                 className={cn(
                   "relative",
-                  shouldUseCenteredMobileCreationPanel && "pointer-events-auto",
+                  shouldUseCenteredCreationPanel && "pointer-events-auto",
                 )}
                 style={{
                   borderRadius: "0.5rem",
-                  transformOrigin: shouldUseCenteredMobileCreationPanel
+                  transformOrigin: shouldUseCenteredCreationPanel
                     ? "center center"
                     : `${creationRevealOriginX}px ${creationRevealOriginY}px`,
                   willChange: shouldUseFabSpawnRevealForPanel
@@ -14045,7 +14374,7 @@ export function Fab({
                       : "bg-gradient-to-b from-zinc-500 via-zinc-600 to-zinc-700",
                     expanded &&
                       (shouldUseCenteredEditModal ||
-                        shouldUseCenteredMobileCreationPanel ||
+                        shouldUseCenteredCreationPanel ||
                         shouldAttachCreationControls) &&
                       "flex flex-col overflow-hidden",
                     expanded
@@ -14060,7 +14389,11 @@ export function Fab({
                               : "w-[92vw] max-w-[920px]"
                       : "min-w-[200px]",
                   )}
-                  layout={!expanded && !shouldUseCenteredEditModal}
+                  layout={
+                    !expanded &&
+                    !shouldUseCenteredEditModal &&
+                    !shouldUseDirectCreationModal
+                  }
                   onTouchStart={(event) => event.stopPropagation()}
                   onTouchMove={(event) => {
                     if (!expanded) {
@@ -14080,7 +14413,7 @@ export function Fab({
                       : staticBorderColor,
                     transition: panelSizeTransition,
                     transformOrigin:
-                      shouldUseCenteredEditModal
+                      shouldUseCenteredEditModal || shouldUseDirectCreationModal
                         ? "center center"
                         : shouldUseCenteredMobileCreationPanel
                           ? "center center"
@@ -14088,17 +14421,17 @@ export function Fab({
                           ? "bottom right"
                           : "bottom center",
                     minHeight: expanded
-                      ? shouldUseCenteredMobileCreationPanel
+                      ? shouldUseCenteredCreationPanel
                         ? undefined
                         : panelMinHeightExpanded
                       : menuContainerHeight,
                     maxHeight: expanded
-                      ? shouldUseCenteredMobileCreationPanel
+                      ? shouldUseCenteredCreationPanel
                         ? centeredMobileCreationPanelMaxHeight
                         : panelMaxHeightExpanded
                       : menuContainerHeight,
                     height: expanded
-                      ? shouldUseCenteredMobileCreationPanel
+                      ? shouldUseCenteredCreationPanel
                         ? undefined
                         : panelHeightExpanded
                       : menuContainerHeight,
@@ -14109,6 +14442,7 @@ export function Fab({
                     overflowY:
                       expanded &&
                       !shouldUseCenteredEditModal &&
+                      !shouldUseCenteredCreationPanel &&
                       !shouldAttachCreationControls
                         ? "auto"
                         : "hidden",
@@ -14118,7 +14452,8 @@ export function Fab({
                   initial={
                     shouldUseFabSpawnRevealForPanel
                       ? false
-                      : (centeredEditModalAnimation?.initial ?? {
+                      : (centeredEditModalAnimation?.initial ??
+                        directCreationModalAnimation?.initial ?? {
                           opacity: 0,
                           y: 8,
                         })
@@ -14126,7 +14461,8 @@ export function Fab({
                   animate={
                     shouldUseFabSpawnRevealForPanel
                       ? { opacity: 1, y: 0 }
-                      : (centeredEditModalAnimation?.animate ?? {
+                      : (centeredEditModalAnimation?.animate ??
+                        directCreationModalAnimation?.animate ?? {
                           opacity: 1,
                           y: 0,
                           transition: {
@@ -14139,7 +14475,8 @@ export function Fab({
                   exit={
                     shouldUseFabSpawnRevealForPanel
                       ? { opacity: 1 }
-                      : (centeredEditModalAnimation?.exit ?? {
+                      : (centeredEditModalAnimation?.exit ??
+                        directCreationModalAnimation?.exit ?? {
                           opacity: 0,
                           y: 8,
                           transition: {
@@ -14153,13 +14490,13 @@ export function Fab({
                 >
                   <div
                     data-fab-scroll-body={
-                      shouldUseCenteredMobileCreationPanel ||
+                      shouldUseCenteredCreationPanel ||
                       shouldUseScrollableFabBody
                         ? ""
                         : undefined
                     }
                     className={cn(
-                      shouldUseCenteredMobileCreationPanel
+                      shouldUseCenteredCreationPanel
                         ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
                         : shouldUseScrollableFabBody
                           ? "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
@@ -14291,7 +14628,7 @@ export function Fab({
                 </div>
               );
 
-              return shouldUseCenteredMobileCreationPanel &&
+              return shouldUseCenteredCreationPanel &&
                 typeof document !== "undefined"
                 ? createPortal(panelShell, document.body)
                 : panelShell;

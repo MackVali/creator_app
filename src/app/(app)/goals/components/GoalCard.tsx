@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { ProjectQuickEditDialog } from "./ProjectQuickEditDialog";
+import { useFabCreation } from "@/components/ui/FabCreationContext";
 
 const energyAccent: Record<Goal["energy"], { dot: string; bar: string }> = {
   No: {
@@ -64,17 +65,6 @@ const energyAccent: Record<Goal["energy"], { dot: string; bar: string }> = {
     dot: "bg-yellow-300",
     bar: "linear-gradient(90deg, rgba(250,204,21,0.9), rgba(244,63,94,0.45))",
   },
-};
-
-const projectStageToStatus = (stage: string): Project["status"] => {
-  switch (stage) {
-    case "RESEARCH":
-      return "Todo";
-    case "RELEASE":
-      return "Done";
-    default:
-      return "In-Progress";
-  }
 };
 
 interface GoalCardProps {
@@ -118,7 +108,7 @@ interface GoalCardProps {
     stage: string
   ) => void;
   completeWhenProjectsDone?: boolean;
-  completionTheme?: "auto" | "emerald" | "monument";
+  completionTheme?: "auto" | "emerald" | "monument" | "border";
 }
 
 function isProjectComplete(project: Project) {
@@ -207,6 +197,7 @@ function GoalCardImpl({
     useState<ProjectCardMorphOrigin | null>(null);
   const [addingProject, setAddingProject] = useState(false);
   const prefersReducedMotion = useReducedMotion();
+  const fabCreation = useFabCreation();
 
   const setOpen = useCallback(
     (value: boolean) => {
@@ -278,33 +269,11 @@ function GoalCardImpl({
         await onAddTask?.(goal.id);
         return;
       }
-      const draftId =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `draft-${Date.now()}`;
-      const stage = "BUILD";
-      const draftProject: Project = {
-        id: draftId,
-        name: "",
-        status: projectStageToStatus(stage),
-        progress: 0,
-        dueDate: undefined,
-        energy: "No",
-        emoji: null,
-        tasks: [],
-        stage,
-        energyCode: "NO",
-        priorityCode: "NO",
-        durationMinutes: null,
-        skillIds: [],
-        isNew: true,
-      };
-      setEditingProjectOrigin(null);
-      setEditingProject(draftProject);
+      fabCreation?.requestProjectCreation(goal.id);
     } finally {
       setAddingProject(false);
     }
-  }, [addingProject, goal.id, onAddTask, projectDropdownMode]);
+  }, [addingProject, fabCreation, goal.id, onAddTask, projectDropdownMode]);
 
   const handleProjectLongPress = useCallback(
     (project: Project, origin: ProjectCardMorphOrigin | null) => {
@@ -352,17 +321,29 @@ function GoalCardImpl({
         ? "monument"
         : "emerald"
       : completionTheme;
+  const isBorderOnlyCompleted =
+    isCompleted && resolvedCompletionTheme === "border";
+  const isMonumentCompactCompleted =
+    isCompleted &&
+    resolvedCompletionTheme === "monument" &&
+    variant === "compact";
   const completedClass = isCompleted
-    ? resolvedCompletionTheme === "monument"
+    ? resolvedCompletionTheme === "border"
+      ? "shimmer-border-complete completion-border-only"
+      : resolvedCompletionTheme === "monument"
       ? variant === "compact"
-        ? "monument-completed-compact"
+        ? "border border-white/10 bg-white/[0.04] text-white/75 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),_0_4px_10px_rgba(0,0,0,0.45)] opacity-85"
         : "monument-completed"
       : variant === "compact"
         ? "emerald-completed-compact"
         : "emerald-completed"
     : "";
   const completedIconClass = isCompleted
-    ? "bg-gradient-to-b from-[#0a5c3a] via-[#0a4f34] to-[#043022] border border-emerald-400/60 text-emerald-100 shadow-[inset_0_2px_0_rgba(255,255,255,0.08)]"
+    ? isBorderOnlyCompleted
+      ? "bg-white/5 text-white"
+      : isMonumentCompactCompleted
+      ? "bg-white/[0.045] border border-white/10 text-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] grayscale"
+      : "bg-gradient-to-b from-[#0a5c3a] via-[#0a4f34] to-[#043022] border border-emerald-400/60 text-emerald-100 shadow-[inset_0_2px_0_rgba(255,255,255,0.08)]"
     : "bg-white/5 text-white";
   const progressBarStyle = {
     width: `${goal.progress}%`,
@@ -598,10 +579,10 @@ function GoalCardImpl({
     .filter(Boolean)
     .join(" ");
   const shellStateClass = open
-    ? isCompleted
+    ? isCompleted && !isBorderOnlyCompleted
       ? "border border-emerald-300/55 shadow-[0_24px_44px_-28px_rgba(16,185,129,0.48),inset_0_1px_0_rgba(255,255,255,0.07)]"
       : "border border-white/16 bg-white/[0.04] shadow-[0_24px_44px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.06)]"
-    : isCompleted
+    : isCompleted && !isBorderOnlyCompleted
       ? "border border-emerald-400/28 shadow-[0_16px_28px_-24px_rgba(16,185,129,0.32),inset_0_1px_0_rgba(255,255,255,0.04)]"
       : "border border-transparent shadow-[0_12px_24px_-24px_rgba(0,0,0,0.7)]";
 
@@ -824,7 +805,7 @@ function GoalCardImpl({
           <AnimatePresence initial={false}>
             {open ? (
               <motion.div
-                className="origin-top overflow-hidden rounded-[18px] border border-white/10 border-t-white/15 bg-gradient-to-b from-white/[0.035] via-white/[0.02] to-white/[0.015] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] sm:rounded-2xl"
+                className="origin-top overflow-hidden rounded-xl border border-white/8 bg-white/[0.025] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
                 {...detailMotionProps}
               >
                 <motion.div

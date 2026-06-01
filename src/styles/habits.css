@@ -97,14 +97,14 @@
 .habit-card--type-default {
   --habit-card-scheduled-bg: radial-gradient(
       circle at 0% 0%,
-      rgba(120, 126, 138, 0.28),
+      rgba(82, 82, 91, 0.2),
       transparent 58%
     ),
     linear-gradient(
       140deg,
-      rgba(8, 8, 10, 0.96) 0%,
-      rgba(22, 22, 26, 0.94) 42%,
-      rgba(88, 90, 104, 0.6) 100%
+      rgba(8, 8, 10, 0.98) 0%,
+      rgba(20, 20, 23, 0.96) 48%,
+      rgba(50, 50, 57, 0.72) 100%
     );
   --habit-card-completed-bg: radial-gradient(
       circle at 2% 0%,
@@ -122,14 +122,14 @@
 .habit-card--type-chore {
   --habit-card-scheduled-bg: radial-gradient(
       circle at 10% -25%,
-      rgba(248, 113, 113, 0.32),
+      rgba(159, 18, 57, 0.32),
       transparent 58%
     ),
     linear-gradient(
       135deg,
-      rgba(67, 26, 26, 0.9) 0%,
-      rgba(127, 29, 29, 0.85) 45%,
-      rgba(220, 38, 38, 0.72) 100%
+      rgba(31, 9, 12, 0.98) 0%,
+      rgba(76, 18, 27, 0.94) 48%,
+      rgba(111, 26, 39, 0.76) 100%
     );
   --habit-card-completed-bg: radial-gradient(
       circle at 2% 0%,
@@ -147,51 +147,56 @@
 .habit-card--type-relaxer {
   --habit-card-scheduled-bg: radial-gradient(
       circle at 8% -18%,
-      rgba(16, 185, 129, 0.32),
+      rgba(6, 95, 70, 0.34),
       transparent 60%
     ),
     linear-gradient(
       138deg,
-      rgba(4, 56, 33, 0.94) 0%,
-      rgba(4, 120, 87, 0.88) 46%,
-      rgba(16, 185, 129, 0.78) 100%
+      rgba(3, 24, 18, 0.98) 0%,
+      rgba(5, 68, 51, 0.94) 48%,
+      rgba(6, 95, 70, 0.74) 100%
     );
 }
 
 .habit-card--type-sync {
-  --habit-card-scheduled-bg: linear-gradient(
-    135deg,
-    rgba(32, 35, 41, 0.96) 0%,
-    rgba(55, 60, 70, 0.9) 48%,
-    rgba(105, 112, 126, 0.74) 100%
-  );
+  --habit-card-scheduled-bg: radial-gradient(
+      circle at 12% -20%,
+      rgba(113, 113, 122, 0.22),
+      transparent 58%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(16, 18, 22, 0.98) 0%,
+      rgba(39, 43, 51, 0.94) 48%,
+      rgba(70, 77, 89, 0.68) 100%
+    );
 }
 
 .habit-card--type-practice {
   --habit-card-scheduled-bg: radial-gradient(
       circle at 6% -14%,
-      rgba(54, 57, 66, 0.38),
+      rgba(79, 70, 229, 0.22),
       transparent 60%
     ),
     linear-gradient(
       142deg,
-      rgba(4, 4, 6, 0.98) 0%,
-      rgba(18, 18, 22, 0.95) 44%,
-      rgba(68, 72, 92, 0.72) 100%
+      rgba(8, 9, 20, 0.98) 0%,
+      rgba(24, 27, 51, 0.95) 46%,
+      rgba(50, 55, 92, 0.68) 100%
     );
 }
 
 .habit-card--type-memo {
   --habit-card-scheduled-bg: radial-gradient(
       circle at 8% -18%,
-      rgba(192, 132, 252, 0.34),
+      rgba(126, 34, 206, 0.26),
       transparent 60%
     ),
     linear-gradient(
       138deg,
-      rgba(59, 7, 100, 0.94) 0%,
-      rgba(99, 37, 141, 0.88) 46%,
-      rgba(168, 85, 247, 0.74) 100%
+      rgba(24, 13, 38, 0.98) 0%,
+      rgba(55, 29, 84, 0.95) 48%,
+      rgba(88, 46, 128, 0.72) 100%
     );
   --habit-card-completed-bg: radial-gradient(
       circle at 10% -18%,
