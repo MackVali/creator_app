@@ -10,12 +10,6 @@ import {
 import { CheckCircle2, Pin, TriangleAlert } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
-import {
-  segmentedToggleActiveClassName,
-  segmentedToggleButtonClassName,
-  segmentedToggleContainerClassName,
-  segmentedToggleInactiveClassName,
-} from "@/components/ui/segmented-toggle-styles";
 import { cn } from "@/lib/utils";
 import {
   type MonumentLevelHistoryPoint,
@@ -27,8 +21,6 @@ import {
 interface ActivityPanelProps {
   monumentId: string;
 }
-
-type MonumentGraphTab = "level" | "xp";
 
 function formatRelativeTime(date: Date) {
   const divisions: Array<{ amount: number; unit: Intl.RelativeTimeFormatUnit }> = [
@@ -93,19 +85,6 @@ function getLevelTickValues(minLevel: number, maxLevel: number) {
   return [...new Set(ticks)].sort((a, b) => a - b);
 }
 
-function getXpTickValues(minXp: number, maxXp: number) {
-  if (minXp === maxXp) {
-    return [minXp];
-  }
-
-  const span = Math.max(1, maxXp - minXp);
-  const ticks = [minXp, minXp + span / 2, maxXp];
-
-  return [...new Set(ticks.map((tick) => Math.round(tick)))].sort(
-    (a, b) => a - b
-  );
-}
-
 function getLevelBucketKey(date: Date, bucket: "day" | "week" | "month") {
   const year = date.getFullYear();
   const month = date.getMonth();
@@ -163,7 +142,7 @@ function getLevelXAxisLabels(points: MonumentLevelHistoryPoint[]) {
   return [...candidates].sort((a, b) => a - b);
 }
 
-function MonumentLevelCurveChart({
+function MonumentGrowthTrendChart({
   levelHistory,
 }: {
   levelHistory: MonumentLevelHistoryPoint[];
@@ -171,16 +150,21 @@ function MonumentLevelCurveChart({
   const gradientId = useId().replace(/:/g, "");
   const width = 720;
   const height = 240;
-  const padding = { top: 18, right: 18, bottom: 42, left: 44 };
+  const padding = { top: 22, right: 18, bottom: 42, left: 44 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   const displayPoints = getDisplayLevelPoints(levelHistory);
   const hasPoints = displayPoints.length > 0;
   const levels = hasPoints ? displayPoints.map((point) => point.level) : [1];
+  const xpValues = hasPoints ? displayPoints.map((point) => point.totalXp) : [0];
   const rawMinLevel = Math.min(...levels);
   const rawMaxLevel = Math.max(...levels);
+  const rawMinXp = Math.min(...xpValues);
+  const rawMaxXp = Math.max(...xpValues);
   const minLevel = Math.max(1, rawMinLevel);
   const maxLevel = rawMaxLevel === minLevel ? minLevel + 1 : rawMaxLevel;
+  const minXp = Math.max(0, rawMinXp);
+  const maxXp = rawMaxXp === minXp ? minXp + 1 : rawMaxXp;
   const yTicks = getLevelTickValues(minLevel, maxLevel);
   const timeValues = displayPoints.map((point) => Date.parse(point.date));
   const minTime = timeValues.length > 0 ? Math.min(...timeValues) : 0;
@@ -196,18 +180,38 @@ function MonumentLevelCurveChart({
     return padding.left + ((time - minTime) / timeSpan) * chartWidth;
   };
 
-  const svgPoints = displayPoints.map((point) => {
+  const getLevelY = (level: number) =>
+    padding.top +
+    chartHeight -
+    ((level - minLevel) / Math.max(1, maxLevel - minLevel)) * chartHeight;
+
+  const getXpY = (totalXp: number) =>
+    padding.top +
+    chartHeight -
+    ((totalXp - minXp) / Math.max(1, maxXp - minXp)) * chartHeight;
+
+  const levelPoints = displayPoints.map((point) => {
     const x = getX(point);
-    const y =
-      padding.top +
-      chartHeight -
-      ((point.level - minLevel) / Math.max(1, maxLevel - minLevel)) *
-        chartHeight;
+    const y = getLevelY(point.level);
 
     return { x, y, point };
   });
 
-  const linePath = svgPoints
+  const xpPoints = displayPoints.map((point) => {
+    const x = getX(point);
+    const y = getXpY(point.totalXp);
+
+    return { x, y, point };
+  });
+
+  const levelLinePath = levelPoints
+    .map(
+      ({ x, y }, index) =>
+        `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`
+    )
+    .join(" ");
+
+  const xpLinePath = xpPoints
     .map(
       ({ x, y }, index) =>
         `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`
@@ -217,7 +221,7 @@ function MonumentLevelCurveChart({
   const areaPath = hasPoints
     ? [
         `M${padding.left},${padding.top + chartHeight}`,
-        ...svgPoints.map(({ x, y }) => `${x.toFixed(2)},${y.toFixed(2)}`),
+        ...levelPoints.map(({ x, y }) => `${x.toFixed(2)},${y.toFixed(2)}`),
         `L${padding.left + chartWidth},${padding.top + chartHeight}`,
         "Z",
       ].join(" ")
@@ -229,34 +233,26 @@ function MonumentLevelCurveChart({
   }));
 
   return (
-    <div className="mt-4 min-w-0">
+    <div className="mt-3 min-w-0">
       <svg
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
         className="h-[210px] w-full opacity-95 transition-opacity sm:h-[220px]"
         role="img"
-        aria-label="Monument level over time"
+        aria-label="Monument level and total XP over time"
       >
         <defs>
           <linearGradient id={`${gradientId}-area`} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(244,244,245,0.16)" />
+            <stop offset="0%" stopColor="rgba(244,244,245,0.14)" />
             <stop offset="100%" stopColor="rgba(244,244,245,0.01)" />
-          </linearGradient>
-          <linearGradient id={`${gradientId}-line`} x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0%" stopColor="#71717a" />
-            <stop offset="100%" stopColor="#d4d4d8" />
           </linearGradient>
         </defs>
 
         {yTicks.map((value) => {
-          const y =
-            padding.top +
-            chartHeight -
-            ((value - minLevel) / Math.max(1, maxLevel - minLevel)) *
-              chartHeight;
+          const y = getLevelY(value);
 
           return (
-            <g key={`level-grid-${value}`}>
+            <g key={`growth-grid-${value}`}>
               <line
                 x1={padding.left}
                 x2={padding.left + chartWidth}
@@ -291,202 +287,38 @@ function MonumentLevelCurveChart({
           <>
             <path d={areaPath} fill={`url(#${gradientId}-area)`} />
             <path
-              d={linePath}
+              d={xpLinePath}
               fill="none"
-              stroke={`url(#${gradientId}-line)`}
+              stroke="rgba(212,212,216,0.52)"
               strokeLinecap="round"
               strokeLinejoin="round"
-              strokeWidth={1.8}
+              strokeWidth={1.55}
             />
-            {svgPoints.length > 1 ? (
-              <circle
-                cx={svgPoints[svgPoints.length - 1]?.x}
-                cy={svgPoints[svgPoints.length - 1]?.y}
-                r={3.4}
-                fill="#e4e4e7"
-                stroke="rgba(5,6,8,0.95)"
-                strokeWidth={1.2}
-              />
-            ) : null}
-          </>
-        ) : (
-          <g>
-            <line
-              x1={padding.left}
-              x2={padding.left + chartWidth}
-              y1={padding.top + chartHeight * 0.55}
-              y2={padding.top + chartHeight * 0.55}
-              stroke="rgba(63,63,70,0.55)"
-              strokeDasharray="4 6"
-            />
-            <text
-              x={padding.left + chartWidth / 2}
-              y={padding.top + chartHeight * 0.47}
-              textAnchor="middle"
-              fill="rgba(212,212,216,0.86)"
-              fontSize="13"
-            >
-              No monument XP yet.
-            </text>
-          </g>
-        )}
-
-        {xLabels.map((label, index) => (
-          <text
-            key={`${label.label}-${index}`}
-            x={label.x}
-            y={height - 16}
-            textAnchor="middle"
-            fill="rgba(161,161,170,0.82)"
-            fontSize="11"
-          >
-            {label.label}
-          </text>
-        ))}
-      </svg>
-    </div>
-  );
-}
-
-function MonumentXpTrendChart({
-  levelHistory,
-}: {
-  levelHistory: MonumentLevelHistoryPoint[];
-}) {
-  const gradientId = useId().replace(/:/g, "");
-  const width = 720;
-  const height = 240;
-  const padding = { top: 18, right: 18, bottom: 42, left: 56 };
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
-  const displayPoints = getDisplayLevelPoints(levelHistory);
-  const hasPoints = displayPoints.length > 0;
-  const xpValues = hasPoints ? displayPoints.map((point) => point.totalXp) : [0];
-  const rawMinXp = Math.min(...xpValues);
-  const rawMaxXp = Math.max(...xpValues);
-  const minXp = Math.max(0, rawMinXp);
-  const maxXp = rawMaxXp === minXp ? minXp + 1 : rawMaxXp;
-  const yTicks = getXpTickValues(minXp, maxXp);
-  const timeValues = displayPoints.map((point) => Date.parse(point.date));
-  const minTime = timeValues.length > 0 ? Math.min(...timeValues) : 0;
-  const maxTime = timeValues.length > 0 ? Math.max(...timeValues) : minTime;
-  const timeSpan = Math.max(1, maxTime - minTime);
-
-  const getX = (point: MonumentLevelHistoryPoint) => {
-    if (displayPoints.length === 1) return padding.left + chartWidth / 2;
-
-    const time = Date.parse(point.date);
-    if (Number.isNaN(time)) return padding.left;
-
-    return padding.left + ((time - minTime) / timeSpan) * chartWidth;
-  };
-
-  const svgPoints = displayPoints.map((point) => {
-    const x = getX(point);
-    const y =
-      padding.top +
-      chartHeight -
-      ((point.totalXp - minXp) / Math.max(1, maxXp - minXp)) * chartHeight;
-
-    return { x, y, point };
-  });
-
-  const linePath = svgPoints
-    .map(
-      ({ x, y }, index) =>
-        `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`
-    )
-    .join(" ");
-
-  const areaPath = hasPoints
-    ? [
-        `M${padding.left},${padding.top + chartHeight}`,
-        ...svgPoints.map(({ x, y }) => `${x.toFixed(2)},${y.toFixed(2)}`),
-        `L${padding.left + chartWidth},${padding.top + chartHeight}`,
-        "Z",
-      ].join(" ")
-    : "";
-
-  const xLabels = getLevelXAxisLabels(displayPoints).map((index) => ({
-    x: getX(displayPoints[index]),
-    label: formatChartDateLabel(displayPoints[index]?.date ?? "", true),
-  }));
-
-  return (
-    <div className="mt-4 min-w-0">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        className="h-[210px] w-full opacity-95 transition-opacity sm:h-[220px]"
-        role="img"
-        aria-label="Monument total XP over time"
-      >
-        <defs>
-          <linearGradient id={`${gradientId}-area`} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(244,244,245,0.16)" />
-            <stop offset="100%" stopColor="rgba(244,244,245,0.01)" />
-          </linearGradient>
-          <linearGradient id={`${gradientId}-line`} x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0%" stopColor="#71717a" />
-            <stop offset="100%" stopColor="#d4d4d8" />
-          </linearGradient>
-        </defs>
-
-        {yTicks.map((value) => {
-          const y =
-            padding.top +
-            chartHeight -
-            ((value - minXp) / Math.max(1, maxXp - minXp)) * chartHeight;
-
-          return (
-            <g key={`xp-grid-${value}`}>
-              <line
-                x1={padding.left}
-                x2={padding.left + chartWidth}
-                y1={y}
-                y2={y}
-                stroke="rgba(82,82,91,0.3)"
-                strokeDasharray="3 6"
-              />
-              <text
-                x={padding.left - 10}
-                y={y + 4}
-                textAnchor="end"
-                fill="rgba(161,161,170,0.72)"
-                fontSize="11"
-              >
-                {formatCompactNumber(value)}
-              </text>
-            </g>
-          );
-        })}
-
-        <line
-          x1={padding.left}
-          x2={padding.left + chartWidth}
-          y1={padding.top + chartHeight}
-          y2={padding.top + chartHeight}
-          stroke="rgba(82,82,91,0.34)"
-          strokeDasharray="3 6"
-        />
-
-        {hasPoints ? (
-          <>
-            <path d={areaPath} fill={`url(#${gradientId}-area)`} />
             <path
-              d={linePath}
+              d={levelLinePath}
               fill="none"
-              stroke={`url(#${gradientId}-line)`}
+              stroke="#f4f4f5"
               strokeLinecap="round"
               strokeLinejoin="round"
-              strokeWidth={1.8}
+              strokeWidth={2}
             />
-            {svgPoints.length > 1 ? (
+            {xpPoints.length > 1 ? (
               <circle
-                cx={svgPoints[svgPoints.length - 1]?.x}
-                cy={svgPoints[svgPoints.length - 1]?.y}
-                r={3.4}
-                fill="#e4e4e7"
+                cx={xpPoints[xpPoints.length - 1]?.x}
+                cy={xpPoints[xpPoints.length - 1]?.y}
+                r={2.8}
+                fill="#d4d4d8"
+                fillOpacity={0.68}
+                stroke="rgba(5,6,8,0.95)"
+                strokeWidth={1}
+              />
+            ) : null}
+            {levelPoints.length > 1 ? (
+              <circle
+                cx={levelPoints[levelPoints.length - 1]?.x}
+                cy={levelPoints[levelPoints.length - 1]?.y}
+                r={3.5}
+                fill="#f4f4f5"
                 stroke="rgba(5,6,8,0.95)"
                 strokeWidth={1.2}
               />
@@ -527,6 +359,16 @@ function MonumentXpTrendChart({
           </text>
         ))}
       </svg>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/42">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-px w-5 bg-zinc-100" aria-hidden="true" />
+          Level
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-px w-5 bg-zinc-300/55" aria-hidden="true" />
+          Total XP
+        </span>
+      </div>
     </div>
   );
 }
@@ -933,7 +775,7 @@ function MonumentXpMixDonut({
   }, [donutMix]);
 
   return (
-    <div className="mt-4 min-w-0">
+    <div className="mt-2 min-w-0">
       <div className="border-y border-white/[0.06] py-3">
         <div className="relative mx-auto aspect-[420/380] w-full min-w-0 max-w-[420px]">
           <svg
@@ -1233,7 +1075,6 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
   );
 
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
-  const [graphTab, setGraphTab] = useState<MonumentGraphTab>("level");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1318,30 +1159,39 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
   }
 
   const hasEvents = events.length > 0;
-  const currentLevelPoint = levelHistory[levelHistory.length - 1] ?? null;
-  const currentLevel = currentLevelPoint?.level ?? 1;
-  const currentTotalXp = currentLevelPoint?.totalXp ?? 0;
-  const firstLevelPoint = levelHistory[0] ?? null;
-  const xpGainedAcrossHistory = Math.max(
-    0,
-    currentTotalXp - (firstLevelPoint?.totalXp ?? 0)
-  );
-  const xpToNextLevel = currentLevelPoint
-    ? Math.max(
-        0,
-        currentLevelPoint.xpForNextLevel - currentLevelPoint.xpIntoLevel
-      )
-    : 0;
-  const xpPointCount = Math.max(0, levelHistory.length - 1);
-  const xpSkillMixTotal = xpSkillMix.reduce((sum, item) => sum + item.xp, 0);
-  const xpSkillEventCount = xpSkillMix.reduce((sum, item) => sum + item.count, 0);
-  const topSkillPoint = xpSkillMix[0] ?? null;
-  const topSkill = topSkillPoint?.skillName ?? "None";
-  const topSkillIcon = topSkillPoint?.skillIcon || topSkill.charAt(0).toUpperCase();
-  const graphTabs: Array<{ label: string; value: MonumentGraphTab }> = [
-    { label: "LEVEL CURVE", value: "level" },
-    { label: "XP TREND", value: "xp" },
-  ];
+  const monumentAnalytics = useMemo(() => {
+    const currentLevelPoint = levelHistory[levelHistory.length - 1] ?? null;
+    const currentLevel = currentLevelPoint?.level ?? 1;
+    const currentTotalXp = currentLevelPoint?.totalXp ?? 0;
+    const xpToNextLevel = currentLevelPoint
+      ? Math.max(
+          0,
+          currentLevelPoint.xpForNextLevel - currentLevelPoint.xpIntoLevel
+        )
+      : 0;
+    const xpPointCount = Math.max(0, levelHistory.length - 1);
+    const skillMixTotalXp = xpSkillMix.reduce((sum, item) => sum + item.xp, 0);
+    const skillEventCount = xpSkillMix.reduce(
+      (sum, item) => sum + item.count,
+      0
+    );
+    const topSkillPoint = xpSkillMix[0] ?? null;
+    const topSkillName = topSkillPoint?.skillName ?? "None";
+    const topSkillIcon =
+      topSkillPoint?.skillIcon || topSkillName.charAt(0).toUpperCase();
+
+    return {
+      currentLevel,
+      currentTotalXp,
+      skillCount: xpSkillMix.length,
+      skillEventCount,
+      skillMixTotalXp,
+      topSkillIcon,
+      topSkillName,
+      xpPointCount,
+      xpToNextLevel,
+    };
+  }, [levelHistory, xpSkillMix]);
 
   const phases = useMemo(
     () => [
@@ -1471,143 +1321,97 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
 
               <section className="relative min-w-0 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#07080A] px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:px-4 sm:py-5">
                 <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-white/[0.06]" />
-                <header className="relative space-y-4">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0 space-y-3">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:block">
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/42">
-                            Monument analytics
-                          </p>
-                          <h4 className="text-sm font-semibold text-white/90">
-                            {graphTab === "level"
-                              ? "Level over time"
-                              : "XP over time"}
-                          </h4>
+                <div className="relative min-w-0 space-y-2">
+                  <div className="min-w-0">
+                    <header>
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/42">
+                        Monument analytics
+                      </p>
+
+                      <dl className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
+                        <div className="min-w-0 rounded-2xl border border-white/[0.07] bg-[#050607] px-3 py-3">
+                          <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.24em] text-white/42">
+                            Current level
+                          </dt>
+                          <dd className="mt-2 truncate text-2xl font-semibold leading-none text-white sm:text-3xl">
+                            {monumentAnalytics.currentLevel}
+                          </dd>
                         </div>
-                        <div className={segmentedToggleContainerClassName}>
-                          {graphTabs.map((tab) => (
-                            <button
-                              key={tab.value}
-                              type="button"
-                              onClick={() => setGraphTab(tab.value)}
-                              className={cn(
-                                segmentedToggleButtonClassName,
-                                graphTab === tab.value
-                                  ? segmentedToggleActiveClassName
-                                  : segmentedToggleInactiveClassName
-                              )}
-                              aria-pressed={graphTab === tab.value}
-                            >
-                              {tab.label}
-                            </button>
-                          ))}
+                        <div className="min-w-0 rounded-2xl border border-white/[0.07] bg-[#050607] px-3 py-3">
+                          <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.24em] text-white/42">
+                            Skill XP
+                          </dt>
+                          <dd className="mt-2 truncate text-2xl font-semibold leading-none text-white sm:text-3xl">
+                            {formatCompactNumber(
+                              monumentAnalytics.skillMixTotalXp
+                            )}
+                          </dd>
                         </div>
-                      </div>
-                      <div className="flex items-end gap-3">
-                        <p className="text-4xl font-semibold leading-none text-white sm:text-5xl">
-                          {graphTab === "level"
-                            ? currentLevel
-                            : formatCompactNumber(currentTotalXp)}
-                        </p>
-                        <div className="pb-0.5 sm:pb-1">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.26em] text-white/42">
-                            {graphTab === "level" ? "Current level" : "Total XP"}
-                          </p>
-                          <p className="mt-1 text-xs text-white/45">
-                            {graphTab === "level"
-                              ? `${formatCompactNumber(xpToNextLevel)} XP to next`
-                              : `${formatCompactNumber(xpGainedAcrossHistory)} XP gained across history`}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <dl className="flex flex-wrap gap-x-5 gap-y-2 border-t border-white/[0.06] pt-3 text-left lg:max-w-[420px] lg:border-t-0 lg:pt-0">
-                      <div className="space-y-1">
-                        <dt className="text-[9px] font-semibold uppercase tracking-[0.22em] text-white/38">
-                          {graphTab === "level" ? "Total XP" : "Current level"}
+                      </dl>
+                    </header>
+
+                    <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-white/[0.06] pt-3 text-left">
+                      <div className="min-w-0 rounded-xl border border-white/[0.06] bg-[#050506] px-2.5 py-2.5">
+                        <dt className="text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
+                          Total Monument XP
                         </dt>
-                        <dd className="mt-1 text-sm font-semibold text-white/82">
-                          {graphTab === "level"
-                            ? formatCompactNumber(currentTotalXp)
-                            : currentLevel}
+                        <dd className="mt-1 truncate text-sm font-semibold leading-none text-white/82">
+                          {formatCompactNumber(
+                            monumentAnalytics.currentTotalXp
+                          )}
                         </dd>
                       </div>
-                      <div className="space-y-1">
-                        <dt className="text-[9px] font-semibold uppercase tracking-[0.22em] text-white/38">
-                          {graphTab === "level" ? "To next" : "XP to next"}
+                      <div className="min-w-0 rounded-xl border border-white/[0.06] bg-[#050506] px-2.5 py-2.5">
+                        <dt className="text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
+                          XP to next
                         </dt>
-                        <dd className="mt-1 text-sm font-semibold text-white/82">
-                          {formatCompactNumber(xpToNextLevel)}
+                        <dd className="mt-1 truncate text-sm font-semibold leading-none text-white/82">
+                          {formatCompactNumber(monumentAnalytics.xpToNextLevel)}
                         </dd>
                       </div>
-                      <div className="space-y-1">
-                        <dt className="text-[9px] font-semibold uppercase tracking-[0.22em] text-white/38">
+                      <div className="min-w-0 rounded-xl border border-white/[0.06] bg-[#050506] px-2.5 py-2.5">
+                        <dt className="text-[8px] font-semibold uppercase leading-tight tracking-[0.18em] text-white/38 sm:text-[9px]">
                           Points
                         </dt>
-                        <dd className="mt-1 text-sm font-semibold text-white/82">
-                          {xpPointCount}
+                        <dd className="mt-1 truncate text-sm font-semibold leading-none text-white/82">
+                          {monumentAnalytics.xpPointCount}
                         </dd>
                       </div>
                     </dl>
-                  </div>
-                </header>
 
-                {graphTab === "level" ? (
-                  <MonumentLevelCurveChart levelHistory={levelHistory} />
-                ) : (
-                  <MonumentXpTrendChart levelHistory={levelHistory} />
-                )}
-
-                <section className="mt-5 min-w-0 border-t border-white/[0.06] pt-5">
-                  <header className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0 space-y-3">
-                      <div className="space-y-1">
-                        <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/42">
-                          Skill contribution
-                        </p>
-                        <h4 className="text-sm font-semibold text-white/90">
-                          XP mix
-                        </h4>
-                      </div>
-                      <div className="flex min-w-0 items-end gap-3">
-                        <p className="min-w-0 truncate text-3xl font-semibold leading-none text-white sm:text-4xl">
-                          {formatCompactNumber(xpSkillMixTotal)}
-                        </p>
-                        <div className="min-w-0 pb-0.5 sm:pb-1">
-                          <p className="truncate text-[10px] font-semibold uppercase tracking-[0.26em] text-white/42">
-                            Total XP
-                          </p>
-                          <p className="mt-1 truncate text-xs text-white/45">
-                            {xpSkillMix.length} skills
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <dl className="grid w-full min-w-0 grid-cols-2 gap-x-4 gap-y-2 border-t border-white/[0.06] pt-3 text-left lg:max-w-[320px] lg:border-t-0 lg:pt-0">
-                      <div className="min-w-0 space-y-1">
+                    <dl className="mt-3 grid grid-cols-2 gap-2 text-left">
+                      <div className="min-w-0 rounded-xl border border-white/[0.06] bg-[#050506] px-2.5 py-2.5">
                         <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.22em] text-white/38">
                           Total events
                         </dt>
-                        <dd className="mt-1 truncate text-sm font-semibold text-white/82">
-                          {formatCompactNumber(xpSkillEventCount)}
+                        <dd className="mt-1 truncate text-sm font-semibold leading-none text-white/82">
+                          {formatCompactNumber(
+                            monumentAnalytics.skillEventCount
+                          )}
                         </dd>
                       </div>
-                      <div className="min-w-0 space-y-1">
+                      <div className="min-w-0 rounded-xl border border-white/[0.06] bg-[#050506] px-2.5 py-2.5">
                         <dt className="truncate text-[9px] font-semibold uppercase tracking-[0.22em] text-white/38">
                           Top skill
                         </dt>
-                        <dd className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-semibold text-white/82">
-                          <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-white/[0.07] bg-white/[0.035] text-xs text-white/78">
-                            {topSkillIcon}
+                        <dd className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-semibold leading-none text-white/82">
+                          <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-white/[0.07] bg-black/40 text-xs text-white/78">
+                            {monumentAnalytics.topSkillIcon}
                           </span>
-                          <span className="min-w-0 truncate">{topSkill}</span>
+                          <span className="min-w-0 truncate">
+                            {monumentAnalytics.topSkillName}
+                          </span>
                         </dd>
                       </div>
                     </dl>
-                  </header>
-                  <MonumentXpMixDonut xpSkillMix={xpSkillMix} />
-                </section>
+
+                    <MonumentGrowthTrendChart levelHistory={levelHistory} />
+                  </div>
+
+                  <section className="min-w-0 border-t border-white/[0.06] pt-1">
+                    <MonumentXpMixDonut xpSkillMix={xpSkillMix} />
+                  </section>
+                </div>
               </section>
             </div>
           )}
