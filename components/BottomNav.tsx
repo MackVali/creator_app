@@ -63,7 +63,9 @@ export default function BottomNav() {
     <>
       <div
         className={`pointer-events-none fixed inset-x-0 z-50 px-3 pb-0 ${
-          isIos ? "bottom-[max(0.5rem,env(safe-area-inset-bottom,0px))]" : "bottom-0"
+          isIos
+            ? "bottom-[max(0.125rem,calc(env(safe-area-inset-bottom,0px)-0.375rem))]"
+            : "bottom-0"
         }`}
         data-bottom-nav
         aria-busy={isPending}

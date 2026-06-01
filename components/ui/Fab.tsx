@@ -10157,7 +10157,7 @@ export function Fab({
   const handleEventClick = (
     eventType: CreationType,
     triggerElement?: HTMLElement | null,
-    options?: { skipLauncher?: boolean },
+    options?: { skipLauncher?: boolean; originRect?: { top: number; left: number; width: number; height: number } | null },
   ) => {
     const shouldAttemptNameFocus = !editTarget;
     const shouldFocusImmediatelyForMobile =
@@ -10188,7 +10188,15 @@ export function Fab({
         setIsOpen(false);
         setIsDirectCreationOpen(true);
         setPressedCreationType(null);
-        setCreationSpawnOrigin(null);
+        setCreationSpawnOrigin(
+          options.originRect
+            ? {
+                type: eventType,
+                rect: options.originRect,
+                nonce: Date.now(),
+              }
+            : null,
+        );
         setCreationRevealGeometry(null);
         setPendingCreationNameFocus(
           shouldAttemptNameFocus && !shouldFocusImmediatelyForMobile
@@ -10215,7 +10223,15 @@ export function Fab({
     if (expanded) {
       const updateSelection = () => {
         setPressedCreationType(null);
-        setCreationSpawnOrigin(null);
+        setCreationSpawnOrigin(
+          options.originRect
+            ? {
+                type: eventType,
+                rect: options.originRect,
+                nonce: Date.now(),
+              }
+            : null,
+        );
         setCreationRevealGeometry(null);
         setPendingCreationNameFocus(
           shouldAttemptNameFocus && !shouldFocusImmediatelyForMobile
@@ -10302,6 +10318,7 @@ export function Fab({
     setActiveCreationMode("main");
     handleEventClickRef.current(creationRequest.type, null, {
       skipLauncher: true,
+      originRect: creationRequest.originRect ?? null,
     });
   }, [creationRequest, resetFabFormState]);
 
