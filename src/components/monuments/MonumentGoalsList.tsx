@@ -958,7 +958,11 @@ export function MonumentGoalsList({
   const [activeGoalPanel, setActiveGoalPanel] = useState<GoalPanel>("active");
   const [goalPanelHeight, setGoalPanelHeight] = useState<number | null>(null);
   const [goalPanelDragOffset, setGoalPanelDragOffset] = useState(0);
+  const [goalPanelViewportWidth, setGoalPanelViewportWidth] = useState(0);
+  const [goalPanelTransitionEnabled, setGoalPanelTransitionEnabled] =
+    useState(false);
   const deferredGoalCloseFrameRef = useRef<number | null>(null);
+  const goalPanelViewportRef = useRef<HTMLDivElement | null>(null);
   const activeGoalPanelRef = useRef<HTMLDivElement | null>(null);
   const completedGoalPanelRef = useRef<HTMLDivElement | null>(null);
   const loadingGoalPanelRef = useRef<HTMLDivElement | null>(null);
@@ -979,6 +983,15 @@ export function MonumentGoalsList({
     axis: GoalPanelSwipeAxis;
     width: number;
   } | null>(null);
+  const activeGoalPanelIndex = activeGoalPanel === "completed" ? 1 : 0;
+  const goalPanelBaseTransform =
+    goalPanelViewportWidth > 0
+      ? -activeGoalPanelIndex * goalPanelViewportWidth
+      : 0;
+  const goalPanelTrackTransform = Math.max(
+    -goalPanelViewportWidth,
+    Math.min(0, goalPanelBaseTransform + goalPanelDragOffset)
+  );
 
   const getGoalPanelElement = useCallback((panel: GoalPanel) => {
     return panel === "completed"
@@ -1004,8 +1017,43 @@ export function MonumentGoalsList({
     if (nextHeight) {
       setGoalPanelHeight(nextHeight);
     }
+    setGoalPanelDragOffset(0);
     setActiveGoalPanel(goalSection);
   }, [getGoalPanelHeight, goalSection]);
+
+  useLayoutEffect(() => {
+    const viewportElement = goalPanelViewportRef.current;
+    if (!viewportElement) return;
+
+    const measureViewportWidth = () => {
+      setGoalPanelViewportWidth(viewportElement.clientWidth);
+    };
+
+    measureViewportWidth();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measureViewportWidth);
+    resizeObserver?.observe(viewportElement);
+
+    if (typeof window === "undefined") {
+      return () => {
+        resizeObserver?.disconnect();
+      };
+    }
+
+    window.addEventListener("resize", measureViewportWidth);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureViewportWidth);
+    };
+  }, [loading, monumentView]);
+
+  useEffect(() => {
+    setGoalPanelDragOffset(0);
+    setGoalPanelTransitionEnabled(true);
+  }, []);
 
   const handleGoalPanelChange = useCallback(
     (panel: GoalPanel) => {
@@ -1013,6 +1061,7 @@ export function MonumentGoalsList({
       if (nextHeight) {
         setGoalPanelHeight(nextHeight);
       }
+      setGoalPanelDragOffset(0);
       setActiveGoalPanel(panel);
       onGoalSectionChange?.(panel);
     },
@@ -1116,7 +1165,7 @@ export function MonumentGoalsList({
         return;
       }
 
-      handleGoalPanelChange(deltaX > 0 ? "completed" : "active");
+      handleGoalPanelChange(deltaX < 0 ? "completed" : "active");
     },
     [handleGoalPanelChange]
   );
@@ -1178,13 +1227,14 @@ export function MonumentGoalsList({
       }
 
       const width = gesture.width || event.currentTarget.clientWidth || 1;
-      const boundedOffset =
-        activeGoalPanel === "active"
-          ? Math.max(0, Math.min(width, deltaX))
-          : Math.min(0, Math.max(-width, deltaX));
-      setGoalPanelDragOffset(boundedOffset);
+      const baseTransform = -activeGoalPanelIndex * width;
+      const nextTransform = Math.max(
+        -width,
+        Math.min(0, baseTransform + deltaX)
+      );
+      setGoalPanelDragOffset(nextTransform - baseTransform);
     },
-    [activeGoalPanel]
+    [activeGoalPanelIndex]
   );
 
   const handleGoalPanelTouchEnd = useCallback(() => {
@@ -1205,8 +1255,15 @@ export function MonumentGoalsList({
       return;
     }
 
-    handleGoalPanelChange(gesture.deltaX > 0 ? "completed" : "active");
-  }, [handleGoalPanelChange]);
+    if (activeGoalPanel === "active" && gesture.deltaX < -releaseThreshold) {
+      handleGoalPanelChange("completed");
+      return;
+    }
+
+    if (activeGoalPanel === "completed" && gesture.deltaX > releaseThreshold) {
+      handleGoalPanelChange("active");
+    }
+  }, [activeGoalPanel, handleGoalPanelChange]);
 
   const handleGoalPanelWheel = useCallback(
     (event: WheelEvent<HTMLDivElement>) => {
@@ -1218,7 +1275,7 @@ export function MonumentGoalsList({
         return;
       }
 
-      const nextPanel = event.deltaX > 0 ? "completed" : "active";
+      const nextPanel = event.deltaX < 0 ? "completed" : "active";
       if (nextPanel === activeGoalPanel || goalPanelWheelLockedRef.current) {
         return;
       }
@@ -2435,28 +2492,34 @@ export function MonumentGoalsList({
           }}
         >
           <div
-            className="absolute inset-0 flex w-[200%] flex-row-reverse transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-            style={{
-              transform: `translateX(calc(${
-                activeGoalPanel === "completed" ? "0%" : "-50%"
-              } + ${goalPanelDragOffset}px))`,
-              transitionDuration: goalPanelDragOffset ? "0ms" : undefined,
-            }}
+            ref={goalPanelViewportRef}
+            className="absolute inset-0"
           >
-            <div className="h-full w-1/2 shrink-0 overflow-hidden">
-              <div
-                ref={activeGoalPanelRef}
-                className={GOAL_PANEL_CONTENT_CLASS}
-              >
-                {renderGoalsPanel("active")}
+            <div
+              className="flex h-full w-[200%] transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+              style={{
+                transform: `translate3d(${goalPanelTrackTransform}px, 0, 0)`,
+                transitionDuration:
+                  !goalPanelTransitionEnabled || goalPanelDragOffset
+                    ? "0ms"
+                    : undefined,
+              }}
+            >
+              <div className="h-full w-1/2 shrink-0 overflow-hidden">
+                <div
+                  ref={activeGoalPanelRef}
+                  className={GOAL_PANEL_CONTENT_CLASS}
+                >
+                  {renderGoalsPanel("active")}
+                </div>
               </div>
-            </div>
-            <div className="h-full w-1/2 shrink-0 overflow-hidden">
-              <div
-                ref={completedGoalPanelRef}
-                className={GOAL_PANEL_CONTENT_CLASS}
-              >
-                {renderGoalsPanel("completed")}
+              <div className="h-full w-1/2 shrink-0 overflow-hidden">
+                <div
+                  ref={completedGoalPanelRef}
+                  className={GOAL_PANEL_CONTENT_CLASS}
+                >
+                  {renderGoalsPanel("completed")}
+                </div>
               </div>
             </div>
           </div>
@@ -2515,6 +2578,8 @@ export function MonumentGoalsList({
     resetGoalPanelTouch,
     handleGoalPanelWheel,
     goalPanelDragOffset,
+    goalPanelTrackTransform,
+    goalPanelTransitionEnabled,
     ownerLabel,
     decorate,
     monumentEmoji,
