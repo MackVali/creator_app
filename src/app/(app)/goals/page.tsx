@@ -14,7 +14,7 @@ import {
 } from "./components/GoalsUtilityBar";
 import { GoalCard } from "./components/GoalCard";
 import MixedRoadmapCard from "./components/MixedRoadmapCard";
-import { RoadmapCard } from "./components/RoadmapCard";
+import { CampaignCard } from "./components/CampaignCard";
 import { RoadmapDrawer } from "./components/RoadmapDrawer";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { EmptyState } from "./components/EmptyState";
@@ -680,6 +680,9 @@ export default function GoalsPage() {
   const [monument, setMonument] = useState<string>("All");
   const [skill, setSkill] = useState<string>("All");
   const [drawer, setDrawer] = useState(false);
+  const [drawerInitialRoadmapId, setDrawerInitialRoadmapId] = useState<
+    string | null
+  >(null);
   const [editing, setEditing] = useState<Goal | null>(null);
   const [roadmapDrawer, setRoadmapDrawer] = useState(false);
   const [selectedRoadmap, setSelectedRoadmap] = useState<Roadmap | null>(null);
@@ -1755,11 +1758,16 @@ export default function GoalsPage() {
                       key={roadmap.id}
                       className="relative h-full snap-center sm:[scroll-snap-align:unset] mb-[22px] overflow-visible"
                     >
-                      <RoadmapCard
+                      <CampaignCard
                         roadmap={roadmap}
                         goalCount={roadmapGoalsList.length}
                         goals={roadmapGoalsList}
                         onRoadmapOrderSaved={refreshGoalsAndRoadmaps}
+                        onAddGoal={() => {
+                          setEditing(null);
+                          setDrawerInitialRoadmapId(roadmap.id);
+                          setDrawer(true);
+                        }}
                         onClick={() => {
                           setSelectedRoadmap(roadmap);
                           setRoadmapDrawer(true);
@@ -1834,10 +1842,12 @@ export default function GoalsPage() {
           onClose={() => {
             setDrawer(false);
             setEditing(null);
+            setDrawerInitialRoadmapId(null);
             router.replace("/goals");
           }}
           onAdd={addGoal}
           initialGoal={editing}
+          initialRoadmapId={drawerInitialRoadmapId}
           monuments={monuments}
           onUpdate={async (goal, context) => {
             const supabase = getSupabaseBrowser();
@@ -1874,6 +1884,13 @@ export default function GoalsPage() {
           goals={
             selectedRoadmap ? roadmapGoals.get(selectedRoadmap.id) ?? [] : []
           }
+          onAddGoal={() => {
+            if (!selectedRoadmap) return;
+            setRoadmapDrawer(false);
+            setEditing(null);
+            setDrawerInitialRoadmapId(selectedRoadmap.id);
+            setDrawer(true);
+          }}
           onGoalEdit={(goal) => {
             setEditing(goal);
             setDrawer(true);

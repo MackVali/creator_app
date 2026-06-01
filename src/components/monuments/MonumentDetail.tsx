@@ -7,6 +7,12 @@ import {
   useState,
   type PointerEvent,
 } from "react";
+import {
+  animate,
+  motion,
+  useMotionValue,
+  type AnimationPlaybackControls,
+} from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -51,7 +57,29 @@ interface MonumentDetailProps {
 }
 
 type MonumentView = "goals" | "roadmap";
-const PULL_EXIT_THRESHOLD_PX = 56;
+const PULL_EXIT_ACTIVATION_PX = 8;
+const PULL_EXIT_THRESHOLD_PX = 128;
+const PULL_EXIT_FLICK_VELOCITY = 0.65;
+const PULL_EXIT_FLICK_MIN_DISTANCE_PX = 32;
+
+function getScrollParent(element: HTMLElement | null) {
+  let current = element?.parentElement ?? null;
+
+  while (current) {
+    const { overflowY } = window.getComputedStyle(current);
+    const canScrollY =
+      /(auto|scroll|overlay)/.test(overflowY) &&
+      current.scrollHeight > current.clientHeight;
+
+    if (canScrollY) {
+      return current;
+    }
+
+    current = current.parentElement;
+  }
+
+  return null;
+}
 
 function MonumentRoadmapEmptyState() {
   return (
@@ -92,9 +120,18 @@ export function MonumentDetail({
   );
   const [focusPomoSource, setFocusPomoSource] =
     useState<FocusPomoSource | null>(null);
+  const detailSurfaceRef = useRef<HTMLElement | null>(null);
+  const detailScrollRef = useRef<HTMLElement | null>(null);
   const pullStartYRef = useRef<number | null>(null);
-  const pullExitTriggeredRef = useRef(false);
+  const pullStartXRef = useRef<number | null>(null);
+  const pullStartTimeRef = useRef<number | null>(null);
+  const pullLastYRef = useRef<number | null>(null);
+  const pullLastTimeRef = useRef<number | null>(null);
   const pullPointerIdRef = useRef<number | null>(null);
+  const pullGestureAllowedRef = useRef(false);
+  const pullDragActiveRef = useRef(false);
+  const pullSnapAnimationRef = useRef<AnimationPlaybackControls | null>(null);
+  const pullY = useMotionValue(0);
   const pullExitBlocked =
     editDialogOpen || actionsMenuOpen || Boolean(focusPomoSource);
 
@@ -102,6 +139,16 @@ export function MonumentDetail({
     setMonumentView("goals");
     setGoalSection("active");
   }, [id]);
+
+  useEffect(() => {
+    detailScrollRef.current = getScrollParent(detailSurfaceRef.current);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      pullSnapAnimationRef.current?.stop();
+    };
+  }, []);
 
   const containerShell =
     "relative w-full rounded-3xl border border-white/10";
@@ -146,69 +193,202 @@ export function MonumentDetail({
     router.back();
   }, [onClose, router]);
 
-  const isAtTop = () => window.scrollY <= 2;
+  const isAtTop = () => {
+    const scrollContainer = detailScrollRef.current;
+
+    if (scrollContainer) {
+      return scrollContainer.scrollTop <= 2;
+    }
+
+    return window.scrollY <= 2;
+  };
 
   const isInteractivePullTarget = (target: EventTarget | null) => {
     return (
       target instanceof HTMLElement &&
       Boolean(
         target.closest(
-          "a,button,input,select,textarea,[role='button'],[role='menuitem']"
+          "a,button,input,select,textarea,[role='button'],[role='menuitem'],[contenteditable='true']"
         )
       )
     );
   };
 
+  const isNestedScrollablePullTarget = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false;
+
+    let current: HTMLElement | null = target;
+
+    while (current && current !== detailSurfaceRef.current) {
+      const { overflowX, overflowY } = window.getComputedStyle(current);
+      const canScrollX =
+        /(auto|scroll|overlay)/.test(overflowX) &&
+        current.scrollWidth > current.clientWidth + 2;
+      const canScrollY =
+        /(auto|scroll|overlay)/.test(overflowY) &&
+        current.scrollHeight > current.clientHeight + 2;
+
+      if (canScrollX || canScrollY) {
+        return true;
+      }
+
+      current = current.parentElement;
+    }
+
+    return false;
+  };
+
   const resetPullExit = () => {
+    pullSnapAnimationRef.current?.stop();
+    pullSnapAnimationRef.current = null;
     pullStartYRef.current = null;
-    pullExitTriggeredRef.current = false;
+    pullStartXRef.current = null;
+    pullStartTimeRef.current = null;
+    pullLastYRef.current = null;
+    pullLastTimeRef.current = null;
     pullPointerIdRef.current = null;
+    pullGestureAllowedRef.current = false;
+    pullDragActiveRef.current = false;
+  };
+
+  const snapPullExitBack = () => {
+    resetPullExit();
+    pullSnapAnimationRef.current = animate(pullY, 0, {
+      type: "spring",
+      stiffness: 520,
+      damping: 42,
+      mass: 0.9,
+    });
   };
 
   const handlePullExitStart = (event: PointerEvent<HTMLElement>) => {
+    detailScrollRef.current =
+      detailScrollRef.current ?? getScrollParent(detailSurfaceRef.current);
+    pullSnapAnimationRef.current?.stop();
+
     if (
       pullExitBlocked ||
       (event.pointerType !== "touch" && event.pointerType !== "mouse") ||
       !isAtTop() ||
-      isInteractivePullTarget(event.target)
+      isInteractivePullTarget(event.target) ||
+      isNestedScrollablePullTarget(event.target)
     ) {
       resetPullExit();
       return;
     }
 
     pullStartYRef.current = event.clientY;
-    pullExitTriggeredRef.current = false;
+    pullStartXRef.current = event.clientX;
+    pullStartTimeRef.current = event.timeStamp;
+    pullLastYRef.current = event.clientY;
+    pullLastTimeRef.current = event.timeStamp;
     pullPointerIdRef.current = event.pointerId;
+    pullGestureAllowedRef.current = true;
+    pullDragActiveRef.current = false;
   };
 
   const handlePullExitMove = (event: PointerEvent<HTMLElement>) => {
     const pullStartY = pullStartYRef.current;
+    const pullStartX = pullStartXRef.current;
 
     if (
       pullExitBlocked ||
       pullStartY === null ||
-      pullExitTriggeredRef.current ||
+      pullStartX === null ||
+      !pullGestureAllowedRef.current ||
       pullPointerIdRef.current !== event.pointerId ||
       !isAtTop()
     ) {
       return;
     }
 
-    const pullDistance = event.clientY - pullStartY;
+    const deltaY = event.clientY - pullStartY;
+    const deltaX = event.clientX - pullStartX;
 
-    if (pullDistance > PULL_EXIT_THRESHOLD_PX) {
-      pullExitTriggeredRef.current = true;
-      pullStartYRef.current = null;
-      pullPointerIdRef.current = null;
-      handleCloseOrBack();
+    if (!pullDragActiveRef.current) {
+      if (
+        Math.abs(deltaX) > PULL_EXIT_ACTIVATION_PX &&
+        Math.abs(deltaX) > deltaY
+      ) {
+        resetPullExit();
+        return;
+      }
+
+      if (deltaY < -PULL_EXIT_ACTIVATION_PX) {
+        resetPullExit();
+        return;
+      }
+
+      if (deltaY <= PULL_EXIT_ACTIVATION_PX) {
+        return;
+      }
+
+      pullDragActiveRef.current = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
     }
+
+    event.preventDefault();
+
+    const dampedDistance = Math.max(0, deltaY) * 0.86;
+    pullY.set(dampedDistance);
+    pullLastYRef.current = event.clientY;
+    pullLastTimeRef.current = event.timeStamp;
   };
 
-  const handlePullExitEnd = resetPullExit;
+  const handlePullExitEnd = (event: PointerEvent<HTMLElement>) => {
+    const pullStartY = pullStartYRef.current;
+    const pullLastY = pullLastYRef.current;
+    const pullStartTime = pullStartTimeRef.current;
+    const pullLastTime = pullLastTimeRef.current;
+    const wasDragging = pullDragActiveRef.current;
+
+    if (
+      pullPointerIdRef.current !== null &&
+      event.currentTarget.hasPointerCapture(pullPointerIdRef.current)
+    ) {
+      event.currentTarget.releasePointerCapture(pullPointerIdRef.current);
+    }
+
+    if (
+      !wasDragging ||
+      pullStartY === null ||
+      pullLastY === null ||
+      pullStartTime === null ||
+      pullLastTime === null
+    ) {
+      resetPullExit();
+      pullY.set(0);
+      return;
+    }
+
+    const pullDistance = Math.max(0, event.clientY - pullStartY);
+    const recentDistance = Math.max(0, event.clientY - pullLastY);
+    const recentTime = Math.max(1, event.timeStamp - pullLastTime);
+    const totalTime = Math.max(1, event.timeStamp - pullStartTime);
+    const velocity = Math.max(
+      recentDistance / recentTime,
+      pullDistance / totalTime
+    );
+    const shouldClose =
+      pullDistance >= PULL_EXIT_THRESHOLD_PX ||
+      (pullDistance >= PULL_EXIT_FLICK_MIN_DISTANCE_PX &&
+        velocity >= PULL_EXIT_FLICK_VELOCITY);
+
+    resetPullExit();
+
+    if (shouldClose) {
+      handleCloseOrBack();
+      return;
+    }
+
+    snapPullExitBack();
+  };
 
   return (
-    <main
+    <motion.main
+      ref={detailSurfaceRef}
       className="overflow-x-hidden px-2.5 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-2 sm:px-6 sm:pb-10 sm:pt-4 lg:px-8"
+      style={{ y: pullY, touchAction: "pan-y", willChange: "transform" }}
       onPointerDown={handlePullExitStart}
       onPointerMove={handlePullExitMove}
       onPointerUp={handlePullExitEnd}
@@ -394,7 +574,7 @@ export function MonumentDetail({
           </div>
         </div>
       </div>
-    </main>
+    </motion.main>
   );
 }
 

@@ -1,8 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
-import { getSupabaseBrowser } from "@/lib/supabase";
+import { useCallback, useState } from "react";
 import {
   Sheet,
   SheetContent,
@@ -18,6 +16,7 @@ interface RoadmapDrawerProps {
   onClose(): void;
   roadmap: Roadmap | null;
   goals: Goal[];
+  onAddGoal?: () => void;
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
@@ -30,6 +29,7 @@ export function RoadmapDrawer({
   onClose,
   roadmap,
   goals,
+  onAddGoal,
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
@@ -65,7 +65,7 @@ export function RoadmapDrawer({
     >
       <SheetContent
         side="center"
-        className="h-[90vh] w-full max-w-3xl overflow-hidden border border-white/10 bg-[#05070c] text-white shadow-[0_45px_120px_-40px_rgba(5,8,21,0.85)] sm:max-w-4xl"
+        className="flex h-[90vh] w-full max-w-3xl flex-col overflow-hidden border border-white/10 bg-[#05070c] text-white shadow-[0_45px_120px_-40px_rgba(5,8,21,0.85)] sm:max-w-4xl"
       >
         <SheetHeader className="border-b border-white/10 px-6 py-5 sm:px-8 sm:py-6">
           <div className="flex items-center gap-3">
@@ -111,8 +111,22 @@ export function RoadmapDrawer({
             </div>
           )}
         </div>
+        {onAddGoal ? (
+          <div className="shrink-0 border-t border-white/10 bg-[#05070c] px-6 py-4 sm:px-8">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onAddGoal();
+              }}
+              className="w-full rounded-2xl border border-amber-300/60 bg-amber-400/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.28em] text-amber-100 transition hover:border-amber-200 hover:bg-amber-400/20 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+            >
+              Add GOAL
+            </button>
+          </div>
+        ) : null}
       </SheetContent>
     </Sheet>
   );
 }
-

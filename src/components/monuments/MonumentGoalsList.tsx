@@ -961,7 +961,14 @@ export function MonumentGoalsList({
   const [goalPanelViewportWidth, setGoalPanelViewportWidth] = useState(0);
   const [goalPanelTransitionEnabled, setGoalPanelTransitionEnabled] =
     useState(false);
+  const [goalsRoadmapViewportWidth, setGoalsRoadmapViewportWidth] = useState(0);
+  const [goalsRoadmapViewHeight, setGoalsRoadmapViewHeight] = useState<
+    number | null
+  >(null);
   const deferredGoalCloseFrameRef = useRef<number | null>(null);
+  const goalsRoadmapViewportRef = useRef<HTMLDivElement | null>(null);
+  const goalsViewPanelRef = useRef<HTMLDivElement | null>(null);
+  const roadmapViewPanelRef = useRef<HTMLDivElement | null>(null);
   const goalPanelViewportRef = useRef<HTMLDivElement | null>(null);
   const activeGoalPanelRef = useRef<HTMLDivElement | null>(null);
   const completedGoalPanelRef = useRef<HTMLDivElement | null>(null);
@@ -984,6 +991,11 @@ export function MonumentGoalsList({
     width: number;
   } | null>(null);
   const activeGoalPanelIndex = activeGoalPanel === "completed" ? 1 : 0;
+  const goalsRoadmapViewIndex = monumentView === "roadmap" ? 1 : 0;
+  const goalsRoadmapTrackTransform =
+    goalsRoadmapViewportWidth > 0
+      ? -goalsRoadmapViewIndex * goalsRoadmapViewportWidth
+      : 0;
   const goalPanelBaseTransform =
     goalPanelViewportWidth > 0
       ? -activeGoalPanelIndex * goalPanelViewportWidth
@@ -1011,6 +1023,26 @@ export function MonumentGoalsList({
     const panelElement = loadingGoalPanelRef.current;
     return panelElement ? Math.ceil(panelElement.scrollHeight) : null;
   }, []);
+
+  const getGoalsRoadmapPanelHeight = useCallback(
+    (view: "goals" | "roadmap") => {
+      const panelElement =
+        view === "roadmap"
+          ? roadmapViewPanelRef.current
+          : goalsViewPanelRef.current;
+      return panelElement ? Math.ceil(panelElement.scrollHeight) : null;
+    },
+    []
+  );
+
+  const measureSelectedGoalsRoadmapPanel = useCallback(() => {
+    const nextHeight = getGoalsRoadmapPanelHeight(monumentView);
+    if (!nextHeight) return;
+
+    setGoalsRoadmapViewHeight((currentHeight) =>
+      currentHeight === nextHeight ? currentHeight : nextHeight
+    );
+  }, [getGoalsRoadmapPanelHeight, monumentView]);
 
   useLayoutEffect(() => {
     const nextHeight = getGoalPanelHeight(goalSection);
@@ -1055,6 +1087,35 @@ export function MonumentGoalsList({
     setGoalPanelTransitionEnabled(true);
   }, []);
 
+  useLayoutEffect(() => {
+    const viewportElement = goalsRoadmapViewportRef.current;
+    if (!viewportElement) return;
+
+    const measureViewportWidth = () => {
+      setGoalsRoadmapViewportWidth(viewportElement.clientWidth);
+    };
+
+    measureViewportWidth();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measureViewportWidth);
+    resizeObserver?.observe(viewportElement);
+
+    if (typeof window === "undefined") {
+      return () => {
+        resizeObserver?.disconnect();
+      };
+    }
+
+    window.addEventListener("resize", measureViewportWidth);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureViewportWidth);
+    };
+  }, []);
+
   const handleGoalPanelChange = useCallback(
     (panel: GoalPanel) => {
       const nextHeight = getGoalPanelHeight(panel);
@@ -1081,7 +1142,6 @@ export function MonumentGoalsList({
 
   useLayoutEffect(() => {
     if (monumentView !== "goals") {
-      setGoalPanelHeight(null);
       return;
     }
 
@@ -1130,6 +1190,54 @@ export function MonumentGoalsList({
       window.removeEventListener("resize", measureActiveGoalPanel);
     };
   }, [activeGoalPanel, loading, measureActiveGoalPanel, monumentView]);
+
+  useLayoutEffect(() => {
+    measureSelectedGoalsRoadmapPanel();
+  }, [
+    activeGoalPanel,
+    goalPanelHeight,
+    goals,
+    loading,
+    measureSelectedGoalsRoadmapPanel,
+    monumentRoadmapsWithItems,
+    openGoalId,
+    roadmapOpenGoal,
+    goalsRoadmapViewportWidth,
+  ]);
+
+  useEffect(() => {
+    const goalsPanel = goalsViewPanelRef.current;
+    const roadmapPanel = roadmapViewPanelRef.current;
+
+    measureSelectedGoalsRoadmapPanel();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            measureSelectedGoalsRoadmapPanel();
+          });
+    if (goalsPanel) resizeObserver?.observe(goalsPanel);
+    if (roadmapPanel) resizeObserver?.observe(roadmapPanel);
+
+    if (typeof window === "undefined") {
+      return () => {
+        resizeObserver?.disconnect();
+      };
+    }
+
+    window.addEventListener("resize", measureSelectedGoalsRoadmapPanel);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureSelectedGoalsRoadmapPanel);
+    };
+  }, [
+    activeGoalPanel,
+    goalPanelHeight,
+    loading,
+    measureSelectedGoalsRoadmapPanel,
+    monumentView,
+  ]);
 
   const handleGoalPanelPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
@@ -2079,51 +2187,92 @@ export function MonumentGoalsList({
   }, [goals, openGoalId, roadmapOpenGoal]);
 
   const content = useMemo(() => {
-    if (loading) {
-      if (monumentView === "goals") {
-        return (
-          <section className={`${GOAL_REVEAL_CLASS} space-y-3`}>
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
-                  Goal Library
-                </p>
+    const renderGoalsRoadmapViewport = (
+      goalsContent: ReactNode,
+      roadmapContent: ReactNode
+    ) => (
+      <div
+        ref={goalsRoadmapViewportRef}
+        className="relative w-full overflow-hidden transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+        style={
+          goalsRoadmapViewHeight
+            ? { height: goalsRoadmapViewHeight }
+            : undefined
+        }
+      >
+        <div className="absolute inset-0">
+          <div
+            className="flex w-[200%] transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+            style={{
+              transform:
+                goalsRoadmapViewportWidth > 0
+                  ? `translate3d(${goalsRoadmapTrackTransform}px, 0, 0)`
+                  : `translate3d(${-goalsRoadmapViewIndex * 50}%, 0, 0)`,
+            }}
+          >
+            <div className="w-1/2 shrink-0 overflow-hidden">
+              <div
+                ref={goalsViewPanelRef}
+                className="px-1 py-1 sm:px-1.5 sm:py-1.5"
+              >
+                {goalsContent}
               </div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
-                {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
+            </div>
+            <div className="w-1/2 shrink-0 overflow-hidden">
+              <div
+                ref={roadmapViewPanelRef}
+                className="px-1 py-1 sm:px-1.5 sm:py-1.5"
+              >
+                {roadmapContent}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+
+    if (loading) {
+      const loadingGoalsContent = (
+        <section className={`${GOAL_REVEAL_CLASS} space-y-3`}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
+                Goal Library
               </p>
             </div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+              {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
+            </p>
+          </div>
+          <div
+            className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+            style={goalPanelHeight ? { height: goalPanelHeight } : undefined}
+            onPointerDown={handleGoalPanelPointerDown}
+            onPointerUp={handleGoalPanelPointerEnd}
+            onWheel={handleGoalPanelWheel}
+            onPointerCancel={() => {
+              goalPanelDragStartRef.current = null;
+            }}
+          >
             <div
-              className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-              style={goalPanelHeight ? { height: goalPanelHeight } : undefined}
-              onPointerDown={handleGoalPanelPointerDown}
-              onPointerUp={handleGoalPanelPointerEnd}
-              onWheel={handleGoalPanelWheel}
-              onPointerCancel={() => {
-                goalPanelDragStartRef.current = null;
-              }}
+              ref={loadingGoalPanelRef}
+              className={GOAL_PANEL_CONTENT_CLASS}
             >
               <div
-                ref={loadingGoalPanelRef}
-                className={GOAL_PANEL_CONTENT_CLASS}
+                className={`${GOAL_GRID_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}
               >
-                <div
-                  className={`${GOAL_GRID_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}
-                >
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <Skeleton
-                      key={i}
-                      className="h-[100px] rounded-2xl bg-white/[0.06]"
-                    />
-                  ))}
-                </div>
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <Skeleton
+                    key={i}
+                    className="h-[100px] rounded-2xl bg-white/[0.06]"
+                  />
+                ))}
               </div>
             </div>
-          </section>
-        );
-      }
-
-      return (
+          </div>
+        </section>
+      );
+      const loadingRoadmapContent = (
         <div className={`${GOAL_GRID_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}>
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton
@@ -2132,6 +2281,11 @@ export function MonumentGoalsList({
             />
           ))}
         </div>
+      );
+
+      return renderGoalsRoadmapViewport(
+        loadingGoalsContent,
+        loadingRoadmapContent
       );
     }
 
@@ -2265,78 +2419,72 @@ export function MonumentGoalsList({
 
     const hasTrueRoadmaps = monumentRoadmapsWithItems.length > 0;
 
-    if (monumentView === "roadmap") {
-      if (!hasTrueRoadmaps) {
-        return (
-          roadmapEmptyState ?? (
-            <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-              No true roadmap linked to this {ownerLabel} yet.
-            </Card>
-          )
-        );
-      }
-
-      return (
-        <div
-          className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3.5 sm:space-y-4`}
-        >
-          {monumentRoadmapsWithItems.map((roadmap) => (
-            <div
-              key={roadmap.id}
-              className="goal-card-wrapper"
-            >
-              <MixedRoadmapCard
-                roadmap={roadmap}
-                variant="compact"
-                defaultOpen
-                onGoalOpen={handleRoadmapGoalOpen}
-                onReorderSaved={refreshTrueRoadmaps}
-                enableCampaignCollapse
-              />
-            </div>
-          ))}
-          {roadmapOpenGoal && openGoalId === roadmapOpenGoal.id ? (
-            <div
-              className="goal-card-wrapper"
-              data-monument-goal-card-id={roadmapOpenGoal.id}
-            >
-              <GoalCard
-                goal={roadmapOpenGoal}
-                showWeight={false}
-                showCreatedAt={false}
-                showEmojiPrefix={false}
-                variant="compact"
-                monumentContext
-                completeWhenProjectsDone
-                completionTheme="border"
-                onEdit={() => handleGoalEdit(roadmapOpenGoal)}
-                onProjectUpdated={(projectId, updates) =>
-                  handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
-                }
-                onProjectDeleted={(projectId) =>
-                  handleProjectDeleted(roadmapOpenGoal.id, projectId)
-                }
-                onProjectEditOpen={(target, project, origin) =>
-                  handleProjectEditOpen(
-                    target,
-                    project.id,
-                    roadmapOpenGoal.id,
-                    origin
-                  )
-                }
-                onTaskEditOpen={handleTaskEditOpen}
-                onTaskToggleCompletion={handleTaskToggleCompletion}
-                open={openGoalId === roadmapOpenGoal.id}
-                onOpenChange={(isOpen) => {
-                  handleGoalOpenChange(roadmapOpenGoal.id, isOpen);
-                  if (!isOpen) setRoadmapOpenGoal(null);
-                }}
-              />
-            </div>
-          ) : null}
-        </div>
-      );
-    }
+    const roadmapContent = !hasTrueRoadmaps ? (
+      roadmapEmptyState ?? (
+        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+          No true roadmap linked to this {ownerLabel} yet.
+        </Card>
+      )
+    ) : (
+      <div
+        className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3.5 sm:space-y-4`}
+      >
+        {monumentRoadmapsWithItems.map((roadmap) => (
+          <div
+            key={roadmap.id}
+            className="goal-card-wrapper"
+          >
+            <MixedRoadmapCard
+              roadmap={roadmap}
+              variant="compact"
+              defaultOpen
+              onGoalOpen={handleRoadmapGoalOpen}
+              onReorderSaved={refreshTrueRoadmaps}
+              enableCampaignCollapse
+            />
+          </div>
+        ))}
+        {roadmapOpenGoal && openGoalId === roadmapOpenGoal.id ? (
+          <div
+            className="goal-card-wrapper"
+            data-monument-goal-card-id={roadmapOpenGoal.id}
+          >
+            <GoalCard
+              goal={roadmapOpenGoal}
+              showWeight={false}
+              showCreatedAt={false}
+              showEmojiPrefix={false}
+              variant="compact"
+              monumentContext
+              completeWhenProjectsDone
+              completionTheme="border"
+              onEdit={() => handleGoalEdit(roadmapOpenGoal)}
+              onProjectUpdated={(projectId, updates) =>
+                handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
+              }
+              onProjectDeleted={(projectId) =>
+                handleProjectDeleted(roadmapOpenGoal.id, projectId)
+              }
+              onProjectEditOpen={(target, project, origin) =>
+                handleProjectEditOpen(
+                  target,
+                  project.id,
+                  roadmapOpenGoal.id,
+                  origin
+                )
+              }
+              onTaskEditOpen={handleTaskEditOpen}
+              onTaskToggleCompletion={handleTaskToggleCompletion}
+              open={openGoalId === roadmapOpenGoal.id}
+              onOpenChange={(isOpen) => {
+                handleGoalOpenChange(roadmapOpenGoal.id, isOpen);
+                if (!isOpen) setRoadmapOpenGoal(null);
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
+    );
 
     const renderGoalsPanel = (section: GoalPanel) => {
       const campaignGroupsForGoalGrid = getCampaignGroupsForGoalGrid(section);
@@ -2465,7 +2613,7 @@ export function MonumentGoalsList({
       );
     };
 
-    return (
+    const goalsContent = (
       <section className={`${GOAL_REVEAL_CLASS} space-y-3`}>
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-1">
@@ -2549,10 +2697,16 @@ export function MonumentGoalsList({
         </div>
       </section>
     );
+
+    return renderGoalsRoadmapViewport(goalsContent, roadmapContent);
   }, [
     loading,
     goals,
     monumentView,
+    goalsRoadmapViewHeight,
+    goalsRoadmapViewportWidth,
+    goalsRoadmapTrackTransform,
+    goalsRoadmapViewIndex,
     roadmapEmptyState,
     monumentRoadmapsWithItems,
     roadmapOpenGoal,

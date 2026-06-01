@@ -303,6 +303,7 @@ export function MonumentRelatedHabits({
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
   const [habitsLoading, setHabitsLoading] = useState(true);
+  const [completionLoading, setCompletionLoading] = useState(false);
   const [habitsError, setHabitsError] = useState<string | null>(null);
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [completedRelatedHabitIds, setCompletedRelatedHabitIds] = useState<
@@ -403,8 +404,11 @@ export function MonumentRelatedHabits({
       setCompletedRelatedHabitIds(new Set());
       completionStateDateKeyRef.current = currentDateKey;
       setCompletionError(null);
+      setCompletionLoading(false);
       return;
     }
+
+    setCompletionLoading(true);
 
     if (completionStateDateKeyRef.current !== currentDateKey) {
       const currentDatePendingCompletions = new Set<string>();
@@ -465,6 +469,10 @@ export function MonumentRelatedHabits({
             completionLoadErr
           );
           setCompletionError("Unable to load habit completion state right now.");
+        }
+      } finally {
+        if (!cancelled) {
+          setCompletionLoading(false);
         }
       }
     };
@@ -640,10 +648,12 @@ export function MonumentRelatedHabits({
       if (!supabase || !monumentId) {
         setRelatedHabits([]);
         setHabitsLoading(false);
+        setCompletionLoading(false);
         return;
       }
 
       setHabitsLoading(true);
+      setCompletionLoading(false);
       setHabitsError(null);
       setCompletionError(null);
       setRelatedHabits([]);
@@ -750,11 +760,11 @@ export function MonumentRelatedHabits({
         }
 
         if (!cancelled) {
-          setRelatedHabits(
-            (habitsData ?? [])
-              .map((habit) => formatHabitRecord(habit, skillIconById))
-              .filter((habit): habit is HabitSummary => habit !== null)
-          );
+          const formattedHabits = (habitsData ?? [])
+            .map((habit) => formatHabitRecord(habit, skillIconById))
+            .filter((habit): habit is HabitSummary => habit !== null);
+          setCompletionLoading(formattedHabits.length > 0);
+          setRelatedHabits(formattedHabits);
         }
       } catch (err) {
         if (!cancelled) {
@@ -792,7 +802,7 @@ export function MonumentRelatedHabits({
         </div>
       </CardHeader>
       <CardContent className="relative pt-0 pb-4">
-        {habitsLoading ? (
+        {habitsLoading || completionLoading ? (
           <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {Array.from({ length: 3 }).map((_, index) => (
               <Skeleton

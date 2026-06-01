@@ -58,6 +58,7 @@ interface GoalDrawerProps {
   onDelete?(goal: Goal): Promise<void> | void;
   monuments?: { id: string; title: string; emoji?: string | null }[];
   roadmaps?: { id: string; title: string; emoji?: string | null }[];
+  initialRoadmapId?: string | null;
   hideProjects?: boolean;
   saveDisabled?: boolean;
   onGoalLimitReached?(limitCode: LimitErrorCode): void;
@@ -287,6 +288,7 @@ export function GoalDrawer({
   onDelete,
   monuments = [],
   roadmaps = undefined,
+  initialRoadmapId = null,
   hideProjects = false,
   saveDisabled = false,
 }: GoalDrawerProps) {
@@ -396,7 +398,7 @@ export function GoalDrawer({
       setWhy("");
       setMonumentId("");
       monumentSelectionRef.current = "";
-      setRoadmapId("");
+      setRoadmapId(initialRoadmapId || "");
       setShowCreateRoadmap(false);
       setNewRoadmapTitle("");
       setNewRoadmapEmoji("");
@@ -406,7 +408,7 @@ export function GoalDrawer({
     }
     setRemovedProjectIds([]);
     setRemovedTaskIds([]);
-  }, [initialGoal, open, getMonumentEmojiById]);
+  }, [initialGoal, initialRoadmapId, open, getMonumentEmojiById]);
 
   useEffect(() => {
     if (monumentSelectionRef.current === monumentId) {
