@@ -210,7 +210,7 @@ function DraggableGoalCard({
           <motion.button
             type="button"
             onClick={() => onOpenChange?.(true)}
-            className={`relative flex w-full items-center gap-2 rounded-xl border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:rounded-2xl sm:px-2.5 sm:py-2 ${
+            className={`relative flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2 ${
               isCompleted
                 ? "border-emerald-400/55 bg-[linear-gradient(135deg,rgba(6,78,59,0.72),rgba(5,46,39,0.86))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
                 : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"

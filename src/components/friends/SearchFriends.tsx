@@ -437,7 +437,7 @@ export default function SearchFriends({
         >
           <Link
             href={profile.profileUrl ?? `/profile/${profile.username}`}
-            className="flex flex-1 items-center gap-3"
+            className="flex min-w-0 flex-1 items-center gap-3"
           >
             <Image
               src={profile.avatarUrl || DEFAULT_AVATAR_URL}
@@ -446,23 +446,23 @@ export default function SearchFriends({
               height={48}
               className="h-12 w-12 rounded-full object-cover"
             />
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex items-baseline justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white whitespace-nowrap">
-                    {profile.displayName}
-                  </p>
-                  <p className="text-xs text-white/60 whitespace-nowrap">
-                    @{profile.username} • {profile.role}
-                  </p>
-                </div>
-                <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <p className="truncate text-sm font-semibold text-white">
+                  {profile.displayName}
+                </p>
+                <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-medium leading-none text-white/45">
                   {profile.mutualFriends} mutual
                 </span>
               </div>
-              <p className="text-xs text-white/70">
-                {profile.bio ?? profile.highlight}
+              <p className="mt-0.5 truncate text-xs text-white/60">
+                @{profile.username}
               </p>
+              <div className="mt-1">
+                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/60">
+                  {profile.role}
+                </span>
+              </div>
             </div>
           </Link>
           <button

@@ -213,7 +213,7 @@ function computeHabitDueStatus(
   });
 
   if (todayEvaluation.isDue) {
-    return { label: "Due Now", rank: 0 };
+    return { label: "DUE", rank: 0 };
   }
 
   for (let dayOffset = 1; dayOffset <= MAX_LOOKAHEAD_DAYS; dayOffset += 1) {
@@ -226,22 +226,14 @@ function computeHabitDueStatus(
     });
 
     if (evaluation.isDue) {
-      if (dayOffset === 1) {
-        return { label: "Due in 1 Day", rank: dayOffset };
-      }
-      return { label: `Due in ${dayOffset} Days`, rank: dayOffset };
+      return {
+        label: `${dayOffset} ${dayOffset === 1 ? "DAY" : "DAYS"}`,
+        rank: dayOffset,
+      };
     }
   }
 
   return { label: "No Due Match", rank: NO_DUE_MATCH_RANK };
-}
-
-function computeHabitDueLabel(habit: HabitSummary, timeZone: string): string {
-  return computeHabitDueStatus(habit, timeZone).label;
-}
-
-function computeHabitDueRank(habit: HabitSummary, timeZone: string): number {
-  return computeHabitDueStatus(habit, timeZone).rank;
 }
 
 function getHabitTypePriority(habitType: string | null | undefined): number {
@@ -378,12 +370,15 @@ export default function SkillDetailPage() {
   const decoratedHabits = useMemo(
     () =>
       relatedHabits
-        .map((habit) => ({
-          ...habit,
-          normalizedHabitType: normalizeRelatedHabitType(habit.habitType),
-          dueLabel: computeHabitDueLabel(habit, timeZone),
-          dueRank: computeHabitDueRank(habit, timeZone),
-        }))
+        .map((habit) => {
+          const dueStatus = computeHabitDueStatus(habit, timeZone);
+          return {
+            ...habit,
+            normalizedHabitType: normalizeRelatedHabitType(habit.habitType),
+            dueLabel: dueStatus.label,
+            dueRank: dueStatus.rank,
+          };
+        })
         .sort((first, second) => {
           if (first.dueRank !== second.dueRank) {
             return first.dueRank - second.dueRank;
@@ -1561,11 +1556,19 @@ export default function SkillDetailPage() {
                         const streakLabel = `${streakDays}x`;
                         const habitSkillIcon = skill.icon || "💡";
                         const isHabitDue = habit.dueRank === 0;
+                        const habitPillLabel = isHabitCompletedToday
+                          ? "COMPLETE"
+                          : habit.dueLabel;
                         const shimmerBorderClass = isHabitCompletedToday
                           ? "shimmer-border-complete"
                           : isHabitDue
                             ? "shimmer-border-due"
                             : null;
+                        const habitPillClass = isHabitCompletedToday
+                          ? "border-emerald-200/25 bg-emerald-400/15 text-emerald-50"
+                          : isHabitDue
+                            ? "border-rose-200/25 bg-rose-500/15 text-rose-50"
+                            : "border-white/10 bg-white/[0.06] text-white/65";
 
                         return (
                           <div
@@ -1591,10 +1594,10 @@ export default function SkillDetailPage() {
                             tabIndex={isHabitPending ? -1 : 0}
                             aria-pressed={isHabitCompletedToday}
                             aria-disabled={isHabitPending}
-                            aria-label={`${habit.name}. ${habit.dueLabel}. Double tap to ${
+                            aria-label={`${habit.name}. ${habitPillLabel}. Double tap to ${
                               isHabitCompletedToday ? "undo" : "complete"
                             }.`}
-                            title={`${habit.name} - ${habit.dueLabel}. Double tap to ${
+                            title={`${habit.name} - ${habitPillLabel}. Double tap to ${
                               isHabitCompletedToday ? "undo" : "complete"
                             }.`}
                             onDoubleClick={() => {
@@ -1625,10 +1628,10 @@ export default function SkillDetailPage() {
                                 </span>
                               </span>
                             ) : null}
-                            <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-2 text-center">
+                            <div className="relative z-[2] flex min-h-0 flex-1 flex-col items-center justify-between gap-1 text-center">
                               <span
                                 className={clsx(
-                                  "mt-2 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]",
+                                  "mt-1 flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs font-semibold leading-none text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-8 sm:w-8",
                                   isHabitCompletedToday
                                     ? "grayscale"
                                     : "drop-shadow-[0_8px_18px_rgba(0,0,0,0.38)]"
@@ -1637,15 +1640,22 @@ export default function SkillDetailPage() {
                               >
                                 {habitSkillIcon}
                               </span>
-                              <span
-                                className="line-clamp-3 max-w-full break-words px-1 text-[10px] font-semibold leading-snug text-white sm:text-[11px]"
-                                style={{ hyphens: "auto" }}
-                              >
-                                {habit.name}
-                              </span>
+                              <div className="flex min-h-0 w-full min-w-0 flex-1 items-center justify-center">
+                                <span
+                                  className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]"
+                                  style={{ hyphens: "auto" }}
+                                >
+                                  {habit.name}
+                                </span>
+                              </div>
                               <div className="flex w-full min-w-0 flex-col items-center gap-1">
-                                <span className="max-w-full truncate rounded-full border border-white/10 bg-white/[0.06] px-1.5 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.12em] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                                  {habit.dueLabel}
+                                <span
+                                  className={clsx(
+                                    "max-w-full truncate rounded-full border px-1.5 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.12em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                                    habitPillClass
+                                  )}
+                                >
+                                  {habitPillLabel}
                                 </span>
                               </div>
                             </div>

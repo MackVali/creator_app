@@ -3,10 +3,13 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type PointerEvent,
   type ReactNode,
+  type WheelEvent,
 } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalStatusById } from "@/lib/queries/goals";
@@ -20,12 +23,6 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LazyFab } from "@/components/ui/LazyFab";
 import type { FabEditTarget } from "@/components/ui/Fab";
-import {
-  segmentedToggleActiveClassName,
-  segmentedToggleButtonClassName,
-  segmentedToggleContainerClassName,
-  segmentedToggleInactiveClassName,
-} from "@/components/ui/segmented-toggle-styles";
 import {
   projectWeight,
   taskWeight,
@@ -79,6 +76,8 @@ type GoalRowWithRelations = GoalRow & {
   }[];
   priority_rank?: number | null;
 };
+
+type GoalPanel = "active" | "completed";
 
 const GOAL_RELATIONS_BASE_SELECT =
   "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank";
@@ -929,8 +928,8 @@ export function MonumentGoalsList({
   circleId?: string;
   monumentEmoji?: string | null;
   monumentView?: "goals" | "roadmap";
-  goalSection?: "active" | "completed";
-  onGoalSectionChange?: (section: "active" | "completed") => void;
+  goalSection?: GoalPanel;
+  onGoalSectionChange?: (section: GoalPanel) => void;
   roadmapEmptyState?: ReactNode;
 }) {
   const resolvedSourceType: GoalsSourceType = sourceType;
@@ -953,7 +952,201 @@ export function MonumentGoalsList({
   const [fabEditTarget, setFabEditTarget] = useState<FabEditTarget | null>(
     null
   );
+  const [activeGoalPanel, setActiveGoalPanel] = useState<GoalPanel>("active");
+  const [goalPanelHeight, setGoalPanelHeight] = useState<number | null>(null);
   const deferredGoalCloseFrameRef = useRef<number | null>(null);
+  const activeGoalPanelRef = useRef<HTMLDivElement | null>(null);
+  const completedGoalPanelRef = useRef<HTMLDivElement | null>(null);
+  const loadingGoalPanelRef = useRef<HTMLDivElement | null>(null);
+  const goalPanelWheelLockedRef = useRef(false);
+  const goalPanelWheelCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const goalPanelDragStartRef = useRef<{
+    x: number;
+    y: number;
+    pointerId: number;
+  } | null>(null);
+
+  const getGoalPanelElement = useCallback((panel: GoalPanel) => {
+    return panel === "completed"
+      ? completedGoalPanelRef.current
+      : activeGoalPanelRef.current;
+  }, []);
+
+  const getGoalPanelHeight = useCallback(
+    (panel: GoalPanel) => {
+      const panelElement = getGoalPanelElement(panel);
+      return panelElement ? Math.ceil(panelElement.scrollHeight) : null;
+    },
+    [getGoalPanelElement]
+  );
+
+  const getLoadingGoalPanelHeight = useCallback(() => {
+    const panelElement = loadingGoalPanelRef.current;
+    return panelElement ? Math.ceil(panelElement.scrollHeight) : null;
+  }, []);
+
+  useLayoutEffect(() => {
+    const nextHeight = getGoalPanelHeight(goalSection);
+    if (nextHeight) {
+      setGoalPanelHeight(nextHeight);
+    }
+    setActiveGoalPanel(goalSection);
+  }, [getGoalPanelHeight, goalSection]);
+
+  const handleGoalPanelChange = useCallback(
+    (panel: GoalPanel) => {
+      const nextHeight = getGoalPanelHeight(panel);
+      if (nextHeight) {
+        setGoalPanelHeight(nextHeight);
+      }
+      setActiveGoalPanel(panel);
+      onGoalSectionChange?.(panel);
+    },
+    [getGoalPanelHeight, onGoalSectionChange]
+  );
+
+  const measureActiveGoalPanel = useCallback(() => {
+    const nextHeight = loading
+      ? getLoadingGoalPanelHeight()
+      : getGoalPanelHeight(activeGoalPanel);
+    if (!nextHeight) return;
+
+    setGoalPanelHeight((currentHeight) =>
+      currentHeight === nextHeight ? currentHeight : nextHeight
+    );
+  }, [activeGoalPanel, getGoalPanelHeight, getLoadingGoalPanelHeight, loading]);
+
+  useLayoutEffect(() => {
+    if (monumentView !== "goals") {
+      setGoalPanelHeight(null);
+      return;
+    }
+
+    measureActiveGoalPanel();
+  }, [
+    activeGoalPanel,
+    goals,
+    loading,
+    measureActiveGoalPanel,
+    monumentRoadmapsWithItems,
+    monumentView,
+    openGoalId,
+    roadmapOpenGoal,
+  ]);
+
+  useEffect(() => {
+    if (monumentView !== "goals") return;
+
+    const activePanel = loading
+      ? loadingGoalPanelRef.current
+      : activeGoalPanel === "completed"
+        ? completedGoalPanelRef.current
+        : activeGoalPanelRef.current;
+
+    if (!activePanel) return;
+
+    measureActiveGoalPanel();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            measureActiveGoalPanel();
+          });
+    resizeObserver?.observe(activePanel);
+
+    if (typeof window === "undefined") {
+      return () => {
+        resizeObserver?.disconnect();
+      };
+    }
+
+    window.addEventListener("resize", measureActiveGoalPanel);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureActiveGoalPanel);
+    };
+  }, [activeGoalPanel, loading, measureActiveGoalPanel, monumentView]);
+
+  const handleGoalPanelPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (
+        event.pointerType !== "touch" &&
+        event.pointerType !== "pen" &&
+        event.pointerType !== "mouse"
+      ) {
+        return;
+      }
+      goalPanelDragStartRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        pointerId: event.pointerId,
+      };
+    },
+    []
+  );
+
+  const handleGoalPanelPointerEnd = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const start = goalPanelDragStartRef.current;
+      if (!start || start.pointerId !== event.pointerId) return;
+      goalPanelDragStartRef.current = null;
+
+      const deltaX = event.clientX - start.x;
+      const deltaY = event.clientY - start.y;
+      const horizontalDistance = Math.abs(deltaX);
+
+      if (
+        horizontalDistance < 48 ||
+        horizontalDistance < Math.abs(deltaY) * 1.35
+      ) {
+        return;
+      }
+
+      handleGoalPanelChange(deltaX > 0 ? "completed" : "active");
+    },
+    [handleGoalPanelChange]
+  );
+
+  const handleGoalPanelWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      const horizontalDistance = Math.abs(event.deltaX);
+      if (
+        horizontalDistance < 28 ||
+        horizontalDistance <= Math.abs(event.deltaY)
+      ) {
+        return;
+      }
+
+      const nextPanel = event.deltaX > 0 ? "completed" : "active";
+      if (nextPanel === activeGoalPanel || goalPanelWheelLockedRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      goalPanelWheelLockedRef.current = true;
+      handleGoalPanelChange(nextPanel);
+
+      if (goalPanelWheelCooldownRef.current) {
+        clearTimeout(goalPanelWheelCooldownRef.current);
+      }
+      goalPanelWheelCooldownRef.current = setTimeout(() => {
+        goalPanelWheelLockedRef.current = false;
+        goalPanelWheelCooldownRef.current = null;
+      }, 650);
+    },
+    [activeGoalPanel, handleGoalPanelChange]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (goalPanelWheelCooldownRef.current) {
+        clearTimeout(goalPanelWheelCooldownRef.current);
+      }
+    };
+  }, []);
 
   const closeGoalDetailAfterFabOpen = useCallback(() => {
     const closeGoalDetail = () => {
@@ -1732,6 +1925,46 @@ export function MonumentGoalsList({
 
   const content = useMemo(() => {
     if (loading) {
+      if (monumentView === "goals") {
+        return (
+          <section className={`${GOAL_REVEAL_CLASS} space-y-3`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
+                  Goal Library
+                </p>
+              </div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+                {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
+              </p>
+            </div>
+            <div
+              className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+              style={goalPanelHeight ? { height: goalPanelHeight } : undefined}
+              onPointerDown={handleGoalPanelPointerDown}
+              onPointerUp={handleGoalPanelPointerEnd}
+              onWheel={handleGoalPanelWheel}
+              onPointerCancel={() => {
+                goalPanelDragStartRef.current = null;
+              }}
+            >
+              <div ref={loadingGoalPanelRef}>
+                <div
+                  className={`${GOAL_GRID_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}
+                >
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <Skeleton
+                      key={i}
+                      className="h-[100px] rounded-2xl bg-white/[0.06]"
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+        );
+      }
+
       return (
         <div className={`${GOAL_GRID_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}>
           {Array.from({ length: 8 }).map((_, i) => (
@@ -1744,18 +1977,21 @@ export function MonumentGoalsList({
       );
     }
 
-    const filterGoalBySection = (goal: Goal) =>
-      goalSection === "completed"
+    const filterGoalBySection = (goal: Goal, section: GoalPanel) =>
+      section === "completed"
         ? isGoalCompletedForSection(goal)
         : !isGoalCompletedForSection(goal);
-    const filterRoadmapGoalBySection = (goal: {
-      status?: string | null;
-      allProjectsCompleted?: boolean;
-    }) => {
+    const filterRoadmapGoalBySection = (
+      goal: {
+        status?: string | null;
+        allProjectsCompleted?: boolean;
+      },
+      section: GoalPanel
+    ) => {
       const isCompleted =
         normalizeGoalStatus(goal.status) === "COMPLETED" ||
         goal.allProjectsCompleted === true;
-      return goalSection === "completed" ? isCompleted : !isCompleted;
+      return section === "completed" ? isCompleted : !isCompleted;
     };
 
     const campaignGoalIds = new Set<string>(
@@ -1801,12 +2037,12 @@ export function MonumentGoalsList({
         priorityRank: campaignGoal.priority_rank ?? campaignGoal.position,
       });
     };
-    const campaignGroupsForGoalGrid: {
+    const getCampaignGroupsForGoalGrid = (section: GoalPanel): {
       roadmap: Roadmap;
       goals: Goal[];
       goalCount: number;
       sortPosition: number;
-    }[] =
+    }[] =>
       monumentRoadmapsWithItems
         .flatMap((roadmap, roadmapIndex) =>
           roadmap.items
@@ -1817,7 +2053,9 @@ export function MonumentGoalsList({
                 return null;
               }
 
-              const filteredGoals = campaign.goals.filter(filterRoadmapGoalBySection);
+              const filteredGoals = campaign.goals.filter((goal) =>
+                filterRoadmapGoalBySection(goal, section)
+              );
               if (filteredGoals.length === 0) {
                 return null;
               }
@@ -1866,7 +2104,6 @@ export function MonumentGoalsList({
         )
         .sort((a, b) => a.sortPosition - b.sortPosition);
     const standaloneGoals = goals.filter((goal) => !campaignGoalIds.has(goal.id));
-    const filteredStandaloneGoals = standaloneGoals.filter(filterGoalBySection);
 
     const hasTrueRoadmaps = monumentRoadmapsWithItems.length > 0;
 
@@ -1943,59 +2180,33 @@ export function MonumentGoalsList({
       );
     }
 
-    if (
-      campaignGroupsForGoalGrid.length === 0 &&
-      filteredStandaloneGoals.length === 0
-    ) {
-      return (
-        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-          {goalSection === "completed"
-            ? `No completed goals linked to this ${ownerLabel} yet.`
-            : `No active goals linked to this ${ownerLabel} yet.`}
-        </Card>
+    const renderGoalsPanel = (section: GoalPanel) => {
+      const campaignGroupsForGoalGrid = getCampaignGroupsForGoalGrid(section);
+      const filteredStandaloneGoals = standaloneGoals.filter((goal) =>
+        filterGoalBySection(goal, section)
       );
-    }
+      const openRoadmapGoalForSection =
+        roadmapOpenGoal &&
+        openGoalId === roadmapOpenGoal.id &&
+        filterGoalBySection(roadmapOpenGoal, section)
+          ? roadmapOpenGoal
+          : null;
 
-    return (
-      <section
-        className={`${GOAL_REVEAL_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS} space-y-3`}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div className="space-y-1">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
-              Goal Library
-            </p>
-          </div>
-          <div
-            className={segmentedToggleContainerClassName}
-            aria-label="Goal section"
-          >
-            <button
-              type="button"
-              onClick={() => onGoalSectionChange?.("active")}
-              className={`${segmentedToggleButtonClassName} ${
-                goalSection === "active"
-                  ? segmentedToggleActiveClassName
-                  : segmentedToggleInactiveClassName
-              }`}
-              aria-pressed={goalSection === "active"}
-            >
-              Active
-            </button>
-            <button
-              type="button"
-              onClick={() => onGoalSectionChange?.("completed")}
-              className={`${segmentedToggleButtonClassName} ${
-                goalSection === "completed"
-                  ? segmentedToggleActiveClassName
-                  : segmentedToggleInactiveClassName
-              }`}
-              aria-pressed={goalSection === "completed"}
-            >
-              Completed
-            </button>
-          </div>
-        </div>
+      if (
+        campaignGroupsForGoalGrid.length === 0 &&
+        filteredStandaloneGoals.length === 0 &&
+        !openRoadmapGoalForSection
+      ) {
+        return (
+          <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+            {section === "completed"
+              ? `No completed goals linked to this ${ownerLabel} yet.`
+              : `No active goals linked to this ${ownerLabel} yet.`}
+          </Card>
+        );
+      }
+
+      return (
         <div className={GOAL_GRID_CLASS}>
           {campaignGroupsForGoalGrid.map(
             ({ roadmap, goals: roadmapGoalsList, goalCount }) => (
@@ -2016,13 +2227,13 @@ export function MonumentGoalsList({
             )
           )}
 
-          {roadmapOpenGoal && openGoalId === roadmapOpenGoal.id ? (
+          {openRoadmapGoalForSection ? (
             <div
               className="goal-card-wrapper relative z-0 mb-0 min-w-0 w-full overflow-visible opacity-80"
-              data-monument-goal-card-id={roadmapOpenGoal.id}
+              data-monument-goal-card-id={openRoadmapGoalForSection.id}
             >
               <GoalCard
-                goal={roadmapOpenGoal}
+                goal={openRoadmapGoalForSection}
                 showWeight={false}
                 showCreatedAt={false}
                 showEmojiPrefix={false}
@@ -2030,18 +2241,22 @@ export function MonumentGoalsList({
                 monumentContext
                 completeWhenProjectsDone
                 completionTheme="border"
-                onEdit={() => handleGoalEdit(roadmapOpenGoal)}
+                onEdit={() => handleGoalEdit(openRoadmapGoalForSection)}
                 onProjectUpdated={(projectId, updates) =>
-                  handleProjectUpdated(roadmapOpenGoal.id, projectId, updates)
+                  handleProjectUpdated(
+                    openRoadmapGoalForSection.id,
+                    projectId,
+                    updates
+                  )
                 }
                 onProjectDeleted={(projectId) =>
-                  handleProjectDeleted(roadmapOpenGoal.id, projectId)
+                  handleProjectDeleted(openRoadmapGoalForSection.id, projectId)
                 }
                 onProjectEditOpen={(target, project, origin) =>
                   handleProjectEditOpen(
                     target,
                     project.id,
-                    roadmapOpenGoal.id,
+                    openRoadmapGoalForSection.id,
                     origin
                   )
                 }
@@ -2049,7 +2264,7 @@ export function MonumentGoalsList({
                 onTaskToggleCompletion={handleTaskToggleCompletion}
                 open
                 onOpenChange={(isOpen) => {
-                  handleGoalOpenChange(roadmapOpenGoal.id, isOpen);
+                  handleGoalOpenChange(openRoadmapGoalForSection.id, isOpen);
                   if (!isOpen) setRoadmapOpenGoal(null);
                 }}
               />
@@ -2089,6 +2304,73 @@ export function MonumentGoalsList({
             </div>
           ))}
         </div>
+      );
+    };
+
+    return (
+      <section className={`${GOAL_REVEAL_CLASS} space-y-3`}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
+              Goal Library
+            </p>
+          </div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+            {activeGoalPanel === "completed" ? "COMPLETED" : "ACTIVE"}
+          </p>
+        </div>
+        <div
+          className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+          style={goalPanelHeight ? { height: goalPanelHeight } : undefined}
+          onPointerDown={handleGoalPanelPointerDown}
+          onPointerUp={handleGoalPanelPointerEnd}
+          onWheel={handleGoalPanelWheel}
+          onPointerCancel={() => {
+            goalPanelDragStartRef.current = null;
+          }}
+        >
+          <div
+            className="absolute inset-0 flex w-[200%] transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+            style={{
+              transform:
+                activeGoalPanel === "completed"
+                  ? "translateX(-50%)"
+                  : "translateX(0%)",
+            }}
+          >
+            <div className="h-full w-1/2 shrink-0 overflow-hidden">
+              <div ref={activeGoalPanelRef}>{renderGoalsPanel("active")}</div>
+            </div>
+            <div className="h-full w-1/2 shrink-0 overflow-hidden">
+              <div ref={completedGoalPanelRef}>
+                {renderGoalsPanel("completed")}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-center gap-1.5">
+          {(["active", "completed"] as const).map((panel) => {
+            const isActive = activeGoalPanel === panel;
+            return (
+              <button
+                key={panel}
+                type="button"
+                aria-label={
+                  panel === "active"
+                    ? "Show active goals"
+                    : "Show completed goals"
+                }
+                aria-current={isActive ? "true" : undefined}
+                onClick={() => handleGoalPanelChange(panel)}
+                className={`h-1.5 rounded-full transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                  isActive
+                    ? "w-5 bg-white shadow-[0_0_10px_rgba(255,255,255,0.28)]"
+                    : "w-1.5 bg-white/24 hover:bg-white/40"
+                }`}
+              />
+            );
+          })}
+        </div>
       </section>
     );
   }, [
@@ -2098,7 +2380,8 @@ export function MonumentGoalsList({
     roadmapEmptyState,
     monumentRoadmapsWithItems,
     roadmapOpenGoal,
-    goalSection,
+    activeGoalPanel,
+    goalPanelHeight,
     openGoalId,
     handleGoalEdit,
     handleGoalOpenChange,
@@ -2110,7 +2393,10 @@ export function MonumentGoalsList({
     handleProjectUpdated,
     handleProjectDeleted,
     refreshTrueRoadmaps,
-    onGoalSectionChange,
+    handleGoalPanelChange,
+    handleGoalPanelPointerDown,
+    handleGoalPanelPointerEnd,
+    handleGoalPanelWheel,
     ownerLabel,
     decorate,
     monumentEmoji,

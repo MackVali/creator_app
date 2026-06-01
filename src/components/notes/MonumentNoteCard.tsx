@@ -1,7 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { Bookmark, FileText } from "lucide-react";
+import {
+  Bookmark,
+  BookOpenText,
+  Brain,
+  FileText,
+  Lightbulb,
+  ListTodo,
+  MessageSquareText,
+  NotebookPen,
+  ScrollText,
+  Sparkles,
+  Target,
+  type LucideIcon,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { MonumentNote } from "@/lib/types/monument-note";
@@ -18,6 +31,56 @@ interface MonumentNoteCardProps {
   onToggleBookmark?: (noteId: string) => void;
 }
 
+function getMonumentNoteIcon(iconValue?: string | null): LucideIcon {
+  const icon = iconValue?.trim().toLowerCase();
+
+  switch (icon) {
+    case "💡":
+    case "idea":
+      return Lightbulb;
+    case "🧠":
+    case "brain":
+    case "thought":
+    case "insight":
+      return Brain;
+    case "📓":
+    case "📔":
+    case "📖":
+    case "journal":
+    case "book":
+      return BookOpenText;
+    case "📜":
+    case "log":
+    case "scroll":
+      return ScrollText;
+    case "💬":
+    case "message":
+    case "chat":
+      return MessageSquareText;
+    case "✅":
+    case "☑️":
+    case "task":
+    case "todo":
+    case "check":
+      return ListTodo;
+    case "🎯":
+    case "target":
+    case "goal":
+      return Target;
+    case "✨":
+    case "spark":
+    case "sparkles":
+    case "magic":
+      return Sparkles;
+    case "file":
+      return FileText;
+    case "📝":
+    case "note":
+    default:
+      return NotebookPen;
+  }
+}
+
 export function MonumentNoteCard({ note, monumentId, onToggleBookmark }: MonumentNoteCardProps) {
   const titleLine =
     note.title?.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ??
@@ -29,7 +92,7 @@ export function MonumentNoteCard({ note, monumentId, onToggleBookmark }: Monumen
   const dateLabel = note.updatedAt
     ? new Date(note.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })
     : "";
-  const icon = note.icon?.trim() || "📝";
+  const NoteIcon = getMonumentNoteIcon(note.icon);
   return (
     <Link
       href={`/monuments/${monumentId}/notes/${note.id}`}
@@ -37,7 +100,7 @@ export function MonumentNoteCard({ note, monumentId, onToggleBookmark }: Monumen
     >
       <div className={cn(monumentNoteTileInnerClass, "items-center gap-2.5 sm:gap-3")}>
         <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.09] bg-[#07080A] text-sm text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),0_8px_16px_-14px_rgba(0,0,0,0.9)]">
-          {icon.length <= 2 ? icon : <FileText className="h-4 w-4" />}
+          <NoteIcon className="h-4 w-4" aria-hidden="true" />
         </div>
         <div className="relative z-10 min-w-0 flex-1 pr-1">
           <p className="truncate text-[15px] font-semibold leading-tight text-white/90">

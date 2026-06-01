@@ -48,7 +48,6 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
   const title = isExternalProfile ? rawProfileUrl : undefined;
   const statusText = f.isOnline ? "Online now" : null;
   const statusIndicatorClass = f.isOnline ? "bg-emerald-500" : "bg-white/40";
-  const statusTextClass = "text-emerald-300";
   const displayName = f.displayName || f.username;
   const avatarSrc = f.avatarUrl?.trim() || null;
   const fallbackInitials = getInitials(displayName, f.username);
@@ -102,8 +101,6 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
                 @{f.username}
               </p>
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
-                <span className={`h-1.5 w-1.5 rounded-full ${statusIndicatorClass}`} aria-hidden />
-                {statusText ? <span className={statusTextClass}>{statusText}</span> : null}
                 {f.hasRing && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white/70">
                     <span
