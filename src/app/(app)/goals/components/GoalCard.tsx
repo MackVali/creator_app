@@ -128,38 +128,39 @@ const shellSpringTransition = {
 } as const;
 
 const detailRevealVariant = {
-  hidden: { opacity: 0, scale: 0.985, y: 8 },
+  hidden: { opacity: 0, height: 0, y: 6 },
   visible: {
     opacity: 1,
-    scale: 1,
+    height: "auto",
     y: 0,
-    transition: shellSpringTransition,
+    transition: {
+      duration: 0.24,
+      ease: [0.22, 1, 0.36, 1],
+    },
   },
   exit: {
     opacity: 0,
-    scale: 0.99,
-    y: 6,
-    transition: { duration: 0.12, ease: "easeOut" },
+    height: 0,
+    y: 4,
+    transition: { duration: 0.22, ease: "easeOut" },
   },
 } as const;
 
 const detailContentVariant = {
-  hidden: { opacity: 0, y: 8, scale: 0.985 },
+  hidden: { opacity: 0, y: 5 },
   visible: {
     opacity: 1,
     y: 0,
-    scale: 1,
     transition: {
-      delay: 0.04,
-      duration: 0.16,
+      delay: 0.03,
+      duration: 0.2,
       ease: "easeOut",
     },
   },
   exit: {
     opacity: 0,
-    y: 4,
-    scale: 0.99,
-    transition: { duration: 0.12, ease: "easeOut" },
+    y: 3,
+    transition: { duration: 0.18, ease: "easeOut" },
   },
 } as const;
 

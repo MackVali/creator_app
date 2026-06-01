@@ -13745,8 +13745,7 @@ export function Fab({
       ? (viewportHeight ?? stableViewportHeight)
       : null;
   const editPresentationOriginRect = editTarget?.originRect ?? null;
-  const shouldUseCenteredEditModal =
-    expanded && Boolean(editPresentationOriginRect);
+  const shouldUseCenteredEditModal = expanded && Boolean(editTarget);
   const isGoalCreationExpanded = expanded && selected === "GOAL";
   const isProjectCreationExpanded = expanded && selected === "PROJECT";
   const isTaskCreationExpanded = expanded && selected === "TASK";
@@ -13757,7 +13756,7 @@ export function Fab({
     isTaskCreationExpanded ||
     isHabitCreationExpanded;
   const goalCreationMinHeight = 240;
-  const goalCenteredEditMinHeight = 440;
+  const goalCenteredEditMinHeight = 320;
   const projectCreationMinHeight = 280;
   const projectCenteredEditMinHeight = 480;
   const taskCreationMinHeight = 320;
@@ -13765,22 +13764,35 @@ export function Fab({
   const habitCreationMinHeight = 300;
   const selectedCreationTypeMinHeight =
     selected === "GOAL"
-      ? shouldUseCenteredEditModal
-        ? goalCenteredEditMinHeight
-        : goalCreationMinHeight
+      ? goalCreationMinHeight
       : selected === "PROJECT"
-        ? shouldUseCenteredEditModal
-          ? projectCenteredEditMinHeight
-          : projectCreationMinHeight
+        ? projectCreationMinHeight
         : selected === "TASK"
-          ? shouldUseCenteredEditModal
-            ? taskCenteredEditMinHeight
-            : taskCreationMinHeight
+          ? taskCreationMinHeight
           : selected === "HABIT"
             ? habitCreationMinHeight
             : null;
+  const selectedCenteredEditMinHeight =
+    selected === "GOAL"
+      ? goalCenteredEditMinHeight
+      : selected === "PROJECT"
+        ? projectCenteredEditMinHeight
+        : selected === "TASK"
+          ? taskCenteredEditMinHeight
+          : selected === "HABIT"
+            ? habitCreationMinHeight
+            : null;
+  const selectedExpandedMinHeight = shouldUseCenteredEditModal
+    ? selectedCenteredEditMinHeight
+    : selectedCreationTypeMinHeight;
   useLayoutEffect(() => {
-    if (!expanded || !selected || activeCreationMode !== "main") return;
+    if (
+      !expanded ||
+      !selected ||
+      shouldUseCenteredEditModal ||
+      activeCreationMode !== "main"
+    )
+      return;
     const node = expandedCreationBodyRef.current;
     if (!node) return;
 
@@ -13805,7 +13817,7 @@ export function Fab({
     });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [activeCreationMode, expanded, selected]);
+  }, [activeCreationMode, expanded, selected, shouldUseCenteredEditModal]);
   const selectedCreationShellHeight =
     selected && selectedCreationTypeMinHeight !== null
       ? Math.max(
@@ -13841,6 +13853,7 @@ export function Fab({
     if (typeof window === "undefined") return;
     if (
       !shouldUseStableMobileFabPanel ||
+      shouldUseCenteredEditModal ||
       selectedCreationTypeMinHeight === null
     ) {
       setMobileFabPanelHeight(null);
@@ -13877,6 +13890,7 @@ export function Fab({
     attachedCreationControlsHeight,
     selectedCreationShellHeight,
     selectedCreationTypeMinHeight,
+    shouldUseCenteredEditModal,
     shouldUseStableMobileFabPanel,
     stableSafeBottom,
     stableViewportHeight,
@@ -13886,8 +13900,8 @@ export function Fab({
       ? selectedCreationShellHeight ?? selectedCreationTypeMinHeight
       : undefined;
   const baseMinHeightExpanded = expanded
-    ? selectedCreationTypeMinHeight !== null
-      ? selectedCreationTypeMinHeight
+    ? selectedExpandedMinHeight !== null
+      ? selectedExpandedMinHeight
       : effectiveViewportHeight
         ? Math.round(effectiveViewportHeight * 0.58)
         : "58vh"
@@ -13900,9 +13914,13 @@ export function Fab({
           )
         : "calc(100dvh - env(safe-area-inset-bottom, 0px) - 16px)"
       : undefined;
+  const centeredModalMaxHeight =
+    "calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 2rem)";
   const normalMaxHeightExpanded =
     expanded && !shouldUseKeyboardConstrainedFabSizing
-      ? stableViewportHeight
+      ? shouldUseCenteredEditModal || shouldUseDirectCreationModal
+        ? centeredModalMaxHeight
+        : stableViewportHeight
         ? Math.round(stableViewportHeight * 0.9 - 8 - stableSafeBottom)
         : "calc(90vh - env(safe-area-inset-bottom, 0px) - 8px)"
       : undefined;
@@ -13917,7 +13935,7 @@ export function Fab({
       ? Math.min(baseMinHeightExpanded, maxHeightExpanded)
       : baseMinHeightExpanded;
   const fallbackMobileFabPanelHeightExpanded =
-    selectedCreationTypeMinHeight !== null
+    !shouldUseCenteredEditModal && selectedCreationTypeMinHeight !== null
       ? Math.ceil(
           (selectedCreationShellHeight ?? selectedCreationTypeMinHeight) +
             (attachedCreationControlsHeight ?? 64) +
@@ -14047,8 +14065,32 @@ export function Fab({
   const creationRevealClipEnd =
     `circle(${creationRevealGeometry?.radius ?? 0}px at ${creationRevealOriginX}px ${creationRevealOriginY}px)`;
   const centeredEditModalAnimation = useMemo(() => {
-    if (!shouldUseCenteredEditModal || !editPresentationOriginRect) {
+    if (!shouldUseCenteredEditModal) {
       return null;
+    }
+
+    if (!editPresentationOriginRect) {
+      return {
+        initial: { opacity: 0, y: 8 },
+        animate: {
+          opacity: 1,
+          y: 0,
+          transition: {
+            type: "tween" as const,
+            ease: "easeOut" as const,
+            duration: 0.2,
+          },
+        },
+        exit: {
+          opacity: 0,
+          y: 8,
+          transition: {
+            type: "tween" as const,
+            ease: "easeIn" as const,
+            duration: 0.16,
+          },
+        },
+      };
     }
 
     const viewportWidth =
@@ -14290,7 +14332,7 @@ export function Fab({
                 <div
                   className={cn(
                     shouldUseCenteredEditModal || shouldUseDirectCreationModal
-                      ? "fixed inset-0 z-[2147483650] flex items-center justify-center px-3 py-6 sm:px-4"
+                      ? "fixed inset-0 z-[2147483650] flex items-center justify-center px-3 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-[calc(1rem+env(safe-area-inset-top,0px))] sm:px-4"
                       : shouldUseCenteredMobileCreationPanel
                         ? "fixed left-1/2 top-1/2 z-[2147483650] box-border -translate-x-1/2 -translate-y-1/2 pointer-events-none"
                         : "bottom-20 mb-2 z-[2147483650] flex flex-col items-stretch",
@@ -14324,13 +14366,16 @@ export function Fab({
                 }
                 className={cn(
                   "relative",
-                  shouldUseCenteredCreationPanel && "pointer-events-auto",
+                  (shouldUseCenteredEditModal ||
+                    shouldUseCenteredCreationPanel) &&
+                    "pointer-events-auto",
                 )}
                 style={{
                   borderRadius: "0.5rem",
-                  transformOrigin: shouldUseCenteredCreationPanel
-                    ? "center center"
-                    : `${creationRevealOriginX}px ${creationRevealOriginY}px`,
+                  transformOrigin:
+                    shouldUseCenteredEditModal || shouldUseCenteredCreationPanel
+                      ? "center center"
+                      : `${creationRevealOriginX}px ${creationRevealOriginY}px`,
                   willChange: shouldUseFabSpawnRevealForPanel
                     ? "clip-path, opacity"
                     : undefined,
@@ -14380,7 +14425,7 @@ export function Fab({
                     panelRef.current = node;
                   }}
                   layoutId={
-                    shouldUseCenteredEditModal
+                    shouldUseCenteredEditModal && editPresentationOriginRect
                       ? (editTarget?.layoutId ?? undefined)
                       : undefined
                   }
@@ -14507,17 +14552,20 @@ export function Fab({
                 >
                   <div
                     data-fab-scroll-body={
+                      shouldUseCenteredEditModal ||
                       shouldUseCenteredCreationPanel ||
                       shouldUseScrollableFabBody
                         ? ""
                         : undefined
                     }
                     className={cn(
-                      shouldUseCenteredCreationPanel
+                      shouldUseCenteredEditModal
+                        ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                        : shouldUseCenteredCreationPanel
                         ? "min-h-0 flex-1 overflow-y-auto overscroll-contain"
                         : shouldUseScrollableFabBody
                           ? "min-h-0 flex-1 basis-0 overflow-y-auto overscroll-contain"
-                        : shouldRenderAttachedCreationControls
+                          : shouldRenderAttachedCreationControls
                           ? "flex-none overflow-visible"
                           : null,
                     )}
@@ -14645,7 +14693,8 @@ export function Fab({
                 </div>
               );
 
-              return shouldUseCenteredCreationPanel &&
+              return (shouldUseCenteredEditModal ||
+                shouldUseCenteredCreationPanel) &&
                 typeof document !== "undefined"
                 ? createPortal(panelShell, document.body)
                 : panelShell;

@@ -9,6 +9,7 @@ import {
   useState,
   type PointerEvent,
   type ReactNode,
+  type TouchEvent,
   type WheelEvent,
 } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -78,6 +79,7 @@ type GoalRowWithRelations = GoalRow & {
 };
 
 type GoalPanel = "active" | "completed";
+type GoalPanelSwipeAxis = "horizontal" | "vertical" | null;
 
 const GOAL_RELATIONS_BASE_SELECT =
   "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, circle_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank";
@@ -272,6 +274,7 @@ const NORMALIZED_ENERGY_VALUES = new Set([
 const GOAL_GRID_CLASS =
   "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-1 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-1 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
 const GOAL_GRID_MIN_HEIGHT_CLASS = "min-h-[240px] sm:min-h-[260px]";
+const GOAL_PANEL_CONTENT_CLASS = "px-1 py-1 sm:px-1.5 sm:py-1.5";
 const GOAL_REVEAL_CLASS = "monument-goal-reveal";
 
 const normalizePriorityCode = (value?: string | null): string => {
@@ -954,6 +957,7 @@ export function MonumentGoalsList({
   );
   const [activeGoalPanel, setActiveGoalPanel] = useState<GoalPanel>("active");
   const [goalPanelHeight, setGoalPanelHeight] = useState<number | null>(null);
+  const [goalPanelDragOffset, setGoalPanelDragOffset] = useState(0);
   const deferredGoalCloseFrameRef = useRef<number | null>(null);
   const activeGoalPanelRef = useRef<HTMLDivElement | null>(null);
   const completedGoalPanelRef = useRef<HTMLDivElement | null>(null);
@@ -966,6 +970,14 @@ export function MonumentGoalsList({
     x: number;
     y: number;
     pointerId: number;
+  } | null>(null);
+  const goalPanelTouchRef = useRef<{
+    startX: number;
+    startY: number;
+    deltaX: number;
+    deltaY: number;
+    axis: GoalPanelSwipeAxis;
+    width: number;
   } | null>(null);
 
   const getGoalPanelElement = useCallback((panel: GoalPanel) => {
@@ -1073,7 +1085,6 @@ export function MonumentGoalsList({
   const handleGoalPanelPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       if (
-        event.pointerType !== "touch" &&
         event.pointerType !== "pen" &&
         event.pointerType !== "mouse"
       ) {
@@ -1109,6 +1120,93 @@ export function MonumentGoalsList({
     },
     [handleGoalPanelChange]
   );
+
+  const resetGoalPanelTouch = useCallback(() => {
+    goalPanelTouchRef.current = null;
+    setGoalPanelDragOffset(0);
+  }, []);
+
+  const handleGoalPanelTouchStart = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      if (event.touches.length !== 1) {
+        resetGoalPanelTouch();
+        return;
+      }
+
+      const touch = event.touches[0];
+      goalPanelTouchRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        deltaX: 0,
+        deltaY: 0,
+        axis: null,
+        width: event.currentTarget.clientWidth,
+      };
+      setGoalPanelDragOffset(0);
+    },
+    [resetGoalPanelTouch]
+  );
+
+  const handleGoalPanelTouchMove = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const gesture = goalPanelTouchRef.current;
+      if (!gesture || event.touches.length !== 1) return;
+
+      const touch = event.touches[0];
+      const deltaX = touch.clientX - gesture.startX;
+      const deltaY = touch.clientY - gesture.startY;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+
+      gesture.deltaX = deltaX;
+      gesture.deltaY = deltaY;
+
+      if (!gesture.axis) {
+        if (absX > 12 && absX > absY * 1.15) {
+          gesture.axis = "horizontal";
+        } else if (absY > 12 && absY > absX * 1.15) {
+          gesture.axis = "vertical";
+        } else {
+          return;
+        }
+      }
+
+      if (gesture.axis !== "horizontal") return;
+
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+
+      const width = gesture.width || event.currentTarget.clientWidth || 1;
+      const boundedOffset =
+        activeGoalPanel === "active"
+          ? Math.max(0, Math.min(width, deltaX))
+          : Math.min(0, Math.max(-width, deltaX));
+      setGoalPanelDragOffset(boundedOffset);
+    },
+    [activeGoalPanel]
+  );
+
+  const handleGoalPanelTouchEnd = useCallback(() => {
+    const gesture = goalPanelTouchRef.current;
+    if (!gesture) return;
+
+    goalPanelTouchRef.current = null;
+    setGoalPanelDragOffset(0);
+
+    if (gesture.axis !== "horizontal") return;
+
+    const horizontalDistance = Math.abs(gesture.deltaX);
+    const releaseThreshold = Math.min(45, Math.max(28, gesture.width * 0.2));
+    if (
+      horizontalDistance < releaseThreshold ||
+      horizontalDistance < Math.abs(gesture.deltaY) * 1.15
+    ) {
+      return;
+    }
+
+    handleGoalPanelChange(gesture.deltaX > 0 ? "completed" : "active");
+  }, [handleGoalPanelChange]);
 
   const handleGoalPanelWheel = useCallback(
     (event: WheelEvent<HTMLDivElement>) => {
@@ -1948,7 +2046,10 @@ export function MonumentGoalsList({
                 goalPanelDragStartRef.current = null;
               }}
             >
-              <div ref={loadingGoalPanelRef}>
+              <div
+                ref={loadingGoalPanelRef}
+                className={GOAL_PANEL_CONTENT_CLASS}
+              >
                 <div
                   className={`${GOAL_GRID_CLASS} ${GOAL_GRID_MIN_HEIGHT_CLASS}`}
                 >
@@ -2324,25 +2425,37 @@ export function MonumentGoalsList({
           style={goalPanelHeight ? { height: goalPanelHeight } : undefined}
           onPointerDown={handleGoalPanelPointerDown}
           onPointerUp={handleGoalPanelPointerEnd}
+          onTouchStart={handleGoalPanelTouchStart}
+          onTouchMove={handleGoalPanelTouchMove}
+          onTouchEnd={handleGoalPanelTouchEnd}
+          onTouchCancel={resetGoalPanelTouch}
           onWheel={handleGoalPanelWheel}
           onPointerCancel={() => {
             goalPanelDragStartRef.current = null;
           }}
         >
           <div
-            className="absolute inset-0 flex w-[200%] transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+            className="absolute inset-0 flex w-[200%] flex-row-reverse transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
             style={{
-              transform:
-                activeGoalPanel === "completed"
-                  ? "translateX(-50%)"
-                  : "translateX(0%)",
+              transform: `translateX(calc(${
+                activeGoalPanel === "completed" ? "0%" : "-50%"
+              } + ${goalPanelDragOffset}px))`,
+              transitionDuration: goalPanelDragOffset ? "0ms" : undefined,
             }}
           >
             <div className="h-full w-1/2 shrink-0 overflow-hidden">
-              <div ref={activeGoalPanelRef}>{renderGoalsPanel("active")}</div>
+              <div
+                ref={activeGoalPanelRef}
+                className={GOAL_PANEL_CONTENT_CLASS}
+              >
+                {renderGoalsPanel("active")}
+              </div>
             </div>
             <div className="h-full w-1/2 shrink-0 overflow-hidden">
-              <div ref={completedGoalPanelRef}>
+              <div
+                ref={completedGoalPanelRef}
+                className={GOAL_PANEL_CONTENT_CLASS}
+              >
                 {renderGoalsPanel("completed")}
               </div>
             </div>
@@ -2396,7 +2509,12 @@ export function MonumentGoalsList({
     handleGoalPanelChange,
     handleGoalPanelPointerDown,
     handleGoalPanelPointerEnd,
+    handleGoalPanelTouchStart,
+    handleGoalPanelTouchMove,
+    handleGoalPanelTouchEnd,
+    resetGoalPanelTouch,
     handleGoalPanelWheel,
+    goalPanelDragOffset,
     ownerLabel,
     decorate,
     monumentEmoji,
