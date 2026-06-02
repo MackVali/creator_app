@@ -23,6 +23,7 @@ import type { Goal, Project, Task } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LazyFab } from "@/components/ui/LazyFab";
+import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import {
   projectWeight,
@@ -943,6 +944,7 @@ export function MonumentGoalsList({
   const resolvedMonumentId =
     resolvedSourceType === "monument" ? resolvedSourceId : null;
   const ownerLabel = resolvedSourceType === "circle" ? "Circle" : "monument";
+  const creationContext = useFabCreation();
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [monumentRoadmapsWithItems, setMonumentRoadmapsWithItems] = useState<
@@ -1939,6 +1941,10 @@ export function MonumentGoalsList({
     [closeGoalDetailAfterFabOpen, getGoalEditOriginRect]
   );
 
+  const handleCampaignAddGoal = useCallback(() => {
+    creationContext?.requestGoalCreation(null);
+  }, [creationContext]);
+
   const handleRoadmapGoalOpen = useCallback(
     (goalId: string) => {
       const existingGoal = goals.find((goal) => goal.id === goalId);
@@ -2527,6 +2533,8 @@ export function MonumentGoalsList({
                   variant="compact"
                   onGoalEdit={handleRoadmapGoalEdit}
                   onProjectEditOpen={handleProjectEditOpen}
+                  // Opens the Campaign Drawer ADD GOAL flow through the shared FAB creation request.
+                  onAddGoal={handleCampaignAddGoal}
                   monumentContext
                 />
               </div>
@@ -2715,6 +2723,7 @@ export function MonumentGoalsList({
     openGoalId,
     handleGoalEdit,
     handleGoalOpenChange,
+    handleCampaignAddGoal,
     handleRoadmapGoalEdit,
     handleRoadmapGoalOpen,
     handleProjectEditOpen,

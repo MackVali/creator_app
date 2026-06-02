@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Reorder } from "framer-motion";
+import { PaintBucket } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { updateCatColor, updateCatIcon, updateCatName, deleteCat } from "@/lib/data/cats";
 import { updateSkillsOrder } from "@/lib/data/skills";
@@ -117,14 +118,10 @@ export default function CategoryCard({
   const canDeleteCategory = !isUncategorized && (!isLocked || isDefaultCategory);
   const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
   const [menuOpenState, setMenuOpenState] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [orderOpen, setOrderOpen] = useState(false);
-  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
   const [icon, setIcon] = useState<string>(iconOverride || category.icon || "");
   const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon || "");
   const [isSavingSkillOrder, setIsSavingSkillOrder] = useState(false);
-  const [renameOpen, setRenameOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState(category.name || "");
   const [isRenaming, setIsRenaming] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -150,8 +147,12 @@ export default function CategoryCard({
   }, [setMenuOpenStateSafe]);
 
   const toggleMenu = useCallback(() => {
+    if (!menuOpen) {
+      setNameDraft(category.name ?? "");
+      setIconDraft(icon);
+    }
     setMenuOpenStateSafe(!menuOpen);
-  }, [menuOpen, setMenuOpenStateSafe]);
+  }, [category.name, icon, menuOpen, setMenuOpenStateSafe]);
 
   useEffect(() => {
     setColor(colorOverride || category.color_hex || "#000000");
@@ -171,9 +172,6 @@ export default function CategoryCard({
 
   useEffect(() => {
     if (editingRestricted) {
-      setPickerOpen(false);
-      setOrderOpen(false);
-      setIconPickerOpen(false);
       closeMenu();
     }
   }, [editingRestricted, closeMenu]);
@@ -265,10 +263,6 @@ export default function CategoryCard({
 
   useEffect(() => {
     if (!menuOpen) {
-      setPickerOpen(false);
-      setOrderOpen(false);
-      setIconPickerOpen(false);
-      setRenameOpen(false);
       setDeleteConfirmOpen(false);
       setIsDeleting(false);
     }
@@ -285,7 +279,6 @@ export default function CategoryCard({
     } catch (e) {
       console.error("Failed to update category color", e);
     } finally {
-      setPickerOpen(false);
       closeMenu();
     }
   };
@@ -304,7 +297,6 @@ export default function CategoryCard({
     } catch (e) {
       console.error("Failed to update category icon", e);
     } finally {
-      setIconPickerOpen(false);
       closeMenu();
     }
   };
@@ -318,14 +310,12 @@ export default function CategoryCard({
       return;
     }
     if (trimmedName === category.name) {
-      setRenameOpen(false);
       return;
     }
     setIsRenaming(true);
     try {
       await updateCatName(category.id, trimmedName);
       onNameChange?.(trimmedName);
-      setRenameOpen(false);
       closeMenu();
     } catch (error) {
       console.error("Failed to rename category", error);
@@ -369,6 +359,7 @@ export default function CategoryCard({
   const boxShadow = isDropTarget
     ? `0 0 0 2px ${withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", 0.35)}, ${palette.dropShadow}`
     : palette.dropShadow;
+  const orderLabel = typeof category.order === "number" ? `Order ${category.order}` : "Order";
 
   return (
     <div className="relative h-full" onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
@@ -422,8 +413,8 @@ export default function CategoryCard({
                   backgroundColor: palette.badgeNameBg,
                   border: `1px solid ${palette.badgeNameBorder}`,
                 }}
-                  onClick={toggleMenu}
-              aria-disabled={editingRestricted && !canDeleteCategory}
+                onClick={toggleMenu}
+                aria-disabled={editingRestricted && !canDeleteCategory}
               >
                 {icon && <span className="mr-2 text-lg leading-none">{icon}</span>}
                 <span className="pr-3">{category.name}</span>
@@ -433,244 +424,201 @@ export default function CategoryCard({
                   style={{ background: palette.sheen, mixBlendMode: "screen", opacity: active ? 0.55 : 0.4 }}
                 />
               </button>
-            {menuOpen && (
-              <div
-                className="absolute left-0 top-full z-20 mt-2 w-56 rounded-2xl p-3 text-sm text-slate-400 shadow-xl backdrop-blur"
-                style={{
-                  background: `linear-gradient(180deg, ${withAlpha("#0f172a", 0.92)} 0%, ${withAlpha("#0b1220", 0.85)} 100%)`,
-                  border: "1px solid rgba(0, 0, 0, 0.9)",
-                }}
-              >
-                {deleteConfirmOpen ? (
-                  <div className="space-y-3">
-                    <p className="text-xs text-slate-500">
-                      Removing this category moves its skills to the uncategorized list. The built-in skills remain locked.
-                    </p>
-                    <div className="flex justify-between text-xs font-medium uppercase tracking-wide">
-                      <button
-                        type="button"
-                        className="text-slate-500"
-                        onClick={() => setDeleteConfirmOpen(false)}
-                        disabled={isDeleting}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="text-rose-600"
-                        onClick={handleDeleteCategory}
-                        disabled={isDeleting}
-                      >
-                        {isDeleting ? "Deleting…" : "Delete category"}
-                      </button>
-                    </div>
-                  </div>
-                ) : editingRestricted ? (
-                  <div className="space-y-3">
-                    {canDeleteCategory ? (
-                      <>
-                        <p className="text-xs text-slate-500">
-                          This locked category can be deleted, but its skills stay intact and move to Uncategorized.
-                        </p>
-                        <button
-                          type="button"
-                          className="block text-left text-sm font-semibold uppercase tracking-wide text-rose-500 underline"
-                          onClick={() => setDeleteConfirmOpen(true)}
-                          disabled={isDeleting}
-                        >
-                          Delete category
-                        </button>
-                      </>
-                    ) : (
-                      <p className="text-xs font-semibold uppercase text-slate-500">Category locked</p>
-                    )}
-                  </div>
-                ) : renameOpen ? (
-                  <div className="space-y-3">
-                    <label className="block text-xs font-semibold uppercase text-slate-500">
-                      Rename category
-                    </label>
-                    <input
-                      type="text"
-                      value={nameDraft}
-                      onChange={(event) => setNameDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          handleRenameSave();
-                        }
-                      }}
-                      autoFocus
-                      className="w-full rounded border border-black/20 bg-transparent px-2 py-1.5 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring focus:ring-slate-300"
-                      placeholder="Category name"
-                      maxLength={80}
-                    />
-                    <div className="flex justify-between text-xs font-medium uppercase tracking-wide">
-                      <button
-                        type="button"
-                        className="text-slate-500"
-                        onClick={() => setRenameOpen(false)}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="text-blue-600"
-                        onClick={handleRenameSave}
-                        disabled={isRenaming || nameDraft.trim().length === 0}
-                      >
-                        {isRenaming ? "Saving…" : "Save"}
-                      </button>
-                    </div>
-                  </div>
-                ) : pickerOpen ? (
-                  <input
-                    type="color"
-                    value={color}
-                    onChange={(e) => handleColorChange(e.target.value)}
-                    className="h-24 w-full cursor-pointer rounded border-0 bg-transparent p-0"
-                  />
-                  ) : iconPickerOpen ? (
+              {menuOpen && (
+                <div
+                  className="absolute left-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-2xl p-2.5 text-sm text-slate-300 shadow-2xl backdrop-blur-xl"
+                  style={{
+                    background: `linear-gradient(180deg, ${withAlpha("#0f172a", 0.94)} 0%, ${withAlpha("#020617", 0.9)} 100%)`,
+                    border: "1px solid rgba(255, 255, 255, 0.12)",
+                    boxShadow: "0 18px 36px rgba(2, 6, 23, 0.46), inset 0 1px 0 rgba(255,255,255,0.08)",
+                  }}
+                >
+                  {deleteConfirmOpen ? (
                     <div className="space-y-3">
-                      <label className="block text-xs font-semibold uppercase text-slate-500">
-                        Pick an emoji
-                      </label>
-                      <input
-                        type="text"
-                        value={iconDraft}
-                        onChange={(e) => setIconDraft(e.target.value)}
-                        maxLength={8}
-                        className="w-full rounded border border-black/20 p-2 text-base"
-                        placeholder="Type any emoji"
-                      />
-                      <p className="text-[11px] text-slate-400">
-                        Enter a custom emoji and save; we won’t suggest defaults anymore.
+                      <p className="text-xs leading-relaxed text-slate-400">
+                        Removing this category moves its skills to the uncategorized list. The built-in skills remain
+                        locked.
                       </p>
-                      <div className="flex justify-end gap-2 text-xs font-medium uppercase">
+                      <div className="flex justify-between text-xs font-medium uppercase tracking-wide">
                         <button
                           type="button"
-                          className="text-slate-500"
-                          onClick={() => {
-                            setIconPickerOpen(false);
-                            setIconDraft(icon);
-                          }}
+                          className="text-slate-400"
+                          onClick={() => setDeleteConfirmOpen(false)}
+                          disabled={isDeleting}
                         >
                           Cancel
                         </button>
-                        <button type="button" className="text-blue-600" onClick={() => handleIconSave(iconDraft)}>
-                          Save
+                        <button
+                          type="button"
+                          className="text-rose-300"
+                          onClick={handleDeleteCategory}
+                          disabled={isDeleting}
+                        >
+                          {isDeleting ? "Deleting…" : "Delete category"}
                         </button>
                       </div>
                     </div>
-                  ) : orderOpen ? (
+                  ) : editingRestricted ? (
                     <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase text-slate-500">Reorder category</p>
-                      <div className="flex items-stretch divide-x divide-black/10 overflow-hidden rounded-full border border-black/10 bg-white/90 text-slate-700 shadow-sm backdrop-blur-sm">
+                      {canDeleteCategory ? (
+                        <>
+                          <p className="text-xs leading-relaxed text-slate-400">
+                            This locked category can be deleted, but its skills stay intact and move to Uncategorized.
+                          </p>
+                          <button
+                            type="button"
+                            className="block text-left text-sm font-semibold uppercase tracking-wide text-rose-300 underline"
+                            onClick={() => setDeleteConfirmOpen(true)}
+                            disabled={isDeleting}
+                          >
+                            Delete category
+                          </button>
+                        </>
+                      ) : (
+                        <p className="text-xs font-semibold uppercase text-slate-400">Category locked</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2rem] items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={iconDraft}
+                          onChange={(event) => setIconDraft(event.target.value)}
+                          onBlur={() => {
+                            if (iconDraft !== icon) {
+                              void handleIconSave(iconDraft);
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void handleIconSave(iconDraft);
+                            }
+                          }}
+                          maxLength={8}
+                          className="h-9 w-10 rounded-md border border-white/10 bg-white/10 px-2 text-center text-base text-white outline-none transition focus:border-white/30 focus:bg-white/15 focus:ring-2 focus:ring-white/10"
+                          aria-label="Category icon"
+                          disabled={isRenaming}
+                        />
+                        <input
+                          type="text"
+                          value={nameDraft}
+                          onChange={(event) => setNameDraft(event.target.value)}
+                          onBlur={() => {
+                            if (nameDraft.trim() && nameDraft.trim() !== category.name) {
+                              void handleRenameSave();
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void handleRenameSave();
+                            }
+                          }}
+                          className="h-9 min-w-0 rounded-md border border-white/10 bg-white/10 px-2.5 text-sm font-medium text-white outline-none transition placeholder:text-slate-500 focus:border-white/30 focus:bg-white/15 focus:ring-2 focus:ring-white/10"
+                          placeholder="Category name"
+                          maxLength={80}
+                          aria-label="Category name"
+                          disabled={isRenaming}
+                        />
+                        <label
+                          className="relative flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-white/15 bg-white/10 text-white shadow-inner transition hover:bg-white/15 focus-within:ring-2 focus-within:ring-white/35 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50"
+                          style={{ backgroundColor: withAlpha(color, 0.38) }}
+                        >
+                          <input
+                            type="color"
+                            value={color}
+                            onChange={(e) => handleColorChange(e.target.value)}
+                            className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                            disabled={isRenaming}
+                            aria-label="Change category color"
+                          />
+                          <span
+                            aria-hidden
+                            className="absolute inset-0"
+                            style={{
+                              background: `linear-gradient(135deg, ${withAlpha(color, 0.82)}, ${withAlpha(darken(color, 0.24), 0.68)})`,
+                              boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.16)",
+                            }}
+                          />
+                          <PaintBucket
+                            aria-hidden
+                            className="relative z-10 h-4 w-4 drop-shadow-sm"
+                            strokeWidth={2.1}
+                          />
+                        </label>
+                      </div>
+                      <div className="grid grid-cols-[2.25rem_2.25rem_minmax(3rem,1fr)_2.25rem_2.25rem] items-center overflow-hidden rounded-full border border-white/10 bg-white/10 text-slate-100 shadow-sm backdrop-blur-sm">
                         <button
                           type="button"
                           onClick={() => onReorder?.("first")}
                           disabled={!onReorder || !canMoveToStart || isReordering}
-                          className="group relative flex h-9 basis-[18%] items-center justify-center text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex h-9 items-center justify-center text-base transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Move to first position"
                         >
-                          <span aria-hidden className="relative text-base">⏮</span>
+                          <span aria-hidden className="relative">⇤</span>
                           <span
                             className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
-                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                            style={{ background: withAlpha("#ffffff", 0.08) }}
                           />
                         </button>
                         <button
                           type="button"
                           onClick={() => onReorder?.("left")}
                           disabled={!onReorder || !canMoveLeft || isReordering}
-                          className="group relative flex flex-1 items-center justify-center px-5 text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex h-9 items-center justify-center text-lg transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Move earlier"
                         >
-                          <span className="relative">Move left</span>
+                          <span aria-hidden className="relative">‹</span>
                           <span
                             className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
-                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                            style={{ background: withAlpha("#ffffff", 0.08) }}
                           />
                         </button>
+                        <span className="min-w-0 border-x border-white/10 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-300">
+                          {orderLabel}
+                        </span>
                         <button
                           type="button"
                           onClick={() => onReorder?.("right")}
                           disabled={!onReorder || !canMoveRight || isReordering}
-                          className="group relative flex flex-1 items-center justify-center px-5 text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex h-9 items-center justify-center text-lg transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Move later"
                         >
-                          <span className="relative">Move right</span>
+                          <span aria-hidden className="relative">›</span>
                           <span
                             className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
-                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                            style={{ background: withAlpha("#ffffff", 0.08) }}
                           />
                         </button>
                         <button
                           type="button"
                           onClick={() => onReorder?.("last")}
                           disabled={!onReorder || !canMoveToEnd || isReordering}
-                          className="group relative flex h-9 basis-[18%] items-center justify-center text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex h-9 items-center justify-center text-base transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Move to last position"
                         >
-                          <span aria-hidden className="relative text-base">⏭</span>
+                          <span aria-hidden className="relative">⇥</span>
                           <span
                             className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
-                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                            style={{ background: withAlpha("#ffffff", 0.08) }}
                           />
                         </button>
                       </div>
-                      <p className="text-xs text-slate-500">
-                        {isReordering ? "Saving new order…" : "Move this category earlier or later in the carousel."}
-                      </p>
-                      <div className="flex justify-end">
+                      {canDeleteCategory && (
                         <button
                           type="button"
-                          className="text-xs font-medium uppercase text-slate-500"
-                          onClick={() => setOrderOpen(false)}
+                          className="block w-full rounded-xl px-2.5 py-2 text-left text-sm font-semibold text-rose-300 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={() => setDeleteConfirmOpen(true)}
+                          disabled={isRenaming}
                         >
-                          Done
+                          Delete category
                         </button>
-                      </div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <button
-                        className="block text-left text-sm font-medium underline"
-                        type="button"
-                        onClick={() => {
-                          setNameDraft(category.name ?? "");
-                          setRenameOpen(true);
-                        }}
-                        disabled={editingRestricted}
-                        aria-disabled={editingRestricted}
-                      >
-                        Rename category
-                      </button>
-                      <button className="block text-left text-sm font-medium underline" onClick={() => setPickerOpen(true)}>
-                        Change color
-                      </button>
-                      <button
-                        className="block text-left text-sm font-medium underline"
-                        onClick={() => {
-                          setIconDraft(icon);
-                          setIconPickerOpen(true);
-                        }}
-                      >
-                        Change icon
-                      </button>
-                    <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
-                      Change order
-                    </button>
-                    {canDeleteCategory && (
-                      <button
-                        type="button"
-                        className="block text-left text-sm font-medium underline text-rose-500"
-                        onClick={() => setDeleteConfirmOpen(true)}
-                      >
-                        Delete category
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
               )}
             </div>
             <span
