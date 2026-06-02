@@ -247,19 +247,9 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
   };
 }
 
-interface Project {
-  id: string;
-  title: string;
-  progress: number;
-  tasksDone: number;
-  tasksTotal: number;
-}
-
 const ANALYTICS_TABS: Array<{ id: AnalyticsView; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "execution", label: "Execution" },
-  { id: "schedule", label: "Schedule" },
-  { id: "identity", label: "Identity" },
   { id: "habits", label: "Habits" },
   { id: "system-health", label: "System Health" },
 ];
@@ -417,13 +407,11 @@ export default function AnalyticsDashboard({
     previousViewRef.current = activeView;
   }, [activeView]);
 
-  const projects = analytics?.projects ?? [];
   const skillCategoryContribution = analytics?.skillCategoryContribution ?? [];
   const skillCategoryContributionMeta =
     analytics?.skillCategoryContributionMeta ?? null;
   const habitSummary = normalizeHabitSummary(analytics?.habit);
   const recentSchedules = analytics?.recentSchedules ?? [];
-  const scheduleSummary = analytics?.scheduleSummary;
   const overviewTrend = analytics?.overviewDaily ?? [];
   const hasAnalyticsData = analytics !== null;
 
@@ -509,88 +497,6 @@ export default function AnalyticsDashboard({
             <EmptyCopy copy="No completed events in this range." />
           ) : (
             <RecentScheduleShowcase items={recentSchedules} />
-          )}
-        </SectionCard>
-      </div>
-    );
-  } else if (activeView === "schedule") {
-    activeContent = (
-      <div className="space-y-4 xl:space-y-6">
-        <SectionCard
-          title="Event status"
-          description="Observed scheduled events in the selected range."
-        >
-          {loading ? (
-            <Skeleton className="h-44" />
-          ) : error ? (
-            renderErrorState()
-          ) : (
-            <div className="space-y-4">
-              <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-                <StatTile
-                  label="Planned events"
-                  value={`${scheduleSummary?.plannedEvents ?? 0}`}
-                />
-                <StatTile
-                  label="Completed events"
-                  value={`${scheduleSummary?.completedEvents ?? 0}`}
-                />
-                <StatTile
-                  label="Scheduled events"
-                  value={`${scheduleSummary?.scheduledEvents ?? 0}`}
-                />
-                <StatTile
-                  label="Missed events"
-                  value={`${scheduleSummary?.missedEvents ?? 0}`}
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <StatTile
-                  label="Projects"
-                  value={`${
-                    scheduleSummary?.byType.find((entry) => entry.type === "project")
-                      ?.planned ?? 0
-                  }`}
-                />
-                <StatTile
-                  label="Tasks"
-                  value={`${
-                    scheduleSummary?.byType.find((entry) => entry.type === "task")
-                      ?.planned ?? 0
-                  }`}
-                />
-                <StatTile
-                  label="Habits"
-                  value={`${
-                    scheduleSummary?.byType.find((entry) => entry.type === "habit")
-                      ?.planned ?? 0
-                  }`}
-                />
-              </div>
-            </div>
-          )}
-        </SectionCard>
-      </div>
-    );
-  } else if (activeView === "identity") {
-    activeContent = (
-      <div className="space-y-4 xl:space-y-6">
-        <SectionCard
-          title="Projects"
-          description="Projects currently contributing to identity progress."
-        >
-          {loading ? (
-            <Skeleton className="h-40" />
-          ) : error ? (
-            renderErrorState()
-          ) : projects.length === 0 ? (
-            <EmptyCopy copy="No project identity data in this range." />
-          ) : (
-            <div className="space-y-3">
-              {projects.map((project) => (
-                <ProjectCard key={project.id} project={project} />
-              ))}
-            </div>
           )}
         </SectionCard>
       </div>
@@ -2971,35 +2877,6 @@ function formatEnergyLabel(value: string | null) {
   return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)} energy`;
 }
 
-function ProjectCard({ project }: { project: Project }) {
-  return (
-    <div
-      className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-2.5 shadow-[0_12px_24px_rgba(0,0,0,0.22)] sm:rounded-2xl sm:p-3.5"
-      aria-label={`${project.title} progress`}
-    >
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="text-sm font-semibold text-white">
-            {project.title}
-          </div>
-          <div className="mt-1 text-xs text-zinc-500">
-            {project.tasksDone}/{project.tasksTotal} tasks complete
-          </div>
-        </div>
-        <span className="text-sm font-semibold text-zinc-300">
-          {project.progress}%
-        </span>
-      </div>
-      <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
-        <div
-          className="h-full rounded-full bg-zinc-300"
-          style={{ width: `${project.progress}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 function StreakTrendCard({
   currentStreak,
   longestStreak,
@@ -3312,26 +3189,6 @@ function SectionCard({
       ) : null}
       <div className={hasHeader ? "mt-3 sm:mt-4" : undefined}>{children}</div>
     </section>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-}) {
-  return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-2 sm:rounded-2xl sm:p-3">
-      <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-        {label}
-      </div>
-      <div className="mt-0.5 text-base font-semibold text-white sm:mt-1 sm:text-xl">{value}</div>
-      {detail ? <div className="mt-1 text-xs text-zinc-400">{detail}</div> : null}
-    </div>
   );
 }
 

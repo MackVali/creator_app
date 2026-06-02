@@ -3,8 +3,6 @@ export type AnalyticsRange = "1d" | "7d" | "30d" | "90d";
 export type AnalyticsView =
   | "overview"
   | "execution"
-  | "schedule"
-  | "identity"
   | "habits"
   | "system-health";
 

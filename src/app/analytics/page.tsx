@@ -16,7 +16,7 @@ export default function AnalyticsPage() {
   return (
     <PlusRoute>
       <div className="relative">
-        <div className="mx-auto max-w-7xl px-4 pb-10 pt-4 sm:px-6 sm:pt-5 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 pb-10 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-6 sm:pt-[calc(env(safe-area-inset-top)+1.25rem)] lg:px-8">
           <Suspense
             fallback={
               <div className="py-10 text-center text-zinc-400">Loading...</div>

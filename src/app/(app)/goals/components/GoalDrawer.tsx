@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import type { Goal, Project, Task } from "../types";
 
 export interface GoalUpdateContext {
+  campaignId?: string | null;
   projects: (Project & { tasks: (Task & { isNew?: boolean })[] })[];
   removedProjectIds: string[];
   removedTaskIds: string[];
@@ -59,6 +60,7 @@ interface GoalDrawerProps {
   monuments?: { id: string; title: string; emoji?: string | null }[];
   roadmaps?: { id: string; title: string; emoji?: string | null }[];
   initialRoadmapId?: string | null;
+  initialCampaignId?: string | null;
   hideProjects?: boolean;
   saveDisabled?: boolean;
   onGoalLimitReached?(limitCode: LimitErrorCode): void;
@@ -289,6 +291,7 @@ export function GoalDrawer({
   monuments = [],
   roadmaps = undefined,
   initialRoadmapId = null,
+  initialCampaignId = null,
   hideProjects = false,
   saveDisabled = false,
 }: GoalDrawerProps) {
@@ -759,6 +762,7 @@ export function GoalDrawer({
     const goalProgress = computeGoalProgress(preparedProjects);
 
     const context: GoalUpdateContext = {
+      campaignId: editing ? null : initialCampaignId,
       projects: projectsState.map((project) => ({
         ...project,
         tasks: project.tasks.map((task) => ({ ...task })),

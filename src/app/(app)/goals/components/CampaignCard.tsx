@@ -782,59 +782,63 @@ function CompactGoalsOverlay({
   );
 
   const listArea = (
-    <div className="mt-2.5 max-h-[60vh] overflow-y-auto pb-1.5 sm:mt-4 sm:pb-3 sm:max-h-[70vh]">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={(event) => {
-          console.log("🎯 Drag started:", event.active.id);
-        }}
-        onDragEnd={async (event) => {
-          console.log("🎯 Drag ended:", event);
-          const { active, over } = event;
-          if (over && active.id !== over.id) {
-            const oldIndex = localGoals.findIndex((g) => g.id === active.id);
-            const newIndex = localGoals.findIndex((g) => g.id === over.id);
-            console.log(`Moving from index ${oldIndex} to ${newIndex}`);
-            const reordered = arrayMove(localGoals, oldIndex, newIndex).map(
-              (goal, index) => ({
-                ...goal,
-                priorityRank: index + 1,
-              })
-            );
-            setLocalGoals(reordered);
-            await savePriorityRanks(reordered);
-            await onGoalsReordered?.(reordered);
-          }
-        }}
-      >
-        <SortableContext items={localGoals.map((g) => g.id)}>
-          <div className="flex flex-col gap-1 sm:gap-1.5">
-            {localGoals.map((goal, index) => (
-              <DraggableGoalCard
-                key={goal.id}
-                goal={goal}
-                index={index}
-                isOpen={openGoalId === goal.id}
-                onOpenChange={(isOpen) => {
-                  if (isOpen) {
-                    setOpenGoalId(goal.id);
-                  } else if (openGoalId === goal.id) {
-                    setOpenGoalId(null);
-                  }
-                }}
-                onGoalEdit={onGoalEdit}
-                onGoalToggleActive={onGoalToggleActive}
-                onGoalDelete={onGoalDelete}
-                onProjectEditOpen={onProjectEditOpen}
-                monumentContext={monumentContext}
-                hideEnergyPill
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
-      <AddGoalButton onAddGoal={onAddGoal} />
+    <div className="mt-2.5 sm:mt-4">
+      <div className="max-h-[60vh] overflow-y-auto pb-1.5 sm:max-h-[70vh] sm:pb-3">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={(event) => {
+            console.log("🎯 Drag started:", event.active.id);
+          }}
+          onDragEnd={async (event) => {
+            console.log("🎯 Drag ended:", event);
+            const { active, over } = event;
+            if (over && active.id !== over.id) {
+              const oldIndex = localGoals.findIndex((g) => g.id === active.id);
+              const newIndex = localGoals.findIndex((g) => g.id === over.id);
+              console.log(`Moving from index ${oldIndex} to ${newIndex}`);
+              const reordered = arrayMove(localGoals, oldIndex, newIndex).map(
+                (goal, index) => ({
+                  ...goal,
+                  priorityRank: index + 1,
+                })
+              );
+              setLocalGoals(reordered);
+              await savePriorityRanks(reordered);
+              await onGoalsReordered?.(reordered);
+            }
+          }}
+        >
+          <SortableContext items={localGoals.map((g) => g.id)}>
+            <div className="flex flex-col gap-1 sm:gap-1.5">
+              {localGoals.map((goal, index) => (
+                <DraggableGoalCard
+                  key={goal.id}
+                  goal={goal}
+                  index={index}
+                  isOpen={openGoalId === goal.id}
+                  onOpenChange={(isOpen) => {
+                    if (isOpen) {
+                      setOpenGoalId(goal.id);
+                    } else if (openGoalId === goal.id) {
+                      setOpenGoalId(null);
+                    }
+                  }}
+                  onGoalEdit={onGoalEdit}
+                  onGoalToggleActive={onGoalToggleActive}
+                  onGoalDelete={onGoalDelete}
+                  onProjectEditOpen={onProjectEditOpen}
+                  monumentContext={monumentContext}
+                  hideEnergyPill
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      </div>
+      <div className="mt-2 border-t border-white/10 pt-2 sm:mt-3 sm:pt-3">
+        <AddGoalButton onAddGoal={onAddGoal} />
+      </div>
     </div>
   );
 
