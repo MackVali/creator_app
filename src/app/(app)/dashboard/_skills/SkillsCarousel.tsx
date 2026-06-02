@@ -2,7 +2,7 @@
 
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
 
 import CategoryCard from "./CategoryCard";
 import useSkillProgress from "./useSkillProgress";
@@ -28,6 +28,238 @@ const FALLBACK_COLOR = "#6366f1";
 const MAX_CATEGORY_SLOTS = 10;
 const DEFAULT_CATEGORY_EMOJI = "⚓";
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+type CommunitySkill = {
+  name: string;
+  icon: string;
+};
+
+const COMMUNITY_SKILL_CATEGORY_NAMES = [
+  "Popular",
+  "Creative",
+  "Business",
+  "Health",
+  "Tech",
+  "Music",
+  "Lifestyle",
+] as const;
+
+type CommunitySkillCategoryName = (typeof COMMUNITY_SKILL_CATEGORY_NAMES)[number];
+type CommunityMainCategoryName = Exclude<CommunitySkillCategoryName, "Popular">;
+
+const POPULAR_COMMUNITY_SKILLS = [
+  { name: "Content Strategy", icon: "✦" },
+  { name: "Songwriting", icon: "🎵" },
+  { name: "Videography", icon: "🎥" },
+  { name: "Graphic Design", icon: "🎨" },
+  { name: "Fitness", icon: "💪" },
+  { name: "Coding", icon: "⌘" },
+  { name: "Outreach", icon: "✉" },
+  { name: "Piano", icon: "🎹" },
+  { name: "Marketing", icon: "↗" },
+  { name: "Meditation", icon: "◐" },
+  { name: "Cooking", icon: "🍳" },
+  { name: "Copywriting", icon: "✍" },
+  { name: "Brand Design", icon: "◇" },
+  { name: "Public Speaking", icon: "🎙" },
+  { name: "Productivity", icon: "✓" },
+  { name: "Photography", icon: "📷" },
+  { name: "Sales", icon: "$" },
+  { name: "Yoga", icon: "☽" },
+  { name: "AI Automation", icon: "✧" },
+  { name: "Guitar", icon: "🎸" },
+  { name: "Personal Finance", icon: "◈" },
+  { name: "Interior Styling", icon: "⌂" },
+] as const satisfies readonly CommunitySkill[];
+
+const COMMUNITY_SKILL_CATEGORIES = [
+  {
+    name: "Creative",
+    subcategories: [
+      {
+        name: "Visual Studio",
+        skills: [
+          { name: "Graphic Design", icon: "🎨" },
+          { name: "Brand Design", icon: "◇" },
+          { name: "Illustration", icon: "✎" },
+          { name: "Photography", icon: "📷" },
+        ],
+      },
+      {
+        name: "Content Craft",
+        skills: [
+          { name: "Videography", icon: "🎥" },
+          { name: "Copywriting", icon: "✍" },
+          { name: "Storytelling", icon: "◌" },
+          { name: "Creative Direction", icon: "✦" },
+        ],
+      },
+      {
+        name: "Making",
+        skills: [
+          { name: "Cooking", icon: "🍳" },
+          { name: "Drawing", icon: "✏" },
+          { name: "Ceramics", icon: "◒" },
+          { name: "Fashion Styling", icon: "✂" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "Business",
+    subcategories: [
+      {
+        name: "Growth",
+        skills: [
+          { name: "Marketing", icon: "↗" },
+          { name: "Sales", icon: "$" },
+          { name: "Outreach", icon: "✉" },
+          { name: "Content Strategy", icon: "✦" },
+        ],
+      },
+      {
+        name: "Operator",
+        skills: [
+          { name: "Project Management", icon: "▦" },
+          { name: "Leadership", icon: "♛" },
+          { name: "Negotiation", icon: "◈" },
+          { name: "Personal Finance", icon: "◈" },
+        ],
+      },
+      {
+        name: "Creator Business",
+        skills: [
+          { name: "Sponsorships", icon: "★" },
+          { name: "Newsletter", icon: "✉" },
+          { name: "Public Speaking", icon: "🎙" },
+          { name: "Community Building", icon: "◉" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "Health",
+    subcategories: [
+      {
+        name: "Training",
+        skills: [
+          { name: "Fitness", icon: "💪" },
+          { name: "Running", icon: "↟" },
+          { name: "Strength Training", icon: "▰" },
+          { name: "Mobility", icon: "⤢" },
+        ],
+      },
+      {
+        name: "Mind",
+        skills: [
+          { name: "Meditation", icon: "◐" },
+          { name: "Yoga", icon: "☽" },
+          { name: "Breathwork", icon: "≋" },
+          { name: "Journaling", icon: "✍" },
+        ],
+      },
+      {
+        name: "Fuel",
+        skills: [
+          { name: "Nutrition", icon: "◎" },
+          { name: "Meal Prep", icon: "▤" },
+          { name: "Sleep", icon: "☾" },
+          { name: "Recovery", icon: "◌" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "Tech",
+    subcategories: [
+      {
+        name: "Build",
+        skills: [
+          { name: "Coding", icon: "⌘" },
+          { name: "Web Development", icon: "</>" },
+          { name: "Product Design", icon: "▧" },
+          { name: "No-Code", icon: "□" },
+        ],
+      },
+      {
+        name: "Systems",
+        skills: [
+          { name: "AI Automation", icon: "✧" },
+          { name: "Data Analysis", icon: "▥" },
+          { name: "Cybersecurity", icon: "◆" },
+          { name: "Cloud Ops", icon: "☁" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "Music",
+    subcategories: [
+      {
+        name: "Writing",
+        skills: [
+          { name: "Songwriting", icon: "🎵" },
+          { name: "Music Theory", icon: "♬" },
+          { name: "Lyrics", icon: "✍" },
+          { name: "Arrangement", icon: "≡" },
+        ],
+      },
+      {
+        name: "Performance",
+        skills: [
+          { name: "Piano", icon: "🎹" },
+          { name: "Guitar", icon: "🎸" },
+          { name: "Singing", icon: "♪" },
+          { name: "DJing", icon: "◉" },
+        ],
+      },
+      {
+        name: "Production",
+        skills: [
+          { name: "Beat Making", icon: "▦" },
+          { name: "Mixing", icon: "≋" },
+          { name: "Audio Engineering", icon: "⌁" },
+          { name: "Sound Design", icon: "◇" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "Lifestyle",
+    subcategories: [
+      {
+        name: "Home",
+        skills: [
+          { name: "Interior Styling", icon: "⌂" },
+          { name: "Gardening", icon: "☘" },
+          { name: "Home Organization", icon: "▤" },
+          { name: "DIY Projects", icon: "✚" },
+        ],
+      },
+      {
+        name: "Daily Practice",
+        skills: [
+          { name: "Productivity", icon: "✓" },
+          { name: "Reading", icon: "▥" },
+          { name: "Language Learning", icon: "Aa" },
+          { name: "Travel Planning", icon: "✈" },
+        ],
+      },
+    ],
+  },
+] as const satisfies readonly {
+  name: CommunityMainCategoryName;
+  subcategories: readonly {
+    name: string;
+    skills: readonly CommunitySkill[];
+  }[];
+}[];
+
+const COMMUNITY_SKILLS = [
+  ...POPULAR_COMMUNITY_SKILLS,
+  ...COMMUNITY_SKILL_CATEGORIES.flatMap((category) =>
+    category.subcategories.flatMap((subcategory) => subcategory.skills)
+  ),
+] as const;
 
 type Monument = {
   id: string;
@@ -89,6 +321,13 @@ export default function SkillsCarousel() {
   const [dropTargetCategoryId, setDropTargetCategoryId] = useState<string | null>(null);
   const [isMovingSkill, setIsMovingSkill] = useState(false);
   const [skillDrawerOpen, setSkillDrawerOpen] = useState(false);
+  const [communitySkillPickerOpen, setCommunitySkillPickerOpen] = useState(false);
+  const [selectedCommunitySkillName, setSelectedCommunitySkillName] = useState<string | null>(null);
+  const [communitySkillSearch, setCommunitySkillSearch] = useState("");
+  const [activeCommunitySkillCategoryIndex, setActiveCommunitySkillCategoryIndex] = useState(0);
+  const [openCommunitySkillSubcategories, setOpenCommunitySkillSubcategories] = useState<
+    Record<string, boolean>
+  >({});
   const [drawerSkills, setDrawerSkills] = useState<DrawerSkill[]>([]);
   const [drawerCategories, setDrawerCategories] = useState<DrawerCategory[]>([]);
   const [monuments, setMonuments] = useState<Monument[]>([]);
@@ -98,6 +337,7 @@ export default function SkillsCarousel() {
   const [newCategoryEmoji, setNewCategoryEmoji] = useState(DEFAULT_CATEGORY_EMOJI);
   const addCategoryMenuRef = useRef<HTMLDivElement | null>(null);
   const addCategoryNameRef = useRef<HTMLInputElement | null>(null);
+  const communityCategoryButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const skeletonCategoryPlaceholders = [0, 1, 2];
   const skeletonChipPlaceholders = [0, 1, 2, 3];
@@ -126,6 +366,91 @@ export default function SkillsCarousel() {
   const categoryPillListClass = useFiveColumnCategoryPillGrid
     ? "grid w-full max-w-4xl grid-cols-5 gap-2.5"
     : "flex flex-wrap justify-center gap-2.5";
+  const activeCommunitySkillCategory =
+    COMMUNITY_SKILL_CATEGORY_NAMES[activeCommunitySkillCategoryIndex] ?? "Popular";
+  const activeCommunityMainCategory =
+    activeCommunitySkillCategory === "Popular"
+      ? null
+      : COMMUNITY_SKILL_CATEGORIES.find(
+          (category) => category.name === activeCommunitySkillCategory
+        ) ?? null;
+  const communitySkillSearchQuery = communitySkillSearch.trim().toLowerCase();
+  const isCommunitySkillSearching = communitySkillSearchQuery.length > 0;
+  const filteredPopularCommunitySkills = useMemo(() => {
+    const query = communitySkillSearch.trim().toLowerCase();
+
+    return POPULAR_COMMUNITY_SKILLS.filter(
+      (skill) => query.length === 0 || skill.name.toLowerCase().includes(query)
+    );
+  }, [communitySkillSearch]);
+  const filteredCommunitySubcategories = useMemo(() => {
+    if (!activeCommunityMainCategory) {
+      return [];
+    }
+
+    const query = communitySkillSearch.trim().toLowerCase();
+
+    return activeCommunityMainCategory.subcategories
+      .map((subcategory) => ({
+        ...subcategory,
+        skills: subcategory.skills.filter(
+          (skill) => query.length === 0 || skill.name.toLowerCase().includes(query)
+        ),
+      }))
+      .filter((subcategory) => subcategory.skills.length > 0);
+  }, [activeCommunityMainCategory, communitySkillSearch]);
+  const filteredCommunitySkills =
+    activeCommunitySkillCategory === "Popular"
+      ? filteredPopularCommunitySkills
+      : filteredCommunitySubcategories.flatMap((subcategory) => subcategory.skills);
+  const selectedCommunitySkill = selectedCommunitySkillName
+    ? COMMUNITY_SKILLS.find((skill) => skill.name === selectedCommunitySkillName)
+    : null;
+
+  const moveCommunitySkillCategory = useCallback((direction: -1 | 1) => {
+    setActiveCommunitySkillCategoryIndex((current) => {
+      const next =
+        (current + direction + COMMUNITY_SKILL_CATEGORY_NAMES.length) %
+        COMMUNITY_SKILL_CATEGORY_NAMES.length;
+      return next;
+    });
+    setOpenCommunitySkillSubcategories({});
+  }, []);
+
+  const selectCommunitySkillCategory = useCallback((category: CommunitySkillCategoryName) => {
+    const nextIndex = COMMUNITY_SKILL_CATEGORY_NAMES.indexOf(category);
+    if (nextIndex === -1) {
+      return;
+    }
+    setActiveCommunitySkillCategoryIndex(nextIndex);
+    setOpenCommunitySkillSubcategories({});
+  }, []);
+
+  const closeCommunitySkillPicker = useCallback(() => {
+    setCommunitySkillPickerOpen(false);
+    setSelectedCommunitySkillName(null);
+    setCommunitySkillSearch("");
+    setActiveCommunitySkillCategoryIndex(0);
+    setOpenCommunitySkillSubcategories({});
+  }, []);
+
+  useEffect(() => {
+    if (!communitySkillPickerOpen) {
+      return undefined;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      const activeCategoryButton =
+        communityCategoryButtonRefs.current[activeCommunitySkillCategoryIndex];
+      activeCategoryButton?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
+      });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [activeCommunitySkillCategoryIndex, communitySkillPickerOpen]);
 
   const loadSkillDrawerData = useCallback(async () => {
     const supabase = getSupabaseBrowser();
@@ -626,6 +951,13 @@ export default function SkillsCarousel() {
     [drawerSkills, reload, toast]
   );
 
+  const handleConfirmCommunitySkill = useCallback(() => {
+    if (!selectedCommunitySkill) return;
+
+    // TODO: Wire this to shared community skill persistence once the backend contract exists.
+    closeCommunitySkillPicker();
+  }, [closeCommunitySkillPicker, selectedCommunitySkill]);
+
   const handleAddDrawerCategory = useCallback(
     async (name: string): Promise<DrawerCategory | null> => {
       if (drawerCategories.length >= MAX_CATEGORY_SLOTS) {
@@ -984,6 +1316,228 @@ export default function SkillsCarousel() {
                 </div>
               );
             })}
+            <div
+              role="group"
+              aria-label={communitySkillPickerOpen ? "Community skills picker" : "Add skill"}
+              className="w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[52vw] xl:w-[44vw]"
+              style={{ scrollMarginInline: "12px" }}
+            >
+              {communitySkillPickerOpen ? (
+                <div className="relative flex h-full min-h-[23rem] w-full flex-col overflow-hidden rounded-[26px] border border-white/[0.1] bg-[#030303]/95 text-white shadow-[0_18px_42px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.08)] transition-all duration-300 sm:min-h-[24rem]">
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.1),transparent_46%)]"
+                  />
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-[1px] rounded-[24px] border border-white/[0.06]"
+                  />
+                  <div className="relative z-10 px-3 pb-2.5 pt-3 sm:px-4">
+                    <div className="flex justify-center text-center">
+                      <div className="min-w-0">
+                        <h2
+                          id="community-skills-title"
+                          className="truncate text-[11px] font-semibold uppercase tracking-[0.28em] text-white/80"
+                        >
+                          COMMUNITY SKILLS
+                        </h2>
+                      </div>
+                    </div>
+                    <div className="relative mt-3">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400/75" />
+                      <input
+                        type="search"
+                        value={communitySkillSearch}
+                        onChange={(event) => setCommunitySkillSearch(event.target.value)}
+                        placeholder="Search skills"
+                        className="h-8 w-full rounded-full border border-white/10 bg-white/[0.035] pl-8 pr-3 text-xs text-zinc-200 outline-none transition placeholder:text-zinc-500 focus:border-white/20 focus:ring-2 focus:ring-white/15 focus-visible:ring-white/25"
+                      />
+                    </div>
+                    <div className="mt-2.5 grid grid-cols-[1.75rem_minmax(0,1fr)_1.75rem] items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => moveCommunitySkillCategory(-1)}
+                        aria-label="Previous community skill category"
+                        className="flex h-7 w-7 items-center justify-center border border-transparent p-0 text-zinc-400 transition hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </button>
+                      <div className="flex min-w-0 snap-x snap-mandatory items-end gap-4 overflow-x-auto overscroll-x-contain px-1 text-center [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        {COMMUNITY_SKILL_CATEGORY_NAMES.map((category, index) => {
+                          const isActive = index === activeCommunitySkillCategoryIndex;
+
+                          return (
+                            <button
+                              key={category}
+                              ref={(node) => {
+                                communityCategoryButtonRefs.current[index] = node;
+                              }}
+                              type="button"
+                              onClick={() => selectCommunitySkillCategory(category)}
+                              aria-current={isActive ? "true" : undefined}
+                              className={`relative flex-none snap-center whitespace-nowrap px-1.5 pb-1.5 text-[11px] font-medium uppercase tracking-normal transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${
+                                isActive
+                                  ? "text-zinc-100"
+                                  : "text-zinc-600 hover:text-zinc-300"
+                              }`}
+                            >
+                              {category}
+
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => moveCommunitySkillCategory(1)}
+                        aria-label="Next community skill category"
+                        className="flex h-7 w-7 items-center justify-center border border-transparent p-0 text-zinc-400 transition hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-2 sm:px-4">
+                    {activeCommunitySkillCategory === "Popular" || isCommunitySkillSearching ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {filteredCommunitySkills.map((skill) => {
+                          const isSelected = selectedCommunitySkillName === skill.name;
+                          return (
+                            <button
+                              key={skill.name}
+                              type="button"
+                              onClick={() => setSelectedCommunitySkillName(skill.name)}
+                              aria-pressed={isSelected}
+                              className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
+                                isSelected
+                                  ? "border-white/25 bg-white/[0.065] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-1px_0_rgba(255,255,255,0.05),0_0_20px_rgba(255,255,255,0.07)]"
+                                  : "border-white/[0.035] bg-zinc-950/90 text-zinc-500 hover:border-white/15 hover:text-zinc-200 active:border-white/20 active:text-zinc-100"
+                              }`}
+                            >
+                              <span className="shrink-0 text-[12px] text-zinc-200" aria-hidden>
+                                {skill.icon}
+                              </span>
+                              <span className="truncate">{skill.name}</span>
+                              <span
+                                className={isSelected ? "shrink-0 text-zinc-200/85" : "hidden"}
+                                aria-hidden
+                              >
+                                <Check className="h-3 w-3" />
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {filteredCommunitySubcategories.map((subcategory) => {
+                          const subcategoryKey = `${activeCommunitySkillCategory}:${subcategory.name}`;
+                          const isOpen = Boolean(openCommunitySkillSubcategories[subcategoryKey]);
+                          return (
+                            <div key={subcategory.name} className="border-b border-white/[0.055] pb-1.5 last:border-b-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOpenCommunitySkillSubcategories((previous) => ({
+                                    ...previous,
+                                    [subcategoryKey]: !previous[subcategoryKey],
+                                  }))
+                                }
+                                className="flex w-full items-center justify-between gap-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-400 transition hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                                aria-expanded={isOpen}
+                              >
+                                <span className="truncate">{subcategory.name}</span>
+                                <ChevronDown
+                                  className={`h-3.5 w-3.5 shrink-0 transition ${
+                                    isOpen ? "rotate-180 text-zinc-100" : "text-zinc-600"
+                                  }`}
+                                />
+                              </button>
+                              {isOpen && (
+                                <div className="flex flex-wrap gap-1.5 pb-1">
+                                  {subcategory.skills.map((skill) => {
+                                    const isSelected = selectedCommunitySkillName === skill.name;
+                                    return (
+                                      <button
+                                        key={skill.name}
+                                        type="button"
+                                        onClick={() => setSelectedCommunitySkillName(skill.name)}
+                                        aria-pressed={isSelected}
+                                        className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
+                                          isSelected
+                                            ? "border-white/25 bg-white/[0.065] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-1px_0_rgba(255,255,255,0.05),0_0_20px_rgba(255,255,255,0.07)]"
+                                            : "border-white/[0.035] bg-zinc-950/90 text-zinc-500 hover:border-white/15 hover:text-zinc-200 active:border-white/20 active:text-zinc-100"
+                                        }`}
+                                      >
+                                        <span className="shrink-0 text-[12px] text-zinc-200" aria-hidden>
+                                          {skill.icon}
+                                        </span>
+                                        <span className="truncate">{skill.name}</span>
+                                        <span
+                                          className={
+                                            isSelected ? "shrink-0 text-zinc-200/85" : "hidden"
+                                          }
+                                          aria-hidden
+                                        >
+                                          <Check className="h-3 w-3" />
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {filteredCommunitySkills.length === 0 && (
+                      <div className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-6 text-center text-xs text-zinc-500">
+                        No skills found.
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative z-10 px-3 pb-3 pt-2 sm:px-4">
+                    <button
+                      type="button"
+                      onClick={handleConfirmCommunitySkill}
+                      disabled={!selectedCommunitySkill}
+                      className={`h-9 w-full rounded-full text-[11px] font-semibold uppercase tracking-[0.22em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
+                        selectedCommunitySkill
+                          ? "border border-white/20 bg-white/[0.07] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.11),0_0_22px_rgba(255,255,255,0.07)] hover:border-white/[0.28] hover:bg-white/[0.09]"
+                          : "cursor-not-allowed border border-white/10 bg-zinc-950/75 text-zinc-600"
+                      }`}
+                    >
+                      {selectedCommunitySkill ? `ADD ${selectedCommunitySkill.name}` : "SELECT A SKILL"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setCommunitySkillPickerOpen(true)}
+                  className="group relative flex h-full min-h-[24rem] w-full overflow-hidden rounded-[26px] border border-white/10 bg-black/75 px-3 pb-4 pt-5 text-left shadow-lg transition duration-300 hover:border-white/20 hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:px-4"
+                >
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute -inset-12 rounded-[34px] bg-white/[0.04] blur-3xl transition-opacity duration-300 group-hover:opacity-80"
+                  />
+                  <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-[26px]">
+                    <span className="absolute inset-[1px] rounded-[24px] border border-white/10" />
+                    <span className="absolute inset-[6px] rounded-[20px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]" />
+                    <span className="absolute inset-0 bg-gradient-to-br from-white/[0.08] via-transparent to-white/[0.03]" />
+                  </span>
+                  <span className="relative z-10 flex h-full w-full flex-col items-center justify-center gap-4 text-center">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/[0.06] text-white shadow-[0_18px_38px_rgba(0,0,0,0.42)] transition group-hover:border-white/25 group-hover:bg-white/[0.09]">
+                      <Plus className="h-5 w-5" />
+                    </span>
+                    <span className="text-xs font-semibold uppercase tracking-[0.35em] text-white/80">
+                      ADD SKILL
+                    </span>
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
         <div className="mt-6 flex flex-col items-center gap-3">

@@ -2535,6 +2535,9 @@ export function MonumentGoalsList({
                   onProjectEditOpen={handleProjectEditOpen}
                   // Opens the Campaign Drawer ADD GOAL flow through the shared FAB creation request.
                   onAddGoal={handleCampaignAddGoal}
+                  onCampaignDetailsSaved={() =>
+                    setRefreshVersion((current) => current + 1)
+                  }
                   monumentContext
                 />
               </div>
@@ -2710,7 +2713,6 @@ export function MonumentGoalsList({
   }, [
     loading,
     goals,
-    monumentView,
     goalsRoadmapViewHeight,
     goalsRoadmapViewportWidth,
     goalsRoadmapTrackTransform,

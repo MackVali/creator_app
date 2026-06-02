@@ -128,6 +128,8 @@ export default function CategoryCard({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const dragging = useRef(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const menuControlled = menuOpenProp !== undefined;
   const menuOpen = menuOpenProp ?? menuOpenState;
@@ -176,6 +178,32 @@ export default function CategoryCard({
       closeMenu();
     }
   }, [editingRestricted, closeMenu]);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || menuTriggerRef.current?.contains(target)) {
+        return;
+      }
+      closeMenu();
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [closeMenu, menuOpen]);
 
   const handleSkillReorder = useCallback(
     (nextSkills: Skill[]) => {
@@ -408,6 +436,7 @@ export default function CategoryCard({
           <header className="mb-3 flex items-start justify-between gap-3">
             <div className="relative inline-flex flex-col">
               <button
+                ref={menuTriggerRef}
                 type="button"
                 className="relative inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors"
                 style={{
@@ -428,6 +457,7 @@ export default function CategoryCard({
               </button>
               {menuOpen && (
                 <div
+                  ref={menuRef}
                   className="absolute left-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-xl p-2 text-sm text-slate-300 shadow-2xl backdrop-blur-xl"
                   style={{
                     background: `linear-gradient(180deg, ${withAlpha("#0f172a", 0.94)} 0%, ${withAlpha("#020617", 0.9)} 100%)`,
@@ -617,7 +647,7 @@ export default function CategoryCard({
                         }}
                         disabled={isRenaming || !onAddSkill}
                       >
-                        add skill
+                        ADD A NEW SKILL
                       </button>
                       {canDeleteCategory && (
                         <button

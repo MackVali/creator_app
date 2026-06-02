@@ -1,7 +1,14 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import { Check, ChevronDown, MoreVertical, Plus, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
@@ -17,13 +24,13 @@ import {
   SortableContext,
 } from "@dnd-kit/sortable";
 import { useSortable } from "@dnd-kit/sortable";
-import type { Roadmap } from "@/lib/queries/roadmaps";
+import {
+  updateCampaignDetails,
+  type Roadmap,
+} from "@/lib/queries/roadmaps";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { FabEditTarget } from "@/components/ui/Fab";
-import {
-  getGoalStatusLabel,
-  normalizeGoalStatus,
-} from "@/lib/goals/status";
+import { normalizeGoalStatus } from "@/lib/goals/status";
 
 import type { Goal } from "../types";
 import { GoalCard } from "./GoalCard";
@@ -149,6 +156,16 @@ const closeGoalDetailAfterFabOpen = (closeGoalDetail: () => void) => {
     window.requestAnimationFrame(closeGoalDetail);
   });
 };
+
+type CampaignDetails = {
+  id: string;
+  name: string;
+  emoji: string | null;
+};
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 function DraggableGoalCard({
   goal,
@@ -467,6 +484,10 @@ interface CampaignCardProps {
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
   onRoadmapOrderSaved?: () => void | Promise<void>;
+  onCampaignDetailsSaved?: (
+    campaignId: string,
+    details: CampaignDetails
+  ) => void | Promise<void>;
   onProjectEditOpen?: (
     target: FabEditTarget,
     projectId: string,
@@ -489,6 +510,7 @@ function CampaignCardImpl({
   onProjectEditOpen,
   monumentContext = false,
   onRoadmapOrderSaved,
+  onCampaignDetailsSaved,
 }: CampaignCardProps) {
   const prefersReducedMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
@@ -652,6 +674,7 @@ function CampaignCardImpl({
                 onProjectEditOpen={onProjectEditOpen}
                 monumentContext={monumentContext}
                 onAddGoal={onAddGoal}
+                onCampaignDetailsSaved={onCampaignDetailsSaved}
                 onGoalsReordered={async (reordered) => {
                   setLocalGoals(reordered);
                   await onRoadmapOrderSaved?.();
@@ -788,6 +811,10 @@ type CampaignDrawerProps = {
   monumentContext?: boolean;
   onGoalsReordered?: (goals: Goal[]) => void | Promise<void>;
   onAddGoal?: () => void;
+  onCampaignDetailsSaved?: (
+    campaignId: string,
+    details: CampaignDetails
+  ) => void | Promise<void>;
 };
 
 // Campaign Drawer: opened compact campaign goals menu used by Monument Detail Goal Grid campaign cards.
@@ -802,11 +829,26 @@ function CampaignDrawer({
   monumentContext,
   onGoalsReordered,
   onAddGoal,
+  onCampaignDetailsSaved,
 }: CampaignDrawerProps) {
   const [mounted, setMounted] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const [localGoals, setLocalGoals] = useState(goals);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
+  const [isEditingCampaign, setIsEditingCampaign] = useState(false);
+  const [displayCampaignName, setDisplayCampaignName] = useState(roadmap.title);
+  const [displayCampaignEmoji, setDisplayCampaignEmoji] = useState(
+    roadmap.emoji ?? null
+  );
+  const [draftCampaignName, setDraftCampaignName] = useState(roadmap.title);
+  const [draftCampaignEmoji, setDraftCampaignEmoji] = useState(
+    roadmap.emoji ?? ""
+  );
+  const [isSavingCampaignDetails, setIsSavingCampaignDetails] = useState(false);
+  const [campaignEditError, setCampaignEditError] = useState<string | null>(
+    null
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -844,11 +886,95 @@ function CampaignDrawer({
   }, [goals]);
 
   useEffect(() => {
+    setDisplayCampaignName(roadmap.title);
+    setDisplayCampaignEmoji(roadmap.emoji ?? null);
+  }, [roadmap.emoji, roadmap.title]);
+
+  useEffect(() => {
+    if (!isEditingCampaign) {
+      setDraftCampaignName(displayCampaignName);
+      setDraftCampaignEmoji(displayCampaignEmoji ?? "");
+    }
+  }, [displayCampaignEmoji, displayCampaignName, isEditingCampaign]);
+
+  useEffect(() => {
     if (!openGoalId) return;
     if (!localGoals.some((goal) => goal.id === openGoalId)) {
       setOpenGoalId(null);
     }
   }, [localGoals, openGoalId]);
+
+  const openCampaignEditForm = useCallback(() => {
+    setDraftCampaignName(displayCampaignName);
+    setDraftCampaignEmoji(displayCampaignEmoji ?? "");
+    setCampaignEditError(null);
+    setIsActionsMenuOpen(false);
+    setIsEditingCampaign(true);
+  }, [displayCampaignEmoji, displayCampaignName]);
+
+  const closeCampaignEditForm = useCallback(() => {
+    if (isSavingCampaignDetails) return;
+    setDraftCampaignName(displayCampaignName);
+    setDraftCampaignEmoji(displayCampaignEmoji ?? "");
+    setIsEditingCampaign(false);
+    setCampaignEditError(null);
+  }, [displayCampaignEmoji, displayCampaignName, isSavingCampaignDetails]);
+
+  const handleSaveCampaignDetails = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+
+      const nextName = draftCampaignName.trim();
+      if (!nextName) {
+        setCampaignEditError("Campaign name is required.");
+        return;
+      }
+
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        setCampaignEditError("Unable to update campaign.");
+        return;
+      }
+
+      setIsSavingCampaignDetails(true);
+      setCampaignEditError(null);
+
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          setCampaignEditError("Sign in required to edit this campaign.");
+          return;
+        }
+
+        const details = await updateCampaignDetails(user.id, roadmap.id, {
+          name: draftCampaignName,
+          emoji: draftCampaignEmoji,
+        });
+
+        setDisplayCampaignName(details.name);
+        setDisplayCampaignEmoji(details.emoji);
+        setDraftCampaignName(details.name);
+        setDraftCampaignEmoji(details.emoji ?? "");
+        await onCampaignDetailsSaved?.(roadmap.id, details);
+        setIsEditingCampaign(false);
+      } catch (error) {
+        setCampaignEditError(
+          getErrorMessage(error, "Unable to update campaign.")
+        );
+      } finally {
+        setIsSavingCampaignDetails(false);
+      }
+    },
+    [
+      draftCampaignEmoji,
+      draftCampaignName,
+      onCampaignDetailsSaved,
+      roadmap.id,
+    ]
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -873,44 +999,141 @@ function CampaignDrawer({
     typeof window !== "undefined" ? window.innerWidth < 640 : true;
   const computedMaxWidth =
     typeof window !== "undefined"
-      ? Math.min(window.innerWidth - (isMobile ? 16 : 48), isMobile ? window.innerWidth - 16 : 576)
+      ? Math.min(window.innerWidth - (isMobile ? 32 : 48), isMobile ? 384 : 576)
       : isMobile
         ? 384
         : 576;
 
-  const emojiBadge = roadmap.emoji ?? roadmap.title.slice(0, 2);
+  const emojiBadge = displayCampaignEmoji ?? displayCampaignName.slice(0, 2);
   const goalsLabel = `${goals.length} ${goals.length === 1 ? "goal" : "goals"}`;
 
-  const header = (
-    <div className="flex items-start justify-between gap-2 border-b border-white/10 pb-2 sm:gap-4 sm:pb-3">
-      <div className="flex min-w-0 items-start gap-2 sm:gap-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/15 bg-white/[0.08] text-base font-semibold text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.2)] sm:h-9 sm:w-9 sm:rounded-2xl sm:text-lg">
-          {emojiBadge}
-        </div>
-        <div className="flex min-w-0 flex-col gap-0.5 sm:gap-1">
-          <h4
-            id={headingId}
-            className="text-[15px] font-semibold leading-tight text-white sm:text-base"
-          >
-            {roadmap.title}
-          </h4>
+  const headerContent = (
+    <div className="flex items-start justify-between gap-2 sm:gap-4">
+      <div className="flex min-w-0 flex-1 items-start gap-2 sm:gap-3">
+        {isEditingCampaign ? (
+          <input
+            aria-label="Campaign emoji"
+            value={draftCampaignEmoji}
+            onChange={(event) => setDraftCampaignEmoji(event.target.value)}
+            maxLength={2}
+            placeholder="◆"
+            disabled={isSavingCampaignDetails}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-transparent bg-transparent p-0 text-center text-base font-semibold text-white outline-none transition placeholder:text-white/28 focus:border-white/14 focus:bg-white/[0.03] focus:ring-1 focus:ring-white/10 disabled:opacity-55 sm:h-9 sm:w-9 sm:text-lg"
+          />
+        ) : (
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base font-semibold text-white sm:h-9 sm:w-9 sm:text-lg">
+            {emojiBadge}
+          </div>
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:gap-1">
+          {isEditingCampaign ? (
+            <input
+              id={headingId}
+              aria-label="Campaign name"
+              value={draftCampaignName}
+              onChange={(event) => setDraftCampaignName(event.target.value)}
+              placeholder="Campaign name"
+              disabled={isSavingCampaignDetails}
+              className="h-5 min-w-0 rounded-md border border-white/12 bg-white/[0.05] px-1.5 text-[15px] font-semibold leading-tight text-white outline-none transition placeholder:text-white/30 focus:border-white/28 focus:bg-white/[0.08] focus:ring-2 focus:ring-white/10 disabled:opacity-55 sm:h-6 sm:text-base"
+            />
+          ) : (
+            <h4
+              id={headingId}
+              className="text-[15px] font-semibold leading-tight text-white sm:text-base"
+            >
+              {displayCampaignName}
+            </h4>
+          )}
           <p className="text-[10px] uppercase tracking-[0.22em] text-white/60 sm:text-[11px] sm:tracking-[0.32em]">
             {goalsLabel}
           </p>
+          {isEditingCampaign && campaignEditError ? (
+            <p className="text-[11px] leading-4 text-red-100/82">
+              {campaignEditError}
+            </p>
+          ) : null}
         </div>
       </div>
-      <button
-        type="button"
-        onClick={onClose}
-        className="self-start rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] text-white/70 transition hover:border-white/30 hover:text-white sm:px-3 sm:py-1 sm:text-[10px] sm:tracking-[0.2em]"
-      >
-        Close
-      </button>
+      {isEditingCampaign ? (
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            aria-label="Cancel campaign edit"
+            onClick={closeCampaignEditForm}
+            disabled={isSavingCampaignDetails}
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 text-white/58 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <X aria-hidden="true" className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="submit"
+            aria-label="Save campaign edit"
+            disabled={
+              isSavingCampaignDetails || draftCampaignName.trim().length === 0
+            }
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-white/14 bg-white/[0.1] text-white transition hover:border-white/24 hover:bg-white/[0.16] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {isSavingCampaignDetails ? (
+              <span className="text-[10px] font-semibold leading-none">...</span>
+            ) : (
+              <Check aria-hidden="true" className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </div>
+      ) : (
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            aria-label="Campaign actions"
+            aria-haspopup="menu"
+            aria-expanded={isActionsMenuOpen}
+            onClick={() => {
+              setIsActionsMenuOpen((current) => !current);
+              setCampaignEditError(null);
+            }}
+            className="rounded-md p-1.5 text-white/58 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+          >
+            <MoreVertical aria-hidden="true" className="h-4 w-4" />
+          </button>
+          {isActionsMenuOpen ? (
+            <div
+              role="menu"
+              className="absolute right-0 top-8 z-20 min-w-36 rounded-xl border border-white/10 bg-[#090A0C] p-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.5)]"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={openCampaignEditForm}
+                className="w-full rounded-lg px-2.5 py-2 text-left text-[12px] font-medium text-white/82 transition hover:bg-white/[0.07] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+              >
+                Edit
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+
+  const header = (
+    <div className="px-5 py-4">
+      {isEditingCampaign ? (
+        <form
+          className="min-w-0"
+          onSubmit={handleSaveCampaignDetails}
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {headerContent}
+        </form>
+      ) : (
+        headerContent
+      )}
     </div>
   );
 
   const listArea = (
-    <div className="mt-2.5 flex min-h-0 flex-1 flex-col sm:mt-4">
+    <div className="flex min-h-0 flex-1 flex-col px-3 pb-4 sm:px-5">
       <div className="min-h-0 flex-1 overflow-y-auto pb-1 sm:pb-1.5">
         <DndContext
           sensors={sensors}
@@ -971,9 +1194,8 @@ function CampaignDrawer({
     </div>
   );
 
-  const panelPadding = "p-2 sm:p-4";
   const basePanelClass =
-    "relative w-full max-w-full overflow-hidden rounded-[22px] border border-white/10 bg-[#07080A]/92 shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9)] backdrop-blur-sm text-white/90 sm:rounded-[28px] sm:border-white/12";
+    "overflow-hidden rounded-2xl border border-white/10 bg-[#07080A]/95 shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)] text-white/90";
   return createPortal(
     <>
       <motion.button
@@ -987,18 +1209,35 @@ function CampaignDrawer({
         transition={{ duration: 0.14 }}
       />
       <div
-        className={`fixed inset-0 z-[70] flex items-center justify-center ${isMobile ? "px-1.5 py-6" : "px-6 py-12"}`}
+        className={`fixed inset-0 z-[70] flex items-center justify-center ${isMobile ? "px-4 py-10" : "px-6 py-12"}`}
+        onClick={onClose}
       >
         <motion.div
           role="dialog"
           aria-modal="true"
           aria-labelledby={headingId}
-          className={`w-full ${isMobile ? "max-w-full" : "max-w-xl"} ${basePanelClass} ${panelPadding}`}
+          onClick={(event) => event.stopPropagation()}
+          className={`w-full ${isMobile ? "max-w-sm" : "max-w-xl"} ${basePanelClass}`}
           style={computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined}
-          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.985 }}
-          animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.99 }}
-          transition={{ duration: prefersReducedMotion ? 0.12 : 0.18, ease: "easeOut" }}
+          initial={
+            prefersReducedMotion
+              ? { opacity: 0 }
+              : { opacity: 0, y: 6, scale: 0.985 }
+          }
+          animate={
+            prefersReducedMotion
+              ? { opacity: 1 }
+              : { opacity: 1, y: 0, scale: 1 }
+          }
+          exit={
+            prefersReducedMotion
+              ? { opacity: 0 }
+              : { opacity: 0, y: 4, scale: 0.99 }
+          }
+          transition={{
+            duration: prefersReducedMotion ? 0.12 : 0.18,
+            ease: "easeOut",
+          }}
         >
           <motion.div
             className="flex max-h-[calc(100vh-3rem)] flex-col sm:max-h-[calc(100vh-6rem)]"
@@ -1027,7 +1266,8 @@ export const CampaignCard = memo(CampaignCardImpl, (prev, next) => {
     prev.monumentContext === next.monumentContext &&
     prev.onProjectEditOpen === next.onProjectEditOpen &&
     prev.onAddGoal === next.onAddGoal &&
-    prev.onRoadmapOrderSaved === next.onRoadmapOrderSaved
+    prev.onRoadmapOrderSaved === next.onRoadmapOrderSaved &&
+    prev.onCampaignDetailsSaved === next.onCampaignDetailsSaved
   );
 });
 

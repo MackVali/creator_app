@@ -11,7 +11,7 @@ import {
   type MouseEvent,
 } from "react";
 import dynamic from "next/dynamic";
-import { ChevronDown, MoreHorizontal, Sparkles } from "lucide-react";
+import { ChevronDown, MoreVertical, Sparkles } from "lucide-react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { Goal, Project, Task } from "../types";
@@ -236,6 +236,7 @@ function GoalCardImpl({
   const [addingProject, setAddingProject] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const isDrawerCompactDefault = drawerCompact && variant === "default";
+  const defaultCardRef = useRef<HTMLDivElement | null>(null);
   const drawerCompactDropdownContentRef = useRef<HTMLDivElement | null>(null);
   const latestDrawerCompactDropdownHeightRef = useRef(0);
   const [drawerCompactDropdownHeight, setDrawerCompactDropdownHeight] =
@@ -254,6 +255,30 @@ function GoalCardImpl({
   const toggle = useCallback(() => {
     setOpen(!open);
   }, [open, setOpen]);
+
+  useEffect(() => {
+    if (!open || isDrawerCompactDefault) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const node = defaultCardRef.current;
+      if (!node || !(event.target instanceof Node)) {
+        return;
+      }
+
+      if (node.contains(event.target)) {
+        return;
+      }
+
+      setOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isDrawerCompactDefault, open, setOpen]);
 
   useLayoutEffect(() => {
     if (!isDrawerCompactDefault || !open) {
@@ -752,6 +777,7 @@ function GoalCardImpl({
   return (
     <>
       <motion.div
+        ref={defaultCardRef}
         layout={!prefersReducedMotion}
         transition={
           prefersReducedMotion
@@ -790,7 +816,7 @@ function GoalCardImpl({
               <div
                 className={`relative z-10 flex ${
                   isDrawerCompactDefault
-                    ? "items-center gap-2"
+                      ? "w-full items-center gap-2"
                     : "items-start gap-2"
                 }`}
               >
@@ -936,10 +962,13 @@ function GoalCardImpl({
 
             <div className="relative">
               <button
+                type="button"
                 aria-label="Goal actions"
-                className={`rounded-full border border-white/10 bg-white/10 text-white/70 hover:bg-white/20 ${
-                  isDrawerCompactDefault ? "p-1" : "p-1 sm:p-1.5"
-                }`}
+                className={
+                  isDrawerCompactDefault
+                    ? "rounded-full border border-white/10 bg-white/10 p-1 text-white/70 hover:bg-white/20"
+                    : "rounded-full p-1.5 text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white/85"
+                }
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -956,7 +985,7 @@ function GoalCardImpl({
                   }
                 }}
               >
-                <MoreHorizontal
+                <MoreVertical
                   className={
                     isDrawerCompactDefault
                       ? "h-3.5 w-3.5"
@@ -978,7 +1007,10 @@ function GoalCardImpl({
                       document
                         .getElementById(`dropdown-${goal.id}`)
                         ?.classList.add("hidden");
-                      onEdit?.();
+                      onClose();
+                window.requestAnimationFrame(() => {
+                  onEdit?.();
+                });
                     }}
                   >
                     Edit
@@ -1026,7 +1058,7 @@ function GoalCardImpl({
                 className={
                   isDrawerCompactDefault
                     ? "mt-0.5 origin-top overflow-hidden rounded-lg border border-white/8 bg-black/10 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]"
-                    : "origin-top overflow-hidden rounded-xl border border-white/8 bg-white/[0.025] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                    : "origin-top overflow-hidden rounded-[22px] border border-white/10 bg-[#07080A]/92 shadow-[0_25px_45px_-25px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-sm"
                 }
                 layout={
                   !isDrawerCompactDefault && !prefersReducedMotion
@@ -1181,28 +1213,44 @@ function CompactProjectsOverlay({
       : isMobile
         ? 384
         : 576;
+  const goalBadge =
+    typeof goal.emoji === "string" && goal.emoji.trim().length
+      ? goal.emoji.trim()
+      : typeof goal.monumentEmoji === "string" &&
+          goal.monumentEmoji.trim().length
+        ? goal.monumentEmoji.trim()
+        : goal.title.slice(0, 2).toUpperCase();
 
   const header = (
-    <div className="flex items-center justify-between px-5 py-4">
-      <h4
-        id={headingId}
-        className="text-xs font-semibold uppercase tracking-[0.28em] text-white/70"
-      >
-        {goal.title}
-      </h4>
+    <div className="flex items-center justify-between gap-2 px-5 py-4">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-base font-semibold text-white sm:h-9 sm:w-9 sm:text-lg">
+          {goalBadge}
+        </div>
+        <h4
+          id={headingId}
+          className="min-w-0 truncate text-xs font-semibold uppercase tracking-[0.28em] text-white/70"
+        >
+          {goal.title}
+        </h4>
+      </div>
       <div className="flex items-center gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               aria-label="Goal actions"
-              className="rounded-full border border-white/15 bg-white/10 p-1.5 text-white/70"
+              className="rounded-full p-1.5 text-white/55 transition hover:bg-white/[0.06] hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreVertical className="h-4 w-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="z-[80]">
+          <DropdownMenuContent
+            align="end"
+            className="z-[80] min-w-36 rounded-xl border border-white/10 bg-[#090A0C] p-1.5 text-white shadow-[0_18px_44px_rgba(0,0,0,0.5)]"
+          >
             <DropdownMenuItem
+              className="rounded-lg px-2.5 py-2 text-[12px] font-medium text-white/82 outline-none transition focus:bg-white/[0.07] focus:text-white data-[highlighted]:bg-white/[0.07] data-[highlighted]:text-white"
               onSelect={() => {
                 if (projectDropdownMode === "tasks-only") {
                   const firstProject = goal.projects[0];
@@ -1214,17 +1262,10 @@ function CompactProjectsOverlay({
                 onEdit?.();
               }}
             >
-              {projectDropdownMode === "tasks-only" ? "EDIT PROJECT" : "EDIT GOAL"}
+              {projectDropdownMode === "tasks-only" ? "Edit Project" : "Edit Goal"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/80"
-        >
-          Close
-        </button>
       </div>
     </div>
   );
@@ -1268,11 +1309,13 @@ function CompactProjectsOverlay({
       />
       <div
         className={`fixed inset-0 z-[70] flex items-center justify-center ${isMobile ? "px-4 py-10" : "px-6 py-12"}`}
+        onClick={onClose}
       >
         <motion.div
           role="dialog"
           aria-modal="true"
           aria-labelledby={headingId}
+          onClick={(event) => event.stopPropagation()}
           className={`w-full ${isMobile ? "max-w-sm" : "max-w-xl"} ${basePanelClass}`}
           style={computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined}
           initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.985 }}
