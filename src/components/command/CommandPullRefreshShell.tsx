@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type TouchEvent,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 
 import { cn } from "@/lib/utils";
@@ -18,12 +12,21 @@ import {
 const PULL_REFRESH_THRESHOLD_PX = 72;
 const PULL_REFRESH_MAX_OFFSET_PX = 86;
 const PULL_REFRESH_HOLD_OFFSET_PX = 48;
-const PULL_REFRESH_AXIS_SLOP_PX = 6;
+const PULL_REFRESH_AXIS_SLOP_PX = 4;
+const PULL_REFRESH_SCROLL_TOP_TOLERANCE_PX = 6;
+const PULL_REFRESH_BLOCKED_MARKER_MS = 900;
 
 type PullRefreshStatus = "idle" | "pulling" | "ready" | "refreshing";
 type PullRefreshAxis = "pending" | "vertical" | "horizontal";
 type PullDebugMarker =
   | "touch start"
+  | "blocked detail"
+  | "blocked refreshing"
+  | "blocked not top"
+  | "blocked interactive"
+  | "blocked multitouch"
+  | "blocked horizontal"
+  | "blocked upward"
   | "pull detected"
   | "ready"
   | "refreshing"
@@ -56,7 +59,7 @@ function getPullOffset(deltaY: number) {
 }
 
 function isAtScrollTop(element: HTMLDivElement | null) {
-  return !element || element.scrollTop <= 0;
+  return !element || element.scrollTop <= PULL_REFRESH_SCROLL_TOP_TOLERANCE_PX;
 }
 
 export function CommandPullRefreshShell({
@@ -65,6 +68,9 @@ export function CommandPullRefreshShell({
   const commandRef = useRef<CommandCirclesSectionHandle | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const offsetRef = useRef(0);
+  const debugMarkerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const gestureRef = useRef<TouchGesture>({
     active: false,
     startX: 0,
@@ -100,38 +106,84 @@ export function CommandPullRefreshShell({
     };
   }, []);
 
-  const resetGesture = useCallback(() => {
-    gestureRef.current.active = false;
-    gestureRef.current.axis = "pending";
+  useEffect(() => {
+    return () => {
+      if (debugMarkerTimeoutRef.current) {
+        clearTimeout(debugMarkerTimeoutRef.current);
+      }
+    };
+  }, []);
 
-    if (!isRefreshing) {
-      offsetRef.current = 0;
-      setOffset(0);
-      setStatus("idle");
-      setDebugMarker(null);
-    }
-  }, [isRefreshing]);
+  const showDebugMarker = useCallback(
+    (marker: PullDebugMarker, clearAfterMs?: number) => {
+      if (debugMarkerTimeoutRef.current) {
+        clearTimeout(debugMarkerTimeoutRef.current);
+        debugMarkerTimeoutRef.current = null;
+      }
+
+      setDebugMarker(marker);
+
+      if (clearAfterMs) {
+        debugMarkerTimeoutRef.current = setTimeout(() => {
+          setDebugMarker(null);
+          debugMarkerTimeoutRef.current = null;
+        }, clearAfterMs);
+      }
+    },
+    [],
+  );
+
+  const showBlockedMarker = useCallback(
+    (
+      marker: Exclude<
+        PullDebugMarker,
+        "touch start" | "pull detected" | "ready" | "refreshing" | null
+      >,
+    ) => {
+      showDebugMarker(marker, PULL_REFRESH_BLOCKED_MARKER_MS);
+    },
+    [showDebugMarker],
+  );
+
+  const resetGesture = useCallback(
+    (clearDebugMarker = true) => {
+      gestureRef.current.active = false;
+      gestureRef.current.axis = "pending";
+
+      if (!isRefreshing) {
+        offsetRef.current = 0;
+        setOffset(0);
+        setStatus("idle");
+        if (clearDebugMarker) {
+          showDebugMarker(null);
+        }
+      }
+    },
+    [isRefreshing, showDebugMarker],
+  );
 
   const updatePull = useCallback((deltaY: number) => {
     const nextOffset = getPullOffset(deltaY);
 
-    scrollContainerRef.current?.scrollTo({ top: 0 });
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
     offsetRef.current = nextOffset;
     setOffset(nextOffset);
 
     if (nextOffset >= PULL_REFRESH_THRESHOLD_PX) {
       setStatus("ready");
-      setDebugMarker("ready");
+      showDebugMarker("ready");
       return;
     }
 
     setStatus("pulling");
-    setDebugMarker("pull detected");
-  }, []);
+    showDebugMarker("pull detected");
+  }, [showDebugMarker]);
 
   const runRefresh = useCallback(async () => {
     setStatus("refreshing");
-    setDebugMarker("refreshing");
+    showDebugMarker("refreshing");
     offsetRef.current = PULL_REFRESH_HOLD_OFFSET_PX;
     setOffset(PULL_REFRESH_HOLD_OFFSET_PX);
 
@@ -141,9 +193,9 @@ export function CommandPullRefreshShell({
       offsetRef.current = 0;
       setOffset(0);
       setStatus("idle");
-      setDebugMarker(null);
+      showDebugMarker(null);
     }
-  }, []);
+  }, [showDebugMarker]);
 
   const finishGesture = useCallback(() => {
     const shouldRefresh =
@@ -162,23 +214,43 @@ export function CommandPullRefreshShell({
     offsetRef.current = 0;
     setOffset(0);
     setStatus("idle");
-    setDebugMarker(null);
-  }, [runRefresh]);
+    showDebugMarker(null);
+  }, [runRefresh, showDebugMarker]);
 
   const handleTouchStart = useCallback(
-    (event: TouchEvent<HTMLDivElement>) => {
+    (event: TouchEvent) => {
+      showDebugMarker("touch start");
+
       const touch = event.touches[0];
       const scrollContainer = scrollContainerRef.current;
 
-      if (
-        !touch ||
-        event.touches.length !== 1 ||
-        isRefreshing ||
-        commandRef.current?.isDetailOpen() ||
-        !isAtScrollTop(scrollContainer) ||
-        isInteractivePullTarget(event.target)
-      ) {
-        resetGesture();
+      if (!touch || event.touches.length !== 1) {
+        showBlockedMarker("blocked multitouch");
+        resetGesture(false);
+        return;
+      }
+
+      if (isRefreshing) {
+        showBlockedMarker("blocked refreshing");
+        resetGesture(false);
+        return;
+      }
+
+      if (commandRef.current?.isDetailOpen()) {
+        showBlockedMarker("blocked detail");
+        resetGesture(false);
+        return;
+      }
+
+      if (!isAtScrollTop(scrollContainer)) {
+        showBlockedMarker("blocked not top");
+        resetGesture(false);
+        return;
+      }
+
+      if (isInteractivePullTarget(event.target)) {
+        showBlockedMarker("blocked interactive");
+        resetGesture(false);
         return;
       }
 
@@ -188,18 +260,29 @@ export function CommandPullRefreshShell({
         startY: touch.clientY,
         axis: "pending",
       };
-      setDebugMarker("touch start");
     },
-    [isRefreshing, resetGesture],
+    [isRefreshing, resetGesture, showBlockedMarker, showDebugMarker],
   );
 
   const handleTouchMove = useCallback(
-    (event: TouchEvent<HTMLDivElement>) => {
+    (event: TouchEvent) => {
       const gesture = gestureRef.current;
       const touch = event.touches[0];
       const scrollContainer = scrollContainerRef.current;
 
-      if (!gesture.active || !touch || isRefreshing) {
+      if (!gesture.active) {
+        return;
+      }
+
+      if (!touch || event.touches.length !== 1) {
+        showBlockedMarker("blocked multitouch");
+        resetGesture(false);
+        return;
+      }
+
+      if (isRefreshing) {
+        showBlockedMarker("blocked refreshing");
+        resetGesture(false);
         return;
       }
 
@@ -220,13 +303,31 @@ export function CommandPullRefreshShell({
           absDeltaY > absDeltaX * 1.25 ? "vertical" : "horizontal";
       }
 
-      if (
-        gesture.axis !== "vertical" ||
-        deltaY <= 0 ||
-        commandRef.current?.isDetailOpen() ||
-        !isAtScrollTop(scrollContainer)
-      ) {
-        resetGesture();
+      if (gesture.axis !== "vertical") {
+        showBlockedMarker("blocked horizontal");
+        resetGesture(false);
+        return;
+      }
+
+      if (deltaY <= 0) {
+        showBlockedMarker("blocked upward");
+        resetGesture(false);
+        return;
+      }
+
+      if (commandRef.current?.isDetailOpen()) {
+        showBlockedMarker("blocked detail");
+        resetGesture(false);
+        return;
+      }
+
+      if (scrollContainer && isAtScrollTop(scrollContainer)) {
+        scrollContainer.scrollTop = 0;
+      }
+
+      if (!isAtScrollTop(scrollContainer)) {
+        showBlockedMarker("blocked not top");
+        resetGesture(false);
         return;
       }
 
@@ -236,17 +337,72 @@ export function CommandPullRefreshShell({
 
       updatePull(deltaY);
     },
-    [isRefreshing, resetGesture, updatePull],
+    [isRefreshing, resetGesture, showBlockedMarker, updatePull],
   );
 
   const handleTouchEnd = useCallback(() => {
     if (!gestureRef.current.active) {
-      resetGesture();
       return;
     }
 
     finishGesture();
-  }, [finishGesture, resetGesture]);
+  }, [finishGesture]);
+
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+
+    if (!scrollContainer) {
+      return;
+    }
+
+    const touchStartOptions: AddEventListenerOptions = { passive: true };
+    const touchMoveOptions: AddEventListenerOptions = { passive: false };
+    const touchEndOptions: AddEventListenerOptions = { passive: true };
+
+    scrollContainer.addEventListener(
+      "touchstart",
+      handleTouchStart,
+      touchStartOptions,
+    );
+    scrollContainer.addEventListener(
+      "touchmove",
+      handleTouchMove,
+      touchMoveOptions,
+    );
+    scrollContainer.addEventListener(
+      "touchend",
+      handleTouchEnd,
+      touchEndOptions,
+    );
+    scrollContainer.addEventListener(
+      "touchcancel",
+      handleTouchEnd,
+      touchEndOptions,
+    );
+
+    return () => {
+      scrollContainer.removeEventListener(
+        "touchstart",
+        handleTouchStart,
+        touchStartOptions,
+      );
+      scrollContainer.removeEventListener(
+        "touchmove",
+        handleTouchMove,
+        touchMoveOptions,
+      );
+      scrollContainer.removeEventListener(
+        "touchend",
+        handleTouchEnd,
+        touchEndOptions,
+      );
+      scrollContainer.removeEventListener(
+        "touchcancel",
+        handleTouchEnd,
+        touchEndOptions,
+      );
+    };
+  }, [handleTouchEnd, handleTouchMove, handleTouchStart]);
 
   const contentY = isRefreshing ? PULL_REFRESH_HOLD_OFFSET_PX : offset;
   const transition = isDragging
@@ -270,10 +426,6 @@ export function CommandPullRefreshShell({
         ref={scrollContainerRef}
         className="relative h-full overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] [overscroll-behavior-y:contain]"
         style={{ overscrollBehaviorY: "contain" }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
       >
         <motion.div
           aria-hidden="true"

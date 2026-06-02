@@ -74,15 +74,16 @@ export function LevelBanner({ className }: LevelBannerProps) {
         </span>
       </div>
       <div className="relative z-[1]">
-        <div className="h-[12px] w-full rounded-full bg-[#0c0f14] inner-hair" />
-        <motion.div
-          className="absolute left-0 top-0 h-[12px] rounded-full bg-gradient-to-r from-zinc-200 via-zinc-300 to-zinc-400 shadow-[0_0_15px_-2px_rgba(161,161,170,0.6)]"
-          initial={{ width: "0%" }}
-          animate={{ width: `${progressPercent}%` }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-        >
-          <div className="pointer-events-none absolute right-0 top-1/2 h-5 w-5 -translate-y-1/2 translate-x-1/2 rounded-full bg-zinc-200/40 blur-md" />
-        </motion.div>
+        <div className="h-[12px] w-full overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)] backdrop-blur-sm">
+          <motion.div
+            className="relative h-full rounded-full border border-white/[0.16] bg-gradient-to-r from-white/55 via-zinc-200/75 to-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22)]"
+            initial={{ width: "0%" }}
+            animate={{ width: `${progressPercent}%` }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+          >
+            <div className="pointer-events-none absolute inset-x-1 top-[2px] h-[3px] rounded-full bg-white/35" />
+          </motion.div>
+        </div>
         <div className="absolute right-1 -top-6 rounded-full border border-white/10 bg-[#0c0f14] px-2 py-[2px] text-[11px]">
           {progressLabel}
         </div>
