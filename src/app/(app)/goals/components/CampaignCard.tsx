@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
@@ -322,9 +322,14 @@ function AddGoalButton({ onAddGoal }: { onAddGoal?: () => void }) {
         event.stopPropagation();
         onAddGoal();
       }}
-      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.07] px-3 py-2.5 text-xs font-semibold uppercase tracking-[0.24em] text-white/80 transition hover:border-white/30 hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+      className="relative flex w-full items-center gap-2 rounded-lg border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] px-2 py-1.5 text-left text-white transition shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2"
     >
-      Add a new goal
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/80 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] sm:h-8 sm:w-8">
+        <Plus aria-hidden="true" className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/84 sm:text-[13px]">
+        add GOAL
+      </span>
     </button>
   );
 }
@@ -515,7 +520,7 @@ function CampaignCardImpl({
 
           <AnimatePresence initial={false}>
             {open && hasGoals ? (
-              <CompactGoalsOverlay
+              <CampaignDrawer
                 roadmap={roadmap}
                 goals={localGoals}
                 onClose={handleToggle}
@@ -539,7 +544,7 @@ function CampaignCardImpl({
 
   // Default variant is the Goals grid Campaign Card. Keep AddGoalButton outside DndContext/SortableContext so it is not sortable.
   return (
-    <div className="group relative min-h-full rounded-[24px] border-2 border-amber-500 bg-white/[0.03] p-2.5 text-white transition hover:-translate-y-1 hover:border-amber-500/50 sm:rounded-[30px] sm:p-4">
+    <div className="group relative min-h-full rounded-[24px] border border-white/10 bg-[#0A0B0F]/88 p-2.5 text-white shadow-[0_20px_42px_-28px_rgba(0,0,0,0.75)] transition hover:-translate-y-1 hover:border-white/18 sm:rounded-[30px] sm:p-4">
       <div className="relative flex min-h-full flex-col gap-2.5 sm:gap-4">
         <div className="flex items-start justify-between gap-2 sm:gap-3">
           <motion.button
@@ -587,7 +592,7 @@ function CampaignCardImpl({
         <AnimatePresence initial={false}>
           {open ? (
             <motion.div
-              className="w-full origin-top rounded-[18px] border border-white/8 border-t-white/15 bg-white/[0.015] p-1.5 shadow-[0_20px_32px_-24px_rgba(0,0,0,0.8)] sm:rounded-[24px] sm:border-white/10 sm:border-t-white/20 sm:bg-white/[0.02] sm:p-2"
+              className="w-full origin-top rounded-[18px] border border-white/10 bg-white/[0.03] p-1.5 shadow-[0_20px_32px_-24px_rgba(0,0,0,0.8)] sm:rounded-[24px] sm:p-2"
               {...revealProps}
             >
               <div className="flex max-h-[min(58vh,34rem)] flex-col">
@@ -645,7 +650,7 @@ function CampaignCardImpl({
   );
 }
 
-type CompactGoalsOverlayProps = {
+type CampaignDrawerProps = {
   roadmap: Roadmap;
   goals: Goal[];
   onClose: () => void;
@@ -663,7 +668,8 @@ type CompactGoalsOverlayProps = {
   onAddGoal?: () => void;
 };
 
-function CompactGoalsOverlay({
+// Campaign Drawer: opened compact campaign goals menu used by Monument Detail Goal Grid campaign cards.
+function CampaignDrawer({
   roadmap,
   goals,
   onClose,
@@ -674,7 +680,7 @@ function CompactGoalsOverlay({
   monumentContext,
   onGoalsReordered,
   onAddGoal,
-}: CompactGoalsOverlayProps) {
+}: CampaignDrawerProps) {
   const [mounted, setMounted] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const [localGoals, setLocalGoals] = useState(goals);
@@ -782,8 +788,8 @@ function CompactGoalsOverlay({
   );
 
   const listArea = (
-    <div className="mt-2.5 sm:mt-4">
-      <div className="max-h-[60vh] overflow-y-auto pb-1.5 sm:max-h-[70vh] sm:pb-3">
+    <div className="mt-2.5 flex min-h-0 flex-1 flex-col sm:mt-4">
+      <div className="min-h-0 flex-1 overflow-y-auto pb-1 sm:pb-1.5">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -836,7 +842,7 @@ function CompactGoalsOverlay({
           </SortableContext>
         </DndContext>
       </div>
-      <div className="mt-2 border-t border-white/10 pt-2 sm:mt-3 sm:pt-3">
+      <div className="mt-1.5 shrink-0 sm:mt-2">
         <AddGoalButton onAddGoal={onAddGoal} />
       </div>
     </div>
@@ -872,6 +878,7 @@ function CompactGoalsOverlay({
           transition={{ duration: prefersReducedMotion ? 0.12 : 0.18, ease: "easeOut" }}
         >
           <motion.div
+            className="flex max-h-[calc(100vh-3rem)] flex-col sm:max-h-[calc(100vh-6rem)]"
             variants={prefersReducedMotion ? undefined : shellContentMotion}
             initial={prefersReducedMotion ? false : "hidden"}
             animate={prefersReducedMotion ? undefined : "visible"}

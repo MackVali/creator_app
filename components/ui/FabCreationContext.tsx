@@ -20,14 +20,18 @@ export type FabCreationOriginRect = {
 
 export type FabCreationRequest = {
   id: number;
-  type: "PROJECT";
+  type: "GOAL" | "PROJECT";
   goalId?: string | null;
   originRect?: FabCreationOriginRect | null;
 };
 
 type FabCreationContextValue = {
   creationRequest: FabCreationRequest | null;
-  requestProjectCreation: (goalId?: string | null, originRect?: FabCreationOriginRect | null) => void;
+  requestGoalCreation: (originRect?: FabCreationOriginRect | null) => void;
+  requestProjectCreation: (
+    goalId?: string | null,
+    originRect?: FabCreationOriginRect | null
+  ) => void;
 };
 
 const FabCreationContext = createContext<FabCreationContextValue | null>(null);
@@ -36,6 +40,19 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
   const [creationRequest, setCreationRequest] =
     useState<FabCreationRequest | null>(null);
   const nextRequestIdRef = useRef(0);
+
+  const requestGoalCreation = useCallback(
+    (originRect?: FabCreationOriginRect | null) => {
+      nextRequestIdRef.current += 1;
+      setCreationRequest({
+        id: nextRequestIdRef.current,
+        type: "GOAL",
+        goalId: null,
+        originRect: originRect ?? null,
+      });
+    },
+    []
+  );
 
   const requestProjectCreation = useCallback((goalId?: string | null, originRect?: FabCreationOriginRect | null) => {
     nextRequestIdRef.current += 1;
@@ -50,9 +67,10 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       creationRequest,
+      requestGoalCreation,
       requestProjectCreation,
     }),
-    [creationRequest, requestProjectCreation],
+    [creationRequest, requestGoalCreation, requestProjectCreation],
   );
 
   return (
