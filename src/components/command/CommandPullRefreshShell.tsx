@@ -13,13 +13,14 @@ const PULL_REFRESH_THRESHOLD_PX = 72;
 const PULL_REFRESH_MAX_OFFSET_PX = 86;
 const PULL_REFRESH_HOLD_OFFSET_PX = 48;
 const PULL_REFRESH_AXIS_SLOP_PX = 4;
-const PULL_REFRESH_SCROLL_TOP_TOLERANCE_PX = 6;
+const PULL_REFRESH_SCROLL_TOP_TOLERANCE_PX = 8;
 const PULL_REFRESH_BLOCKED_MARKER_MS = 900;
 
 type PullRefreshStatus = "idle" | "pulling" | "ready" | "refreshing";
 type PullRefreshAxis = "pending" | "vertical" | "horizontal";
 type PullDebugMarker =
   | "touch start"
+  | "blocked outside shell"
   | "blocked detail"
   | "blocked refreshing"
   | "blocked not top"
@@ -59,8 +60,56 @@ function getPullOffset(deltaY: number) {
   return Math.min(PULL_REFRESH_MAX_OFFSET_PX, deltaY * 0.62);
 }
 
-function isAtScrollTop(element: HTMLDivElement | null) {
-  return !element || element.scrollTop <= PULL_REFRESH_SCROLL_TOP_TOLERANCE_PX;
+function isScrollableElement(element: HTMLElement) {
+  const style = window.getComputedStyle(element);
+  const overflowY = style.overflowY;
+
+  return (
+    (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") &&
+    element.scrollHeight > element.clientHeight
+  );
+}
+
+function isScrollPositionAtTop(scrollTop: number | undefined) {
+  return (scrollTop ?? 0) <= PULL_REFRESH_SCROLL_TOP_TOLERANCE_PX;
+}
+
+function isAtScrollTop(
+  scrollContainer: HTMLDivElement | null,
+  root: HTMLElement | null,
+  target: EventTarget | null,
+) {
+  const documentScrollTops = [
+    document.scrollingElement?.scrollTop,
+    document.documentElement.scrollTop,
+    document.body.scrollTop,
+    window.scrollY,
+  ];
+  let checkedShellScroll = false;
+
+  if (scrollContainer && !isScrollPositionAtTop(scrollContainer.scrollTop)) {
+    return false;
+  }
+  checkedShellScroll = Boolean(scrollContainer);
+
+  if (root && target instanceof Node) {
+    let node: Node | null = target;
+
+    while (node && node !== root) {
+      if (node instanceof HTMLElement && isScrollableElement(node)) {
+        checkedShellScroll = true;
+        if (!isScrollPositionAtTop(node.scrollTop)) {
+          return false;
+        }
+      }
+
+      node = node.parentNode;
+    }
+  }
+
+  return checkedShellScroll
+    ? true
+    : documentScrollTops.every(isScrollPositionAtTop);
 }
 
 export function CommandPullRefreshShell({
@@ -68,6 +117,7 @@ export function CommandPullRefreshShell({
   lockDocumentScroll = true,
 }: CommandPullRefreshShellProps) {
   const commandRef = useRef<CommandCirclesSectionHandle | null>(null);
+  const rootRef = useRef<HTMLElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const offsetRef = useRef(0);
   const debugMarkerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -151,6 +201,12 @@ export function CommandPullRefreshShell({
     [showDebugMarker],
   );
 
+  const isTouchInsideShell = useCallback((target: EventTarget | null) => {
+    const root = rootRef.current;
+
+    return Boolean(root && target instanceof Node && root.contains(target));
+  }, []);
+
   const resetGesture = useCallback(
     (clearDebugMarker = true) => {
       gestureRef.current.active = false;
@@ -206,7 +262,7 @@ export function CommandPullRefreshShell({
   const finishGesture = useCallback(() => {
     const shouldRefresh =
       !commandRef.current?.isDetailOpen() &&
-      isAtScrollTop(scrollContainerRef.current) &&
+      isAtScrollTop(scrollContainerRef.current, rootRef.current, null) &&
       offsetRef.current >= PULL_REFRESH_THRESHOLD_PX;
 
     gestureRef.current.active = false;
@@ -225,6 +281,12 @@ export function CommandPullRefreshShell({
 
   const handleTouchStart = useCallback(
     (event: TouchEvent) => {
+      if (!isTouchInsideShell(event.target)) {
+        showBlockedMarker("blocked outside shell");
+        resetGesture(false);
+        return;
+      }
+
       showDebugMarker("touch start");
 
       const touch = event.touches[0];
@@ -248,7 +310,7 @@ export function CommandPullRefreshShell({
         return;
       }
 
-      if (!isAtScrollTop(scrollContainer)) {
+      if (!isAtScrollTop(scrollContainer, rootRef.current, event.target)) {
         showBlockedMarker("blocked not top");
         resetGesture(false);
         return;
@@ -267,11 +329,25 @@ export function CommandPullRefreshShell({
         axis: "pending",
       };
     },
-    [isRefreshing, resetGesture, showBlockedMarker, showDebugMarker],
+    [
+      isRefreshing,
+      isTouchInsideShell,
+      resetGesture,
+      showBlockedMarker,
+      showDebugMarker,
+    ],
   );
 
   const handleTouchMove = useCallback(
     (event: TouchEvent) => {
+      if (!isTouchInsideShell(event.target)) {
+        if (gestureRef.current.active) {
+          showBlockedMarker("blocked outside shell");
+          resetGesture(false);
+        }
+        return;
+      }
+
       const gesture = gestureRef.current;
       const touch = event.touches[0];
       const scrollContainer = scrollContainerRef.current;
@@ -327,11 +403,14 @@ export function CommandPullRefreshShell({
         return;
       }
 
-      if (scrollContainer && isAtScrollTop(scrollContainer)) {
+      if (
+        scrollContainer &&
+        isAtScrollTop(scrollContainer, rootRef.current, event.target)
+      ) {
         scrollContainer.scrollTop = 0;
       }
 
-      if (!isAtScrollTop(scrollContainer)) {
+      if (!isAtScrollTop(scrollContainer, rootRef.current, event.target)) {
         showBlockedMarker("blocked not top");
         resetGesture(false);
         return;
@@ -343,66 +422,85 @@ export function CommandPullRefreshShell({
 
       updatePull(deltaY);
     },
-    [isRefreshing, resetGesture, showBlockedMarker, updatePull],
+    [
+      isRefreshing,
+      isTouchInsideShell,
+      resetGesture,
+      showBlockedMarker,
+      updatePull,
+    ],
   );
 
-  const handleTouchEnd = useCallback(() => {
+  const handleTouchEnd = useCallback((event: TouchEvent) => {
+    if (!isTouchInsideShell(event.target) && gestureRef.current.active) {
+      showBlockedMarker("blocked outside shell");
+      resetGesture(false);
+      return;
+    }
+
     if (!gestureRef.current.active) {
       return;
     }
 
     finishGesture();
-  }, [finishGesture]);
+  }, [finishGesture, isTouchInsideShell, resetGesture, showBlockedMarker]);
 
   useEffect(() => {
-    const scrollContainer = scrollContainerRef.current;
-
-    if (!scrollContainer) {
+    if (!rootRef.current) {
       return;
     }
 
-    const touchStartOptions: AddEventListenerOptions = { passive: true };
-    const touchMoveOptions: AddEventListenerOptions = { passive: false };
-    const touchEndOptions: AddEventListenerOptions = { passive: true };
+    const touchStartOptions: AddEventListenerOptions = {
+      capture: true,
+      passive: true,
+    };
+    const touchMoveOptions: AddEventListenerOptions = {
+      capture: true,
+      passive: false,
+    };
+    const touchEndOptions: AddEventListenerOptions = {
+      capture: true,
+      passive: true,
+    };
 
-    scrollContainer.addEventListener(
+    document.addEventListener(
       "touchstart",
       handleTouchStart,
       touchStartOptions,
     );
-    scrollContainer.addEventListener(
+    document.addEventListener(
       "touchmove",
       handleTouchMove,
       touchMoveOptions,
     );
-    scrollContainer.addEventListener(
+    document.addEventListener(
       "touchend",
       handleTouchEnd,
       touchEndOptions,
     );
-    scrollContainer.addEventListener(
+    document.addEventListener(
       "touchcancel",
       handleTouchEnd,
       touchEndOptions,
     );
 
     return () => {
-      scrollContainer.removeEventListener(
+      document.removeEventListener(
         "touchstart",
         handleTouchStart,
         touchStartOptions,
       );
-      scrollContainer.removeEventListener(
+      document.removeEventListener(
         "touchmove",
         handleTouchMove,
         touchMoveOptions,
       );
-      scrollContainer.removeEventListener(
+      document.removeEventListener(
         "touchend",
         handleTouchEnd,
         touchEndOptions,
       );
-      scrollContainer.removeEventListener(
+      document.removeEventListener(
         "touchcancel",
         handleTouchEnd,
         touchEndOptions,
@@ -423,6 +521,7 @@ export function CommandPullRefreshShell({
 
   return (
     <section
+      ref={rootRef}
       className={cn(
         "relative h-[calc(100dvh-4rem)] min-h-[calc(100dvh-4rem)] overflow-hidden bg-[var(--background)]",
         className,
@@ -478,9 +577,28 @@ export function CommandPullRefreshShell({
         </motion.div>
       </div>
 
+      {/* TEMP PTR MOUNT MARKER. */}
+      <div className="absolute left-2 top-2 z-30 flex max-w-[calc(100%-1rem)] items-center gap-2">
+        <div className="rounded bg-emerald-500 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-normal text-black shadow-lg shadow-black/30">
+          PTR SHELL MOUNTED
+        </div>
+
+        {/* TEMP PTR MANUAL TEST. */}
+        <button
+          type="button"
+          className="rounded bg-white px-1.5 py-0.5 text-[10px] font-black uppercase tracking-normal text-black shadow-lg shadow-black/30 disabled:opacity-60"
+          disabled={isRefreshing}
+          onClick={() => {
+            void runRefresh();
+          }}
+        >
+          TEST REFRESH
+        </button>
+      </div>
+
       {/* TEMP PTR DEBUG MARKER. */}
       {debugMarker ? (
-        <div className="pointer-events-none absolute left-2 top-2 z-20 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-white/70">
+        <div className="pointer-events-none absolute left-2 top-8 z-30 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-white/70">
           {debugMarker}
         </div>
       ) : null}
