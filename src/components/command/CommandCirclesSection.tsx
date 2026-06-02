@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -10,7 +12,6 @@ import {
   type FormEvent,
   type PointerEvent,
   type ReactNode,
-  type TouchEvent,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -118,6 +119,11 @@ type CircleMemberDisplay = {
 
 type CommandCirclesSectionProps = {
   className?: string;
+};
+
+export type CommandCirclesSectionHandle = {
+  refresh: () => Promise<void>;
+  isDetailOpen: () => boolean;
 };
 
 type CircleDetailView = "goals" | "roadmap";
@@ -237,19 +243,6 @@ const offerTypeOptions = [
 ] as const;
 
 const PULL_EXIT_THRESHOLD_PX = 56;
-const PULL_REFRESH_THRESHOLD_PX = 72;
-const PULL_REFRESH_MAX_OFFSET_PX = 96;
-const PULL_REFRESH_HOLD_OFFSET_PX = 46;
-const PULL_REFRESH_AXIS_SLOP_PX = 6;
-
-type PullRefreshAxis = "pending" | "vertical" | "horizontal";
-
-type PullRefreshTouchGesture = {
-  startX: number;
-  startY: number;
-  active: boolean;
-  axis: PullRefreshAxis;
-};
 
 function isInteractivePullTarget(target: EventTarget | null) {
   return (
@@ -261,25 +254,6 @@ function isInteractivePullTarget(target: EventTarget | null) {
     )
   );
 }
-
-function getPageScrollTop() {
-  if (typeof window === "undefined") {
-    return 0;
-  }
-
-  return Math.max(
-    window.scrollY,
-    document.scrollingElement?.scrollTop ?? 0,
-    document.documentElement.scrollTop,
-    document.body.scrollTop,
-  );
-}
-
-function getPullRefreshOffset(pullDistance: number) {
-  return Math.min(PULL_REFRESH_MAX_OFFSET_PX, pullDistance * 0.58);
-}
-
-type PullRefreshStatus = "idle" | "pulling" | "ready" | "refreshing";
 
 type OfferWeekdayValue = (typeof offerWeekdays)[number]["value"];
 
@@ -3809,9 +3783,10 @@ function CircleCommandDetail({
   );
 }
 
-export function CommandCirclesSection({
-  className,
-}: CommandCirclesSectionProps) {
+export const CommandCirclesSection = forwardRef<
+  CommandCirclesSectionHandle,
+  CommandCirclesSectionProps
+>(function CommandCirclesSection({ className }, ref) {
   const toast = useToastHelpers();
   const [circles, setCircles] = useState<CommandCircle[]>([]);
   const [incomingOffers, setIncomingOffers] = useState<IncomingOffer[]>([]);
@@ -3832,23 +3807,7 @@ export function CommandCirclesSection({
     string | null
   >(null);
   const [activeCircleId, setActiveCircleId] = useState<string | null>(null);
-  const [pullRefreshOffset, setPullRefreshOffset] = useState(0);
-  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
-  const [pullRefreshStatus, setPullRefreshStatus] =
-    useState<PullRefreshStatus>("idle");
   const previousFocus = useRef<HTMLElement | null>(null);
-  const pullRefreshStartYRef = useRef<number | null>(null);
-  const pullRefreshStartXRef = useRef<number | null>(null);
-  const pullRefreshPointerIdRef = useRef<number | null>(null);
-  const pullRefreshActiveRef = useRef(false);
-  const pullRefreshAxisRef = useRef<PullRefreshAxis>("pending");
-  const pullRefreshTouchRef = useRef<PullRefreshTouchGesture>({
-    startX: 0,
-    startY: 0,
-    active: false,
-    axis: "pending",
-  });
-  const pullRefreshOffsetRef = useRef(0);
 
   const activeCircle =
     circles.find((circle) => circle.id === activeCircleId) ?? null;
@@ -3937,261 +3896,18 @@ export function CommandCirclesSection({
     }
   }, []);
 
-  const resetPullRefreshGesture = useCallback(() => {
-    pullRefreshStartYRef.current = null;
-    pullRefreshStartXRef.current = null;
-    pullRefreshPointerIdRef.current = null;
-    pullRefreshActiveRef.current = false;
-    pullRefreshAxisRef.current = "pending";
-    pullRefreshTouchRef.current = {
-      startX: 0,
-      startY: 0,
-      active: false,
-      axis: "pending",
-    };
-
-    if (!isPullRefreshing) {
-      pullRefreshOffsetRef.current = 0;
-      setPullRefreshOffset(0);
-      setPullRefreshStatus("idle");
-    }
-  }, [isPullRefreshing]);
-
-  const runPullRefresh = useCallback(async () => {
-    setIsPullRefreshing(true);
-    setPullRefreshStatus("refreshing");
-    pullRefreshOffsetRef.current = PULL_REFRESH_HOLD_OFFSET_PX;
-    setPullRefreshOffset(PULL_REFRESH_HOLD_OFFSET_PX);
-
-    try {
-      await Promise.all([loadCircles(), loadIncomingOffers()]);
-    } finally {
-      setIsPullRefreshing(false);
-      pullRefreshOffsetRef.current = 0;
-      setPullRefreshOffset(0);
-      setPullRefreshStatus("idle");
-    }
-  }, [loadCircles, loadIncomingOffers]);
-
-  const canStartPullRefresh = useCallback(
-    (target: EventTarget | null) =>
-      activeCircleId === null &&
-      !isPullRefreshing &&
-      getPageScrollTop() <= 2 &&
-      !isInteractivePullTarget(target),
-    [activeCircleId, isPullRefreshing],
+  const refreshCommandData = useCallback(
+    () => Promise.all([loadCircles(), loadIncomingOffers()]).then(() => {}),
+    [loadCircles, loadIncomingOffers],
   );
 
-  const updatePullRefreshPull = useCallback((pullDistance: number) => {
-    const nextOffset = getPullRefreshOffset(pullDistance);
-
-    pullRefreshOffsetRef.current = nextOffset;
-    setPullRefreshOffset(nextOffset);
-    setPullRefreshStatus(
-      nextOffset >= PULL_REFRESH_THRESHOLD_PX ? "ready" : "pulling",
-    );
-  }, []);
-
-  const finishPullRefreshGesture = useCallback(() => {
-    const shouldRefresh =
-      activeCircleId === null &&
-      !isPullRefreshing &&
-      getPageScrollTop() <= 2 &&
-      pullRefreshOffsetRef.current >= PULL_REFRESH_THRESHOLD_PX;
-
-    pullRefreshStartYRef.current = null;
-    pullRefreshStartXRef.current = null;
-    pullRefreshPointerIdRef.current = null;
-    pullRefreshActiveRef.current = false;
-    pullRefreshAxisRef.current = "pending";
-    pullRefreshTouchRef.current = {
-      startX: 0,
-      startY: 0,
-      active: false,
-      axis: "pending",
-    };
-
-    if (shouldRefresh) {
-      void runPullRefresh();
-      return;
-    }
-
-    pullRefreshOffsetRef.current = 0;
-    setPullRefreshOffset(0);
-    setPullRefreshStatus("idle");
-  }, [activeCircleId, isPullRefreshing, runPullRefresh]);
-
-  const handlePullRefreshTouchStart = useCallback(
-    (event: TouchEvent<HTMLElement>) => {
-      const touch = event.touches[0];
-
-      if (
-        !touch ||
-        event.touches.length !== 1 ||
-        !canStartPullRefresh(event.target)
-      ) {
-        resetPullRefreshGesture();
-        return;
-      }
-
-      pullRefreshTouchRef.current = {
-        startX: touch.clientX,
-        startY: touch.clientY,
-        active: true,
-        axis: "pending",
-      };
-    },
-    [canStartPullRefresh, resetPullRefreshGesture],
-  );
-
-  const handlePullRefreshTouchMove = useCallback(
-    (event: TouchEvent<HTMLElement>) => {
-      const gesture = pullRefreshTouchRef.current;
-      const touch = event.touches[0];
-
-      if (!gesture.active || !touch || activeCircleId || isPullRefreshing) {
-        return;
-      }
-
-      const deltaY = touch.clientY - gesture.startY;
-      const deltaX = touch.clientX - gesture.startX;
-      const absDeltaY = Math.abs(deltaY);
-      const absDeltaX = Math.abs(deltaX);
-
-      if (gesture.axis === "pending") {
-        if (
-          absDeltaY < PULL_REFRESH_AXIS_SLOP_PX &&
-          absDeltaX < PULL_REFRESH_AXIS_SLOP_PX
-        ) {
-          return;
-        }
-
-        gesture.axis =
-          absDeltaY > absDeltaX * 1.25 ? "vertical" : "horizontal";
-      }
-
-      if (
-        gesture.axis !== "vertical" ||
-        deltaY <= 0 ||
-        getPageScrollTop() > 2
-      ) {
-        resetPullRefreshGesture();
-        return;
-      }
-
-      event.preventDefault();
-      updatePullRefreshPull(deltaY);
-    },
-    [
-      activeCircleId,
-      isPullRefreshing,
-      resetPullRefreshGesture,
-      updatePullRefreshPull,
-    ],
-  );
-
-  const handlePullRefreshTouchEnd = useCallback(() => {
-    if (!pullRefreshTouchRef.current.active) {
-      resetPullRefreshGesture();
-      return;
-    }
-
-    finishPullRefreshGesture();
-  }, [finishPullRefreshGesture, resetPullRefreshGesture]);
-
-  const handlePullRefreshStart = useCallback(
-    (event: PointerEvent<HTMLElement>) => {
-      if (
-        event.pointerType === "touch" ||
-        (event.pointerType !== "mouse" && event.pointerType !== "pen") ||
-        !canStartPullRefresh(event.target)
-      ) {
-        resetPullRefreshGesture();
-        return;
-      }
-
-      pullRefreshStartXRef.current = event.clientX;
-      pullRefreshStartYRef.current = event.clientY;
-      pullRefreshPointerIdRef.current = event.pointerId;
-      pullRefreshActiveRef.current = true;
-      pullRefreshAxisRef.current = "pending";
-      event.currentTarget.setPointerCapture(event.pointerId);
-    },
-    [canStartPullRefresh, resetPullRefreshGesture],
-  );
-
-  const handlePullRefreshMove = useCallback(
-    (event: PointerEvent<HTMLElement>) => {
-      const startY = pullRefreshStartYRef.current;
-      const startX = pullRefreshStartXRef.current;
-
-      if (
-        activeCircleId ||
-        isPullRefreshing ||
-        !pullRefreshActiveRef.current ||
-        startY === null ||
-        startX === null ||
-        pullRefreshPointerIdRef.current !== event.pointerId
-      ) {
-        return;
-      }
-
-      const pullDistance = event.clientY - startY;
-      const horizontalDistance = event.clientX - startX;
-      const absPullDistance = Math.abs(pullDistance);
-      const absHorizontalDistance = Math.abs(horizontalDistance);
-
-      if (pullRefreshAxisRef.current === "pending") {
-        if (
-          absPullDistance < PULL_REFRESH_AXIS_SLOP_PX &&
-          absHorizontalDistance < PULL_REFRESH_AXIS_SLOP_PX
-        ) {
-          return;
-        }
-
-        pullRefreshAxisRef.current =
-          absPullDistance > absHorizontalDistance * 1.25
-            ? "vertical"
-            : "horizontal";
-      }
-
-      if (
-        pullRefreshAxisRef.current !== "vertical" ||
-        pullDistance <= 0 ||
-        getPageScrollTop() > 2
-      ) {
-        resetPullRefreshGesture();
-        return;
-      }
-
-      event.preventDefault();
-      updatePullRefreshPull(pullDistance);
-    },
-    [
-      activeCircleId,
-      isPullRefreshing,
-      resetPullRefreshGesture,
-      updatePullRefreshPull,
-    ],
-  );
-
-  const handlePullRefreshEnd = useCallback(
-    (event: PointerEvent<HTMLElement>) => {
-      if (
-        !pullRefreshActiveRef.current ||
-        pullRefreshPointerIdRef.current !== event.pointerId
-      ) {
-        resetPullRefreshGesture();
-        return;
-      }
-
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-
-      finishPullRefreshGesture();
-    },
-    [finishPullRefreshGesture, resetPullRefreshGesture],
+  useImperativeHandle(
+    ref,
+    () => ({
+      refresh: refreshCommandData,
+      isDetailOpen: () => activeCircleId !== null,
+    }),
+    [activeCircleId, refreshCommandData],
   );
 
   const handleOfferResponse = useCallback(
@@ -4301,79 +4017,10 @@ export function CommandCirclesSection({
   }
 
   const shouldShowCircles = isLoading || !!error || circles.length > 0;
-  const isPullRefreshVisible = isPullRefreshing || pullRefreshOffset > 2;
-  const pullRefreshLabel =
-    pullRefreshStatus === "refreshing"
-      ? "Refreshing"
-      : pullRefreshStatus === "ready"
-        ? "Release to refresh"
-        : "Pull to refresh";
-  const isPullRefreshDragging =
-    !isPullRefreshing &&
-    (pullRefreshStatus === "pulling" || pullRefreshStatus === "ready");
-  const pullRefreshContentY = isPullRefreshing
-    ? PULL_REFRESH_HOLD_OFFSET_PX
-    : Math.min(72, pullRefreshOffset * 0.72);
-  const pullRefreshContentTransition = isPullRefreshDragging
-    ? { duration: 0 }
-    : { type: "spring" as const, stiffness: 380, damping: 34, mass: 0.8 };
 
   return (
-    <section
-      className={cn("relative overscroll-contain text-white", className)}
-      onTouchStart={handlePullRefreshTouchStart}
-      onTouchMove={handlePullRefreshTouchMove}
-      onTouchEnd={handlePullRefreshTouchEnd}
-      onTouchCancel={handlePullRefreshTouchEnd}
-      onPointerDown={handlePullRefreshStart}
-      onPointerMove={handlePullRefreshMove}
-      onPointerUp={handlePullRefreshEnd}
-      onPointerCancel={handlePullRefreshEnd}
-    >
-      <motion.div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 z-0 h-28 bg-gradient-to-b from-black via-zinc-950/95 to-transparent"
-        initial={false}
-        animate={{
-          opacity: isPullRefreshVisible ? 1 : 0,
-          scaleY: isPullRefreshVisible
-            ? Math.max(0.45, Math.min(1, pullRefreshOffset / 72))
-            : 0.35,
-        }}
-        style={{ originY: 0 }}
-        transition={pullRefreshContentTransition}
-      />
-
-      <motion.div
-        aria-hidden={!isPullRefreshVisible}
-        className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center"
-        initial={false}
-        animate={{
-          opacity: isPullRefreshVisible ? 1 : 0,
-          y: isPullRefreshing
-            ? 10
-            : Math.max(-34, pullRefreshOffset - 54),
-        }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-      >
-        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/92 px-3 py-2 text-xs font-semibold text-white/70 shadow-2xl shadow-black/35 backdrop-blur-md">
-          <span
-            className={cn(
-              "h-4 w-4 rounded-full border-2 border-white/25 border-t-white/90",
-              (isPullRefreshing || pullRefreshStatus === "ready") &&
-                "animate-spin",
-            )}
-          />
-          <span>{pullRefreshLabel}</span>
-        </div>
-      </motion.div>
-
-      <motion.div
-        initial={false}
-        animate={{ y: pullRefreshContentY }}
-        transition={pullRefreshContentTransition}
-        className="relative z-0"
-      >
+    <section className={cn("relative text-white", className)}>
+      <div className="relative z-0">
         <IncomingOffersSection
           offers={incomingOffers}
           isLoading={isLoadingOffers}
@@ -4428,7 +4075,7 @@ export function CommandCirclesSection({
             ))}
           </div>
         ) : null}
-      </motion.div>
+      </div>
 
       <AnimatePresence>
         {activeCircle ? (
@@ -4464,4 +4111,4 @@ export function CommandCirclesSection({
       </AnimatePresence>
     </section>
   );
-}
+});
