@@ -27,6 +27,7 @@ type CommunitySkill = {
   id: string | null;
   name: string;
   icon: string;
+  categoryName?: string | null;
 };
 
 const POPULAR_COMMUNITY_SKILLS = [
@@ -328,6 +329,7 @@ const isReorderable = (category: Category) =>
   category.id !== "uncategorized" && !category.is_locked;
 
 const normalizeSkillName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
+const normalizeCategoryName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
 
 const compareBySortOrderThenName = <T extends { sort_order: number | null; name: string }>(
   left: T,
@@ -357,13 +359,15 @@ function buildFallbackCommunityCatalog(): CommunityCatalog {
     subcategories: category.subcategories.map((subcategory) => ({
       id: `${category.name}:${subcategory.name}`,
       name: subcategory.name,
-      skills: [...subcategory.skills],
+      skills: subcategory.skills.map((skill) => ({
+        ...skill,
+        categoryName: category.name,
+      })),
     })),
   }));
   const skillsByName = new Map<string, CommunitySkill>();
 
   for (const skill of [
-    ...POPULAR_COMMUNITY_SKILLS,
     ...categories.flatMap((category) =>
       category.subcategories.flatMap((subcategory) => subcategory.skills)
     ),
@@ -371,10 +375,15 @@ function buildFallbackCommunityCatalog(): CommunityCatalog {
     skillsByName.set(skill.name, skill);
   }
 
+  const popularSkills = POPULAR_COMMUNITY_SKILLS.map((skill) => ({
+    ...skill,
+    categoryName: skillsByName.get(skill.name)?.categoryName ?? null,
+  }));
+
   return {
     categoryNames: ["Popular", ...categories.map((category) => category.name)],
     categories,
-    popularSkills: [...POPULAR_COMMUNITY_SKILLS],
+    popularSkills,
     skills: [...skillsByName.values()],
     source: "fallback",
   };
@@ -425,13 +434,19 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
     throw new Error("Global skill catalog is empty");
   }
 
+  const categoryNameById = new Map(categoryRows.map((category) => [category.id, category.name]));
   const skillsBySubcategory = new Map<string, CommunitySkill[]>();
   for (const skill of skillRows) {
     if (!skill.subcategory_id) {
       continue;
     }
     const list = skillsBySubcategory.get(skill.subcategory_id) ?? [];
-    list.push({ id: skill.id, name: skill.name, icon: skill.icon || "✦" });
+    list.push({
+      id: skill.id,
+      name: skill.name,
+      icon: skill.icon || "✦",
+      categoryName: categoryNameById.get(skill.category_id) ?? null,
+    });
     skillsBySubcategory.set(skill.subcategory_id, list);
   }
 
@@ -455,13 +470,23 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
   const popularSkills = skillRows
     .filter((skill) => skill.is_popular)
     .sort(comparePopularSkills)
-    .map((skill) => ({ id: skill.id, name: skill.name, icon: skill.icon || "✦" }));
+    .map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      icon: skill.icon || "✦",
+      categoryName: categoryNameById.get(skill.category_id) ?? null,
+    }));
 
   return {
     categoryNames: ["Popular", ...categories.map((category) => category.name)],
     categories,
     popularSkills,
-    skills: skillRows.map((skill) => ({ id: skill.id, name: skill.name, icon: skill.icon || "✦" })),
+    skills: skillRows.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      icon: skill.icon || "✦",
+      categoryName: categoryNameById.get(skill.category_id) ?? null,
+    })),
     source: "supabase",
   };
 }
@@ -1191,15 +1216,21 @@ export default function SkillsCarousel() {
       return;
     }
 
-    const safeActiveCategoryId =
-      activeCategory && isReorderable(activeCategory) && UUID_REGEX.test(activeCategory.id)
-        ? activeCategory.id
-        : null;
+    const matchedCategoryId = selectedCommunitySkill.categoryName
+      ? categories.find((category) => {
+          return (
+            isReorderable(category) &&
+            UUID_REGEX.test(category.id) &&
+            normalizeCategoryName(category.name) ===
+              normalizeCategoryName(selectedCommunitySkill.categoryName ?? "")
+          );
+        })?.id ?? null
+      : null;
     const created = await handleAddSkill({
       name: selectedCommunitySkill.name,
       icon: selectedCommunitySkill.icon,
       level: 1,
-      cat_id: safeActiveCategoryId,
+      cat_id: matchedCategoryId,
       monument_id: null,
       global_skill_id: selectedGlobalSkillId,
     });
@@ -1210,8 +1241,8 @@ export default function SkillsCarousel() {
 
     closeCommunitySkillPicker();
   }, [
-    activeCategory,
     closeCommunitySkillPicker,
+    categories,
     existingSkillSortItems,
     handleAddSkill,
     selectedCommunitySkill,
