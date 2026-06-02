@@ -1202,6 +1202,8 @@ export default function SkillsCarousel() {
   const handleConfirmCommunitySkill = useCallback(async () => {
     if (!selectedCommunitySkill) return;
 
+    toast.info("Adding skill...", selectedCommunitySkill.name);
+
     const selectedGlobalSkillId = selectedCommunitySkill.id;
     const normalizedSelectedName = normalizeSkillName(selectedCommunitySkill.name);
     const alreadyAdded = existingSkillSortItems.some((skill) => {
@@ -1216,7 +1218,7 @@ export default function SkillsCarousel() {
       return;
     }
 
-    const matchedCategoryId = selectedCommunitySkill.categoryName
+    const matchedCategory = selectedCommunitySkill.categoryName
       ? categories.find((category) => {
           return (
             isReorderable(category) &&
@@ -1224,8 +1226,9 @@ export default function SkillsCarousel() {
             normalizeCategoryName(category.name) ===
               normalizeCategoryName(selectedCommunitySkill.categoryName ?? "")
           );
-        })?.id ?? null
+        }) ?? null
       : null;
+    const matchedCategoryId = matchedCategory?.id ?? null;
     const created = await handleAddSkill({
       name: selectedCommunitySkill.name,
       icon: selectedCommunitySkill.icon,
@@ -1239,6 +1242,12 @@ export default function SkillsCarousel() {
       return;
     }
 
+    toast.success(
+      "Skill added",
+      matchedCategory
+        ? `${selectedCommunitySkill.name} was added to ${matchedCategory.name.toUpperCase()}.`
+        : `${selectedCommunitySkill.name} was added.`
+    );
     closeCommunitySkillPicker();
   }, [
     closeCommunitySkillPicker,
