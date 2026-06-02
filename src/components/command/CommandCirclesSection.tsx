@@ -236,6 +236,8 @@ const offerTypeOptions = [
 ] as const;
 
 const PULL_EXIT_THRESHOLD_PX = 56;
+const PULL_REFRESH_THRESHOLD_PX = 72;
+const PULL_REFRESH_MAX_OFFSET_PX = 96;
 
 function isInteractivePullTarget(target: EventTarget | null) {
   return (
@@ -247,6 +249,8 @@ function isInteractivePullTarget(target: EventTarget | null) {
     )
   );
 }
+
+type PullRefreshStatus = "idle" | "pulling" | "ready" | "refreshing";
 
 type OfferWeekdayValue = (typeof offerWeekdays)[number]["value"];
 
@@ -3799,7 +3803,15 @@ export function CommandCirclesSection({
     string | null
   >(null);
   const [activeCircleId, setActiveCircleId] = useState<string | null>(null);
+  const [pullRefreshOffset, setPullRefreshOffset] = useState(0);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [pullRefreshStatus, setPullRefreshStatus] =
+    useState<PullRefreshStatus>("idle");
   const previousFocus = useRef<HTMLElement | null>(null);
+  const pullRefreshStartYRef = useRef<number | null>(null);
+  const pullRefreshPointerIdRef = useRef<number | null>(null);
+  const pullRefreshActiveRef = useRef(false);
+  const pullRefreshOffsetRef = useRef(0);
 
   const activeCircle =
     circles.find((circle) => circle.id === activeCircleId) ?? null;
@@ -3887,6 +3899,140 @@ export function CommandCirclesSection({
       }
     }
   }, []);
+
+  const resetPullRefreshGesture = useCallback(() => {
+    pullRefreshStartYRef.current = null;
+    pullRefreshPointerIdRef.current = null;
+    pullRefreshActiveRef.current = false;
+
+    if (!isPullRefreshing) {
+      pullRefreshOffsetRef.current = 0;
+      setPullRefreshOffset(0);
+      setPullRefreshStatus("idle");
+    }
+  }, [isPullRefreshing]);
+
+  const runPullRefresh = useCallback(async () => {
+    setIsPullRefreshing(true);
+    setPullRefreshStatus("refreshing");
+    pullRefreshOffsetRef.current = PULL_REFRESH_THRESHOLD_PX;
+    setPullRefreshOffset(PULL_REFRESH_THRESHOLD_PX);
+
+    try {
+      await Promise.all([loadCircles(), loadIncomingOffers()]);
+    } finally {
+      setIsPullRefreshing(false);
+      pullRefreshOffsetRef.current = 0;
+      setPullRefreshOffset(0);
+      setPullRefreshStatus("idle");
+    }
+  }, [loadCircles, loadIncomingOffers]);
+
+  const handlePullRefreshStart = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (
+        activeCircleId ||
+        isPullRefreshing ||
+        event.pointerType !== "touch" ||
+        window.scrollY > 2 ||
+        isInteractivePullTarget(event.target)
+      ) {
+        resetPullRefreshGesture();
+        return;
+      }
+
+      pullRefreshStartYRef.current = event.clientY;
+      pullRefreshPointerIdRef.current = event.pointerId;
+      pullRefreshActiveRef.current = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setPullRefreshStatus("pulling");
+    },
+    [activeCircleId, isPullRefreshing, resetPullRefreshGesture],
+  );
+
+  const handlePullRefreshMove = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      const startY = pullRefreshStartYRef.current;
+
+      if (
+        activeCircleId ||
+        isPullRefreshing ||
+        !pullRefreshActiveRef.current ||
+        startY === null ||
+        pullRefreshPointerIdRef.current !== event.pointerId
+      ) {
+        return;
+      }
+
+      const pullDistance = event.clientY - startY;
+
+      if (pullDistance <= 0) {
+        pullRefreshOffsetRef.current = 0;
+        setPullRefreshOffset(0);
+        setPullRefreshStatus("pulling");
+        return;
+      }
+
+      if (window.scrollY > 2) {
+        resetPullRefreshGesture();
+        return;
+      }
+
+      event.preventDefault();
+
+      const nextOffset = Math.min(
+        PULL_REFRESH_MAX_OFFSET_PX,
+        pullDistance * 0.58,
+      );
+      pullRefreshOffsetRef.current = nextOffset;
+      setPullRefreshOffset(nextOffset);
+      setPullRefreshStatus(
+        nextOffset >= PULL_REFRESH_THRESHOLD_PX ? "ready" : "pulling",
+      );
+    },
+    [activeCircleId, isPullRefreshing, resetPullRefreshGesture],
+  );
+
+  const handlePullRefreshEnd = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (
+        !pullRefreshActiveRef.current ||
+        pullRefreshPointerIdRef.current !== event.pointerId
+      ) {
+        resetPullRefreshGesture();
+        return;
+      }
+
+      const shouldRefresh =
+        activeCircleId === null &&
+        !isPullRefreshing &&
+        window.scrollY <= 2 &&
+        pullRefreshOffsetRef.current >= PULL_REFRESH_THRESHOLD_PX;
+
+      pullRefreshStartYRef.current = null;
+      pullRefreshPointerIdRef.current = null;
+      pullRefreshActiveRef.current = false;
+
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+
+      if (shouldRefresh) {
+        void runPullRefresh();
+        return;
+      }
+
+      pullRefreshOffsetRef.current = 0;
+      setPullRefreshOffset(0);
+      setPullRefreshStatus("idle");
+    },
+    [
+      activeCircleId,
+      isPullRefreshing,
+      resetPullRefreshGesture,
+      runPullRefresh,
+    ],
+  );
 
   const handleOfferResponse = useCallback(
     async (offer: IncomingOffer, responseValue: "ACCEPTED" | "DECLINED") => {
@@ -3995,63 +4141,116 @@ export function CommandCirclesSection({
   }
 
   const shouldShowCircles = isLoading || !!error || circles.length > 0;
+  const isPullRefreshVisible = isPullRefreshing || pullRefreshOffset > 2;
+  const pullRefreshLabel =
+    pullRefreshStatus === "refreshing"
+      ? "Refreshing"
+      : pullRefreshStatus === "ready"
+        ? "Release to refresh"
+        : "Pull to refresh";
+  const isPullRefreshDragging =
+    !isPullRefreshing &&
+    (pullRefreshStatus === "pulling" || pullRefreshStatus === "ready");
+  const pullRefreshContentY = isPullRefreshing
+    ? 46
+    : Math.min(72, pullRefreshOffset * 0.72);
+  const pullRefreshContentTransition = isPullRefreshDragging
+    ? { duration: 0 }
+    : { type: "spring" as const, stiffness: 380, damping: 34, mass: 0.8 };
 
   return (
-    <section className={cn("text-white", className)}>
-      <IncomingOffersSection
-        offers={incomingOffers}
-        isLoading={isLoadingOffers}
-        error={offersError}
-        respondingOfferId={respondingOfferId}
-        respondingResponse={respondingOfferResponse}
-        responseErrorOfferId={offerResponseErrorId}
-        responseError={offerResponseError}
-        onRespond={handleOfferResponse}
-      />
-
-      {shouldShowCircles ? (
-        <div className="mb-3 flex flex-col gap-1">
-          <h2 className="text-lg font-semibold text-white">Circles</h2>
+    <section
+      className={cn("relative text-white", className)}
+      onPointerDown={handlePullRefreshStart}
+      onPointerMove={handlePullRefreshMove}
+      onPointerUp={handlePullRefreshEnd}
+      onPointerCancel={handlePullRefreshEnd}
+    >
+      <motion.div
+        aria-hidden={!isPullRefreshVisible}
+        className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center"
+        initial={false}
+        animate={{
+          opacity: isPullRefreshVisible ? 1 : 0,
+          y: isPullRefreshing
+            ? 10
+            : Math.max(-34, pullRefreshOffset - 54),
+        }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
+      >
+        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-zinc-950/92 px-3 py-2 text-xs font-semibold text-white/70 shadow-2xl shadow-black/35 backdrop-blur-md">
+          <span
+            className={cn(
+              "h-4 w-4 rounded-full border-2 border-white/25 border-t-white/90",
+              (isPullRefreshing || pullRefreshStatus === "ready") &&
+                "animate-spin",
+            )}
+          />
+          <span>{pullRefreshLabel}</span>
         </div>
-      ) : null}
+      </motion.div>
 
-      {shouldShowCircles && isLoading ? (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 3 }, (_, index) => (
-            <div
-              key={index}
-              className="min-h-[184px] animate-pulse rounded-2xl border border-white/10 bg-white/[0.04] p-4"
-            >
-              <div className="h-5 w-2/3 rounded-full bg-white/10" />
-              <div className="mt-3 h-3 w-1/3 rounded-full bg-white/10" />
-              <div className="mt-9 h-3 w-full rounded-full bg-white/10" />
-              <div className="mt-3 h-3 w-3/4 rounded-full bg-white/10" />
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <motion.div
+        initial={false}
+        animate={{ y: pullRefreshContentY }}
+        transition={pullRefreshContentTransition}
+        className="relative z-0"
+      >
+        <IncomingOffersSection
+          offers={incomingOffers}
+          isLoading={isLoadingOffers}
+          error={offersError}
+          respondingOfferId={respondingOfferId}
+          respondingResponse={respondingOfferResponse}
+          responseErrorOfferId={offerResponseErrorId}
+          responseError={offerResponseError}
+          onRespond={handleOfferResponse}
+        />
 
-      {shouldShowCircles && !isLoading && error ? (
-        <article className="rounded-2xl border border-rose-300/20 bg-rose-500/10 p-5 text-sm text-rose-100 shadow-xl shadow-rose-950/20">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-rose-200/70">
-            Circles unavailable
-          </p>
-          <p className="mt-2 leading-6">{error}</p>
-        </article>
-      ) : null}
+        {shouldShowCircles ? (
+          <div className="mb-3 flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-white">Circles</h2>
+          </div>
+        ) : null}
 
-      {shouldShowCircles && !isLoading && !error && circles.length > 0 ? (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {circles.map((circle) => (
-            <CircleCard
-              key={circle.id}
-              circle={circle}
-              isSelected={activeCircleId === circle.id}
-              onSelect={() => setActiveCircleId(circle.id)}
-            />
-          ))}
-        </div>
-      ) : null}
+        {shouldShowCircles && isLoading ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 3 }, (_, index) => (
+              <div
+                key={index}
+                className="min-h-[184px] animate-pulse rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+              >
+                <div className="h-5 w-2/3 rounded-full bg-white/10" />
+                <div className="mt-3 h-3 w-1/3 rounded-full bg-white/10" />
+                <div className="mt-9 h-3 w-full rounded-full bg-white/10" />
+                <div className="mt-3 h-3 w-3/4 rounded-full bg-white/10" />
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {shouldShowCircles && !isLoading && error ? (
+          <article className="rounded-2xl border border-rose-300/20 bg-rose-500/10 p-5 text-sm text-rose-100 shadow-xl shadow-rose-950/20">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-rose-200/70">
+              Circles unavailable
+            </p>
+            <p className="mt-2 leading-6">{error}</p>
+          </article>
+        ) : null}
+
+        {shouldShowCircles && !isLoading && !error && circles.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {circles.map((circle) => (
+              <CircleCard
+                key={circle.id}
+                circle={circle}
+                isSelected={activeCircleId === circle.id}
+                onSelect={() => setActiveCircleId(circle.id)}
+              />
+            ))}
+          </div>
+        ) : null}
+      </motion.div>
 
       <AnimatePresence>
         {activeCircle ? (
