@@ -12,11 +12,6 @@ import {
   derivePersistedCategoryOrders,
   shouldUseFiveColumnCategoryPillGrid,
 } from "./carouselUtils";
-import {
-  SkillDrawer,
-  type Category as DrawerCategory,
-  type Skill as DrawerSkill,
-} from "@/app/(app)/skills/components/SkillDrawer";
 import { updateCatOrder } from "@/lib/data/cats";
 import { getSkillsForUser } from "@/lib/data/skills";
 import { createRecord, updateRecord } from "@/lib/db";
@@ -27,7 +22,7 @@ import type { SkillRow } from "@/lib/types/skill";
 const FALLBACK_COLOR = "#6366f1";
 const MAX_CATEGORY_SLOTS = 10;
 const DEFAULT_CATEGORY_EMOJI = "⚓";
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type CommunitySkill = {
   name: string;
   icon: string;
@@ -261,9 +256,18 @@ const COMMUNITY_SKILLS = [
   ),
 ] as const;
 
-type Monument = {
+type SkillCreateInput = {
+  name: string;
+  icon: string;
+  level: number;
+  cat_id: string | null;
+  monument_id?: string | null;
+};
+
+type ExistingSkillSortItem = {
   id: string;
-  title: string;
+  cat_id: string | null;
+  sort_order?: number | null;
 };
 
 function parseHex(hex?: string | null) {
@@ -320,7 +324,6 @@ export default function SkillsCarousel() {
   const [dragOriginCategoryId, setDragOriginCategoryId] = useState<string | null>(null);
   const [dropTargetCategoryId, setDropTargetCategoryId] = useState<string | null>(null);
   const [isMovingSkill, setIsMovingSkill] = useState(false);
-  const [skillDrawerOpen, setSkillDrawerOpen] = useState(false);
   const [communitySkillPickerOpen, setCommunitySkillPickerOpen] = useState(false);
   const [selectedCommunitySkillName, setSelectedCommunitySkillName] = useState<string | null>(null);
   const [communitySkillSearch, setCommunitySkillSearch] = useState("");
@@ -328,9 +331,7 @@ export default function SkillsCarousel() {
   const [openCommunitySkillSubcategories, setOpenCommunitySkillSubcategories] = useState<
     Record<string, boolean>
   >({});
-  const [drawerSkills, setDrawerSkills] = useState<DrawerSkill[]>([]);
-  const [drawerCategories, setDrawerCategories] = useState<DrawerCategory[]>([]);
-  const [monuments, setMonuments] = useState<Monument[]>([]);
+  const [existingSkillSortItems, setExistingSkillSortItems] = useState<ExistingSkillSortItem[]>([]);
   const [isAddCategoryMenuOpen, setIsAddCategoryMenuOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryColor, setNewCategoryColor] = useState(FALLBACK_COLOR);
@@ -452,7 +453,7 @@ export default function SkillsCarousel() {
     return () => cancelAnimationFrame(frame);
   }, [activeCommunitySkillCategoryIndex, communitySkillPickerOpen]);
 
-  const loadSkillDrawerData = useCallback(async () => {
+  const loadExistingSkillSortItems = useCallback(async () => {
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
 
@@ -462,37 +463,23 @@ export default function SkillsCarousel() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const [skillRows, cats, mons] = await Promise.all([
-        getSkillsForUser(user.id),
-        supabase.from("cats").select("id,name").eq("user_id", user.id),
-        supabase.from("monuments").select("id,title").eq("user_id", user.id),
-      ]);
+      const skillRows = await getSkillsForUser(user.id);
 
-      setDrawerSkills(
+      setExistingSkillSortItems(
         (skillRows || []).map((skill) => ({
           id: skill.id,
-          name: skill.name || "Unnamed",
-          icon: skill.icon || "🧩",
-          level: skill.level ?? 1,
-          progress: 0,
           cat_id: skill.cat_id,
-          monument_id: skill.monument_id,
-          created_at: skill.created_at,
-          is_default: skill.is_default ?? false,
-          is_locked: skill.is_locked ?? false,
           sort_order: skill.sort_order ?? null,
         }))
       );
-      setDrawerCategories((cats.data || []).map((cat) => ({ id: cat.id, name: cat.name })));
-      setMonuments((mons.data || []).map((monument) => ({ id: monument.id, title: monument.title })));
     } catch (error) {
-      console.error("Error loading skill drawer data:", error);
+      console.error("Error loading skill sort data:", error);
     }
   }, []);
 
   useEffect(() => {
-    void loadSkillDrawerData();
-  }, [loadSkillDrawerData]);
+    void loadExistingSkillSortItems();
+  }, [loadExistingSkillSortItems]);
 
   useEffect(() => {
     if (!canAddCategory && isAddCategoryMenuOpen) {
@@ -904,9 +891,9 @@ export default function SkillsCarousel() {
   }, [newCategoryColor, newCategoryEmoji, newCategoryName, reload, toast]);
 
   const handleAddSkill = useCallback(
-    async (skill: DrawerSkill) => {
+    async (skill: SkillCreateInput) => {
       const catIdToUse = skill.cat_id && UUID_REGEX.test(skill.cat_id) ? skill.cat_id : null;
-      const highestSortOrderInCategory = drawerSkills
+      const highestSortOrderInCategory = existingSkillSortItems
         .filter((existing) => {
           const existingCategory = existing.cat_id || "";
           const newCategory = catIdToUse || "";
@@ -927,58 +914,49 @@ export default function SkillsCarousel() {
       if (error || !data) {
         console.error("Error creating skill:", error);
         toast.error("Error", error?.message || "Failed to create skill");
-        return;
+        return false;
       }
 
-      setDrawerSkills((previous) => {
+      setExistingSkillSortItems((previous) => {
         if (previous.some((existing) => existing.id === data.id)) {
           return previous;
         }
         return [
           ...previous,
           {
-            ...skill,
             id: data.id,
             cat_id: catIdToUse,
-            monument_id: skill.monument_id ?? null,
             sort_order: data.sort_order ?? nextSortOrder,
-            created_at: data.created_at,
           },
         ];
       });
       reload();
+      return true;
     },
-    [drawerSkills, reload, toast]
+    [existingSkillSortItems, reload, toast]
   );
 
-  const handleConfirmCommunitySkill = useCallback(() => {
+  const handleConfirmCommunitySkill = useCallback(async () => {
     if (!selectedCommunitySkill) return;
 
-    // TODO: Wire this to shared community skill persistence once the backend contract exists.
+    const safeActiveCategoryId =
+      activeCategory && isReorderable(activeCategory) && UUID_REGEX.test(activeCategory.id)
+        ? activeCategory.id
+        : null;
+    const created = await handleAddSkill({
+      name: selectedCommunitySkill.name,
+      icon: selectedCommunitySkill.icon,
+      level: 1,
+      cat_id: safeActiveCategoryId,
+      monument_id: null,
+    });
+
+    if (!created) {
+      return;
+    }
+
     closeCommunitySkillPicker();
-  }, [closeCommunitySkillPicker, selectedCommunitySkill]);
-
-  const handleAddDrawerCategory = useCallback(
-    async (name: string): Promise<DrawerCategory | null> => {
-      if (drawerCategories.length >= MAX_CATEGORY_SLOTS) {
-        toast.error("Limit reached", "You can have up to 10 categories.");
-        return null;
-      }
-
-      const { data, error } = await createRecord<DrawerCategory>("cats", { name });
-      if (error || !data) {
-        console.error("Error creating category:", error);
-        toast.error("Error", error?.message || "Failed to create category");
-        return null;
-      }
-
-      const category = { id: data.id, name: data.name };
-      setDrawerCategories((previous) => [...previous, category]);
-      reload();
-      return category;
-    },
-    [drawerCategories.length, reload, toast]
-  );
+  }, [activeCategory, closeCommunitySkillPicker, handleAddSkill, selectedCommunitySkill]);
 
   type ReorderDirection = "left" | "right" | "first" | "last";
 
@@ -1139,37 +1117,27 @@ export default function SkillsCarousel() {
 
   if (!isLoading && categories.length === 0) {
     return (
-      <>
-        <div className="relative">
-          <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-4 py-6 shadow-lg sm:px-6">
-            <div className="space-y-1 text-left">
-              <p className="text-xs font-semibold tracking-[0.4em] text-slate-300/70">SKILLS</p>
-              <h3 className="text-xl font-semibold text-white">No skills yet</h3>
-              <p className="text-sm text-slate-400">
-                Set up your skill stack (5 categories, ~25 skills) to personalize CREATOR.
-              </p>
-            </div>
-            <div className="mt-6 flex flex-wrap justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setSkillDrawerOpen(true)}
-                className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                CREATE SKILL
-              </button>
-            </div>
+      <div className="relative">
+        <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-4 py-6 shadow-lg sm:px-6">
+          <div className="space-y-1 text-left">
+            <p className="text-xs font-semibold tracking-[0.4em] text-slate-300/70">SKILLS</p>
+            <h3 className="text-xl font-semibold text-white">No skills yet</h3>
+            <p className="text-sm text-slate-400">
+              Set up your skill stack (5 categories, ~25 skills) to personalize CREATOR.
+            </p>
+          </div>
+          <div className="mt-6 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setCommunitySkillPickerOpen(true)}
+              className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              ADD SKILL
+            </button>
           </div>
         </div>
-        <SkillDrawer
-          open={skillDrawerOpen}
-          onClose={() => setSkillDrawerOpen(false)}
-          onAdd={handleAddSkill}
-          categories={drawerCategories}
-          monuments={monuments}
-          onAddCategory={handleAddDrawerCategory}
-        />
-      </>
+      </div>
     );
   }
 
@@ -1306,7 +1274,6 @@ export default function SkillsCarousel() {
                       if (category.is_locked) return;
                       reorderCategory(category.id, direction);
                     }}
-                    onAddSkill={() => setSkillDrawerOpen(true)}
                     canMoveLeft={canMoveLeft}
                     canMoveRight={canMoveRight}
                     canMoveToStart={canMoveLeft}
@@ -1333,16 +1300,6 @@ export default function SkillsCarousel() {
                     className="pointer-events-none absolute inset-[1px] rounded-[24px] border border-white/[0.06]"
                   />
                   <div className="relative z-10 px-3 pb-2.5 pt-3 sm:px-4">
-                    <div className="flex justify-center text-center">
-                      <div className="min-w-0">
-                        <h2
-                          id="community-skills-title"
-                          className="truncate text-[11px] font-semibold uppercase tracking-[0.28em] text-white/80"
-                        >
-                          COMMUNITY SKILLS
-                        </h2>
-                      </div>
-                    </div>
                     <div className="relative mt-3">
                       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400/75" />
                       <input
@@ -1735,14 +1692,6 @@ export default function SkillsCarousel() {
           )}
         </div>
       </div>
-      <SkillDrawer
-        open={skillDrawerOpen}
-        onClose={() => setSkillDrawerOpen(false)}
-        onAdd={handleAddSkill}
-        categories={drawerCategories}
-        monuments={monuments}
-        onAddCategory={handleAddDrawerCategory}
-      />
     </>
   );
 }
