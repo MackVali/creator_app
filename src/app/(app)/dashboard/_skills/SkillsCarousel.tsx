@@ -1853,13 +1853,9 @@ export default function SkillsCarousel() {
                   }}
                 >
                   <span
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-base font-semibold shadow"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center text-base font-semibold"
                     style={{
-                      backgroundColor: isActive ? withAlpha(chipColor, 0.55) : withAlpha(chipColor, 0.18),
-                      color: isActive ? "rgba(0, 0, 0, 0.85)" : "rgba(255,255,255,0.92)",
-                      boxShadow: isActive
-                        ? `0 12px 24px ${withAlpha(chipColor, 0.32)}`
-                        : "0 6px 14px rgba(0,0,0,0.28)",
+                      color: isActive ? withAlpha(chipColor, 0.95) : "rgba(255,255,255,0.76)",
                     }}
                   >
                     {preview}

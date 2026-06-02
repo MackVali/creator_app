@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { motion } from "framer-motion";
 
 import { cn } from "@/lib/utils";
@@ -41,8 +48,12 @@ type TouchGesture = {
 };
 
 type CommandPullRefreshShellProps = {
+  children?: ReactNode;
   className?: string;
+  contentClassName?: string;
   lockDocumentScroll?: boolean;
+  onRefresh?: () => Promise<void> | void;
+  refreshRef?: RefObject<CommandCirclesSectionHandle | null>;
 };
 
 function isInteractivePullTarget(target: EventTarget | null) {
@@ -87,10 +98,12 @@ function isAtScrollTop(
   ];
   let checkedShellScroll = false;
 
-  if (scrollContainer && !isScrollPositionAtTop(scrollContainer.scrollTop)) {
-    return false;
+  if (scrollContainer && isScrollableElement(scrollContainer)) {
+    checkedShellScroll = true;
+    if (!isScrollPositionAtTop(scrollContainer.scrollTop)) {
+      return false;
+    }
   }
-  checkedShellScroll = Boolean(scrollContainer);
 
   if (root && target instanceof Node) {
     let node: Node | null = target;
@@ -113,10 +126,15 @@ function isAtScrollTop(
 }
 
 export function CommandPullRefreshShell({
+  children,
   className,
+  contentClassName,
   lockDocumentScroll = true,
+  onRefresh,
+  refreshRef,
 }: CommandPullRefreshShellProps) {
-  const commandRef = useRef<CommandCirclesSectionHandle | null>(null);
+  const fallbackCommandRef = useRef<CommandCirclesSectionHandle | null>(null);
+  const commandRef = refreshRef ?? fallbackCommandRef;
   const rootRef = useRef<HTMLElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const offsetRef = useRef(0);
@@ -133,6 +151,7 @@ export function CommandPullRefreshShell({
   const [status, setStatus] = useState<PullRefreshStatus>("idle");
   const [debugMarker, setDebugMarker] = useState<PullDebugMarker>(null);
 
+  const hasWrappedContent = children !== undefined;
   const isRefreshing = status === "refreshing";
   const isDragging = status === "pulling" || status === "ready";
   const isVisible = status !== "idle";
@@ -250,14 +269,18 @@ export function CommandPullRefreshShell({
     setOffset(PULL_REFRESH_HOLD_OFFSET_PX);
 
     try {
-      await commandRef.current?.refresh();
+      if (onRefresh) {
+        await onRefresh();
+      } else {
+        await commandRef.current?.refresh();
+      }
     } finally {
       offsetRef.current = 0;
       setOffset(0);
       setStatus("idle");
       showDebugMarker(null);
     }
-  }, [showDebugMarker]);
+  }, [commandRef, onRefresh, showDebugMarker]);
 
   const finishGesture = useCallback(() => {
     const shouldRefresh =
@@ -277,7 +300,7 @@ export function CommandPullRefreshShell({
     setOffset(0);
     setStatus("idle");
     showDebugMarker(null);
-  }, [runRefresh, showDebugMarker]);
+  }, [commandRef, runRefresh, showDebugMarker]);
 
   const handleTouchStart = useCallback(
     (event: TouchEvent) => {
@@ -330,6 +353,7 @@ export function CommandPullRefreshShell({
       };
     },
     [
+      commandRef,
       isRefreshing,
       isTouchInsideShell,
       resetGesture,
@@ -423,6 +447,7 @@ export function CommandPullRefreshShell({
       updatePull(deltaY);
     },
     [
+      commandRef,
       isRefreshing,
       isTouchInsideShell,
       resetGesture,
@@ -523,14 +548,21 @@ export function CommandPullRefreshShell({
     <section
       ref={rootRef}
       className={cn(
-        "relative h-[calc(100dvh-4rem)] min-h-[calc(100dvh-4rem)] overflow-hidden bg-[var(--background)]",
+        hasWrappedContent
+          ? "relative overflow-hidden bg-[var(--background)]"
+          : "relative h-[calc(100dvh-4rem)] min-h-[calc(100dvh-4rem)] overflow-hidden bg-[var(--background)]",
         className,
       )}
     >
       <div
         ref={scrollContainerRef}
-        className="relative h-full overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] [overscroll-behavior-y:contain]"
-        style={{ overscrollBehaviorY: "contain" }}
+        className={cn(
+          "relative overscroll-contain [-webkit-overflow-scrolling:touch] [overscroll-behavior-y:contain]",
+          hasWrappedContent ? "w-full" : "h-full overflow-y-auto",
+        )}
+        style={
+          hasWrappedContent ? undefined : { overscrollBehaviorY: "contain" }
+        }
       >
         <motion.div
           aria-hidden="true"
@@ -571,37 +603,48 @@ export function CommandPullRefreshShell({
           initial={false}
           animate={{ y: contentY }}
           transition={transition}
-          className="relative z-0 mx-auto w-full max-w-6xl px-4 pb-10 pt-4"
+          className={cn(
+            hasWrappedContent
+              ? "relative z-0 w-full"
+              : "relative z-0 mx-auto w-full max-w-6xl px-4 pb-10 pt-4",
+            contentClassName,
+          )}
         >
-          <CommandCirclesSection ref={commandRef} />
+          {hasWrappedContent ? (
+            children
+          ) : (
+            <CommandCirclesSection ref={fallbackCommandRef} />
+          )}
         </motion.div>
       </div>
 
-      {/* TEMP PTR MOUNT MARKER. */}
-      <div className="absolute left-2 top-2 z-30 flex max-w-[calc(100%-1rem)] items-center gap-2">
-        <div className="rounded bg-emerald-500 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-normal text-black shadow-lg shadow-black/30">
-          PTR SHELL MOUNTED
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30">
+        {/* TEMP PTR MOUNT MARKER. */}
+        <div className="pointer-events-auto absolute left-2 top-2 flex max-w-[calc(100%-1rem)] items-center gap-2">
+          <div className="rounded bg-emerald-500 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-normal text-black shadow-lg shadow-black/30">
+            PTR SHELL MOUNTED
+          </div>
+
+          {/* TEMP PTR MANUAL TEST. */}
+          <button
+            type="button"
+            className="rounded bg-white px-1.5 py-0.5 text-[10px] font-black uppercase tracking-normal text-black shadow-lg shadow-black/30 disabled:opacity-60"
+            disabled={isRefreshing}
+            onClick={() => {
+              void runRefresh();
+            }}
+          >
+            TEST REFRESH
+          </button>
         </div>
 
-        {/* TEMP PTR MANUAL TEST. */}
-        <button
-          type="button"
-          className="rounded bg-white px-1.5 py-0.5 text-[10px] font-black uppercase tracking-normal text-black shadow-lg shadow-black/30 disabled:opacity-60"
-          disabled={isRefreshing}
-          onClick={() => {
-            void runRefresh();
-          }}
-        >
-          TEST REFRESH
-        </button>
+        {/* TEMP PTR DEBUG MARKER. */}
+        {debugMarker ? (
+          <div className="absolute left-2 top-8 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-white/70">
+            {debugMarker}
+          </div>
+        ) : null}
       </div>
-
-      {/* TEMP PTR DEBUG MARKER. */}
-      {debugMarker ? (
-        <div className="pointer-events-none absolute left-2 top-8 z-30 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-white/70">
-          {debugMarker}
-        </div>
-      ) : null}
     </section>
   );
 }
