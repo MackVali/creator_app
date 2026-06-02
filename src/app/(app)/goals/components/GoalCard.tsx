@@ -1004,7 +1004,7 @@ function CompactProjectsOverlay({
   );
 
   const basePanelClass =
-    "overflow-hidden rounded-2xl border border-white/15 bg-black shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)]";
+    "overflow-hidden rounded-2xl border border-white/10 bg-[#07080A]/95 shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)]";
 
   return createPortal(
     <>

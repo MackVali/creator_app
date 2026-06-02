@@ -58,6 +58,7 @@ interface MonumentDetailProps {
 
 type MonumentView = "goals" | "roadmap";
 const PULL_EXIT_ACTIVATION_PX = 8;
+const PULL_EXIT_TOUCH_ACTIVATION_PX = 5;
 const PULL_EXIT_THRESHOLD_PX = 128;
 const PULL_EXIT_FLICK_VELOCITY = 0.65;
 const PULL_EXIT_FLICK_MIN_DISTANCE_PX = 32;
@@ -290,6 +291,10 @@ export function MonumentDetail({
   const handlePullExitMove = (event: PointerEvent<HTMLElement>) => {
     const pullStartY = pullStartYRef.current;
     const pullStartX = pullStartXRef.current;
+    const activationThreshold =
+      event.pointerType === "touch"
+        ? PULL_EXIT_TOUCH_ACTIVATION_PX
+        : PULL_EXIT_ACTIVATION_PX;
 
     if (
       pullExitBlocked ||
@@ -306,23 +311,23 @@ export function MonumentDetail({
 
     if (!pullDragActiveRef.current) {
       if (
-        Math.abs(deltaX) > PULL_EXIT_ACTIVATION_PX &&
+        Math.abs(deltaX) > activationThreshold &&
         Math.abs(deltaX) > deltaY
       ) {
         resetPullExit();
         return;
       }
 
-      if (deltaY < -PULL_EXIT_ACTIVATION_PX) {
+      if (deltaY < -activationThreshold) {
         resetPullExit();
         return;
       }
 
-      if (!isAtTop() && deltaY <= PULL_EXIT_ACTIVATION_PX) {
+      if (!isAtTop() && deltaY <= activationThreshold) {
         return;
       }
 
-      if (deltaY <= PULL_EXIT_ACTIVATION_PX) {
+      if (deltaY <= activationThreshold) {
         return;
       }
 
@@ -415,7 +420,7 @@ export function MonumentDetail({
     >
       <div
         aria-hidden="true"
-        className="absolute inset-x-0 top-0 z-20 h-5 touch-none sm:hidden"
+        className="absolute inset-x-0 top-0 z-20 h-16 touch-none sm:hidden"
         style={{ touchAction: "none" }}
         onPointerDown={handleTopPullExitStart}
         onPointerMove={handleTopPullExitMove}

@@ -34,8 +34,10 @@ import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
 import {
-  listRoadmaps,
+  addGoalToCampaign,
+  listGoalCampaignCards,
   listRoadmapsWithItems,
+  type GoalCampaignCardData,
   type Roadmap,
   type RoadmapWithItems,
 } from "@/lib/queries/roadmaps";
@@ -387,81 +389,6 @@ async function fetchGoalsWithRelations(
   return fallback.data ?? [];
 }
 
-async function fetchGoalsByRoadmapId(
-  supabase: SupabaseClient,
-  userId: string,
-  roadmapId: string
-): Promise<GoalRowWithRelations[]> {
-  const baseSelect =
-    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date, emoji, priority_rank";
-  const selectWithEnumColumns = `
-    ${baseSelect},
-    projects (
-      id, name, goal_id, stage, duration_min, created_at, due_date,
-      priority,
-      energy,
-      tasks (
-        id, project_id, stage, name, skill_id, priority
-      ),
-      project_skills (
-        skill_id
-      )
-    )
-  `;
-  const selectWithLookupRelations = `
-    ${baseSelect},
-    projects (
-      id, name, goal_id, stage, duration_min, created_at, due_date,
-      priority,
-      energy,
-      tasks (
-        id, project_id, stage, name, skill_id, priority
-      ),
-      project_skills (
-        skill_id
-      )
-    )
-  `;
-  const runQuery = (select: string) =>
-    supabase
-      .from("goals")
-      .select(select)
-      .eq("user_id", userId)
-      .eq("roadmap_id", roadmapId)
-      .order("priority_rank", { ascending: true, nullsFirst: false })
-      .order("priority_code", { ascending: true, nullsFirst: false })
-      .order("created_at", { ascending: true });
-
-  const variants = [
-    { description: "enum column project fetch", select: selectWithEnumColumns },
-    {
-      description: "lookup relation project fetch",
-      select: selectWithLookupRelations,
-    },
-  ];
-  for (const variant of variants) {
-    const { data, error } = await runQuery(variant.select);
-    if (!error) {
-      return data ?? [];
-    }
-    console.warn(
-      `Roadmap goal fetch variant failed (${variant.description}):`,
-      error
-    );
-  }
-
-  console.warn(
-    "Falling back to basic roadmap goal fetch (relations unavailable)"
-  );
-
-  const fallback = await runQuery(baseSelect);
-  if (fallback.error) {
-    console.error("Fallback roadmap goal fetch also failed:", fallback.error);
-    throw fallback.error;
-  }
-  return fallback.data ?? [];
-}
-
 async function fetchProjectScheduleEndLookup(
   supabase: SupabaseClient,
   userId: string
@@ -662,9 +589,11 @@ export default function GoalsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [roadmaps, setRoadmaps] = useState<Roadmap[]>([]);
+  const [campaignCards, setCampaignCards] = useState<
+    GoalCampaignCardData[]
+  >([]);
   const [roadmapsWithItems, setRoadmapsWithItems] = useState<RoadmapWithItems[]>([]);
-  const [roadmapGoals, setRoadmapGoals] = useState<Map<string, Goal[]>>(
+  const [campaignGoalsMap, setCampaignGoalsMap] = useState<Map<string, Goal[]>>(
     new Map()
   );
   const [search, setSearch] = useState("");
@@ -681,6 +610,9 @@ export default function GoalsPage() {
   const [skill, setSkill] = useState<string>("All");
   const [drawer, setDrawer] = useState(false);
   const [drawerInitialRoadmapId, setDrawerInitialRoadmapId] = useState<
+    string | null
+  >(null);
+  const [drawerInitialCampaignId, setDrawerInitialCampaignId] = useState<
     string | null
   >(null);
   const [editing, setEditing] = useState<Goal | null>(null);
@@ -857,10 +789,12 @@ export default function GoalsPage() {
           return [];
         });
 
-        const roadmapsPromise = listRoadmaps(user.id).catch((err) => {
-          console.error("Error fetching roadmaps:", err);
-          return [];
-        });
+        const campaignCardsPromise = listGoalCampaignCards(user.id).catch(
+          (err) => {
+            console.error("Error fetching goal campaign cards:", err);
+            return [];
+          }
+        );
 
         const roadmapsWithItemsPromise = listRoadmapsWithItems(user.id).catch(
           (err) => {
@@ -881,19 +815,19 @@ export default function GoalsPage() {
           goalsData,
           monumentsData,
           skillsData,
-          roadmapsData,
+          campaignCardsData,
           roadmapsWithItemsData,
           projectScheduleLookup,
         ] = await Promise.all([
           goalsPromise,
           monumentsPromise,
           skillsPromise,
-          roadmapsPromise,
+          campaignCardsPromise,
           roadmapsWithItemsPromise,
           projectSchedulesPromise,
         ]);
 
-        setRoadmaps(roadmapsData);
+        setCampaignCards(campaignCardsData);
         setRoadmapsWithItems(roadmapsWithItemsData);
 
         const monumentEmojiLookup = new Map(
@@ -1055,19 +989,15 @@ export default function GoalsPage() {
           return decorateGoal(baseGoal, monumentEmojiLookup);
         });
 
-        // Separate goals with and without roadmap_id
-        // Only hide goals with a valid roadmap_id (non-null, non-undefined, non-empty string)
-        const goalsWithoutRoadmap = realGoals.filter((goal) => {
-          const roadmapId = goal.roadmapId;
-          // Keep goals where roadmap_id is null, undefined, or empty string
-          return !roadmapId || roadmapId.trim() === "";
-        });
-
-        const goalsWithRoadmap = realGoals.filter((goal) => {
-          const roadmapId = goal.roadmapId;
-          // Only include goals with a valid roadmap_id (non-empty string)
-          return roadmapId && roadmapId.trim() !== "";
-        });
+        const goalsById = new Map(realGoals.map((goal) => [goal.id, goal]));
+        const campaignGoalIds = new Set(
+          campaignCardsData.flatMap((campaign) =>
+            campaign.goals.map((goal) => goal.id)
+          )
+        );
+        const goalsWithoutCampaign = realGoals.filter(
+          (goal) => !campaignGoalIds.has(goal.id)
+        );
 
         const goalsNeedingUpdate = realGoals.filter((goal) => {
           const existing = originalWeightMap.get(goal.id) ?? null;
@@ -1086,172 +1016,16 @@ export default function GoalsPage() {
           }
         }
 
-        // Fetch goals for each roadmap
-        const roadmapGoalsMap = new Map<string, Goal[]>();
-        for (const roadmap of roadmapsData) {
-          try {
-            const roadmapGoalsData = await fetchGoalsByRoadmapId(
-              supabase,
-              user.id,
-              roadmap.id
-            );
-            const roadmapGoalsList: Goal[] = roadmapGoalsData.map((g) => {
-              // Reuse the same transformation logic as above
-              const goalSkills = new Set<string>();
-              const projList: Project[] = (g.projects ?? []).map((p) => {
-                const normalizedTasks = (p.tasks ?? []).map((task) => {
-                  const normalized = {
-                    id: task.id,
-                    name: task.name,
-                    stage: task.stage,
-                    skillId: task.skill_id ?? null,
-                    priorityCode: task.priority ?? null,
-                    isNew: false,
-                  };
-                  if (normalized.skillId) {
-                    goalSkills.add(normalized.skillId);
-                  }
-                  return normalized;
-                });
-                const projectSkillIds: string[] = [];
-                (p.project_skills ?? []).forEach((record) => {
-                  if (record?.skill_id) {
-                    goalSkills.add(record.skill_id);
-                    projectSkillIds.push(record.skill_id);
-                  }
-                });
-                const total = normalizedTasks.length;
-                const done = normalizedTasks.filter(
-                  (t) => t.stage === "PERFECT"
-                ).length;
-                const progress = total ? Math.round((done / total) * 100) : 0;
-                const status = projectStageToStatus(p.stage ?? "BUILD");
-                const schedulerTasks = normalizedTasks.map(toSchedulerTask);
-                const relatedTaskWeightSum = schedulerTasks.reduce(
-                  (sum, t) => sum + taskWeight(t),
-                  0
-                );
-                const projectWeightValue = projectWeight(
-                  toSchedulerProject({
-                    id: p.id,
-                    priorityCode: p.priority ?? undefined,
-                    stage: p.stage ?? undefined,
-                    dueDate: p.due_date ?? null,
-                  }),
-                  relatedTaskWeightSum
-                );
-                const normalizedTaskSkillIds = normalizedTasks
-                  .map((task) => task.skillId)
-                  .filter((value): value is string => Boolean(value));
-                const projectEmoji =
-                  projectSkillIds
-                    .map(resolveSkillEmoji)
-                    .find((emoji): emoji is string => Boolean(emoji)) ??
-                  normalizedTaskSkillIds
-                    .map(resolveSkillEmoji)
-                    .find((emoji): emoji is string => Boolean(emoji)) ??
-                  null;
-                const rawEnergy = extractLookupValue(p.energy);
-                const rawPriority = extractLookupValue(p.priority);
-                const energyCode = normalizeProjectEnergyCode(rawEnergy);
-                const priorityCode = normalizeProjectPriority(rawPriority);
-                return {
-                  id: p.id,
-                  name: p.name,
-                  status,
-                  progress,
-                  energy: mapEnergy(energyCode),
-                  energyCode,
-                  dueDate: p.due_date ?? null,
-                  durationMinutes:
-                    typeof p.duration_min === "number" &&
-                    Number.isFinite(p.duration_min)
-                      ? p.duration_min
-                      : null,
-                  skillIds: projectSkillIds,
-                  emoji: projectEmoji,
-                  stage: p.stage ?? "BUILD",
-                  priorityCode,
-                  weight: projectWeightValue,
-                  isNew: false,
-                  tasks: normalizedTasks,
-                };
-              });
-              const progress =
-                projList.length > 0
-                  ? Math.round(
-                      projList.reduce((sum, p) => sum + p.progress, 0) /
-                        projList.length
-                    )
-                  : 0;
-              const status = normalizeGoalStatus(g.status, g.active);
-              const estimatedCompletionAt = projList.reduce<string | null>(
-                (latest, project) => {
-                  const scheduledEnd =
-                    projectScheduleLookup.get(project.id) ?? null;
-                  if (!scheduledEnd) return latest;
-                  const scheduledTime = Date.parse(scheduledEnd);
-                  if (Number.isNaN(scheduledTime)) return latest;
-                  if (!latest) return scheduledEnd;
-                  const latestTime = Date.parse(latest);
-                  if (Number.isNaN(latestTime) || scheduledTime > latestTime) {
-                    return scheduledEnd;
-                  }
-                  return latest;
-                },
-                null
-              );
-              const goalPriorityCode =
-                g.priority_code ?? extractLookupValue(g.priority);
-              const normalizedGoalPriorityCode = goalPriorityCode
-                ? goalPriorityCode.toUpperCase()
-                : null;
-              const goalEnergyCode =
-                g.energy_code ?? extractLookupValue(g.energy);
-              const normalizedGoalEnergyCode = goalEnergyCode
-                ? goalEnergyCode.toUpperCase()
-                : null;
-              const baseGoal: Goal = {
-                id: g.id,
-                title: g.name,
-                priority: mapPriority(goalPriorityCode ?? null),
-                energy: mapEnergy(goalEnergyCode ?? null),
-                progress,
-                status,
-                active: status === "ACTIVE",
-                createdAt: g.created_at,
-                updatedAt: g.created_at,
-                dueDate: g.due_date ?? undefined,
-                projects: projList,
-                monumentId: g.monument_id ?? null,
-                roadmapId: g.roadmap_id ?? null,
-                priorityRank:
-                  typeof g.priority_rank === "number" &&
-                  Number.isFinite(g.priority_rank) &&
-                  g.priority_rank > 0
-                    ? g.priority_rank
-                    : undefined,
-                priorityCode: normalizedGoalPriorityCode,
-                energyCode: normalizedGoalEnergyCode,
-                weightBoost: g.weight_boost ?? 0,
-                skills: Array.from(goalSkills),
-                why: g.why || undefined,
-                estimatedCompletionAt,
-              };
-              return decorateGoal(baseGoal, monumentEmojiLookup);
-            });
-            roadmapGoalsMap.set(roadmap.id, roadmapGoalsList);
-          } catch (err) {
-            console.error(
-              `Error fetching goals for roadmap ${roadmap.id}:`,
-              err
-            );
-            roadmapGoalsMap.set(roadmap.id, []);
-          }
+        const nextCampaignGoalsMap = new Map<string, Goal[]>();
+        for (const campaign of campaignCardsData) {
+          const orderedGoals = campaign.goals
+            .map((goal) => goalsById.get(goal.id))
+            .filter((goal): goal is Goal => Boolean(goal));
+          nextCampaignGoalsMap.set(campaign.id, orderedGoals);
         }
-        setRoadmapGoals(roadmapGoalsMap);
+        setCampaignGoalsMap(nextCampaignGoalsMap);
 
-        setGoals(goalsWithoutRoadmap);
+        setGoals(goalsWithoutCampaign);
         setMonuments(monumentsData);
         setSkills(skillsData);
       } catch (err) {
@@ -1536,6 +1310,44 @@ export default function GoalsPage() {
         }
       }
 
+      const campaignId =
+        typeof _context?.campaignId === "string" &&
+        _context.campaignId.trim().length > 0
+          ? _context.campaignId
+          : null;
+      let linkedToCampaign = false;
+      if (campaignId) {
+        try {
+          const { data: campaignGoalRows, error: campaignGoalError } =
+            await supabase
+              .from("campaign_goals")
+              .select("position")
+              .eq("user_id", user.id)
+              .eq("campaign_id", campaignId)
+              .order("position", { ascending: false })
+              .limit(1);
+
+          if (campaignGoalError) {
+            throw campaignGoalError;
+          }
+
+          const lastPosition = Number(campaignGoalRows?.[0]?.position ?? 0);
+          const nextPosition =
+            Number.isFinite(lastPosition) && lastPosition > 0
+              ? lastPosition + 1
+              : 1;
+
+          await addGoalToCampaign(user.id, {
+            campaignId,
+            goalId: newGoalId,
+            position: nextPosition,
+          });
+          linkedToCampaign = true;
+        } catch (error) {
+          console.error("Error linking goal to campaign:", error);
+        }
+      }
+
       const saved: Goal = decorateGoal(savedBase);
 
       const recalcGoalRanks = async (extraGoals: Goal[] = []) => {
@@ -1587,7 +1399,11 @@ export default function GoalsPage() {
       await recalcGoalRanks([saved]);
 
       // Reflect the saved goal in local state with the server id
-      setGoals((g) => [saved, ...g]);
+      if (linkedToCampaign) {
+        await refreshGoalsAndRoadmaps();
+      } else {
+        setGoals((g) => [saved, ...g]);
+      }
     } catch (err) {
       if (err instanceof LimitReachedError) {
         console.warn("Goal limit reached during create:", err.limitCode);
@@ -1738,39 +1554,44 @@ export default function GoalsPage() {
             <div className="rounded-[32px] border border-white/10 bg-white/[0.03] p-8 backdrop-blur">
               <LoadingSkeleton />
             </div>
-          ) : filteredGoals.length === 0 && roadmaps.length === 0 ? (
+          ) : filteredGoals.length === 0 && campaignCards.length === 0 ? (
             <div className="rounded-[32px] border border-dashed border-white/20 bg-white/[0.02] p-10 text-center backdrop-blur">
               <EmptyState onCreate={() => setDrawer(true)} />
             </div>
           ) : (
             <div className="relative">
-              {(visibleGoals.length > 0 || roadmaps.length > 0) && (
+              {(visibleGoals.length > 0 || campaignCards.length > 0) && (
                 <div className="pointer-events-none absolute -top-8 right-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-white/60 sm:hidden">
                   Swipe to browse
                   <ArrowRight className="h-3 w-3" />
                 </div>
               )}
               <div className="grid auto-cols-[minmax(280px,1fr)] grid-flow-col gap-6 overflow-x-auto pb-6 snap-x snap-mandatory sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 sm:snap-none xl:grid-cols-3">
-                {roadmaps.map((roadmap) => {
-                  const roadmapGoalsList = roadmapGoals.get(roadmap.id) ?? [];
+                {campaignCards.map((campaign) => {
+                  const campaignGoals = campaignGoalsMap.get(campaign.id) ?? [];
+                  const campaignRoadmapAdapter: Roadmap = {
+                    id: campaign.id,
+                    title: campaign.name,
+                    emoji: campaign.emoji,
+                    monument_id: campaign.primary_monument_id,
+                    circle_id: campaign.primary_circle_id,
+                    goals: [],
+                  };
                   return (
                     <div
-                      key={roadmap.id}
+                      key={campaign.id}
                       className="relative h-full snap-center sm:[scroll-snap-align:unset] mb-[22px] overflow-visible"
                     >
                       <CampaignCard
-                        roadmap={roadmap}
-                        goalCount={roadmapGoalsList.length}
-                        goals={roadmapGoalsList}
+                        roadmap={campaignRoadmapAdapter}
+                        goalCount={campaignGoals.length}
+                        goals={campaignGoals}
                         onRoadmapOrderSaved={refreshGoalsAndRoadmaps}
                         onAddGoal={() => {
                           setEditing(null);
-                          setDrawerInitialRoadmapId(roadmap.id);
+                          setDrawerInitialRoadmapId(campaign.roadmap_id);
+                          setDrawerInitialCampaignId(campaign.id);
                           setDrawer(true);
-                        }}
-                        onClick={() => {
-                          setSelectedRoadmap(roadmap);
-                          setRoadmapDrawer(true);
                         }}
                       />
                     </div>
@@ -1843,11 +1664,13 @@ export default function GoalsPage() {
             setDrawer(false);
             setEditing(null);
             setDrawerInitialRoadmapId(null);
+            setDrawerInitialCampaignId(null);
             router.replace("/goals");
           }}
           onAdd={addGoal}
           initialGoal={editing}
           initialRoadmapId={drawerInitialRoadmapId}
+          initialCampaignId={drawerInitialCampaignId}
           monuments={monuments}
           onUpdate={async (goal, context) => {
             const supabase = getSupabaseBrowser();
@@ -1881,14 +1704,13 @@ export default function GoalsPage() {
             setSelectedRoadmap(null);
           }}
           roadmap={selectedRoadmap}
-          goals={
-            selectedRoadmap ? roadmapGoals.get(selectedRoadmap.id) ?? [] : []
-          }
+          goals={[]}
           onAddGoal={() => {
             if (!selectedRoadmap) return;
             setRoadmapDrawer(false);
             setEditing(null);
             setDrawerInitialRoadmapId(selectedRoadmap.id);
+            setDrawerInitialCampaignId(null);
             setDrawer(true);
           }}
           onGoalEdit={(goal) => {
