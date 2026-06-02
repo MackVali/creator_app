@@ -24,46 +24,34 @@ const MAX_CATEGORY_SLOTS = 10;
 const DEFAULT_CATEGORY_EMOJI = "⚓";
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type CommunitySkill = {
+  id: string | null;
   name: string;
   icon: string;
 };
 
-const COMMUNITY_SKILL_CATEGORY_NAMES = [
-  "Popular",
-  "Creative",
-  "Business",
-  "Health",
-  "Tech",
-  "Music",
-  "Lifestyle",
-] as const;
-
-type CommunitySkillCategoryName = (typeof COMMUNITY_SKILL_CATEGORY_NAMES)[number];
-type CommunityMainCategoryName = Exclude<CommunitySkillCategoryName, "Popular">;
-
 const POPULAR_COMMUNITY_SKILLS = [
-  { name: "Content Strategy", icon: "✦" },
-  { name: "Songwriting", icon: "🎵" },
-  { name: "Videography", icon: "🎥" },
-  { name: "Graphic Design", icon: "🎨" },
-  { name: "Fitness", icon: "💪" },
-  { name: "Coding", icon: "⌘" },
-  { name: "Outreach", icon: "✉" },
-  { name: "Piano", icon: "🎹" },
-  { name: "Marketing", icon: "↗" },
-  { name: "Meditation", icon: "◐" },
-  { name: "Cooking", icon: "🍳" },
-  { name: "Copywriting", icon: "✍" },
-  { name: "Brand Design", icon: "◇" },
-  { name: "Public Speaking", icon: "🎙" },
-  { name: "Productivity", icon: "✓" },
-  { name: "Photography", icon: "📷" },
-  { name: "Sales", icon: "$" },
-  { name: "Yoga", icon: "☽" },
-  { name: "AI Automation", icon: "✧" },
-  { name: "Guitar", icon: "🎸" },
-  { name: "Personal Finance", icon: "◈" },
-  { name: "Interior Styling", icon: "⌂" },
+  { id: null, name: "Content Strategy", icon: "✦" },
+  { id: null, name: "Songwriting", icon: "🎵" },
+  { id: null, name: "Videography", icon: "🎥" },
+  { id: null, name: "Graphic Design", icon: "🎨" },
+  { id: null, name: "Fitness", icon: "💪" },
+  { id: null, name: "Coding", icon: "⌘" },
+  { id: null, name: "Outreach", icon: "✉" },
+  { id: null, name: "Piano", icon: "🎹" },
+  { id: null, name: "Marketing", icon: "↗" },
+  { id: null, name: "Meditation", icon: "◐" },
+  { id: null, name: "Cooking", icon: "🍳" },
+  { id: null, name: "Copywriting", icon: "✍" },
+  { id: null, name: "Brand Design", icon: "◇" },
+  { id: null, name: "Public Speaking", icon: "🎙" },
+  { id: null, name: "Productivity", icon: "✓" },
+  { id: null, name: "Photography", icon: "📷" },
+  { id: null, name: "Sales", icon: "$" },
+  { id: null, name: "Yoga", icon: "☽" },
+  { id: null, name: "AI Automation", icon: "✧" },
+  { id: null, name: "Guitar", icon: "🎸" },
+  { id: null, name: "Personal Finance", icon: "◈" },
+  { id: null, name: "Interior Styling", icon: "⌂" },
 ] as const satisfies readonly CommunitySkill[];
 
 const COMMUNITY_SKILL_CATEGORIES = [
@@ -73,28 +61,28 @@ const COMMUNITY_SKILL_CATEGORIES = [
       {
         name: "Visual Studio",
         skills: [
-          { name: "Graphic Design", icon: "🎨" },
-          { name: "Brand Design", icon: "◇" },
-          { name: "Illustration", icon: "✎" },
-          { name: "Photography", icon: "📷" },
+          { id: null, name: "Graphic Design", icon: "🎨" },
+          { id: null, name: "Brand Design", icon: "◇" },
+          { id: null, name: "Illustration", icon: "✎" },
+          { id: null, name: "Photography", icon: "📷" },
         ],
       },
       {
         name: "Content Craft",
         skills: [
-          { name: "Videography", icon: "🎥" },
-          { name: "Copywriting", icon: "✍" },
-          { name: "Storytelling", icon: "◌" },
-          { name: "Creative Direction", icon: "✦" },
+          { id: null, name: "Videography", icon: "🎥" },
+          { id: null, name: "Copywriting", icon: "✍" },
+          { id: null, name: "Storytelling", icon: "◌" },
+          { id: null, name: "Creative Direction", icon: "✦" },
         ],
       },
       {
         name: "Making",
         skills: [
-          { name: "Cooking", icon: "🍳" },
-          { name: "Drawing", icon: "✏" },
-          { name: "Ceramics", icon: "◒" },
-          { name: "Fashion Styling", icon: "✂" },
+          { id: null, name: "Cooking", icon: "🍳" },
+          { id: null, name: "Drawing", icon: "✏" },
+          { id: null, name: "Ceramics", icon: "◒" },
+          { id: null, name: "Fashion Styling", icon: "✂" },
         ],
       },
     ],
@@ -105,28 +93,28 @@ const COMMUNITY_SKILL_CATEGORIES = [
       {
         name: "Growth",
         skills: [
-          { name: "Marketing", icon: "↗" },
-          { name: "Sales", icon: "$" },
-          { name: "Outreach", icon: "✉" },
-          { name: "Content Strategy", icon: "✦" },
+          { id: null, name: "Marketing", icon: "↗" },
+          { id: null, name: "Sales", icon: "$" },
+          { id: null, name: "Outreach", icon: "✉" },
+          { id: null, name: "Content Strategy", icon: "✦" },
         ],
       },
       {
         name: "Operator",
         skills: [
-          { name: "Project Management", icon: "▦" },
-          { name: "Leadership", icon: "♛" },
-          { name: "Negotiation", icon: "◈" },
-          { name: "Personal Finance", icon: "◈" },
+          { id: null, name: "Project Management", icon: "▦" },
+          { id: null, name: "Leadership", icon: "♛" },
+          { id: null, name: "Negotiation", icon: "◈" },
+          { id: null, name: "Personal Finance", icon: "◈" },
         ],
       },
       {
         name: "Creator Business",
         skills: [
-          { name: "Sponsorships", icon: "★" },
-          { name: "Newsletter", icon: "✉" },
-          { name: "Public Speaking", icon: "🎙" },
-          { name: "Community Building", icon: "◉" },
+          { id: null, name: "Sponsorships", icon: "★" },
+          { id: null, name: "Newsletter", icon: "✉" },
+          { id: null, name: "Public Speaking", icon: "🎙" },
+          { id: null, name: "Community Building", icon: "◉" },
         ],
       },
     ],
@@ -137,28 +125,28 @@ const COMMUNITY_SKILL_CATEGORIES = [
       {
         name: "Training",
         skills: [
-          { name: "Fitness", icon: "💪" },
-          { name: "Running", icon: "↟" },
-          { name: "Strength Training", icon: "▰" },
-          { name: "Mobility", icon: "⤢" },
+          { id: null, name: "Fitness", icon: "💪" },
+          { id: null, name: "Running", icon: "↟" },
+          { id: null, name: "Strength Training", icon: "▰" },
+          { id: null, name: "Mobility", icon: "⤢" },
         ],
       },
       {
         name: "Mind",
         skills: [
-          { name: "Meditation", icon: "◐" },
-          { name: "Yoga", icon: "☽" },
-          { name: "Breathwork", icon: "≋" },
-          { name: "Journaling", icon: "✍" },
+          { id: null, name: "Meditation", icon: "◐" },
+          { id: null, name: "Yoga", icon: "☽" },
+          { id: null, name: "Breathwork", icon: "≋" },
+          { id: null, name: "Journaling", icon: "✍" },
         ],
       },
       {
         name: "Fuel",
         skills: [
-          { name: "Nutrition", icon: "◎" },
-          { name: "Meal Prep", icon: "▤" },
-          { name: "Sleep", icon: "☾" },
-          { name: "Recovery", icon: "◌" },
+          { id: null, name: "Nutrition", icon: "◎" },
+          { id: null, name: "Meal Prep", icon: "▤" },
+          { id: null, name: "Sleep", icon: "☾" },
+          { id: null, name: "Recovery", icon: "◌" },
         ],
       },
     ],
@@ -169,19 +157,19 @@ const COMMUNITY_SKILL_CATEGORIES = [
       {
         name: "Build",
         skills: [
-          { name: "Coding", icon: "⌘" },
-          { name: "Web Development", icon: "</>" },
-          { name: "Product Design", icon: "▧" },
-          { name: "No-Code", icon: "□" },
+          { id: null, name: "Coding", icon: "⌘" },
+          { id: null, name: "Web Development", icon: "</>" },
+          { id: null, name: "Product Design", icon: "▧" },
+          { id: null, name: "No-Code", icon: "□" },
         ],
       },
       {
         name: "Systems",
         skills: [
-          { name: "AI Automation", icon: "✧" },
-          { name: "Data Analysis", icon: "▥" },
-          { name: "Cybersecurity", icon: "◆" },
-          { name: "Cloud Ops", icon: "☁" },
+          { id: null, name: "AI Automation", icon: "✧" },
+          { id: null, name: "Data Analysis", icon: "▥" },
+          { id: null, name: "Cybersecurity", icon: "◆" },
+          { id: null, name: "Cloud Ops", icon: "☁" },
         ],
       },
     ],
@@ -192,28 +180,28 @@ const COMMUNITY_SKILL_CATEGORIES = [
       {
         name: "Writing",
         skills: [
-          { name: "Songwriting", icon: "🎵" },
-          { name: "Music Theory", icon: "♬" },
-          { name: "Lyrics", icon: "✍" },
-          { name: "Arrangement", icon: "≡" },
+          { id: null, name: "Songwriting", icon: "🎵" },
+          { id: null, name: "Music Theory", icon: "♬" },
+          { id: null, name: "Lyrics", icon: "✍" },
+          { id: null, name: "Arrangement", icon: "≡" },
         ],
       },
       {
         name: "Performance",
         skills: [
-          { name: "Piano", icon: "🎹" },
-          { name: "Guitar", icon: "🎸" },
-          { name: "Singing", icon: "♪" },
-          { name: "DJing", icon: "◉" },
+          { id: null, name: "Piano", icon: "🎹" },
+          { id: null, name: "Guitar", icon: "🎸" },
+          { id: null, name: "Singing", icon: "♪" },
+          { id: null, name: "DJing", icon: "◉" },
         ],
       },
       {
         name: "Production",
         skills: [
-          { name: "Beat Making", icon: "▦" },
-          { name: "Mixing", icon: "≋" },
-          { name: "Audio Engineering", icon: "⌁" },
-          { name: "Sound Design", icon: "◇" },
+          { id: null, name: "Beat Making", icon: "▦" },
+          { id: null, name: "Mixing", icon: "≋" },
+          { id: null, name: "Audio Engineering", icon: "⌁" },
+          { id: null, name: "Sound Design", icon: "◇" },
         ],
       },
     ],
@@ -224,37 +212,30 @@ const COMMUNITY_SKILL_CATEGORIES = [
       {
         name: "Home",
         skills: [
-          { name: "Interior Styling", icon: "⌂" },
-          { name: "Gardening", icon: "☘" },
-          { name: "Home Organization", icon: "▤" },
-          { name: "DIY Projects", icon: "✚" },
+          { id: null, name: "Interior Styling", icon: "⌂" },
+          { id: null, name: "Gardening", icon: "☘" },
+          { id: null, name: "Home Organization", icon: "▤" },
+          { id: null, name: "DIY Projects", icon: "✚" },
         ],
       },
       {
         name: "Daily Practice",
         skills: [
-          { name: "Productivity", icon: "✓" },
-          { name: "Reading", icon: "▥" },
-          { name: "Language Learning", icon: "Aa" },
-          { name: "Travel Planning", icon: "✈" },
+          { id: null, name: "Productivity", icon: "✓" },
+          { id: null, name: "Reading", icon: "▥" },
+          { id: null, name: "Language Learning", icon: "Aa" },
+          { id: null, name: "Travel Planning", icon: "✈" },
         ],
       },
     ],
   },
 ] as const satisfies readonly {
-  name: CommunityMainCategoryName;
+  name: string;
   subcategories: readonly {
     name: string;
     skills: readonly CommunitySkill[];
   }[];
 }[];
-
-const COMMUNITY_SKILLS = [
-  ...POPULAR_COMMUNITY_SKILLS,
-  ...COMMUNITY_SKILL_CATEGORIES.flatMap((category) =>
-    category.subcategories.flatMap((subcategory) => subcategory.skills)
-  ),
-] as const;
 
 type SkillCreateInput = {
   name: string;
@@ -262,12 +243,59 @@ type SkillCreateInput = {
   level: number;
   cat_id: string | null;
   monument_id?: string | null;
+  global_skill_id?: string | null;
 };
 
 type ExistingSkillSortItem = {
   id: string;
+  name: string;
   cat_id: string | null;
+  global_skill_id?: string | null;
   sort_order?: number | null;
+};
+
+type CommunitySkillSubcategory = {
+  id: string;
+  name: string;
+  skills: CommunitySkill[];
+};
+
+type CommunitySkillCategory = {
+  id: string;
+  name: string;
+  subcategories: CommunitySkillSubcategory[];
+};
+
+type CommunityCatalog = {
+  categoryNames: string[];
+  categories: CommunitySkillCategory[];
+  popularSkills: CommunitySkill[];
+  skills: CommunitySkill[];
+  source: "supabase" | "fallback";
+};
+
+type CatalogCategoryRow = {
+  id: string;
+  name: string;
+  sort_order: number | null;
+};
+
+type CatalogSubcategoryRow = {
+  id: string;
+  category_id: string;
+  name: string;
+  sort_order: number | null;
+};
+
+type CatalogSkillRow = {
+  id: string;
+  category_id: string;
+  subcategory_id: string | null;
+  name: string;
+  icon: string | null;
+  is_popular: boolean | null;
+  popular_order: number | null;
+  sort_order: number | null;
 };
 
 function parseHex(hex?: string | null) {
@@ -299,6 +327,145 @@ function withAlpha(hex: string | null | undefined, alpha: number) {
 const isReorderable = (category: Category) =>
   category.id !== "uncategorized" && !category.is_locked;
 
+const normalizeSkillName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
+
+const compareBySortOrderThenName = <T extends { sort_order: number | null; name: string }>(
+  left: T,
+  right: T
+) => {
+  const leftOrder = left.sort_order ?? Number.MAX_SAFE_INTEGER;
+  const rightOrder = right.sort_order ?? Number.MAX_SAFE_INTEGER;
+  if (leftOrder !== rightOrder) {
+    return leftOrder - rightOrder;
+  }
+  return left.name.localeCompare(right.name);
+};
+
+const comparePopularSkills = (left: CatalogSkillRow, right: CatalogSkillRow) => {
+  const leftPopularOrder = left.popular_order ?? Number.MAX_SAFE_INTEGER;
+  const rightPopularOrder = right.popular_order ?? Number.MAX_SAFE_INTEGER;
+  if (leftPopularOrder !== rightPopularOrder) {
+    return leftPopularOrder - rightPopularOrder;
+  }
+  return compareBySortOrderThenName(left, right);
+};
+
+function buildFallbackCommunityCatalog(): CommunityCatalog {
+  const categories = COMMUNITY_SKILL_CATEGORIES.map((category) => ({
+    id: category.name,
+    name: category.name,
+    subcategories: category.subcategories.map((subcategory) => ({
+      id: `${category.name}:${subcategory.name}`,
+      name: subcategory.name,
+      skills: [...subcategory.skills],
+    })),
+  }));
+  const skillsByName = new Map<string, CommunitySkill>();
+
+  for (const skill of [
+    ...POPULAR_COMMUNITY_SKILLS,
+    ...categories.flatMap((category) =>
+      category.subcategories.flatMap((subcategory) => subcategory.skills)
+    ),
+  ]) {
+    skillsByName.set(skill.name, skill);
+  }
+
+  return {
+    categoryNames: ["Popular", ...categories.map((category) => category.name)],
+    categories,
+    popularSkills: [...POPULAR_COMMUNITY_SKILLS],
+    skills: [...skillsByName.values()],
+    source: "fallback",
+  };
+}
+
+async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    throw new Error("Supabase client not available");
+  }
+
+  const [categoryResponse, subcategoryResponse, skillResponse] = await Promise.all([
+    supabase
+      .from("global_skill_categories")
+      .select("id,name,sort_order")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true, nullsFirst: false })
+      .order("name", { ascending: true }),
+    supabase
+      .from("global_skill_subcategories")
+      .select("id,category_id,name,sort_order")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true, nullsFirst: false })
+      .order("name", { ascending: true }),
+    supabase
+      .from("global_skills")
+      .select("id,category_id,subcategory_id,name,icon,is_popular,popular_order,sort_order")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true, nullsFirst: false })
+      .order("name", { ascending: true }),
+  ]);
+
+  if (categoryResponse.error) throw categoryResponse.error;
+  if (subcategoryResponse.error) throw subcategoryResponse.error;
+  if (skillResponse.error) throw skillResponse.error;
+
+  const categoryRows = ((categoryResponse.data ?? []) as CatalogCategoryRow[]).sort(
+    compareBySortOrderThenName
+  );
+  const subcategoryRows = ((subcategoryResponse.data ?? []) as CatalogSubcategoryRow[]).sort(
+    compareBySortOrderThenName
+  );
+  const skillRows = ((skillResponse.data ?? []) as CatalogSkillRow[]).sort(
+    compareBySortOrderThenName
+  );
+
+  if (categoryRows.length === 0 || skillRows.length === 0) {
+    throw new Error("Global skill catalog is empty");
+  }
+
+  const skillsBySubcategory = new Map<string, CommunitySkill[]>();
+  for (const skill of skillRows) {
+    if (!skill.subcategory_id) {
+      continue;
+    }
+    const list = skillsBySubcategory.get(skill.subcategory_id) ?? [];
+    list.push({ id: skill.id, name: skill.name, icon: skill.icon || "✦" });
+    skillsBySubcategory.set(skill.subcategory_id, list);
+  }
+
+  const subcategoriesByCategory = new Map<string, CommunitySkillSubcategory[]>();
+  for (const subcategory of subcategoryRows) {
+    const list = subcategoriesByCategory.get(subcategory.category_id) ?? [];
+    list.push({
+      id: subcategory.id,
+      name: subcategory.name,
+      skills: skillsBySubcategory.get(subcategory.id) ?? [],
+    });
+    subcategoriesByCategory.set(subcategory.category_id, list);
+  }
+
+  const categories = categoryRows.map((category) => ({
+    id: category.id,
+    name: category.name,
+    subcategories: subcategoriesByCategory.get(category.id) ?? [],
+  }));
+
+  const popularSkills = skillRows
+    .filter((skill) => skill.is_popular)
+    .sort(comparePopularSkills)
+    .map((skill) => ({ id: skill.id, name: skill.name, icon: skill.icon || "✦" }));
+
+  return {
+    categoryNames: ["Popular", ...categories.map((category) => category.name)],
+    categories,
+    popularSkills,
+    skills: skillRows.map((skill) => ({ id: skill.id, name: skill.name, icon: skill.icon || "✦" })),
+    source: "supabase",
+  };
+}
+
 export default function SkillsCarousel() {
   const { categories: fetchedCategories, skillsByCategory, isLoading, reload } = useSkillsData();
   const { progressBySkillId } = useSkillProgress();
@@ -325,12 +492,17 @@ export default function SkillsCarousel() {
   const [dropTargetCategoryId, setDropTargetCategoryId] = useState<string | null>(null);
   const [isMovingSkill, setIsMovingSkill] = useState(false);
   const [communitySkillPickerOpen, setCommunitySkillPickerOpen] = useState(false);
-  const [selectedCommunitySkillName, setSelectedCommunitySkillName] = useState<string | null>(null);
+  const [selectedCommunitySkillId, setSelectedCommunitySkillId] = useState<string | null>(null);
   const [communitySkillSearch, setCommunitySkillSearch] = useState("");
   const [activeCommunitySkillCategoryIndex, setActiveCommunitySkillCategoryIndex] = useState(0);
   const [openCommunitySkillSubcategories, setOpenCommunitySkillSubcategories] = useState<
     Record<string, boolean>
   >({});
+  const [communityCatalog, setCommunityCatalog] = useState<CommunityCatalog>(() =>
+    buildFallbackCommunityCatalog()
+  );
+  const [isCommunityCatalogLoading, setIsCommunityCatalogLoading] = useState(true);
+  const [communityCatalogError, setCommunityCatalogError] = useState<string | null>(null);
   const [existingSkillSortItems, setExistingSkillSortItems] = useState<ExistingSkillSortItem[]>([]);
   const [isAddCategoryMenuOpen, setIsAddCategoryMenuOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -367,23 +539,23 @@ export default function SkillsCarousel() {
   const categoryPillListClass = useFiveColumnCategoryPillGrid
     ? "grid w-full max-w-4xl grid-cols-5 gap-2.5"
     : "flex flex-wrap justify-center gap-2.5";
+  const communitySkillCategoryNames = communityCatalog.categoryNames;
   const activeCommunitySkillCategory =
-    COMMUNITY_SKILL_CATEGORY_NAMES[activeCommunitySkillCategoryIndex] ?? "Popular";
+    communitySkillCategoryNames[activeCommunitySkillCategoryIndex] ?? "Popular";
   const activeCommunityMainCategory =
     activeCommunitySkillCategory === "Popular"
       ? null
-      : COMMUNITY_SKILL_CATEGORIES.find(
-          (category) => category.name === activeCommunitySkillCategory
-        ) ?? null;
+      : communityCatalog.categories.find((category) => category.name === activeCommunitySkillCategory) ??
+        null;
   const communitySkillSearchQuery = communitySkillSearch.trim().toLowerCase();
   const isCommunitySkillSearching = communitySkillSearchQuery.length > 0;
   const filteredPopularCommunitySkills = useMemo(() => {
     const query = communitySkillSearch.trim().toLowerCase();
 
-    return POPULAR_COMMUNITY_SKILLS.filter(
+    return communityCatalog.popularSkills.filter(
       (skill) => query.length === 0 || skill.name.toLowerCase().includes(query)
     );
-  }, [communitySkillSearch]);
+  }, [communityCatalog.popularSkills, communitySkillSearch]);
   const filteredCommunitySubcategories = useMemo(() => {
     if (!activeCommunityMainCategory) {
       return [];
@@ -404,36 +576,75 @@ export default function SkillsCarousel() {
     activeCommunitySkillCategory === "Popular"
       ? filteredPopularCommunitySkills
       : filteredCommunitySubcategories.flatMap((subcategory) => subcategory.skills);
-  const selectedCommunitySkill = selectedCommunitySkillName
-    ? COMMUNITY_SKILLS.find((skill) => skill.name === selectedCommunitySkillName)
+  const selectedCommunitySkill = selectedCommunitySkillId
+    ? communityCatalog.skills.find((skill) => selectedCommunitySkillId === (skill.id ?? skill.name))
     : null;
 
   const moveCommunitySkillCategory = useCallback((direction: -1 | 1) => {
     setActiveCommunitySkillCategoryIndex((current) => {
       const next =
-        (current + direction + COMMUNITY_SKILL_CATEGORY_NAMES.length) %
-        COMMUNITY_SKILL_CATEGORY_NAMES.length;
+        (current + direction + communitySkillCategoryNames.length) %
+        communitySkillCategoryNames.length;
       return next;
     });
     setOpenCommunitySkillSubcategories({});
-  }, []);
+  }, [communitySkillCategoryNames.length]);
 
-  const selectCommunitySkillCategory = useCallback((category: CommunitySkillCategoryName) => {
-    const nextIndex = COMMUNITY_SKILL_CATEGORY_NAMES.indexOf(category);
-    if (nextIndex === -1) {
-      return;
-    }
-    setActiveCommunitySkillCategoryIndex(nextIndex);
-    setOpenCommunitySkillSubcategories({});
-  }, []);
+  const selectCommunitySkillCategory = useCallback(
+    (category: string) => {
+      const nextIndex = communitySkillCategoryNames.indexOf(category);
+      if (nextIndex === -1) {
+        return;
+      }
+      setActiveCommunitySkillCategoryIndex(nextIndex);
+      setOpenCommunitySkillSubcategories({});
+    },
+    [communitySkillCategoryNames]
+  );
 
   const closeCommunitySkillPicker = useCallback(() => {
     setCommunitySkillPickerOpen(false);
-    setSelectedCommunitySkillName(null);
+    setSelectedCommunitySkillId(null);
     setCommunitySkillSearch("");
     setActiveCommunitySkillCategoryIndex(0);
     setOpenCommunitySkillSubcategories({});
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCommunityCatalog() {
+      setIsCommunityCatalogLoading(true);
+      try {
+        const catalog = await fetchCommunityCatalog();
+        if (!isMounted) return;
+        setCommunityCatalog(catalog);
+        setCommunityCatalogError(null);
+      } catch (error) {
+        console.error("Error loading global skill catalog:", error);
+        if (!isMounted) return;
+        setCommunityCatalog(buildFallbackCommunityCatalog());
+        setCommunityCatalogError(error instanceof Error ? error.message : "Catalog unavailable");
+      } finally {
+        if (isMounted) {
+          setIsCommunityCatalogLoading(false);
+        }
+      }
+    }
+
+    void loadCommunityCatalog();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeCommunitySkillCategoryIndex >= communitySkillCategoryNames.length) {
+      setActiveCommunitySkillCategoryIndex(0);
+      setOpenCommunitySkillSubcategories({});
+    }
+  }, [activeCommunitySkillCategoryIndex, communitySkillCategoryNames.length]);
 
   useEffect(() => {
     if (!communitySkillPickerOpen) {
@@ -463,12 +674,33 @@ export default function SkillsCarousel() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const skillRows = await getSkillsForUser(user.id);
+      const { data, error } = await supabase
+        .from("skills")
+        .select("id,name,cat_id,global_skill_id,sort_order")
+        .eq("user_id", user.id)
+        .order("sort_order", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        const skillRows = await getSkillsForUser(user.id);
+
+        setExistingSkillSortItems(
+          (skillRows || []).map((skill) => ({
+            id: skill.id,
+            name: skill.name,
+            cat_id: skill.cat_id,
+            sort_order: skill.sort_order ?? null,
+          }))
+        );
+        return;
+      }
 
       setExistingSkillSortItems(
-        (skillRows || []).map((skill) => ({
+        (data || []).map((skill) => ({
           id: skill.id,
+          name: skill.name,
           cat_id: skill.cat_id,
+          global_skill_id: skill.global_skill_id ?? null,
           sort_order: skill.sort_order ?? null,
         }))
       );
@@ -902,14 +1134,18 @@ export default function SkillsCarousel() {
         .reduce((max, existing) => Math.max(max, existing.sort_order ?? 0), 0);
       const nextSortOrder = highestSortOrderInCategory + 1;
 
-      const { data, error } = await createRecord<SkillRow>("skills", {
-        name: skill.name,
-        icon: skill.icon,
-        level: skill.level,
-        cat_id: catIdToUse,
-        sort_order: nextSortOrder,
-        monument_id: skill.monument_id ?? null,
-      });
+      const { data, error } = await createRecord<SkillRow & { global_skill_id?: string | null }>(
+        "skills",
+        {
+          name: skill.name,
+          icon: skill.icon,
+          level: skill.level,
+          cat_id: catIdToUse,
+          sort_order: nextSortOrder,
+          monument_id: skill.monument_id ?? null,
+          ...(skill.global_skill_id ? { global_skill_id: skill.global_skill_id } : {}),
+        }
+      );
 
       if (error || !data) {
         console.error("Error creating skill:", error);
@@ -925,7 +1161,9 @@ export default function SkillsCarousel() {
           ...previous,
           {
             id: data.id,
+            name: data.name,
             cat_id: catIdToUse,
+            global_skill_id: skill.global_skill_id ?? null,
             sort_order: data.sort_order ?? nextSortOrder,
           },
         ];
@@ -939,6 +1177,20 @@ export default function SkillsCarousel() {
   const handleConfirmCommunitySkill = useCallback(async () => {
     if (!selectedCommunitySkill) return;
 
+    const selectedGlobalSkillId = selectedCommunitySkill.id;
+    const normalizedSelectedName = normalizeSkillName(selectedCommunitySkill.name);
+    const alreadyAdded = existingSkillSortItems.some((skill) => {
+      if (selectedGlobalSkillId && skill.global_skill_id === selectedGlobalSkillId) {
+        return true;
+      }
+      return normalizeSkillName(skill.name) === normalizedSelectedName;
+    });
+
+    if (alreadyAdded) {
+      toast.info("Skill already added");
+      return;
+    }
+
     const safeActiveCategoryId =
       activeCategory && isReorderable(activeCategory) && UUID_REGEX.test(activeCategory.id)
         ? activeCategory.id
@@ -949,6 +1201,7 @@ export default function SkillsCarousel() {
       level: 1,
       cat_id: safeActiveCategoryId,
       monument_id: null,
+      global_skill_id: selectedGlobalSkillId,
     });
 
     if (!created) {
@@ -956,7 +1209,14 @@ export default function SkillsCarousel() {
     }
 
     closeCommunitySkillPicker();
-  }, [activeCategory, closeCommunitySkillPicker, handleAddSkill, selectedCommunitySkill]);
+  }, [
+    activeCategory,
+    closeCommunitySkillPicker,
+    existingSkillSortItems,
+    handleAddSkill,
+    selectedCommunitySkill,
+    toast,
+  ]);
 
   type ReorderDirection = "left" | "right" | "first" | "last";
 
@@ -1320,7 +1580,7 @@ export default function SkillsCarousel() {
                         <ChevronLeft className="h-3.5 w-3.5" />
                       </button>
                       <div className="flex min-w-0 snap-x snap-mandatory items-end gap-4 overflow-x-auto overscroll-x-contain px-1 text-center [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                        {COMMUNITY_SKILL_CATEGORY_NAMES.map((category, index) => {
+                        {communitySkillCategoryNames.map((category, index) => {
                           const isActive = index === activeCommunitySkillCategoryIndex;
 
                           return (
@@ -1355,15 +1615,20 @@ export default function SkillsCarousel() {
                     </div>
                   </div>
                   <div className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-2 sm:px-4">
-                    {activeCommunitySkillCategory === "Popular" || isCommunitySkillSearching ? (
+                    {isCommunityCatalogLoading ? (
+                      <div className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-6 text-center text-xs text-zinc-500">
+                        Loading skills...
+                      </div>
+                    ) : activeCommunitySkillCategory === "Popular" || isCommunitySkillSearching ? (
                       <div className="flex flex-wrap gap-1.5">
                         {filteredCommunitySkills.map((skill) => {
-                          const isSelected = selectedCommunitySkillName === skill.name;
+                          const skillKey = skill.id ?? skill.name;
+                          const isSelected = selectedCommunitySkillId === skillKey;
                           return (
                             <button
-                              key={skill.name}
+                              key={skillKey}
                               type="button"
-                              onClick={() => setSelectedCommunitySkillName(skill.name)}
+                              onClick={() => setSelectedCommunitySkillId(skillKey)}
                               aria-pressed={isSelected}
                               className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
                                 isSelected
@@ -1388,10 +1653,10 @@ export default function SkillsCarousel() {
                     ) : (
                       <div className="space-y-1.5">
                         {filteredCommunitySubcategories.map((subcategory) => {
-                          const subcategoryKey = `${activeCommunitySkillCategory}:${subcategory.name}`;
+                          const subcategoryKey = subcategory.id;
                           const isOpen = Boolean(openCommunitySkillSubcategories[subcategoryKey]);
                           return (
-                            <div key={subcategory.name} className="border-b border-white/[0.055] pb-1.5 last:border-b-0">
+                            <div key={subcategory.id} className="border-b border-white/[0.055] pb-1.5 last:border-b-0">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -1413,12 +1678,13 @@ export default function SkillsCarousel() {
                               {isOpen && (
                                 <div className="flex flex-wrap gap-1.5 pb-1">
                                   {subcategory.skills.map((skill) => {
-                                    const isSelected = selectedCommunitySkillName === skill.name;
+                                    const skillKey = skill.id ?? skill.name;
+                                    const isSelected = selectedCommunitySkillId === skillKey;
                                     return (
                                       <button
-                                        key={skill.name}
+                                        key={skillKey}
                                         type="button"
-                                        onClick={() => setSelectedCommunitySkillName(skill.name)}
+                                        onClick={() => setSelectedCommunitySkillId(skillKey)}
                                         aria-pressed={isSelected}
                                         className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
                                           isSelected
@@ -1448,11 +1714,18 @@ export default function SkillsCarousel() {
                         })}
                       </div>
                     )}
-                    {filteredCommunitySkills.length === 0 && (
+                    {!isCommunityCatalogLoading && filteredCommunitySkills.length === 0 && (
                       <div className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-6 text-center text-xs text-zinc-500">
                         No skills found.
                       </div>
                     )}
+                    {!isCommunityCatalogLoading &&
+                      communityCatalog.source === "fallback" &&
+                      communityCatalogError && (
+                        <p className="mt-2 px-1 text-[10px] text-zinc-600">
+                          Showing starter skills while the catalog is unavailable.
+                        </p>
+                      )}
                   </div>
                   <div className="relative z-10 px-3 pb-3 pt-2 sm:px-4">
                     <button
