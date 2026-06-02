@@ -1319,7 +1319,7 @@ export default function SkillDetailPage() {
       toast.success("Skill removed", "The skill was deleted.");
       setDeleteConfirmationOpen(false);
       setActionsMenuOpen(false);
-      router.push("/skills");
+      router.push("/dashboard");
     } finally {
       setIsDeleting(false);
     }
@@ -1673,7 +1673,7 @@ export default function SkillDetailPage() {
               <CardHeader className="relative">
                 <CardTitle className="text-base font-semibold text-white">Need a different view?</CardTitle>
                 <CardDescription className="text-white/70">
-                  Jump back to your full skills library to reorganize, add new abilities, or explore other focuses.
+                  Jump back to your dashboard to reorganize, add new abilities, or explore other focuses.
                 </CardDescription>
               </CardHeader>
               <CardContent className="relative">
@@ -1682,7 +1682,7 @@ export default function SkillDetailPage() {
                   size="sm"
                   className="rounded-full bg-white px-5 text-slate-900 shadow-sm transition hover:bg-white/90"
                 >
-                  <Link href="/skills">Open skills dashboard</Link>
+                  <Link href="/dashboard">Open dashboard</Link>
                 </Button>
               </CardContent>
             </Card>

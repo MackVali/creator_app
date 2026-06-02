@@ -319,11 +319,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               letterSpacing: "0.1em",
               marginBottom: "16px",
               color: "#E0E0E0",
-              cursor: "pointer",
             }}
-            onClick={() => (window.location.href = "/skills")}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#BBB")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#E0E0E0")}
           >
             SKILLS
           </h2>
@@ -559,33 +555,6 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                 Set up your skill stack (5 categories, ~25 skills) to personalize
                 CREATOR.
               </p>
-              <button
-                type="button"
-                style={{
-                  marginTop: "8px",
-                  padding: "12px 24px",
-                  borderRadius: "999px",
-                  border: "none",
-                  background:
-                    "linear-gradient(135deg, #F25C5C, #FF9F40, #FFC542)",
-                  color: "#1E1E1E",
-                  fontWeight: "700",
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  cursor: "pointer",
-                  boxShadow: "0 12px 20px rgba(242, 92, 92, 0.35)",
-                  transition: "transform 0.2s ease",
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.transform = "translateY(-1px)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.transform = "translateY(0)")
-                }
-                onClick={() => router.push("/skills")}
-              >
-                LAUNCH SKILLS
-              </button>
             </div>
           )}
         </div>

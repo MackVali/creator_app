@@ -4,6 +4,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -80,6 +81,7 @@ interface GoalCardProps {
   hideEnergyPill?: boolean;
   monumentContext?: boolean;
   variant?: "default" | "compact";
+  drawerCompact?: boolean;
   showEnergyInCompact?: boolean;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   onProjectDeleted?: (projectId: string) => void;
@@ -127,22 +129,53 @@ const shellSpringTransition = {
   mass: 0.7,
 } as const;
 
+const projectDropdownTransition = {
+  duration: 0.24,
+  ease: [0.22, 1, 0.36, 1],
+} as const;
+
+const drawerCompactDropdownTransition = {
+  duration: 0.48,
+  ease: [0.16, 1, 0.3, 1],
+} as const;
+
+const drawerCompactDropdownCloseTransition = {
+  duration: 0.4,
+  ease: [0.4, 0, 0.2, 1],
+} as const;
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
 const detailRevealVariant = {
   hidden: { opacity: 0, height: 0, y: 6 },
   visible: {
     opacity: 1,
     height: "auto",
     y: 0,
-    transition: {
-      duration: 0.24,
-      ease: [0.22, 1, 0.36, 1],
-    },
+    transition: projectDropdownTransition,
   },
   exit: {
     opacity: 0,
     height: 0,
     y: 4,
     transition: { duration: 0.22, ease: "easeOut" },
+  },
+} as const;
+
+const drawerCompactDetailRevealVariant = {
+  hidden: { opacity: 0, height: 0, y: -4 },
+  visible: {
+    opacity: 1,
+    height: "auto",
+    y: 0,
+    transition: drawerCompactDropdownTransition,
+  },
+  exit: {
+    opacity: 0,
+    height: 0,
+    y: -4,
+    transition: drawerCompactDropdownCloseTransition,
   },
 } as const;
 
@@ -176,6 +209,7 @@ function GoalCardImpl({
   showEmojiPrefix = false,
   hideEnergyPill = false,
   variant = "default",
+  drawerCompact = false,
   showEnergyInCompact = false,
   monumentContext = false,
   onProjectUpdated,
@@ -201,6 +235,11 @@ function GoalCardImpl({
     useState<ProjectCardMorphOrigin | null>(null);
   const [addingProject, setAddingProject] = useState(false);
   const prefersReducedMotion = useReducedMotion();
+  const isDrawerCompactDefault = drawerCompact && variant === "default";
+  const drawerCompactDropdownContentRef = useRef<HTMLDivElement | null>(null);
+  const latestDrawerCompactDropdownHeightRef = useRef(0);
+  const [drawerCompactDropdownHeight, setDrawerCompactDropdownHeight] =
+    useState(0);
 
   const setOpen = useCallback(
     (value: boolean) => {
@@ -215,6 +254,39 @@ function GoalCardImpl({
   const toggle = useCallback(() => {
     setOpen(!open);
   }, [open, setOpen]);
+
+  useLayoutEffect(() => {
+    if (!isDrawerCompactDefault || !open) {
+      return;
+    }
+
+    const node = drawerCompactDropdownContentRef.current;
+    if (!node) return;
+
+    const updateMeasuredHeight = () => {
+      const nextHeight = node.scrollHeight;
+      if (nextHeight > 0) {
+        latestDrawerCompactDropdownHeightRef.current = nextHeight;
+      }
+      setDrawerCompactDropdownHeight((currentHeight) =>
+        Math.abs(currentHeight - nextHeight) > 0.5 ? nextHeight : currentHeight
+      );
+    };
+
+    updateMeasuredHeight();
+
+    if (typeof ResizeObserver === "undefined") return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateMeasuredHeight();
+    });
+    resizeObserver.observe(node);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [goal.projects, isDrawerCompactDefault, open, projectDropdownMode]);
+
   const handleShellClick = useCallback(() => {
     if (onCardClick) {
       onCardClick();
@@ -339,7 +411,9 @@ function GoalCardImpl({
         : "monument-completed"
       : variant === "compact"
         ? "emerald-completed-compact"
-        : "emerald-completed"
+        : drawerCompact
+          ? ""
+          : "emerald-completed"
     : "";
   const completedIconClass = isCompleted
     ? isBorderOnlyCompleted
@@ -372,15 +446,95 @@ function GoalCardImpl({
         whileTap: { scale: 0.962, y: 2 },
         transition: shellSpringTransition,
       };
+  const drawerCompactOpenDuration = clamp(
+    0.45 + drawerCompactDropdownHeight / 900,
+    0.55,
+    1.15
+  );
+  const latestDrawerCompactDropdownHeight = Math.max(
+    drawerCompactDropdownHeight,
+    latestDrawerCompactDropdownHeightRef.current
+  );
+  const drawerCompactCloseDuration = clamp(
+    0.75 + latestDrawerCompactDropdownHeight / 900,
+    0.85,
+    1.45
+  );
+  const drawerCompactMeasuredDetailMotionProps = prefersReducedMotion
+    ? {
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+        transition: { duration: 0.08 },
+      }
+    : {
+        initial: { opacity: 0, height: 0 },
+        animate: {
+          opacity: 1,
+          height: latestDrawerCompactDropdownHeight,
+          transition: {
+            height: {
+              duration: drawerCompactOpenDuration,
+              ease: [0.25, 0.1, 0.25, 1],
+            },
+            opacity: { duration: 0.18, ease: "linear" },
+          },
+        },
+        exit: {
+          opacity: [1, 1, 0.92],
+          height: 0,
+          transition: {
+            height: {
+              duration: drawerCompactCloseDuration,
+              ease: "linear",
+            },
+            opacity: {
+              duration: drawerCompactCloseDuration,
+              ease: "linear",
+              times: [0, 0.82, 1],
+            },
+          },
+        },
+      };
+  const drawerCompactMeasuredContentMotionProps = prefersReducedMotion
+    ? {
+        initial: false,
+      }
+    : {
+        initial: { opacity: 0, y: 5 },
+        animate: {
+          opacity: 1,
+          y: 0,
+          transition: {
+            delay: 0.03,
+            duration: 0.2,
+            ease: "easeOut",
+          },
+        },
+        exit: {
+          opacity: [1, 1, 0.92],
+          y: 0,
+          transition: {
+            opacity: {
+              duration: drawerCompactCloseDuration,
+              ease: "linear",
+              times: [0, 0.82, 1],
+            },
+            y: { duration: drawerCompactCloseDuration, ease: "linear" },
+          },
+        },
+      };
   const detailMotionProps = prefersReducedMotion
     ? {
         initial: { opacity: 0 },
         animate: { opacity: 1 },
         exit: { opacity: 0 },
-        transition: { duration: 0.12 },
+        transition: { duration: isDrawerCompactDefault ? 0.08 : 0.12 },
       }
     : {
-        variants: detailRevealVariant,
+        variants: isDrawerCompactDefault
+          ? drawerCompactDetailRevealVariant
+          : detailRevealVariant,
         initial: "hidden" as const,
         animate: "visible" as const,
         exit: "exit" as const,
@@ -576,15 +730,21 @@ function GoalCardImpl({
   }
 
   const defaultContainerClass = [
-    "group relative mb-2.5 h-full overflow-hidden rounded-xl goal-card p-2.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:mb-3 sm:p-3",
+    isDrawerCompactDefault
+      ? "group relative mb-1 h-full overflow-hidden rounded-lg goal-card p-1.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:rounded-xl sm:p-2"
+      : "group relative mb-2.5 h-full overflow-hidden rounded-xl goal-card p-2.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:mb-3 sm:p-3",
     completedClass,
   ]
     .filter(Boolean)
     .join(" ");
   const shellStateClass = open
     ? isCompleted && !isBorderOnlyCompleted
-      ? "border border-emerald-300/55 shadow-[0_24px_44px_-28px_rgba(16,185,129,0.48),inset_0_1px_0_rgba(255,255,255,0.07)]"
-      : "border border-white/16 bg-white/[0.04] shadow-[0_24px_44px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.06)]"
+      ? isDrawerCompactDefault
+        ? "border border-emerald-300/50 bg-emerald-950/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+        : "border border-emerald-300/55 shadow-[0_24px_44px_-28px_rgba(16,185,129,0.48),inset_0_1px_0_rgba(255,255,255,0.07)]"
+      : isDrawerCompactDefault
+        ? "border border-white/10 bg-[linear-gradient(180deg,rgba(66,66,66,0.16)_0%,rgba(28,28,28,0.72)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+        : "border border-white/16 bg-white/[0.04] shadow-[0_24px_44px_-28px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.06)]"
     : isCompleted && !isBorderOnlyCompleted
       ? "border border-emerald-400/28 shadow-[0_16px_28px_-24px_rgba(16,185,129,0.32),inset_0_1px_0_rgba(255,255,255,0.04)]"
       : "border border-transparent shadow-[0_12px_24px_-24px_rgba(0,0,0,0.7)]";
@@ -593,11 +753,27 @@ function GoalCardImpl({
     <>
       <motion.div
         layout={!prefersReducedMotion}
-        transition={prefersReducedMotion ? { duration: 0.12 } : shellSpringTransition}
+        transition={
+          prefersReducedMotion
+            ? { duration: 0.12 }
+            : isDrawerCompactDefault
+              ? { layout: projectDropdownTransition }
+              : shellSpringTransition
+        }
         className={`${defaultContainerClass} ${shellStateClass}`}
       >
-        <div className="relative flex h-full flex-col gap-1.5 sm:gap-2">
-          <div className="flex items-start justify-between gap-2">
+        <div
+          className={`relative flex h-full flex-col ${
+            isDrawerCompactDefault ? "gap-1" : "gap-1.5 sm:gap-2"
+          }`}
+        >
+          <div
+            className={`flex justify-between ${
+              isDrawerCompactDefault
+                ? "items-center gap-1.5"
+                : "items-start gap-2"
+            }`}
+          >
             <motion.button
               onClick={handleShellClick}
               aria-expanded={onCardClick ? undefined : open}
@@ -606,17 +782,35 @@ function GoalCardImpl({
               onPointerUp={handleProjectPointerUp}
               onPointerCancel={handleProjectPointerCancel}
               onPointerLeave={handleProjectPointerCancel}
-              className="relative flex flex-1 flex-col gap-1 text-left overflow-hidden sm:gap-1.5"
+              className={`relative flex flex-1 flex-col text-left overflow-hidden ${
+                isDrawerCompactDefault ? "gap-0.5" : "gap-1 sm:gap-1.5"
+              }`}
               {...shellMotionProps}
             >
-              <div className="relative z-10 flex items-start gap-2">
+              <div
+                className={`relative z-10 flex ${
+                  isDrawerCompactDefault
+                    ? "items-center gap-2"
+                    : "items-start gap-2"
+                }`}
+              >
                 <div
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-lg font-semibold sm:h-10 sm:w-10 sm:rounded-2xl sm:text-xl ${completedIconClass}`}
+                  className={`flex items-center justify-center border border-white/10 font-semibold ${
+                    isDrawerCompactDefault
+                      ? "h-7 w-7 shrink-0 rounded-lg text-[10px] sm:h-8 sm:w-8 sm:text-[11px]"
+                      : "h-9 w-9 rounded-xl text-lg sm:h-10 sm:w-10 sm:rounded-2xl sm:text-xl"
+                  } ${completedIconClass}`}
                 >
                   {goal.emoji ?? goal.monumentEmoji ?? goal.title.slice(0, 2)}
                 </div>
-                <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-1 text-[9px] uppercase tracking-[0.14em] sm:gap-1.5 sm:text-[10px] sm:tracking-[0.18em]">
+                <div className="min-w-0 flex-1">
+                  <div
+                    className={`flex flex-wrap items-center gap-1 text-[9px] uppercase tracking-[0.14em] ${
+                      isDrawerCompactDefault
+                        ? "hidden"
+                        : "sm:gap-1.5 sm:text-[10px] sm:tracking-[0.18em]"
+                    }`}
+                  >
                     {hideEnergyPill ? null : (
                       <span className="flex items-center gap-1 rounded-full border border-white/10 px-1.5 py-0.5 text-white/80">
                         <FlameEmber
@@ -636,7 +830,12 @@ function GoalCardImpl({
                   </div>
                   <h3
                     id={`goal-${goal.id}-label`}
-                    className="mt-0.5 text-[17px] font-semibold leading-tight sm:mt-1 sm:text-lg"
+                    className={
+                      isDrawerCompactDefault
+                        ? "truncate text-[12px] font-medium leading-tight text-white/84 sm:text-[13px]"
+                        : "mt-0.5 text-[17px] font-semibold leading-tight sm:mt-1 sm:text-lg"
+                    }
+                    title={goal.title}
                   >
                     {showEmojiPrefix && (goal.emoji ?? goal.monumentEmoji) ? (
                       <span className="mr-2 inline" aria-hidden>
@@ -645,54 +844,60 @@ function GoalCardImpl({
                     ) : null}
                     {goal.title}
                   </h3>
-                  {goal.why && (
+                  {goal.why && !isDrawerCompactDefault && (
                     <p className="mt-0.5 line-clamp-1 text-[13px] leading-4 text-white/65 sm:line-clamp-2 sm:text-sm sm:leading-5">
                       {goal.why}
                     </p>
                   )}
                 </div>
                 <ChevronDown
-                  className={`mt-0.5 h-4 w-4 text-white/60 sm:mt-1 sm:h-5 sm:w-5 ${
+                  className={`shrink-0 text-white/60 ${
+                    isDrawerCompactDefault
+                      ? "h-4 w-4"
+                      : "mt-0.5 h-4 w-4 sm:mt-1 sm:h-5 sm:w-5"
+                  } ${
                     open ? "rotate-180" : ""
                   }`}
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-1.5 text-[9px] text-white/60 sm:gap-2 sm:text-[10px]">
-                {!open && (
-                  <div className="flex items-center gap-1.5 rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] sm:gap-2 sm:px-2 sm:text-[10px]">
-                    <span
-                      className={`h-1 w-1 rounded-full sm:h-1.5 sm:w-1.5 ${energy.dot}`}
-                      aria-hidden="true"
-                    />
-                    <span>{goal.projects.length} projects</span>
-                  </div>
-                )}
-                {goal.dueDate && (
-                  <span className="rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] sm:px-2 sm:text-[10px]">
-                    Due {new Date(goal.dueDate).toLocaleDateString()}
-                  </span>
-                )}
-                {etaDisplay && (
-                  <span className="relative flex items-center gap-1.5 rounded-full border border-fuchsia-400/40 bg-gradient-to-r from-fuchsia-500/15 via-rose-500/10 to-amber-500/15 px-1.5 py-0.5 text-white shadow-[0_6px_18px_rgba(236,72,153,0.35)] sm:gap-2 sm:px-2">
-                    <span className="flex items-center gap-1 rounded-full bg-white/10 px-1 py-0.5 text-[7px] font-semibold uppercase tracking-[0.22em] text-white/70 sm:px-1.25 sm:text-[8px] sm:tracking-[0.3em]">
-                      <Sparkles
-                        className="h-3 w-3 text-amber-100"
+              {!isDrawerCompactDefault ? (
+                <div className="flex flex-wrap items-center gap-1.5 text-[9px] text-white/60 sm:gap-2 sm:text-[10px]">
+                  {!open && (
+                    <div className="flex items-center gap-1.5 rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] sm:gap-2 sm:px-2 sm:text-[10px]">
+                      <span
+                        className={`h-1 w-1 rounded-full sm:h-1.5 sm:w-1.5 ${energy.dot}`}
                         aria-hidden="true"
                       />
-                      ETA
+                      <span>{goal.projects.length} projects</span>
+                    </div>
+                  )}
+                  {goal.dueDate && (
+                    <span className="rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] sm:px-2 sm:text-[10px]">
+                      Due {new Date(goal.dueDate).toLocaleDateString()}
                     </span>
-                    <span className="text-[13px] font-semibold tracking-tight text-white sm:text-sm">
-                      {etaDisplay}
+                  )}
+                  {etaDisplay && (
+                    <span className="relative flex items-center gap-1.5 rounded-full border border-fuchsia-400/40 bg-gradient-to-r from-fuchsia-500/15 via-rose-500/10 to-amber-500/15 px-1.5 py-0.5 text-white shadow-[0_6px_18px_rgba(236,72,153,0.35)] sm:gap-2 sm:px-2">
+                      <span className="flex items-center gap-1 rounded-full bg-white/10 px-1 py-0.5 text-[7px] font-semibold uppercase tracking-[0.22em] text-white/70 sm:px-1.25 sm:text-[8px] sm:tracking-[0.3em]">
+                        <Sparkles
+                          className="h-3 w-3 text-amber-100"
+                          aria-hidden="true"
+                        />
+                        ETA
+                      </span>
+                      <span className="text-[13px] font-semibold tracking-tight text-white sm:text-sm">
+                        {etaDisplay}
+                      </span>
                     </span>
-                  </span>
-                )}
-                {createdAt && showCreatedAt && (
-                  <span className="rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] text-white/60 sm:px-2 sm:text-[10px]">
-                    Created {createdAt}
-                  </span>
-                )}
-              </div>
-              {!open && (
+                  )}
+                  {createdAt && showCreatedAt && (
+                    <span className="rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] text-white/60 sm:px-2 sm:text-[10px]">
+                      Created {createdAt}
+                    </span>
+                  )}
+                </div>
+              ) : null}
+              {!open && !isDrawerCompactDefault && (
                 <div className="flex flex-col gap-0.5 sm:gap-1">
                   <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-white/50 sm:text-[11px] sm:tracking-[0.25em]">
                     <span>Progress</span>
@@ -732,7 +937,9 @@ function GoalCardImpl({
             <div className="relative">
               <button
                 aria-label="Goal actions"
-                className="rounded-full border border-white/10 bg-white/10 p-1 text-white/70 hover:bg-white/20 sm:p-1.5"
+                className={`rounded-full border border-white/10 bg-white/10 text-white/70 hover:bg-white/20 ${
+                  isDrawerCompactDefault ? "p-1" : "p-1 sm:p-1.5"
+                }`}
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -749,7 +956,13 @@ function GoalCardImpl({
                   }
                 }}
               >
-                <MoreHorizontal className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <MoreHorizontal
+                  className={
+                    isDrawerCompactDefault
+                      ? "h-3.5 w-3.5"
+                      : "h-3.5 w-3.5 sm:h-4 sm:w-4"
+                  }
+                />
               </button>
               <div
                 id={`dropdown-${goal.id}`}
@@ -807,17 +1020,52 @@ function GoalCardImpl({
             </div>
           </div>
 
-          <AnimatePresence initial={false}>
+          <AnimatePresence initial={false} mode="sync">
             {open ? (
               <motion.div
-                className="origin-top overflow-hidden rounded-xl border border-white/8 bg-white/[0.025] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
-                {...detailMotionProps}
+                className={
+                  isDrawerCompactDefault
+                    ? "mt-0.5 origin-top overflow-hidden rounded-lg border border-white/8 bg-black/10 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]"
+                    : "origin-top overflow-hidden rounded-xl border border-white/8 bg-white/[0.025] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                }
+                layout={
+                  !isDrawerCompactDefault && !prefersReducedMotion
+                    ? "size"
+                    : undefined
+                }
+                {...(isDrawerCompactDefault
+                  ? drawerCompactMeasuredDetailMotionProps
+                  : detailMotionProps)}
               >
                 <motion.div
-                  variants={prefersReducedMotion ? undefined : detailContentVariant}
-                  initial={prefersReducedMotion ? false : "hidden"}
-                  animate={prefersReducedMotion ? undefined : "visible"}
-                  exit={prefersReducedMotion ? undefined : "exit"}
+                  ref={
+                    isDrawerCompactDefault
+                      ? drawerCompactDropdownContentRef
+                      : undefined
+                  }
+                  variants={
+                    isDrawerCompactDefault || prefersReducedMotion
+                      ? undefined
+                      : detailContentVariant
+                  }
+                  initial={
+                    isDrawerCompactDefault || prefersReducedMotion
+                      ? undefined
+                      : "hidden"
+                  }
+                  animate={
+                    isDrawerCompactDefault || prefersReducedMotion
+                      ? undefined
+                      : "visible"
+                  }
+                  exit={
+                    isDrawerCompactDefault || prefersReducedMotion
+                      ? undefined
+                      : "exit"
+                  }
+                  {...(isDrawerCompactDefault
+                    ? drawerCompactMeasuredContentMotionProps
+                    : {})}
                 >
                   <ProjectRowTaskInteractionsProvider
                     value={{

@@ -73,36 +73,69 @@ const shellContentMotion = {
 } as const;
 
 const goalExpansionTransition = {
-  duration: 0.28,
+  duration: 0.24,
   ease: [0.22, 1, 0.36, 1],
 } as const;
 
-const goalSwapMotion = {
-  collapsed: {
-    initial: { opacity: 0, y: -4 },
-    animate: {
-      opacity: 1,
-      y: 0,
-      transition: { duration: 0.18, ease: "easeOut" },
-    },
-    exit: {
-      opacity: 0,
-      y: -3,
-      transition: { duration: 0.12, ease: "easeOut" },
-    },
+const campaignDrawerRowTransition = {
+  duration: 0.9,
+  ease: [0.33, 0, 0.67, 1],
+} as const;
+
+const collapsedGoalMotion = {
+  hidden: {
+    opacity: 0,
+    y: -3,
   },
-  open: {
-    initial: { opacity: 0, y: 6 },
-    animate: {
-      opacity: 1,
-      y: 0,
-      transition: { delay: 0.04, duration: 0.2, ease: "easeOut" },
-    },
-    exit: {
-      opacity: 0,
-      y: 4,
-      transition: { duration: 0.14, ease: "easeOut" },
-    },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.18, ease: "easeOut" },
+  },
+  exit: {
+    opacity: 0,
+    y: -2,
+    transition: { duration: 0.12, ease: "easeOut" },
+  },
+} as const;
+
+const openedGoalMotion = {
+  hidden: {
+    opacity: 0,
+    height: 0,
+    y: 4,
+  },
+  visible: {
+    opacity: 1,
+    height: "auto",
+    y: 0,
+    transition: goalExpansionTransition,
+  },
+  exit: {
+    opacity: 0,
+    height: 0,
+    y: 3,
+    transition: { duration: 0.18, ease: "easeOut" },
+  },
+} as const;
+
+const campaignDrawerOpenedGoalMotion = {
+  hidden: {
+    opacity: 0,
+    height: 0,
+    y: 3,
+  },
+  visible: {
+    opacity: 1,
+    height: "auto",
+    y: 0,
+    transition: campaignDrawerRowTransition,
+  },
+  exit: {
+    opacity: 0,
+    height: 0,
+    y: 2,
+    transition: campaignDrawerRowTransition,
   },
 } as const;
 
@@ -128,6 +161,7 @@ function DraggableGoalCard({
   onProjectEditOpen,
   monumentContext,
   hideEnergyPill,
+  campaignDrawerRow = false,
 }: {
   goal: Goal;
   index: number;
@@ -144,6 +178,7 @@ function DraggableGoalCard({
   ) => void;
   monumentContext?: boolean;
   hideEnergyPill?: boolean;
+  campaignDrawerRow?: boolean;
 }) {
   const prefersReducedMotion = useReducedMotion();
   const {
@@ -189,11 +224,77 @@ function DraggableGoalCard({
         whileTap: { scale: 0.97, y: 1 },
         transition: cardSpringTransition,
       };
+  const rowLayoutTransition = campaignDrawerRow
+    ? campaignDrawerRowTransition
+    : goalExpansionTransition;
+  const openedGoalVariants = campaignDrawerRow
+    ? campaignDrawerOpenedGoalMotion
+    : openedGoalMotion;
+  const [shouldRenderOpenGoal, setShouldRenderOpenGoal] = useState(Boolean(isOpen));
+  const [controlledGoalOpen, setControlledGoalOpen] = useState(Boolean(isOpen));
+  const closeTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+      setShouldRenderOpenGoal(true);
+      setControlledGoalOpen(true);
+      return;
+    }
+
+    setControlledGoalOpen(false);
+  }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleOpenedGoalChange = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) {
+        if (closeTimerRef.current !== null) {
+          window.clearTimeout(closeTimerRef.current);
+          closeTimerRef.current = null;
+        }
+        setShouldRenderOpenGoal(true);
+        setControlledGoalOpen(true);
+        onOpenChange?.(true);
+        return;
+      }
+
+      setControlledGoalOpen(false);
+
+      const closeDelay = prefersReducedMotion
+        ? 140
+        : campaignDrawerRow
+          ? 1500
+          : 520;
+
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+      }
+
+      closeTimerRef.current = window.setTimeout(() => {
+        closeTimerRef.current = null;
+        setShouldRenderOpenGoal(false);
+        onOpenChange?.(false);
+      }, closeDelay);
+    },
+    [campaignDrawerRow, onOpenChange, prefersReducedMotion]
+  );
+
   const handleGoalEdit = useCallback(() => {
     if (!onGoalEdit) return;
     onGoalEdit(goal);
-    closeGoalDetailAfterFabOpen(() => onOpenChange?.(false));
-  }, [goal, onGoalEdit, onOpenChange]);
+    closeGoalDetailAfterFabOpen(() => handleOpenedGoalChange(false));
+  }, [goal, handleOpenedGoalChange, onGoalEdit]);
 
   return (
     <div
@@ -213,12 +314,24 @@ function DraggableGoalCard({
         transition={
           prefersReducedMotion
             ? { duration: 0.01 }
-            : { layout: goalExpansionTransition }
+            : { layout: rowLayoutTransition }
         }
       >
-        <AnimatePresence initial={false} mode="popLayout">
-          {isOpen ? (
-            <motion.div key="open-goal" {...goalSwapMotion.open}>
+        <AnimatePresence initial={false}>
+          {shouldRenderOpenGoal ? (
+            <motion.div
+              className="overflow-hidden"
+              layout={prefersReducedMotion ? undefined : "size"}
+              variants={prefersReducedMotion ? undefined : openedGoalVariants}
+              initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
+              animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
+              exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
+              transition={
+                prefersReducedMotion
+                  ? { duration: 0.12 }
+                  : { layout: rowLayoutTransition }
+              }
+            >
               <GoalCard
                 goal={goal}
                 showWeight={false}
@@ -226,8 +339,9 @@ function DraggableGoalCard({
                 showEmojiPrefix={false}
                 hideEnergyPill={hideEnergyPill}
                 variant="default"
-                open={true}
-                onOpenChange={onOpenChange}
+                drawerCompact
+                open={controlledGoalOpen}
+                onOpenChange={handleOpenedGoalChange}
                 onEdit={onGoalEdit ? handleGoalEdit : undefined}
                 onToggleActive={
                   onGoalToggleActive
@@ -247,60 +361,68 @@ function DraggableGoalCard({
               />
             </motion.div>
           ) : (
-            <motion.div key="collapsed-goal" {...goalSwapMotion.collapsed}>
-              <motion.button
-                type="button"
-                onClick={() => onOpenChange?.(true)}
-                className={`relative flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2 ${
+            <motion.button
+              type="button"
+              onClick={() => onOpenChange?.(true)}
+              className={`relative flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2 ${
+                isCompleted
+                  ? "border-emerald-400/55 bg-[linear-gradient(135deg,rgba(6,78,59,0.72),rgba(5,46,39,0.86))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                  : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+              }`}
+              {...shellMotionProps}
+              layout={prefersReducedMotion ? undefined : "size"}
+              variants={prefersReducedMotion ? undefined : collapsedGoalMotion}
+              initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
+              animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
+              exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
+              transition={
+                prefersReducedMotion
+                  ? { duration: 0.12 }
+                  : { layout: goalExpansionTransition }
+              }
+            >
+              <div
+                className={`flex h-7 w-7 shrink-0 touch-none items-center justify-center rounded-lg text-[10px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] cursor-grab active:cursor-grabbing sm:h-8 sm:w-8 sm:text-[11px] ${
                   isCompleted
-                    ? "border-emerald-400/55 bg-[linear-gradient(135deg,rgba(6,78,59,0.72),rgba(5,46,39,0.86))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                    : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                    ? "border border-emerald-300/50 bg-emerald-950/35 text-emerald-50"
+                    : "border border-white/10 bg-white/[0.04] text-white/80"
                 }`}
-                {...shellMotionProps}
+                {...attributes}
+                {...listeners}
+                aria-label="Drag goal to reorder"
+                onClickCapture={(event) => {
+                  if (!wasDraggingRef.current) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
               >
-                <div
-                  className={`flex h-7 w-7 shrink-0 touch-none items-center justify-center rounded-lg text-[10px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] cursor-grab active:cursor-grabbing sm:h-8 sm:w-8 sm:text-[11px] ${
-                    isCompleted
-                      ? "border border-emerald-300/50 bg-emerald-950/35 text-emerald-50"
-                      : "border border-white/10 bg-white/[0.04] text-white/80"
-                  }`}
-                  {...attributes}
-                  {...listeners}
-                  aria-label="Drag goal to reorder"
-                  onClickCapture={(event) => {
-                    if (!wasDraggingRef.current) return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                >
-                  {displayEmoji}
-                </div>
+                {displayEmoji}
+              </div>
 
-                <p
-                  className={`min-w-0 flex-1 truncate text-[12px] font-medium leading-tight sm:text-[13px] ${
-                    isCompleted ? "text-emerald-50" : "text-white/84"
-                  }`}
-                  title={goal.title}
-                >
-                  {goal.title}
-                </p>
+              <p
+                className={`min-w-0 flex-1 truncate text-[12px] font-medium leading-tight sm:text-[13px] ${
+                  isCompleted ? "text-emerald-50" : "text-white/84"
+                }`}
+                title={goal.title}
+              >
+                {goal.title}
+              </p>
 
-                <ChevronDown
-                  aria-hidden="true"
-                  className="h-4 w-4 shrink-0 text-white/45"
-                />
+              <ChevronDown
+                aria-hidden="true"
+                className="h-4 w-4 shrink-0 text-white/45"
+              />
 
-                <span
-                  className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${
-                    isCompleted
-                      ? "border-emerald-300/35 bg-emerald-300/10 text-emerald-50/85"
-                      : "border-white/8 bg-white/[0.03] text-white/42"
-                  }`}
-                >
-                  {index + 1}
-                </span>
-              </motion.button>
-            </motion.div>
+              <span
+                className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${
+                  isCompleted
+                    ? "border-emerald-300/35 bg-emerald-300/10 text-emerald-50/85"
+                    : "border-white/8 bg-white/[0.03] text-white/42"
+                }`}
+              >
+                {index + 1}
+              </span>
+            </motion.button>
           )}
         </AnimatePresence>
       </motion.div>
@@ -328,7 +450,7 @@ function AddGoalButton({ onAddGoal }: { onAddGoal?: () => void }) {
         <Plus aria-hidden="true" className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
       </span>
       <span className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/84 sm:text-[13px]">
-        add GOAL
+        ADD GOAL
       </span>
     </button>
   );
@@ -836,6 +958,7 @@ function CampaignDrawer({
                   onProjectEditOpen={onProjectEditOpen}
                   monumentContext={monumentContext}
                   hideEnergyPill
+                  campaignDrawerRow
                 />
               ))}
             </div>

@@ -12,14 +12,27 @@ import {
   derivePersistedCategoryOrders,
   shouldUseFiveColumnCategoryPillGrid,
 } from "./carouselUtils";
+import {
+  SkillDrawer,
+  type Category as DrawerCategory,
+  type Skill as DrawerSkill,
+} from "@/app/(app)/skills/components/SkillDrawer";
 import { updateCatOrder } from "@/lib/data/cats";
+import { getSkillsForUser } from "@/lib/data/skills";
 import { createRecord, updateRecord } from "@/lib/db";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import { useToastHelpers } from "@/components/ui/toast";
 import type { SkillRow } from "@/lib/types/skill";
 
 const FALLBACK_COLOR = "#6366f1";
 const MAX_CATEGORY_SLOTS = 10;
 const DEFAULT_CATEGORY_EMOJI = "⚓";
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type Monument = {
+  id: string;
+  title: string;
+};
 
 function parseHex(hex?: string | null) {
   if (!hex) {
@@ -75,6 +88,10 @@ export default function SkillsCarousel() {
   const [dragOriginCategoryId, setDragOriginCategoryId] = useState<string | null>(null);
   const [dropTargetCategoryId, setDropTargetCategoryId] = useState<string | null>(null);
   const [isMovingSkill, setIsMovingSkill] = useState(false);
+  const [skillDrawerOpen, setSkillDrawerOpen] = useState(false);
+  const [drawerSkills, setDrawerSkills] = useState<DrawerSkill[]>([]);
+  const [drawerCategories, setDrawerCategories] = useState<DrawerCategory[]>([]);
+  const [monuments, setMonuments] = useState<Monument[]>([]);
   const [isAddCategoryMenuOpen, setIsAddCategoryMenuOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryColor, setNewCategoryColor] = useState(FALLBACK_COLOR);
@@ -109,6 +126,48 @@ export default function SkillsCarousel() {
   const categoryPillListClass = useFiveColumnCategoryPillGrid
     ? "grid w-full max-w-4xl grid-cols-5 gap-2.5"
     : "flex flex-wrap justify-center gap-2.5";
+
+  const loadSkillDrawerData = useCallback(async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const [skillRows, cats, mons] = await Promise.all([
+        getSkillsForUser(user.id),
+        supabase.from("cats").select("id,name").eq("user_id", user.id),
+        supabase.from("monuments").select("id,title").eq("user_id", user.id),
+      ]);
+
+      setDrawerSkills(
+        (skillRows || []).map((skill) => ({
+          id: skill.id,
+          name: skill.name || "Unnamed",
+          icon: skill.icon || "🧩",
+          level: skill.level ?? 1,
+          progress: 0,
+          cat_id: skill.cat_id,
+          monument_id: skill.monument_id,
+          created_at: skill.created_at,
+          is_default: skill.is_default ?? false,
+          is_locked: skill.is_locked ?? false,
+          sort_order: skill.sort_order ?? null,
+        }))
+      );
+      setDrawerCategories((cats.data || []).map((cat) => ({ id: cat.id, name: cat.name })));
+      setMonuments((mons.data || []).map((monument) => ({ id: monument.id, title: monument.title })));
+    } catch (error) {
+      console.error("Error loading skill drawer data:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSkillDrawerData();
+  }, [loadSkillDrawerData]);
 
   useEffect(() => {
     if (!canAddCategory && isAddCategoryMenuOpen) {
@@ -519,6 +578,76 @@ export default function SkillsCarousel() {
     }
   }, [newCategoryColor, newCategoryEmoji, newCategoryName, reload, toast]);
 
+  const handleAddSkill = useCallback(
+    async (skill: DrawerSkill) => {
+      const catIdToUse = skill.cat_id && UUID_REGEX.test(skill.cat_id) ? skill.cat_id : null;
+      const highestSortOrderInCategory = drawerSkills
+        .filter((existing) => {
+          const existingCategory = existing.cat_id || "";
+          const newCategory = catIdToUse || "";
+          return existingCategory === newCategory;
+        })
+        .reduce((max, existing) => Math.max(max, existing.sort_order ?? 0), 0);
+      const nextSortOrder = highestSortOrderInCategory + 1;
+
+      const { data, error } = await createRecord<SkillRow>("skills", {
+        name: skill.name,
+        icon: skill.icon,
+        level: skill.level,
+        cat_id: catIdToUse,
+        sort_order: nextSortOrder,
+        monument_id: skill.monument_id ?? null,
+      });
+
+      if (error || !data) {
+        console.error("Error creating skill:", error);
+        toast.error("Error", error?.message || "Failed to create skill");
+        return;
+      }
+
+      setDrawerSkills((previous) => {
+        if (previous.some((existing) => existing.id === data.id)) {
+          return previous;
+        }
+        return [
+          ...previous,
+          {
+            ...skill,
+            id: data.id,
+            cat_id: catIdToUse,
+            monument_id: skill.monument_id ?? null,
+            sort_order: data.sort_order ?? nextSortOrder,
+            created_at: data.created_at,
+          },
+        ];
+      });
+      reload();
+    },
+    [drawerSkills, reload, toast]
+  );
+
+  const handleAddDrawerCategory = useCallback(
+    async (name: string): Promise<DrawerCategory | null> => {
+      if (drawerCategories.length >= MAX_CATEGORY_SLOTS) {
+        toast.error("Limit reached", "You can have up to 10 categories.");
+        return null;
+      }
+
+      const { data, error } = await createRecord<DrawerCategory>("cats", { name });
+      if (error || !data) {
+        console.error("Error creating category:", error);
+        toast.error("Error", error?.message || "Failed to create category");
+        return null;
+      }
+
+      const category = { id: data.id, name: data.name };
+      setDrawerCategories((previous) => [...previous, category]);
+      reload();
+      return category;
+    },
+    [drawerCategories.length, reload, toast]
+  );
+
   type ReorderDirection = "left" | "right" | "first" | "last";
 
   const reorderCategory = useCallback(
@@ -611,12 +740,9 @@ export default function SkillsCarousel() {
     [isSavingOrder, persistCategoryOrder]
   );
 
-  const handleCategoryNameChange = useCallback(
-    (_categoryId: string, _nextName: string) => {
-      reload();
-    },
-    [reload]
-  );
+  const handleCategoryNameChange = useCallback(() => {
+    reload();
+  }, [reload]);
 
   const handleCategoryDelete = useCallback(
     (categoryId: string) => {
@@ -681,366 +807,388 @@ export default function SkillsCarousel() {
 
   if (!isLoading && categories.length === 0) {
     return (
-      <div className="relative">
-        <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-4 py-6 shadow-lg sm:px-6">
-          <div className="space-y-1 text-left">
-            <p className="text-xs font-semibold tracking-[0.4em] text-slate-300/70">SKILLS</p>
-            <h3 className="text-xl font-semibold text-white">No skills yet</h3>
-            <p className="text-sm text-slate-400">
-              Set up your skill stack (5 categories, ~25 skills) to personalize CREATOR.
-            </p>
-          </div>
-          <div className="mt-6 flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => router.push("/skills")}
-              className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-100 transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-            >
-              VIEW SKILL DASHBOARD
-            </button>
+      <>
+        <div className="relative">
+          <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-4 py-6 shadow-lg sm:px-6">
+            <div className="space-y-1 text-left">
+              <p className="text-xs font-semibold tracking-[0.4em] text-slate-300/70">SKILLS</p>
+              <h3 className="text-xl font-semibold text-white">No skills yet</h3>
+              <p className="text-sm text-slate-400">
+                Set up your skill stack (5 categories, ~25 skills) to personalize CREATOR.
+              </p>
+            </div>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSkillDrawerOpen(true)}
+                className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-950 transition hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                CREATE SKILL
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+        <SkillDrawer
+          open={skillDrawerOpen}
+          onClose={() => setSkillDrawerOpen(false)}
+          onAdd={handleAddSkill}
+          categories={drawerCategories}
+          monuments={monuments}
+          onAddCategory={handleAddDrawerCategory}
+        />
+      </>
     );
   }
 
   const isCreateCategoryDisabled = isCreatingCategory || newCategoryName.trim().length === 0;
 
   return (
-    <div
-      className="relative"
-      role="region"
-      aria-roledescription="carousel"
-      aria-label="Skill categories"
-      tabIndex={0}
-      onKeyDown={(event) => {
-        if (event.key === "ArrowLeft") {
-          event.preventDefault();
-          scrollToIndex(activeIndexRef.current - 1);
-        } else if (event.key === "ArrowRight") {
-          event.preventDefault();
-          scrollToIndex(activeIndexRef.current + 1);
-        } else if (event.key === "Enter") {
-          event.preventDefault();
-          cardRefs.current[activeIndexRef.current]
-            ?.querySelector<HTMLButtonElement>("button")
-            ?.click();
-        }
-      }}
-    >
-      <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-2 py-6 shadow-lg sm:px-4">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black" aria-hidden />
-        {categories.length > 1 && (
-          <>
-            <button
-              type="button"
-              aria-label="Previous category"
-              onClick={() => scrollToIndex(activeIndexRef.current - 1)}
-              disabled={!canGoPrev}
-              className="absolute left-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border text-slate-100 shadow-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-35 sm:flex"
-              style={{
-                backgroundColor: withAlpha(activeColor, 0.18),
-                borderColor: withAlpha(activeColor, 0.35),
-                boxShadow: `0 16px 40px ${withAlpha(activeColor, 0.22)}`,
-              }}
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              aria-label="Next category"
-              onClick={() => scrollToIndex(activeIndexRef.current + 1)}
-              disabled={!canGoNext}
-              className="absolute right-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border text-slate-100 shadow-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-35 sm:flex"
-              style={{
-                backgroundColor: withAlpha(activeColor, 0.18),
-                borderColor: withAlpha(activeColor, 0.35),
-                boxShadow: `0 16px 40px ${withAlpha(activeColor, 0.22)}`,
-              }}
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </>
-        )}
-        <div
-          ref={trackRef}
-          className={`relative flex snap-x gap-5 overflow-x-auto overflow-y-hidden px-2 sm:px-3 ${
-            skillDragging ? "snap-none touch-none" : "snap-mandatory touch-pan-x"
-          }`}
-        >
-          {categories.map((category, idx) => {
-            const isActive = idx === activeIndex;
-            const isUncategorized = category.id === "uncategorized";
-            const isLocked = Boolean(category.is_locked);
-            const canMoveLeft =
-              !isUncategorized && !isLocked && idx > firstReorderableIndex && firstReorderableIndex !== -1;
-            const canMoveRight =
-              !isUncategorized && !isLocked && idx < lastReorderableIndex && lastReorderableIndex !== -1;
-            return (
-              <div
-                key={category.id}
-                ref={(element) => {
-                  cardRefs.current[idx] = element;
-                }}
-                role="group"
-                aria-label={`Category ${idx + 1} of ${categories.length}`}
-                className="w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[52vw] xl:w-[44vw]"
-                style={{ scrollMarginInline: "12px" }}
-              >
-                <CategoryCard
-                  category={category}
-                  skills={skillsByCategory[category.id] || []}
-                  active={isActive}
-                  onSkillDrag={setSkillDragging}
-                  colorOverride={getCategoryColor(category)}
-                  iconOverride={getCategoryIcon(category)}
-                  progressBySkillId={progressBySkillId}
-                  isDropTarget={dropTargetCategoryId === category.id}
-                  isDraggingSkill={Boolean(draggingSkill)}
-                  onSkillDragStart={(skill) => handleSkillDragStart(skill, category.id)}
-                  onSkillDragEnd={handleSkillDragEnd}
-                  onDragCategoryHover={() => handleCategoryDragEnter(category.id)}
-                  onDragCategoryLeave={() => handleCategoryDragLeave(category.id)}
-                  menuOpen={openMenuFor === category.id}
-                  onMenuOpenChange={(open) => {
-                    setOpenMenuFor((current) => {
-                      if (open) {
-                        return category.id;
-                      }
-                      return current === category.id ? null : current;
-                    });
-                  }}
-                  onColorChange={(color) =>
-                    setCatOverrides((prev) => ({
-                      ...prev,
-                      [category.id]: {
-                        ...(prev[category.id] || {}),
-                        color,
-                        icon: prev[category.id]?.icon ?? category.icon ?? null,
-                      },
-                    }))
-                  }
-                  onIconChange={(icon) =>
-                    setCatOverrides((prev) => ({
-                      ...prev,
-                      [category.id]: {
-                        ...(prev[category.id] || {}),
-                        icon,
-                        color: prev[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR,
-                      },
-                    }))
-                  }
-                  onNameChange={(name) => handleCategoryNameChange(category.id, name)}
-                  onDeleteCategory={handleCategoryDelete}
-                  onReorder={(direction) => {
-                    if (category.is_locked) return;
-                    reorderCategory(category.id, direction);
-                  }}
-                  canMoveLeft={canMoveLeft}
-                  canMoveRight={canMoveRight}
-                  canMoveToStart={canMoveLeft}
-                  canMoveToEnd={canMoveRight}
-                  isReordering={isSavingOrder}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      <div className="mt-6 flex flex-col items-center gap-3">
-        <div className={categoryPillListClass} role="tablist">
-          {categories.map((category, idx) => {
-            const isActive = idx === activeIndex;
-            const previewSkill = (skillsByCategory[category.id] || []).find(
-              (skill) => skill.emoji
-            )?.emoji;
-            const catIcon = getCategoryIcon(category);
-            const resolvedIcon = catIcon?.trim();
-            const preview =
-              resolvedIcon && resolvedIcon.length > 0
-                ? resolvedIcon
-                : previewSkill || category.name.charAt(0).toUpperCase();
-            const chipColor = getCategoryColor(category) || FALLBACK_COLOR;
-
-            return (
-              <button
-                key={category.id}
-                role="tab"
-                aria-selected={isActive}
-                aria-label={`Go to ${category.name}`}
-                onClick={() => {
-                  const alreadyActive = idx === activeIndexRef.current;
-                  scrollToIndex(idx);
-                  setOpenMenuFor((current) => {
-                    if (!alreadyActive) {
-                      return null;
-                    }
-                    return current === category.id ? null : category.id;
-                  });
-                }}
-                className={`inline-flex min-w-0 items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
-                  useFiveColumnCategoryPillGrid ? "w-full justify-center" : ""
-                } ${isActive ? "text-slate-100" : "text-slate-300/85 hover:text-slate-100"}`}
-                style={{
-                  backgroundColor: isActive ? withAlpha(chipColor, 0.24) : "rgba(0, 0, 0, 0.65)",
-                  borderColor: isActive ? withAlpha(chipColor, 0.45) : "rgba(148, 163, 184, 0.25)",
-                  boxShadow: isActive
-                    ? `0 16px 32px ${withAlpha(chipColor, 0.28)}`
-                    : "0 6px 18px rgba(0, 0, 0, 0.3)",
-                }}
-              >
-                <span
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-base font-semibold shadow"
-                  style={{
-                    backgroundColor: isActive ? withAlpha(chipColor, 0.55) : withAlpha(chipColor, 0.18),
-                    color: isActive ? "rgba(0, 0, 0, 0.85)" : "rgba(255,255,255,0.92)",
-                    boxShadow: isActive
-                      ? `0 12px 24px ${withAlpha(chipColor, 0.32)}`
-                      : "0 6px 14px rgba(0,0,0,0.28)",
-                  }}
-                >
-                  {preview}
-                </span>
-                <span className="hidden min-w-0 truncate pr-1 sm:block">{category.name}</span>
-              </button>
-            );
-          })}
-        </div>
-        {canAddCategory && (
-          <>
-            <div className="inline-flex">
+    <>
+      <div
+        className="relative"
+        role="region"
+        aria-roledescription="carousel"
+        aria-label="Skill categories"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            scrollToIndex(activeIndexRef.current - 1);
+          } else if (event.key === "ArrowRight") {
+            event.preventDefault();
+            scrollToIndex(activeIndexRef.current + 1);
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            cardRefs.current[activeIndexRef.current]
+              ?.querySelector<HTMLButtonElement>("button")
+              ?.click();
+          }
+        }}
+      >
+        <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-2 py-6 shadow-lg sm:px-4">
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black" aria-hidden />
+          {categories.length > 1 && (
+            <>
               <button
                 type="button"
-                className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
-                  isCreatingCategory
-                    ? "border-white/30 bg-white/10 text-white/60 cursor-wait"
-                    : "border-dashed border-white/30 bg-white/5 text-white/80 hover:border-white/50 hover:bg-white/10"
-              } ${isAddCategoryMenuOpen ? "ring-2 ring-white/60" : ""}`}
-              onClick={handleAddCategoryButtonClick}
-              disabled={isCreatingCategory}
-              aria-label="Add a new category"
-              aria-expanded={isAddCategoryMenuOpen}
-              aria-controls="add-category-panel"
+                aria-label="Previous category"
+                onClick={() => scrollToIndex(activeIndexRef.current - 1)}
+                disabled={!canGoPrev}
+                className="absolute left-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border text-slate-100 shadow-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-35 sm:flex"
+                style={{
+                  backgroundColor: withAlpha(activeColor, 0.18),
+                  borderColor: withAlpha(activeColor, 0.35),
+                  boxShadow: `0 16px 40px ${withAlpha(activeColor, 0.22)}`,
+                }}
               >
-                <Plus className="h-4 w-4" />
-                <span>Add category</span>
+                <ChevronLeft className="h-5 w-5" />
               </button>
-            </div>
-            {isAddCategoryMenuOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-                <div className="absolute inset-0 bg-black/70 backdrop-blur" />
+              <button
+                type="button"
+                aria-label="Next category"
+                onClick={() => scrollToIndex(activeIndexRef.current + 1)}
+                disabled={!canGoNext}
+                className="absolute right-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border text-slate-100 shadow-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-35 sm:flex"
+                style={{
+                  backgroundColor: withAlpha(activeColor, 0.18),
+                  borderColor: withAlpha(activeColor, 0.35),
+                  boxShadow: `0 16px 40px ${withAlpha(activeColor, 0.22)}`,
+                }}
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </>
+          )}
+          <div
+            ref={trackRef}
+            className={`relative flex snap-x gap-5 overflow-x-auto overflow-y-hidden px-2 sm:px-3 ${
+              skillDragging ? "snap-none touch-none" : "snap-mandatory touch-pan-x"
+            }`}
+          >
+            {categories.map((category, idx) => {
+              const isActive = idx === activeIndex;
+              const isUncategorized = category.id === "uncategorized";
+              const isLocked = Boolean(category.is_locked);
+              const canMoveLeft =
+                !isUncategorized && !isLocked && idx > firstReorderableIndex && firstReorderableIndex !== -1;
+              const canMoveRight =
+                !isUncategorized && !isLocked && idx < lastReorderableIndex && lastReorderableIndex !== -1;
+              return (
                 <div
-                  ref={addCategoryMenuRef}
-                  id="add-category-panel"
-                  className="relative z-10 w-full max-w-sm rounded-3xl border px-4 py-3 text-white shadow-2xl backdrop-blur"
+                  key={category.id}
+                  ref={(element) => {
+                    cardRefs.current[idx] = element;
+                  }}
+                  role="group"
+                  aria-label={`Category ${idx + 1} of ${categories.length}`}
+                  className="w-[85vw] shrink-0 snap-center sm:w-[70vw] lg:w-[52vw] xl:w-[44vw]"
+                  style={{ scrollMarginInline: "12px" }}
+                >
+                  <CategoryCard
+                    category={category}
+                    skills={skillsByCategory[category.id] || []}
+                    active={isActive}
+                    onSkillDrag={setSkillDragging}
+                    colorOverride={getCategoryColor(category)}
+                    iconOverride={getCategoryIcon(category)}
+                    progressBySkillId={progressBySkillId}
+                    isDropTarget={dropTargetCategoryId === category.id}
+                    isDraggingSkill={Boolean(draggingSkill)}
+                    onSkillDragStart={(skill) => handleSkillDragStart(skill, category.id)}
+                    onSkillDragEnd={handleSkillDragEnd}
+                    onDragCategoryHover={() => handleCategoryDragEnter(category.id)}
+                    onDragCategoryLeave={() => handleCategoryDragLeave(category.id)}
+                    menuOpen={openMenuFor === category.id}
+                    onMenuOpenChange={(open) => {
+                      setOpenMenuFor((current) => {
+                        if (open) {
+                          return category.id;
+                        }
+                        return current === category.id ? null : current;
+                      });
+                    }}
+                    onColorChange={(color) =>
+                      setCatOverrides((prev) => ({
+                        ...prev,
+                        [category.id]: {
+                          ...(prev[category.id] || {}),
+                          color,
+                          icon: prev[category.id]?.icon ?? category.icon ?? null,
+                        },
+                      }))
+                    }
+                    onIconChange={(icon) =>
+                      setCatOverrides((prev) => ({
+                        ...prev,
+                        [category.id]: {
+                          ...(prev[category.id] || {}),
+                          icon,
+                          color: prev[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR,
+                        },
+                      }))
+                    }
+                    onNameChange={handleCategoryNameChange}
+                    onDeleteCategory={handleCategoryDelete}
+                    onReorder={(direction) => {
+                      if (category.is_locked) return;
+                      reorderCategory(category.id, direction);
+                    }}
+                    onAddSkill={() => setSkillDrawerOpen(true)}
+                    canMoveLeft={canMoveLeft}
+                    canMoveRight={canMoveRight}
+                    canMoveToStart={canMoveLeft}
+                    canMoveToEnd={canMoveRight}
+                    isReordering={isSavingOrder}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="mt-6 flex flex-col items-center gap-3">
+          <div className={categoryPillListClass} role="tablist">
+            {categories.map((category, idx) => {
+              const isActive = idx === activeIndex;
+              const previewSkill = (skillsByCategory[category.id] || []).find(
+                (skill) => skill.emoji
+              )?.emoji;
+              const catIcon = getCategoryIcon(category);
+              const resolvedIcon = catIcon?.trim();
+              const preview =
+                resolvedIcon && resolvedIcon.length > 0
+                  ? resolvedIcon
+                  : previewSkill || category.name.charAt(0).toUpperCase();
+              const chipColor = getCategoryColor(category) || FALLBACK_COLOR;
+
+              return (
+                <button
+                  key={category.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-label={`Go to ${category.name}`}
+                  onClick={() => {
+                    const alreadyActive = idx === activeIndexRef.current;
+                    scrollToIndex(idx);
+                    setOpenMenuFor((current) => {
+                      if (!alreadyActive) {
+                        return null;
+                      }
+                      return current === category.id ? null : category.id;
+                    });
+                  }}
+                  className={`inline-flex min-w-0 items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
+                    useFiveColumnCategoryPillGrid ? "w-full justify-center" : ""
+                  } ${isActive ? "text-slate-100" : "text-slate-300/85 hover:text-slate-100"}`}
                   style={{
-                    background: `linear-gradient(150deg, ${withAlpha(activeColor, 0.35)}, ${withAlpha(
-                      activeColor,
-                      0.08
-                    )})`,
-                    borderColor: withAlpha(activeColor, 0.55),
-                    boxShadow: `0 25px 45px ${withAlpha("#0f172a", 0.55)}, 0 12px 30px ${withAlpha(
-                      activeColor,
-                      0.35
-                    )}`,
+                    backgroundColor: isActive ? withAlpha(chipColor, 0.24) : "rgba(0, 0, 0, 0.65)",
+                    borderColor: isActive ? withAlpha(chipColor, 0.45) : "rgba(148, 163, 184, 0.25)",
+                    boxShadow: isActive
+                      ? `0 16px 32px ${withAlpha(chipColor, 0.28)}`
+                      : "0 6px 18px rgba(0, 0, 0, 0.3)",
                   }}
                 >
-                  <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
-                      New category
-                    </p>
-                    <p className="text-base font-semibold">Style & name</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsAddCategoryMenuOpen(false)}
-                    className="rounded-full p-1 text-white/70 transition hover:text-white"
+                  <span
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-base font-semibold shadow"
+                    style={{
+                      backgroundColor: isActive ? withAlpha(chipColor, 0.55) : withAlpha(chipColor, 0.18),
+                      color: isActive ? "rgba(0, 0, 0, 0.85)" : "rgba(255,255,255,0.92)",
+                      boxShadow: isActive
+                        ? `0 12px 24px ${withAlpha(chipColor, 0.32)}`
+                        : "0 6px 14px rgba(0,0,0,0.28)",
+                    }}
                   >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="mt-3 space-y-4">
-                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,4fr)] gap-3">
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">
-                        Emoji
+                    {preview}
+                  </span>
+                  <span className="hidden min-w-0 truncate pr-1 sm:block">{category.name}</span>
+                </button>
+              );
+            })}
+          </div>
+          {canAddCategory && (
+            <>
+              <div className="inline-flex">
+                <button
+                  type="button"
+                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
+                    isCreatingCategory
+                      ? "border-white/30 bg-white/10 text-white/60 cursor-wait"
+                      : "border-dashed border-white/30 bg-white/5 text-white/80 hover:border-white/50 hover:bg-white/10"
+                } ${isAddCategoryMenuOpen ? "ring-2 ring-white/60" : ""}`}
+                onClick={handleAddCategoryButtonClick}
+                disabled={isCreatingCategory}
+                aria-label="Add a new category"
+                aria-expanded={isAddCategoryMenuOpen}
+                aria-controls="add-category-panel"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Add category</span>
+                </button>
+              </div>
+              {isAddCategoryMenuOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+                  <div className="absolute inset-0 bg-black/70 backdrop-blur" />
+                  <div
+                    ref={addCategoryMenuRef}
+                    id="add-category-panel"
+                    className="relative z-10 w-full max-w-sm rounded-3xl border px-4 py-3 text-white shadow-2xl backdrop-blur"
+                    style={{
+                      background: `linear-gradient(150deg, ${withAlpha(activeColor, 0.35)}, ${withAlpha(
+                        activeColor,
+                        0.08
+                      )})`,
+                      borderColor: withAlpha(activeColor, 0.55),
+                      boxShadow: `0 25px 45px ${withAlpha("#0f172a", 0.55)}, 0 12px 30px ${withAlpha(
+                        activeColor,
+                        0.35
+                      )}`,
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
+                        New category
                       </p>
-                      <div className="flex items-center justify-center">
+                      <p className="text-base font-semibold">Style & name</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddCategoryMenuOpen(false)}
+                      className="rounded-full p-1 text-white/70 transition hover:text-white"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="mt-3 space-y-4">
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,4fr)] gap-3">
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                          Emoji
+                        </p>
+                        <div className="flex items-center justify-center">
+                          <input
+                            type="text"
+                            value={newCategoryEmoji}
+                            onChange={(event) => setNewCategoryEmoji(event.target.value)}
+                            maxLength={4}
+                            className="aspect-square h-10 w-full max-w-[64px] rounded-[18px] border border-white/20 bg-white/5 px-3 text-center text-lg text-white placeholder-transparent transition focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                            aria-label="Choose an emoji for the category"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="category-name"
+                          className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70"
+                        >
+                          Name
+                        </label>
                         <input
+                          ref={addCategoryNameRef}
+                          id="category-name"
                           type="text"
-                          value={newCategoryEmoji}
-                          onChange={(event) => setNewCategoryEmoji(event.target.value)}
-                          maxLength={4}
-                          className="aspect-square h-10 w-full max-w-[64px] rounded-[18px] border border-white/20 bg-white/5 px-3 text-center text-lg text-white placeholder-transparent transition focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
-                          aria-label="Choose an emoji for the category"
+                          value={newCategoryName}
+                          onChange={(event) => setNewCategoryName(event.target.value)}
+                          placeholder="Example: Flow, Business, Studio"
+                          maxLength={36}
+                          className="w-full rounded-2xl border border-white/20 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/50 transition focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
                         />
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <label
-                        htmlFor="category-name"
-                        className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70"
-                      >
-                        Name
-                      </label>
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                        Color
+                      </p>
                       <input
-                        ref={addCategoryNameRef}
-                        id="category-name"
-                        type="text"
-                        value={newCategoryName}
-                        onChange={(event) => setNewCategoryName(event.target.value)}
-                        placeholder="Example: Flow, Business, Studio"
-                        maxLength={36}
-                        className="w-full rounded-2xl border border-white/20 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/50 transition focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                        type="color"
+                        value={newCategoryColor}
+                        onChange={(event) => setNewCategoryColor(event.target.value)}
+                        className="h-10 w-10 cursor-pointer rounded-xl border border-white/40 p-0 transition"
+                        aria-label="Pick a color for the new category"
                       />
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">
-                      Color
-                    </p>
-                    <input
-                      type="color"
-                      value={newCategoryColor}
-                      onChange={(event) => setNewCategoryColor(event.target.value)}
-                      className="h-10 w-10 cursor-pointer rounded-xl border border-white/40 p-0 transition"
-                      aria-label="Pick a color for the new category"
-                    />
+                  <div className="mt-4 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsAddCategoryMenuOpen(false)}
+                      className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/60 transition hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCreateCategory}
+                      disabled={isCreatingCategory || newCategoryName.trim().length === 0}
+                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] transition ${
+                        isCreatingCategory || newCategoryName.trim().length === 0
+                          ? "cursor-not-allowed bg-white/20 text-white/60"
+                          : "bg-white text-slate-900 shadow-lg shadow-white/40 hover:bg-white/90"
+                      }`}
+                    >
+                      <Plus
+                        className={`h-4 w-4 ${
+                          isCreateCategoryDisabled ? "text-white/60" : "text-slate-900"
+                        }`}
+                      />
+                      Create category
+                    </button>
                   </div>
                 </div>
-                <div className="mt-4 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddCategoryMenuOpen(false)}
-                    className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/60 transition hover:text-white"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCreateCategory}
-                    disabled={isCreatingCategory || newCategoryName.trim().length === 0}
-                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] transition ${
-                      isCreatingCategory || newCategoryName.trim().length === 0
-                        ? "cursor-not-allowed bg-white/20 text-white/60"
-                        : "bg-white text-slate-900 shadow-lg shadow-white/40 hover:bg-white/90"
-                    }`}
-                  >
-                    <Plus
-                      className={`h-4 w-4 ${
-                        isCreateCategoryDisabled ? "text-white/60" : "text-slate-900"
-                      }`}
-                    />
-                    Create category
-                  </button>
-                </div>
               </div>
-            </div>
-            )}
-          </>
-        )}
+              )}
+            </>
+          )}
+        </div>
       </div>
-    </div>
+      <SkillDrawer
+        open={skillDrawerOpen}
+        onClose={() => setSkillDrawerOpen(false)}
+        onAdd={handleAddSkill}
+        categories={drawerCategories}
+        monuments={monuments}
+        onAddCategory={handleAddDrawerCategory}
+      />
+    </>
   );
 }
