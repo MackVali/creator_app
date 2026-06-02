@@ -10,6 +10,7 @@ import {
   type FormEvent,
   type PointerEvent,
   type ReactNode,
+  type TouchEvent,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -238,6 +239,17 @@ const offerTypeOptions = [
 const PULL_EXIT_THRESHOLD_PX = 56;
 const PULL_REFRESH_THRESHOLD_PX = 72;
 const PULL_REFRESH_MAX_OFFSET_PX = 96;
+const PULL_REFRESH_HOLD_OFFSET_PX = 46;
+const PULL_REFRESH_AXIS_SLOP_PX = 6;
+
+type PullRefreshAxis = "pending" | "vertical" | "horizontal";
+
+type PullRefreshTouchGesture = {
+  startX: number;
+  startY: number;
+  active: boolean;
+  axis: PullRefreshAxis;
+};
 
 function isInteractivePullTarget(target: EventTarget | null) {
   return (
@@ -248,6 +260,23 @@ function isInteractivePullTarget(target: EventTarget | null) {
       ),
     )
   );
+}
+
+function getPageScrollTop() {
+  if (typeof window === "undefined") {
+    return 0;
+  }
+
+  return Math.max(
+    window.scrollY,
+    document.scrollingElement?.scrollTop ?? 0,
+    document.documentElement.scrollTop,
+    document.body.scrollTop,
+  );
+}
+
+function getPullRefreshOffset(pullDistance: number) {
+  return Math.min(PULL_REFRESH_MAX_OFFSET_PX, pullDistance * 0.58);
 }
 
 type PullRefreshStatus = "idle" | "pulling" | "ready" | "refreshing";
@@ -3809,8 +3838,16 @@ export function CommandCirclesSection({
     useState<PullRefreshStatus>("idle");
   const previousFocus = useRef<HTMLElement | null>(null);
   const pullRefreshStartYRef = useRef<number | null>(null);
+  const pullRefreshStartXRef = useRef<number | null>(null);
   const pullRefreshPointerIdRef = useRef<number | null>(null);
   const pullRefreshActiveRef = useRef(false);
+  const pullRefreshAxisRef = useRef<PullRefreshAxis>("pending");
+  const pullRefreshTouchRef = useRef<PullRefreshTouchGesture>({
+    startX: 0,
+    startY: 0,
+    active: false,
+    axis: "pending",
+  });
   const pullRefreshOffsetRef = useRef(0);
 
   const activeCircle =
@@ -3902,8 +3939,16 @@ export function CommandCirclesSection({
 
   const resetPullRefreshGesture = useCallback(() => {
     pullRefreshStartYRef.current = null;
+    pullRefreshStartXRef.current = null;
     pullRefreshPointerIdRef.current = null;
     pullRefreshActiveRef.current = false;
+    pullRefreshAxisRef.current = "pending";
+    pullRefreshTouchRef.current = {
+      startX: 0,
+      startY: 0,
+      active: false,
+      axis: "pending",
+    };
 
     if (!isPullRefreshing) {
       pullRefreshOffsetRef.current = 0;
@@ -3915,8 +3960,8 @@ export function CommandCirclesSection({
   const runPullRefresh = useCallback(async () => {
     setIsPullRefreshing(true);
     setPullRefreshStatus("refreshing");
-    pullRefreshOffsetRef.current = PULL_REFRESH_THRESHOLD_PX;
-    setPullRefreshOffset(PULL_REFRESH_THRESHOLD_PX);
+    pullRefreshOffsetRef.current = PULL_REFRESH_HOLD_OFFSET_PX;
+    setPullRefreshOffset(PULL_REFRESH_HOLD_OFFSET_PX);
 
     try {
       await Promise.all([loadCircles(), loadIncomingOffers()]);
@@ -3928,69 +3973,206 @@ export function CommandCirclesSection({
     }
   }, [loadCircles, loadIncomingOffers]);
 
-  const handlePullRefreshStart = useCallback(
-    (event: PointerEvent<HTMLElement>) => {
+  const canStartPullRefresh = useCallback(
+    (target: EventTarget | null) =>
+      activeCircleId === null &&
+      !isPullRefreshing &&
+      getPageScrollTop() <= 2 &&
+      !isInteractivePullTarget(target),
+    [activeCircleId, isPullRefreshing],
+  );
+
+  const updatePullRefreshPull = useCallback((pullDistance: number) => {
+    const nextOffset = getPullRefreshOffset(pullDistance);
+
+    pullRefreshOffsetRef.current = nextOffset;
+    setPullRefreshOffset(nextOffset);
+    setPullRefreshStatus(
+      nextOffset >= PULL_REFRESH_THRESHOLD_PX ? "ready" : "pulling",
+    );
+  }, []);
+
+  const finishPullRefreshGesture = useCallback(() => {
+    const shouldRefresh =
+      activeCircleId === null &&
+      !isPullRefreshing &&
+      getPageScrollTop() <= 2 &&
+      pullRefreshOffsetRef.current >= PULL_REFRESH_THRESHOLD_PX;
+
+    pullRefreshStartYRef.current = null;
+    pullRefreshStartXRef.current = null;
+    pullRefreshPointerIdRef.current = null;
+    pullRefreshActiveRef.current = false;
+    pullRefreshAxisRef.current = "pending";
+    pullRefreshTouchRef.current = {
+      startX: 0,
+      startY: 0,
+      active: false,
+      axis: "pending",
+    };
+
+    if (shouldRefresh) {
+      void runPullRefresh();
+      return;
+    }
+
+    pullRefreshOffsetRef.current = 0;
+    setPullRefreshOffset(0);
+    setPullRefreshStatus("idle");
+  }, [activeCircleId, isPullRefreshing, runPullRefresh]);
+
+  const handlePullRefreshTouchStart = useCallback(
+    (event: TouchEvent<HTMLElement>) => {
+      const touch = event.touches[0];
+
       if (
-        activeCircleId ||
-        isPullRefreshing ||
-        event.pointerType !== "touch" ||
-        window.scrollY > 2 ||
-        isInteractivePullTarget(event.target)
+        !touch ||
+        event.touches.length !== 1 ||
+        !canStartPullRefresh(event.target)
       ) {
         resetPullRefreshGesture();
         return;
       }
 
+      pullRefreshTouchRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        active: true,
+        axis: "pending",
+      };
+    },
+    [canStartPullRefresh, resetPullRefreshGesture],
+  );
+
+  const handlePullRefreshTouchMove = useCallback(
+    (event: TouchEvent<HTMLElement>) => {
+      const gesture = pullRefreshTouchRef.current;
+      const touch = event.touches[0];
+
+      if (!gesture.active || !touch || activeCircleId || isPullRefreshing) {
+        return;
+      }
+
+      const deltaY = touch.clientY - gesture.startY;
+      const deltaX = touch.clientX - gesture.startX;
+      const absDeltaY = Math.abs(deltaY);
+      const absDeltaX = Math.abs(deltaX);
+
+      if (gesture.axis === "pending") {
+        if (
+          absDeltaY < PULL_REFRESH_AXIS_SLOP_PX &&
+          absDeltaX < PULL_REFRESH_AXIS_SLOP_PX
+        ) {
+          return;
+        }
+
+        gesture.axis =
+          absDeltaY > absDeltaX * 1.25 ? "vertical" : "horizontal";
+      }
+
+      if (
+        gesture.axis !== "vertical" ||
+        deltaY <= 0 ||
+        getPageScrollTop() > 2
+      ) {
+        resetPullRefreshGesture();
+        return;
+      }
+
+      event.preventDefault();
+      updatePullRefreshPull(deltaY);
+    },
+    [
+      activeCircleId,
+      isPullRefreshing,
+      resetPullRefreshGesture,
+      updatePullRefreshPull,
+    ],
+  );
+
+  const handlePullRefreshTouchEnd = useCallback(() => {
+    if (!pullRefreshTouchRef.current.active) {
+      resetPullRefreshGesture();
+      return;
+    }
+
+    finishPullRefreshGesture();
+  }, [finishPullRefreshGesture, resetPullRefreshGesture]);
+
+  const handlePullRefreshStart = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (
+        event.pointerType === "touch" ||
+        (event.pointerType !== "mouse" && event.pointerType !== "pen") ||
+        !canStartPullRefresh(event.target)
+      ) {
+        resetPullRefreshGesture();
+        return;
+      }
+
+      pullRefreshStartXRef.current = event.clientX;
       pullRefreshStartYRef.current = event.clientY;
       pullRefreshPointerIdRef.current = event.pointerId;
       pullRefreshActiveRef.current = true;
+      pullRefreshAxisRef.current = "pending";
       event.currentTarget.setPointerCapture(event.pointerId);
-      setPullRefreshStatus("pulling");
     },
-    [activeCircleId, isPullRefreshing, resetPullRefreshGesture],
+    [canStartPullRefresh, resetPullRefreshGesture],
   );
 
   const handlePullRefreshMove = useCallback(
     (event: PointerEvent<HTMLElement>) => {
       const startY = pullRefreshStartYRef.current;
+      const startX = pullRefreshStartXRef.current;
 
       if (
         activeCircleId ||
         isPullRefreshing ||
         !pullRefreshActiveRef.current ||
         startY === null ||
+        startX === null ||
         pullRefreshPointerIdRef.current !== event.pointerId
       ) {
         return;
       }
 
       const pullDistance = event.clientY - startY;
+      const horizontalDistance = event.clientX - startX;
+      const absPullDistance = Math.abs(pullDistance);
+      const absHorizontalDistance = Math.abs(horizontalDistance);
 
-      if (pullDistance <= 0) {
-        pullRefreshOffsetRef.current = 0;
-        setPullRefreshOffset(0);
-        setPullRefreshStatus("pulling");
-        return;
+      if (pullRefreshAxisRef.current === "pending") {
+        if (
+          absPullDistance < PULL_REFRESH_AXIS_SLOP_PX &&
+          absHorizontalDistance < PULL_REFRESH_AXIS_SLOP_PX
+        ) {
+          return;
+        }
+
+        pullRefreshAxisRef.current =
+          absPullDistance > absHorizontalDistance * 1.25
+            ? "vertical"
+            : "horizontal";
       }
 
-      if (window.scrollY > 2) {
+      if (
+        pullRefreshAxisRef.current !== "vertical" ||
+        pullDistance <= 0 ||
+        getPageScrollTop() > 2
+      ) {
         resetPullRefreshGesture();
         return;
       }
 
       event.preventDefault();
-
-      const nextOffset = Math.min(
-        PULL_REFRESH_MAX_OFFSET_PX,
-        pullDistance * 0.58,
-      );
-      pullRefreshOffsetRef.current = nextOffset;
-      setPullRefreshOffset(nextOffset);
-      setPullRefreshStatus(
-        nextOffset >= PULL_REFRESH_THRESHOLD_PX ? "ready" : "pulling",
-      );
+      updatePullRefreshPull(pullDistance);
     },
-    [activeCircleId, isPullRefreshing, resetPullRefreshGesture],
+    [
+      activeCircleId,
+      isPullRefreshing,
+      resetPullRefreshGesture,
+      updatePullRefreshPull,
+    ],
   );
 
   const handlePullRefreshEnd = useCallback(
@@ -4003,35 +4185,13 @@ export function CommandCirclesSection({
         return;
       }
 
-      const shouldRefresh =
-        activeCircleId === null &&
-        !isPullRefreshing &&
-        window.scrollY <= 2 &&
-        pullRefreshOffsetRef.current >= PULL_REFRESH_THRESHOLD_PX;
-
-      pullRefreshStartYRef.current = null;
-      pullRefreshPointerIdRef.current = null;
-      pullRefreshActiveRef.current = false;
-
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
 
-      if (shouldRefresh) {
-        void runPullRefresh();
-        return;
-      }
-
-      pullRefreshOffsetRef.current = 0;
-      setPullRefreshOffset(0);
-      setPullRefreshStatus("idle");
+      finishPullRefreshGesture();
     },
-    [
-      activeCircleId,
-      isPullRefreshing,
-      resetPullRefreshGesture,
-      runPullRefresh,
-    ],
+    [finishPullRefreshGesture, resetPullRefreshGesture],
   );
 
   const handleOfferResponse = useCallback(
@@ -4152,7 +4312,7 @@ export function CommandCirclesSection({
     !isPullRefreshing &&
     (pullRefreshStatus === "pulling" || pullRefreshStatus === "ready");
   const pullRefreshContentY = isPullRefreshing
-    ? 46
+    ? PULL_REFRESH_HOLD_OFFSET_PX
     : Math.min(72, pullRefreshOffset * 0.72);
   const pullRefreshContentTransition = isPullRefreshDragging
     ? { duration: 0 }
@@ -4160,12 +4320,30 @@ export function CommandCirclesSection({
 
   return (
     <section
-      className={cn("relative text-white", className)}
+      className={cn("relative overscroll-contain text-white", className)}
+      onTouchStart={handlePullRefreshTouchStart}
+      onTouchMove={handlePullRefreshTouchMove}
+      onTouchEnd={handlePullRefreshTouchEnd}
+      onTouchCancel={handlePullRefreshTouchEnd}
       onPointerDown={handlePullRefreshStart}
       onPointerMove={handlePullRefreshMove}
       onPointerUp={handlePullRefreshEnd}
       onPointerCancel={handlePullRefreshEnd}
     >
+      <motion.div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 z-0 h-28 bg-gradient-to-b from-black via-zinc-950/95 to-transparent"
+        initial={false}
+        animate={{
+          opacity: isPullRefreshVisible ? 1 : 0,
+          scaleY: isPullRefreshVisible
+            ? Math.max(0.45, Math.min(1, pullRefreshOffset / 72))
+            : 0.35,
+        }}
+        style={{ originY: 0 }}
+        transition={pullRefreshContentTransition}
+      />
+
       <motion.div
         aria-hidden={!isPullRefreshVisible}
         className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center"
