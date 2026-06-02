@@ -1007,7 +1007,10 @@ function GoalCardImpl({
                       document
                         .getElementById(`dropdown-${goal.id}`)
                         ?.classList.add("hidden");
-                      onEdit?.();
+                      onClose();
+                window.requestAnimationFrame(() => {
+                  onEdit?.();
+                });
                     }}
                   >
                     Edit
