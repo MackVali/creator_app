@@ -213,8 +213,14 @@ function computeHabitDueStatus(
   });
 
   if (todayEvaluation.isDue) {
-    return { label: "DUE", rank: 0 };
-  }
+      const dueStartMs = todayEvaluation.dueStart?.getTime();
+      const isOverdue =
+        typeof dueStartMs === "number" &&
+        Number.isFinite(dueStartMs) &&
+        today.getTime() - dueStartMs >= MS_PER_DAY;
+
+      return { label: isOverdue ? "OVERDUE" : "DUE", rank: 0 };
+    }
 
   for (let dayOffset = 1; dayOffset <= MAX_LOOKAHEAD_DAYS; dayOffset += 1) {
     const futureDate = new Date(today.getTime() + dayOffset * MS_PER_DAY);
@@ -1546,7 +1552,7 @@ export default function SkillDetailPage() {
                           >
                             {showStreakBadge ? (
                               <span
-                                className="pointer-events-none absolute right-2 top-2 z-[3] flex items-center gap-0.5 rounded-full border border-white/10 bg-black/20 px-1.5 py-[2px] text-[10px] font-semibold leading-tight text-amber-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
+                                className="pointer-events-none absolute -right-0.5 -top-0.5 z-[8] flex items-center gap-0.5 text-[10px] font-semibold leading-tight text-amber-100/95"
                                 aria-label={`${streakDays} habit streak`}
                               >
                                 <FlameEmber
@@ -1557,8 +1563,8 @@ export default function SkillDetailPage() {
                                         ? "MEDIUM"
                                         : "LOW"
                                   }
-                                  size="xs"
-                                  className="drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
+                                  size="sm"
+                                  className="scale-90 drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
                                 />
                                 <span className="tracking-normal">
                                   {streakLabel}
@@ -1588,7 +1594,7 @@ export default function SkillDetailPage() {
                               <div className="flex w-full min-w-0 flex-col items-center gap-1">
                                 <span
                                   className={clsx(
-                                    "max-w-full truncate rounded-full border px-1.5 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.12em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+                                    "w-fit max-w-none whitespace-nowrap rounded-full border px-2 py-[3px] text-[8px] font-semibold uppercase leading-none tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
                                     habitPillClass
                                   )}
                                 >

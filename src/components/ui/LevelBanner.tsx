@@ -50,13 +50,13 @@ export function LevelBanner({ className }: LevelBannerProps) {
   return (
     <div
       className={cn(
-        "card relative mx-4 mt-4 overflow-hidden p-4",
-        "border border-white/10 bg-black/60",
+        "card relative mx-4 mt-4 overflow-hidden p-4 shadow-[0_20px_42px_-28px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.045)]",
+        "border border-white/10 bg-[#0A0B0F]/88",
         className,
       )}
       aria-live="polite"
     >
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-zinc-500/20 via-zinc-400/10 to-zinc-500/20 blur-2xl" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.045),transparent_32%,rgba(0,0,0,0.28)_78%)]" />
       <div className="relative z-[1] mb-4 flex flex-wrap items-center gap-3 text-white">
         <span
           role="img"

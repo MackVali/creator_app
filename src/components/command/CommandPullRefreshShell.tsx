@@ -21,24 +21,9 @@ const PULL_REFRESH_MAX_OFFSET_PX = 86;
 const PULL_REFRESH_HOLD_OFFSET_PX = 48;
 const PULL_REFRESH_AXIS_SLOP_PX = 4;
 const PULL_REFRESH_SCROLL_TOP_TOLERANCE_PX = 8;
-const PULL_REFRESH_BLOCKED_MARKER_MS = 900;
 
 type PullRefreshStatus = "idle" | "pulling" | "ready" | "refreshing";
 type PullRefreshAxis = "pending" | "vertical" | "horizontal";
-type PullDebugMarker =
-  | "touch start"
-  | "blocked outside shell"
-  | "blocked detail"
-  | "blocked refreshing"
-  | "blocked not top"
-  | "blocked interactive"
-  | "blocked multitouch"
-  | "blocked horizontal"
-  | "blocked upward"
-  | "pull detected"
-  | "ready"
-  | "refreshing"
-  | null;
 
 type TouchGesture = {
   active: boolean;
@@ -138,9 +123,6 @@ export function CommandPullRefreshShell({
   const rootRef = useRef<HTMLElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const offsetRef = useRef(0);
-  const debugMarkerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   const gestureRef = useRef<TouchGesture>({
     active: false,
     startX: 0,
@@ -149,7 +131,6 @@ export function CommandPullRefreshShell({
   });
   const [offset, setOffset] = useState(0);
   const [status, setStatus] = useState<PullRefreshStatus>("idle");
-  const [debugMarker, setDebugMarker] = useState<PullDebugMarker>(null);
 
   const hasWrappedContent = children !== undefined;
   const isRefreshing = status === "refreshing";
@@ -181,67 +162,22 @@ export function CommandPullRefreshShell({
     };
   }, [lockDocumentScroll]);
 
-  useEffect(() => {
-    return () => {
-      if (debugMarkerTimeoutRef.current) {
-        clearTimeout(debugMarkerTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const showDebugMarker = useCallback(
-    (marker: PullDebugMarker, clearAfterMs?: number) => {
-      if (debugMarkerTimeoutRef.current) {
-        clearTimeout(debugMarkerTimeoutRef.current);
-        debugMarkerTimeoutRef.current = null;
-      }
-
-      setDebugMarker(marker);
-
-      if (clearAfterMs) {
-        debugMarkerTimeoutRef.current = setTimeout(() => {
-          setDebugMarker(null);
-          debugMarkerTimeoutRef.current = null;
-        }, clearAfterMs);
-      }
-    },
-    [],
-  );
-
-  const showBlockedMarker = useCallback(
-    (
-      marker: Exclude<
-        PullDebugMarker,
-        "touch start" | "pull detected" | "ready" | "refreshing" | null
-      >,
-    ) => {
-      showDebugMarker(marker, PULL_REFRESH_BLOCKED_MARKER_MS);
-    },
-    [showDebugMarker],
-  );
-
   const isTouchInsideShell = useCallback((target: EventTarget | null) => {
     const root = rootRef.current;
 
     return Boolean(root && target instanceof Node && root.contains(target));
   }, []);
 
-  const resetGesture = useCallback(
-    (clearDebugMarker = true) => {
-      gestureRef.current.active = false;
-      gestureRef.current.axis = "pending";
+  const resetGesture = useCallback(() => {
+    gestureRef.current.active = false;
+    gestureRef.current.axis = "pending";
 
-      if (!isRefreshing) {
-        offsetRef.current = 0;
-        setOffset(0);
-        setStatus("idle");
-        if (clearDebugMarker) {
-          showDebugMarker(null);
-        }
-      }
-    },
-    [isRefreshing, showDebugMarker],
-  );
+    if (!isRefreshing) {
+      offsetRef.current = 0;
+      setOffset(0);
+      setStatus("idle");
+    }
+  }, [isRefreshing]);
 
   const updatePull = useCallback((deltaY: number) => {
     const nextOffset = getPullOffset(deltaY);
@@ -254,17 +190,14 @@ export function CommandPullRefreshShell({
 
     if (nextOffset >= PULL_REFRESH_THRESHOLD_PX) {
       setStatus("ready");
-      showDebugMarker("ready");
       return;
     }
 
     setStatus("pulling");
-    showDebugMarker("pull detected");
-  }, [showDebugMarker]);
+  }, []);
 
   const runRefresh = useCallback(async () => {
     setStatus("refreshing");
-    showDebugMarker("refreshing");
     offsetRef.current = PULL_REFRESH_HOLD_OFFSET_PX;
     setOffset(PULL_REFRESH_HOLD_OFFSET_PX);
 
@@ -278,9 +211,8 @@ export function CommandPullRefreshShell({
       offsetRef.current = 0;
       setOffset(0);
       setStatus("idle");
-      showDebugMarker(null);
     }
-  }, [commandRef, onRefresh, showDebugMarker]);
+  }, [commandRef, onRefresh]);
 
   const finishGesture = useCallback(() => {
     const shouldRefresh =
@@ -299,49 +231,40 @@ export function CommandPullRefreshShell({
     offsetRef.current = 0;
     setOffset(0);
     setStatus("idle");
-    showDebugMarker(null);
-  }, [commandRef, runRefresh, showDebugMarker]);
+  }, [commandRef, runRefresh]);
 
   const handleTouchStart = useCallback(
     (event: TouchEvent) => {
       if (!isTouchInsideShell(event.target)) {
-        showBlockedMarker("blocked outside shell");
-        resetGesture(false);
+        resetGesture();
         return;
       }
-
-      showDebugMarker("touch start");
 
       const touch = event.touches[0];
       const scrollContainer = scrollContainerRef.current;
 
       if (!touch || event.touches.length !== 1) {
-        showBlockedMarker("blocked multitouch");
-        resetGesture(false);
+        resetGesture();
         return;
       }
 
       if (isRefreshing) {
-        showBlockedMarker("blocked refreshing");
-        resetGesture(false);
+        resetGesture();
         return;
       }
 
       if (commandRef.current?.isDetailOpen()) {
-        showBlockedMarker("blocked detail");
-        resetGesture(false);
+        resetGesture();
         return;
       }
 
       if (!isAtScrollTop(scrollContainer, rootRef.current, event.target)) {
-        showBlockedMarker("blocked not top");
-        resetGesture(false);
+        resetGesture();
         return;
       }
 
       if (isInteractivePullTarget(event.target)) {
-        showBlockedMarker("blocked interactive");
-        resetGesture(false);
+        resetGesture();
         return;
       }
 
@@ -352,22 +275,14 @@ export function CommandPullRefreshShell({
         axis: "pending",
       };
     },
-    [
-      commandRef,
-      isRefreshing,
-      isTouchInsideShell,
-      resetGesture,
-      showBlockedMarker,
-      showDebugMarker,
-    ],
+    [commandRef, isRefreshing, isTouchInsideShell, resetGesture],
   );
 
   const handleTouchMove = useCallback(
     (event: TouchEvent) => {
       if (!isTouchInsideShell(event.target)) {
         if (gestureRef.current.active) {
-          showBlockedMarker("blocked outside shell");
-          resetGesture(false);
+          resetGesture();
         }
         return;
       }
@@ -381,14 +296,12 @@ export function CommandPullRefreshShell({
       }
 
       if (!touch || event.touches.length !== 1) {
-        showBlockedMarker("blocked multitouch");
-        resetGesture(false);
+        resetGesture();
         return;
       }
 
       if (isRefreshing) {
-        showBlockedMarker("blocked refreshing");
-        resetGesture(false);
+        resetGesture();
         return;
       }
 
@@ -410,20 +323,17 @@ export function CommandPullRefreshShell({
       }
 
       if (gesture.axis !== "vertical") {
-        showBlockedMarker("blocked horizontal");
-        resetGesture(false);
+        resetGesture();
         return;
       }
 
       if (deltaY <= 0) {
-        showBlockedMarker("blocked upward");
-        resetGesture(false);
+        resetGesture();
         return;
       }
 
       if (commandRef.current?.isDetailOpen()) {
-        showBlockedMarker("blocked detail");
-        resetGesture(false);
+        resetGesture();
         return;
       }
 
@@ -435,8 +345,7 @@ export function CommandPullRefreshShell({
       }
 
       if (!isAtScrollTop(scrollContainer, rootRef.current, event.target)) {
-        showBlockedMarker("blocked not top");
-        resetGesture(false);
+        resetGesture();
         return;
       }
 
@@ -451,15 +360,13 @@ export function CommandPullRefreshShell({
       isRefreshing,
       isTouchInsideShell,
       resetGesture,
-      showBlockedMarker,
       updatePull,
     ],
   );
 
   const handleTouchEnd = useCallback((event: TouchEvent) => {
     if (!isTouchInsideShell(event.target) && gestureRef.current.active) {
-      showBlockedMarker("blocked outside shell");
-      resetGesture(false);
+      resetGesture();
       return;
     }
 
@@ -468,7 +375,7 @@ export function CommandPullRefreshShell({
     }
 
     finishGesture();
-  }, [finishGesture, isTouchInsideShell, resetGesture, showBlockedMarker]);
+  }, [finishGesture, isTouchInsideShell, resetGesture]);
 
   useEffect(() => {
     if (!rootRef.current) {
@@ -616,34 +523,6 @@ export function CommandPullRefreshShell({
             <CommandCirclesSection ref={fallbackCommandRef} />
           )}
         </motion.div>
-      </div>
-
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-30">
-        {/* TEMP PTR MOUNT MARKER. */}
-        <div className="pointer-events-auto absolute left-2 top-2 flex max-w-[calc(100%-1rem)] items-center gap-2">
-          <div className="rounded bg-emerald-500 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-normal text-black shadow-lg shadow-black/30">
-            PTR SHELL MOUNTED
-          </div>
-
-          {/* TEMP PTR MANUAL TEST. */}
-          <button
-            type="button"
-            className="rounded bg-white px-1.5 py-0.5 text-[10px] font-black uppercase tracking-normal text-black shadow-lg shadow-black/30 disabled:opacity-60"
-            disabled={isRefreshing}
-            onClick={() => {
-              void runRefresh();
-            }}
-          >
-            TEST REFRESH
-          </button>
-        </div>
-
-        {/* TEMP PTR DEBUG MARKER. */}
-        {debugMarker ? (
-          <div className="absolute left-2 top-8 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-white/70">
-            {debugMarker}
-          </div>
-        ) : null}
       </div>
     </section>
   );
