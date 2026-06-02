@@ -1,4 +1,4 @@
-import { CommandCirclesSection } from "@/components/command/CommandCirclesSection";
+import { CommandPullRefreshShell } from "@/components/command/CommandPullRefreshShell";
 import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import { getSupabaseServer } from "@/lib/supabase";
 import { cookies } from "next/headers";
@@ -23,7 +23,7 @@ export default async function CommandPage() {
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-4">
-      <CommandCirclesSection />
+      <CommandPullRefreshShell />
     </main>
   );
 }
