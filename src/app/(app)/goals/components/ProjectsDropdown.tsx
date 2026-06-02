@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, type PointerEvent } from "react";
+import { Plus } from "lucide-react";
 import { ProjectRow, type ProjectCardMorphOrigin } from "./ProjectRow";
 import type { Project } from "../types";
 import { Progress } from "@/components/ui/Progress";
@@ -109,22 +110,34 @@ export function ProjectsDropdown({
             No projects linked yet. Head to Projects to tether the first track.
           </div>
         )}
-        <button
-          type="button"
-          onClick={(event) => {
-            onAddProject?.(event.currentTarget.getBoundingClientRect());
-          }}
-          disabled={addingProject || !onAddProject}
-          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.07] px-3 py-2.5 text-xs font-semibold uppercase tracking-[0.24em] text-white/80 transition hover:border-white/30 hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {addingProject
-            ? projectTasksOnly
-              ? "Adding task"
-              : "Adding project"
-            : projectTasksOnly
-              ? "Add a new task"
-              : "Add a new project"}
-        </button>
+        <div className="pt-1">
+          <button
+            type="button"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onAddProject?.(event.currentTarget.getBoundingClientRect());
+            }}
+            disabled={addingProject || !onAddProject}
+            className="relative flex w-full items-center gap-2 rounded-lg border border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] px-2 py-1.5 text-left text-white transition shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2"
+          >
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/80 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] sm:h-8 sm:w-8">
+              <Plus aria-hidden="true" className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[12px] font-medium leading-tight text-white/84 sm:text-[13px]">
+              {addingProject
+                ? projectTasksOnly
+                  ? "adding TASK"
+                  : "adding PROJECT"
+                : projectTasksOnly
+                  ? "add TASK"
+                  : "add PROJECT"}
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );

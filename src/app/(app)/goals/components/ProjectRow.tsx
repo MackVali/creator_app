@@ -2,6 +2,11 @@
 
 import type React from "react";
 import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+} from "framer-motion";
+import {
   createContext,
   useCallback,
   useContext,
@@ -51,6 +56,28 @@ const MAX_VISIBLE_TASKS = 12;
 const LONG_PRESS_MS = 650;
 const DOUBLE_TAP_MS = 325;
 const SINGLE_TAP_DELAY_MS = 160;
+
+const compactNestedTaskPanelMotion = {
+  hidden: { opacity: 0, height: 0, y: -3 },
+  visible: {
+    opacity: 1,
+    height: "auto",
+    y: 0,
+    transition: {
+      duration: 0.48,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  },
+  exit: {
+    opacity: 0,
+    height: 0,
+    y: -2,
+    transition: {
+      duration: 0.38,
+      ease: [0.4, 0, 0.2, 1],
+    },
+  },
+} as const;
 
 type ProjectRowTaskInteractions = Pick<
   ProjectRowProps,
@@ -149,8 +176,10 @@ export function ProjectRow({
   const onTaskToggleCompletion =
     onTaskToggleCompletionProp ??
     taskInteractionContext.onTaskToggleCompletion;
+  const prefersReducedMotion = useReducedMotion();
+  const isCompactNested = variant === "compactNested";
   const hasTasks = project.tasks.length > 0;
-  const [open, setOpen] = useState(hasTasks);
+  const [open, setOpen] = useState(() => (isCompactNested ? false : hasTasks));
   const toggle = useCallback(() => {
     if (!hasTasks) return;
     setOpen((o) => !o);
@@ -561,25 +590,35 @@ export function ProjectRow({
   const projectStatusLabel = isCompleted ? "Done" : localStatus;
   const projectEnergyLabel =
     project.energyCode?.toString().trim() || project.energy;
-  const isCompactNested = variant === "compactNested";
-  const primaryTextClass = isCompleted ? "text-emerald-50" : "text-white";
+  const primaryTextClass =
+    isCompactNested ? "text-white/84" : isCompleted ? "text-emerald-50" : "text-white";
   const tertiaryTextClass = isCompleted ? "text-emerald-100/65" : "text-white/50";
-  const chevronColorClass = isCompleted ? "text-emerald-100/70" : "text-white/60";
+  const chevronColorClass = isCompactNested
+    ? "text-white/45"
+    : isCompleted
+      ? "text-emerald-100/70"
+      : "text-white/60";
   const overlayGlowClass = isCompleted
     ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(52,211,153,0.35),transparent_55%)]"
     : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
-  const cardSurfaceClass = isCompleted
-    ? "border-emerald-400/55 bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] ring-1 ring-emerald-300/60 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_2px_0_0_rgba(209,250,229,0.22),inset_0_1px_0_rgba(255,255,255,0.12)]"
-    : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)] ring-1 ring-white/8 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)]";
+  const cardSurfaceClass = isCompactNested
+    ? "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04]"
+    : isCompleted
+      ? "border-emerald-400/55 bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] ring-1 ring-emerald-300/60 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_2px_0_0_rgba(209,250,229,0.22),inset_0_1px_0_rgba(255,255,255,0.12)]"
+      : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)] ring-1 ring-white/8 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)]";
   const tasksPanelClass = isCompleted
     ? "border-emerald-100/24 bg-emerald-950/35 ring-emerald-200/20 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-12px_18px_rgba(2,44,34,0.22)]"
     : "border-white/10 bg-[#030407] ring-white/10 text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-12px_18px_rgba(0,0,0,0.18)]";
-  const metaPillClass = isCompleted
-    ? "border-emerald-50/24 bg-emerald-950/14 text-emerald-50/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-    : "border-white/8 bg-white/[0.03] text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]";
-  const identityClass = isCompleted
-    ? "border-emerald-50/28 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
-    : "border-white/12 bg-black/25 text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)]";
+  const metaPillClass = isCompactNested
+    ? "border-white/8 bg-white/[0.03] text-white/42"
+    : isCompleted
+      ? "border-emerald-50/24 bg-emerald-950/14 text-emerald-50/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+      : "border-white/8 bg-white/[0.03] text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]";
+  const identityClass = isCompactNested
+    ? "rounded-lg border-white/10 bg-white/[0.04] text-white/80 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]"
+    : isCompleted
+      ? "rounded-md border-emerald-50/28 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] sm:rounded-lg"
+      : "rounded-md border-white/12 bg-black/25 text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)] sm:rounded-lg";
   const completedTaskRowClass =
     "border-emerald-300/60 bg-[linear-gradient(135deg,rgba(6,78,59,0.96)_0%,rgba(4,120,87,0.9)_48%,rgba(16,185,129,0.84)_100%)] text-emerald-50 ring-1 ring-emerald-200/30 shadow-[0_12px_26px_-16px_rgba(16,185,129,0.72),0_0_22px_rgba(16,185,129,0.14),inset_2px_0_0_rgba(209,250,229,0.24),inset_0_1px_0_rgba(255,255,255,0.14)]";
   const incompleteTaskRowClass =
@@ -592,16 +631,24 @@ export function ProjectRow({
   return (
     <>
       <div
-        className={`relative rounded-lg border px-1.5 py-1.5 transition-transform select-none sm:px-2.5 sm:py-2 ${cardSurfaceClass} ${primaryTextClass} ${
+        className={`relative border transition-transform select-none ${
+          isCompactNested
+            ? "rounded-lg px-2 py-1.5 sm:rounded-xl sm:px-2.5 sm:py-2"
+            : "rounded-lg px-1.5 py-1.5 sm:px-2.5 sm:py-2"
+        } ${cardSurfaceClass} ${primaryTextClass} ${
           completionPending ? "opacity-70" : ""
         }`}
         style={cardAnimationStyle}
       >
+        {!isCompactNested && (
+          <div
+            className={`pointer-events-none absolute inset-0 rounded-lg [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
+          />
+        )}
         <div
-          className={`pointer-events-none absolute inset-0 rounded-lg [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
-        />
-        <div
-          className={`relative z-0 flex w-full items-center gap-1 text-sm select-none sm:gap-2 ${primaryTextClass}`}
+          className={`relative z-0 flex w-full items-center text-sm select-none ${
+            isCompactNested ? "gap-2 sm:gap-2.5" : "gap-1 sm:gap-2"
+          } ${primaryTextClass}`}
         >
           <button
             onClick={handleClick}
@@ -621,24 +668,23 @@ export function ProjectRow({
                 isCompactNested ? "flex-1" : ""
               }`}
             >
-              <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold leading-none sm:h-8 sm:w-8 sm:rounded-lg sm:text-[12px] ${identityClass}`}>
+              <div
+                className={`flex h-7 w-7 shrink-0 items-center justify-center border text-[10px] font-semibold leading-none sm:h-8 sm:w-8 sm:text-[11px] ${identityClass}`}
+              >
                 {displayEmoji}
               </div>
               <div
                 className={`flex min-w-0 ${
-                  isCompactNested ? "flex-1 items-center gap-2" : "flex-col"
+                  isCompactNested ? "flex-1" : "flex-col"
                 }`}
               >
                 <span
-                  className={`text-[12px] font-medium leading-snug sm:text-[13px] ${
+                  className={`text-[12px] font-medium sm:text-[13px] ${
                     isCompactNested ? "min-w-0 flex-1 truncate" : "line-clamp-2 sm:truncate"
-                  }`}
+                  } ${isCompactNested ? "leading-tight text-white/84" : "leading-snug"}`}
                 >
                   {project.name}
                 </span>
-                {isCompactNested && (
-                  <FlameEmber level={flameLevel} size="sm" className="shrink-0" />
-                )}
               </div>
             </div>
             {!isCompactNested && (
@@ -661,7 +707,11 @@ export function ProjectRow({
           {hasTasks && (
             <button
               type="button"
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none sm:h-8 sm:w-8 sm:rounded-lg ${chevronColorClass}`}
+              className={`flex shrink-0 items-center justify-center rounded-md transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none ${
+                isCompactNested
+                  ? "h-5 w-5 sm:h-6 sm:w-6"
+                  : "h-7 w-7 sm:h-8 sm:w-8 sm:rounded-lg"
+              } ${chevronColorClass}`}
               aria-expanded={open}
               aria-controls={`project-${project.id}`}
               aria-label={open ? "Collapse project tasks" : "Expand project tasks"}
@@ -674,8 +724,46 @@ export function ProjectRow({
               />
             </button>
           )}
+          {isCompactNested && typeof projectOrder === "number" && (
+            <span
+              className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${metaPillClass}`}
+            >
+              {projectOrder}
+            </span>
+          )}
         </div>
-        {hasTasks && (
+        {hasTasks && isCompactNested && (
+          <AnimatePresence initial={false}>
+            {open ? (
+              <motion.div
+                id={`project-${project.id}`}
+                className={`relative mt-1.5 overflow-hidden rounded-lg border p-2 ring-1 sm:mt-2 ${tasksPanelClass}`}
+                variants={
+                  prefersReducedMotion ? undefined : compactNestedTaskPanelMotion
+                }
+                initial={prefersReducedMotion ? { opacity: 0 } : "hidden"}
+                animate={prefersReducedMotion ? { opacity: 1 } : "visible"}
+                exit={prefersReducedMotion ? { opacity: 0 } : "exit"}
+                transition={prefersReducedMotion ? { duration: 0.12 } : undefined}
+              >
+                <ProjectTasksList
+                  visibleTasks={visibleTasks}
+                  hiddenCount={hiddenCount}
+                  tertiaryTextClass={tertiaryTextClass}
+                  completedTaskRowClass={completedTaskRowClass}
+                  incompleteTaskRowClass={incompleteTaskRowClass}
+                  completedTaskMarkerClass={completedTaskMarkerClass}
+                  incompleteTaskMarkerClass={incompleteTaskMarkerClass}
+                  onTaskPointerDown={handleTaskPointerDown}
+                  onTaskPointerUp={handleTaskPointerUp}
+                  onTaskPointerCancel={handleTaskPointerCancel}
+                  onTaskClick={handleTaskClick}
+                />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        )}
+        {hasTasks && !isCompactNested && (
           <div
             id={`project-${project.id}`}
             className={`relative mt-1.5 overflow-hidden rounded-lg border ring-1 transition-all duration-200 sm:mt-2 ${
@@ -683,59 +771,19 @@ export function ProjectRow({
             } ${tasksPanelClass}`}
           >
             {open && (
-              <>
-                <div className="pointer-events-none absolute inset-y-3 left-2 w-px bg-white/10" />
-                <div className="relative space-y-1.5" role="list">
-                  {visibleTasks.map((task) => {
-                    const taskCompleted = Boolean(task.completedAt);
-                    return (
-                      <button
-                        type="button"
-                        key={task.id}
-                        className={`flex w-full min-w-0 items-start gap-2 rounded-lg border px-2 py-1.5 text-left text-xs leading-4 ${
-                          taskCompleted
-                            ? completedTaskRowClass
-                            : incompleteTaskRowClass
-                        }`}
-                        role="listitem"
-                        onPointerDown={handleTaskPointerDown}
-                        onPointerUp={(event) => handleTaskPointerUp(event, task)}
-                        onPointerCancel={handleTaskPointerCancel}
-                        onClick={(event) => handleTaskClick(event, task)}
-                      >
-                        <span
-                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold leading-none ${
-                            taskCompleted
-                              ? completedTaskMarkerClass
-                              : incompleteTaskMarkerClass
-                          }`}
-                          aria-hidden="true"
-                        >
-                          {task.skillIcon ?? (
-                            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                          )}
-                        </span>
-                        <span className="min-w-0 flex-1 break-words pr-1">
-                          {task.name}
-                        </span>
-                        <FlameEmber
-                          level={energyCodeToFlameLevel(task.energyCode)}
-                          size="sm"
-                          className="shrink-0"
-                        />
-                      </button>
-                    );
-                  })}
-                  {hiddenCount > 0 && (
-                    <div
-                      className={`rounded-lg border border-white/8 bg-black/20 px-2 py-1.5 text-[11px] ${tertiaryTextClass}`}
-                      role="listitem"
-                    >
-                      +{hiddenCount} more tasks
-                    </div>
-                  )}
-                </div>
-              </>
+              <ProjectTasksList
+                visibleTasks={visibleTasks}
+                hiddenCount={hiddenCount}
+                tertiaryTextClass={tertiaryTextClass}
+                completedTaskRowClass={completedTaskRowClass}
+                incompleteTaskRowClass={incompleteTaskRowClass}
+                completedTaskMarkerClass={completedTaskMarkerClass}
+                incompleteTaskMarkerClass={incompleteTaskMarkerClass}
+                onTaskPointerDown={handleTaskPointerDown}
+                onTaskPointerUp={handleTaskPointerUp}
+                onTaskPointerCancel={handleTaskPointerCancel}
+                onTaskClick={handleTaskClick}
+              />
             )}
           </div>
         )}
@@ -756,6 +804,94 @@ export function ProjectRow({
           }
         }
       `}</style>
+    </>
+  );
+}
+
+interface ProjectTasksListProps {
+  visibleTasks: Task[];
+  hiddenCount: number;
+  tertiaryTextClass: string;
+  completedTaskRowClass: string;
+  incompleteTaskRowClass: string;
+  completedTaskMarkerClass: string;
+  incompleteTaskMarkerClass: string;
+  onTaskPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  onTaskPointerUp: (
+    event: React.PointerEvent<HTMLButtonElement>,
+    task: Task
+  ) => void;
+  onTaskPointerCancel: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  onTaskClick: (
+    event: React.MouseEvent<HTMLButtonElement>,
+    task: Task
+  ) => void;
+}
+
+function ProjectTasksList({
+  visibleTasks,
+  hiddenCount,
+  tertiaryTextClass,
+  completedTaskRowClass,
+  incompleteTaskRowClass,
+  completedTaskMarkerClass,
+  incompleteTaskMarkerClass,
+  onTaskPointerDown,
+  onTaskPointerUp,
+  onTaskPointerCancel,
+  onTaskClick,
+}: ProjectTasksListProps) {
+  return (
+    <>
+      <div className="pointer-events-none absolute inset-y-3 left-2 w-px bg-white/10" />
+      <div className="relative space-y-1.5" role="list">
+        {visibleTasks.map((task) => {
+          const taskCompleted = Boolean(task.completedAt);
+          return (
+            <button
+              type="button"
+              key={task.id}
+              className={`flex w-full min-w-0 items-start gap-2 rounded-lg border px-2 py-1.5 text-left text-xs leading-4 ${
+                taskCompleted ? completedTaskRowClass : incompleteTaskRowClass
+              }`}
+              role="listitem"
+              onPointerDown={onTaskPointerDown}
+              onPointerUp={(event) => onTaskPointerUp(event, task)}
+              onPointerCancel={onTaskPointerCancel}
+              onClick={(event) => onTaskClick(event, task)}
+            >
+              <span
+                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold leading-none ${
+                  taskCompleted
+                    ? completedTaskMarkerClass
+                    : incompleteTaskMarkerClass
+                }`}
+                aria-hidden="true"
+              >
+                {task.skillIcon ?? (
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1 break-words pr-1">
+                {task.name}
+              </span>
+              <FlameEmber
+                level={energyCodeToFlameLevel(task.energyCode)}
+                size="sm"
+                className="shrink-0"
+              />
+            </button>
+          );
+        })}
+        {hiddenCount > 0 && (
+          <div
+            className={`rounded-lg border border-white/8 bg-black/20 px-2 py-1.5 text-[11px] ${tertiaryTextClass}`}
+            role="listitem"
+          >
+            +{hiddenCount} more tasks
+          </div>
+        )}
+      </div>
     </>
   );
 }
