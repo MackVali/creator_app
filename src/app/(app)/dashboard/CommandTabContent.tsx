@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
@@ -19,14 +18,7 @@ export default function CommandTabContent() {
 
       <MonumentContainer />
 
-      <Section
-        title={
-          <Link href="/skills" data-tour="nav-skills">
-            Skills
-          </Link>
-        }
-        className="mt-1 px-4"
-      >
+      <Section title="Skills" className="mt-1 px-4">
         <SkillsCarousel />
       </Section>
 

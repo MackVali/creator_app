@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { Gauge, Target, FolderKanban, CheckSquare2, Repeat, Badge, Landmark, X } from 'lucide-react'
+import { Gauge, Target, FolderKanban, CheckSquare2, Repeat, Landmark, X } from 'lucide-react'
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Gauge },
@@ -14,7 +14,6 @@ const navItems = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/tasks", label: "Tasks", icon: CheckSquare2 },
   { href: "/habits", label: "Habits", icon: Repeat },
-  { href: "/skills", label: "Skills", icon: Badge },
   { href: "/monuments", label: "Monuments", icon: Landmark },
 ]
 

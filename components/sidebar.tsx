@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Gauge, Target, FolderKanban, CheckSquare2, Repeat, Badge, Landmark } from "lucide-react";
+import { Gauge, Target, FolderKanban, CheckSquare2, Repeat, Landmark } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: Gauge },
@@ -11,7 +11,6 @@ const navItems = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/tasks", label: "Tasks", icon: CheckSquare2 },
   { href: "/habits", label: "Habits", icon: Repeat },
-  { href: "/skills", label: "Skills", icon: Badge },
   { href: "/monuments", label: "Monuments", icon: Landmark },
 ];
 
@@ -41,5 +40,4 @@ export function Sidebar() {
     </aside>
   );
 }
-
 

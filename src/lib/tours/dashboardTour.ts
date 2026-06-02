@@ -29,14 +29,6 @@ export const dashboardTourSteps: TourStep[] = [
     },
   },
   {
-    id: "nav-skills",
-    selector: '[data-tour="nav-skills"]',
-    title: "Skills & Categories",
-    body: "Skills map your life areas and categories keep related focus grouped together.",
-    requiresClick: false,
-    allowNext: true,
-  },
-  {
     id: "new-monument",
     selector: '[data-tour="new-monument"]',
     title: "Monuments",

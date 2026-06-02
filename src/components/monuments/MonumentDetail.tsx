@@ -420,7 +420,7 @@ export function MonumentDetail({
     >
       <div
         aria-hidden="true"
-        className="absolute inset-x-0 top-0 z-20 h-16 touch-none sm:hidden"
+        className="absolute inset-x-0 top-0 z-10 h-16 touch-none sm:hidden"
         style={{ touchAction: "none" }}
         onPointerDown={handleTopPullExitStart}
         onPointerMove={handleTopPullExitMove}
@@ -455,7 +455,7 @@ export function MonumentDetail({
             <div className="absolute inset-x-12 -top-16 h-48 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.18),_transparent_70%)] blur-3xl" />
             <div className="absolute bottom-0 right-0 h-56 w-56 translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.06),_transparent_60%)] blur-3xl" />
           </div>
-          <div className="relative flex flex-row gap-4 sm:flex-row sm:items-start sm:gap-6">
+          <div className="relative z-30 flex flex-row gap-4 sm:flex-row sm:items-start sm:gap-6">
             <span
               className="relative flex h-[60px] w-[60px] items-center justify-center rounded-2xl border border-white/10 bg-[#09090b] text-3xl text-white shadow-[0_14px_28px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.08)] sm:h-[72px] sm:w-[72px] sm:text-4xl"
               role="img"

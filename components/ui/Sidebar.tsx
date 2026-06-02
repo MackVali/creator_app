@@ -6,7 +6,6 @@ import {
   FolderOpen, 
   CheckSquare, 
   Repeat, 
-  Zap, 
   Trophy,
   Calendar
 } from 'lucide-react'
@@ -20,7 +19,6 @@ const navigation = [
   { name: 'Projects', href: '/projects', icon: FolderOpen },
   { name: 'Tasks', href: '/tasks', icon: CheckSquare },
   { name: 'Habits', href: '/habits', icon: Repeat },
-  { name: 'Skills', href: '/skills', icon: Zap },
   { name: 'Monuments', href: '/monuments', icon: Trophy },
 ]
 
