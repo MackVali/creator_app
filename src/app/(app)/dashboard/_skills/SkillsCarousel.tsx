@@ -1845,11 +1845,11 @@ export default function SkillsCarousel() {
                     useFiveColumnCategoryPillGrid ? "w-full justify-center" : ""
                   } ${isActive ? "text-slate-100" : "text-slate-300/85 hover:text-slate-100"}`}
                   style={{
-                    backgroundColor: isActive ? withAlpha(chipColor, 0.24) : "rgba(0, 0, 0, 0.65)",
-                    borderColor: isActive ? withAlpha(chipColor, 0.45) : "rgba(148, 163, 184, 0.25)",
+                    backgroundColor: isActive ? withAlpha(chipColor, 0.16) : "rgba(255, 255, 255, 0.045)",
+                    borderColor: isActive ? withAlpha(chipColor, 0.42) : "rgba(255, 255, 255, 0.1)",
                     boxShadow: isActive
-                      ? `0 16px 32px ${withAlpha(chipColor, 0.28)}`
-                      : "0 6px 18px rgba(0, 0, 0, 0.3)",
+                      ? "inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.28)"
+                      : "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.32)",
                   }}
                 >
                   <span
