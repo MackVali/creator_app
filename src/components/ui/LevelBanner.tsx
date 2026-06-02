@@ -67,14 +67,14 @@ export function LevelBanner({ className }: LevelBannerProps) {
         </span>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 text-lg leading-none">{renderedBadges}</div>
-          <span className="font-extrabold text-[18px] tracking-wide text-white">LEVEL {levelLabel}</span>
+          <span className="font-extrabold text-[20px] tracking-wide text-white">LEVEL {levelLabel}</span>
         </div>
         <span className="text-xs font-medium text-white/60">
           {remainingLabel === "--" ? "Loading" : `${remainingLabel} XP to next level`}
         </span>
       </div>
       <div className="relative z-[1]">
-        <div className="h-[12px] w-full overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)] backdrop-blur-sm">
+        <div className="h-[15px] w-full overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.45)] backdrop-blur-sm">
           <motion.div
             className="relative h-full rounded-full border border-white/[0.16] bg-gradient-to-r from-white/55 via-zinc-200/75 to-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-1px_0_rgba(0,0,0,0.22)]"
             initial={{ width: "0%" }}
@@ -83,9 +83,6 @@ export function LevelBanner({ className }: LevelBannerProps) {
           >
             <div className="pointer-events-none absolute inset-x-1 top-[2px] h-[3px] rounded-full bg-white/35" />
           </motion.div>
-        </div>
-        <div className="absolute right-1 -top-6 rounded-full border border-white/10 bg-[#0c0f14] px-2 py-[2px] text-[11px]">
-          {progressLabel}
         </div>
       </div>
     </div>

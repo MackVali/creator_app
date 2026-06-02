@@ -41,6 +41,7 @@ type TouchGesture = {
 
 type CommandPullRefreshShellProps = {
   className?: string;
+  lockDocumentScroll?: boolean;
 };
 
 function isInteractivePullTarget(target: EventTarget | null) {
@@ -64,6 +65,7 @@ function isAtScrollTop(element: HTMLDivElement | null) {
 
 export function CommandPullRefreshShell({
   className,
+  lockDocumentScroll = true,
 }: CommandPullRefreshShellProps) {
   const commandRef = useRef<CommandCirclesSectionHandle | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -86,6 +88,10 @@ export function CommandPullRefreshShell({
   const isVisible = status !== "idle";
 
   useEffect(() => {
+    if (!lockDocumentScroll) {
+      return;
+    }
+
     const html = document.documentElement;
     const body = document.body;
     const previousHtmlOverflow = html.style.overflow;
@@ -104,7 +110,7 @@ export function CommandPullRefreshShell({
       body.style.overflow = previousBodyOverflow;
       body.style.overscrollBehavior = previousBodyOverscrollBehavior;
     };
-  }, []);
+  }, [lockDocumentScroll]);
 
   useEffect(() => {
     return () => {
