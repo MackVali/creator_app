@@ -1009,7 +1009,10 @@ function GoalCardImpl({
                         ?.classList.add("hidden");
                       onClose();
                 window.requestAnimationFrame(() => {
+                  onClose();
+                window.requestAnimationFrame(() => {
                   onEdit?.();
+                });
                 });
                     }}
                   >

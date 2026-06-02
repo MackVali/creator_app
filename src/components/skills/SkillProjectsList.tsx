@@ -1,6 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type TouchEvent,
+  type WheelEvent,
+} from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
@@ -89,6 +99,7 @@ function mapEnergy(energy: { name?: string | null } | string | null | undefined)
 }
 
 type ProjectSection = "active" | "completed";
+type ProjectPanelSwipeAxis = "horizontal" | "vertical" | null;
 type ProjectWithCompletion = Project & {
   completedAt?: string | null;
   completed_at?: string | null;
@@ -275,6 +286,11 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<Goal[]>([]);
   const [projectSection, setProjectSection] = useState<ProjectSection>("active");
+  const [projectPanelHeight, setProjectPanelHeight] = useState<number | null>(null);
+  const [projectPanelDragOffset, setProjectPanelDragOffset] = useState(0);
+  const [projectPanelViewportWidth, setProjectPanelViewportWidth] = useState(0);
+  const [projectPanelTransitionEnabled, setProjectPanelTransitionEnabled] =
+    useState(false);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [monumentOptions, setMonumentOptions] = useState<{ id: string; title: string; emoji: string | null }[]>([]);
@@ -291,11 +307,327 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
   const [taskPriorityInput, setTaskPriorityInput] = useState("NO");
   const [taskFormError, setTaskFormError] = useState<string | null>(null);
   const [taskSaving, setTaskSaving] = useState(false);
+  const projectPanelViewportRef = useRef<HTMLDivElement | null>(null);
+  const activeProjectPanelRef = useRef<HTMLDivElement | null>(null);
+  const completedProjectPanelRef = useRef<HTMLDivElement | null>(null);
+  const loadingProjectPanelRef = useRef<HTMLDivElement | null>(null);
+  const projectPanelWheelLockedRef = useRef(false);
+  const projectPanelWheelCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const projectPanelDragStartRef = useRef<{
+    x: number;
+    y: number;
+    pointerId: number;
+  } | null>(null);
+  const projectPanelTouchRef = useRef<{
+    startX: number;
+    startY: number;
+    deltaX: number;
+    deltaY: number;
+    axis: ProjectPanelSwipeAxis;
+    width: number;
+  } | null>(null);
+  const activeProjectPanelIndex = projectSection === "completed" ? 1 : 0;
+  const projectPanelBaseTransform =
+    projectPanelViewportWidth > 0
+      ? -activeProjectPanelIndex * projectPanelViewportWidth
+      : 0;
+  const projectPanelTrackTransform = Math.max(
+    -projectPanelViewportWidth,
+    Math.min(0, projectPanelBaseTransform + projectPanelDragOffset)
+  );
 
   useEffect(() => {
     setOpenGoalId(null);
     setProjectSection("active");
   }, [skillId]);
+
+  const getProjectPanelElement = useCallback((panel: ProjectSection) => {
+    return panel === "completed"
+      ? completedProjectPanelRef.current
+      : activeProjectPanelRef.current;
+  }, []);
+
+  const getProjectPanelHeight = useCallback(
+    (panel: ProjectSection) => {
+      const panelElement = getProjectPanelElement(panel);
+      return panelElement ? Math.ceil(panelElement.scrollHeight) : null;
+    },
+    [getProjectPanelElement]
+  );
+
+  const getLoadingProjectPanelHeight = useCallback(() => {
+    const panelElement = loadingProjectPanelRef.current;
+    return panelElement ? Math.ceil(panelElement.scrollHeight) : null;
+  }, []);
+
+  const handleProjectPanelChange = useCallback(
+    (panel: ProjectSection) => {
+      const nextHeight = getProjectPanelHeight(panel);
+      if (nextHeight) {
+        setProjectPanelHeight(nextHeight);
+      }
+      setProjectPanelDragOffset(0);
+      setProjectSection(panel);
+    },
+    [getProjectPanelHeight]
+  );
+
+  const measureActiveProjectPanel = useCallback(() => {
+    const nextHeight = loading
+      ? getLoadingProjectPanelHeight()
+      : getProjectPanelHeight(projectSection);
+    if (!nextHeight) return;
+
+    setProjectPanelHeight((currentHeight) =>
+      currentHeight === nextHeight ? currentHeight : nextHeight
+    );
+  }, [
+    getLoadingProjectPanelHeight,
+    getProjectPanelHeight,
+    loading,
+    projectSection,
+  ]);
+
+  useLayoutEffect(() => {
+    const viewportElement = projectPanelViewportRef.current;
+    if (!viewportElement) return;
+
+    const measureViewportWidth = () => {
+      setProjectPanelViewportWidth(viewportElement.clientWidth);
+    };
+
+    measureViewportWidth();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measureViewportWidth);
+    resizeObserver?.observe(viewportElement);
+
+    if (typeof window === "undefined") {
+      return () => {
+        resizeObserver?.disconnect();
+      };
+    }
+
+    window.addEventListener("resize", measureViewportWidth);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureViewportWidth);
+    };
+  }, [loading]);
+
+  useEffect(() => {
+    setProjectPanelDragOffset(0);
+    setProjectPanelTransitionEnabled(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    measureActiveProjectPanel();
+  }, [measureActiveProjectPanel, openGoalId, projects]);
+
+  useEffect(() => {
+    const activePanel = loading
+      ? loadingProjectPanelRef.current
+      : projectSection === "completed"
+        ? completedProjectPanelRef.current
+        : activeProjectPanelRef.current;
+
+    if (!activePanel) return;
+
+    measureActiveProjectPanel();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            measureActiveProjectPanel();
+          });
+    resizeObserver?.observe(activePanel);
+
+    if (typeof window === "undefined") {
+      return () => {
+        resizeObserver?.disconnect();
+      };
+    }
+
+    window.addEventListener("resize", measureActiveProjectPanel);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureActiveProjectPanel);
+    };
+  }, [loading, measureActiveProjectPanel, projectSection]);
+
+  const handleProjectPanelPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType !== "pen" && event.pointerType !== "mouse") {
+        return;
+      }
+      projectPanelDragStartRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        pointerId: event.pointerId,
+      };
+    },
+    []
+  );
+
+  const handleProjectPanelPointerEnd = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const start = projectPanelDragStartRef.current;
+      if (!start || start.pointerId !== event.pointerId) return;
+      projectPanelDragStartRef.current = null;
+
+      const deltaX = event.clientX - start.x;
+      const deltaY = event.clientY - start.y;
+      const horizontalDistance = Math.abs(deltaX);
+
+      if (
+        horizontalDistance < 48 ||
+        horizontalDistance < Math.abs(deltaY) * 1.35
+      ) {
+        return;
+      }
+
+      handleProjectPanelChange(deltaX < 0 ? "completed" : "active");
+    },
+    [handleProjectPanelChange]
+  );
+
+  const resetProjectPanelTouch = useCallback(() => {
+    projectPanelTouchRef.current = null;
+    setProjectPanelDragOffset(0);
+  }, []);
+
+  const handleProjectPanelTouchStart = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      if (event.touches.length !== 1) {
+        resetProjectPanelTouch();
+        return;
+      }
+
+      const touch = event.touches[0];
+      projectPanelTouchRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        deltaX: 0,
+        deltaY: 0,
+        axis: null,
+        width: event.currentTarget.clientWidth,
+      };
+      setProjectPanelDragOffset(0);
+    },
+    [resetProjectPanelTouch]
+  );
+
+  const handleProjectPanelTouchMove = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const gesture = projectPanelTouchRef.current;
+      if (!gesture || event.touches.length !== 1) return;
+
+      const touch = event.touches[0];
+      const deltaX = touch.clientX - gesture.startX;
+      const deltaY = touch.clientY - gesture.startY;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+
+      gesture.deltaX = deltaX;
+      gesture.deltaY = deltaY;
+
+      if (!gesture.axis) {
+        if (absX > 12 && absX > absY * 1.15) {
+          gesture.axis = "horizontal";
+        } else if (absY > 12 && absY > absX * 1.15) {
+          gesture.axis = "vertical";
+        } else {
+          return;
+        }
+      }
+
+      if (gesture.axis !== "horizontal") return;
+
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+
+      const width = gesture.width || event.currentTarget.clientWidth || 1;
+      const baseTransform = -activeProjectPanelIndex * width;
+      const nextTransform = Math.max(
+        -width,
+        Math.min(0, baseTransform + deltaX)
+      );
+      setProjectPanelDragOffset(nextTransform - baseTransform);
+    },
+    [activeProjectPanelIndex]
+  );
+
+  const handleProjectPanelTouchEnd = useCallback(() => {
+    const gesture = projectPanelTouchRef.current;
+    if (!gesture) return;
+
+    projectPanelTouchRef.current = null;
+    setProjectPanelDragOffset(0);
+
+    if (gesture.axis !== "horizontal") return;
+
+    const horizontalDistance = Math.abs(gesture.deltaX);
+    const releaseThreshold = Math.min(45, Math.max(28, gesture.width * 0.2));
+    if (
+      horizontalDistance < releaseThreshold ||
+      horizontalDistance < Math.abs(gesture.deltaY) * 1.15
+    ) {
+      return;
+    }
+
+    if (projectSection === "active" && gesture.deltaX < -releaseThreshold) {
+      handleProjectPanelChange("completed");
+      return;
+    }
+
+    if (projectSection === "completed" && gesture.deltaX > releaseThreshold) {
+      handleProjectPanelChange("active");
+    }
+  }, [handleProjectPanelChange, projectSection]);
+
+  const handleProjectPanelWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      const horizontalDistance = Math.abs(event.deltaX);
+      if (
+        horizontalDistance < 28 ||
+        horizontalDistance <= Math.abs(event.deltaY)
+      ) {
+        return;
+      }
+
+      const nextPanel = event.deltaX < 0 ? "completed" : "active";
+      if (nextPanel === projectSection || projectPanelWheelLockedRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      projectPanelWheelLockedRef.current = true;
+      handleProjectPanelChange(nextPanel);
+
+      if (projectPanelWheelCooldownRef.current) {
+        clearTimeout(projectPanelWheelCooldownRef.current);
+      }
+      projectPanelWheelCooldownRef.current = setTimeout(() => {
+        projectPanelWheelLockedRef.current = false;
+        projectPanelWheelCooldownRef.current = null;
+      }, 650);
+    },
+    [handleProjectPanelChange, projectSection]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (projectPanelWheelCooldownRef.current) {
+        clearTimeout(projectPanelWheelCooldownRef.current);
+      }
+    };
+  }, []);
 
   const decorate = useCallback((goal: Goal) => {
     return {
@@ -1065,13 +1397,19 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     [projects]
   );
 
-  const filteredProjects = useMemo(
-    () =>
-      projects
-        .map((goal) => filterGoalProjectsBySection(goal, projectSection))
+  const projectsBySection = useMemo(
+    () => ({
+      active: projects
+        .map((goal) => filterGoalProjectsBySection(goal, "active"))
         .filter((goal): goal is Goal => Boolean(goal)),
-    [projects, projectSection]
+      completed: projects
+        .map((goal) => filterGoalProjectsBySection(goal, "completed"))
+        .filter((goal): goal is Goal => Boolean(goal)),
+    }),
+    [projects]
   );
+
+  const filteredProjects = projectsBySection[projectSection];
 
   useEffect(() => {
     if (!openGoalId) return;
@@ -1080,69 +1418,62 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     }
   }, [filteredProjects, openGoalId]);
 
-  const content = useMemo(() => {
-    if (loading) {
+  const renderProjectPanel = useCallback(
+    (section: ProjectSection) => {
+      const sectionProjects = projectsBySection[section];
+
+      if (sectionProjects.length === 0) {
+        return (
+          <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+            {section === "completed"
+              ? "No completed projects linked to this skill yet."
+              : "No active projects linked to this skill yet."}
+          </Card>
+        );
+      }
+
       return (
         <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-[100px] w-full rounded-2xl bg-white/10" />
+          {sectionProjects.map((goal) => (
+            <div key={goal.id} className="skill-project-card-wrapper relative z-0 w-full isolate min-w-0">
+              <GoalCard
+                goal={goal}
+                showWeight={false}
+                showCreatedAt={false}
+                showEmojiPrefix={false}
+                variant="compact"
+                completionTheme="border"
+                projectDropdownMode="tasks-only"
+                onEdit={() => handleGoalEdit(goal)}
+                open={openGoalId === goal.id}
+                onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
+                onProjectUpdated={(projectId, updates) =>
+                  handleProjectUpdated(goal.id, projectId, updates)
+                }
+                onTaskToggleCompletion={handleTaskToggleCompletion}
+                onAddTask={handleTaskCreate}
+                onProjectHoldComplete={(goalId, projectId) =>
+                  handleProjectToggleCompletion(goalId, projectId)
+                }
+                onProjectDeleted={() => handleProjectDeleted(goal.id)}
+              />
+            </div>
           ))}
         </div>
       );
-    }
-
-    if (filteredProjects.length === 0) {
-      return (
-        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-          {projectSection === "completed"
-            ? "No completed projects linked to this skill yet."
-            : "No active projects linked to this skill yet."}
-        </Card>
-      );
-    }
-
-    return (
-      <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-        {filteredProjects.map((goal) => (
-          <div key={goal.id} className="skill-project-card-wrapper relative z-0 w-full isolate min-w-0">
-            <GoalCard
-              goal={goal}
-              showWeight={false}
-              showCreatedAt={false}
-              showEmojiPrefix={false}
-              variant="compact"
-              completionTheme="border"
-              projectDropdownMode="tasks-only"
-              onEdit={() => handleGoalEdit(goal)}
-              open={openGoalId === goal.id}
-              onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
-              onProjectUpdated={(projectId, updates) =>
-                handleProjectUpdated(goal.id, projectId, updates)
-              }
-              onTaskToggleCompletion={handleTaskToggleCompletion}
-              onAddTask={handleTaskCreate}
-              onProjectHoldComplete={(goalId, projectId) =>
-                handleProjectToggleCompletion(goalId, projectId)
-              }
-              onProjectDeleted={() => handleProjectDeleted(goal.id)}
-            />
-          </div>
-        ))}
-      </div>
-    );
-  }, [
-    loading,
-    filteredProjects,
-    projectSection,
-    openGoalId,
-    handleGoalEdit,
-    handleGoalOpenChange,
-    handleProjectUpdated,
-    handleProjectDeleted,
-    handleTaskCreate,
-    handleTaskToggleCompletion,
-    handleProjectToggleCompletion,
-  ]);
+    },
+    [
+      projectsBySection,
+      openGoalId,
+      handleGoalEdit,
+      handleGoalOpenChange,
+      handleProjectUpdated,
+      handleProjectDeleted,
+      handleTaskCreate,
+      handleTaskToggleCompletion,
+      handleProjectToggleCompletion,
+    ]
+  );
 
   return (
     <div className="skill-projects-list">
@@ -1151,34 +1482,85 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
           <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
             Project Library
           </p>
-          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-1">
-            <button
-              type="button"
-              onClick={() => setProjectSection("active")}
-              className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
-                projectSection === "active"
-                  ? "bg-[#3B3F49] text-white"
-                  : "text-[#A7B0BD] hover:text-white"
-              }`}
-              aria-pressed={projectSection === "active"}
-            >
-              Active
-            </button>
-            <button
-              type="button"
-              onClick={() => setProjectSection("completed")}
-              className={`rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
-                projectSection === "completed"
-                  ? "bg-[#3B3F49] text-white"
-                  : "text-[#A7B0BD] hover:text-white"
-              }`}
-              aria-pressed={projectSection === "completed"}
-            >
-              Completed
-            </button>
-          </div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+            {projectSection === "completed" ? "COMPLETED" : "ACTIVE"}
+          </p>
         </div>
-        {content}
+        <div
+          className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+          style={projectPanelHeight ? { height: projectPanelHeight } : undefined}
+          onPointerDown={handleProjectPanelPointerDown}
+          onPointerUp={handleProjectPanelPointerEnd}
+          onTouchStart={handleProjectPanelTouchStart}
+          onTouchMove={handleProjectPanelTouchMove}
+          onTouchEnd={handleProjectPanelTouchEnd}
+          onTouchCancel={resetProjectPanelTouch}
+          onWheel={handleProjectPanelWheel}
+          onPointerCancel={() => {
+            projectPanelDragStartRef.current = null;
+          }}
+        >
+          {loading ? (
+            <div
+              ref={loadingProjectPanelRef}
+              className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+            >
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-[100px] w-full rounded-2xl bg-white/10" />
+              ))}
+            </div>
+          ) : (
+            <div
+              ref={projectPanelViewportRef}
+              className="absolute inset-0"
+            >
+              <div
+                className="flex h-full w-[200%] transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                style={{
+                  transform: `translate3d(${projectPanelTrackTransform}px, 0, 0)`,
+                  transitionDuration:
+                    !projectPanelTransitionEnabled || projectPanelDragOffset
+                      ? "0ms"
+                      : undefined,
+                }}
+              >
+                <div className="h-full w-1/2 shrink-0 overflow-hidden">
+                  <div ref={activeProjectPanelRef}>
+                    {renderProjectPanel("active")}
+                  </div>
+                </div>
+                <div className="h-full w-1/2 shrink-0 overflow-hidden">
+                  <div ref={completedProjectPanelRef}>
+                    {renderProjectPanel("completed")}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center justify-center gap-1.5">
+          {(["active", "completed"] as const).map((panel) => {
+            const isActive = projectSection === panel;
+            return (
+              <button
+                key={panel}
+                type="button"
+                aria-label={
+                  panel === "active"
+                    ? "Show active projects"
+                    : "Show completed projects"
+                }
+                aria-current={isActive ? "true" : undefined}
+                onClick={() => handleProjectPanelChange(panel)}
+                className={`h-1.5 rounded-full transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                  isActive
+                    ? "w-5 bg-white shadow-[0_0_10px_rgba(255,255,255,0.28)]"
+                    : "w-1.5 bg-white/24 hover:bg-white/40"
+                }`}
+              />
+            );
+          })}
+        </div>
       </section>
       {taskFormOpenForGoalId ? (
         <div className="fixed inset-0 z-[85] flex items-center justify-center px-4 py-8">

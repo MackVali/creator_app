@@ -864,6 +864,7 @@ export default function SkillDetailPage() {
                 id,
                 badge_id,
                 badges (
+                  badge_type,
                   level,
                   emoji,
                   label,
@@ -1090,7 +1091,10 @@ export default function SkillDetailPage() {
                       <h1 className="max-w-xl break-words text-3xl font-semibold tracking-tight text-white sm:text-4xl">
                         {skillOpenPreview.name}
                       </h1>
-                      <Skeleton className="h-5 w-36 bg-white/10" />
+                      <div className="flex items-center gap-2">
+                        <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
+                        <Skeleton className="h-6 w-16 rounded-xl bg-white/10" />
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -1098,29 +1102,14 @@ export default function SkillDetailPage() {
                     <Skeleton className="h-[88px] w-[88px] rounded-3xl border border-white/10 bg-white/10" />
                     <div className="flex flex-col gap-3">
                       <Skeleton className="h-10 w-48 bg-white/10 sm:w-64" />
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2">
                         <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
-                        <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
-                        <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
+                        <Skeleton className="h-6 w-16 rounded-xl bg-white/10" />
                       </div>
                     </div>
                   </>
                 )}
               </div>
-            </div>
-            <div className="relative mt-8 grid grid-cols-2 gap-2">
-              {Array.from({ length: 2 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
-                >
-                  <Skeleton className="size-6 rounded-full bg-white/10" />
-                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                    <Skeleton className="h-2 w-20 bg-white/10" />
-                    <Skeleton className="h-3 w-24 bg-white/10" />
-                  </div>
-                </div>
-              ))}
             </div>
           </section>
 
@@ -1221,20 +1210,6 @@ export default function SkillDetailPage() {
     : "Creation date unavailable.";
 
   const skillBadges = progress?.badges ?? [];
-  const stats = [
-    {
-      label: "Skill level",
-      value: `Lv ${skill.level}`,
-      description: describeLevel(skill.level),
-      icon: Target,
-    },
-    {
-      label: "Added to timeline",
-      value: formattedCreatedAt ?? "Not available",
-      description: createdRelativeText,
-      icon: CalendarDays,
-    },
-  ];
 
   const icon = skill.icon || "💡";
 
@@ -1375,7 +1350,7 @@ export default function SkillDetailPage() {
                 >
                   {icon}
                 </span>
-                <div className="min-w-0 flex-1 space-y-2">
+                <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-start justify-between gap-3">
                     <h1 id="skill-overview" className="min-w-0 flex-1 break-words text-2xl font-semibold tracking-tight text-white sm:text-3xl md:text-4xl">
                       {skill.name}
@@ -1442,47 +1417,24 @@ export default function SkillDetailPage() {
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex items-center gap-1 text-lg leading-none">
-                      {skillBadges.length > 0 ? (
-                        skillBadges.map((badge) => (
-                          <span
-                            key={badge.id}
-                            role="img"
-                            aria-label={badge.label}
-                            title={badge.label}
-                            className="drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]"
-                          >
-                            {badge.emoji}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-[10px] font-medium uppercase tracking-[0.28em] text-white/35">
-                          No badges yet
+                    <div className="flex items-center gap-2 leading-none">
+                      {skillBadges.map((badge) => (
+                        <span
+                          key={badge.id}
+                          role="img"
+                          aria-label={badge.label}
+                          title={badge.label}
+                          className="text-lg drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]"
+                        >
+                          {badge.emoji}
                         </span>
-                      )}
+                      ))}
+                      <span className="text-[13px] font-black uppercase tracking-[0.04em] text-white">
+                        LVL {skill.level}
+                      </span>
                     </div>
                   </div>
                 </div>
-              </div>
-              <div className="grid w-full grid-cols-2 gap-2 md:w-[320px] md:shrink-0">
-                {stats.map(({ label, value, icon: Icon }) => (
-                  <div
-                    key={label}
-                    className="group flex min-w-0 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 px-2 py-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10 sm:px-2.5"
-                  >
-                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80">
-                      <Icon className="size-2.5" aria-hidden="true" />
-                    </span>
-                    <div className="flex min-w-0 flex-col leading-[1.08]">
-                      <span className="text-[7px] font-semibold uppercase tracking-[0.18em] text-white/50">
-                        {label}
-                      </span>
-                      <span className="break-words text-[9px] font-semibold text-white">
-                        {value}
-                      </span>
-                    </div>
-                  </div>
-                ))}
               </div>
             </div>
           </section>
@@ -1490,35 +1442,20 @@ export default function SkillDetailPage() {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101010] to-[#1a1a1a] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.75)] sm:p-7">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
-            <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div className="space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">PROJECTS</p>
-              </div>
-            </header>
-            <div className="relative mt-6 overflow-visible">
+            <div className="relative overflow-visible">
               <SkillProjectsList skillId={id} />
             </div>
           </section>
 
           <section className="relative space-y-6">
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#070707] via-[#121212] to-[#1c1c1c] p-4 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.78)] sm:p-5">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.1),_transparent_60%)]" />
-              <div className="relative">
-                <NotesGrid skillId={id} />
-              </div>
-            </div>
-
             <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#070707] via-[#111111] to-[#1b1b1b] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_68%)]" />
-              <CardHeader className="relative pb-3">
+              <CardHeader className="relative pb-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
                     <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
                       RELATED HABITS
                     </CardTitle>
-                    <CardDescription className="text-xs text-white/45">
-                      Habits linked to this skill.
-                    </CardDescription>
                   </div>
                   <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
                     {decoratedHabits.length}
@@ -1668,24 +1605,13 @@ export default function SkillDetailPage() {
               </CardContent>
             </Card>
 
-            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-white/5 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.7)] backdrop-blur">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(129,140,248,0.14),_transparent_70%)]" />
-              <CardHeader className="relative">
-                <CardTitle className="text-base font-semibold text-white">Need a different view?</CardTitle>
-                <CardDescription className="text-white/70">
-                  Jump back to your dashboard to reorganize, add new abilities, or explore other focuses.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="relative">
-                <Button
-                  asChild
-                  size="sm"
-                  className="rounded-full bg-white px-5 text-slate-900 shadow-sm transition hover:bg-white/90"
-                >
-                  <Link href="/dashboard">Open dashboard</Link>
-                </Button>
-              </CardContent>
-            </Card>
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#070707] via-[#121212] to-[#1c1c1c] p-4 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.78)] sm:p-5">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.1),_transparent_60%)]" />
+              <div className="relative">
+                <NotesGrid skillId={id} />
+              </div>
+            </div>
+
           </section>
         </div>
       </div>

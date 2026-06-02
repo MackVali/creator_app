@@ -268,20 +268,13 @@ export function NotesGrid({ skillId }: NotesGridProps) {
       ) : null}
 
       {hasTopLevelNotes && !hasVisibleTopLevelNotes && !isLoading ? (
-        <div className={cn(skillNoteTileOuterClass, "col-span-3 w-full")}>
-          <div
-            className={cn(
-              skillNoteTileInnerClass,
-              "min-h-[4rem] flex-col justify-center gap-1 text-left"
-            )}
-          >
-            <p className="text-sm font-semibold tracking-tight text-[#f2f4f8]">
-              No matching notes
-            </p>
-            <p className="text-xs leading-5 text-[#d2d7e0]">
-              Try a different search.
-            </p>
-          </div>
+        <div className="w-full rounded-2xl border border-white/[0.08] bg-[#07080A] px-3 py-3 text-slate-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]">
+          <p className="text-sm font-semibold tracking-tight text-white/90">
+            No matching notes
+          </p>
+          <p className="text-xs leading-5 text-white/50">
+            Try a different search.
+          </p>
         </div>
       ) : null}
 
@@ -300,36 +293,31 @@ export function NotesGrid({ skillId }: NotesGridProps) {
         ))}
 
         {(() => {
-          const regularNoteCount = visibleRegularNotes.length;
-          const hasAnyVisibleNotes = hasVisibleTopLevelNotes;
-          const remainder = regularNoteCount % 3;
-          const spanClass = !hasAnyVisibleNotes
-            ? "col-span-3"
-            : remainder === 0
-              ? "col-span-3"
-              : remainder === 1
-                ? "col-span-2"
-                : "col-span-1";
-          const isBarVariant = hasAnyVisibleNotes && remainder === 0;
           return (
             <Link
               href={`/skills/${skillId}/notes/new`}
-              className={cn(skillNoteTileOuterClass, spanClass)}
+              className={skillNoteTileOuterClass}
               aria-label={hasTopLevelNotes ? "Add note" : "Create note"}
             >
               <div
                 className={cn(
                   skillNoteTileInnerClass,
-                  "items-center justify-center gap-2 text-center",
-                  isBarVariant ? "min-h-[4.25rem] flex-row text-left" : "min-h-[4.25rem] flex-col"
+                  "w-full min-w-0"
                 )}
               >
-                <div className="relative z-10 flex h-8 w-8 items-center justify-center rounded-2xl border border-white/[0.12] bg-black/35 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_9px_18px_-14px_rgba(0,0,0,0.9)]">
-                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                <div className="flex w-full min-w-0 flex-col items-center justify-center gap-1.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] sm:h-10 sm:w-10">
+                    <Plus className="h-3.5 w-3.5 text-zinc-500 sm:h-4 sm:w-4" aria-hidden="true" />
+                  </div>
+                  <div className="flex w-full min-w-0 items-center justify-center">
+                    <span
+                      className="line-clamp-3 w-full min-w-0 break-words px-0.5 text-center text-[9px] font-semibold leading-tight text-white whitespace-normal sm:text-[10px]"
+                      style={{ hyphens: "auto" }}
+                    >
+                      {hasTopLevelNotes ? "Add note" : "Create note"}
+                    </span>
+                  </div>
                 </div>
-                <span className="relative z-10 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#f2f4f8]">
-                  {hasTopLevelNotes ? "Add note" : "Create note"}
-                </span>
               </div>
             </Link>
           );

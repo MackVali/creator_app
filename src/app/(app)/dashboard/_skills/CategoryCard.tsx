@@ -70,7 +70,6 @@ interface Props {
   menuOpen?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
   onReorder?: (direction: "left" | "right" | "first" | "last") => void;
-  onAddSkill?: () => void;
   canMoveLeft?: boolean;
   canMoveRight?: boolean;
   canMoveToStart?: boolean;
@@ -99,7 +98,6 @@ export default function CategoryCard({
   menuOpen: menuOpenProp,
   onMenuOpenChange,
   onReorder,
-  onAddSkill,
   canMoveLeft,
   canMoveRight,
   canMoveToStart,
@@ -638,17 +636,6 @@ export default function CategoryCard({
                           />
                         </button>
                       </div>
-                      <button
-                        type="button"
-                        className="block w-full rounded-md px-2 py-1.5 text-left text-sm font-medium text-slate-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-                        onClick={() => {
-                          closeMenu();
-                          onAddSkill?.();
-                        }}
-                        disabled={isRenaming || !onAddSkill}
-                      >
-                        ADD A NEW SKILL
-                      </button>
                       {canDeleteCategory && (
                         <button
                           type="button"
