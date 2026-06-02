@@ -21,9 +21,5 @@ export default async function CommandPage() {
     redirect("/dashboard");
   }
 
-  return (
-    <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-4">
-      <CommandPullRefreshShell />
-    </main>
-  );
+  return <CommandPullRefreshShell />;
 }
