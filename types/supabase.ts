@@ -248,23 +248,170 @@ export interface Database {
         Row: {
           id: string;
           created_at: string;
-          Title: string | null;
-          cat_id: string | null;
+          updated_at: string;
           user_id: string | null;
+          name: string;
+          icon: string;
+          level: number;
+          cat_id: string | null;
+          monument_id: string | null;
+          sort_order: number;
+          is_default: boolean;
+          is_locked: boolean;
+          global_skill_id: string | null;
         };
         Insert: {
           id?: string;
           created_at?: string;
-          Title?: string | null;
-          cat_id?: string | null;
+          updated_at?: string;
           user_id?: string | null;
+          name: string;
+          icon: string;
+          level?: number;
+          cat_id?: string | null;
+          monument_id?: string | null;
+          sort_order?: number;
+          is_default?: boolean;
+          is_locked?: boolean;
+          global_skill_id?: string | null;
         };
         Update: {
           id?: string;
           created_at?: string;
-          Title?: string | null;
-          cat_id?: string | null;
+          updated_at?: string;
           user_id?: string | null;
+          name?: string;
+          icon?: string;
+          level?: number;
+          cat_id?: string | null;
+          monument_id?: string | null;
+          sort_order?: number;
+          is_default?: boolean;
+          is_locked?: boolean;
+          global_skill_id?: string | null;
+        };
+      };
+      global_skill_categories: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          icon: string | null;
+          description: string | null;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          slug: string;
+          icon?: string | null;
+          description?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          slug?: string;
+          icon?: string | null;
+          description?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      global_skill_subcategories: {
+        Row: {
+          id: string;
+          category_id: string;
+          name: string;
+          slug: string;
+          description: string | null;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          category_id: string;
+          name: string;
+          slug: string;
+          description?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          category_id?: string;
+          name?: string;
+          slug?: string;
+          description?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      global_skills: {
+        Row: {
+          id: string;
+          category_id: string;
+          subcategory_id: string | null;
+          name: string;
+          slug: string;
+          icon: string;
+          description: string | null;
+          popular_order: number | null;
+          sort_order: number;
+          is_popular: boolean;
+          is_active: boolean;
+          feature_key: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          category_id: string;
+          subcategory_id?: string | null;
+          name: string;
+          slug: string;
+          icon?: string;
+          description?: string | null;
+          popular_order?: number | null;
+          sort_order?: number;
+          is_popular?: boolean;
+          is_active?: boolean;
+          feature_key?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          category_id?: string;
+          subcategory_id?: string | null;
+          name?: string;
+          slug?: string;
+          icon?: string;
+          description?: string | null;
+          popular_order?: number | null;
+          sort_order?: number;
+          is_popular?: boolean;
+          is_active?: boolean;
+          feature_key?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
         };
       };
       monuments: {
