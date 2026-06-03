@@ -521,6 +521,8 @@ export default function SkillsCarousel() {
   const [selectedCommunitySkillId, setSelectedCommunitySkillId] = useState<string | null>(null);
   const [communitySkillSearch, setCommunitySkillSearch] = useState("");
   const [activeCommunitySkillCategoryIndex, setActiveCommunitySkillCategoryIndex] = useState(0);
+  const [communitySwipeOffset, setCommunitySwipeOffset] = useState(0);
+  const [isCommunitySwiping, setIsCommunitySwiping] = useState(false);
   const [openCommunitySkillSubcategories, setOpenCommunitySkillSubcategories] = useState<
     Record<string, boolean>
   >({});
@@ -537,6 +539,14 @@ export default function SkillsCarousel() {
   const addCategoryMenuRef = useRef<HTMLDivElement | null>(null);
   const addCategoryNameRef = useRef<HTMLInputElement | null>(null);
   const communityCategoryButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const communitySwipeRef = useRef<{
+    startX: number;
+    startY: number;
+    offsetX: number;
+    direction: "horizontal" | "vertical" | null;
+  } | null>(null);
+
+  const COMMUNITY_SWIPE_THRESHOLD = 60;
 
   const skeletonCategoryPlaceholders = [0, 1, 2];
   const skeletonChipPlaceholders = [0, 1, 2, 3];
@@ -627,6 +637,86 @@ export default function SkillsCarousel() {
     },
     [communitySkillCategoryNames]
   );
+
+  const handleCommunitySwipeStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (isCommunitySkillSearching) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+      communitySwipeRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        offsetX: 0,
+        direction: null,
+      };
+      setIsCommunitySwiping(false);
+    },
+    [isCommunitySkillSearching]
+  );
+
+  const handleCommunitySwipeMove = useCallback(
+    (e: React.TouchEvent) => {
+      const ref = communitySwipeRef.current;
+      if (!ref || isCommunitySkillSearching) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+      const deltaX = touch.clientX - ref.startX;
+      const deltaY = touch.clientY - ref.startY;
+
+      if (ref.direction === null) {
+        if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) {
+          ref.direction = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
+          if (ref.direction === "horizontal") {
+            setIsCommunitySwiping(true);
+          }
+        }
+        return;
+      }
+
+      if (ref.direction !== "horizontal") return;
+
+      e.preventDefault();
+      let clamped = deltaX;
+      if (activeCommunitySkillCategoryIndex === 0 && deltaX > 0) {
+        clamped = Math.min(deltaX, 40);
+      } else if (
+        activeCommunitySkillCategoryIndex === communitySkillCategoryNames.length - 1 &&
+        deltaX < 0
+      ) {
+        clamped = Math.max(deltaX, -40);
+      }
+      ref.offsetX = clamped;
+      setCommunitySwipeOffset(clamped);
+    },
+    [
+      isCommunitySkillSearching,
+      activeCommunitySkillCategoryIndex,
+      communitySkillCategoryNames.length,
+    ]
+  );
+
+  const handleCommunitySwipeEnd = useCallback(() => {
+    const ref = communitySwipeRef.current;
+    communitySwipeRef.current = null;
+    setIsCommunitySwiping(false);
+    setCommunitySwipeOffset(0);
+
+    if (!ref || ref.direction !== "horizontal") return;
+
+    const deltaX = ref.offsetX;
+    if (Math.abs(deltaX) > COMMUNITY_SWIPE_THRESHOLD) {
+      if (deltaX < 0) {
+        setActiveCommunitySkillCategoryIndex((current) =>
+          current < communitySkillCategoryNames.length - 1 ? current + 1 : current
+        );
+      } else {
+        setActiveCommunitySkillCategoryIndex((current) =>
+          current > 0 ? current - 1 : current
+        );
+      }
+      setOpenCommunitySkillSubcategories({});
+    }
+  }, [communitySkillCategoryNames.length, COMMUNITY_SWIPE_THRESHOLD]);
 
   const closeCommunitySkillPicker = useCallback(() => {
     setCommunitySkillPickerOpen(false);
@@ -1655,7 +1745,17 @@ export default function SkillsCarousel() {
                       </button>
                     </div>
                   </div>
-                  <div className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-2 sm:px-4">
+                  <div
+                    className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-2 sm:px-4"
+                    style={{
+                      transform: `translateX(${communitySwipeOffset}px)`,
+                      transition: isCommunitySwiping ? "none" : "transform 0.25s ease-out",
+                      touchAction: "pan-y",
+                    }}
+                    onTouchStart={handleCommunitySwipeStart}
+                    onTouchMove={handleCommunitySwipeMove}
+                    onTouchEnd={handleCommunitySwipeEnd}
+                  >
                     {isCommunityCatalogLoading ? (
                       <div className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-6 text-center text-xs text-zinc-500">
                         Loading skills...

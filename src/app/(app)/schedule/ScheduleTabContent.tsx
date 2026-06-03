@@ -209,7 +209,7 @@ const TIMELINE_COMPACT_CARD_HEIGHT_PX = 56;
 const TIMELINE_COMPACT_CARD_SHADOW =
   "0 14px 28px rgba(6, 8, 20, 0.45), 0 8px 18px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 const TIMELINE_COMPACT_CARD_COMPLETED_SHADOW =
-  "0 16px 32px rgba(2, 32, 24, 0.5), 0 8px 18px rgba(1, 55, 34, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.12)";
+  "0 18px 36px rgba(0, 0, 0, 0.48), 0 8px 18px rgba(0, 6, 4, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06)";
 const TIMELINE_RESTING_CARD_SHADOW =
   "0 0 0 1px rgba(255, 255, 255, 0.035), 0 10px 24px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08)";
 const TIMELINE_STACK_BASE_Z_INDEX = 30;
@@ -7335,7 +7335,7 @@ export default function ScheduleTabContent({
               if (visibleSegments.length === 0) return null;
 
               const reportContent = (
-                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-slate-700/80 bg-black/10 px-3 py-2 text-slate-50 shadow-[0_16px_24px_rgba(0,0,0,0.25)] backdrop-blur-sm">
+                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-700/55 bg-black/[0.025] px-3 py-2 text-slate-50 shadow-[0_10px_18px_rgba(0,0,0,0.16),inset_0_1px_0_rgba(255,255,255,0.018),inset_0_-1px_0_rgba(0,0,0,0.34)] backdrop-blur-[2px]">
                   <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-white/90">
                     <FlameEmber
                       level={report.energyLabel}
@@ -7346,19 +7346,12 @@ export default function ScheduleTabContent({
                     <span className="shrink-0 text-white/70">
                       {report.rangeLabel}
                     </span>
+                    <span className="ml-auto shrink-0 text-[9px] uppercase tracking-wide text-white/60">
+                      {report.window.window_kind === "DEFAULT"
+                        ? "FOCUS"
+                        : report.window.window_kind}
+                    </span>
                   </div>
-                  <p className="mt-2 text-[11px] leading-snug text-white">
-                    {report.summary}
-                  </p>
-                  {report.details.length > 0 && (
-                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-white/80">
-                      {report.details.map((detail, index) => (
-                        <li key={`${report.key}-detail-${index}`}>
-                          {detail}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
               );
 
@@ -7559,9 +7552,9 @@ export default function ScheduleTabContent({
                 "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
               ].join(", ");
               const syncCompletedShadow = [
-                "0 14px 28px rgba(20, 83, 45, 0.26)",
-                "0 6px 14px rgba(6, 78, 59, 0.18)",
-                "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+                "0 28px 48px rgba(0, 0, 0, 0.48)",
+                "0 10px 22px rgba(0, 6, 4, 0.34)",
+                "inset 0 1px 0 rgba(255, 255, 255, 0.06)",
               ].join(", ");
               const practiceShadow = [
                 "0 30px 60px rgba(2, 2, 6, 0.72)",
@@ -7579,13 +7572,14 @@ export default function ScheduleTabContent({
                 "inset 0 1px 0 rgba(255, 255, 255, 0.16)",
               ].join(", ");
               const completedShadow = [
-                "0 22px 44px rgba(3, 83, 63, 0.34)",
-                "0 10px 24px rgba(2, 44, 34, 0.28)",
-                "inset 0 1px 0 rgba(236, 253, 245, 0.24)",
+                "0 22px 38px rgba(0, 0, 0, 0.34)",
+                "0 9px 18px rgba(3, 83, 45, 0.22)",
+                "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
               ].join(", ");
               const completedGemBevelInset = [
-                "inset 0 1px 0 rgba(236, 253, 245, 0.20)",
-                "inset 0 -8px 14px rgba(1, 35, 29, 0.18)",
+                "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
+                "inset 0 -2px 8px rgba(0, 0, 0, 0.1)",
+                "inset 0 0 0 1px rgba(0, 0, 0, 0.08)",
               ].join(", ");
               let cardShadow = scheduledShadow;
               let cardOutline = "1px solid rgba(10, 10, 12, 0.85)";
@@ -7616,16 +7610,16 @@ export default function ScheduleTabContent({
                 }
               } else if (normalizedHabitType === "SYNC" && isHabitCompleted) {
                 cardShadow = syncCompletedShadow;
-                cardOutline = "1px solid rgba(167, 243, 208, 0.42)";
-                habitBorderClass = "border-emerald-200/40";
+                cardOutline = "1px solid rgba(10, 60, 44, 0.52)";
+                habitBorderClass = "border-emerald-300/25";
               } else if (normalizedHabitType === "CHORE" && isHabitCompleted) {
                 cardShadow = completedShadow;
-                cardOutline = "1px solid rgba(167, 243, 208, 0.62)";
-                habitBorderClass = "border-emerald-200/55";
+                cardOutline = "1px solid rgba(10, 60, 44, 0.48)";
+                habitBorderClass = "border-emerald-300/22";
               } else if (isHabitCompleted) {
                 cardShadow = completedShadow;
-                cardOutline = "1px solid rgba(167, 243, 208, 0.58)";
-                habitBorderClass = "border-emerald-200/55";
+                cardOutline = "1px solid rgba(10, 60, 44, 0.50)";
+                habitBorderClass = "border-emerald-300/24";
               } else if (normalizedHabitType === "CHORE") {
                 cardShadow = choreShadow;
                 cardOutline = "1px solid rgba(0, 0, 0, 0.85)";
@@ -7696,6 +7690,10 @@ export default function ScheduleTabContent({
                 boxShadow: habitCardShadow,
                 outline: cardOutline,
                 outlineOffset: "-1px",
+                background:
+                  normalizedHabitType === "HABIT" && !isHabitCompleted
+                    ? "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)"
+                    : undefined,
               };
               const hasHabitInstance = Boolean(placement.habitId);
               const habitBounceActive =
@@ -8109,18 +8107,18 @@ export default function ScheduleTabContent({
                   }
                 };
                 const projectBackground = isCompleted
-                  ? "radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)"
+                  ? "linear-gradient(155deg, rgba(5, 52, 38, 0.98) 0%, rgba(3, 44, 32, 1) 50%, rgba(2, 36, 26, 1) 100%)"
                   : "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)";
                 const resolvedProjectShadow = isCompleted
                   ? useCompactProjectShadow
                     ? TIMELINE_COMPACT_CARD_COMPLETED_SHADOW
-                    : "0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)"
+                    : "0 32px 56px rgba(0, 0, 0, 0.52), 0 12px 28px rgba(0, 8, 4, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.06)"
                   : sharedCardShadow;
                 const projectCardStyle: CSSProperties = {
                   ...sharedCardStyle,
                   boxShadow: resolvedProjectShadow,
                   outline: isCompleted
-                    ? "1px solid rgba(16, 185, 129, 0.55)"
+                    ? "1px solid rgba(10, 60, 44, 0.50)"
                     : sharedCardStyle.outline,
                   background: projectBackground,
                   opacity: displacedPreview ? 0.92 : undefined,
@@ -8129,7 +8127,7 @@ export default function ScheduleTabContent({
                     : sharedCardStyle.outlineOffset,
                 };
                 const projectBorderClass = isCompleted
-                  ? "border-emerald-400/60"
+                  ? "border-emerald-300/25"
                   : "border-black/70";
                 const instanceEnergyLevel = resolveEnergyLevel(
                   instance.energy_resolved

@@ -257,9 +257,7 @@ describe('describeEmptyWindowReport', () => {
 
     expect(result.summary).toBe('Only')
     expect(result.details).toEqual([
-      'MONUMENT = 🧠',
-      'SKILL = 🎛️',
-      'HABITS = HABIT, FOCUS',
+      'MONUMENT(S) = 1, SKILL(S) = 1, HABITS = 2 types',
     ])
     expect([result.summary, ...result.details].join('\n')).not.toMatch(
       /(?:location|habit\.type|skill|monument)\.constraints\s*=/
@@ -308,7 +306,7 @@ describe('describeEmptyWindowReport', () => {
     }
 
     expect(result.summary).toBe('Only')
-    expect(result.details).toEqual(['SKILL = 🎵, Skill ×1'])
+    expect(result.details).toEqual(['SKILL(S) = 2'])
   })
 
   it('omits skill constraints already covered by selected monuments', async () => {
@@ -355,7 +353,7 @@ describe('describeEmptyWindowReport', () => {
     }
 
     expect(result.summary).toBe('Only')
-    expect(result.details).toEqual(['MONUMENT = 🧠'])
+    expect(result.details).toEqual(['MONUMENT(S) = 1'])
   })
 
   it('labels historical windows as past entries without constraint details', async () => {

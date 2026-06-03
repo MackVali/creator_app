@@ -375,20 +375,13 @@ export function describeEmptyWindowReport({
 }
 
 function describeWindowConstraints(window: RepoWindow): string[] {
-  const rows: string[] = []
+  const parts: string[] = []
 
   const monumentIds = normalizeConstraintValues(
     window.allowedMonumentIds ?? window.allowedMonumentIdsSet ?? null
   )
   if (window.allowAllMonuments === false || monumentIds.length > 0) {
-    rows.push(
-      `MONUMENT = ${formatConstraintTokenGroup({
-        ids: monumentIds,
-        displays: window.allowedMonumentDisplays,
-        displayKey: 'emoji',
-        fallbackLabel: 'Monument',
-      })}`
-    )
+    parts.push(`MONUMENT(S) = ${monumentIds.length}`)
   }
 
   const skillIds = normalizeConstraintValues(
@@ -399,30 +392,18 @@ function describeWindowConstraints(window: RepoWindow): string[] {
     skillDisplays: window.allowedSkillDisplays,
     monumentIds,
   })
-  if (
-    filteredSkillIds.length > 0 ||
-    (window.allowAllSkills === false && skillIds.length === 0)
-  ) {
-    rows.push(
-      `SKILL = ${formatConstraintTokenGroup({
-        ids: filteredSkillIds,
-        displays: window.allowedSkillDisplays,
-        displayKey: 'icon',
-        fallbackLabel: 'Skill',
-      })}`
-    )
+  if (filteredSkillIds.length > 0) {
+    parts.push(`SKILL(S) = ${filteredSkillIds.length}`)
   }
 
   const habitTypes = normalizeConstraintValues(
     window.allowedHabitTypes ?? window.allowedHabitTypesSet ?? null
   )
   if (window.allowAllHabitTypes === false || habitTypes.length > 0) {
-    rows.push(
-      `HABITS = ${habitTypes.length > 0 ? habitTypes.join(', ') : 'Habit Type'}`
-    )
+    parts.push(`HABITS = ${habitTypes.length} type${habitTypes.length === 1 ? '' : 's'}`)
   }
 
-  return rows
+  return parts.length > 0 ? [parts.join(', ')] : []
 }
 
 function filterSkillIdsCoveredByMonuments({
@@ -444,10 +425,10 @@ function filterSkillIdsCoveredByMonuments({
   const skillMonumentById = new Map(
     (skillDisplays ?? [])
       .map(display => {
-        const id = formatDisplayToken(display.id)
-        const monumentId = formatDisplayToken(
-          display.monumentId ?? display.monument_id
-        )
+        const id = typeof display.id === 'string' ? display.id.trim() : ''
+        const monumentId = typeof (display.monumentId ?? display.monument_id) === 'string'
+          ? (display.monumentId ?? display.monument_id)!.trim()
+          : ''
         return [id, monumentId] as const
       })
       .filter(([id, monumentId]) => id.length > 0 && monumentId.length > 0)
@@ -457,49 +438,6 @@ function filterSkillIdsCoveredByMonuments({
     const monumentId = skillMonumentById.get(id)
     return !monumentId || !allowedMonuments.has(monumentId)
   })
-}
-
-function formatConstraintTokenGroup<
-  T extends { id?: string | null } & Record<K, string | null | undefined>,
-  K extends string
->({
-  ids,
-  displays,
-  displayKey,
-  fallbackLabel,
-}: {
-  ids: string[]
-  displays?: T[] | null
-  displayKey: K
-  fallbackLabel: string
-}): string {
-  if (ids.length === 0) return fallbackLabel
-
-  const displayById = new Map(
-    (displays ?? [])
-      .map(display => [
-        typeof display.id === 'string' ? display.id.trim() : '',
-        formatDisplayToken(display[displayKey]),
-      ] as const)
-      .filter(([id, token]) => id.length > 0 && token.length > 0)
-  )
-  const tokens = ids
-    .map(id => displayById.get(id) ?? '')
-    .filter(token => token.length > 0)
-  const missingCount = ids.length - tokens.length
-  if (missingCount > 0) {
-    tokens.push(formatCompactCount(missingCount, fallbackLabel))
-  }
-
-  return tokens.join(', ')
-}
-
-function formatDisplayToken(value?: string | null): string {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-function formatCompactCount(count: number, singularLabel: string): string {
-  return `${singularLabel} ×${count}`
 }
 
 function normalizeConstraintValues(

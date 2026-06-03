@@ -50,6 +50,7 @@ import {
 } from "./ui/sheet"
 import { Textarea } from "./ui/textarea"
 import { PostModal } from "./ui/PostModal"
+import { PullRefreshShell } from "@/components/ui/PullRefreshShell"
 
 import {
   PRODUCT_ORDER_FULFILLMENT_STATUSES,
@@ -1518,6 +1519,24 @@ export default function Source() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const { tier } = useEntitlement()
   const isAdmin = tier === "ADMIN"
+  const sourcePullRefreshBlockedRef = useRef<(() => boolean) | null>(null)
+
+  sourcePullRefreshBlockedRef.current = () =>
+    isProductSheetOpen ||
+    isServiceSheetOpen ||
+    Boolean(selectedProductId) ||
+    Boolean(selectedServiceId) ||
+    Boolean(selectedOrderId) ||
+    isCropOpen ||
+    isPostModalOpen
+
+  const handlePullRefresh = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["source", "integrations"] }),
+      queryClient.invalidateQueries({ queryKey: ["source", "listings"] }),
+      queryClient.invalidateQueries({ queryKey: ["source", "orders"] }),
+    ])
+  }, [queryClient])
   const [isCropOpen, setIsCropOpen] = useState(false)
   const [cropTarget, setCropTarget] = useState<
     "product" | "product_detail" | "service" | "service_detail" | null
@@ -3047,6 +3066,10 @@ export default function Source() {
 
   return (
     <>
+      <PullRefreshShell
+        onRefresh={handlePullRefresh}
+        isBlockedRef={sourcePullRefreshBlockedRef}
+      >
       <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-900/60 bg-zinc-950/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6">
@@ -4311,6 +4334,7 @@ export default function Source() {
       />
       <PostModal isOpen={isPostModalOpen} onClose={() => setIsPostModalOpen(false)} />
     </div>
+      </PullRefreshShell>
       <style jsx global>{`
         .no-default-close [data-slot='sheet-close'] {
           display: none;

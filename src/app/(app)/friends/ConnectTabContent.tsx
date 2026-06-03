@@ -9,6 +9,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
+import { PullRefreshShell } from '@/components/ui/PullRefreshShell';
 import type {
   DiscoveryProfile,
   Friend,
@@ -600,8 +601,31 @@ export default function ConnectTabContent() {
         ? 'Following'
         : 'Followers';
 
+  const handlePullRefresh = useCallback(async () => {
+    const promises: Promise<void>[] = [
+      refreshFriends(),
+      refreshRequests(),
+      refreshCircleInvites(),
+      refreshSearch(),
+    ];
+    if (canCreateCircle) {
+      promises.push(refreshCircles());
+    }
+    await Promise.all(promises);
+  }, [
+    refreshFriends,
+    refreshRequests,
+    refreshCircleInvites,
+    refreshSearch,
+    refreshCircles,
+    canCreateCircle,
+  ]);
+
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 pb-10 pt-6">
+    <PullRefreshShell
+      onRefresh={handlePullRefresh}
+      contentClassName="mx-auto w-full max-w-4xl space-y-6 px-4 pb-10 pt-6"
+    >
       <div className="space-y-3">
         <h1 className="sr-only">Connect</h1>
         <div
@@ -1214,6 +1238,6 @@ export default function ConnectTabContent() {
       </section>
 
       <div className="pb-[env(safe-area-inset-bottom)]" />
-    </main>
+    </PullRefreshShell>
   );
 }
