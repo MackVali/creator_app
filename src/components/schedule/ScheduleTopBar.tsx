@@ -9,15 +9,8 @@ import {
   Calendar,
   Search,
   Plus,
-  CheckSquare,
-  FolderPlus,
-  Filter,
-  Flame,
-  ListChecks,
   RefreshCcw,
-  PanelsTopLeft,
   SortAsc,
-  Sparkles,
 } from "lucide-react";
 import {
   Sheet,
@@ -100,18 +93,10 @@ export function ScheduleTopBar({
 
   const actions = [
     {
-      label: "Scheduler",
-      icon: RefreshCcw,
-      onClick: () => router.push("/schedule/scheduler"),
-    },
-    {
       label: "Priority Editor",
       icon: SortAsc,
       onClick: () => router.push("/schedule/priorities"),
     },
-    { label: "NEXUS", icon: Sparkles, onClick: () => router.push("/schedule/nexus") },
-    { label: "Windows", icon: PanelsTopLeft, onClick: () => router.push("/windows") },
-    { label: "Today", icon: Calendar, onClick: onToday },
   ];
 
   const safeAreaPadding: CSSProperties = {
