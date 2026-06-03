@@ -1,23 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   Bug,
   ChevronLeft,
   Calendar,
-  Search,
-  Plus,
   RefreshCcw,
-  SortAsc,
 } from "lucide-react";
-import {
-  Sheet,
-  SheetContent,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-
 interface ScheduleTopBarProps {
   year: number;
   onBack: () => void;
@@ -44,7 +35,6 @@ export function ScheduleTopBar({
   onHeightChange,
 }: ScheduleTopBarProps) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const headerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -83,21 +73,13 @@ export function ScheduleTopBar({
   }, [onHeightChange]);
 
   const iconButtonClass =
-    "inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-[var(--text-primary)] transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:opacity-30 disabled:hover:bg-white/5";
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-colors hover:border-white/15 hover:bg-white/[0.12] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:opacity-30 disabled:hover:bg-white/[0.08]";
 
   const rescheduleButtonClass =
     "group relative hidden sm:inline-flex items-center gap-2 rounded-full bg-[var(--accent-red)] px-5 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(190,18,60,0.45)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(190,18,60,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:pointer-events-none disabled:translate-y-0 disabled:opacity-60 disabled:shadow-none";
 
   const debugButtonClass =
-    "hidden sm:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-[var(--text-primary)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]";
-
-  const actions = [
-    {
-      label: "Priority Editor",
-      icon: SortAsc,
-      onClick: () => router.push("/schedule/priorities"),
-    },
-  ];
+    "hidden sm:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] px-3 py-2 text-xs font-semibold text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:border-white/15 hover:bg-white/[0.12] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]";
 
   const safeAreaPadding: CSSProperties = {
     paddingTop: "calc(0.75rem + env(safe-area-inset-top, 0px))",
@@ -113,14 +95,11 @@ export function ScheduleTopBar({
       ref={headerRef}
     >
       <button type="button" onClick={onBack} disabled={!canGoBack} className={iconButtonClass}>
-        <ChevronLeft className="h-5 w-5 text-[var(--accent-red)]" />
+        <ChevronLeft className="h-5 w-5 text-zinc-400" />
       </button>
-      <button
-        type="button"
-        className="rounded-full px-4 py-2 text-sm font-semibold text-[var(--text-primary)] bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]"
-      >
+      <span className="px-4 py-2 text-base font-black tracking-tight text-zinc-200">
         {year}
-      </button>
+      </span>
       <div className="flex items-center gap-2">
         {onReschedule ? (
           <>
@@ -147,7 +126,7 @@ export function ScheduleTopBar({
               className={`sm:hidden ${iconButtonClass}`}
             >
               <RefreshCcw
-                className={`h-5 w-5 text-[var(--accent-red)] ${
+                className={`h-5 w-5 text-zinc-400 ${
                   isRescheduling ? "animate-spin" : ""
                 }`}
               />
@@ -160,7 +139,7 @@ export function ScheduleTopBar({
           aria-label="Open schedule debug"
           className={debugButtonClass}
         >
-          <Bug className="h-4 w-4 text-[var(--accent-red)]" />
+          <Bug className="h-4 w-4 text-zinc-400" />
           <span>Schedule Debug</span>
         </button>
         <button
@@ -169,7 +148,7 @@ export function ScheduleTopBar({
           aria-label="Schedule Debug"
           className={cn(iconButtonClass, "sm:hidden")}
         >
-          <Bug className="h-5 w-5 text-[var(--accent-red)]" />
+          <Bug className="h-5 w-5 text-zinc-400" />
         </button>
         <button
           type="button"
@@ -178,40 +157,8 @@ export function ScheduleTopBar({
           aria-label="Open jump to date"
           className={iconButtonClass}
         >
-          <Calendar className="h-5 w-5 text-[var(--accent-red)]" />
+          <Calendar className="h-5 w-5 text-zinc-400" />
         </button>
-        <button
-          type="button"
-          onClick={() => onOpenSearch?.()}
-          aria-label="Search schedule"
-          className={iconButtonClass}
-        >
-          <Search className="h-5 w-5 text-[var(--accent-red)]" />
-        </button>
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger asChild>
-            <button type="button" aria-label="Open schedule quick actions" className={iconButtonClass}>
-              <Plus className="h-5 w-5 text-[var(--accent-red)]" />
-            </button>
-          </SheetTrigger>
-          <SheetContent side="bottom" className="bg-[var(--surface-elevated)] rounded-t-xl p-4">
-            <div className="grid gap-2">
-              {actions.map(({ label, icon: Icon, onClick }) => (
-                <button
-                  key={label}
-                  onClick={() => {
-                    onClick();
-                    setOpen(false);
-                  }}
-                  className="flex items-center gap-3 p-3 rounded-md bg-white/5 hover:bg-white/10 text-[var(--text-primary)]"
-                >
-                  <Icon className="h-5 w-5 text-[var(--accent-red)]" />
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-          </SheetContent>
-        </Sheet>
       </div>
     </header>
   );
