@@ -470,6 +470,7 @@ async function fetchCommunityCatalog(): Promise<CommunityCatalog> {
   const popularSkills = skillRows
     .filter((skill) => skill.is_popular)
     .sort(comparePopularSkills)
+    .slice(0, 20)
     .map((skill) => ({
       id: skill.id,
       name: skill.name,

@@ -172,22 +172,38 @@ export function describeEmptyWindowReport({
 }): { summary: string; details: string[] } {
   const details: string[] = []
   const constraintNotes = describeWindowConstraints(window)
+  const describeLaterWork = (entries: typeof futurePlacements): string[] => {
+    if (entries.length === 0) return []
+    const candidates = entries.slice(0, 4).map(entry => {
+      const parts = [entry.projectName || 'Untitled project']
+      if (
+        typeof entry.durationMinutes === 'number' &&
+        Number.isFinite(entry.durationMinutes)
+      ) {
+        parts.push(formatDurationLabel(entry.durationMinutes))
+      }
+      parts.push(
+        entry.sameDay
+          ? TIME_FORMATTER.format(entry.start)
+          : DATE_WITH_TIME_FORMATTER.format(entry.start)
+      )
+      return parts.join(', ')
+    })
+    return [`EARLIER = ${candidates.join('; ')}`]
+  }
   const finalizeReport = (
     summary: string,
     detailItems: string[] = details,
     options: { includeConstraints?: boolean } = {}
-  ): { summary: string; details: string[] } => ({
-    summary,
-    details:
-      (options.includeConstraints ?? true) && constraintNotes.length > 0
-        ? [...detailItems, ...constraintNotes]
-        : detailItems,
-  })
+  ): { summary: string; details: string[] } => {
+    if ((options.includeConstraints ?? true) && constraintNotes.length > 0) {
+      return { summary: 'Only', details: [...detailItems, ...constraintNotes] }
+    }
+    return { summary, details: detailItems }
+  }
 
   if (window.window_kind === 'BREAK') {
-    return finalizeReport(
-      `${windowLabel} is a break block—take a breather. The scheduler intentionally keeps this slot empty.`
-    )
+    return finalizeReport('Break', details, { includeConstraints: false })
   }
 
   const effectiveSegmentStart = segmentStart ?? windowStart
@@ -196,42 +212,27 @@ export function describeEmptyWindowReport({
   const segmentEndMs = effectiveSegmentEnd.getTime()
   if (segmentEndMs <= Date.now()) {
     return finalizeReport(
-      `${windowLabel} is in the past, so nothing new can be scheduled within it.`,
+      'Past',
       details,
       { includeConstraints: false }
     )
   }
 
   if (durationMinutes <= 0) {
-    return finalizeReport(
-      `${windowLabel} has no remaining minutes in this gap on the selected day, so nothing can be scheduled here.`
-    )
+    return finalizeReport('Full')
   }
 
   if (unscheduledProjects.length === 0) {
     if (futurePlacements.length > 0) {
-      // Use careful wording here because we only infer causes from later placements.
       const runStartedAtMs = runStartedAt?.getTime()
       const windowStartMs = segmentStartMs
       const windowEndMs = segmentEndMs
       const allTooLong = futurePlacements.every(entry => entry.fits === false)
       if (allTooLong) {
-        const durations = futurePlacements
-          .map(entry => entry.durationMinutes ?? Number.POSITIVE_INFINITY)
-          .filter(value => Number.isFinite(value))
-        const shortest = Math.min(...durations)
-        const summary = Number.isFinite(shortest)
-          ? `${windowLabel} remained open in the final schedule; compatible projects needing at least ${formatDurationLabel(
-              shortest
-            )} appear later, which suggests the scheduler did not use this slot for them. A reschedule or debug run may be needed to explain why.`
-          : `${windowLabel} remained open in the final schedule; compatible projects requiring longer blocks appear later, which suggests the scheduler did not use this slot for them. A reschedule or debug run may be needed to explain why.`
-        const detailItems = futurePlacements.slice(0, 4).map(entry => {
-          const lengthLabel = entry.durationMinutes
-            ? formatDurationLabel(entry.durationMinutes)
-            : 'unknown length'
-          return `${entry.projectName} · ${lengthLabel} · ${DATE_WITH_TIME_FORMATTER.format(entry.start)}`
-        })
-        return finalizeReport(summary, detailItems)
+        return finalizeReport(
+          'Open',
+          describeLaterWork(futurePlacements)
+        )
       }
 
       if (
@@ -251,16 +252,10 @@ export function describeEmptyWindowReport({
             return entry.durationMinutes > remainingMinutes
           })
           if (needsMoreTime.length > 0) {
-            const summary = `${windowLabel} remained open in the final schedule; when the scheduler ran at ${TIME_FORMATTER.format(
-              runStartedAt!
-            )}, only ${formatDurationLabel(remainingMinutes)} was left, so compatible projects appear in later windows. This suggests the scheduler did not use this earlier slot, and a reschedule or debug run may be needed to explain why.`
-            const detailItems = needsMoreTime.slice(0, 4).map(entry => {
-              const lengthLabel = entry.durationMinutes
-                ? formatDurationLabel(entry.durationMinutes)
-                : 'unknown length'
-              return `${entry.projectName} · ${lengthLabel} · ${TIME_FORMATTER.format(entry.start)}`
-            })
-            return finalizeReport(summary, detailItems)
+            return finalizeReport(
+              'Open',
+              describeLaterWork(needsMoreTime)
+            )
           }
         }
       }
@@ -269,42 +264,28 @@ export function describeEmptyWindowReport({
         entry => entry.sameDay && entry.fits !== false
       )
       if (sameDay.length > 0) {
-        const summary = `${windowLabel} remained open in the final schedule; ${sameDay.length} compatible project${
-          sameDay.length === 1 ? '' : 's'
-        } appear later today, which suggests the scheduler did not use this earlier slot. A reschedule or debug run may be needed to explain why.`
-        const detailItems = sameDay.slice(0, 4).map(entry => {
-          const lengthLabel = entry.durationMinutes
-            ? formatDurationLabel(entry.durationMinutes)
-            : 'unknown length'
-          return `${entry.projectName} · ${lengthLabel} · ${TIME_FORMATTER.format(entry.start)}`
-        })
-        return finalizeReport(summary, detailItems)
+        return finalizeReport(
+          'Open',
+          describeLaterWork(sameDay)
+        )
       }
 
       const futureDay = futurePlacements.filter(
         entry => !entry.sameDay && entry.fits !== false
       )
       if (futureDay.length > 0) {
-        const summary = `${windowLabel} remained open in the final schedule; compatible projects were placed in upcoming windows, which suggests the scheduler did not use this slot. A reschedule or debug run may be needed to explain why.`
-        const detailItems = futureDay.slice(0, 4).map(entry => {
-          const lengthLabel = entry.durationMinutes
-            ? formatDurationLabel(entry.durationMinutes)
-            : 'unknown length'
-          return `${entry.projectName} · ${lengthLabel} · ${DATE_WITH_TIME_FORMATTER.format(entry.start)}`
-        })
-        return finalizeReport(summary, detailItems)
+        return finalizeReport(
+          'Open',
+          describeLaterWork(futureDay)
+        )
       }
     }
 
     if (runStartedAt && runStartedAt >= windowEnd) {
-      return finalizeReport(
-        `${windowLabel} began at ${TIME_FORMATTER.format(windowStart)}, but the scheduler last ran at ${TIME_FORMATTER.format(runStartedAt)}, after this window ended.`
-      )
+      return finalizeReport('Past')
     }
 
-    return finalizeReport(
-      `${windowLabel} remained open after the last scheduler run. Trigger a reschedule to reevaluate this slot.`
-    )
+    return finalizeReport('Open')
   }
 
   const windowEnergyIndex = energyIndexFromLabel(energyLabel)
@@ -340,7 +321,7 @@ export function describeEmptyWindowReport({
     )
     if (!Number.isFinite(shortestDuration)) {
       return finalizeReport(
-        `Projects matching ${windowLabel}'s energy are missing duration estimates, so the scheduler skipped this window.`
+        `Projects matching ${windowLabel}'s energy are missing duration estimates.`
       )
     }
     return finalizeReport(
@@ -375,9 +356,7 @@ export function describeEmptyWindowReport({
 
   if (diagnostics.length > 0) {
     return finalizeReport(
-      `Scheduler could not fit ${durationMatches.length} compatible project${
-        durationMatches.length === 1 ? '' : 's'
-      } into ${windowLabel}.`,
+      'No match',
       diagnostics.slice(0, 4)
     )
   }
@@ -390,63 +369,137 @@ export function describeEmptyWindowReport({
   }
 
   return finalizeReport(
-    `${windowLabel} remained open because matching projects still need to be rescheduled. Run the scheduler to capture diagnostics.`,
+    'No match',
     fallbackDetails
   )
 }
 
 function describeWindowConstraints(window: RepoWindow): string[] {
-  const notes: string[] = []
+  const rows: string[] = []
 
-  const locationLabel =
-    window.location_context_name?.trim() ||
-    window.location_context_value?.trim() ||
-    ''
-
-  if (locationLabel) {
-    notes.push(`Requires location context "${locationLabel}".`)
-  } else if (window.location_context_id) {
-    notes.push('Requires a selected location context.')
-  }
-
-  const habitTypes = normalizeConstraintValues(
-    window.allowedHabitTypes ?? window.allowedHabitTypesSet ?? null
+  const monumentIds = normalizeConstraintValues(
+    window.allowedMonumentIds ?? window.allowedMonumentIdsSet ?? null
   )
-  if (window.allowAllHabitTypes === false || habitTypes.length > 0) {
-    notes.push(
-      habitTypes.length > 0
-        ? `Habit types limited to ${habitTypes.join(', ')}.`
-        : 'Habit types are restricted for this block.'
+  if (window.allowAllMonuments === false || monumentIds.length > 0) {
+    rows.push(
+      `MONUMENT = ${formatConstraintTokenGroup({
+        ids: monumentIds,
+        displays: window.allowedMonumentDisplays,
+        displayKey: 'emoji',
+        fallbackLabel: 'Monument',
+      })}`
     )
   }
 
   const skillIds = normalizeConstraintValues(
     window.allowedSkillIds ?? window.allowedSkillIdsSet ?? null
   )
-  if (window.allowAllSkills === false || skillIds.length > 0) {
-    notes.push(
-      skillIds.length > 0
-        ? `Skills are limited to ${skillIds.length} selected skill(s).`
-        : 'Specific skills are required for this block.'
+  const filteredSkillIds = filterSkillIdsCoveredByMonuments({
+    skillIds,
+    skillDisplays: window.allowedSkillDisplays,
+    monumentIds,
+  })
+  if (
+    filteredSkillIds.length > 0 ||
+    (window.allowAllSkills === false && skillIds.length === 0)
+  ) {
+    rows.push(
+      `SKILL = ${formatConstraintTokenGroup({
+        ids: filteredSkillIds,
+        displays: window.allowedSkillDisplays,
+        displayKey: 'icon',
+        fallbackLabel: 'Skill',
+      })}`
     )
   }
 
-  const monumentIds = normalizeConstraintValues(
-    window.allowedMonumentIds ?? window.allowedMonumentIdsSet ?? null
+  const habitTypes = normalizeConstraintValues(
+    window.allowedHabitTypes ?? window.allowedHabitTypesSet ?? null
   )
-  if (window.allowAllMonuments === false || monumentIds.length > 0) {
-    notes.push(
-      monumentIds.length > 0
-        ? `Monuments are limited to ${monumentIds.length} selected monument(s).`
-        : 'Specific monuments are required for this block.'
+  if (window.allowAllHabitTypes === false || habitTypes.length > 0) {
+    rows.push(
+      `HABITS = ${habitTypes.length > 0 ? habitTypes.join(', ') : 'Habit Type'}`
     )
   }
 
-  if (window.dayTypeTimeBlockId && notes.length > 0) {
-    notes.unshift('Day-type time block constraints apply to this slot.')
+  return rows
+}
+
+function filterSkillIdsCoveredByMonuments({
+  skillIds,
+  skillDisplays,
+  monumentIds,
+}: {
+  skillIds: string[]
+  skillDisplays?: Array<{
+    id?: string | null
+    monumentId?: string | null
+    monument_id?: string | null
+  }> | null
+  monumentIds: string[]
+}): string[] {
+  if (skillIds.length === 0 || monumentIds.length === 0) return skillIds
+
+  const allowedMonuments = new Set(monumentIds)
+  const skillMonumentById = new Map(
+    (skillDisplays ?? [])
+      .map(display => {
+        const id = formatDisplayToken(display.id)
+        const monumentId = formatDisplayToken(
+          display.monumentId ?? display.monument_id
+        )
+        return [id, monumentId] as const
+      })
+      .filter(([id, monumentId]) => id.length > 0 && monumentId.length > 0)
+  )
+
+  return skillIds.filter(id => {
+    const monumentId = skillMonumentById.get(id)
+    return !monumentId || !allowedMonuments.has(monumentId)
+  })
+}
+
+function formatConstraintTokenGroup<
+  T extends { id?: string | null } & Record<K, string | null | undefined>,
+  K extends string
+>({
+  ids,
+  displays,
+  displayKey,
+  fallbackLabel,
+}: {
+  ids: string[]
+  displays?: T[] | null
+  displayKey: K
+  fallbackLabel: string
+}): string {
+  if (ids.length === 0) return fallbackLabel
+
+  const displayById = new Map(
+    (displays ?? [])
+      .map(display => [
+        typeof display.id === 'string' ? display.id.trim() : '',
+        formatDisplayToken(display[displayKey]),
+      ] as const)
+      .filter(([id, token]) => id.length > 0 && token.length > 0)
+  )
+  const tokens = ids
+    .map(id => displayById.get(id) ?? '')
+    .filter(token => token.length > 0)
+  const missingCount = ids.length - tokens.length
+  if (missingCount > 0) {
+    tokens.push(formatCompactCount(missingCount, fallbackLabel))
   }
 
-  return notes
+  return tokens.join(', ')
+}
+
+function formatDisplayToken(value?: string | null): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function formatCompactCount(count: number, singularLabel: string): string {
+  return `${singularLabel} ×${count}`
 }
 
 function normalizeConstraintValues(

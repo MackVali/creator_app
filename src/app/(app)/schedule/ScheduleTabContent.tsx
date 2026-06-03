@@ -7336,13 +7336,16 @@ export default function ScheduleTabContent({
 
               const reportContent = (
                 <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-slate-700/80 bg-black/10 px-3 py-2 text-slate-50 shadow-[0_16px_24px_rgba(0,0,0,0.25)] backdrop-blur-sm">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-white/90">
-                    Window report · {report.windowLabel}
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-white/80">
-                    <span>{report.rangeLabel}</span>
-                    <span>Energy: {report.energyLabel}</span>
-                    <span>Duration: {report.durationLabel}</span>
+                  <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-white/90">
+                    <FlameEmber
+                      level={report.energyLabel}
+                      size="xs"
+                      className="shrink-0"
+                    />
+                    <span className="min-w-0 truncate">{report.windowLabel}</span>
+                    <span className="shrink-0 text-white/70">
+                      {report.rangeLabel}
+                    </span>
                   </div>
                   <p className="mt-2 text-[11px] leading-snug text-white">
                     {report.summary}

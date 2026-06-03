@@ -88,7 +88,13 @@ const buildReportPayload = () => {
     makeInstance('inst-2', 'win-2', '2026-02-01T15:00:00Z', '2026-02-01T16:00:00Z'),
   ]
   const projects = [makeProject('proj-1'), makeProject('proj-2')]
-  const projectInstances = [
+  const projectInstances: Array<{
+    instance: ScheduleInstance
+    project: ProjectItem
+    start: Date
+    end: Date
+    assignedWindow: RepoWindow | null
+  }> = [
     {
       instance: instances[0],
       project: projects[0],
@@ -103,7 +109,7 @@ const buildReportPayload = () => {
       end: new Date('2026-02-01T16:00:00Z'),
       assignedWindow: windows[1],
     },
-  ] as any
+  ]
   const occupiedSegments = projectInstances.map(({ start, end }) => ({ start, end }))
 
   return {
@@ -122,7 +128,7 @@ const buildReportPayload = () => {
 }
 
 describe('describeEmptyWindowReport', () => {
-  it('explains when the scheduler runs mid-window with too little time remaining', async () => {
+  it('lists later matching work without scheduler prose', async () => {
     const { describeEmptyWindowReport } = await loadWindowReports()
     const runStartedAt = makeDate('2024-05-05T15:30:00Z')
     const windowStart = makeDate('2024-05-05T15:00:00Z')
@@ -160,10 +166,11 @@ describe('describeEmptyWindowReport', () => {
       vi.useRealTimers()
     }
 
-    expect(result.summary).toMatch(/only 1h 30m was left/i)
-    expect(result.summary).toMatch(/scheduler ran/i)
+    expect(result.summary).toBe('Open')
     expect(result.details).toHaveLength(1)
+    expect(result.details[0]).toMatch(/^EARLIER = /)
     expect(result.details[0]).toContain('Project A')
+    expect(result.details[0]).toContain('2 hours')
   })
 
   it('tells you to take a break for break blocks', async () => {
@@ -189,11 +196,11 @@ describe('describeEmptyWindowReport', () => {
       window: wakeWindow,
     })
 
-    expect(result.summary).toMatch(/break block/i)
+    expect(result.summary).toBe('Break')
     expect(result.details).toHaveLength(0)
   })
 
-  it('documents constraints for day-type time blocks without exposing raw ids', async () => {
+  it('documents constraints with clean labels without exposing raw ids', async () => {
     const { describeEmptyWindowReport } = await loadWindowReports()
     const windowStart = makeDate('2024-05-05T14:00:00Z')
     const windowEnd = makeDate('2024-05-05T15:00:00Z')
@@ -207,8 +214,23 @@ describe('describeEmptyWindowReport', () => {
       '42ee1e43-8aa8-47ce-bc10-222d740ebf53',
       '624f9725-98a6-40a9-a5b9-78ad21289857',
     ]
+    constrainedWindow.allowedSkillDisplays = [
+      {
+        id: '42ee1e43-8aa8-47ce-bc10-222d740ebf53',
+        icon: '🎵',
+        monumentId: 'd827668e-21e5-4bdc-8e23-8f89d73a245cc',
+      },
+      {
+        id: '624f9725-98a6-40a9-a5b9-78ad21289857',
+        icon: '🎛️',
+        monumentId: 'd1ff77e2-a1cb-4606-b2d9-99d152614593',
+      },
+    ]
     constrainedWindow.allowAllMonuments = false
     constrainedWindow.allowedMonumentIds = ['d827668e-21e5-4bdc-8e23-8f89d73a245cc']
+    constrainedWindow.allowedMonumentDisplays = [
+      { id: 'd827668e-21e5-4bdc-8e23-8f89d73a245cc', emoji: '🧠' },
+    ]
 
     vi.useFakeTimers()
     vi.setSystemTime(makeDate('2024-05-05T13:00:00Z'))
@@ -233,14 +255,107 @@ describe('describeEmptyWindowReport', () => {
       vi.useRealTimers()
     }
 
-    expect(result.details.some(detail => detail.includes('Day-type time block constraints'))).toBe(true)
-    expect(result.details.some(detail => detail.includes('Requires a selected location context'))).toBe(true)
-    expect(result.details.some(detail => detail.includes('Habit types limited to'))).toBe(true)
-    expect(result.details.some(detail => detail.includes('Skills are limited to 2 selected skill(s).'))).toBe(true)
-    expect(result.details.some(detail => detail.includes('Monuments are limited to 1 selected monument(s).'))).toBe(true)
-    expect(result.details.join('\n')).not.toMatch(
+    expect(result.summary).toBe('Only')
+    expect(result.details).toEqual([
+      'MONUMENT = 🧠',
+      'SKILL = 🎛️',
+      'HABITS = HABIT, FOCUS',
+    ])
+    expect([result.summary, ...result.details].join('\n')).not.toMatch(
+      /(?:location|habit\.type|skill|monument)\.constraints\s*=/
+    )
+    expect([result.summary, ...result.details].join('\n')).not.toMatch(
       /0b15f4a9-8145-43d1-8bd6-268f0174afdf|42ee1e43-8aa8-47ce-bc10-222d740ebf53|624f9725-98a6-40a9-a5b9-78ad21289857|d827668e-21e5-4bdc-8e23-8f89d73a245cc/
     )
+  })
+
+  it('falls back to compact counts when a related display token is missing', async () => {
+    const { describeEmptyWindowReport } = await loadWindowReports()
+    const windowStart = makeDate('2024-05-05T14:00:00Z')
+    const windowEnd = makeDate('2024-05-05T15:00:00Z')
+    const window = makeWindow('missing-display-window', '14:00', '15:00')
+    window.allowAllSkills = false
+    window.allowedSkillIds = [
+      '42ee1e43-8aa8-47ce-bc10-222d740ebf53',
+      '624f9725-98a6-40a9-a5b9-78ad21289857',
+    ]
+    window.allowedSkillDisplays = [
+      { id: '42ee1e43-8aa8-47ce-bc10-222d740ebf53', icon: '🎵' },
+      { id: '624f9725-98a6-40a9-a5b9-78ad21289857', icon: null },
+    ]
+
+    vi.useFakeTimers()
+    vi.setSystemTime(makeDate('2024-05-05T13:00:00Z'))
+    let result
+    try {
+      result = describeEmptyWindowReport({
+        windowLabel: 'Constraints block',
+        energyLabel: 'NO',
+        durationMinutes: 60,
+        unscheduledProjects: [],
+        schedulerFailureByProjectId: {},
+        diagnosticsAvailable: false,
+        runStartedAt: null,
+        windowStart,
+        windowEnd,
+        futurePlacements: [],
+        segmentStart: windowStart,
+        segmentEnd: windowEnd,
+        window,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+
+    expect(result.summary).toBe('Only')
+    expect(result.details).toEqual(['SKILL = 🎵, Skill ×1'])
+  })
+
+  it('omits skill constraints already covered by selected monuments', async () => {
+    const { describeEmptyWindowReport } = await loadWindowReports()
+    const windowStart = makeDate('2024-05-05T14:00:00Z')
+    const windowEnd = makeDate('2024-05-05T15:00:00Z')
+    const window = makeWindow('covered-skill-window', '14:00', '15:00')
+    window.allowAllSkills = false
+    window.allowedSkillIds = ['42ee1e43-8aa8-47ce-bc10-222d740ebf53']
+    window.allowedSkillDisplays = [
+      {
+        id: '42ee1e43-8aa8-47ce-bc10-222d740ebf53',
+        icon: '🎵',
+        monumentId: 'd827668e-21e5-4bdc-8e23-8f89d73a245cc',
+      },
+    ]
+    window.allowAllMonuments = false
+    window.allowedMonumentIds = ['d827668e-21e5-4bdc-8e23-8f89d73a245cc']
+    window.allowedMonumentDisplays = [
+      { id: 'd827668e-21e5-4bdc-8e23-8f89d73a245cc', emoji: '🧠' },
+    ]
+
+    vi.useFakeTimers()
+    vi.setSystemTime(makeDate('2024-05-05T13:00:00Z'))
+    let result
+    try {
+      result = describeEmptyWindowReport({
+        windowLabel: 'Constraints block',
+        energyLabel: 'NO',
+        durationMinutes: 60,
+        unscheduledProjects: [],
+        schedulerFailureByProjectId: {},
+        diagnosticsAvailable: false,
+        runStartedAt: null,
+        windowStart,
+        windowEnd,
+        futurePlacements: [],
+        segmentStart: windowStart,
+        segmentEnd: windowEnd,
+        window,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+
+    expect(result.summary).toBe('Only')
+    expect(result.details).toEqual(['MONUMENT = 🧠'])
   })
 
   it('labels historical windows as past entries without constraint details', async () => {
@@ -271,7 +386,7 @@ describe('describeEmptyWindowReport', () => {
       window,
     })
 
-    expect(result.summary).toMatch(/past/)
+    expect(result.summary).toBe('Past')
     expect(result.details).toHaveLength(0)
   })
 })

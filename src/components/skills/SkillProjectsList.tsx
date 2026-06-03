@@ -16,7 +16,6 @@ import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import { GoalDrawer, type GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
 import type { Goal, Project } from "@/app/(app)/goals/types";
-import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -282,7 +281,7 @@ async function fetchGoalsWithRelations(userId: string) {
   return fallback.data ?? [];
 }
 
-export function SkillProjectsList({ skillId }: { skillId: string }) {
+export function SkillProjectsList({ skillId, icon }: { skillId: string; icon?: string | null }) {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<Goal[]>([]);
   const [projectSection, setProjectSection] = useState<ProjectSection>("active");
@@ -1424,13 +1423,25 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
 
       if (sectionProjects.length === 0) {
         return (
-          <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-            {section === "completed"
-              ? "No completed projects linked to this skill yet."
-              : "No active projects linked to this skill yet."}
-          </Card>
+          <div className="flex min-h-[64px] items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] px-3 py-2.5">
+            <span
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-lg"
+              aria-hidden="true"
+            >
+              {icon}
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-[13px] font-medium leading-tight text-white/84">
+                {section === "completed" ? "No completed projects" : "No active projects"}
+              </h3>
+              <p className="mt-0.5 text-[11px] leading-4 text-white/48">
+                Link a project to this skill to build out your library.
+              </p>
+            </div>
+          </div>
         );
       }
+
 
       return (
         <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
@@ -1464,6 +1475,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     },
     [
       projectsBySection,
+      icon,
       openGoalId,
       handleGoalEdit,
       handleGoalOpenChange,
@@ -1477,67 +1489,76 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
 
   return (
     <div className="skill-projects-list">
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/35">
-            Project Library
-          </p>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/38">
+      <section className="space-y-0">
+        <div className="flex items-start justify-between gap-3 pb-2">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+              PROJECT LIBRARY
+            </p>
+          </div>
+          <span className="rounded-full border border-white/10 bg-white/[0.07] px-2.5 py-1 text-[10px] font-semibold leading-none text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
             {projectSection === "completed" ? "COMPLETED" : "ACTIVE"}
-          </p>
+          </span>
         </div>
-        <div
-          className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-          style={projectPanelHeight ? { height: projectPanelHeight } : undefined}
-          onPointerDown={handleProjectPanelPointerDown}
-          onPointerUp={handleProjectPanelPointerEnd}
-          onTouchStart={handleProjectPanelTouchStart}
-          onTouchMove={handleProjectPanelTouchMove}
-          onTouchEnd={handleProjectPanelTouchEnd}
-          onTouchCancel={resetProjectPanelTouch}
-          onWheel={handleProjectPanelWheel}
-          onPointerCancel={() => {
-            projectPanelDragStartRef.current = null;
-          }}
-        >
+        <div className="relative">
           {loading ? (
             <div
               ref={loadingProjectPanelRef}
               className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
             >
               {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-[100px] w-full rounded-2xl bg-white/10" />
+                <Skeleton
+                  key={i}
+                  className="h-[100px] rounded-2xl bg-white/[0.06]"
+                />
               ))}
             </div>
+          ) : filteredProjects.length === 0 ? (
+            renderProjectPanel(projectSection)
           ) : (
             <div
-              ref={projectPanelViewportRef}
-              className="absolute inset-0"
+              className="relative w-full overflow-hidden touch-pan-y transition-[height] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+              style={projectPanelHeight ? { height: projectPanelHeight } : undefined}
+              onPointerDown={handleProjectPanelPointerDown}
+              onPointerUp={handleProjectPanelPointerEnd}
+              onTouchStart={handleProjectPanelTouchStart}
+              onTouchMove={handleProjectPanelTouchMove}
+              onTouchEnd={handleProjectPanelTouchEnd}
+              onTouchCancel={resetProjectPanelTouch}
+              onWheel={handleProjectPanelWheel}
+              onPointerCancel={() => {
+                projectPanelDragStartRef.current = null;
+              }}
             >
               <div
-                className="flex h-full w-[200%] transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-                style={{
-                  transform: `translate3d(${projectPanelTrackTransform}px, 0, 0)`,
-                  transitionDuration:
-                    !projectPanelTransitionEnabled || projectPanelDragOffset
-                      ? "0ms"
-                      : undefined,
-                }}
+                ref={projectPanelViewportRef}
+                className="absolute inset-0"
               >
-                <div className="h-full w-1/2 shrink-0 overflow-hidden">
-                  <div ref={activeProjectPanelRef}>
-                    {renderProjectPanel("active")}
+                <div
+                  className="flex h-full w-[200%] transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                  style={{
+                    transform: `translate3d(${projectPanelTrackTransform}px, 0, 0)`,
+                    transitionDuration:
+                      !projectPanelTransitionEnabled || projectPanelDragOffset
+                        ? "0ms"
+                        : undefined,
+                  }}
+                >
+                  <div className="h-full w-1/2 shrink-0 overflow-hidden">
+                    <div ref={activeProjectPanelRef}>
+                      {renderProjectPanel("active")}
+                    </div>
                   </div>
-                </div>
-                <div className="h-full w-1/2 shrink-0 overflow-hidden">
-                  <div ref={completedProjectPanelRef}>
-                    {renderProjectPanel("completed")}
+                  <div className="h-full w-1/2 shrink-0 overflow-hidden">
+                    <div ref={completedProjectPanelRef}>
+                      {renderProjectPanel("completed")}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           )}
-        </div>
+          </div>
         <div className="flex items-center justify-center gap-1.5">
           {(["active", "completed"] as const).map((panel) => {
             const isActive = projectSection === panel;

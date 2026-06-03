@@ -184,6 +184,20 @@ export type WindowKind = "DEFAULT" | "BREAK" | "PRACTICE";
 
 const WINDOW_KIND_SET = new Set<WindowKind>(["DEFAULT", "BREAK", "PRACTICE"]);
 
+export type WindowSkillDisplay = {
+  id: string;
+  icon: string | null;
+  monumentId?: string | null;
+  monument_id?: string | null;
+  name?: string | null;
+};
+
+export type WindowMonumentDisplay = {
+  id: string;
+  emoji: string | null;
+  title?: string | null;
+};
+
 export type WindowLite = {
   id: string;
   label: string;
@@ -208,7 +222,11 @@ export type WindowLite = {
   allowedHabitTypesSet?: Set<string>;
   allowedSkillIdsSet?: Set<string>;
   allowedMonumentIdsSet?: Set<string>;
+  allowedSkillDisplays?: WindowSkillDisplay[];
+  allowedMonumentDisplays?: WindowMonumentDisplay[];
 };
+
+export type RepoWindow = WindowLite;
 
 type WindowRecord = {
   id: string;
@@ -280,6 +298,135 @@ function buildIdSet(items: string[]): Set<string> | undefined {
     if (entry) set.add(entry);
   }
   return set.size ? set : undefined;
+}
+
+function uniqueConstraintIds(
+  input?: string[] | null | Set<string>
+): string[] {
+  if (!input) return [];
+  const values = input instanceof Set ? Array.from(input) : input;
+  return Array.from(
+    new Set(
+      values
+        .map((entry) => String(entry ?? "").trim())
+        .filter((entry) => entry.length > 0)
+    )
+  );
+}
+
+function collectWindowConstraintIds(
+  windows: WindowLite[],
+  key: "allowedSkillIds" | "allowedMonumentIds"
+): string[] {
+  return Array.from(
+    new Set(windows.flatMap((window) => uniqueConstraintIds(window[key])))
+  );
+}
+
+type SkillDisplayRow = {
+  id: string | null;
+  icon: string | null;
+  monument_id?: string | null;
+};
+
+type MonumentDisplayRow = {
+  id: string | null;
+  emoji: string | null;
+};
+
+async function fetchConstraintDisplayMaps(
+  supabase: Client,
+  skillIds: string[],
+  monumentIds: string[]
+): Promise<{
+  skills: Map<string, WindowSkillDisplay>;
+  monuments: Map<string, WindowMonumentDisplay>;
+}> {
+  const uniqueSkillIds = uniqueConstraintIds(skillIds);
+  const uniqueMonumentIds = uniqueConstraintIds(monumentIds);
+
+  const [skillDisplays, monumentDisplays] = await Promise.all([
+    uniqueSkillIds.length > 0
+      ? supabase
+          .from("skills")
+          .select("id, icon, monument_id")
+          .in("id", uniqueSkillIds)
+      : Promise.resolve({ data: [] as SkillDisplayRow[] | null, error: null }),
+    uniqueMonumentIds.length > 0
+      ? supabase
+          .from("monuments")
+          .select("id, emoji")
+          .in("id", uniqueMonumentIds)
+      : Promise.resolve({
+          data: [] as MonumentDisplayRow[] | null,
+          error: null,
+        }),
+  ]);
+
+  if (skillDisplays.error) throw skillDisplays.error;
+  if (monumentDisplays.error) throw monumentDisplays.error;
+
+  const skills = new Map<string, WindowSkillDisplay>();
+  for (const row of (skillDisplays.data ?? []) as SkillDisplayRow[]) {
+    const id = typeof row.id === "string" ? row.id.trim() : "";
+    if (!id) continue;
+    const monumentId =
+      typeof row.monument_id === "string" && row.monument_id.trim().length > 0
+        ? row.monument_id.trim()
+        : null;
+    skills.set(id, { id, icon: row.icon ?? null, monumentId });
+  }
+
+  const monuments = new Map<string, WindowMonumentDisplay>();
+  for (const row of (monumentDisplays.data ?? []) as MonumentDisplayRow[]) {
+    const id = typeof row.id === "string" ? row.id.trim() : "";
+    if (!id) continue;
+    monuments.set(id, { id, emoji: row.emoji ?? null });
+  }
+
+  return { skills, monuments };
+}
+
+function attachConstraintDisplays(
+  windows: WindowLite[],
+  displays: {
+    skills: Map<string, WindowSkillDisplay>;
+    monuments: Map<string, WindowMonumentDisplay>;
+  }
+): WindowLite[] {
+  return windows.map((window) => {
+    const skillDisplays = uniqueConstraintIds(window.allowedSkillIds)
+      .map((id) => displays.skills.get(id))
+      .filter((display): display is WindowSkillDisplay => Boolean(display));
+    const monumentDisplays = uniqueConstraintIds(window.allowedMonumentIds)
+      .map((id) => displays.monuments.get(id))
+      .filter((display): display is WindowMonumentDisplay =>
+        Boolean(display)
+      );
+
+    return {
+      ...window,
+      allowedSkillDisplays: skillDisplays.length > 0 ? skillDisplays : undefined,
+      allowedMonumentDisplays:
+        monumentDisplays.length > 0 ? monumentDisplays : undefined,
+    };
+  });
+}
+
+async function enrichWindowConstraintDisplays(
+  supabase: Client,
+  windows: WindowLite[]
+): Promise<WindowLite[]> {
+  const skillIds = collectWindowConstraintIds(windows, "allowedSkillIds");
+  const monumentIds = collectWindowConstraintIds(windows, "allowedMonumentIds");
+  if (skillIds.length === 0 && monumentIds.length === 0) return windows;
+
+  const displays = await fetchConstraintDisplayMaps(
+    supabase,
+    skillIds,
+    monumentIds
+  );
+  return attachConstraintDisplays(windows, displays);
 }
 
 function mapWindowRecord(record: WindowRecord): WindowLite {
@@ -548,7 +695,7 @@ async function fetchWindowsForDateLegacy(
   const weekday = weekdayInTimeZone(date, timeZone);
   const prevWeekday = (weekday + 6) % 7;
   const contextJoin = "location_context:location_contexts(id, value, label)";
-  const columns = `id, label, energy, start_local, end_local, days, location_context_id, window_kind, ${contextJoin}`;
+  const columns = `id, label, energy, start_local, end_local, days, location_context_id, window_kind, day_type_time_block_id, allow_all_habit_types, allow_all_skills, allow_all_monuments, allowed_habit_types, allowed_skill_ids, allowed_monument_ids, ${contextJoin}`;
 
   const userId = options?.userId ?? null;
   const selectWindows = () => supabase.from("windows").select(columns);
@@ -600,30 +747,57 @@ async function fetchWindowsForDateLegacy(
         )
     );
 
-  return [...baseWindows, ...prevCross];
+  return enrichWindowConstraintDisplays(supabase, [...baseWindows, ...prevCross]);
 }
 
-// These tables may not be present in generated types yet; fall back to any to avoid type errors during migration rollout.
+// These tables may not be present in generated types yet; use structural fallbacks during migration rollout.
+type DayTypeAssignmentFallbackRow = {
+  day_type_id?: string | null;
+};
+type DayTypeFallbackRow = {
+  id?: string | null;
+  name?: string | null;
+  days?: unknown[] | null;
+  created_at?: string | null;
+};
+type TimeBlockFallbackRow = {
+  id?: string | null;
+  label?: string | null;
+  start_local?: string | null;
+  end_local?: string | null;
+  days?: number[] | null;
+};
+type DayTypeTimeBlockFallbackRow = {
+  id?: string | null;
+  day_type_id?: string | null;
+  energy?: string | null;
+  block_type?: string | null;
+  location_context_id?: string | null;
+  time_blocks?: TimeBlockFallbackRow | null;
+  allow_all_habit_types?: boolean | null;
+  allow_all_skills?: boolean | null;
+  allow_all_monuments?: boolean | null;
+};
 type DayTypeAssignmentRow = Database["public"]["Tables"] extends {
   day_type_assignments: { Row: infer R };
 }
   ? R
-  : any;
+  : DayTypeAssignmentFallbackRow;
 type DayTypeRow = Database["public"]["Tables"] extends {
   day_types: { Row: infer R };
 }
   ? R
-  : any;
+  : DayTypeFallbackRow;
 type DayTypeTimeBlockRow = Database["public"]["Tables"] extends {
   day_type_time_blocks: { Row: infer R };
 }
   ? R
-  : any;
+  : DayTypeTimeBlockFallbackRow;
 type TimeBlockRow = Database["public"]["Tables"] extends {
   time_blocks: { Row: infer R };
 }
   ? R
-  : any;
+  : TimeBlockFallbackRow;
 
 export const normalizeBlockType = (value?: string | null): WindowKind => {
   const raw = typeof value === "string" ? value.toUpperCase().trim() : "FOCUS";
@@ -867,8 +1041,13 @@ export async function getWindowsForDate_v2(
     .filter(Boolean)
     .sort(sortWindowsByStartThenId) as WindowLite[];
 
+  const enrichedBaseWindows = await enrichWindowConstraintDisplays(
+    supabase,
+    baseWindows
+  );
+
   const result = buildWindowsForDateFromSnapshot(
-    baseWindows,
+    enrichedBaseWindows,
     anchor,
     normalizedTimeZone
   );
@@ -1055,7 +1234,10 @@ export async function fetchWindowsSnapshot(
 
   if (error) throw error;
 
-  return ((data ?? []) as WindowRecord[]).map(mapWindowRecord);
+  return enrichWindowConstraintDisplays(
+    supabase,
+    ((data ?? []) as WindowRecord[]).map(mapWindowRecord)
+  );
 }
 
 export function windowsForDateFromSnapshot(
@@ -1078,7 +1260,10 @@ export async function fetchAllWindows(client?: Client): Promise<WindowLite[]> {
 
   if (error) throw error;
 
-  return ((data ?? []) as WindowRecord[]).map(mapWindowRecord);
+  return enrichWindowConstraintDisplays(
+    supabase,
+    ((data ?? []) as WindowRecord[]).map(mapWindowRecord)
+  );
 }
 
 export async function fetchProjectsMap(
