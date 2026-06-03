@@ -9,6 +9,27 @@ import { normalizeBlockType } from "./repo";
 import type { WindowLite } from "./repo";
 import { addDaysInTimeZone, startOfDayInTimeZone } from "./timezone";
 
+type MockQueryResult = {
+  data: unknown;
+  error: unknown;
+};
+
+type MockBuilder = {
+  select: () => MockBuilder;
+  contains: () => MockBuilder;
+  in: () => MockBuilder;
+  is: () => MockBuilder;
+  eq: () => MockBuilder;
+  maybeSingle: () => Promise<MockQueryResult>;
+  single: () => Promise<MockQueryResult>;
+  then: <TResult1 = MockQueryResult, TResult2 = never>(
+    onFulfilled?:
+      | ((value: MockQueryResult) => TResult1 | PromiseLike<TResult1>)
+      | null,
+    onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
+  ) => Promise<TResult1 | TResult2>;
+};
+
 function createMockSupabase(
   tables: Record<string, { data: unknown; error?: unknown }>
 ) {
@@ -19,14 +40,15 @@ function createMockSupabase(
         data: payload.data ?? null,
         error: payload.error ?? null,
       };
-      const builder: any = {
+      const builder: MockBuilder = {
         select: () => builder,
         contains: () => builder,
+        in: () => builder,
         is: () => builder,
         eq: () => builder,
         maybeSingle: async () => result,
         single: async () => result,
-        then: (onFulfilled: any, onRejected: any) =>
+        then: (onFulfilled, onRejected) =>
           Promise.resolve(result).then(onFulfilled, onRejected),
       };
       return builder;
@@ -63,7 +85,7 @@ describe("getWindowsForDate_v2", () => {
 
     const windows = await getWindowsForDate_v2(
       date,
-      mockSupabase as any,
+      mockSupabase as unknown as Parameters<typeof getWindowsForDate_v2>[1],
       "UTC",
       { userId }
     );
@@ -103,7 +125,7 @@ describe("getWindowsForDate_v2", () => {
 
     const windows = await getWindowsForDate_v2(
       date,
-      mockSupabase as any,
+      mockSupabase as unknown as Parameters<typeof getWindowsForDate_v2>[1],
       "UTC",
       { userId }
     );
@@ -112,6 +134,77 @@ describe("getWindowsForDate_v2", () => {
     expect(windows[0]?.window_kind).toBe("DEFAULT");
     expect(windows[0]?.energy).toBe("MEDIUM");
     expect(windows[0]?.label).toBe("Focus Block");
+  });
+
+  it("attaches allowed skill icons and monument emojis for day-type windows", async () => {
+    const userId = "user-1";
+    const date = new Date("2024-06-10T00:00:00Z");
+    const mockSupabase = createMockSupabase({
+      day_type_assignments: { data: { day_type_id: "dt-constrained" } },
+      day_type_time_blocks: {
+        data: [
+          {
+            id: "dttb-1",
+            day_type_id: "dt-constrained",
+            time_block_id: "block-1",
+            energy: "LOW",
+            block_type: "FOCUS",
+            location_context_id: null,
+            time_blocks: {
+              id: "block-1",
+              label: "Constrained Block",
+              start_local: "14:00",
+              end_local: "15:00",
+              days: null,
+            },
+            location_context: null,
+          },
+        ],
+      },
+      day_type_time_block_allowed_habit_types: {
+        data: [
+          { day_type_time_block_id: "dttb-1", habit_type: "habit" },
+          { day_type_time_block_id: "dttb-1", habit_type: "PRACTICE" },
+        ],
+      },
+      day_type_time_block_allowed_skills: {
+        data: [
+          { day_type_time_block_id: "dttb-1", skill_id: "skill-1" },
+          { day_type_time_block_id: "dttb-1", skill_id: "skill-2" },
+        ],
+      },
+      day_type_time_block_allowed_monuments: {
+        data: [{ day_type_time_block_id: "dttb-1", monument_id: "mon-1" }],
+      },
+      skills: {
+        data: [
+          { id: "skill-1", icon: "🎵", monument_id: "mon-1" },
+          { id: "skill-2", icon: "🎛️", monument_id: "mon-2" },
+        ],
+      },
+      monuments: {
+        data: [{ id: "mon-1", emoji: "🧠" }],
+      },
+    });
+
+    const windows = await getWindowsForDate_v2(
+      date,
+      mockSupabase as unknown as Parameters<typeof getWindowsForDate_v2>[1],
+      "UTC",
+      { userId }
+    );
+
+    expect(windows).toHaveLength(1);
+    expect(windows[0]?.allowedHabitTypes).toEqual(["HABIT", "PRACTICE"]);
+    expect(windows[0]?.allowedSkillIds).toEqual(["skill-1", "skill-2"]);
+    expect(windows[0]?.allowedMonumentIds).toEqual(["mon-1"]);
+    expect(windows[0]?.allowedSkillDisplays).toEqual([
+      { id: "skill-1", icon: "🎵", monumentId: "mon-1" },
+      { id: "skill-2", icon: "🎛️", monumentId: "mon-2" },
+    ]);
+    expect(windows[0]?.allowedMonumentDisplays).toEqual([
+      { id: "mon-1", emoji: "🧠" },
+    ]);
   });
 });
 
@@ -140,9 +233,18 @@ describe("fetchWindowsSnapshot", () => {
           },
         ],
       },
+      skills: {
+        data: [{ id: "skill-1", icon: "🎹", monument_id: "mon-1" }],
+      },
+      monuments: {
+        data: [{ id: "mon-1", emoji: "✍️" }],
+      },
     });
 
-    const snapshot = await fetchWindowsSnapshot("user-1", mockSupabase as any);
+    const snapshot = await fetchWindowsSnapshot(
+      "user-1",
+      mockSupabase as unknown as Parameters<typeof fetchWindowsSnapshot>[1]
+    );
     expect(snapshot).toHaveLength(1);
     const win = snapshot[0];
     expect(win.dayTypeTimeBlockId).toBe("dttb-1");
@@ -152,6 +254,12 @@ describe("fetchWindowsSnapshot", () => {
     expect(win.allowedHabitTypes).toEqual(["HABIT", "PRACTICE"]);
     expect(win.allowedSkillIds).toEqual(["skill-1"]);
     expect(win.allowedMonumentIds).toEqual(["mon-1"]);
+    expect(win.allowedSkillDisplays).toEqual([
+      { id: "skill-1", icon: "🎹", monumentId: "mon-1" },
+    ]);
+    expect(win.allowedMonumentDisplays).toEqual([
+      { id: "mon-1", emoji: "✍️" },
+    ]);
   });
 });
 

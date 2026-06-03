@@ -1075,94 +1075,118 @@ export default function SkillDetailPage() {
     const previewIcon = skillOpenPreview?.icon || "💡";
 
     return (
-      <main className="px-4 py-6 sm:px-6 lg:px-8">
+      <main className="px-4 pb-6 pt-3 sm:px-6 sm:pt-4 lg:px-8">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-6 shadow-[0_35px_120px_-45px_rgba(0,0,0,0.82)] sm:p-8">
+          <section aria-labelledby="skill-overview-loading" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#101010] to-[#181818] p-4 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-5 md:p-6">
             <div className="absolute inset-0">
-              <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.12),_transparent_70%)] blur-3xl" />
-              <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.08),_transparent_65%)] blur-3xl" />
+              <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.16),_transparent_70%)] blur-3xl" />
+              <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.12),_transparent_65%)] blur-3xl" />
             </div>
-            <div className="relative flex flex-col gap-8 md:flex-row md:items-center">
-              <div className="flex items-start gap-5">
+            <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-6">
+              <div className="flex min-w-0 items-start gap-3 sm:gap-4">
                 {skillOpenPreview ? (
-                  <>
-                    <span
-                      className="flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-3xl border border-white/10 bg-white/10 text-5xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
-                      role="img"
-                      aria-label={`Opening ${skillOpenPreview.name}`}
-                    >
-                      {previewIcon}
-                    </span>
-                    <div className="flex min-w-0 flex-col gap-3">
-                      <h1 className="max-w-xl break-words text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                  <span
+                    className="flex h-[68px] w-[68px] shrink-0 items-center justify-center rounded-2xl bg-white/10 text-4xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/20 sm:h-[76px] sm:w-[76px] sm:text-[2.75rem]"
+                    role="img"
+                    aria-label={`Opening ${skillOpenPreview.name}`}
+                  >
+                    {previewIcon}
+                  </span>
+                ) : (
+                  <Skeleton className="h-[68px] w-[68px] shrink-0 rounded-2xl bg-white/10 ring-1 ring-white/20 sm:h-[76px] sm:w-[76px]" />
+                )}
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-start justify-between gap-3">
+                    {skillOpenPreview ? (
+                      <h1 id="skill-overview-loading" className="min-w-0 flex-1 break-words text-2xl font-semibold tracking-tight text-white sm:text-3xl md:text-4xl">
                         {skillOpenPreview.name}
                       </h1>
-                      <div className="flex items-center gap-2">
-                        <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
-                        <Skeleton className="h-6 w-16 rounded-xl bg-white/10" />
-                      </div>
+                    ) : (
+                      <Skeleton id="skill-overview-loading" className="h-8 min-w-0 flex-1 bg-white/10 sm:h-9 md:h-10" />
+                    )}
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Skeleton className="size-9 rounded-full bg-white/10" />
+                      <Skeleton className="size-9 rounded-full bg-white/10" />
                     </div>
-                  </>
-                ) : (
-                  <>
-                    <Skeleton className="h-[88px] w-[88px] rounded-3xl border border-white/10 bg-white/10" />
-                    <div className="flex flex-col gap-3">
-                      <Skeleton className="h-10 w-48 bg-white/10 sm:w-64" />
-                      <div className="flex items-center gap-2">
-                        <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
-                        <Skeleton className="h-6 w-16 rounded-xl bg-white/10" />
-                      </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2 leading-none">
+                      <Skeleton className="h-5 w-5 rounded-full bg-white/10" />
+                      <Skeleton className="h-4 w-14 bg-white/10" />
                     </div>
-                  </>
-                )}
+                  </div>
+                </div>
               </div>
             </div>
           </section>
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101010] to-[#1a1a1a] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.8)] sm:p-7">
+            <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101010] to-[#1a1a1a] p-5 shadow-[0_24px_70px_-48px_rgba(0,0,0,0.76)] sm:p-6">
               <div className="flex items-start justify-between gap-4">
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-20 bg-white/10" />
-                  <Skeleton className="h-7 w-52 bg-white/10" />
-                  <Skeleton className="h-4 w-full max-w-md bg-white/10" />
+                <div className="space-y-1">
+                  <Skeleton className="h-3 w-20 bg-white/10" />
                 </div>
-                <Skeleton className="h-9 w-24 rounded-full bg-white/10" />
+                <Skeleton className="h-8 w-20 rounded-full bg-white/10" />
               </div>
-              <div className="mt-6 space-y-3">
+              <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                 {Array.from({ length: 3 }).map((_, index) => (
-                  <Skeleton key={index} className="h-24 rounded-2xl border border-white/10 bg-white/5" />
+                  <Skeleton
+                    key={index}
+                    className="h-[100px] rounded-2xl bg-white/[0.06]"
+                  />
                 ))}
               </div>
             </section>
 
-            <section className="space-y-6">
-              <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#070707] via-[#121212] to-[#1c1c1c] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.8)] sm:p-7">
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-16 bg-white/10" />
-                  <Skeleton className="h-7 w-44 bg-white/10" />
-                  <Skeleton className="h-4 w-full bg-white/10" />
-                </div>
-                <div className="mt-5 grid gap-3">
-                  <Skeleton className="h-20 rounded-2xl border border-white/10 bg-white/5" />
-                  <Skeleton className="h-20 rounded-2xl border border-white/10 bg-white/5" />
-                </div>
-              </div>
+              <section className="relative space-y-6">
+                <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#070707] via-[#111111] to-[#1b1b1b] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_68%)]" />
+                  <CardHeader className="relative pb-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+                          RELATED HABITS
+                        </CardTitle>
+                      </div>
+                      <Skeleton className="h-6 w-8 rounded-full bg-white/10" />
+                    </div>
+                  </CardHeader>
+                  <CardContent className="relative">
+                    <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                      {Array.from({ length: 3 }).map((_, index) => (
+                        <Skeleton
+                          key={index}
+                          className="h-[100px] rounded-2xl bg-white/[0.06]"
+                        />
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
 
-              <Card className="rounded-3xl border-white/10 bg-white/5 shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
-                <CardHeader>
-                  <Skeleton className="h-6 w-28 bg-white/10" />
-                  <Skeleton className="h-4 w-44 bg-white/10" />
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {Array.from({ length: 3 }).map((_, index) => (
-                      <Skeleton key={index} className="h-8 w-24 rounded-full bg-white/10" />
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </section>
+                <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#070707] via-[#111111] to-[#1b1b1b] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_68%)]" />
+                  <CardHeader className="relative pb-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <CardTitle className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">
+                          NOTES
+                        </CardTitle>
+                      </div>
+                      <Skeleton className="h-6 w-8 rounded-full bg-white/10" />
+                    </div>
+                  </CardHeader>
+                  <CardContent className="relative">
+                    <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                      {Array.from({ length: 3 }).map((_, index) => (
+                        <Skeleton
+                          key={index}
+                          className="h-[100px] rounded-2xl bg-white/[0.06]"
+                        />
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
           </div>
         </div>
       </main>
@@ -1446,12 +1470,12 @@ export default function SkillDetailPage() {
           </section>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101010] to-[#1a1a1a] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.75)] sm:p-7">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
-            <div className="relative overflow-visible">
-              <SkillProjectsList skillId={id} />
-            </div>
-          </section>
+            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#060606] via-[#101010] to-[#1a1a1a] shadow-[0_28px_90px_-48px_rgba(15,23,42,0.75)] backdrop-blur">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
+              <CardContent className="relative overflow-visible">
+                <SkillProjectsList skillId={id} icon={icon} />
+              </CardContent>
+            </Card>
 
           <section className="relative space-y-6">
             <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-gradient-to-br from-[#070707] via-[#111111] to-[#1b1b1b] shadow-[0_24px_60px_-45px_rgba(0,0,0,0.78)] backdrop-blur">
@@ -1474,14 +1498,30 @@ export default function SkillDetailPage() {
                     {Array.from({ length: 3 }).map((_, index) => (
                       <Skeleton
                         key={index}
-                        className="aspect-[5/6] min-h-[96px] rounded-2xl border border-white/10 bg-white/10"
+                        className="h-[100px] rounded-2xl bg-white/[0.06]"
                       />
                     ))}
                   </div>
                 ) : habitsError ? (
                   <p className="text-xs text-white/60">{habitsError}</p>
                 ) : relatedHabits.length === 0 ? (
-                  <p className="text-xs text-white/60">no habits related to this skill yet</p>
+
+                    <div className="flex min-h-[64px] items-center gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] px-3 py-2.5">
+                      <span
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-lg"
+                        aria-hidden="true"
+                      >
+                        {icon}
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="text-[13px] font-medium leading-tight text-white/84">
+                          No habits linked yet
+                        </h3>
+                        <p className="mt-0.5 text-[11px] leading-4 text-white/48">
+                          Attach a habit to this skill to start building consistency.
+                        </p>
+                      </div>
+                    </div>
                 ) : (
                   <div className="space-y-2">
                     {completionError ? (
