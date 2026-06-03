@@ -521,8 +521,9 @@ export default function SkillsCarousel() {
   const [selectedCommunitySkillId, setSelectedCommunitySkillId] = useState<string | null>(null);
   const [communitySkillSearch, setCommunitySkillSearch] = useState("");
   const [activeCommunitySkillCategoryIndex, setActiveCommunitySkillCategoryIndex] = useState(0);
-  const [communitySwipeOffset, setCommunitySwipeOffset] = useState(0);
-  const [isCommunitySwiping, setIsCommunitySwiping] = useState(false);
+  const [communityDragOffset, setCommunityDragOffset] = useState(0);
+  const [isCommunityDragging, setIsCommunityDragging] = useState(false);
+  const [isCommunityAnimating, setIsCommunityAnimating] = useState(false);
   const [openCommunitySkillSubcategories, setOpenCommunitySkillSubcategories] = useState<
     Record<string, boolean>
   >({});
@@ -539,6 +540,8 @@ export default function SkillsCarousel() {
   const addCategoryMenuRef = useRef<HTMLDivElement | null>(null);
   const addCategoryNameRef = useRef<HTMLInputElement | null>(null);
   const communityCategoryButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const communityContentContainerRef = useRef<HTMLDivElement>(null);
+  const communitySuppressTransitionRef = useRef(false);
   const communitySwipeRef = useRef<{
     startX: number;
     startY: number;
@@ -617,6 +620,8 @@ export default function SkillsCarousel() {
     : null;
 
   const moveCommunitySkillCategory = useCallback((direction: -1 | 1) => {
+    setIsCommunityAnimating(false);
+    setCommunityDragOffset(0);
     setActiveCommunitySkillCategoryIndex((current) => {
       const next =
         (current + direction + communitySkillCategoryNames.length) %
@@ -632,6 +637,8 @@ export default function SkillsCarousel() {
       if (nextIndex === -1) {
         return;
       }
+      setIsCommunityAnimating(false);
+      setCommunityDragOffset(0);
       setActiveCommunitySkillCategoryIndex(nextIndex);
       setOpenCommunitySkillSubcategories({});
     },
@@ -640,7 +647,7 @@ export default function SkillsCarousel() {
 
   const handleCommunitySwipeStart = useCallback(
     (e: React.TouchEvent) => {
-      if (isCommunitySkillSearching) return;
+      if (isCommunitySkillSearching || isCommunityAnimating) return;
       const touch = e.touches[0];
       if (!touch) return;
       communitySwipeRef.current = {
@@ -649,15 +656,16 @@ export default function SkillsCarousel() {
         offsetX: 0,
         direction: null,
       };
-      setIsCommunitySwiping(false);
+      setIsCommunityDragging(false);
+      setCommunityDragOffset(0);
     },
-    [isCommunitySkillSearching]
+    [isCommunitySkillSearching, isCommunityAnimating]
   );
 
   const handleCommunitySwipeMove = useCallback(
     (e: React.TouchEvent) => {
       const ref = communitySwipeRef.current;
-      if (!ref || isCommunitySkillSearching) return;
+      if (!ref || isCommunitySkillSearching || isCommunityAnimating) return;
       const touch = e.touches[0];
       if (!touch) return;
       const deltaX = touch.clientX - ref.startX;
@@ -667,7 +675,7 @@ export default function SkillsCarousel() {
         if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) {
           ref.direction = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
           if (ref.direction === "horizontal") {
-            setIsCommunitySwiping(true);
+            setIsCommunityDragging(true);
           }
         }
         return;
@@ -686,10 +694,11 @@ export default function SkillsCarousel() {
         clamped = Math.max(deltaX, -40);
       }
       ref.offsetX = clamped;
-      setCommunitySwipeOffset(clamped);
+      setCommunityDragOffset(clamped);
     },
     [
       isCommunitySkillSearching,
+      isCommunityAnimating,
       activeCommunitySkillCategoryIndex,
       communitySkillCategoryNames.length,
     ]
@@ -698,25 +707,59 @@ export default function SkillsCarousel() {
   const handleCommunitySwipeEnd = useCallback(() => {
     const ref = communitySwipeRef.current;
     communitySwipeRef.current = null;
-    setIsCommunitySwiping(false);
-    setCommunitySwipeOffset(0);
+    setIsCommunityDragging(false);
 
-    if (!ref || ref.direction !== "horizontal") return;
+    if (!ref || ref.direction !== "horizontal" || isCommunityAnimating) {
+      setCommunityDragOffset(0);
+      return;
+    }
 
     const deltaX = ref.offsetX;
+    const container = communityContentContainerRef.current;
+    const containerWidth = container?.clientWidth ?? 300;
+
     if (Math.abs(deltaX) > COMMUNITY_SWIPE_THRESHOLD) {
-      if (deltaX < 0) {
-        setActiveCommunitySkillCategoryIndex((current) =>
-          current < communitySkillCategoryNames.length - 1 ? current + 1 : current
-        );
+      if (deltaX < 0 && activeCommunitySkillCategoryIndex < communitySkillCategoryNames.length - 1) {
+        setIsCommunityAnimating(true);
+        setCommunityDragOffset(-containerWidth);
+        setTimeout(() => {
+          communitySuppressTransitionRef.current = true;
+          setActiveCommunitySkillCategoryIndex((current) =>
+            current < communitySkillCategoryNames.length - 1 ? current + 1 : current
+          );
+          setOpenCommunitySkillSubcategories({});
+          setCommunityDragOffset(0);
+          setIsCommunityAnimating(false);
+          setTimeout(() => {
+            communitySuppressTransitionRef.current = false;
+          }, 0);
+        }, 250);
+      } else if (deltaX > 0 && activeCommunitySkillCategoryIndex > 0) {
+        setIsCommunityAnimating(true);
+        setCommunityDragOffset(containerWidth);
+        setTimeout(() => {
+          communitySuppressTransitionRef.current = true;
+          setActiveCommunitySkillCategoryIndex((current) =>
+            current > 0 ? current - 1 : current
+          );
+          setOpenCommunitySkillSubcategories({});
+          setCommunityDragOffset(0);
+          setIsCommunityAnimating(false);
+          setTimeout(() => {
+            communitySuppressTransitionRef.current = false;
+          }, 0);
+        }, 250);
       } else {
-        setActiveCommunitySkillCategoryIndex((current) =>
-          current > 0 ? current - 1 : current
-        );
+        setCommunityDragOffset(0);
       }
-      setOpenCommunitySkillSubcategories({});
+    } else {
+      setCommunityDragOffset(0);
     }
-  }, [communitySkillCategoryNames.length, COMMUNITY_SWIPE_THRESHOLD]);
+  }, [
+    activeCommunitySkillCategoryIndex,
+    communitySkillCategoryNames.length,
+    isCommunityAnimating,
+  ]);
 
   const closeCommunitySkillPicker = useCallback(() => {
     setCommunitySkillPickerOpen(false);
@@ -724,6 +767,8 @@ export default function SkillsCarousel() {
     setCommunitySkillSearch("");
     setActiveCommunitySkillCategoryIndex(0);
     setOpenCommunitySkillSubcategories({});
+    setCommunityDragOffset(0);
+    setIsCommunityAnimating(false);
   }, []);
 
   useEffect(() => {
@@ -1746,121 +1791,257 @@ export default function SkillsCarousel() {
                     </div>
                   </div>
                   <div
-                    className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-2 sm:px-4"
-                    style={{
-                      transform: `translateX(${communitySwipeOffset}px)`,
-                      transition: isCommunitySwiping ? "none" : "transform 0.25s ease-out",
-                      touchAction: "pan-y",
-                    }}
+                    ref={communityContentContainerRef}
+                    className="relative z-10 min-h-0 flex-1 overflow-hidden px-3 py-2 sm:px-4"
+                    style={{ touchAction: "pan-y" }}
                     onTouchStart={handleCommunitySwipeStart}
                     onTouchMove={handleCommunitySwipeMove}
                     onTouchEnd={handleCommunitySwipeEnd}
                   >
                     {isCommunityCatalogLoading ? (
-                      <div className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-6 text-center text-xs text-zinc-500">
-                        Loading skills...
+                      <div className="flex h-full items-center justify-center">
+                        <div className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-6 text-center text-xs text-zinc-500">
+                          Loading skills...
+                        </div>
                       </div>
-                    ) : activeCommunitySkillCategory === "Popular" || isCommunitySkillSearching ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {filteredCommunitySkills.map((skill) => {
-                          const skillKey = skill.id ?? skill.name;
-                          const isSelected = selectedCommunitySkillId === skillKey;
-                          return (
-                            <button
-                              key={skillKey}
-                              type="button"
-                              onClick={() => setSelectedCommunitySkillId(skillKey)}
-                              aria-pressed={isSelected}
-                              className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
-                                isSelected
-                                  ? "border-white/25 bg-white/[0.065] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-1px_0_rgba(255,255,255,0.05),0_0_20px_rgba(255,255,255,0.07)]"
-                                  : "border-white/[0.035] bg-zinc-950/90 text-zinc-500 hover:border-white/15 hover:text-zinc-200 active:border-white/20 active:text-zinc-100"
-                              }`}
-                            >
-                              <span className="shrink-0 text-[12px] text-zinc-200" aria-hidden>
-                                {skill.icon}
-                              </span>
-                              <span className="truncate">{skill.name}</span>
-                              <span
-                                className={isSelected ? "shrink-0 text-zinc-200/85" : "hidden"}
-                                aria-hidden
+                    ) : isCommunitySkillSearching ? (
+                      <div className="h-full overflow-y-auto">
+                        <div className="flex flex-wrap gap-1.5">
+                          {filteredCommunitySkills.map((skill) => {
+                            const skillKey = skill.id ?? skill.name;
+                            const isSelected = selectedCommunitySkillId === skillKey;
+                            return (
+                              <button
+                                key={skillKey}
+                                type="button"
+                                onClick={() => setSelectedCommunitySkillId(skillKey)}
+                                aria-pressed={isSelected}
+                                className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
+                                  isSelected
+                                    ? "border-white/25 bg-white/[0.065] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-1px_0_rgba(255,255,255,0.05),0_0_20px_rgba(255,255,255,0.07)]"
+                                    : "border-white/[0.035] bg-zinc-950/90 text-zinc-500 hover:border-white/15 hover:text-zinc-200 active:border-white/20 active:text-zinc-100"
+                                }`}
                               >
-                                <Check className="h-3 w-3" />
-                              </span>
-                            </button>
-                          );
-                        })}
+                                <span className="shrink-0 text-[12px] text-zinc-200" aria-hidden>
+                                  {skill.icon}
+                                </span>
+                                <span className="truncate">{skill.name}</span>
+                                <span
+                                  className={isSelected ? "shrink-0 text-zinc-200/85" : "hidden"}
+                                  aria-hidden
+                                >
+                                  <Check className="h-3 w-3" />
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {filteredCommunitySkills.length === 0 && (
+                          <div className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-6 text-center text-xs text-zinc-500">
+                            No skills found.
+                          </div>
+                        )}
+                        {communityCatalog.source === "fallback" && communityCatalogError && (
+                          <p className="mt-2 px-1 text-[10px] text-zinc-600">
+                            Showing starter skills while the catalog is unavailable.
+                          </p>
+                        )}
                       </div>
                     ) : (
-                      <div className="space-y-1.5">
-                        {filteredCommunitySubcategories.map((subcategory) => {
-                          const subcategoryKey = subcategory.id;
-                          const isOpen = Boolean(openCommunitySkillSubcategories[subcategoryKey]);
-                          return (
-                            <div key={subcategory.id} className="border-b border-white/[0.055] pb-1.5 last:border-b-0">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setOpenCommunitySkillSubcategories((previous) => ({
-                                    ...previous,
-                                    [subcategoryKey]: !previous[subcategoryKey],
-                                  }))
-                                }
-                                className="flex w-full items-center justify-between gap-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-400 transition hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-                                aria-expanded={isOpen}
-                              >
-                                <span className="truncate">{subcategory.name}</span>
-                                <ChevronDown
-                                  className={`h-3.5 w-3.5 shrink-0 transition ${
-                                    isOpen ? "rotate-180 text-zinc-100" : "text-zinc-600"
-                                  }`}
-                                />
-                              </button>
-                              {isOpen && (
-                                <div className="flex flex-wrap gap-1.5 pb-1">
-                                  {subcategory.skills.map((skill) => {
-                                    const skillKey = skill.id ?? skill.name;
-                                    const isSelected = selectedCommunitySkillId === skillKey;
-                                    return (
-                                      <button
-                                        key={skillKey}
-                                        type="button"
-                                        onClick={() => setSelectedCommunitySkillId(skillKey)}
-                                        aria-pressed={isSelected}
-                                        className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
-                                          isSelected
-                                            ? "border-white/25 bg-white/[0.065] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-1px_0_rgba(255,255,255,0.05),0_0_20px_rgba(255,255,255,0.07)]"
-                                            : "border-white/[0.035] bg-zinc-950/90 text-zinc-500 hover:border-white/15 hover:text-zinc-200 active:border-white/20 active:text-zinc-100"
-                                        }`}
-                                      >
-                                        <span className="shrink-0 text-[12px] text-zinc-200" aria-hidden>
-                                          {skill.icon}
-                                        </span>
-                                        <span className="truncate">{skill.name}</span>
-                                        <span
-                                          className={
-                                            isSelected ? "shrink-0 text-zinc-200/85" : "hidden"
-                                          }
-                                          aria-hidden
-                                        >
-                                          <Check className="h-3 w-3" />
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
+                      <div
+                        className="flex h-full"
+                        style={{
+                          transform: `translateX(calc(-100% + ${communityDragOffset}px))`,
+                          transition: isCommunityDragging
+                            ? "none"
+                            : communitySuppressTransitionRef.current
+                              ? "none"
+                              : isCommunityAnimating || communityDragOffset !== 0
+                                ? "transform 0.25s ease-out"
+                                : "none",
+                        }}
+                      >
+                        {(() => {
+                          const prevIdx = Math.max(0, activeCommunitySkillCategoryIndex - 1);
+                          const nextIdx = Math.min(
+                            communitySkillCategoryNames.length - 1,
+                            activeCommunitySkillCategoryIndex + 1
                           );
-                        })}
-                      </div>
-                    )}
-                    {!isCommunityCatalogLoading && filteredCommunitySkills.length === 0 && (
-                      <div className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-6 text-center text-xs text-zinc-500">
-                        No skills found.
+                          const panelCategoryNames = [
+                            communitySkillCategoryNames[prevIdx],
+                            activeCommunitySkillCategory,
+                            communitySkillCategoryNames[nextIdx],
+                          ];
+                          const query = communitySkillSearch.trim().toLowerCase();
+
+                          return panelCategoryNames.map((categoryName) => {
+                            if (!categoryName) return null;
+                            const mainCategory =
+                              categoryName === "Popular"
+                                ? null
+                                : communityCatalog.categories.find(
+                                    (c) => c.name === categoryName
+                                  ) ?? null;
+                            const flatSkills =
+                              categoryName === "Popular"
+                                ? communityCatalog.popularSkills.filter(
+                                    (s) => query.length === 0 || s.name.toLowerCase().includes(query)
+                                  )
+                                : mainCategory
+                                  ? mainCategory.subcategories
+                                      .map((sub) => ({
+                                        ...sub,
+                                        skills: sub.skills.filter(
+                                          (s) =>
+                                            query.length === 0 || s.name.toLowerCase().includes(query)
+                                        ),
+                                      }))
+                                      .filter((sub) => sub.skills.length > 0)
+                                      .flatMap((sub) => sub.skills)
+                                  : [];
+                            const panelSubcategories =
+                              categoryName === "Popular" || !mainCategory
+                                ? []
+                                : mainCategory.subcategories
+                                    .map((sub) => ({
+                                      ...sub,
+                                      skills: sub.skills.filter(
+                                        (s) =>
+                                          query.length === 0 || s.name.toLowerCase().includes(query)
+                                      ),
+                                    }))
+                                    .filter((sub) => sub.skills.length > 0);
+
+                            return (
+                              <div
+                                key={categoryName}
+                                className="h-full w-full shrink-0 overflow-y-auto"
+                              >
+                                {categoryName === "Popular" ? (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {flatSkills.map((skill) => {
+                                      const skillKey = skill.id ?? skill.name;
+                                      const isSelected = selectedCommunitySkillId === skillKey;
+                                      return (
+                                        <button
+                                          key={skillKey}
+                                          type="button"
+                                          onClick={() => setSelectedCommunitySkillId(skillKey)}
+                                          aria-pressed={isSelected}
+                                          className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
+                                            isSelected
+                                              ? "border-white/25 bg-white/[0.065] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-1px_0_rgba(255,255,255,0.05),0_0_20px_rgba(255,255,255,0.07)]"
+                                              : "border-white/[0.035] bg-zinc-950/90 text-zinc-500 hover:border-white/15 hover:text-zinc-200 active:border-white/20 active:text-zinc-100"
+                                          }`}
+                                        >
+                                          <span className="shrink-0 text-[12px] text-zinc-200" aria-hidden>
+                                            {skill.icon}
+                                          </span>
+                                          <span className="truncate">{skill.name}</span>
+                                          <span
+                                            className={isSelected ? "shrink-0 text-zinc-200/85" : "hidden"}
+                                            aria-hidden
+                                          >
+                                            <Check className="h-3 w-3" />
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {panelSubcategories.map((subcategory) => {
+                                      const subcategoryKey = subcategory.id;
+                                      const isOpen = Boolean(
+                                        openCommunitySkillSubcategories[subcategoryKey]
+                                      );
+                                      return (
+                                        <div
+                                          key={subcategory.id}
+                                          className="border-b border-white/[0.055] pb-1.5 last:border-b-0"
+                                        >
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setOpenCommunitySkillSubcategories((previous) => ({
+                                                ...previous,
+                                                [subcategoryKey]: !previous[subcategoryKey],
+                                              }))
+                                            }
+                                            className="flex w-full items-center justify-between gap-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-400 transition hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                                            aria-expanded={isOpen}
+                                          >
+                                            <span className="truncate">{subcategory.name}</span>
+                                            <ChevronDown
+                                              className={`h-3.5 w-3.5 shrink-0 transition ${
+                                                isOpen ? "rotate-180 text-zinc-100" : "text-zinc-600"
+                                              }`}
+                                            />
+                                          </button>
+                                          {isOpen && (
+                                            <div className="flex flex-wrap gap-1.5 pb-1">
+                                              {subcategory.skills.map((skill) => {
+                                                const skillKey = skill.id ?? skill.name;
+                                                const isSelected =
+                                                  selectedCommunitySkillId === skillKey;
+                                                return (
+                                                  <button
+                                                    key={skillKey}
+                                                    type="button"
+                                                    onClick={() =>
+                                                      setSelectedCommunitySkillId(skillKey)
+                                                    }
+                                                    aria-pressed={isSelected}
+                                                    className={`inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-left text-[11px] font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${
+                                                      isSelected
+                                                        ? "border-white/25 bg-white/[0.065] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.13),inset_0_-1px_0_rgba(255,255,255,0.05),0_0_20px_rgba(255,255,255,0.07)]"
+                                                        : "border-white/[0.035] bg-zinc-950/90 text-zinc-500 hover:border-white/15 hover:text-zinc-200 active:border-white/20 active:text-zinc-100"
+                                                    }`}
+                                                  >
+                                                    <span
+                                                      className="shrink-0 text-[12px] text-zinc-200"
+                                                      aria-hidden
+                                                    >
+                                                      {skill.icon}
+                                                    </span>
+                                                    <span className="truncate">{skill.name}</span>
+                                                    <span
+                                                      className={
+                                                        isSelected
+                                                          ? "shrink-0 text-zinc-200/85"
+                                                          : "hidden"
+                                                      }
+                                                      aria-hidden
+                                                    >
+                                                      <Check className="h-3 w-3" />
+                                                    </span>
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          });
+                        })()}
                       </div>
                     )}
                     {!isCommunityCatalogLoading &&
+                      !isCommunitySkillSearching &&
+                      filteredCommunitySkills.length === 0 && (
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                          <div className="rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-6 text-center text-xs text-zinc-500">
+                            No skills found.
+                          </div>
+                        </div>
+                      )}
+                    {!isCommunityCatalogLoading &&
+                      !isCommunitySkillSearching &&
                       communityCatalog.source === "fallback" &&
                       communityCatalogError && (
                         <p className="mt-2 px-1 text-[10px] text-zinc-600">

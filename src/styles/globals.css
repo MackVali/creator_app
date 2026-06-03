@@ -248,6 +248,57 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   );
 }
 
+.focus-pomo-start-glint {
+  overflow: hidden;
+}
+
+.focus-pomo-start-glint::after {
+  content: "";
+  position: absolute;
+  inset: -45% -35%;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(
+    115deg,
+    transparent 0%,
+    transparent 36%,
+    rgba(236, 253, 245, 0.08) 43%,
+    rgba(255, 255, 255, 0.24) 48%,
+    rgba(167, 243, 208, 0.1) 53%,
+    transparent 62%,
+    transparent 100%
+  );
+  transform: translateX(-58%) rotate(0.001deg);
+  animation: steel-glint-sweep 3s ease-in-out infinite;
+}
+
+.focus-pomo-start-glint > * {
+  position: relative;
+  z-index: 2;
+}
+
+@keyframes steel-glint-sweep {
+  0%,
+  46% {
+    transform: translateX(-58%) rotate(0.001deg);
+    opacity: 0;
+  }
+
+  54% {
+    opacity: 0.72;
+  }
+
+  72% {
+    transform: translateX(58%) rotate(0.001deg);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateX(58%) rotate(0.001deg);
+    opacity: 0;
+  }
+}
+
 .goal-card {
   position: relative;
   overflow: visible;

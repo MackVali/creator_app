@@ -1,5 +1,6 @@
 "use client";
 
+import type { User } from "@supabase/supabase-js";
 import { Menu } from "lucide-react";
 import TopNavAvatar from "./TopNavAvatar";
 import { useProfile } from "@/lib/hooks/useProfile";
@@ -16,11 +17,60 @@ import {
 import { useAppCart } from "@/components/cart/AppCartProvider";
 import { AppCartQuickView, AppCheckoutFullscreen } from "@/components/cart/AppCartPanels";
 
+type RoleMetadata = {
+  role?: unknown;
+  roles?: unknown;
+  is_admin?: unknown;
+};
+
+function normalizeRole(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function collectRoles(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap(collectRoles);
+  }
+
+  return [];
+}
+
+function userIsTopNavAdmin(user: User | null) {
+  if (!user) {
+    return false;
+  }
+
+  const userMetadata = (user.user_metadata ?? {}) as RoleMetadata;
+  const appMetadata = (user.app_metadata ?? {}) as RoleMetadata;
+
+  if (userMetadata.is_admin === true || appMetadata.is_admin === true) {
+    return true;
+  }
+
+  const roles = [
+    ...collectRoles(userMetadata.role),
+    ...collectRoles(appMetadata.role),
+    ...collectRoles(userMetadata.roles),
+    ...collectRoles(appMetadata.roles),
+  ];
+
+  return roles.some((role) => normalizeRole(role) === "admin");
+}
+
 export default function TopNav() {
   const pathname = usePathname();
   const shouldHideNav = pathname?.startsWith("/schedule");
   const { profile, userId } = useProfile();
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isCartQuickViewOpen, setIsCartQuickViewOpen] = useState(false);
   const supabase = useMemo(() => getSupabaseBrowser(), []);
   const {
@@ -57,6 +107,7 @@ export default function TopNav() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      setCurrentUser(user ?? null);
       setUserEmail(user?.email || null);
     };
 
@@ -99,6 +150,13 @@ export default function TopNav() {
               <DropdownMenuItem asChild>
                 <Link href="/settings">Settings</Link>
               </DropdownMenuItem>
+              {userIsTopNavAdmin(currentUser) ? (
+                <DropdownMenuItem asChild>
+                  <Link href="/schedule/priorities" className="text-zinc-500">
+                    Priority Editor
+                  </Link>
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

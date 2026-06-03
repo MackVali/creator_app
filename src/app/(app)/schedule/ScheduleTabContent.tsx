@@ -198,6 +198,7 @@ const VERTICAL_SCROLL_SLOPE = 1.35;
 const DEBUG_LONG_PRESS = true;
 const SCHEDULE_CARD_LONG_PRESS_MS = 650;
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280;
+const COMPLETION_BOUNCE_DURATION_MS = 420;
 const LONG_PRESS_ACTION_DELAY_MS = 120;
 const HABIT_STREAK_BADGE_BASE_HEIGHT_PX = 18;
 const HABIT_STREAK_BADGE_TOP_MARGIN_PX = 8;
@@ -2885,6 +2886,10 @@ export default function ScheduleTabContent({
     null
   );
   const longPressBounceTimeoutRef = useRef<number | null>(null);
+  const [completionBounceId, setCompletionBounceId] = useState<string | null>(
+    null
+  );
+  const completionBounceTimeoutRef = useRef<number | null>(null);
   const longPressOriginRef = useRef<HTMLElement | null>(null);
   const pendingLongPressActionRef = useRef<{
     action: () => void;
@@ -5293,6 +5298,21 @@ export default function ScheduleTabContent({
     [getHabitCompletionStatus, updateHabitCompletionStatus]
   );
 
+  const triggerCompletionBounce = useCallback((instanceId: string) => {
+    if (!instanceId) return;
+    setCompletionBounceId(instanceId);
+    if (completionBounceTimeoutRef.current !== null) {
+      window.clearTimeout(completionBounceTimeoutRef.current);
+      completionBounceTimeoutRef.current = null;
+    }
+    completionBounceTimeoutRef.current = window.setTimeout(() => {
+      setCompletionBounceId((current) =>
+        current === instanceId ? null : current
+      );
+      completionBounceTimeoutRef.current = null;
+    }, COMPLETION_BOUNCE_DURATION_MS);
+  }, []);
+
   const handleHabitCardActivation = useCallback(
     (placement: HabitTimelinePlacement, dateKey: string) => {
       const isPending = placement.instanceId
@@ -5335,6 +5355,7 @@ export default function ScheduleTabContent({
       );
       const instanceId = placement.instanceId;
       if (instanceId) {
+        triggerCompletionBounce(instanceId);
         const targetStatus: "completed" | "scheduled" =
           nextStatus === "completed" ? "completed" : "scheduled";
         void handleToggleInstanceCompletion(instanceId, targetStatus);
@@ -5355,6 +5376,7 @@ export default function ScheduleTabContent({
     [
       toggleHabitCompletionStatus,
       handleToggleInstanceCompletion,
+      triggerCompletionBounce,
       completionTimestampForDateKey,
       recordHabitCompletionRemote,
       getHabitCompletionStatus,
@@ -6213,6 +6235,10 @@ export default function ScheduleTabContent({
       if (longPressBounceTimeoutRef.current !== null) {
         window.clearTimeout(longPressBounceTimeoutRef.current);
         longPressBounceTimeoutRef.current = null;
+      }
+      if (completionBounceTimeoutRef.current !== null) {
+        window.clearTimeout(completionBounceTimeoutRef.current);
+        completionBounceTimeoutRef.current = null;
       }
     };
   }, []);
@@ -7577,8 +7603,8 @@ export default function ScheduleTabContent({
                 "inset 0 1px 0 rgba(255, 255, 255, 0.12)",
               ].join(", ");
               const completedGemBevelInset = [
-                "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
-                "inset 0 -2px 8px rgba(0, 0, 0, 0.1)",
+                "inset 0 1px 0 rgba(255, 255, 255, 0.045)",
+                "inset 0 -2px 8px rgba(0, 0, 0, 0.11)",
                 "inset 0 0 0 1px rgba(0, 0, 0, 0.08)",
               ].join(", ");
               let cardShadow = scheduledShadow;
@@ -7699,6 +7725,10 @@ export default function ScheduleTabContent({
               const habitBounceActive =
                 hasHabitInstance && placement.instanceId
                   ? longPressBounceId === placement.instanceId
+                  : false;
+              const habitCompletionBounceActive =
+                hasHabitInstance && placement.instanceId
+                  ? completionBounceId === placement.instanceId
                   : false;
               const handleHabitPrimaryAction = () => {
                 if (disableHabitInteractions) {
@@ -7842,7 +7872,14 @@ export default function ScheduleTabContent({
                       : {
                           opacity: 1,
                           y: 0,
-                          scale: habitBounceActive ? 1.04 : 1,
+                          scale: habitCompletionBounceActive
+                            ? [1, 0.965, 1.018, 1]
+                            : habitBounceActive
+                              ? 1.04
+                              : 1,
+                          transition: habitCompletionBounceActive
+                            ? { scale: { duration: 0.35, ease: [0.33, 1, 0.68, 1] as const } }
+                            : undefined,
                         }
                   }
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
@@ -8075,6 +8112,8 @@ export default function ScheduleTabContent({
                 const isCompleted = effectiveStatus === "completed";
                 const projectLongPressActive =
                   longPressBounceId === instance.id;
+                const projectCompletionBounceActive =
+                  completionBounceId === instance.id;
 
                 const editorMounted =
                   editingProjectId !== null || editingHabitId !== null;
@@ -8090,6 +8129,7 @@ export default function ScheduleTabContent({
 
                 const handleProjectToggle = () => {
                   if (!canToggle || isPending) return;
+                  triggerCompletionBounce(instance.id);
                   const nextStatus = isCompleted ? "scheduled" : "completed";
                   void handleToggleInstanceCompletion(instance.id, nextStatus);
                 };
@@ -8107,18 +8147,18 @@ export default function ScheduleTabContent({
                   }
                 };
                 const projectBackground = isCompleted
-                  ? "linear-gradient(155deg, rgba(5, 52, 38, 0.98) 0%, rgba(3, 44, 32, 1) 50%, rgba(2, 36, 26, 1) 100%)"
+                  ? "linear-gradient(155deg, rgba(34, 197, 94, 0.94) 0%, rgba(22, 163, 74, 0.97) 48%, rgba(21, 128, 61, 0.98) 100%)"
                   : "radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)";
                 const resolvedProjectShadow = isCompleted
                   ? useCompactProjectShadow
                     ? TIMELINE_COMPACT_CARD_COMPLETED_SHADOW
-                    : "0 32px 56px rgba(0, 0, 0, 0.52), 0 12px 28px rgba(0, 8, 4, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.06)"
+                    : "0 22px 38px rgba(0, 0, 0, 0.34), 0 9px 18px rgba(3, 83, 45, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.12)"
                   : sharedCardShadow;
                 const projectCardStyle: CSSProperties = {
                   ...sharedCardStyle,
                   boxShadow: resolvedProjectShadow,
                   outline: isCompleted
-                    ? "1px solid rgba(10, 60, 44, 0.50)"
+                    ? "1px solid rgba(22, 101, 52, 0.42)"
                     : sharedCardStyle.outline,
                   background: projectBackground,
                   opacity: displacedPreview ? 0.92 : undefined,
@@ -8127,7 +8167,7 @@ export default function ScheduleTabContent({
                     : sharedCardStyle.outlineOffset,
                 };
                 const projectBorderClass = isCompleted
-                  ? "border-emerald-300/25"
+                  ? "border-green-900/45"
                   : "border-black/70";
                 const instanceEnergyLevel = resolveEnergyLevel(
                   instance.energy_resolved
@@ -8300,19 +8340,25 @@ export default function ScheduleTabContent({
                                 : {
                                     opacity: 1,
                                     y: 0,
-                                    scale: projectLongPressActive ? 1.03 : 1,
+                                    scale: projectCompletionBounceActive
+                                      ? [1, 0.965, 1.018, 1]
+                                      : projectLongPressActive
+                                        ? 1.03
+                                        : 1,
                                     transition: {
                                       delay: hasInteractedWithProjects
                                         ? 0
                                         : index * 0.02,
                                       duration: 0.18,
                                       ease: [0.4, 0, 0.2, 1],
-                                      scale: {
-                                        delay: 0,
-                                        type: "spring",
-                                        stiffness: 520,
-                                        damping: 32,
-                                      },
+                                      scale: projectCompletionBounceActive
+                                        ? { duration: 0.35, ease: [0.33, 1, 0.68, 1] as const }
+                                        : {
+                                            delay: 0,
+                                            type: "spring",
+                                            stiffness: 520,
+                                            damping: 32,
+                                          },
                                     },
                                   }
                             }
@@ -8605,6 +8651,7 @@ export default function ScheduleTabContent({
                                   }
                                   if (!instanceId) return;
                                   if (!canToggle || isPending) return;
+                                  triggerCompletionBounce(instanceId);
                                   const nextStatus = isCompleted
                                     ? "scheduled"
                                     : "completed";
@@ -8870,6 +8917,8 @@ export default function ScheduleTabContent({
                     .join(" ");
                   const standaloneLongPressActive =
                     longPressBounceId === instance.id;
+                  const standaloneCompletionBounceActive =
+                    completionBounceId === instance.id;
 
                   const hideForEdit = Boolean(
                     editingSnapshot &&
@@ -8891,6 +8940,7 @@ export default function ScheduleTabContent({
 
                   const handleStandaloneTaskPrimaryAction = () => {
                     if (!canToggle || isPending) return;
+                    triggerCompletionBounce(instance.id);
                     const nextStatus = isCompleted ? "scheduled" : "completed";
                     void handleToggleInstanceCompletion(
                       instance.id,
@@ -8948,7 +8998,14 @@ export default function ScheduleTabContent({
                           : {
                               opacity: 1,
                               y: 0,
-                              scale: standaloneLongPressActive ? 1.03 : 1,
+                              scale: standaloneCompletionBounceActive
+                                ? [1, 0.965, 1.018, 1]
+                                : standaloneLongPressActive
+                                  ? 1.03
+                                  : 1,
+                              transition: standaloneCompletionBounceActive
+                                ? { scale: { duration: 0.35, ease: [0.33, 1, 0.68, 1] as const } }
+                                : undefined,
                             }
                       }
                       exit={
@@ -9023,6 +9080,8 @@ export default function ScheduleTabContent({
       handleInstancePointerCancel,
       shouldBlockClickFromLongPress,
       longPressBounceId,
+      completionBounceId,
+      triggerCompletionBounce,
       editingInstance,
       editingProjectId,
       editingHabitId,
