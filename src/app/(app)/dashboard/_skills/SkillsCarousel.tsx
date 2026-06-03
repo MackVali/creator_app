@@ -684,6 +684,7 @@ export default function SkillsCarousel() {
       if (ref.direction !== "horizontal") return;
 
       e.preventDefault();
+      e.stopPropagation();
       let clamped = deltaX;
       if (activeCommunitySkillCategoryIndex === 0 && deltaX > 0) {
         clamped = Math.min(deltaX, 40);

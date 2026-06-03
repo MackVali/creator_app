@@ -7261,19 +7261,6 @@ export default function ScheduleTabContent({
           ref={options?.containerRef ?? undefined}
           style={containerStyle}
         >
-          <div className="pb-3 text-white" style={TIMELINE_HEADER_PADDING}>
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
-                {isViewingToday ? "Today" : "Selected Day"}
-              </span>
-              <h2 className="text-base font-semibold tracking-tight text-white sm:text-lg">
-                {dayViewDetails.weekday}
-              </h2>
-              <p className="text-xs text-white/60 sm:text-sm">
-                {dayViewDetails.fullDate}
-              </p>
-            </div>
-          </div>
           <DayTimeline
             date={date}
             startHour={modelStartHour}
@@ -7362,17 +7349,17 @@ export default function ScheduleTabContent({
 
               const reportContent = (
                 <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-700/55 bg-black/[0.025] px-3 py-2 text-slate-50 shadow-[0_10px_18px_rgba(0,0,0,0.16),inset_0_1px_0_rgba(255,255,255,0.018),inset_0_-1px_0_rgba(0,0,0,0.34)] backdrop-blur-[2px]">
-                  <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-white/90">
+                  <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-white/70">
                     <FlameEmber
                       level={report.energyLabel}
                       size="xs"
                       className="shrink-0"
                     />
-                    <span className="min-w-0 truncate">{report.windowLabel}</span>
-                    <span className="shrink-0 text-white/70">
+                    <span className="min-w-0 truncate text-white/75">{report.windowLabel}</span>
+                    <span className="shrink-0 text-white/50">
                       {report.rangeLabel}
                     </span>
-                    <span className="ml-auto shrink-0 text-[9px] uppercase tracking-wide text-white/60">
+                    <span className="ml-auto shrink-0 text-[9px] uppercase tracking-wide text-white/45">
                       {report.window.window_kind === "DEFAULT"
                         ? "FOCUS"
                         : report.window.window_kind}
@@ -7395,6 +7382,7 @@ export default function ScheduleTabContent({
                       ...TIMELINE_CARD_BOUNDS,
                       top: toTimelinePosition(Math.max(0, segment.start)),
                       height: toTimelinePosition(Math.max(0, heightMinutes)),
+                      zIndex: 10,
                     }}
                   >
                     {index === 0 ? (
@@ -7865,7 +7853,7 @@ export default function ScheduleTabContent({
                   layoutId={habitLayoutTokens?.card}
                   className="absolute"
                   style={layeredCardStyle}
-                  initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+                  initial={prefersReducedMotion ? false : { y: 4 }}
                   animate={
                     prefersReducedMotion
                       ? undefined
@@ -7882,7 +7870,7 @@ export default function ScheduleTabContent({
                             : undefined,
                         }
                   }
-                  exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
+                  exit={prefersReducedMotion ? undefined : { y: 4 }}
                 >
                   <div
                     className={clsx(
@@ -8332,7 +8320,7 @@ export default function ScheduleTabContent({
                             initial={
                               prefersReducedMotion
                                 ? false
-                                : { opacity: 0, y: 4 }
+                                : { y: 4 }
                             }
                             animate={
                               prefersReducedMotion
@@ -8366,7 +8354,6 @@ export default function ScheduleTabContent({
                               prefersReducedMotion
                                 ? undefined
                                 : {
-                                    opacity: 0,
                                     y: 4,
                                     transition: {
                                       duration: 0.14,
@@ -8430,7 +8417,7 @@ export default function ScheduleTabContent({
                           data-expanded-project-id={projectId}
                           className="relative h-full w-full"
                           initial={
-                            prefersReducedMotion ? false : { opacity: 0, y: 4 }
+                            prefersReducedMotion ? false : { y: 4 }
                           }
                           animate={
                             prefersReducedMotion
@@ -8448,7 +8435,6 @@ export default function ScheduleTabContent({
                             prefersReducedMotion
                               ? undefined
                               : {
-                                  opacity: 0,
                                   y: 4,
                                   transition: {
                                     duration: 0.14,
@@ -8747,7 +8733,7 @@ export default function ScheduleTabContent({
                                     initial={
                                       prefersReducedMotion
                                         ? false
-                                        : { opacity: 0, y: 6 }
+                                        : { y: 6 }
                                     }
                                     animate={
                                       prefersReducedMotion
@@ -8774,7 +8760,6 @@ export default function ScheduleTabContent({
                                       prefersReducedMotion
                                         ? undefined
                                         : {
-                                            opacity: 0,
                                             y: 6,
                                             transition: {
                                               duration: 0.14,
@@ -8990,7 +8975,7 @@ export default function ScheduleTabContent({
                         );
                       }}
                       initial={
-                        prefersReducedMotion ? false : { opacity: 0, y: 4 }
+                        prefersReducedMotion ? false : { y: 4 }
                       }
                       animate={
                         prefersReducedMotion
@@ -9009,7 +8994,7 @@ export default function ScheduleTabContent({
                             }
                       }
                       exit={
-                        prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
+                        prefersReducedMotion ? undefined : { y: 4 }
                       }
                     >
                       <div className="flex flex-col">
@@ -9413,6 +9398,15 @@ export default function ScheduleTabContent({
       <ProtectedRoute>
         <ScheduleTopBar
           year={year}
+          weekdayLabel={dayTimelineModel?.dayViewDetails.weekday}
+          monthLabel={
+            dayTimelineModel
+              ? format(
+                  toZonedTime(dayTimelineModel.date, dayTimelineModel.viewTimeZone),
+                  "MMM"
+                ).toUpperCase()
+              : undefined
+          }
           onBack={handleBack}
           onToday={handleToday}
           onOpenJumpToDate={() => setIsJumpToDateOpen(true)}
