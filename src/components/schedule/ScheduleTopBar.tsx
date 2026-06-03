@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 interface ScheduleTopBarProps {
   year: number;
+  weekdayLabel?: string;
+  monthLabel?: string;
   onBack: () => void;
   onToday: () => void;
   canGoBack?: boolean;
@@ -24,6 +26,8 @@ interface ScheduleTopBarProps {
 
 export function ScheduleTopBar({
   year,
+  weekdayLabel,
+  monthLabel,
   onBack,
   onToday,
   canGoBack = true,
@@ -94,12 +98,35 @@ export function ScheduleTopBar({
       style={safeAreaPadding}
       ref={headerRef}
     >
-      <button type="button" onClick={onBack} disabled={!canGoBack} className={iconButtonClass}>
-        <ChevronLeft className="h-5 w-5 text-zinc-400" />
-      </button>
-      <span className="px-4 py-2 text-base font-black tracking-tight text-zinc-200">
-        {year}
-      </span>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={onBack} disabled={!canGoBack} className={iconButtonClass}>
+          <ChevronLeft className="h-5 w-5 text-zinc-400" />
+        </button>
+        <button
+          type="button"
+          data-tour="jump-to-date"
+          onClick={() => onOpenJumpToDate?.()}
+          aria-label="Open jump to date"
+          className={iconButtonClass}
+        >
+          <Calendar className="h-5 w-5 text-zinc-400" />
+        </button>
+      </div>
+      <div className="flex items-center justify-center gap-1.5 px-2 leading-none text-zinc-200">
+        {weekdayLabel ? (
+          <span className="text-sm font-black tracking-tight text-zinc-100">
+            {weekdayLabel}
+          </span>
+        ) : null}
+        {monthLabel ? (
+          <span className="text-sm font-black uppercase tracking-tight text-zinc-300">
+            {monthLabel}
+          </span>
+        ) : null}
+        <span className="text-sm font-black tracking-tight text-zinc-100">
+          {year}
+        </span>
+      </div>
       <div className="flex items-center gap-2">
         {onReschedule ? (
           <>
@@ -149,15 +176,6 @@ export function ScheduleTopBar({
           className={cn(iconButtonClass, "sm:hidden")}
         >
           <Bug className="h-5 w-5 text-zinc-400" />
-        </button>
-        <button
-          type="button"
-          data-tour="jump-to-date"
-          onClick={() => onOpenJumpToDate?.()}
-          aria-label="Open jump to date"
-          className={iconButtonClass}
-        >
-          <Calendar className="h-5 w-5 text-zinc-400" />
         </button>
       </div>
     </header>

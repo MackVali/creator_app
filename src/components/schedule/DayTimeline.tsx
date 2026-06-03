@@ -188,12 +188,13 @@ export function DayTimeline({
                       opacity: markerOpacity,
                     }}
                   />
-                  <div
+                   <div
                     className="pointer-events-none absolute -translate-y-1/2 text-[10px] font-medium tracking-[0.08em] text-white"
                     style={{
                       top: minuteTop,
                       right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
                       opacity: labelOpacity,
+                      zIndex: 25,
                     }}
                   >
                     {formatTime(h * 60 + minute)}
