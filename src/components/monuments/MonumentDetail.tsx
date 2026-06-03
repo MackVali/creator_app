@@ -542,7 +542,7 @@ export function MonumentDetail({
               "z-0 overflow-visible"
             )}
           >
-            <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
+            <div className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
             <header className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div
                 className={segmentedToggleContainerClassName}
@@ -595,7 +595,7 @@ export function MonumentDetail({
                 "z-[1] overflow-visible"
               )}
             >
-              <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
+              <div className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
               <div className="relative z-10">
                 <MonumentNotesGrid monumentId={id} initialNotes={notes} />
               </div>
