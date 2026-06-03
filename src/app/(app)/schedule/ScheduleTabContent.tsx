@@ -387,8 +387,8 @@ const dayTimelineVariants = {
 
 const dayTimelineTransition = {
   x: { type: "spring", stiffness: 280, damping: 28, mass: 0.9 },
-  opacity: { duration: 0.22, ease: [0.33, 1, 0.68, 1] as const },
-  scale: { duration: 0.24, ease: [0.2, 0.8, 0.2, 1] as const },
+  opacity: { duration: 0.422, ease: [0.22, 0.72, 0.24, 1] as const },
+  scale: { duration: 0.424, ease: [0.2, 0.8, 0.2, 1] as const },
 };
 
 function clampPxPerMin(value: number) {
@@ -479,7 +479,7 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
       initial={{ opacity: 0, y: 8, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 8, scale: 0.98 }}
-      transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+      transition={{ duration: 0.42, ease: [0.2, 0.8, 0.2, 1] }}
     >
       {children}
     </motion.div>
@@ -7873,12 +7873,12 @@ export default function ScheduleTabContent({
                           opacity: 1,
                           y: 0,
                           scale: habitCompletionBounceActive
-                            ? [1, 0.965, 1.018, 1]
+                            ? [1, 0.99, 1.004, 1]
                             : habitBounceActive
                               ? 1.04
                               : 1,
                           transition: habitCompletionBounceActive
-                            ? { scale: { duration: 0.35, ease: [0.33, 1, 0.68, 1] as const } }
+                            ? { scale: { duration: 0.42, ease: [0.22, 0.72, 0.24, 1] as const } }
                             : undefined,
                         }
                   }
@@ -8341,7 +8341,7 @@ export default function ScheduleTabContent({
                                     opacity: 1,
                                     y: 0,
                                     scale: projectCompletionBounceActive
-                                      ? [1, 0.965, 1.018, 1]
+                                      ? [1, 0.99, 1.004, 1]
                                       : projectLongPressActive
                                         ? 1.03
                                         : 1,
@@ -8352,7 +8352,7 @@ export default function ScheduleTabContent({
                                       duration: 0.18,
                                       ease: [0.4, 0, 0.2, 1],
                                       scale: projectCompletionBounceActive
-                                        ? { duration: 0.35, ease: [0.33, 1, 0.68, 1] as const }
+                                        ? { duration: 0.42, ease: [0.22, 0.72, 0.24, 1] as const }
                                         : {
                                             delay: 0,
                                             type: "spring",
@@ -8999,12 +8999,12 @@ export default function ScheduleTabContent({
                               opacity: 1,
                               y: 0,
                               scale: standaloneCompletionBounceActive
-                                ? [1, 0.965, 1.018, 1]
+                                ? [1, 0.99, 1.004, 1]
                                 : standaloneLongPressActive
                                   ? 1.03
                                   : 1,
                               transition: standaloneCompletionBounceActive
-                                ? { scale: { duration: 0.35, ease: [0.33, 1, 0.68, 1] as const } }
+                                ? { scale: { duration: 0.42, ease: [0.22, 0.72, 0.24, 1] as const } }
                                 : undefined,
                             }
                       }
