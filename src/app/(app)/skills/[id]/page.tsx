@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent, TouchEvent } from "react";
+import type { MouseEvent, PointerEvent, TouchEvent } from "react";
 import clsx from "clsx";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -23,6 +23,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { NotesGrid } from "@/components/notes/NotesGrid";
 import { Button } from "@/components/ui/button";
+import { useFabCreation } from "@/components/ui/FabCreationContext";
 import { useToastHelpers } from "@/components/ui/toast";
 import FocusPomo, { type FocusPomoSource } from "@/components/focus/FocusPomo";
 import FlameEmber from "@/components/FlameEmber";
@@ -82,6 +83,8 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_LOOKAHEAD_DAYS = MAX_SCHEDULE_LOOKAHEAD_DAYS;
 const NO_DUE_MATCH_RANK = MAX_LOOKAHEAD_DAYS + 1;
 const RELATED_HABIT_DOUBLE_TAP_MS = 350;
+const RELATED_HABIT_LONG_PRESS_MS = 550;
+const RELATED_HABIT_LONG_PRESS_SUPPRESS_MS = 700;
 const PULL_EXIT_THRESHOLD_PX = 56;
 const SKILL_OPEN_PREVIEW_PREFIX = "creator.skillOpenPreview.";
 const SKILL_OPEN_PREVIEW_MAX_AGE_MS = 5_000;
@@ -287,6 +290,22 @@ function getHabitCardBorderClass(habitType: string | null | undefined): string {
   return "border-black/70";
 }
 
+function getRelatedHabitFabOriginRect(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  const styles = window.getComputedStyle(element);
+
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+    borderRadius: styles.borderRadius,
+    backgroundColor: styles.backgroundColor,
+    backgroundImage: styles.backgroundImage,
+    boxShadow: styles.boxShadow,
+  };
+}
+
 function describeLevel(level: number): string {
   if (level >= 10) {
     return "Mastery in motion.";
@@ -331,6 +350,7 @@ export default function SkillDetailPage() {
   const supabase = getSupabaseBrowser();
   const router = useRouter();
   const toast = useToastHelpers();
+  const fabCreation = useFabCreation();
   const timeZone = useMemo(() => {
     try {
       return normalizeTimeZone(
@@ -352,6 +372,8 @@ export default function SkillDetailPage() {
     habitId: string;
     timestamp: number;
   } | null>(null);
+  const relatedHabitLongPressTimerRef = useRef<number | null>(null);
+  const relatedHabitSuppressCompletionUntilRef = useRef(0);
   const previousRelatedHabitStateRef = useRef(
     new Map<
       string,
@@ -684,6 +706,12 @@ export default function SkillDetailPage() {
 
   const handleRelatedHabitTouchEnd = useCallback(
     (event: TouchEvent<HTMLDivElement>, habitId: string) => {
+      if (Date.now() < relatedHabitSuppressCompletionUntilRef.current) {
+        event.preventDefault();
+        lastRelatedHabitTapRef.current = null;
+        return;
+      }
+
       const now = Date.now();
       const previousTap = lastRelatedHabitTapRef.current;
 
@@ -704,6 +732,53 @@ export default function SkillDetailPage() {
     },
     [handleRelatedHabitCompletionToggle]
   );
+
+  const cancelRelatedHabitLongPress = useCallback(() => {
+    if (relatedHabitLongPressTimerRef.current !== null) {
+      window.clearTimeout(relatedHabitLongPressTimerRef.current);
+      relatedHabitLongPressTimerRef.current = null;
+    }
+  }, []);
+
+  const handleRelatedHabitPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>, habit: HabitSummary) => {
+      if (event.button !== 0 || pendingRelatedHabitIds.has(habit.id)) {
+        return;
+      }
+
+      const element = event.currentTarget;
+      cancelRelatedHabitLongPress();
+      relatedHabitLongPressTimerRef.current = window.setTimeout(() => {
+        relatedHabitLongPressTimerRef.current = null;
+        relatedHabitSuppressCompletionUntilRef.current =
+          Date.now() + RELATED_HABIT_LONG_PRESS_SUPPRESS_MS;
+        lastRelatedHabitTapRef.current = null;
+        fabCreation?.requestEntityEdit({
+          entityType: "HABIT",
+          entityId: habit.id,
+          title: habit.name,
+          originRect: getRelatedHabitFabOriginRect(element),
+        });
+      }, RELATED_HABIT_LONG_PRESS_MS);
+    },
+    [cancelRelatedHabitLongPress, fabCreation, pendingRelatedHabitIds]
+  );
+
+  const handleRelatedHabitDoubleClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>, habitId: string) => {
+      if (Date.now() < relatedHabitSuppressCompletionUntilRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        lastRelatedHabitTapRef.current = null;
+        return;
+      }
+
+      void handleRelatedHabitCompletionToggle(habitId);
+    },
+    [handleRelatedHabitCompletionToggle]
+  );
+
+  useEffect(() => cancelRelatedHabitLongPress, [cancelRelatedHabitLongPress]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1583,9 +1658,15 @@ export default function SkillDetailPage() {
                             title={`${habit.name} - ${habitPillLabel}. Double tap to ${
                               isHabitCompletedToday ? "undo" : "complete"
                             }.`}
-                            onDoubleClick={() => {
-                              void handleRelatedHabitCompletionToggle(habit.id);
-                            }}
+                            onPointerDown={(event) =>
+                              handleRelatedHabitPointerDown(event, habit)
+                            }
+                            onPointerUp={cancelRelatedHabitLongPress}
+                            onPointerCancel={cancelRelatedHabitLongPress}
+                            onPointerLeave={cancelRelatedHabitLongPress}
+                            onDoubleClick={(event) =>
+                              handleRelatedHabitDoubleClick(event, habit.id)
+                            }
                             onTouchEnd={(event) =>
                               handleRelatedHabitTouchEnd(event, habit.id)
                             }
