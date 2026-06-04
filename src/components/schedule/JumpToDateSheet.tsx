@@ -68,6 +68,7 @@ import {
 } from "@/lib/queries/monuments";
 
 interface JumpToDateSheetProps {
+  variant?: "sheet" | "inline";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentDate: Date;
@@ -78,6 +79,7 @@ interface JumpToDateSheetProps {
     { color?: string; kind?: string; label?: string }
   >;
   snapshot?: JumpToDateSnapshot;
+  className?: string;
 }
 
 type BlockType = "FOCUS" | "BREAK" | "PRACTICE";
@@ -140,6 +142,7 @@ const HABIT_TYPE_OPTIONS = [
 ];
 
 export function JumpToDateSheet({
+  variant = "sheet",
   open,
   onOpenChange,
   currentDate,
@@ -147,6 +150,7 @@ export function JumpToDateSheet({
   timeZone,
   dayMetaByDateKey,
   snapshot,
+  className,
 }: JumpToDateSheetProps) {
   const router = useRouter();
   const [isPaintMode, setIsPaintMode] = useState(false);
@@ -1864,10 +1868,10 @@ export function JumpToDateSheet({
           supabaseInstance: supabase,
           userId,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.warn("Unable to save block settings", error);
         const message =
-          (error?.message as string) ??
+          (error instanceof Error ? error.message : null) ??
           (typeof error === "string" ? error : null) ??
           "Unable to save changes right now.";
         setSaveError(message);
@@ -2017,19 +2021,25 @@ export function JumpToDateSheet({
     ]
   );
 
-  return (
-    <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="bg-gradient-to-b from-[var(--surface-elevated)] via-[var(--surface-elevated)]/95 to-[#0b0f16] border-t border-white/10 p-0 text-[var(--text-primary)] rounded-t-[22px] sm:rounded-t-2xl max-h-[92vh] sm:max-h-[88vh] overflow-hidden shadow-[0_-22px_50px_rgba(0,0,0,0.45)] backdrop-blur"
-      >
+  function JumpToDateContent({
+    titleVariant,
+  }: {
+    titleVariant: "sheet" | "inline";
+  }) {
+    return (
+      <>
         <SheetHeader className="sticky top-0 z-20 border-b border-white/10 bg-[var(--surface-elevated)]/90 px-4 pt-3 pb-2 backdrop-blur">
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col gap-1">
-              <SheetTitle className="text-base font-semibold tracking-tight text-white">
-                Jump to date
-              </SheetTitle>
+              {titleVariant === "sheet" ? (
+                <SheetTitle className="text-base font-semibold tracking-tight text-white">
+                  Jump to date
+                </SheetTitle>
+              ) : (
+                <h2 className="text-base font-semibold tracking-tight text-white">
+                  Jump to date
+                </h2>
+              )}
             </div>
             <button
               type="button"
@@ -3036,8 +3046,11 @@ export function JumpToDateSheet({
             </button>
           </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </>
+    );
+  }
+
+  const overlayWindowModal = (
     <OverlayWindowModal
       open={isOverlayModalOpen}
       onOpenChange={(nextOpen) => setIsOverlayModalOpen(nextOpen)}
@@ -3047,6 +3060,39 @@ export function JumpToDateSheet({
       onEndChange={(nextEnd) => setOverlayEndReference(nextEnd)}
       timeZone={resolvedTimeZone}
     />
+  );
+
+  if (variant === "inline") {
+    return (
+      <>
+        <div
+          className={cn(
+            "flex h-full min-h-0 flex-col overflow-hidden rounded-b-[22px] border-b border-white/10 bg-gradient-to-b from-[var(--surface-elevated)] via-[var(--surface-elevated)]/95 to-[#0b0f16] text-[var(--text-primary)] shadow-[0_18px_42px_rgba(0,0,0,0.32)] backdrop-blur",
+            className
+          )}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <JumpToDateContent titleVariant="inline" />
+        </div>
+        {overlayWindowModal}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          side="bottom"
+          className={cn(
+            "bg-gradient-to-b from-[var(--surface-elevated)] via-[var(--surface-elevated)]/95 to-[#0b0f16] border-t border-white/10 p-0 text-[var(--text-primary)] rounded-t-[22px] sm:rounded-t-2xl max-h-[92vh] sm:max-h-[88vh] overflow-hidden shadow-[0_-22px_50px_rgba(0,0,0,0.45)] backdrop-blur",
+            className
+          )}
+        >
+          <JumpToDateContent titleVariant="sheet" />
+        </SheetContent>
+      </Sheet>
+      {overlayWindowModal}
     </>
   );
 }

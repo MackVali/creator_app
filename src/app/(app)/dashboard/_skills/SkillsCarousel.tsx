@@ -542,6 +542,8 @@ export default function SkillsCarousel() {
   const communityCategoryButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const communityContentContainerRef = useRef<HTMLDivElement>(null);
   const communitySuppressTransitionRef = useRef(false);
+  const outerSwipeBlockedByCommunityRef = useRef(false);
+  const outerSwipeBlockedScrollLeftRef = useRef<number | null>(null);
   const communitySwipeRef = useRef<{
     startX: number;
     startY: number;
@@ -558,6 +560,87 @@ export default function SkillsCarousel() {
     catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
   const getCategoryIcon = (category: (typeof categories)[number]) =>
     catOverrides[category.id]?.icon ?? category.icon ?? null;
+
+  const isInsideCommunityPickerContent = useCallback((target: EventTarget | null) => {
+    return target instanceof Node && Boolean(communityContentContainerRef.current?.contains(target));
+  }, []);
+
+  const blockOuterSwipeForCommunityPicker = useCallback(() => {
+    const track = trackRef.current;
+    outerSwipeBlockedByCommunityRef.current = true;
+    if (!track) return;
+    outerSwipeBlockedScrollLeftRef.current = track.scrollLeft;
+    track.style.overflowX = "hidden";
+  }, []);
+
+  const unblockOuterSwipeForCommunityPicker = useCallback(() => {
+    const track = trackRef.current;
+    if (track) {
+      const blockedScrollLeft = outerSwipeBlockedScrollLeftRef.current;
+      if (blockedScrollLeft !== null) {
+        track.scrollLeft = blockedScrollLeft;
+      }
+      track.style.overflowX = "";
+    }
+    outerSwipeBlockedByCommunityRef.current = false;
+    outerSwipeBlockedScrollLeftRef.current = null;
+  }, []);
+
+  const handleOuterTouchStartCapture = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (!isInsideCommunityPickerContent(event.target)) {
+        outerSwipeBlockedByCommunityRef.current = false;
+        outerSwipeBlockedScrollLeftRef.current = null;
+        return;
+      }
+
+      blockOuterSwipeForCommunityPicker();
+    },
+    [blockOuterSwipeForCommunityPicker, isInsideCommunityPickerContent]
+  );
+
+  const handleOuterTouchMoveCapture = useCallback(() => {
+    if (!outerSwipeBlockedByCommunityRef.current) return;
+
+    const track = trackRef.current;
+    const blockedScrollLeft = outerSwipeBlockedScrollLeftRef.current;
+    if (track && blockedScrollLeft !== null && track.scrollLeft !== blockedScrollLeft) {
+      track.scrollLeft = blockedScrollLeft;
+    }
+  }, []);
+
+  const handleOuterTouchEndCapture = useCallback(() => {
+    if (!outerSwipeBlockedByCommunityRef.current) return;
+    unblockOuterSwipeForCommunityPicker();
+  }, [unblockOuterSwipeForCommunityPicker]);
+
+  const handleOuterPointerDownCapture = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!isInsideCommunityPickerContent(event.target)) {
+        outerSwipeBlockedByCommunityRef.current = false;
+        outerSwipeBlockedScrollLeftRef.current = null;
+        return;
+      }
+
+      blockOuterSwipeForCommunityPicker();
+    },
+    [blockOuterSwipeForCommunityPicker, isInsideCommunityPickerContent]
+  );
+
+  const handleOuterPointerMoveCapture = useCallback(() => {
+    if (!outerSwipeBlockedByCommunityRef.current) return;
+
+    const track = trackRef.current;
+    const blockedScrollLeft = outerSwipeBlockedScrollLeftRef.current;
+    if (track && blockedScrollLeft !== null && track.scrollLeft !== blockedScrollLeft) {
+      track.scrollLeft = blockedScrollLeft;
+    }
+  }, []);
+
+  const handleOuterPointerEndCapture = useCallback(() => {
+    if (!outerSwipeBlockedByCommunityRef.current) return;
+    unblockOuterSwipeForCommunityPicker();
+  }, [unblockOuterSwipeForCommunityPicker]);
 
   const activeCategory = categories[activeIndex];
   const activeColor = useMemo(() => {
@@ -1642,6 +1725,14 @@ export default function SkillsCarousel() {
             className={`relative flex snap-x gap-5 overflow-x-auto overflow-y-hidden px-2 sm:px-3 ${
               skillDragging ? "snap-none touch-none" : "snap-mandatory touch-pan-x"
             }`}
+            onTouchStartCapture={handleOuterTouchStartCapture}
+            onTouchMoveCapture={handleOuterTouchMoveCapture}
+            onTouchEndCapture={handleOuterTouchEndCapture}
+            onTouchCancelCapture={handleOuterTouchEndCapture}
+            onPointerDownCapture={handleOuterPointerDownCapture}
+            onPointerMoveCapture={handleOuterPointerMoveCapture}
+            onPointerUpCapture={handleOuterPointerEndCapture}
+            onPointerCancelCapture={handleOuterPointerEndCapture}
           >
             {categories.map((category, idx) => {
               const isActive = idx === activeIndex;
@@ -1862,19 +1953,20 @@ export default function SkillsCarousel() {
                         )}
                       </div>
                     ) : (
-                      <div
-                        className="flex h-full"
-                        style={{
-                          transform: `translateX(calc(-100% + ${communityDragOffset}px))`,
-                          transition: isCommunityDragging
-                            ? "none"
-                            : communitySuppressTransitionRef.current
+                      <div className="h-full w-full overflow-hidden">
+                        <div
+                          className="flex h-full w-full min-w-0"
+                          style={{
+                            transform: `translateX(calc(-100% + ${communityDragOffset}px))`,
+                            transition: isCommunityDragging
                               ? "none"
-                              : isCommunityAnimating || communityDragOffset !== 0
-                                ? "transform 0.25s ease-out"
-                                : "none",
-                        }}
-                      >
+                              : communitySuppressTransitionRef.current
+                                ? "none"
+                                : isCommunityAnimating || communityDragOffset !== 0
+                                  ? "transform 0.25s ease-out"
+                                  : "none",
+                          }}
+                        >
                         {(() => {
                           const prevIdx = Math.max(0, activeCommunitySkillCategoryIndex - 1);
                           const nextIdx = Math.min(
@@ -1929,7 +2021,7 @@ export default function SkillsCarousel() {
                             return (
                               <div
                                 key={categoryName}
-                                className="h-full w-full shrink-0 overflow-y-auto"
+                                className="h-full w-full min-w-full shrink-0 overflow-y-auto"
                               >
                                 {categoryName === "Popular" ? (
                                   <div className="flex flex-wrap gap-1.5">
@@ -2043,6 +2135,7 @@ export default function SkillsCarousel() {
                             );
                           });
                         })()}
+                        </div>
                       </div>
                     )}
                     {!isCommunityCatalogLoading &&

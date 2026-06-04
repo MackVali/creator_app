@@ -907,30 +907,6 @@ const AUTO_SCOPE_SCHEDULE_KEYWORDS = [
 
 type ScopeSelection = AiScope | "auto";
 
-const SCOPE_OPTIONS: ScopeSelection[] = [
-  "auto",
-  "read_only",
-  "draft_creation",
-  "schedule_edit",
-];
-
-const SCOPE_LABELS: Record<ScopeSelection, string> = {
-  auto: "AUTO",
-  read_only: "Read only",
-  draft_creation: "Draft creation",
-  schedule_edit: "Schedule edit",
-};
-
-const QUICK_START_PROMPTS = [
-  "What should I do right now?",
-  "Help me create a goal",
-  "Set my day type tomorrow to Workday",
-  "Help me create a new day type",
-  "Create a task for today",
-  "Show my top priorities",
-  "Plan my next 2 hours",
-] as const;
-
 const CREATION_MODE_OPTIONS: Record<CreationType, CreationModeOption[]> = {
   GOAL: [
     { id: "main", label: "Main", icon: CircleDot },
@@ -2376,17 +2352,16 @@ export function Fab({
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
   const scopeMenuRef = useRef<HTMLDivElement | null>(null);
   const scopeToggleRef = useRef<HTMLButtonElement | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
+  const [, setAiLoading] = useState(false);
+  const [, setAiError] = useState<string | null>(null);
   const [aiResponse, setAiResponse] = useState<AiIntentResponse | null>(null);
   const rawQuotaPercent = aiResponse?.quota?.percent_used;
   const quotaPercentValue =
     typeof rawQuotaPercent === "number" && Number.isFinite(rawQuotaPercent)
       ? rawQuotaPercent
       : 0;
-  const quotaDisplayPercent = Math.max(0, Math.round(quotaPercentValue));
   const quotaExceeded = quotaPercentValue >= 100;
-  const [aiShowSnapshot, setAiShowSnapshot] = useState(false);
+  const [, setAiShowSnapshot] = useState(false);
   const [aiThread, setAiThread] = useState<LocalAiThreadMessage[]>([]);
   const [proposalFormState, setProposalFormState] = useState<
     Record<string, ProposalFormValues>
@@ -2394,41 +2369,6 @@ export function Fab({
   const [opsPreviewOpenById, setOpsPreviewOpenById] = useState<
     Record<string, boolean>
   >({});
-  const followUps = useMemo(() => {
-    const values = aiResponse?.follow_ups;
-    if (!Array.isArray(values)) return [];
-    return values
-      .filter((item): item is string => typeof item === "string")
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-  }, [aiResponse?.follow_ups]);
-  const clarificationQuestions = useMemo(() => {
-    if (aiResponse?.intent.type !== "NEEDS_CLARIFICATION") return [];
-    const values = aiResponse.intent.questions;
-    if (!Array.isArray(values)) return [];
-    return values
-      .filter((item): item is string => typeof item === "string")
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-  }, [aiResponse?.intent]);
-  const chipSuggestions =
-    clarificationQuestions.length > 0 ? clarificationQuestions : followUps;
-  const scopeLabel = useMemo(() => {
-    let label: string;
-    switch (aiScope) {
-      case "draft_creation":
-        label = "Draft creation";
-        break;
-      case "schedule_edit":
-        label = "Schedule edit";
-        break;
-      default:
-        label = "Read only";
-    }
-    return autoModeActive ? `${label} (AUTO)` : label;
-  }, [aiScope, autoModeActive]);
-  const shouldShowWelcomePanel =
-    aiThread.length === 0 && aiPrompt.trim().length === 0;
   const resetAiHelperState = useCallback(() => {
     setAiThread([]);
     setAiResponse(null);
@@ -15248,385 +15188,21 @@ export function Fab({
               className="fixed inset-0 z-[2147483655] flex items-center justify-center overflow-hidden bg-black/80 backdrop-blur-sm p-4"
             >
               <div className="relative flex h-full max-h-[85vh] w-full max-w-[min(720px,92vw)] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[#020205]/95 text-white shadow-xl">
-                <header className="flex flex-row items-center justify-between border-b border-white/10 px-6 py-4">
-                  <div className="flex flex-col gap-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] leading-tight text-white">
-                      ILAV
-                    </p>
-                    <div className="relative flex flex-col gap-1">
-                      <button
-                        ref={scopeToggleRef}
-                        type="button"
-                        onClick={() => setScopeMenuOpen((prev) => !prev)}
-                        aria-haspopup="true"
-                        aria-expanded={scopeMenuOpen}
-                        className="cursor-pointer text-[9px] uppercase tracking-[0.3em] leading-none text-white/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-                      >
-                        Scope:{" "}
-                        <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/90">
-                          {scopeLabel}
-                        </span>
-                      </button>
-                      <p
-                        className={cn(
-                          "text-[9px] uppercase tracking-[0.3em]",
-                          quotaExceeded ? "text-amber-400" : "text-white/60",
-                        )}
-                      >
-                        AI USED: {quotaDisplayPercent}%
-                      </p>
-                      {scopeMenuOpen ? (
-                        <div
-                          ref={scopeMenuRef}
-                          className="absolute left-0 top-full z-10 mt-2 w-40 rounded-2xl border border-white/20 bg-[#050507]/95 p-2 shadow-lg"
-                        >
-                          {SCOPE_OPTIONS.map((option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              onClick={() => {
-                                setScopeSelection(option);
-                                if (option === "auto") {
-                                  setAutoModeActive(true);
-                                } else {
-                                  setAutoModeActive(false);
-                                  setAiScope(option);
-                                }
-                                setScopeMenuOpen(false);
-                              }}
-                              className={cn(
-                                "block w-full rounded-xl px-3 py-1 text-left text-xs font-semibold uppercase tracking-[0.3em] transition",
-                                option === scopeSelection
-                                  ? "border border-white/40 bg-white/10 text-white"
-                                  : "text-white/70 hover:text-white",
-                              )}
-                            >
-                              {SCOPE_LABELS[option]}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={closeAiOverlay}
-                    aria-label="Close ILAV"
-                    className="rounded-full p-2 text-white/70 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-                  >
-                    <X className="h-5 w-5" aria-hidden="true" />
-                  </button>
-                </header>
-                <div className="flex h-full flex-1 flex-col overflow-hidden">
-                  {/* CHAT REGION (thread only) */}
-                  <div className="flex-1 overflow-y-auto overscroll-contain">
-                    <div className="px-6 py-4 space-y-5">
-                      {shouldShowWelcomePanel ? (
-                        <section className="rounded-2xl border border-white/20 bg-gradient-to-br from-[#0f111a]/90 via-[#050507]/80 to-black/70 p-5 shadow-[0_25px_60px_rgba(5,6,18,0.8)] backdrop-blur">
-                          <div className="space-y-2">
-                            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-white">
-                              ILAV
-                            </h3>
-                            <p className="text-sm text-white/70">
-                              What are we doing right now, Mack?
-                            </p>
-                          </div>
-                          <div className="mt-4 space-y-2">
-                            <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">
-                              Quick starts
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              {QUICK_START_PROMPTS.map((prompt) => (
-                                <button
-                                  key={prompt}
-                                  type="button"
-                                  onClick={() => setAiPrompt(prompt)}
-                                  className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] font-semibold text-white/90 transition hover:border-white/40 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-                                >
-                                  {prompt}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </section>
-                      ) : null}
-                      {aiError ? (
-                        <div className="rounded-2xl border border-white/20 bg-black/60 p-3 text-sm text-white/80 shadow-inner">
-                          {aiError}
-                        </div>
-                      ) : null}
-                      {quotaExceeded ? (
-                        <div className="rounded-2xl border border-amber-500/60 bg-amber-500/10 p-3 text-sm text-white/80 shadow-inner">
-                          Monthly AI quota reached
-                        </div>
-                      ) : null}
-                      {(aiThread.length > 0 ||
-                        aiResponse?.assistant_message) && (
-                        <section className="space-y-3 pt-2">
-                          <div className="flex items-center justify-between">
-                            <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">
-                              Conversation
-                            </p>
-                          </div>
-                          <div ref={chatLogRef} className="space-y-3">
-                            {(() => {
-                              const makeKey = (
-                                message: (typeof aiThread)[number],
-                                fallbackIndex: number,
-                              ) =>
-                                message.id ??
-                                `${message.role}-${message.ts}-${fallbackIndex}`;
-
-                              const renderItems: Array<
-                                | {
-                                    type: "text";
-                                    key: string;
-                                    message: (typeof aiThread)[number];
-                                  }
-                                | {
-                                    type: "proposalGroup";
-                                    key: string;
-                                    proposals: (typeof aiThread)[number][];
-                                    startIndex: number;
-                                  }
-                              > = [];
-
-                              for (
-                                let index = 0;
-                                index < aiThread.length;
-                                index += 1
-                              ) {
-                                const message = aiThread[index];
-
-                                if (message.kind === "proposal") {
-                                  const startIndex = index;
-                                  const proposals = [message];
-                                  let nextIndex = index + 1;
-
-                                  while (
-                                    nextIndex < aiThread.length &&
-                                    aiThread[nextIndex].kind === "proposal"
-                                  ) {
-                                    proposals.push(aiThread[nextIndex]);
-                                    nextIndex += 1;
-                                  }
-
-                                  const keyParts = proposals.map(
-                                    (proposal, offset) =>
-                                      makeKey(proposal, startIndex + offset),
-                                  );
-
-                                  renderItems.push({
-                                    type: "proposalGroup",
-                                    key: `proposal-group-${startIndex}-${keyParts.join("-")}`,
-                                    proposals,
-                                    startIndex,
-                                  });
-
-                                  index = nextIndex - 1;
-                                  continue;
-                                }
-
-                                renderItems.push({
-                                  type: "text",
-                                  key: makeKey(message, index),
-                                  message,
-                                });
-                              }
-
-                              return renderItems.map((item) => {
-                                if (item.type === "text") {
-                                  const containerClasses = cn(
-                                    "flex gap-2 transition",
-                                    item.message.role === "user"
-                                      ? "ml-auto justify-end max-w-[80%]"
-                                      : "justify-start w-full",
-                                  );
-
-                                  return (
-                                    <div
-                                      key={item.key}
-                                      className={containerClasses}
-                                    >
-                                      <div
-                                        className={cn(
-                                          "rounded-[20px] px-4 py-3 text-sm leading-relaxed shadow-[0_10px_30px_rgba(0,0,0,0.35)]",
-                                          item.message.role === "user"
-                                            ? "border border-white/10 bg-white/10 text-white md:rounded-tl-[4px] md:rounded-bl-[20px]"
-                                            : "border border-white/5 bg-white/5 text-white/90 md:rounded-tr-[4px] md:rounded-bl-[20px]",
-                                        )}
-                                      >
-                                        <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">
-                                          {item.message.role === "user"
-                                            ? "You"
-                                            : "ILAV"}
-                                        </p>
-                                        <p className="mt-1 text-sm text-white/90">
-                                          {item.message.content}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  );
-                                }
-
-                                const firstProposal = item.proposals[0];
-                                const containerClasses = cn(
-                                  "flex gap-2 transition",
-                                  firstProposal.role === "user"
-                                    ? "ml-auto justify-end max-w-[80%]"
-                                    : "justify-start w-full",
-                                );
-
-                                return (
-                                  <div
-                                    key={item.key}
-                                    className={containerClasses}
-                                  >
-                                    <div className="w-full overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                                      <div className="flex gap-3 snap-x snap-mandatory px-1">
-                                        {item.proposals.map(
-                                          (proposal, proposalIndex) => {
-                                            const proposalSlideKey = makeKey(
-                                              proposal,
-                                              item.startIndex + proposalIndex,
-                                            );
-
-                                            return (
-                                              <div
-                                                key={`proposal-slide-${proposalSlideKey}`}
-                                                className="w-full shrink-0 snap-center"
-                                              >
-                                                <ProposalTimelineCard
-                                                  message={proposal}
-                                                  formState={
-                                                    proposalFormState[
-                                                      proposal.id
-                                                    ] ?? {}
-                                                  }
-                                                  onFieldChange={(
-                                                    field,
-                                                    value,
-                                                  ) =>
-                                                    handleProposalFieldChange(
-                                                      proposal.id,
-                                                      field,
-                                                      value,
-                                                    )
-                                                  }
-                                                  onSave={() =>
-                                                    handleSaveProposalEdits(
-                                                      proposal,
-                                                    )
-                                                  }
-                                                  onSend={() =>
-                                                    handleSendEditedProposal(
-                                                      proposal,
-                                                    )
-                                                  }
-                                                  opsOpen={
-                                                    opsPreviewOpenById[
-                                                      proposal.id
-                                                    ] ?? false
-                                                  }
-                                                  onToggleOps={() =>
-                                                    toggleOpsPreview(
-                                                      proposal.id,
-                                                    )
-                                                  }
-                                                  isSending={aiLoading}
-                                                  onQueueAiMessage={(
-                                                    prompt,
-                                                  ) => {
-                                                    void handleRunAi(prompt);
-                                                  }}
-                                                  onSchedulerOpsOverrideChange={
-                                                    handleSchedulerOpsOverridesChange
-                                                  }
-                                                />
-                                              </div>
-                                            );
-                                          },
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              });
-                            })()}
-                          </div>
-                        </section>
-                      )}
-                      {chipSuggestions.length > 0 ? (
-                        <div className="space-y-2">
-                          <p className="text-[10px] uppercase tracking-[0.35em] text-white/60">
-                            {clarificationQuestions.length > 0
-                              ? "Clarification prompts"
-                              : "Follow-ups"}
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {chipSuggestions.map((value, index) => (
-                              <button
-                                key={`${value}-${index}`}
-                                type="button"
-                                onClick={() => {
-                                  console.log("chip click", value);
-                                  setAiPrompt(value);
-                                }}
-                                className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs font-semibold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
-                              >
-                                {value}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                      {aiResponse?.snapshot ? (
-                        <div className="space-y-2">
-                          <button
-                            type="button"
-                            onClick={() => setAiShowSnapshot((prev) => !prev)}
-                            className="text-[10px] uppercase tracking-[0.4em] text-white/60 hover:text-white"
-                          >
-                            {aiShowSnapshot ? "Hide snapshot" : "Show snapshot"}
-                          </button>
-                          {aiShowSnapshot ? (
-                            <pre className="max-h-[220px] overflow-auto rounded-xl border border-white/10 bg-black/50 p-3 text-[11px] text-white/80 whitespace-pre-wrap">
-                              {JSON.stringify(aiResponse.snapshot, null, 2)}
-                            </pre>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-                <div className="border-t border-white/10 px-6 py-3">
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="text"
-                      value={aiPrompt}
-                      onChange={(event) => setAiPrompt(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault();
-                          handleRunAi();
-                        }
-                      }}
-                      placeholder="Describe what you need help with…"
-                      className="flex-1 rounded-full border border-white/20 bg-black/60 px-4 py-2 text-sm text-white placeholder:text-white/50 focus:border-white/40 focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      data-tour="fab-ai"
-                      onClick={handleRunAi}
-                      disabled={aiLoading || !aiPrompt.trim() || quotaExceeded}
-                      className={cn(
-                        "rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:cursor-not-allowed disabled:opacity-60",
-                        aiLoading ? "opacity-70" : "",
-                      )}
-                    >
-                      {aiLoading ? "Sending…" : "Send"}
-                    </button>
-                  </div>
+                <button
+                  type="button"
+                  onClick={closeAiOverlay}
+                  aria-label="Close ILAV"
+                  className="absolute right-4 top-4 z-10 rounded-full p-2 text-white/70 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+                <div className="flex min-h-[240px] flex-1 flex-col items-center justify-center px-6 py-16 text-center">
+                  <h2 className="text-2xl font-semibold leading-tight text-white">
+                    Ilav
+                  </h2>
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
+                    COMING SOON
+                  </p>
                 </div>
               </div>
             </div>,
