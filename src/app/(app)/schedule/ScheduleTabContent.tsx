@@ -6025,6 +6025,15 @@ export default function ScheduleTabContent({
 
   function handleTouchStart(e: React.TouchEvent) {
     if (isTouchFromFabOverlay(e)) return;
+
+    if (isInlineJumpToDateOpen) {
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest?.("[data-inline-jump-panel]")) {
+        void closeInlineJumpToDate();
+        return;
+      }
+    }
+
     swipeScrollProgressRef.current = null;
 
     const touches = e.touches;
@@ -9712,7 +9721,20 @@ export default function ScheduleTabContent({
               }
             >
               <div
+                data-inline-jump-panel
                 aria-hidden={!isInlineJumpToDateOpen}
+                onTouchStart={(event) => {
+                  event.stopPropagation();
+                }}
+                onTouchMove={(event) => {
+                  event.stopPropagation();
+                }}
+                onTouchEnd={(event) => {
+                  event.stopPropagation();
+                }}
+                onTouchCancel={(event) => {
+                  event.stopPropagation();
+                }}
                 onClick={(event) => {
                   event.stopPropagation();
                 }}
