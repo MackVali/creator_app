@@ -7,11 +7,11 @@ import { useProfile } from "@/lib/hooks/useProfile";
 import type { Profile as ProfileType } from "@/lib/types";
 import { updateProfilePreferences } from "@/lib/db";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { userHasAppManagerAccess } from "@/lib/auth/userRoles";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useEntitlement } from "@/components/entitlement/EntitlementProvider";
 import {
   AlertTriangle,
-  ArrowLeft,
   Bell,
   ChevronRight,
   FileText,
@@ -62,6 +62,59 @@ const getLocalTimeZone = () => {
 
 type IntlWithSupportedValues = typeof Intl & {
   supportedValuesOf?: (input: string) => string[];
+};
+
+type AccessRoleMetadata = {
+  role?: unknown;
+  roles?: unknown;
+  is_admin?: unknown;
+};
+
+const normalizeAccessRole = (value: string) => {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+};
+
+const collectAccessRoles = (value: unknown): string[] => {
+  if (typeof value === "string") {
+    return [value];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap(collectAccessRoles);
+  }
+
+  return [];
+};
+
+const userHasAdminAccess = (
+  user: {
+    user_metadata?: AccessRoleMetadata | null;
+    app_metadata?: AccessRoleMetadata | null;
+  } | null,
+) => {
+  if (!user) {
+    return false;
+  }
+
+  const userMetadata = user.user_metadata ?? {};
+  const appMetadata = user.app_metadata ?? {};
+
+  if (userMetadata.is_admin === true || appMetadata.is_admin === true) {
+    return true;
+  }
+
+  const roles = [
+    ...collectAccessRoles(userMetadata.role),
+    ...collectAccessRoles(appMetadata.role),
+    ...collectAccessRoles(userMetadata.roles),
+    ...collectAccessRoles(appMetadata.roles),
+  ];
+
+  return roles.some((role) => normalizeAccessRole(role) === "admin");
 };
 
 const getSupportedTimeZones = () => {
@@ -129,6 +182,13 @@ export default function SettingsPage() {
   const router = useRouter();
 
   const planStatusLabel = !isReady ? "Loading" : is_active ? "Active" : "Free plan";
+  const accessLevelLabel = userHasAdminAccess(user)
+    ? "ADMIN"
+    : userHasAppManagerAccess(user)
+      ? "MANAGER"
+      : isPlus || is_active
+        ? "PRO"
+        : null;
   const handlePlanAction = () => router.push("/settings/billing");
   const planRenewalDate = (() => {
     if (!current_period_end) {
@@ -486,17 +546,27 @@ export default function SettingsPage() {
       }}
     >
       <header className="sticky top-0 z-10 border-b border-white/10 bg-[var(--bg)]/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)]">
+        <div className="relative mx-auto flex max-w-5xl items-center justify-between px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)]">
           <button
             type="button"
             aria-label="Go back to dashboard"
             onClick={() => router.push("/dashboard")}
-            className="inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-sm font-medium transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            className="inline-flex h-9 w-9 items-center justify-center text-[var(--text)] transition hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
           >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            <span>Back</span>
+            <span aria-hidden="true" className="text-3xl font-light leading-none">
+              ‹
+            </span>
           </button>
-          <h1 className="text-lg font-semibold leading-tight">Settings</h1>
+          <h1 className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-lg font-semibold leading-tight">
+            Settings
+          </h1>
+          {accessLevelLabel ? (
+            <span className="shrink-0 text-right text-sm font-extrabold leading-tight text-emerald-400">
+              {accessLevelLabel}
+            </span>
+          ) : (
+            <span className="h-9 w-[76px] shrink-0" aria-hidden="true" />
+          )}
         </div>
       </header>
       <main className="mx-auto max-w-5xl space-y-12 px-4 pb-16 pt-10">{mainContent}</main>

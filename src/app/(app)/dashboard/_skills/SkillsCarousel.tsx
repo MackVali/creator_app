@@ -521,9 +521,6 @@ export default function SkillsCarousel() {
   const [selectedCommunitySkillId, setSelectedCommunitySkillId] = useState<string | null>(null);
   const [communitySkillSearch, setCommunitySkillSearch] = useState("");
   const [activeCommunitySkillCategoryIndex, setActiveCommunitySkillCategoryIndex] = useState(0);
-  const [communityDragOffset, setCommunityDragOffset] = useState(0);
-  const [isCommunityDragging, setIsCommunityDragging] = useState(false);
-  const [isCommunityAnimating, setIsCommunityAnimating] = useState(false);
   const [openCommunitySkillSubcategories, setOpenCommunitySkillSubcategories] = useState<
     Record<string, boolean>
   >({});
@@ -541,15 +538,12 @@ export default function SkillsCarousel() {
   const addCategoryNameRef = useRef<HTMLInputElement | null>(null);
   const communityCategoryButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const communityContentContainerRef = useRef<HTMLDivElement>(null);
-  const communitySuppressTransitionRef = useRef(false);
+  const communityResultsPagerRef = useRef<HTMLDivElement>(null);
+  const activeCommunitySkillCategoryIndexRef = useRef(0);
+  const communityResultsScrollFrameRef = useRef<number | null>(null);
+  const communityResultsScrollSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outerSwipeBlockedByCommunityRef = useRef(false);
   const outerSwipeBlockedScrollLeftRef = useRef<number | null>(null);
-  const communitySwipeRef = useRef<{
-    startX: number;
-    startY: number;
-    offsetX: number;
-    direction: "horizontal" | "vertical" | null;
-  } | null>(null);
   const communityTouchBoundaryRef = useRef<{
     startX: number;
     startY: number;
@@ -561,7 +555,6 @@ export default function SkillsCarousel() {
     startY: number;
   } | null>(null);
 
-  const COMMUNITY_SWIPE_THRESHOLD = 60;
   const COMMUNITY_GESTURE_LOCK_THRESHOLD = 2;
 
   const skeletonCategoryPlaceholders = [0, 1, 2];
@@ -571,6 +564,10 @@ export default function SkillsCarousel() {
     catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
   const getCategoryIcon = (category: (typeof categories)[number]) =>
     catOverrides[category.id]?.icon ?? category.icon ?? null;
+
+  useEffect(() => {
+    activeCommunitySkillCategoryIndexRef.current = activeCommunitySkillCategoryIndex;
+  }, [activeCommunitySkillCategoryIndex]);
 
   const isInsideCommunityPickerContent = useCallback((target: EventTarget | null) => {
     return target instanceof Node && Boolean(communityContentContainerRef.current?.contains(target));
@@ -620,7 +617,6 @@ export default function SkillsCarousel() {
     }
 
     if (ref.direction !== "vertical") {
-      if (event.cancelable) event.preventDefault();
       return;
     }
 
@@ -660,7 +656,6 @@ export default function SkillsCarousel() {
     outerSwipeBlockedScrollLeftRef.current = track.scrollLeft;
     track.style.overflowX = "hidden";
     track.style.scrollSnapType = "none";
-    track.style.touchAction = "pan-y";
   }, []);
 
   const unblockOuterSwipeForCommunityPicker = useCallback(() => {
@@ -691,22 +686,8 @@ export default function SkillsCarousel() {
     [blockOuterSwipeForCommunityPicker, isInsideCommunityPickerContent]
   );
 
-  const handleOuterTouchMoveCapture = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+  const handleOuterTouchMoveCapture = useCallback(() => {
     if (!outerSwipeBlockedByCommunityRef.current) return;
-
-    const ref = communityTouchBoundaryRef.current;
-    const touch = event.touches[0];
-    if (ref && touch) {
-      const deltaX = touch.clientX - ref.startX;
-      const deltaY = touch.clientY - ref.startY;
-      if (
-        Math.abs(deltaX) >= COMMUNITY_GESTURE_LOCK_THRESHOLD &&
-        Math.abs(deltaX) > Math.abs(deltaY) &&
-        event.cancelable
-      ) {
-        event.preventDefault();
-      }
-    }
 
     const track = trackRef.current;
     const blockedScrollLeft = outerSwipeBlockedScrollLeftRef.current;
@@ -740,21 +721,8 @@ export default function SkillsCarousel() {
     [blockOuterSwipeForCommunityPicker, isInsideCommunityPickerContent]
   );
 
-  const handleOuterPointerMoveCapture = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+  const handleOuterPointerMoveCapture = useCallback(() => {
     if (!outerSwipeBlockedByCommunityRef.current) return;
-
-    const ref = communityPointerBoundaryRef.current;
-    if (ref && event.pointerType === "touch") {
-      const deltaX = event.clientX - ref.startX;
-      const deltaY = event.clientY - ref.startY;
-      if (
-        Math.abs(deltaX) >= COMMUNITY_GESTURE_LOCK_THRESHOLD &&
-        Math.abs(deltaX) > Math.abs(deltaY) &&
-        event.cancelable
-      ) {
-        event.preventDefault();
-      }
-    }
 
     const track = trackRef.current;
     const blockedScrollLeft = outerSwipeBlockedScrollLeftRef.current;
@@ -829,17 +797,48 @@ export default function SkillsCarousel() {
     ? communityCatalog.skills.find((skill) => selectedCommunitySkillId === (skill.id ?? skill.name))
     : null;
 
-  const moveCommunitySkillCategory = useCallback((direction: -1 | 1) => {
-    setIsCommunityAnimating(false);
-    setCommunityDragOffset(0);
-    setActiveCommunitySkillCategoryIndex((current) => {
-      const next =
-        (current + direction + communitySkillCategoryNames.length) %
-        communitySkillCategoryNames.length;
-      return next;
+  const scrollCommunityResultsToIndex = useCallback((index: number, behavior: ScrollBehavior = "smooth") => {
+    const pager = communityResultsPagerRef.current;
+    if (!pager || communitySkillCategoryNames.length === 0) {
+      return;
+    }
+
+    const bounded = Math.max(0, Math.min(index, communitySkillCategoryNames.length - 1));
+    pager.scrollTo({
+      left: pager.clientWidth * bounded,
+      behavior,
     });
-    setOpenCommunitySkillSubcategories({});
   }, [communitySkillCategoryNames.length]);
+
+  const setCommunitySkillCategoryIndex = useCallback(
+    (nextIndex: number, behavior: ScrollBehavior = "smooth") => {
+      if (communitySkillCategoryNames.length === 0) {
+        return;
+      }
+
+      const bounded = Math.max(0, Math.min(nextIndex, communitySkillCategoryNames.length - 1));
+      activeCommunitySkillCategoryIndexRef.current = bounded;
+      setActiveCommunitySkillCategoryIndex((current) => (current === bounded ? current : bounded));
+      setOpenCommunitySkillSubcategories({});
+      scrollCommunityResultsToIndex(bounded, behavior);
+    },
+    [communitySkillCategoryNames.length, scrollCommunityResultsToIndex]
+  );
+
+  const moveCommunitySkillCategory = useCallback((direction: -1 | 1) => {
+    if (communitySkillCategoryNames.length === 0) {
+      return;
+    }
+
+    setCommunitySkillCategoryIndex(
+      (activeCommunitySkillCategoryIndex + direction + communitySkillCategoryNames.length) %
+        communitySkillCategoryNames.length
+    );
+  }, [
+    activeCommunitySkillCategoryIndex,
+    communitySkillCategoryNames.length,
+    setCommunitySkillCategoryIndex,
+  ]);
 
   const selectCommunitySkillCategory = useCallback(
     (category: string) => {
@@ -847,155 +846,62 @@ export default function SkillsCarousel() {
       if (nextIndex === -1) {
         return;
       }
-      setIsCommunityAnimating(false);
-      setCommunityDragOffset(0);
-      setActiveCommunitySkillCategoryIndex(nextIndex);
-      setOpenCommunitySkillSubcategories({});
+      setCommunitySkillCategoryIndex(nextIndex);
     },
-    [communitySkillCategoryNames]
+    [communitySkillCategoryNames, setCommunitySkillCategoryIndex]
   );
 
-  const handleCommunitySwipeStart = useCallback(
-    (e: React.TouchEvent) => {
-      if (isCommunitySkillSearching || isCommunityAnimating) return;
-      const touch = e.touches[0];
-      if (!touch) return;
-      communitySwipeRef.current = {
-        startX: touch.clientX,
-        startY: touch.clientY,
-        offsetX: 0,
-        direction: null,
-      };
-      setIsCommunityDragging(false);
-      setCommunityDragOffset(0);
-    },
-    [isCommunitySkillSearching, isCommunityAnimating]
-  );
-
-  const handleCommunitySwipeMove = useCallback(
-    (e: React.TouchEvent) => {
-      const ref = communitySwipeRef.current;
-      if (!ref || isCommunitySkillSearching || isCommunityAnimating) return;
-      const touch = e.touches[0];
-      if (!touch) return;
-      const deltaX = touch.clientX - ref.startX;
-      const deltaY = touch.clientY - ref.startY;
-
-      if (ref.direction === null) {
-        if (
-          Math.abs(deltaX) >= COMMUNITY_GESTURE_LOCK_THRESHOLD ||
-          Math.abs(deltaY) >= COMMUNITY_GESTURE_LOCK_THRESHOLD
-        ) {
-          ref.direction = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
-          if (ref.direction === "horizontal") {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsCommunityDragging(true);
-            let clamped = deltaX;
-            if (activeCommunitySkillCategoryIndex === 0 && deltaX > 0) {
-              clamped = Math.min(deltaX, 40);
-            } else if (
-              activeCommunitySkillCategoryIndex === communitySkillCategoryNames.length - 1 &&
-              deltaX < 0
-            ) {
-              clamped = Math.max(deltaX, -40);
-            }
-            ref.offsetX = clamped;
-            setCommunityDragOffset(clamped);
-          }
-        }
-        return;
-      }
-
-      if (ref.direction !== "horizontal") return;
-
-      e.preventDefault();
-      e.stopPropagation();
-      let clamped = deltaX;
-      if (activeCommunitySkillCategoryIndex === 0 && deltaX > 0) {
-        clamped = Math.min(deltaX, 40);
-      } else if (
-        activeCommunitySkillCategoryIndex === communitySkillCategoryNames.length - 1 &&
-        deltaX < 0
-      ) {
-        clamped = Math.max(deltaX, -40);
-      }
-      ref.offsetX = clamped;
-      setCommunityDragOffset(clamped);
-    },
-    [
-      isCommunitySkillSearching,
-      isCommunityAnimating,
-      activeCommunitySkillCategoryIndex,
-      communitySkillCategoryNames.length,
-    ]
-  );
-
-  const handleCommunitySwipeEnd = useCallback(() => {
-    const ref = communitySwipeRef.current;
-    communitySwipeRef.current = null;
-    setIsCommunityDragging(false);
-
-    if (!ref || ref.direction !== "horizontal" || isCommunityAnimating) {
-      setCommunityDragOffset(0);
+  const syncCommunityCategoryFromResultsScroll = useCallback(() => {
+    const pager = communityResultsPagerRef.current;
+    if (!pager || pager.clientWidth <= 0 || communitySkillCategoryNames.length === 0) {
       return;
     }
 
-    const deltaX = ref.offsetX;
-    const container = communityContentContainerRef.current;
-    const containerWidth = container?.clientWidth ?? 300;
+    const nextIndex = Math.max(
+      0,
+      Math.min(
+        Math.round(pager.scrollLeft / pager.clientWidth),
+        communitySkillCategoryNames.length - 1
+      )
+    );
 
-    if (Math.abs(deltaX) > COMMUNITY_SWIPE_THRESHOLD) {
-      if (deltaX < 0 && activeCommunitySkillCategoryIndex < communitySkillCategoryNames.length - 1) {
-        setIsCommunityAnimating(true);
-        setCommunityDragOffset(-containerWidth);
-        setTimeout(() => {
-          communitySuppressTransitionRef.current = true;
-          setActiveCommunitySkillCategoryIndex((current) =>
-            current < communitySkillCategoryNames.length - 1 ? current + 1 : current
-          );
-          setOpenCommunitySkillSubcategories({});
-          setCommunityDragOffset(0);
-          setIsCommunityAnimating(false);
-          setTimeout(() => {
-            communitySuppressTransitionRef.current = false;
-          }, 0);
-        }, 250);
-      } else if (deltaX > 0 && activeCommunitySkillCategoryIndex > 0) {
-        setIsCommunityAnimating(true);
-        setCommunityDragOffset(containerWidth);
-        setTimeout(() => {
-          communitySuppressTransitionRef.current = true;
-          setActiveCommunitySkillCategoryIndex((current) =>
-            current > 0 ? current - 1 : current
-          );
-          setOpenCommunitySkillSubcategories({});
-          setCommunityDragOffset(0);
-          setIsCommunityAnimating(false);
-          setTimeout(() => {
-            communitySuppressTransitionRef.current = false;
-          }, 0);
-        }, 250);
-      } else {
-        setCommunityDragOffset(0);
+    setActiveCommunitySkillCategoryIndex((current) => {
+      if (current === nextIndex) {
+        return current;
       }
-    } else {
-      setCommunityDragOffset(0);
+      activeCommunitySkillCategoryIndexRef.current = nextIndex;
+      setOpenCommunitySkillSubcategories({});
+      return nextIndex;
+    });
+  }, [communitySkillCategoryNames.length]);
+
+  const handleCommunityResultsScroll = useCallback(() => {
+    if (communityResultsScrollFrameRef.current !== null) {
+      return;
     }
-  }, [
-    activeCommunitySkillCategoryIndex,
-    communitySkillCategoryNames.length,
-    isCommunityAnimating,
-  ]);
+
+    communityResultsScrollFrameRef.current = requestAnimationFrame(() => {
+      communityResultsScrollFrameRef.current = null;
+      syncCommunityCategoryFromResultsScroll();
+    });
+
+    if (communityResultsScrollSettleTimeoutRef.current !== null) {
+      clearTimeout(communityResultsScrollSettleTimeoutRef.current);
+    }
+    communityResultsScrollSettleTimeoutRef.current = setTimeout(() => {
+      communityResultsScrollSettleTimeoutRef.current = null;
+      syncCommunityCategoryFromResultsScroll();
+    }, 120);
+  }, [syncCommunityCategoryFromResultsScroll]);
 
   const closeCommunitySkillPicker = useCallback(() => {
     setCommunitySkillPickerOpen(false);
     setSelectedCommunitySkillId(null);
     setCommunitySkillSearch("");
+    activeCommunitySkillCategoryIndexRef.current = 0;
     setActiveCommunitySkillCategoryIndex(0);
     setOpenCommunitySkillSubcategories({});
-    setCommunityDragOffset(0);
-    setIsCommunityAnimating(false);
+    communityResultsPagerRef.current?.scrollTo({ left: 0, behavior: "auto" });
   }, []);
 
   useEffect(() => {
@@ -1031,8 +937,55 @@ export default function SkillsCarousel() {
     if (activeCommunitySkillCategoryIndex >= communitySkillCategoryNames.length) {
       setActiveCommunitySkillCategoryIndex(0);
       setOpenCommunitySkillSubcategories({});
+      scrollCommunityResultsToIndex(0, "auto");
     }
-  }, [activeCommunitySkillCategoryIndex, communitySkillCategoryNames.length]);
+  }, [
+    activeCommunitySkillCategoryIndex,
+    communitySkillCategoryNames.length,
+    scrollCommunityResultsToIndex,
+  ]);
+
+  useEffect(() => {
+    if (!communitySkillPickerOpen || isCommunitySkillSearching) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      scrollCommunityResultsToIndex(activeCommunitySkillCategoryIndexRef.current, "auto");
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [
+    communitySkillPickerOpen,
+    isCommunitySkillSearching,
+    communitySkillCategoryNames.length,
+    scrollCommunityResultsToIndex,
+  ]);
+
+  useEffect(() => {
+    const pager = communityResultsPagerRef.current;
+    if (!pager) {
+      return;
+    }
+
+    pager.addEventListener("scrollend", syncCommunityCategoryFromResultsScroll);
+    return () => {
+      pager.removeEventListener("scrollend", syncCommunityCategoryFromResultsScroll);
+    };
+  }, [communitySkillPickerOpen, isCommunitySkillSearching, syncCommunityCategoryFromResultsScroll]);
+
+  useEffect(() => {
+    return () => {
+      if (communityResultsScrollFrameRef.current !== null) {
+        cancelAnimationFrame(communityResultsScrollFrameRef.current);
+        communityResultsScrollFrameRef.current = null;
+      }
+      if (communityResultsScrollSettleTimeoutRef.current !== null) {
+        clearTimeout(communityResultsScrollSettleTimeoutRef.current);
+        communityResultsScrollSettleTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!communitySkillPickerOpen) {
@@ -2035,26 +1988,22 @@ export default function SkillsCarousel() {
                   </div>
                   <div
                     ref={communityContentContainerRef}
-                    className="relative z-10 min-h-0 flex-1 overflow-hidden overscroll-contain overscroll-x-contain px-3 py-2 touch-pan-y [overscroll-behavior:contain] sm:px-4"
+                    className="relative z-10 min-h-0 flex-1 overflow-hidden overscroll-contain overscroll-x-contain px-3 py-2 [overscroll-behavior:contain] sm:px-4"
                     onTouchStart={(e) => {
                       e.stopPropagation();
                       handleCommunityTouchBoundaryStart(e);
-                      handleCommunitySwipeStart(e);
                     }}
                     onTouchMove={(e) => {
                       e.stopPropagation();
                       handleCommunityTouchBoundaryMove(e);
-                      handleCommunitySwipeMove(e);
                     }}
                     onTouchEnd={(e) => {
                       e.stopPropagation();
                       handleCommunityTouchBoundaryEnd();
-                      handleCommunitySwipeEnd();
                     }}
                     onTouchCancel={(e) => {
                       e.stopPropagation();
                       handleCommunityTouchBoundaryEnd();
-                      handleCommunitySwipeEnd();
                     }}
                   >
                     {isCommunityCatalogLoading ? (
@@ -2110,35 +2059,18 @@ export default function SkillsCarousel() {
                         )}
                       </div>
                     ) : (
-                      <div className="h-full w-full overflow-hidden overscroll-contain">
+                      <div
+                        ref={communityResultsPagerRef}
+                        className="h-full w-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [touch-action:pan-x_pan-y] [&::-webkit-scrollbar]:hidden"
+                        onScroll={handleCommunityResultsScroll}
+                      >
                         <div
                           className="flex h-full w-full min-w-0"
-                          style={{
-                            transform: `translateX(calc(-100% + ${communityDragOffset}px))`,
-                            transition: isCommunityDragging
-                              ? "none"
-                              : communitySuppressTransitionRef.current
-                                ? "none"
-                                : isCommunityAnimating || communityDragOffset !== 0
-                                  ? "transform 0.25s ease-out"
-                                  : "none",
-                          }}
                         >
                         {(() => {
-                          const prevIdx = Math.max(0, activeCommunitySkillCategoryIndex - 1);
-                          const nextIdx = Math.min(
-                            communitySkillCategoryNames.length - 1,
-                            activeCommunitySkillCategoryIndex + 1
-                          );
-                          const panelCategoryNames = [
-                            communitySkillCategoryNames[prevIdx],
-                            activeCommunitySkillCategory,
-                            communitySkillCategoryNames[nextIdx],
-                          ];
                           const query = communitySkillSearch.trim().toLowerCase();
 
-                          return panelCategoryNames.map((categoryName) => {
-                            if (!categoryName) return null;
+                          return communitySkillCategoryNames.map((categoryName) => {
                             const mainCategory =
                               categoryName === "Popular"
                                 ? null
@@ -2179,7 +2111,7 @@ export default function SkillsCarousel() {
                               <div
                                 key={categoryName}
                                 data-community-results-scroll
-                                className="h-full min-h-0 w-full min-w-full shrink-0 overflow-y-auto overscroll-y-contain"
+                                className="h-full min-h-0 w-full min-w-full shrink-0 snap-start overflow-y-auto overscroll-y-contain"
                               >
                                 {categoryName === "Popular" ? (
                                   <div className="flex flex-wrap gap-1.5">

@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { LazyFab } from "@/components/ui/LazyFab";
+import type { FabEditTarget } from "@/components/ui/Fab";
 
 export type FabCreationOriginRect = {
   top: number;
@@ -27,11 +28,13 @@ export type FabCreationRequest = {
 
 type FabCreationContextValue = {
   creationRequest: FabCreationRequest | null;
+  editRequest: FabEditTarget | null;
   requestGoalCreation: (originRect?: FabCreationOriginRect | null) => void;
   requestProjectCreation: (
     goalId?: string | null,
     originRect?: FabCreationOriginRect | null
   ) => void;
+  requestEntityEdit: (target: FabEditTarget) => void;
 };
 
 const FabCreationContext = createContext<FabCreationContextValue | null>(null);
@@ -39,6 +42,7 @@ const FabCreationContext = createContext<FabCreationContextValue | null>(null);
 export function FabCreationProvider({ children }: { children: ReactNode }) {
   const [creationRequest, setCreationRequest] =
     useState<FabCreationRequest | null>(null);
+  const [editRequest, setEditRequest] = useState<FabEditTarget | null>(null);
   const nextRequestIdRef = useRef(0);
 
   const requestGoalCreation = useCallback(
@@ -64,13 +68,29 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const requestEntityEdit = useCallback((target: FabEditTarget) => {
+    setEditRequest({ ...target });
+  }, []);
+
+  const clearEditRequest = useCallback(() => {
+    setEditRequest(null);
+  }, []);
+
   const value = useMemo(
     () => ({
       creationRequest,
+      editRequest,
       requestGoalCreation,
       requestProjectCreation,
+      requestEntityEdit,
     }),
-    [creationRequest, requestGoalCreation, requestProjectCreation],
+    [
+      creationRequest,
+      editRequest,
+      requestGoalCreation,
+      requestProjectCreation,
+      requestEntityEdit,
+    ],
   );
 
   return (
@@ -78,6 +98,9 @@ export function FabCreationProvider({ children }: { children: ReactNode }) {
       {children}
       <LazyFab
         creationRequest={creationRequest}
+        editTarget={editRequest}
+        onEditClose={clearEditRequest}
+        onEditSaved={clearEditRequest}
         hideLauncher
         portalToBody
         prewarm

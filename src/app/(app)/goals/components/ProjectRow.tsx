@@ -590,21 +590,24 @@ export function ProjectRow({
   const projectStatusLabel = isCompleted ? "Done" : localStatus;
   const projectEnergyLabel =
     project.energyCode?.toString().trim() || project.energy;
-  const primaryTextClass =
-    isCompactNested ? "text-white/84" : isCompleted ? "text-emerald-50" : "text-white";
+  const primaryTextClass = isCompleted
+    ? "text-emerald-50"
+    : isCompactNested
+      ? "text-white/84"
+      : "text-white";
   const tertiaryTextClass = isCompleted ? "text-emerald-100/65" : "text-white/50";
-  const chevronColorClass = isCompactNested
-    ? "text-white/45"
-    : isCompleted
-      ? "text-emerald-100/70"
+  const chevronColorClass = isCompleted
+    ? "text-emerald-100/70"
+    : isCompactNested
+      ? "text-white/45"
       : "text-white/60";
   const overlayGlowClass = isCompleted
     ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(52,211,153,0.35),transparent_55%)]"
     : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
-  const cardSurfaceClass = isCompactNested
-    ? "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04]"
-    : isCompleted
-      ? "border-emerald-400/55 bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] ring-1 ring-emerald-300/60 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_2px_0_0_rgba(209,250,229,0.22),inset_0_1px_0_rgba(255,255,255,0.12)]"
+  const cardSurfaceClass = isCompleted
+    ? "border-emerald-400/55 bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] ring-1 ring-emerald-300/60 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_2px_0_0_rgba(209,250,229,0.22),inset_0_1px_0_rgba(255,255,255,0.12)]"
+    : isCompactNested
+      ? "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04]"
       : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)] ring-1 ring-white/8 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)]";
   const tasksPanelClass = isCompleted
     ? "border-emerald-100/24 bg-emerald-950/35 ring-emerald-200/20 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-12px_18px_rgba(2,44,34,0.22)]"

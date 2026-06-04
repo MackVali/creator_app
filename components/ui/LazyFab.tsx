@@ -130,6 +130,10 @@ export function LazyFab(props: LazyFabProps) {
         {...fabProps}
         className={className}
         editTarget={editTarget}
+        onEditTargetChange={props.onEditTargetChange}
+        onEditTargetConsumed={props.onEditTargetConsumed}
+        onEditClose={props.onEditClose}
+        onEditSaved={props.onEditSaved}
         hideLauncher={hideLauncher}
         creationRequest={creationRequest}
         openOnMount={openOnMount || openWhenReady || Boolean(editTarget)}
