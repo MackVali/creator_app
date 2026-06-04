@@ -31,6 +31,7 @@ import {
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import { normalizeGoalStatus } from "@/lib/goals/status";
+import { useToastHelpers } from "@/components/ui/toast";
 
 import type { Goal } from "../types";
 import { GoalCard } from "./GoalCard";
@@ -146,6 +147,9 @@ const campaignDrawerOpenedGoalMotion = {
   },
 } as const;
 
+const goalManualCompleteRejectClass =
+  "goal-manual-complete-reject !border-red-400/80 shadow-[0_0_0_1px_rgba(248,113,113,0.65),0_12px_28px_-22px_rgba(248,113,113,0.65)]";
+
 const closeGoalDetailAfterFabOpen = (closeGoalDetail: () => void) => {
   if (typeof window === "undefined") {
     closeGoalDetail();
@@ -179,6 +183,7 @@ function DraggableGoalCard({
   monumentContext,
   hideEnergyPill,
   campaignDrawerRow = false,
+  onGoalManualComplete,
 }: {
   goal: Goal;
   index: number;
@@ -187,6 +192,7 @@ function DraggableGoalCard({
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  onGoalManualComplete?: (goal: Goal) => void | Promise<void>;
   onProjectEditOpen?: (
     target: FabEditTarget,
     projectId: string,
@@ -207,6 +213,12 @@ function DraggableGoalCard({
     isDragging,
   } = useSortable({ id: goal.id });
   const wasDraggingRef = useRef(false);
+  const rowClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRowClickAtRef = useRef(0);
+  const rejectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readyToastShownGoalIdsRef = useRef<Set<string>>(new Set());
+  const [manualCompleteRejected, setManualCompleteRejected] = useState(false);
+  const toast = useToastHelpers();
 
   // Debug logging for drag start
   useEffect(() => {
@@ -234,7 +246,8 @@ function DraggableGoalCard({
         Number(project.progress ?? 0) >= 100
     );
   const normalizedStatus = normalizeGoalStatus(goal.status, goal.active);
-  const isCompleted = normalizedStatus === "COMPLETED" || allProjectsCompleted;
+  const isCompleted = normalizedStatus === "COMPLETED";
+  const isReadyToComplete = allProjectsCompleted && !isCompleted;
   const shellMotionProps = prefersReducedMotion
     ? {}
     : {
@@ -270,8 +283,79 @@ function DraggableGoalCard({
       if (closeTimerRef.current !== null) {
         window.clearTimeout(closeTimerRef.current);
       }
+      if (rowClickTimerRef.current !== null) {
+        window.clearTimeout(rowClickTimerRef.current);
+      }
+      if (rejectTimerRef.current !== null) {
+        window.clearTimeout(rejectTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isReadyToComplete) {
+      readyToastShownGoalIdsRef.current.delete(goal.id);
+      return;
+    }
+    if (readyToastShownGoalIdsRef.current.has(goal.id)) return;
+    readyToastShownGoalIdsRef.current.add(goal.id);
+    toast.info("Goal ready to complete");
+  }, [goal.id, isReadyToComplete, toast]);
+
+  const triggerManualCompleteRejection = useCallback(() => {
+    setManualCompleteRejected(true);
+    if (rejectTimerRef.current !== null) {
+      window.clearTimeout(rejectTimerRef.current);
+    }
+    rejectTimerRef.current = window.setTimeout(() => {
+      rejectTimerRef.current = null;
+      setManualCompleteRejected(false);
+    }, 460);
+  }, []);
+
+  const handleManualCompleteAttempt = useCallback(() => {
+    if (isReadyToComplete) {
+      void onGoalManualComplete?.(goal);
+      return;
+    }
+    if (!isCompleted) {
+      triggerManualCompleteRejection();
+    }
+  }, [
+    goal,
+    isCompleted,
+    isReadyToComplete,
+    onGoalManualComplete,
+    triggerManualCompleteRejection,
+  ]);
+
+  const handleClosedRowClick = useCallback(() => {
+    if (!onGoalManualComplete) {
+      onOpenChange?.(true);
+      return;
+    }
+
+    const now = Date.now();
+    const isDoubleTap = now - lastRowClickAtRef.current <= 320;
+    lastRowClickAtRef.current = now;
+
+    if (isDoubleTap) {
+      if (rowClickTimerRef.current !== null) {
+        window.clearTimeout(rowClickTimerRef.current);
+        rowClickTimerRef.current = null;
+      }
+      handleManualCompleteAttempt();
+      return;
+    }
+
+    if (rowClickTimerRef.current !== null) {
+      window.clearTimeout(rowClickTimerRef.current);
+    }
+    rowClickTimerRef.current = window.setTimeout(() => {
+      rowClickTimerRef.current = null;
+      onOpenChange?.(true);
+    }, 330);
+  }, [handleManualCompleteAttempt, onGoalManualComplete, onOpenChange]);
 
   const handleOpenedGoalChange = useCallback(
     (nextOpen: boolean) => {
@@ -373,6 +457,7 @@ function DraggableGoalCard({
                     : undefined
                 }
                 monumentContext={monumentContext}
+                onManualComplete={onGoalManualComplete}
                 completeWhenProjectsDone
                 completionTheme="emerald"
               />
@@ -380,9 +465,11 @@ function DraggableGoalCard({
           ) : (
             <motion.button
               type="button"
-              onClick={() => onOpenChange?.(true)}
+              onClick={handleClosedRowClick}
               className={`relative flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2 ${
-                isCompleted
+                manualCompleteRejected
+                  ? goalManualCompleteRejectClass
+                  : isCompleted
                   ? "habit-card--completed habit-card--completed-gem border-emerald-300/24 shadow-[0_18px_34px_rgba(2,32,24,0.52)]"
                   : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
               }`}
@@ -479,6 +566,7 @@ interface CampaignCardProps {
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  onGoalManualComplete?: (goal: Goal) => void | Promise<void>;
   onRoadmapOrderSaved?: () => void | Promise<void>;
   onCampaignDetailsSaved?: (
     campaignId: string,
@@ -503,6 +591,7 @@ function CampaignCardImpl({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  onGoalManualComplete,
   onProjectEditOpen,
   monumentContext = false,
   onRoadmapOrderSaved,
@@ -667,6 +756,7 @@ function CampaignCardImpl({
                 onGoalEdit={onGoalEdit}
                 onGoalToggleActive={onGoalToggleActive}
                 onGoalDelete={onGoalDelete}
+                onGoalManualComplete={onGoalManualComplete}
                 onProjectEditOpen={onProjectEditOpen}
                 monumentContext={monumentContext}
                 onAddGoal={onAddGoal}
@@ -765,6 +855,7 @@ function CampaignCardImpl({
                                 onGoalEdit={onGoalEdit}
                                 onGoalToggleActive={onGoalToggleActive}
                                 onGoalDelete={onGoalDelete}
+                                onGoalManualComplete={onGoalManualComplete}
                                 onProjectEditOpen={onProjectEditOpen}
                               />
                             </div>
@@ -798,6 +889,7 @@ type CampaignDrawerProps = {
   onGoalEdit?: (goal: Goal) => void;
   onGoalToggleActive?: (goal: Goal) => void;
   onGoalDelete?: (goal: Goal) => void;
+  onGoalManualComplete?: (goal: Goal) => void | Promise<void>;
   onProjectEditOpen?: (
     target: FabEditTarget,
     projectId: string,
@@ -821,6 +913,7 @@ function CampaignDrawer({
   onGoalEdit,
   onGoalToggleActive,
   onGoalDelete,
+  onGoalManualComplete,
   onProjectEditOpen,
   monumentContext,
   onGoalsReordered,
@@ -899,6 +992,26 @@ function CampaignDrawer({
       setOpenGoalId(null);
     }
   }, [localGoals, openGoalId]);
+
+  const handleGoalManualComplete = useCallback(
+    async (goal: Goal) => {
+      await onGoalManualComplete?.(goal);
+      setLocalGoals((currentGoals) =>
+        currentGoals.map((currentGoal) =>
+          currentGoal.id === goal.id
+            ? {
+                ...currentGoal,
+                status: "COMPLETED",
+                active: false,
+                progress: 100,
+              }
+            : currentGoal
+        )
+      );
+      setOpenGoalId((current) => (current === goal.id ? null : current));
+    },
+    [onGoalManualComplete]
+  );
 
   const openCampaignEditForm = useCallback(() => {
     setDraftCampaignName(displayCampaignName);
@@ -1174,6 +1287,7 @@ function CampaignDrawer({
                   onGoalEdit={onGoalEdit}
                   onGoalToggleActive={onGoalToggleActive}
                   onGoalDelete={onGoalDelete}
+                  onGoalManualComplete={handleGoalManualComplete}
                   onProjectEditOpen={onProjectEditOpen}
                   monumentContext={monumentContext}
                   hideEnergyPill
@@ -1261,6 +1375,7 @@ export const CampaignCard = memo(CampaignCardImpl, (prev, next) => {
     prev.goals === next.goals &&
     prev.monumentContext === next.monumentContext &&
     prev.onProjectEditOpen === next.onProjectEditOpen &&
+    prev.onGoalManualComplete === next.onGoalManualComplete &&
     prev.onAddGoal === next.onAddGoal &&
     prev.onRoadmapOrderSaved === next.onRoadmapOrderSaved &&
     prev.onCampaignDetailsSaved === next.onCampaignDetailsSaved

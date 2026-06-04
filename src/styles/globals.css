@@ -322,6 +322,27 @@ body.fab-keyboard-active [data-bottom-nav] [data-tour="fab"] {
   pointer-events: none;
 }
 
+@keyframes goal-manual-complete-reject-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  20%,
+  60% {
+    transform: translateX(-5px);
+  }
+
+  40%,
+  80% {
+    transform: translateX(5px);
+  }
+}
+
+.goal-manual-complete-reject {
+  animation: goal-manual-complete-reject-shake 360ms ease-in-out;
+}
+
 .goal-card.shimmer-border-due::before,
 .goal-card.shimmer-border-complete::before {
   content: "";

@@ -69,8 +69,8 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_LOOKAHEAD_DAYS = MAX_SCHEDULE_LOOKAHEAD_DAYS;
 const NO_DUE_MATCH_RANK = MAX_LOOKAHEAD_DAYS + 1;
 const RELATED_HABIT_DOUBLE_TAP_MS = 350;
-const RELATED_HABIT_LONG_PRESS_MS = 550;
-const RELATED_HABIT_LONG_PRESS_SUPPRESS_MS = 700;
+const RELATED_HABIT_LONG_PRESS_MS = 300;
+const RELATED_HABIT_LONG_PRESS_SUPPRESS_MS = 1_000;
 
 function normalizeRecurrenceDays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
@@ -361,6 +361,9 @@ export function MonumentRelatedHabits({
     habitId: string;
     timestamp: number;
   } | null>(null);
+  const [pressedRelatedHabitId, setPressedRelatedHabitId] = useState<
+    string | null
+  >(null);
   const relatedHabitLongPressTimerRef = useRef<number | null>(null);
   const relatedHabitSuppressCompletionUntilRef = useRef(0);
   const previousRelatedHabitStateRef = useRef(
@@ -677,26 +680,71 @@ export function MonumentRelatedHabits({
     [handleRelatedHabitCompletionToggle]
   );
 
-  const cancelRelatedHabitLongPress = useCallback(() => {
-    if (relatedHabitLongPressTimerRef.current !== null) {
-      window.clearTimeout(relatedHabitLongPressTimerRef.current);
-      relatedHabitLongPressTimerRef.current = null;
-    }
-  }, []);
+  const cancelRelatedHabitLongPress = useCallback(
+    (event?: PointerEvent<HTMLDivElement>) => {
+      if (relatedHabitLongPressTimerRef.current !== null) {
+        window.clearTimeout(relatedHabitLongPressTimerRef.current);
+        relatedHabitLongPressTimerRef.current = null;
+      }
+
+      setPressedRelatedHabitId(null);
+
+      if (event) {
+        try {
+          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+          }
+        } catch {
+          // Pointer capture can already be released by the browser.
+        }
+      }
+    },
+    []
+  );
+
+  const handleRelatedHabitPointerLeave = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse") {
+        cancelRelatedHabitLongPress(event);
+      }
+    },
+    [cancelRelatedHabitLongPress]
+  );
 
   const handleRelatedHabitPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>, habit: HabitSummary) => {
-      if (event.button !== 0 || pendingRelatedHabitIds.has(habit.id)) {
+      if (
+        (event.pointerType === "mouse" && event.button !== 0) ||
+        pendingRelatedHabitIds.has(habit.id)
+      ) {
         return;
       }
 
       const element = event.currentTarget;
+      const { pointerId } = event;
       cancelRelatedHabitLongPress();
+      setPressedRelatedHabitId(habit.id);
+      lastRelatedHabitTapRef.current = null;
+
+      try {
+        element.setPointerCapture?.(pointerId);
+      } catch {
+        // Pointer capture is best-effort across browsers and input types.
+      }
+
       relatedHabitLongPressTimerRef.current = window.setTimeout(() => {
         relatedHabitLongPressTimerRef.current = null;
         relatedHabitSuppressCompletionUntilRef.current =
           Date.now() + RELATED_HABIT_LONG_PRESS_SUPPRESS_MS;
         lastRelatedHabitTapRef.current = null;
+        setPressedRelatedHabitId(null);
+        try {
+          if (element.hasPointerCapture?.(pointerId)) {
+            element.releasePointerCapture?.(pointerId);
+          }
+        } catch {
+          // Pointer capture can already be released by the browser.
+        }
         fabCreation?.requestEntityEdit({
           entityType: "HABIT",
           entityId: habit.id,
@@ -934,7 +982,7 @@ export function MonumentRelatedHabits({
                   <div
                     key={habit.id}
                     className={clsx(
-                      "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full flex-col rounded-2xl p-3 text-white transition duration-200 select-none sm:p-4",
+                      "goal-card group relative flex aspect-[5/6] min-h-[96px] w-full transform-gpu flex-col rounded-2xl p-3 text-white transition duration-200 select-none sm:p-4",
                       isHabitCompletedToday
                         ? "emerald-completed-compact"
                         : [
@@ -944,6 +992,9 @@ export function MonumentRelatedHabits({
                       isHabitPending
                         ? "pointer-events-none cursor-default opacity-75"
                         : "cursor-pointer",
+                      pressedRelatedHabitId === habit.id
+                        ? "scale-[0.985] translate-y-px brightness-95"
+                        : null,
                       shimmerBorderClass
                     )}
                     role="button"
@@ -961,7 +1012,7 @@ export function MonumentRelatedHabits({
                     }
                     onPointerUp={cancelRelatedHabitLongPress}
                     onPointerCancel={cancelRelatedHabitLongPress}
-                    onPointerLeave={cancelRelatedHabitLongPress}
+                    onPointerLeave={handleRelatedHabitPointerLeave}
                     onDoubleClick={(event) =>
                       handleRelatedHabitDoubleClick(event, habit.id)
                     }

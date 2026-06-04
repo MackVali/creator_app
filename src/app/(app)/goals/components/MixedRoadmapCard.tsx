@@ -170,7 +170,7 @@ function isCompletedGoal(goal: {
   status?: string | null;
   allProjectsCompleted?: boolean;
 }): boolean {
-  return isCompletedGoalStatus(goal.status) || goal.allProjectsCompleted === true;
+  return isCompletedGoalStatus(goal.status);
 }
 
 function sortByPosition<T extends { position: number | null }>(items: T[]): T[] {
