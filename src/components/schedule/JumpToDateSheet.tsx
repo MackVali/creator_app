@@ -2953,7 +2953,12 @@ export function JumpToDateSheet({
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
-            <table className="w-full border-collapse table-fixed text-[13px] min-w-[300px]">
+            <table
+              className={cn(
+                "w-full border-collapse table-fixed text-[13px]",
+                variant === "inline" ? "min-w-0" : "min-w-[300px]"
+              )}
+            >
               <thead>
                 <tr className="text-[10px] uppercase tracking-[0.22em] text-white/60">
                   {WEEKDAY_LABELS.map((label) => (
@@ -2983,7 +2988,9 @@ export function JumpToDateSheet({
                         isPaintMode && paintSelectionKey === dayKey;
                       const hasOverride = overrideDates.has(dayKey);
                       const circleClass = cn(
-                        "flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-md text-[13px] font-medium",
+                        variant === "inline"
+                          ? "flex h-9 w-9 min-[390px]:h-10 min-[390px]:w-10 sm:h-11 sm:w-11 items-center justify-center rounded-md text-[13px] font-medium"
+                          : "flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-md text-[13px] font-medium",
                         isSelected
                           ? "bg-[var(--accent-red)] text-white shadow-[0_14px_34px_rgba(252,165,165,0.45)]"
                           : "bg-white/10 text-white/80",
@@ -2998,13 +3005,19 @@ export function JumpToDateSheet({
                       return (
                         <td
                           key={day.toISOString()}
-                          className="px-[4px] py-[4px] sm:py-1.25"
+                          className={cn(
+                            variant === "inline"
+                              ? "px-[2px] py-[4px] sm:px-[4px] sm:py-1.25"
+                              : "px-[4px] py-[4px] sm:py-1.25"
+                          )}
                         >
                           <button
                             type="button"
                             onClick={() => handleSelect(day, dayKey)}
                             className={cn(
-                              "mx-auto flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-lg border text-sm font-semibold transition",
+                              variant === "inline"
+                                ? "mx-auto flex h-10 w-10 min-[390px]:h-11 min-[390px]:w-11 sm:h-12 sm:w-12 items-center justify-center rounded-lg border text-sm font-semibold transition"
+                                : "mx-auto flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-lg border text-sm font-semibold transition",
                               "focus-visible:outline focus-visible:outline-2 focus-visible:outline-white",
                               "border-transparent bg-transparent hover:bg-white/10"
                             )}

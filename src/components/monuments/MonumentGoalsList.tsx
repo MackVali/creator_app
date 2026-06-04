@@ -305,6 +305,7 @@ const GOAL_GRID_CLASS =
 const GOAL_GRID_MIN_HEIGHT_CLASS = "min-h-[240px] sm:min-h-[260px]";
 const GOAL_PANEL_CONTENT_CLASS = "px-1 py-1 sm:px-1.5 sm:py-1.5";
 const GOAL_REVEAL_CLASS = "monument-goal-reveal";
+const RECENTLY_COMPLETED_GOAL_HOLD_MS = 1100;
 
 const normalizePriorityCode = (value?: string | null): string => {
   if (typeof value !== "string") return "NO";
@@ -968,11 +969,17 @@ export function MonumentGoalsList({
   const [goalPanelViewportWidth, setGoalPanelViewportWidth] = useState(0);
   const [goalPanelTransitionEnabled, setGoalPanelTransitionEnabled] =
     useState(false);
+  const [recentlyCompletedGoalIds, setRecentlyCompletedGoalIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [goalsRoadmapViewportWidth, setGoalsRoadmapViewportWidth] = useState(0);
   const [goalsRoadmapViewHeight, setGoalsRoadmapViewHeight] = useState<
     number | null
   >(null);
   const deferredGoalCloseFrameRef = useRef<number | null>(null);
+  const recentlyCompletedGoalTimersRef = useRef<Map<string, number>>(
+    new Map()
+  );
   const goalsRoadmapViewportRef = useRef<HTMLDivElement | null>(null);
   const goalsViewPanelRef = useRef<HTMLDivElement | null>(null);
   const roadmapViewPanelRef = useRef<HTMLDivElement | null>(null);
@@ -1162,6 +1169,7 @@ export function MonumentGoalsList({
     monumentView,
     openGoalId,
     roadmapOpenGoal,
+    recentlyCompletedGoalIds,
   ]);
 
   useEffect(() => {
@@ -1210,6 +1218,7 @@ export function MonumentGoalsList({
     openGoalId,
     roadmapOpenGoal,
     goalsRoadmapViewportWidth,
+    recentlyCompletedGoalIds,
   ]);
 
   useEffect(() => {
@@ -1415,6 +1424,43 @@ export function MonumentGoalsList({
       if (goalPanelWheelCooldownRef.current) {
         clearTimeout(goalPanelWheelCooldownRef.current);
       }
+    };
+  }, []);
+
+  const holdRecentlyCompletedGoal = useCallback((goalId: string) => {
+    setRecentlyCompletedGoalIds((current) => {
+      const next = new Set(current);
+      next.add(goalId);
+      return next;
+    });
+
+    const existingTimer = recentlyCompletedGoalTimersRef.current.get(goalId);
+    if (existingTimer !== undefined) {
+      window.clearTimeout(existingTimer);
+    }
+
+    const timer = window.setTimeout(() => {
+      recentlyCompletedGoalTimersRef.current.delete(goalId);
+      setRecentlyCompletedGoalIds((current) => {
+        if (!current.has(goalId)) return current;
+        const next = new Set(current);
+        next.delete(goalId);
+        return next;
+      });
+    }, RECENTLY_COMPLETED_GOAL_HOLD_MS);
+
+    recentlyCompletedGoalTimersRef.current.set(goalId, timer);
+  }, []);
+
+  useEffect(() => {
+    const recentlyCompletedGoalTimers =
+      recentlyCompletedGoalTimersRef.current;
+
+    return () => {
+      recentlyCompletedGoalTimers.forEach((timer) => {
+        window.clearTimeout(timer);
+      });
+      recentlyCompletedGoalTimers.clear();
     };
   }, []);
 
@@ -1987,6 +2033,7 @@ export function MonumentGoalsList({
         setMonumentRoadmapsWithItems((current) =>
           markRoadmapGoalCompleted(current, goal.id)
         );
+        holdRecentlyCompletedGoal(goal.id);
         setOpenGoalId((current) => (current === goal.id ? null : current));
       } catch (err) {
         console.error("Failed to manually complete goal:", err);
@@ -1994,7 +2041,7 @@ export function MonumentGoalsList({
         throw err;
       }
     },
-    [toast, userId]
+    [holdRecentlyCompletedGoal, toast, userId]
   );
 
   const handleRoadmapGoalOpen = useCallback(
@@ -2347,17 +2394,31 @@ export function MonumentGoalsList({
       );
     }
 
-    const filterGoalBySection = (goal: Goal, section: GoalPanel) =>
-      section === "completed"
+    const filterGoalBySection = (goal: Goal, section: GoalPanel) => {
+      const isRecentlyCompleted = recentlyCompletedGoalIds.has(goal.id);
+      if (isRecentlyCompleted) {
+        return section === "active";
+      }
+
+      return section === "completed"
         ? isGoalCompletedForSection(goal)
         : !isGoalCompletedForSection(goal);
+    };
     const filterRoadmapGoalBySection = (
       goal: {
+        id?: string | null;
         status?: string | null;
         allProjectsCompleted?: boolean;
       },
       section: GoalPanel
     ) => {
+      const isRecentlyCompleted = goal.id
+        ? recentlyCompletedGoalIds.has(goal.id)
+        : false;
+      if (isRecentlyCompleted) {
+        return section === "active";
+      }
+
       const isCompleted = normalizeGoalStatus(goal.status) === "COMPLETED";
       return section === "completed" ? isCompleted : !isCompleted;
     };
@@ -2774,6 +2835,7 @@ export function MonumentGoalsList({
     roadmapEmptyState,
     monumentRoadmapsWithItems,
     roadmapOpenGoal,
+    recentlyCompletedGoalIds,
     activeGoalPanel,
     goalPanelHeight,
     openGoalId,
