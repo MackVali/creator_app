@@ -19,7 +19,7 @@ import type { PurchasesStoreProduct } from "@revenuecat/purchases-typescript-int
 
 const PREMIUM_BENEFITS = [
   {
-    label: "More room for goals, projects, tasks, and habits",
+    label: "Higher limits",
     Icon: Box,
   },
   {
@@ -488,9 +488,6 @@ function BillingPageClient() {
         <CardContent className="relative z-10 space-y-3 p-4 md:space-y-4 md:p-5">
           <div>
             <h2 className="text-xl font-semibold tracking-normal text-white md:text-2xl">Choose your plan</h2>
-            <p className="mt-1 text-sm leading-5 text-zinc-400 md:mt-1.5 md:text-base md:leading-6">
-              Monthly or annual access to the full CREATOR Pro planning layer.
-            </p>
           </div>
           {isPlus ? (
             <div className="space-y-3">

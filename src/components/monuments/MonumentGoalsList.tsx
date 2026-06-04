@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LazyFab } from "@/components/ui/LazyFab";
 import { useFabCreation } from "@/components/ui/FabCreationContext";
 import type { FabEditTarget } from "@/components/ui/Fab";
+import { useToastHelpers } from "@/components/ui/toast";
 import {
   projectWeight,
   taskWeight,
@@ -232,6 +233,33 @@ function updateGoalTaskCompletion(
     projects: updatedProjects,
     progress: goalProgress,
   };
+}
+
+function markRoadmapGoalCompleted(
+  roadmaps: RoadmapWithItems[],
+  goalId: string
+): RoadmapWithItems[] {
+  return roadmaps.map((roadmap) => ({
+    ...roadmap,
+    goals: roadmap.goals.map((goal) =>
+      goal.id === goalId ? { ...goal, status: "COMPLETED" } : goal
+    ),
+    items: roadmap.items.map((item) => ({
+      ...item,
+      goal:
+        item.goal?.id === goalId
+          ? { ...item.goal, status: "COMPLETED" }
+          : item.goal,
+      campaign: item.campaign
+        ? {
+            ...item.campaign,
+            goals: item.campaign.goals.map((goal) =>
+              goal.id === goalId ? { ...goal, status: "COMPLETED" } : goal
+            ),
+          }
+        : item.campaign,
+    })),
+  }));
 }
 
 const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
@@ -572,35 +600,11 @@ function isRoadmapDisplayGoalCompleted(goal: {
   status?: string | null;
   allProjectsCompleted?: boolean;
 }): boolean {
-  return (
-    normalizeGoalStatus(goal.status) === "COMPLETED" ||
-    goal.allProjectsCompleted === true
-  );
-}
-
-type GoalProjectForCompletion = Project & {
-  completedAt?: string | null;
-};
-
-function isProjectCompletedForGoalSection(
-  project: GoalProjectForCompletion
-): boolean {
-  return (
-    (typeof project.completedAt === "string" &&
-      project.completedAt.trim().length > 0) ||
-    isProjectStageComplete(project.stage)
-  );
+  return normalizeGoalStatus(goal.status) === "COMPLETED";
 }
 
 function isGoalCompletedForSection(goal: Goal): boolean {
-  if (normalizeGoalStatus(goal.status) === "COMPLETED") {
-    return true;
-  }
-
-  return (
-    goal.projects.length > 0 &&
-    goal.projects.every(isProjectCompletedForGoalSection)
-  );
+  return normalizeGoalStatus(goal.status, goal.active) === "COMPLETED";
 }
 
 async function fetchTrueRoadmapsForCircle(
@@ -945,6 +949,7 @@ export function MonumentGoalsList({
     resolvedSourceType === "monument" ? resolvedSourceId : null;
   const ownerLabel = resolvedSourceType === "circle" ? "Circle" : "monument";
   const creationContext = useFabCreation();
+  const toast = useToastHelpers();
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [monumentRoadmapsWithItems, setMonumentRoadmapsWithItems] = useState<
@@ -1945,6 +1950,53 @@ export function MonumentGoalsList({
     creationContext?.requestGoalCreation(null);
   }, [creationContext]);
 
+  const handleManualGoalComplete = useCallback(
+    async (goal: Goal) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+
+      const applyCompletedStatus = (currentGoal: Goal): Goal =>
+        currentGoal.id === goal.id
+          ? {
+              ...currentGoal,
+              status: "COMPLETED",
+              active: false,
+              progress: 100,
+            }
+          : currentGoal;
+
+      try {
+        let query = supabase
+          .from("goals")
+          .update({ status: "COMPLETED", active: false })
+          .eq("id", goal.id);
+
+        if (userId) {
+          query = query.eq("user_id", userId);
+        }
+
+        const { error } = await query;
+        if (error) {
+          throw error;
+        }
+
+        setGoals((prev) => prev.map(applyCompletedStatus));
+        setRoadmapOpenGoal((current) =>
+          current?.id === goal.id ? applyCompletedStatus(current) : current
+        );
+        setMonumentRoadmapsWithItems((current) =>
+          markRoadmapGoalCompleted(current, goal.id)
+        );
+        setOpenGoalId((current) => (current === goal.id ? null : current));
+      } catch (err) {
+        console.error("Failed to manually complete goal:", err);
+        toast.error("Goal completion failed", "Try again in a moment.");
+        throw err;
+      }
+    },
+    [toast, userId]
+  );
+
   const handleRoadmapGoalOpen = useCallback(
     (goalId: string) => {
       const existingGoal = goals.find((goal) => goal.id === goalId);
@@ -2306,9 +2358,7 @@ export function MonumentGoalsList({
       },
       section: GoalPanel
     ) => {
-      const isCompleted =
-        normalizeGoalStatus(goal.status) === "COMPLETED" ||
-        goal.allProjectsCompleted === true;
+      const isCompleted = normalizeGoalStatus(goal.status) === "COMPLETED";
       return section === "completed" ? isCompleted : !isCompleted;
     };
 
@@ -2481,6 +2531,7 @@ export function MonumentGoalsList({
               }
               onTaskEditOpen={handleTaskEditOpen}
               onTaskToggleCompletion={handleTaskToggleCompletion}
+              onManualComplete={handleManualGoalComplete}
               open={openGoalId === roadmapOpenGoal.id}
               onOpenChange={(isOpen) => {
                 handleGoalOpenChange(roadmapOpenGoal.id, isOpen);
@@ -2533,6 +2584,7 @@ export function MonumentGoalsList({
                   variant="compact"
                   onGoalEdit={handleRoadmapGoalEdit}
                   onProjectEditOpen={handleProjectEditOpen}
+                  onGoalManualComplete={handleManualGoalComplete}
                   // Opens the Campaign Drawer ADD GOAL flow through the shared FAB creation request.
                   onAddGoal={handleCampaignAddGoal}
                   onCampaignDetailsSaved={() =>
@@ -2579,6 +2631,7 @@ export function MonumentGoalsList({
                 }
                 onTaskEditOpen={handleTaskEditOpen}
                 onTaskToggleCompletion={handleTaskToggleCompletion}
+                onManualComplete={handleManualGoalComplete}
                 open
                 onOpenChange={(isOpen) => {
                   handleGoalOpenChange(openRoadmapGoalForSection.id, isOpen);
@@ -2615,6 +2668,7 @@ export function MonumentGoalsList({
                 }
                 onTaskEditOpen={handleTaskEditOpen}
                 onTaskToggleCompletion={handleTaskToggleCompletion}
+                onManualComplete={handleManualGoalComplete}
                 open={openGoalId === goal.id}
                 onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
               />
@@ -2724,6 +2778,7 @@ export function MonumentGoalsList({
     goalPanelHeight,
     openGoalId,
     handleGoalEdit,
+    handleManualGoalComplete,
     handleGoalOpenChange,
     handleCampaignAddGoal,
     handleRoadmapGoalEdit,

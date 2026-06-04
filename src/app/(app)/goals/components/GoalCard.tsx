@@ -21,6 +21,7 @@ import {
 } from "./ProjectRow";
 import type { FabEditTarget } from "@/components/ui/Fab";
 import { normalizeGoalStatus } from "@/lib/goals/status";
+import { useToastHelpers } from "@/components/ui/toast";
 // Lazy-load dropdown contents to reduce initial bundle and re-render cost
 const ProjectsDropdown = dynamic(
   () => import("./ProjectsDropdown").then((m) => m.ProjectsDropdown),
@@ -110,6 +111,7 @@ interface GoalCardProps {
     projectId: string,
     stage: string
   ) => void;
+  onManualComplete?: (goal: Goal) => void | Promise<void>;
   completeWhenProjectsDone?: boolean;
   completionTheme?: "auto" | "emerald" | "monument" | "border";
 }
@@ -120,6 +122,12 @@ function isProjectComplete(project: Project) {
     project.stage === "RELEASE" ||
     Number(project.progress ?? 0) >= 100
   );
+}
+
+function getProjectCompletionSignature(projects: Project[]) {
+  return projects
+    .map((project) => `${project.id}:${isProjectComplete(project) ? "1" : "0"}`)
+    .join("|");
 }
 
 const shellSpringTransition = {
@@ -146,6 +154,9 @@ const drawerCompactDropdownCloseTransition = {
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
+
+const goalManualCompleteRejectClass =
+  "goal-manual-complete-reject !border-red-400/80 shadow-[0_0_0_1px_rgba(248,113,113,0.65),0_12px_28px_-22px_rgba(248,113,113,0.65)]";
 
 const detailRevealVariant = {
   hidden: { opacity: 0, height: 0, y: 6 },
@@ -222,7 +233,7 @@ function GoalCardImpl({
   onTaskToggleCompletion,
   onAddTask,
   onProjectHoldComplete,
-  completeWhenProjectsDone = false,
+  onManualComplete,
   completionTheme = "auto",
 }: GoalCardProps) {
   const [internalOpen, setInternalOpen] = useState(false);
@@ -241,6 +252,14 @@ function GoalCardImpl({
   const latestDrawerCompactDropdownHeightRef = useRef(0);
   const [drawerCompactDropdownHeight, setDrawerCompactDropdownHeight] =
     useState(0);
+  const [manualCompleteRejected, setManualCompleteRejected] = useState(false);
+  const manualCompleteRejectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const shellClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastShellClickAtRef = useRef(0);
+  const readyToastShownGoalIdsRef = useRef<Set<string>>(new Set());
+  const toast = useToastHelpers();
 
   const setOpen = useCallback(
     (value: boolean) => {
@@ -255,6 +274,34 @@ function GoalCardImpl({
   const toggle = useCallback(() => {
     setOpen(!open);
   }, [open, setOpen]);
+
+  const energy = energyAccent[goal.energy];
+  const normalizedStatus = normalizeGoalStatus(goal.status, goal.active);
+  const allProjectsCompleted =
+    goal.projects.length > 0 && goal.projects.every(isProjectComplete);
+  const isCompleted = normalizedStatus === "COMPLETED";
+  const isReadyToComplete = allProjectsCompleted && !isCompleted;
+
+  const triggerManualCompleteRejection = useCallback(() => {
+    setManualCompleteRejected(true);
+    if (manualCompleteRejectTimerRef.current) {
+      clearTimeout(manualCompleteRejectTimerRef.current);
+    }
+    manualCompleteRejectTimerRef.current = setTimeout(() => {
+      manualCompleteRejectTimerRef.current = null;
+      setManualCompleteRejected(false);
+    }, 460);
+  }, []);
+
+  const handleManualCompleteAttempt = useCallback(() => {
+    if (isReadyToComplete) {
+      void onManualComplete?.(goal);
+      return;
+    }
+    if (!isCompleted) {
+      triggerManualCompleteRejection();
+    }
+  }, [goal, isCompleted, isReadyToComplete, onManualComplete, triggerManualCompleteRejection]);
 
   useEffect(() => {
     if (!open || isDrawerCompactDefault) {
@@ -312,13 +359,67 @@ function GoalCardImpl({
     };
   }, [goal.projects, isDrawerCompactDefault, open, projectDropdownMode]);
 
-  const handleShellClick = useCallback(() => {
-    if (onCardClick) {
-      onCardClick();
+  useEffect(() => {
+    return () => {
+      if (manualCompleteRejectTimerRef.current) {
+        clearTimeout(manualCompleteRejectTimerRef.current);
+      }
+      if (shellClickTimerRef.current) {
+        clearTimeout(shellClickTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isReadyToComplete) {
+      readyToastShownGoalIdsRef.current.delete(goal.id);
       return;
     }
-    toggle();
-  }, [onCardClick, toggle]);
+    if (readyToastShownGoalIdsRef.current.has(goal.id)) return;
+    readyToastShownGoalIdsRef.current.add(goal.id);
+    toast.info("Goal ready to complete");
+  }, [goal.id, isReadyToComplete, toast]);
+
+  const handleShellClick = useCallback(
+    (event?: MouseEvent<HTMLButtonElement>) => {
+      if (!onManualComplete) {
+        if (onCardClick) {
+          onCardClick();
+          return;
+        }
+        toggle();
+        return;
+      }
+
+      const now = Date.now();
+      const isDoubleTap = now - lastShellClickAtRef.current <= 320;
+      lastShellClickAtRef.current = now;
+
+      if (isDoubleTap) {
+        event?.preventDefault();
+        event?.stopPropagation();
+        if (shellClickTimerRef.current) {
+          clearTimeout(shellClickTimerRef.current);
+          shellClickTimerRef.current = null;
+        }
+        handleManualCompleteAttempt();
+        return;
+      }
+
+      if (shellClickTimerRef.current) {
+        clearTimeout(shellClickTimerRef.current);
+      }
+      shellClickTimerRef.current = setTimeout(() => {
+        shellClickTimerRef.current = null;
+        if (onCardClick) {
+          onCardClick();
+          return;
+        }
+        toggle();
+      }, 330);
+    },
+    [handleManualCompleteAttempt, onCardClick, onManualComplete, toggle]
+  );
   const projectLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
@@ -408,13 +509,6 @@ function GoalCardImpl({
     setEditingProjectOrigin(null);
   }, []);
 
-  const energy = energyAccent[goal.energy];
-  const normalizedStatus = normalizeGoalStatus(goal.status, goal.active);
-  const allProjectsCompleted =
-    goal.projects.length > 0 && goal.projects.every(isProjectComplete);
-  const isCompleted =
-    normalizedStatus === "COMPLETED" ||
-    (completeWhenProjectsDone && allProjectsCompleted);
   const resolvedCompletionTheme =
     completionTheme === "auto"
       ? monumentContext
@@ -572,6 +666,7 @@ function GoalCardImpl({
     const containerClass = [
       containerBase,
       completedClass,
+      manualCompleteRejected ? goalManualCompleteRejectClass : "",
       showEnergyInCompact ? "min-h-[60px]" : "min-h-[96px] aspect-[5/6]",
     ]
       .filter(Boolean)
@@ -759,6 +854,7 @@ function GoalCardImpl({
       ? "group relative mb-1 h-full overflow-hidden rounded-lg goal-card p-1.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:rounded-xl sm:p-2"
       : "group relative mb-2.5 h-full overflow-hidden rounded-xl goal-card p-2.5 text-white transition-[background-color,border-color,box-shadow] duration-200 sm:mb-3 sm:p-3",
     completedClass,
+    manualCompleteRejected ? goalManualCompleteRejectClass : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -1353,12 +1449,15 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     a.status === b.status &&
     (a.weight ?? 0) === (b.weight ?? 0) &&
     a.projects.length === b.projects.length &&
+    getProjectCompletionSignature(a.projects) ===
+      getProjectCompletionSignature(b.projects) &&
     prev.showWeight === next.showWeight &&
     prev.showCreatedAt === next.showCreatedAt &&
     prev.showEmojiPrefix === next.showEmojiPrefix &&
     prev.hideEnergyPill === next.hideEnergyPill &&
     prev.variant === next.variant &&
     prev.open === next.open &&
+    prev.onManualComplete === next.onManualComplete &&
     prev.completeWhenProjectsDone === next.completeWhenProjectsDone &&
     prev.completionTheme === next.completionTheme
   );

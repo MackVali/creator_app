@@ -1443,6 +1443,32 @@ export default function GoalsPage() {
     updateGoal({ ...goal, active: nextActive, status });
   };
 
+  const handleManualGoalComplete = async (goal: Goal) => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+
+    let query = supabase
+      .from("goals")
+      .update({ status: "COMPLETED", active: false })
+      .eq("id", goal.id);
+
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { error } = await query;
+    if (error) {
+      throw error;
+    }
+
+    updateGoal({
+      ...goal,
+      active: false,
+      status: "COMPLETED",
+      progress: 100,
+    });
+  };
+
   const handleDelete = async (goal: Goal) => {
     if (!userId) return;
 
@@ -1587,6 +1613,7 @@ export default function GoalsPage() {
                         goalCount={campaignGoals.length}
                         goals={campaignGoals}
                         onRoadmapOrderSaved={refreshGoalsAndRoadmaps}
+                        onGoalManualComplete={handleManualGoalComplete}
                         onAddGoal={() => {
                           setEditing(null);
                           setDrawerInitialRoadmapId(campaign.roadmap_id);
@@ -1609,6 +1636,7 @@ export default function GoalsPage() {
                       onDelete={() => handleDelete(goal)}
                       onBoost={() => handleBoost(goal)}
                       onCardClick={() => handleGoalGridCardOpen(goal)}
+                      onManualComplete={handleManualGoalComplete}
                       onProjectUpdated={(projectId, updates) =>
                         handleProjectUpdated(goal.id, projectId, updates)
                       }
