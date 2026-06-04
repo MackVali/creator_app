@@ -25,7 +25,6 @@ import {
   RefreshCw,
   ShoppingBag,
   Shield,
-  ShieldCheck,
   Trash2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -105,7 +104,6 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const { isPlus, is_active, isReady, current_period_end } = useEntitlement();
   const [email, setEmail] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
   const [savingPreference, setSavingPreference] = useState({
     darkMode: false,
@@ -150,34 +148,6 @@ export default function SettingsPage() {
   useEffect(() => {
     const authUser = user ?? null;
     setEmail(authUser?.email ?? "");
-
-    if (authUser) {
-      const possibleRoles = new Set<string>();
-      const addRole = (value: unknown) => {
-        if (typeof value === "string") {
-          possibleRoles.add(value.toLowerCase());
-        }
-      };
-
-      const addRoles = (values: unknown) => {
-        if (Array.isArray(values)) {
-          values.forEach((role) => addRole(role));
-        }
-      };
-
-      addRole(authUser.user_metadata?.role);
-      addRole(authUser.app_metadata?.role);
-      addRoles(authUser.user_metadata?.roles);
-      addRoles(authUser.app_metadata?.roles);
-
-      if (authUser.user_metadata?.is_admin === true || authUser.app_metadata?.is_admin === true) {
-        possibleRoles.add("admin");
-      }
-
-      setIsAdmin(possibleRoles.has("admin"));
-    } else {
-      setIsAdmin(false);
-    }
   }, [user]);
 
   useEffect(() => {
@@ -413,31 +383,26 @@ export default function SettingsPage() {
           <SettingsActionRow
             icon={ShoppingBag}
             title="Order history"
-            description="Review product purchases tied to your signed-in buyer account."
             onClick={() => router.push("/settings/orders")}
           />
           <SettingsActionRow
             icon={Link2}
             title="Linked accounts"
-            description="Manage the services connected to your Creator profile."
             onClick={() => router.push("/profile/linked-accounts")}
           />
           <SettingsStaticRow
             icon={Lock}
             title="Password"
-            description="Passwords are handled by your authentication provider."
             value="Managed externally"
           />
           <SettingsStaticRow
             icon={Shield}
             title="Two-factor authentication"
-            description="Add another layer of protection to your account."
             value="Coming soon"
           />
           <SettingsActionRow
             icon={Trash2}
             title="Delete account"
-            description="Permanently delete your account and sign out of CREATOR."
             onClick={openDeleteDialog}
           />
         </SettingsCard>
@@ -454,7 +419,6 @@ export default function SettingsPage() {
           <SettingsToggleRow
             icon={Moon}
             title="Dark mode"
-            description="Reduce eye strain with our midnight palette."
             checked={darkMode}
             onChange={handleDarkModeToggle}
             ariaLabel="Toggle dark mode"
@@ -463,7 +427,6 @@ export default function SettingsPage() {
           <SettingsToggleRow
             icon={Bell}
             title="Notifications"
-            description="Get nudges when teammates share something important."
             checked={notifications}
             onChange={handleNotificationsToggle}
             ariaLabel="Toggle notifications"
@@ -472,13 +435,11 @@ export default function SettingsPage() {
           <SettingsStaticRow
             icon={Music}
             title="Ambient Sound (experimental)"
-            description="Paused while CREATOR moves app audio away from background media playback."
             value="Disabled"
           />
           <SettingsSelectRow
             icon={Globe2}
             title="Timezone"
-            description="Scheduling, reminders, and analytics follow this setting."
             value={timezone}
             options={timezoneOptions}
             onChange={handleTimezoneChange}
@@ -487,7 +448,6 @@ export default function SettingsPage() {
           <SettingsStaticRow
             icon={Globe2}
             title="Language"
-            description="Choose the language used throughout the dashboard."
             value="English (US)"
           />
         </SettingsCard>
@@ -499,39 +459,21 @@ export default function SettingsPage() {
           <SettingsActionRow
             icon={FileText}
             title="Terms of Service"
-            description="Read the agreement that keeps everything running smoothly."
             onClick={() => router.push("/legal/terms")}
           />
           <SettingsActionRow
             icon={Shield}
             title="Privacy Policy"
-            description="Learn how we handle your data and respect your privacy."
             onClick={() => router.push("/legal/privacy")}
           />
           <SettingsStaticRow
             icon={Info}
             title="App version"
-            description="You're running the latest build available."
             value="v1.0.0"
           />
         </SettingsCard>
       </section>
 
-      {isAdmin && (
-        <section className="grid gap-6">
-          <SettingsCard
-            title="Administration"
-            description="Manage application-wide content and messaging."
-          >
-            <SettingsActionRow
-              icon={FileText}
-              title="Content overrides"
-              description="Update any copy that appears throughout the app."
-              onClick={() => router.push("/settings/content")}
-            />
-          </SettingsCard>
-        </section>
-      )}
     </>
   );
 
@@ -544,27 +486,17 @@ export default function SettingsPage() {
       }}
     >
       <header className="sticky top-0 z-10 border-b border-white/10 bg-[var(--bg)]/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              aria-label="Go back to dashboard"
-              onClick={() => router.push("/dashboard")}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-            >
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              <span>Back</span>
-            </button>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-[var(--muted)]">Your space</p>
-              <h1 className="text-xl font-semibold leading-tight">Settings</h1>
-              <p className="text-sm text-[var(--muted)]">Tune Creator to match the way you work.</p>
-            </div>
-          </div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-[var(--muted)]">
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-            Account secure
-          </span>
+        <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)]">
+          <button
+            type="button"
+            aria-label="Go back to dashboard"
+            onClick={() => router.push("/dashboard")}
+            className="inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-sm font-medium transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            <span>Back</span>
+          </button>
+          <h1 className="text-lg font-semibold leading-tight">Settings</h1>
         </div>
       </header>
       <main className="mx-auto max-w-5xl space-y-12 px-4 pb-16 pt-10">{mainContent}</main>
@@ -696,48 +628,28 @@ function ProfileOverview({ profile, email, initials, onEdit, onViewProfile }: Pr
     handle ||
     email ||
     "Your profile";
-  const username = handle ? `@${handle}` : "Not set";
-  const location = profile?.city?.trim() || "Add your location";
-  const bio = profile?.bio?.trim();
+  const secondaryIdentifier = handle ? `@${handle}` : email && email !== displayName ? email : null;
   const avatarUrl = profile?.avatar_url;
 
   return (
-    <section className="card overflow-hidden">
-      <div className="flex flex-col gap-6 px-6 py-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <ProfileAvatar src={avatarUrl} alt={displayName} fallback={initials} />
-            <div>
-              <p className="text-xs uppercase tracking-wide text-[var(--muted)]">Profile overview</p>
-              <h2 className="text-xl font-semibold leading-tight">{displayName}</h2>
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[var(--muted)]">
-                <span>{username}</span>
-                {email ? (
-                  <>
-                    <span aria-hidden="true" className="text-white/20">
-                      •
-                    </span>
-                    <span>{email}</span>
-                  </>
-                ) : (
-                  <span>Add an email to finish setup</span>
-                )}
-              </div>
-            </div>
+    <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.025]">
+      <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <ProfileAvatar src={avatarUrl} alt={displayName} fallback={initials} />
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-wide text-[var(--muted)]">Profile overview</p>
+            <h2 className="truncate text-base font-semibold leading-tight text-[var(--text)]">
+              {displayName}
+            </h2>
+            {secondaryIdentifier && (
+              <p className="mt-0.5 truncate text-xs leading-5 text-[var(--muted)]">
+                {secondaryIdentifier}
+              </p>
+            )}
           </div>
         </div>
 
-        {bio && (
-          <p className="text-sm leading-relaxed text-[var(--muted)]">{bio}</p>
-        )}
-
-        <dl className="grid gap-4 sm:grid-cols-2">
-          <InfoItem label="Email" value={email || "Not provided"} />
-          <InfoItem label="Username" value={username} />
-          <InfoItem label="Location" value={location} />
-        </dl>
-
-        <div className="flex flex-wrap gap-3">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <SecondaryButton onClick={onEdit}>
             <Pencil className="h-4 w-4" aria-hidden="true" />
             Edit profile
@@ -754,20 +666,6 @@ function ProfileOverview({ profile, email, initials, onEdit, onViewProfile }: Pr
   );
 }
 
-type InfoItemProps = {
-  label: string;
-  value: string;
-};
-
-function InfoItem({ label, value }: InfoItemProps) {
-  return (
-    <div className="rounded-xl border border-white/5 bg-white/[0.03] px-4 py-3">
-      <dt className="text-xs uppercase tracking-wide text-[var(--muted)]">{label}</dt>
-      <dd className="mt-1 text-sm leading-6 text-[var(--text)] break-words">{value}</dd>
-    </div>
-  );
-}
-
 type SecondaryButtonProps = {
   onClick?: () => void;
   children: ReactNode;
@@ -778,7 +676,7 @@ function SecondaryButton({ onClick, children }: SecondaryButtonProps) {
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+      className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-xs font-medium text-[var(--text)] transition hover:border-white/20 hover:bg-white/[0.07] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
     >
       {children}
     </button>
@@ -802,13 +700,13 @@ function ProfileAvatar({ src, alt, fallback }: ProfileAvatarProps) {
         width={64}
         height={64}
         unoptimized
-        className="h-16 w-16 rounded-2xl object-cover shadow-lg shadow-black/30"
+        className="h-11 w-11 rounded-xl object-cover shadow-md shadow-black/25"
       />
     );
   }
 
   return (
-    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-lg font-semibold text-white shadow-inner shadow-black/40">
+    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/[0.08] text-sm font-semibold text-white shadow-inner shadow-black/30">
       {fallbackValue}
     </div>
   );
@@ -822,14 +720,14 @@ type SettingsCardProps = {
 
 function SettingsCard({ title, description, children }: SettingsCardProps) {
   return (
-    <section className="card overflow-hidden">
-      <div className="px-6 py-5 inner-hair">
-        <h2 className="text-lg font-semibold text-[var(--text)]">{title}</h2>
+    <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.025]">
+      <div className="border-b border-white/5 px-5 py-4 sm:px-6">
+        <h2 className="text-base font-semibold text-[var(--text)]">{title}</h2>
         {description && (
-          <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
+          <p className="mt-1 text-sm leading-5 text-[var(--muted)]">{description}</p>
         )}
       </div>
-      <div className="divide-y divide-white/5">{children}</div>
+      <div className="divide-y divide-white/[0.06]">{children}</div>
     </section>
   );
 }
@@ -846,16 +744,16 @@ function SettingsActionRow({ icon: Icon, title, description, onClick }: Settings
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-4 px-6 py-4 text-left transition-colors duration-200 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+      className="flex min-h-14 w-full items-center gap-3 px-5 py-3 text-left transition-colors duration-200 hover:bg-white/[0.04] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:px-6"
     >
       <SettingsIcon icon={Icon} />
-      <div className="flex-1">
-        <p className="font-medium text-[var(--text)]">{title}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-[var(--text)]">{title}</p>
         {description && (
-          <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
+          <p className="mt-0.5 text-xs leading-5 text-[var(--muted)]">{description}</p>
         )}
       </div>
-      <ChevronRight className="h-4 w-4 text-[var(--muted)]" aria-hidden="true" />
+      <ChevronRight className="h-4 w-4 shrink-0 text-[var(--muted)]" aria-hidden="true" />
     </button>
   );
 }
@@ -880,12 +778,12 @@ function SettingsToggleRow({
   disabled = false,
 }: SettingsToggleRowProps) {
   return (
-    <div className="flex items-center gap-4 px-6 py-4">
+    <div className="flex min-h-14 items-center gap-3 px-5 py-3 sm:px-6">
       <SettingsIcon icon={Icon} />
-      <div className="flex-1">
-        <p className="font-medium text-[var(--text)]">{title}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-[var(--text)]">{title}</p>
         {description && (
-          <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
+          <p className="mt-0.5 text-xs leading-5 text-[var(--muted)]">{description}</p>
         )}
       </div>
       <ToggleSwitch
@@ -901,7 +799,7 @@ function SettingsToggleRow({
 type SettingsSelectRowProps = {
   icon: LucideIcon;
   title: string;
-  description: string;
+  description?: string;
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
@@ -918,12 +816,14 @@ function SettingsSelectRow({
   disabled = false,
 }: SettingsSelectRowProps) {
   return (
-    <div className="flex flex-col gap-4 border-t border-white/5 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex gap-4">
+    <div className="flex min-h-14 flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <div className="flex min-w-0 gap-3">
         <SettingsIcon icon={Icon} />
-        <div>
-          <p className="font-medium leading-tight text-[var(--text)]">{title}</p>
-          <p className="text-sm text-[var(--muted)]">{description}</p>
+        <div className="min-w-0">
+          <p className="text-sm font-medium leading-tight text-[var(--text)]">{title}</p>
+          {description && (
+            <p className="mt-0.5 text-xs leading-5 text-[var(--muted)]">{description}</p>
+          )}
         </div>
       </div>
       <div className="sm:min-w-[220px]">
@@ -954,15 +854,17 @@ type SettingsStaticRowProps = {
 
 function SettingsStaticRow({ icon: Icon, title, description, value }: SettingsStaticRowProps) {
   return (
-    <div className="flex items-center gap-4 px-6 py-4">
+    <div className="flex min-h-14 items-center gap-3 px-5 py-3 sm:px-6">
       <SettingsIcon icon={Icon} />
-      <div className="flex-1">
-        <p className="font-medium text-[var(--text)]">{title}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-[var(--text)]">{title}</p>
         {description && (
-          <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
+          <p className="mt-0.5 text-xs leading-5 text-[var(--muted)]">{description}</p>
         )}
       </div>
-      {value && <span className="text-sm font-medium text-[var(--muted)]">{value}</span>}
+      {value && (
+        <span className="shrink-0 text-right text-xs font-medium text-[var(--muted)]">{value}</span>
+      )}
     </div>
   );
 }
@@ -973,8 +875,8 @@ type SettingsIconProps = {
 
 function SettingsIcon({ icon: Icon }: SettingsIconProps) {
   return (
-    <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
-      <Icon className="h-5 w-5 text-[var(--text)]" aria-hidden="true" />
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/[0.07] bg-white/[0.025]">
+      <Icon className="h-4 w-4 text-[var(--muted)]" aria-hidden="true" />
     </span>
   );
 }

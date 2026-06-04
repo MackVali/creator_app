@@ -187,9 +187,9 @@ const VERTICAL_SCROLL_THRESHOLD_PX = 20;
 const VERTICAL_SCROLL_BIAS_PX = 8;
 const VERTICAL_SCROLL_SLOPE = 1.35;
 const INLINE_JUMP_REVEAL_HEIGHT_PX = 360;
-const INLINE_JUMP_TIMELINE_RESERVE_MIN_PX = 120;
-const INLINE_JUMP_TIMELINE_RESERVE_MAX_PX = 360;
-const INLINE_JUMP_TIMELINE_RESERVE_VIEWPORT_RATIO = 0.5;
+const INLINE_JUMP_TIMELINE_PEEK_MIN_PX = 124;
+const INLINE_JUMP_TIMELINE_PEEK_MAX_PX = 172;
+const INLINE_JUMP_TIMELINE_PEEK_VIEWPORT_RATIO = 0.16;
 const INLINE_JUMP_PULL_RESISTANCE = 0.55;
 const inlineJumpOpenTransition = {
   type: "spring",
@@ -312,32 +312,19 @@ const TIMELINE_CARD_BOUNDS: CSSProperties = {
 
 const TIMELINE_TOUCH_ACTION = "pan-y pinch-zoom";
 
-function computeInlineJumpRevealHeight(
-  viewportHeight: number,
-  timelinePxPerMin: number
-) {
+function computeInlineJumpRevealHeight(viewportHeight: number) {
   if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
     return INLINE_JUMP_REVEAL_HEIGHT_PX;
   }
 
-  const safePxPerMin =
-    Number.isFinite(timelinePxPerMin) && timelinePxPerMin > 0
-      ? timelinePxPerMin
-      : INITIAL_PX_PER_MIN;
-  const rawTimelineReserve = Math.max(
-    INLINE_JUMP_TIMELINE_RESERVE_MIN_PX,
-    Math.round(safePxPerMin * 120)
+  const timelinePeekHeight = Math.min(
+    INLINE_JUMP_TIMELINE_PEEK_MAX_PX,
+    Math.max(
+      INLINE_JUMP_TIMELINE_PEEK_MIN_PX,
+      Math.round(viewportHeight * INLINE_JUMP_TIMELINE_PEEK_VIEWPORT_RATIO)
+    )
   );
-  const viewportReserveCap = Math.max(
-    INLINE_JUMP_TIMELINE_RESERVE_MIN_PX,
-    Math.round(viewportHeight * INLINE_JUMP_TIMELINE_RESERVE_VIEWPORT_RATIO)
-  );
-  const reservedTimelineHeight = Math.min(
-    rawTimelineReserve,
-    INLINE_JUMP_TIMELINE_RESERVE_MAX_PX,
-    viewportReserveCap
-  );
-  const upperBound = Math.max(0, viewportHeight - reservedTimelineHeight);
+  const upperBound = Math.max(0, viewportHeight - timelinePeekHeight);
 
   return Math.round(upperBound);
 }
@@ -3495,10 +3482,7 @@ export default function ScheduleTabContent({
       const viewportHeight = Number.isFinite(viewportHeightRaw)
         ? viewportHeightRaw
         : 0;
-      const nextHeight = computeInlineJumpRevealHeight(
-        viewportHeight,
-        pxPerMin
-      );
+      const nextHeight = computeInlineJumpRevealHeight(viewportHeight);
       setInlineJumpRevealHeight(nextHeight);
     };
 
@@ -3515,7 +3499,7 @@ export default function ScheduleTabContent({
         updateInlineJumpRevealHeight
       );
     };
-  }, [pxPerMin]);
+  }, []);
 
   useEffect(() => {
     if (!isInlineJumpToDateOpen) {

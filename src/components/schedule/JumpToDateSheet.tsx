@@ -2032,12 +2032,12 @@ export function JumpToDateSheet({
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col gap-1">
               {titleVariant === "sheet" ? (
-                <SheetTitle className="text-base font-semibold tracking-tight text-white">
-                  Jump to date
+                <SheetTitle className="text-base font-semibold tracking-tight text-zinc-500">
+                  JUMP TO DATE
                 </SheetTitle>
               ) : (
-                <h2 className="text-base font-semibold tracking-tight text-white">
-                  Jump to date
+                <h2 className="text-base font-semibold tracking-tight text-zinc-500">
+                  JUMP TO DATE
                 </h2>
               )}
             </div>
@@ -2045,7 +2045,7 @@ export function JumpToDateSheet({
               type="button"
               onClick={handleCreateDayType}
               data-tour="create-day-type"
-              className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-[#05070E] shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+              className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-200 shadow-[0_10px_30px_rgba(0,0,0,0.22)] backdrop-blur-md transition hover:border-white/18 hover:bg-white/[0.12] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
             >
               DAY TYPES MENU
             </button>
