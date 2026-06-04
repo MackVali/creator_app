@@ -556,8 +556,13 @@ export default function SkillsCarousel() {
     scrollElement: HTMLElement | null;
     direction: "horizontal" | "vertical" | null;
   } | null>(null);
+  const communityPointerBoundaryRef = useRef<{
+    startX: number;
+    startY: number;
+  } | null>(null);
 
   const COMMUNITY_SWIPE_THRESHOLD = 60;
+  const COMMUNITY_GESTURE_LOCK_THRESHOLD = 2;
 
   const skeletonCategoryPlaceholders = [0, 1, 2];
   const skeletonChipPlaceholders = [0, 1, 2, 3];
@@ -605,13 +610,17 @@ export default function SkillsCarousel() {
     const deltaY = touch.clientY - ref.startY;
 
     if (ref.direction === null) {
-      if (Math.abs(deltaX) <= 8 && Math.abs(deltaY) <= 8) {
+      if (
+        Math.abs(deltaX) < COMMUNITY_GESTURE_LOCK_THRESHOLD &&
+        Math.abs(deltaY) < COMMUNITY_GESTURE_LOCK_THRESHOLD
+      ) {
         return;
       }
       ref.direction = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
     }
 
     if (ref.direction !== "vertical") {
+      if (event.cancelable) event.preventDefault();
       return;
     }
 
@@ -650,6 +659,8 @@ export default function SkillsCarousel() {
     if (!track) return;
     outerSwipeBlockedScrollLeftRef.current = track.scrollLeft;
     track.style.overflowX = "hidden";
+    track.style.scrollSnapType = "none";
+    track.style.touchAction = "pan-y";
   }, []);
 
   const unblockOuterSwipeForCommunityPicker = useCallback(() => {
@@ -660,6 +671,8 @@ export default function SkillsCarousel() {
         track.scrollLeft = blockedScrollLeft;
       }
       track.style.overflowX = "";
+      track.style.scrollSnapType = "";
+      track.style.touchAction = "";
     }
     outerSwipeBlockedByCommunityRef.current = false;
     outerSwipeBlockedScrollLeftRef.current = null;
@@ -678,8 +691,22 @@ export default function SkillsCarousel() {
     [blockOuterSwipeForCommunityPicker, isInsideCommunityPickerContent]
   );
 
-  const handleOuterTouchMoveCapture = useCallback(() => {
+  const handleOuterTouchMoveCapture = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
     if (!outerSwipeBlockedByCommunityRef.current) return;
+
+    const ref = communityTouchBoundaryRef.current;
+    const touch = event.touches[0];
+    if (ref && touch) {
+      const deltaX = touch.clientX - ref.startX;
+      const deltaY = touch.clientY - ref.startY;
+      if (
+        Math.abs(deltaX) >= COMMUNITY_GESTURE_LOCK_THRESHOLD &&
+        Math.abs(deltaX) > Math.abs(deltaY) &&
+        event.cancelable
+      ) {
+        event.preventDefault();
+      }
+    }
 
     const track = trackRef.current;
     const blockedScrollLeft = outerSwipeBlockedScrollLeftRef.current;
@@ -698,16 +725,36 @@ export default function SkillsCarousel() {
       if (!isInsideCommunityPickerContent(event.target)) {
         outerSwipeBlockedByCommunityRef.current = false;
         outerSwipeBlockedScrollLeftRef.current = null;
+        communityPointerBoundaryRef.current = null;
         return;
       }
 
       blockOuterSwipeForCommunityPicker();
+      if (event.pointerType === "touch") {
+        communityPointerBoundaryRef.current = {
+          startX: event.clientX,
+          startY: event.clientY,
+        };
+      }
     },
     [blockOuterSwipeForCommunityPicker, isInsideCommunityPickerContent]
   );
 
-  const handleOuterPointerMoveCapture = useCallback(() => {
+  const handleOuterPointerMoveCapture = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!outerSwipeBlockedByCommunityRef.current) return;
+
+    const ref = communityPointerBoundaryRef.current;
+    if (ref && event.pointerType === "touch") {
+      const deltaX = event.clientX - ref.startX;
+      const deltaY = event.clientY - ref.startY;
+      if (
+        Math.abs(deltaX) >= COMMUNITY_GESTURE_LOCK_THRESHOLD &&
+        Math.abs(deltaX) > Math.abs(deltaY) &&
+        event.cancelable
+      ) {
+        event.preventDefault();
+      }
+    }
 
     const track = trackRef.current;
     const blockedScrollLeft = outerSwipeBlockedScrollLeftRef.current;
@@ -718,6 +765,7 @@ export default function SkillsCarousel() {
 
   const handleOuterPointerEndCapture = useCallback(() => {
     if (!outerSwipeBlockedByCommunityRef.current) return;
+    communityPointerBoundaryRef.current = null;
     unblockOuterSwipeForCommunityPicker();
   }, [unblockOuterSwipeForCommunityPicker]);
 
@@ -834,7 +882,10 @@ export default function SkillsCarousel() {
       const deltaY = touch.clientY - ref.startY;
 
       if (ref.direction === null) {
-        if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) {
+        if (
+          Math.abs(deltaX) >= COMMUNITY_GESTURE_LOCK_THRESHOLD ||
+          Math.abs(deltaY) >= COMMUNITY_GESTURE_LOCK_THRESHOLD
+        ) {
           ref.direction = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
           if (ref.direction === "horizontal") {
             e.preventDefault();
@@ -1984,8 +2035,7 @@ export default function SkillsCarousel() {
                   </div>
                   <div
                     ref={communityContentContainerRef}
-                    className="relative z-10 min-h-0 flex-1 overflow-hidden overscroll-contain px-3 py-2 sm:px-4"
-                    style={{ touchAction: "pan-y" }}
+                    className="relative z-10 min-h-0 flex-1 overflow-hidden overscroll-contain overscroll-x-contain px-3 py-2 touch-pan-y [overscroll-behavior:contain] sm:px-4"
                     onTouchStart={(e) => {
                       e.stopPropagation();
                       handleCommunityTouchBoundaryStart(e);
