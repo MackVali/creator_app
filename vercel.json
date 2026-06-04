@@ -1,3 +1,9 @@
 {
-  "buildCommand": "pnpm install --frozen-lockfile && pnpm approve-builds || true && pnpm run build"
+  "buildCommand": "pnpm install --frozen-lockfile && pnpm approve-builds || true && pnpm run build",
+  "crons": [
+    {
+      "path": "/api/scheduler/cron/run",
+      "schedule": "0 * * * *"
+    }
+  ]
 }

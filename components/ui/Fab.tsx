@@ -196,6 +196,17 @@ type FabCreationRevealGeometry = {
   radius: number;
   nonce: number;
 };
+type FabAiOverlayOrigin = {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+  targetTop: number;
+  targetLeft: number;
+  targetWidth: number;
+  targetHeight: number;
+  borderRadius: string;
+};
 type FabGoalEditRow = {
   id: string;
   name: string | null;
@@ -740,6 +751,17 @@ const FAB_SELECTION_EXIT_MS = 140;
 const FAB_CREATION_ENTER_MS = 220;
 const FAB_CREATION_FOCUS_DELAY_MS =
   FAB_SELECTION_EXIT_MS + FAB_CREATION_ENTER_MS + 40;
+const FAB_AI_DEFAULT_ORIGIN: FabAiOverlayOrigin = {
+  top: 160,
+  left: 124,
+  width: 172,
+  height: 172,
+  targetTop: 16,
+  targetLeft: 16,
+  targetWidth: 320,
+  targetHeight: 420,
+  borderRadius: "9999px",
+};
 const GOAL_MANAGEABLE_CIRCLE_ROLES = new Set([
   "OWNER",
   "MANAGER",
@@ -2345,6 +2367,9 @@ export function Fab({
   const openOnMountConsumedRef = useRef(false);
   const toast = useToastHelpers();
   const [aiOpen, setAiOpen] = useState(false);
+  const [aiOverlayOrigin, setAiOverlayOrigin] = useState<FabAiOverlayOrigin>(
+    FAB_AI_DEFAULT_ORIGIN,
+  );
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiScope, setAiScope] = useState<AiScope>("read_only");
   const [scopeSelection, setScopeSelection] = useState<ScopeSelection>("auto");
@@ -10281,6 +10306,52 @@ export function Fab({
     }
   };
 
+  const measureAiOverlayOrigin = useCallback((): FabAiOverlayOrigin => {
+    if (typeof window === "undefined") {
+      return FAB_AI_DEFAULT_ORIGIN;
+    }
+
+    const sourceNode =
+      panelRef.current ?? menuRef.current ?? buttonRef.current ?? null;
+    const sourceRect = sourceNode?.getBoundingClientRect();
+    if (!sourceRect) {
+      return FAB_AI_DEFAULT_ORIGIN;
+    }
+
+    const viewportWidth = window.innerWidth || 0;
+    const viewportHeight = window.innerHeight || 0;
+    const targetWidth = Math.max(
+      1,
+      Math.min(720, viewportWidth * 0.92, viewportWidth - 32),
+    );
+    const targetHeight = Math.max(
+      1,
+      Math.min(viewportHeight * 0.85, viewportHeight - 32),
+    );
+    const targetLeft = Math.max(16, (viewportWidth - targetWidth) / 2);
+    const targetTop = Math.max(16, (viewportHeight - targetHeight) / 2);
+    const sourceStyle =
+      sourceNode instanceof HTMLElement
+        ? window.getComputedStyle(sourceNode)
+        : null;
+
+    return {
+      top: sourceRect.top,
+      left: sourceRect.left,
+      width: sourceRect.width,
+      height: sourceRect.height,
+      targetTop,
+      targetLeft,
+      targetWidth,
+      targetHeight,
+      borderRadius:
+        sourceStyle?.borderRadius ||
+        (sourceRect.width <= 72 && sourceRect.height <= 72
+          ? "9999px"
+          : "12px"),
+    };
+  }, []);
+
   const handleFabButtonClick = () => {
     if (!isOpen) {
       setPressedCreationType(null);
@@ -10290,6 +10361,8 @@ export function Fab({
       setIsOpen(true);
       return;
     }
+    setAiOverlayOrigin(measureAiOverlayOrigin());
+    setIsOpen(false);
     setAiOpen(true);
   };
 
@@ -13617,15 +13690,10 @@ export function Fab({
     setCreationRevealGeometry(null);
     setExpanded(false);
     setSelected(null);
-    if (aiOpen) {
-      closeAiOverlay();
-    }
   }, [
     creationRequest,
     isDirectCreationOpen,
     isOpen,
-    aiOpen,
-    closeAiOverlay,
   ]);
 
   const shouldRenderNeighbor = isDragging && dragTargetPage !== null;
@@ -15181,31 +15249,103 @@ export function Fab({
           </div>,
           document.body,
         )}
-      {aiOpen
+      {typeof document !== "undefined"
         ? createPortal(
-            <div
-              ref={aiOverlayRef}
-              className="fixed inset-0 z-[2147483655] flex items-center justify-center overflow-hidden bg-black/80 backdrop-blur-sm p-4"
-            >
-              <div className="relative flex h-full max-h-[85vh] w-full max-w-[min(720px,92vw)] flex-col overflow-hidden rounded-2xl border border-white/20 bg-[#020205]/95 text-white shadow-xl">
-                <button
-                  type="button"
-                  onClick={closeAiOverlay}
-                  aria-label="Close ILAV"
-                  className="absolute right-4 top-4 z-10 rounded-full p-2 text-white/70 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+            <AnimatePresence initial={false}>
+              {aiOpen ? (
+                <motion.div
+                  key="ilav-overlay"
+                  ref={aiOverlayRef}
+                  className="fixed inset-0 z-[2147483655] flex items-center justify-center overflow-hidden p-4"
+                  initial="closed"
+                  animate="open"
+                  exit="closed"
                 >
-                  <X className="h-5 w-5" aria-hidden="true" />
-                </button>
-                <div className="flex min-h-[240px] flex-1 flex-col items-center justify-center px-6 py-16 text-center">
-                  <h2 className="text-2xl font-semibold leading-tight text-white">
-                    Ilav
-                  </h2>
-                  <p className="mt-3 text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
-                    COMING SOON
-                  </p>
-                </div>
-              </div>
-            </div>,
+                  <motion.div
+                    className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+                    variants={{
+                      closed: {
+                        opacity: 0,
+                        transition: {
+                          duration: prefersReducedMotion ? 0.08 : 0.14,
+                          ease: "easeIn",
+                        },
+                      },
+                      open: {
+                        opacity: 1,
+                        transition: {
+                          duration: prefersReducedMotion ? 0.08 : 0.22,
+                          delay: prefersReducedMotion ? 0 : 0.04,
+                          ease: "easeOut",
+                        },
+                      },
+                    }}
+                  />
+                  <motion.div
+                    className="fixed flex flex-col overflow-hidden border border-white/20 bg-[#020205]/95 text-white shadow-xl"
+                    variants={{
+                      closed: prefersReducedMotion
+                        ? { opacity: 0 }
+                        : {
+                            opacity: 0,
+                            top: aiOverlayOrigin.top,
+                            left: aiOverlayOrigin.left,
+                            width: aiOverlayOrigin.width,
+                            height: aiOverlayOrigin.height,
+                            borderRadius: aiOverlayOrigin.borderRadius,
+                          },
+                      open: prefersReducedMotion
+                        ? {
+                            opacity: 1,
+                            top: aiOverlayOrigin.targetTop,
+                            left: aiOverlayOrigin.targetLeft,
+                            width: aiOverlayOrigin.targetWidth,
+                            height: aiOverlayOrigin.targetHeight,
+                            borderRadius: "16px",
+                          }
+                        : {
+                            opacity: 1,
+                            top: aiOverlayOrigin.targetTop,
+                            left: aiOverlayOrigin.targetLeft,
+                            width: aiOverlayOrigin.targetWidth,
+                            height: aiOverlayOrigin.targetHeight,
+                            borderRadius: "16px",
+                          },
+                    }}
+                    transition={
+                      prefersReducedMotion
+                        ? { duration: 0.08, ease: "easeOut" }
+                        : {
+                            type: "spring",
+                            stiffness: 360,
+                            damping: 34,
+                            mass: 0.9,
+                          }
+                    }
+                    style={{
+                      willChange: "top, left, width, height, opacity",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={closeAiOverlay}
+                      aria-label="Close ILAV"
+                      className="absolute right-4 top-4 z-10 rounded-full p-2 text-white/70 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+                    >
+                      <X className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                    <div className="flex min-h-[240px] flex-1 flex-col items-start justify-start px-6 py-5 pr-16 text-left">
+                      <h2 className="text-sm font-semibold leading-tight text-white">
+                        Ilav
+                      </h2>
+                      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/50">
+                        COMING SOON
+                      </p>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>,
             document.body,
           )
         : null}
