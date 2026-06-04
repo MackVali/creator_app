@@ -187,7 +187,6 @@ const VERTICAL_SCROLL_THRESHOLD_PX = 20;
 const VERTICAL_SCROLL_BIAS_PX = 8;
 const VERTICAL_SCROLL_SLOPE = 1.35;
 const INLINE_JUMP_REVEAL_HEIGHT_PX = 360;
-const INLINE_JUMP_PULL_THRESHOLD_PX = 145;
 const INLINE_JUMP_PULL_RESISTANCE = 0.55;
 const DEBUG_LONG_PRESS = true;
 const SCHEDULE_CARD_LONG_PRESS_MS = 650;
@@ -3425,9 +3424,52 @@ export default function ScheduleTabContent({
   const swipeScrollProgressRef = useRef<number | null>(null);
   const jumpPullControls = useAnimationControls();
   const [isInlineJumpToDateOpen, setIsInlineJumpToDateOpen] = useState(false);
+  const [inlineJumpRevealHeight, setInlineJumpRevealHeight] = useState(
+    INLINE_JUMP_REVEAL_HEIGHT_PX
+  );
   const jumpPullStartYRef = useRef<number | null>(null);
   const jumpPullDistanceRef = useRef(0);
   const isJumpPullingRef = useRef(false);
+  const inlineJumpPullThreshold = Math.min(
+    220,
+    Math.max(145, inlineJumpRevealHeight * 0.32)
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateInlineJumpRevealHeight = () => {
+      const viewportHeightRaw =
+        window.visualViewport?.height ?? window.innerHeight ?? 0;
+      const viewportHeight = Number.isFinite(viewportHeightRaw)
+        ? viewportHeightRaw
+        : 0;
+      const nextHeight = Math.max(
+        520,
+        Math.min(760, Math.round(viewportHeight * 0.82))
+      );
+      setInlineJumpRevealHeight(nextHeight);
+    };
+
+    updateInlineJumpRevealHeight();
+    window.addEventListener("resize", updateInlineJumpRevealHeight);
+    window.visualViewport?.addEventListener(
+      "resize",
+      updateInlineJumpRevealHeight
+    );
+    return () => {
+      window.removeEventListener("resize", updateInlineJumpRevealHeight);
+      window.visualViewport?.removeEventListener(
+        "resize",
+        updateInlineJumpRevealHeight
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isInlineJumpToDateOpen) return;
+    jumpPullControls.set({ y: inlineJumpRevealHeight });
+  }, [inlineJumpRevealHeight, isInlineJumpToDateOpen, jumpPullControls]);
 
   const canInitiateJumpPull = useCallback(() => {
     if (typeof window === "undefined") return false;
@@ -6109,7 +6151,7 @@ export default function ScheduleTabContent({
         );
         const clamped = Math.min(
           Math.max(0, distance),
-          INLINE_JUMP_REVEAL_HEIGHT_PX
+          inlineJumpRevealHeight
         );
         jumpPullDistanceRef.current = clamped;
         jumpPullControls.set({ y: clamped });
@@ -6189,10 +6231,10 @@ export default function ScheduleTabContent({
     if (isJumpPullingRef.current) {
       isJumpPullingRef.current = false;
       const distance = jumpPullDistanceRef.current;
-      if (distance >= INLINE_JUMP_PULL_THRESHOLD_PX) {
+      if (distance >= inlineJumpPullThreshold) {
         setIsInlineJumpToDateOpen(true);
         jumpPullControls.start({
-          y: INLINE_JUMP_REVEAL_HEIGHT_PX,
+          y: inlineJumpRevealHeight,
           transition: {
             type: "spring",
             stiffness: 180,
@@ -9556,8 +9598,8 @@ export default function ScheduleTabContent({
               <div
                 aria-hidden={!isInlineJumpToDateOpen}
                 style={{
-                  height: INLINE_JUMP_REVEAL_HEIGHT_PX,
-                  marginTop: -INLINE_JUMP_REVEAL_HEIGHT_PX,
+                  height: inlineJumpRevealHeight,
+                  marginTop: -inlineJumpRevealHeight,
                 }}
               >
                 <JumpToDateSheet

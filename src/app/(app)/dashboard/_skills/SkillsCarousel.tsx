@@ -550,6 +550,12 @@ export default function SkillsCarousel() {
     offsetX: number;
     direction: "horizontal" | "vertical" | null;
   } | null>(null);
+  const communityTouchBoundaryRef = useRef<{
+    startX: number;
+    startY: number;
+    scrollElement: HTMLElement | null;
+    direction: "horizontal" | "vertical" | null;
+  } | null>(null);
 
   const COMMUNITY_SWIPE_THRESHOLD = 60;
 
@@ -563,6 +569,75 @@ export default function SkillsCarousel() {
 
   const isInsideCommunityPickerContent = useCallback((target: EventTarget | null) => {
     return target instanceof Node && Boolean(communityContentContainerRef.current?.contains(target));
+  }, []);
+
+  const getCommunityResultsScrollElement = useCallback((target: EventTarget | null) => {
+    const container = communityContentContainerRef.current;
+    if (!container || !(target instanceof Node) || !container.contains(target)) {
+      return null;
+    }
+
+    const targetElement =
+      target instanceof Element ? target : target.parentElement instanceof Element ? target.parentElement : null;
+    const scrollElement = targetElement?.closest<HTMLElement>("[data-community-results-scroll]");
+
+    return scrollElement && container.contains(scrollElement) ? scrollElement : container;
+  }, []);
+
+  const handleCommunityTouchBoundaryStart = useCallback((event: React.TouchEvent) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+
+    communityTouchBoundaryRef.current = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      scrollElement: getCommunityResultsScrollElement(event.target),
+      direction: null,
+    };
+  }, [getCommunityResultsScrollElement]);
+
+  const handleCommunityTouchBoundaryMove = useCallback((event: React.TouchEvent) => {
+    const ref = communityTouchBoundaryRef.current;
+    const touch = event.touches[0];
+    if (!ref || !touch) return;
+
+    const deltaX = touch.clientX - ref.startX;
+    const deltaY = touch.clientY - ref.startY;
+
+    if (ref.direction === null) {
+      if (Math.abs(deltaX) <= 8 && Math.abs(deltaY) <= 8) {
+        return;
+      }
+      ref.direction = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
+    }
+
+    if (ref.direction !== "vertical") {
+      return;
+    }
+
+    const scroller = ref.scrollElement;
+    if (!scroller) {
+      if (event.cancelable) event.preventDefault();
+      return;
+    }
+
+    const canScrollVertically = scroller.scrollHeight > scroller.clientHeight + 1;
+    const isAtTop = scroller.scrollTop <= 0;
+    const isAtBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1;
+    const isPullingDown = deltaY > 0;
+    const isPullingUp = deltaY < 0;
+
+    if (
+      !canScrollVertically ||
+      (isPullingDown && isAtTop) ||
+      (isPullingUp && isAtBottom)
+    ) {
+      if (event.cancelable) event.preventDefault();
+    }
+  }, []);
+
+  const handleCommunityTouchBoundaryEnd = useCallback(() => {
+    communityTouchBoundaryRef.current = null;
   }, []);
 
   const blockOuterSwipeForCommunityPicker = useCallback(() => {
@@ -1884,22 +1959,26 @@ export default function SkillsCarousel() {
                   </div>
                   <div
                     ref={communityContentContainerRef}
-                    className="relative z-10 min-h-0 flex-1 overflow-hidden px-3 py-2 sm:px-4"
+                    className="relative z-10 min-h-0 flex-1 overflow-hidden overscroll-contain px-3 py-2 sm:px-4"
                     style={{ touchAction: "pan-y" }}
                     onTouchStart={(e) => {
                       e.stopPropagation();
+                      handleCommunityTouchBoundaryStart(e);
                       handleCommunitySwipeStart(e);
                     }}
                     onTouchMove={(e) => {
                       e.stopPropagation();
+                      handleCommunityTouchBoundaryMove(e);
                       handleCommunitySwipeMove(e);
                     }}
                     onTouchEnd={(e) => {
                       e.stopPropagation();
+                      handleCommunityTouchBoundaryEnd();
                       handleCommunitySwipeEnd();
                     }}
                     onTouchCancel={(e) => {
                       e.stopPropagation();
+                      handleCommunityTouchBoundaryEnd();
                       handleCommunitySwipeEnd();
                     }}
                   >
@@ -1910,7 +1989,10 @@ export default function SkillsCarousel() {
                         </div>
                       </div>
                     ) : isCommunitySkillSearching ? (
-                      <div className="h-full overflow-y-auto">
+                      <div
+                        data-community-results-scroll
+                        className="h-full min-h-0 overflow-y-auto overscroll-y-contain"
+                      >
                         <div className="flex flex-wrap gap-1.5">
                           {filteredCommunitySkills.map((skill) => {
                             const skillKey = skill.id ?? skill.name;
@@ -1953,7 +2035,7 @@ export default function SkillsCarousel() {
                         )}
                       </div>
                     ) : (
-                      <div className="h-full w-full overflow-hidden">
+                      <div className="h-full w-full overflow-hidden overscroll-contain">
                         <div
                           className="flex h-full w-full min-w-0"
                           style={{
@@ -2021,7 +2103,8 @@ export default function SkillsCarousel() {
                             return (
                               <div
                                 key={categoryName}
-                                className="h-full w-full min-w-full shrink-0 overflow-y-auto"
+                                data-community-results-scroll
+                                className="h-full min-h-0 w-full min-w-full shrink-0 overflow-y-auto overscroll-y-contain"
                               >
                                 {categoryName === "Popular" ? (
                                   <div className="flex flex-wrap gap-1.5">
