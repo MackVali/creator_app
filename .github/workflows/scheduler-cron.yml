@@ -1,0 +1,16 @@
+name: Scheduler Cron
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run-scheduler-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call scheduler cron endpoint
+        run: |
+          curl --fail --show-error --silent \
+            -H "Authorization: Bearer ${{ secrets.SCHEDULER_CRON_SECRET }}" \
+            "https://trycreator.app/api/scheduler/cron/run"
