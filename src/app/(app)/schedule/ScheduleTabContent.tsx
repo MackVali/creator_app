@@ -3482,7 +3482,12 @@ export default function ScheduleTabContent({
       const viewportHeight = Number.isFinite(viewportHeightRaw)
         ? viewportHeightRaw
         : 0;
-      const nextHeight = computeInlineJumpRevealHeight(viewportHeight);
+      const topChromeOffset =
+        topBarHeight !== null && Number.isFinite(topBarHeight)
+          ? Math.max(0, topBarHeight) + 16
+          : 0;
+      const availableHeight = Math.max(0, viewportHeight - topChromeOffset);
+      const nextHeight = computeInlineJumpRevealHeight(availableHeight);
       setInlineJumpRevealHeight(nextHeight);
     };
 
@@ -3499,7 +3504,7 @@ export default function ScheduleTabContent({
         updateInlineJumpRevealHeight
       );
     };
-  }, []);
+  }, [topBarHeight]);
 
   useEffect(() => {
     if (!isInlineJumpToDateOpen) {
