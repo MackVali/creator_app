@@ -643,6 +643,10 @@ export default function SkillsCarousel() {
   const blockOuterSwipeForCommunityPicker = useCallback(() => {
     const track = trackRef.current;
     outerSwipeBlockedByCommunityRef.current = true;
+    if (scrollFrame.current != null) {
+      cancelAnimationFrame(scrollFrame.current);
+      scrollFrame.current = null;
+    }
     if (!track) return;
     outerSwipeBlockedScrollLeftRef.current = track.scrollLeft;
     track.style.overflowX = "hidden";
@@ -833,7 +837,20 @@ export default function SkillsCarousel() {
         if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) {
           ref.direction = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
           if (ref.direction === "horizontal") {
+            e.preventDefault();
+            e.stopPropagation();
             setIsCommunityDragging(true);
+            let clamped = deltaX;
+            if (activeCommunitySkillCategoryIndex === 0 && deltaX > 0) {
+              clamped = Math.min(deltaX, 40);
+            } else if (
+              activeCommunitySkillCategoryIndex === communitySkillCategoryNames.length - 1 &&
+              deltaX < 0
+            ) {
+              clamped = Math.max(deltaX, -40);
+            }
+            ref.offsetX = clamped;
+            setCommunityDragOffset(clamped);
           }
         }
         return;
@@ -1342,6 +1359,14 @@ export default function SkillsCarousel() {
     if (!track || categories.length === 0) return;
 
     const handleScroll = () => {
+      if (outerSwipeBlockedByCommunityRef.current) {
+        const blockedScrollLeft = outerSwipeBlockedScrollLeftRef.current;
+        if (blockedScrollLeft !== null && track.scrollLeft !== blockedScrollLeft) {
+          track.scrollLeft = blockedScrollLeft;
+        }
+        return;
+      }
+
       if (scrollFrame.current != null) {
         cancelAnimationFrame(scrollFrame.current);
       }

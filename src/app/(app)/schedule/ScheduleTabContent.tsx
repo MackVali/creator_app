@@ -187,7 +187,27 @@ const VERTICAL_SCROLL_THRESHOLD_PX = 20;
 const VERTICAL_SCROLL_BIAS_PX = 8;
 const VERTICAL_SCROLL_SLOPE = 1.35;
 const INLINE_JUMP_REVEAL_HEIGHT_PX = 360;
+const INLINE_JUMP_TIMELINE_RESERVE_MIN_PX = 120;
+const INLINE_JUMP_TIMELINE_RESERVE_MAX_PX = 360;
+const INLINE_JUMP_TIMELINE_RESERVE_VIEWPORT_RATIO = 0.5;
 const INLINE_JUMP_PULL_RESISTANCE = 0.55;
+const inlineJumpOpenTransition = {
+  type: "spring",
+  stiffness: 185,
+  damping: 26,
+  mass: 0.9,
+} as const;
+const inlineJumpCloseTransition = {
+  type: "spring",
+  stiffness: 255,
+  damping: 31,
+  mass: 0.85,
+} as const;
+const inlineJumpSettleTransition = {
+  type: "tween",
+  duration: 0.1,
+  ease: [0.22, 0.72, 0.24, 1],
+} as const;
 const DEBUG_LONG_PRESS = true;
 const SCHEDULE_CARD_LONG_PRESS_MS = 650;
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280;
@@ -291,6 +311,36 @@ const TIMELINE_CARD_BOUNDS: CSSProperties = {
 };
 
 const TIMELINE_TOUCH_ACTION = "pan-y pinch-zoom";
+
+function computeInlineJumpRevealHeight(
+  viewportHeight: number,
+  timelinePxPerMin: number
+) {
+  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+    return INLINE_JUMP_REVEAL_HEIGHT_PX;
+  }
+
+  const safePxPerMin =
+    Number.isFinite(timelinePxPerMin) && timelinePxPerMin > 0
+      ? timelinePxPerMin
+      : INITIAL_PX_PER_MIN;
+  const rawTimelineReserve = Math.max(
+    INLINE_JUMP_TIMELINE_RESERVE_MIN_PX,
+    Math.round(safePxPerMin * 120)
+  );
+  const viewportReserveCap = Math.max(
+    INLINE_JUMP_TIMELINE_RESERVE_MIN_PX,
+    Math.round(viewportHeight * INLINE_JUMP_TIMELINE_RESERVE_VIEWPORT_RATIO)
+  );
+  const reservedTimelineHeight = Math.min(
+    rawTimelineReserve,
+    INLINE_JUMP_TIMELINE_RESERVE_MAX_PX,
+    viewportReserveCap
+  );
+  const upperBound = Math.max(0, viewportHeight - reservedTimelineHeight);
+
+  return Math.round(upperBound);
+}
 
 type OverlayWindowRecord = {
   id: string;
@@ -3427,6 +3477,7 @@ export default function ScheduleTabContent({
   const [inlineJumpRevealHeight, setInlineJumpRevealHeight] = useState(
     INLINE_JUMP_REVEAL_HEIGHT_PX
   );
+  const inlineJumpRevealHeightRef = useRef(inlineJumpRevealHeight);
   const jumpPullStartYRef = useRef<number | null>(null);
   const jumpPullDistanceRef = useRef(0);
   const isJumpPullingRef = useRef(false);
@@ -3444,9 +3495,9 @@ export default function ScheduleTabContent({
       const viewportHeight = Number.isFinite(viewportHeightRaw)
         ? viewportHeightRaw
         : 0;
-      const nextHeight = Math.max(
-        520,
-        Math.min(760, Math.round(viewportHeight * 0.82))
+      const nextHeight = computeInlineJumpRevealHeight(
+        viewportHeight,
+        pxPerMin
       );
       setInlineJumpRevealHeight(nextHeight);
     };
@@ -3464,12 +3515,83 @@ export default function ScheduleTabContent({
         updateInlineJumpRevealHeight
       );
     };
-  }, []);
+  }, [pxPerMin]);
 
   useEffect(() => {
-    if (!isInlineJumpToDateOpen) return;
-    jumpPullControls.set({ y: inlineJumpRevealHeight });
+    if (!isInlineJumpToDateOpen) {
+      inlineJumpRevealHeightRef.current = inlineJumpRevealHeight;
+      return;
+    }
+    if (inlineJumpRevealHeightRef.current !== inlineJumpRevealHeight) {
+      jumpPullControls.set({ y: inlineJumpRevealHeight });
+    }
+    inlineJumpRevealHeightRef.current = inlineJumpRevealHeight;
   }, [inlineJumpRevealHeight, isInlineJumpToDateOpen, jumpPullControls]);
+
+  const resetInlineJumpPullState = useCallback(() => {
+    isJumpPullingRef.current = false;
+    jumpPullStartYRef.current = null;
+    jumpPullDistanceRef.current = 0;
+  }, []);
+
+  const animateInlineJumpOpen = useCallback(
+    async ({ source = "button" }: { source?: "button" | "pull" } = {}) => {
+      const currentY = jumpPullDistanceRef.current;
+      jumpPullControls.stop();
+      resetInlineJumpPullState();
+      setIsJumpToDateOpen(false);
+      setIsInlineJumpToDateOpen(true);
+
+      if (prefersReducedMotion) {
+        jumpPullControls.set({ y: inlineJumpRevealHeight });
+        return;
+      }
+
+      if (source === "button" && typeof window !== "undefined") {
+        await new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => resolve());
+        });
+      }
+
+      if (source === "button" && currentY > 10) {
+        await jumpPullControls.start({
+          y: Math.max(0, currentY - 10),
+          transition: inlineJumpSettleTransition,
+        });
+      }
+
+      await jumpPullControls.start({
+        y: inlineJumpRevealHeight,
+        transition: inlineJumpOpenTransition,
+      });
+    },
+    [
+      inlineJumpRevealHeight,
+      jumpPullControls,
+      prefersReducedMotion,
+      resetInlineJumpPullState,
+    ]
+  );
+
+  const animateInlineJumpClosed = useCallback(
+    async ({ unmount = true }: { unmount?: boolean } = {}) => {
+      jumpPullControls.stop();
+      resetInlineJumpPullState();
+
+      if (prefersReducedMotion) {
+        jumpPullControls.set({ y: 0 });
+        if (unmount) setIsInlineJumpToDateOpen(false);
+        return;
+      }
+
+      await jumpPullControls.start({
+        y: 0,
+        transition: inlineJumpCloseTransition,
+      });
+      if (unmount) setIsInlineJumpToDateOpen(false);
+    },
+    [jumpPullControls, prefersReducedMotion, resetInlineJumpPullState]
+  );
 
   const canInitiateJumpPull = useCallback(() => {
     if (typeof window === "undefined") return false;
@@ -6220,6 +6342,9 @@ export default function ScheduleTabContent({
     }
 
     if (view !== "day" || prefersReducedMotion) {
+      if (isJumpPullingRef.current || jumpPullDistanceRef.current > 0) {
+        void animateInlineJumpClosed();
+      }
       touchStartX.current = null;
       setIsSwipingDayView(false);
       setPeekState({ direction: 0, offset: 0 });
@@ -6229,33 +6354,12 @@ export default function ScheduleTabContent({
       return;
     }
     if (isJumpPullingRef.current) {
-      isJumpPullingRef.current = false;
       const distance = jumpPullDistanceRef.current;
       if (distance >= inlineJumpPullThreshold) {
-        setIsInlineJumpToDateOpen(true);
-        jumpPullControls.start({
-          y: inlineJumpRevealHeight,
-          transition: {
-            type: "spring",
-            stiffness: 180,
-            damping: 24,
-            mass: 0.8,
-          },
-        });
+        void animateInlineJumpOpen({ source: "pull" });
       } else {
-        setIsInlineJumpToDateOpen(false);
-        jumpPullControls.start({
-          y: 0,
-          transition: {
-            type: "spring",
-            stiffness: 180,
-            damping: 24,
-            mass: 0.8,
-          },
-        });
+        void animateInlineJumpClosed();
       }
-      jumpPullStartYRef.current = null;
-      jumpPullDistanceRef.current = 0;
       touchStartX.current = null;
       touchStartWidth.current = 0;
       touchStartY.current = null;
@@ -6318,14 +6422,33 @@ export default function ScheduleTabContent({
     navigate("day");
   };
 
-  const closeInlineJumpToDate = useCallback(() => {
+  const closeInlineJumpToDate = useCallback(async () => {
     if (!isInlineJumpToDateOpen) return;
-    setIsInlineJumpToDateOpen(false);
-    jumpPullControls.start({
-      y: 0,
-      transition: { type: "spring", stiffness: 180, damping: 24, mass: 0.8 },
-    });
-  }, [isInlineJumpToDateOpen, jumpPullControls]);
+    await animateInlineJumpClosed();
+  }, [animateInlineJumpClosed, isInlineJumpToDateOpen]);
+
+  const openInlineJumpToDateFromButton = useCallback(() => {
+    if (isInlineJumpToDateOpen) {
+      void closeInlineJumpToDate();
+      return;
+    }
+
+    touchStartY.current = null;
+    hasVerticalTouchMovement.current = false;
+
+    if (typeof window !== "undefined") {
+      const scrollY = window.scrollY ?? window.pageYOffset ?? 0;
+      if (scrollY > 2) {
+        window.scrollTo({ top: 0, behavior: "auto" });
+      }
+    }
+
+    void animateInlineJumpOpen({ source: "button" });
+  }, [
+    animateInlineJumpOpen,
+    closeInlineJumpToDate,
+    isInlineJumpToDateOpen,
+  ]);
 
   const handleInlineJumpToDateSelect = useCallback(
     (date: Date) => {
@@ -9559,7 +9682,7 @@ export default function ScheduleTabContent({
           }
           onBack={handleBack}
           onToday={handleToday}
-          onOpenJumpToDate={() => setIsJumpToDateOpen(true)}
+          onOpenJumpToDate={openInlineJumpToDateFromButton}
           onOpenSearch={() => setIsSearchOpen(true)}
           onReschedule={handleRescheduleClick}
           canReschedule={!isScheduling}
@@ -9592,11 +9715,18 @@ export default function ScheduleTabContent({
               animate={jumpPullControls}
               initial={false}
               onClick={
-                isInlineJumpToDateOpen ? closeInlineJumpToDate : undefined
+                isInlineJumpToDateOpen
+                  ? () => {
+                      void closeInlineJumpToDate();
+                    }
+                  : undefined
               }
             >
               <div
                 aria-hidden={!isInlineJumpToDateOpen}
+                onClick={(event) => {
+                  event.stopPropagation();
+                }}
                 style={{
                   height: inlineJumpRevealHeight,
                   marginTop: -inlineJumpRevealHeight,
@@ -9606,7 +9736,7 @@ export default function ScheduleTabContent({
                   variant="inline"
                   open={isInlineJumpToDateOpen}
                   onOpenChange={(open) => {
-                    if (!open) closeInlineJumpToDate();
+                    if (!open) void closeInlineJumpToDate();
                   }}
                   currentDate={currentDate}
                   timeZone={effectiveTimeZone}

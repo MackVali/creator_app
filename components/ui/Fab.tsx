@@ -206,6 +206,10 @@ type FabAiOverlayOrigin = {
   targetWidth: number;
   targetHeight: number;
   borderRadius: string;
+  borderColor: string;
+  backgroundColor: string;
+  backgroundImage: string;
+  boxShadow: string;
 };
 type FabGoalEditRow = {
   id: string;
@@ -761,6 +765,10 @@ const FAB_AI_DEFAULT_ORIGIN: FabAiOverlayOrigin = {
   targetWidth: 320,
   targetHeight: 420,
   borderRadius: "9999px",
+  borderColor: "rgba(255, 255, 255, 0.2)",
+  backgroundColor: "rgba(2, 2, 5, 0.95)",
+  backgroundImage: "none",
+  boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
 };
 const GOAL_MANAGEABLE_CIRCLE_ROLES = new Set([
   "OWNER",
@@ -10349,6 +10357,13 @@ export function Fab({
         (sourceRect.width <= 72 && sourceRect.height <= 72
           ? "9999px"
           : "12px"),
+      borderColor:
+        sourceStyle?.borderTopColor || FAB_AI_DEFAULT_ORIGIN.borderColor,
+      backgroundColor:
+        sourceStyle?.backgroundColor || FAB_AI_DEFAULT_ORIGIN.backgroundColor,
+      backgroundImage:
+        sourceStyle?.backgroundImage || FAB_AI_DEFAULT_ORIGIN.backgroundImage,
+      boxShadow: sourceStyle?.boxShadow || FAB_AI_DEFAULT_ORIGIN.boxShadow,
     };
   }, []);
 
@@ -15267,22 +15282,22 @@ export function Fab({
                       closed: {
                         opacity: 0,
                         transition: {
-                          duration: prefersReducedMotion ? 0.08 : 0.14,
-                          ease: "easeIn",
+                          duration: prefersReducedMotion ? 0.08 : 0.18,
+                          ease: [0.4, 0, 1, 1],
                         },
                       },
                       open: {
                         opacity: 1,
                         transition: {
-                          duration: prefersReducedMotion ? 0.08 : 0.22,
-                          delay: prefersReducedMotion ? 0 : 0.04,
-                          ease: "easeOut",
+                          duration: prefersReducedMotion ? 0.08 : 0.28,
+                          delay: prefersReducedMotion ? 0 : 0.1,
+                          ease: [0.16, 1, 0.3, 1],
                         },
                       },
                     }}
                   />
                   <motion.div
-                    className="fixed flex flex-col overflow-hidden border border-white/20 bg-[#020205]/95 text-white shadow-xl"
+                    className="fixed flex flex-col overflow-hidden border bg-[#020205]/95 text-white"
                     variants={{
                       closed: prefersReducedMotion
                         ? { opacity: 0 }
@@ -15293,6 +15308,9 @@ export function Fab({
                             width: aiOverlayOrigin.width,
                             height: aiOverlayOrigin.height,
                             borderRadius: aiOverlayOrigin.borderRadius,
+                            borderColor: aiOverlayOrigin.borderColor,
+                            backgroundColor: aiOverlayOrigin.backgroundColor,
+                            boxShadow: aiOverlayOrigin.boxShadow,
                           },
                       open: prefersReducedMotion
                         ? {
@@ -15302,6 +15320,10 @@ export function Fab({
                             width: aiOverlayOrigin.targetWidth,
                             height: aiOverlayOrigin.targetHeight,
                             borderRadius: "16px",
+                            borderColor: "rgba(255, 255, 255, 0.2)",
+                            backgroundColor: "rgba(2, 2, 5, 0.95)",
+                            boxShadow:
+                              "0 32px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06)",
                           }
                         : {
                             opacity: 1,
@@ -15310,38 +15332,81 @@ export function Fab({
                             width: aiOverlayOrigin.targetWidth,
                             height: aiOverlayOrigin.targetHeight,
                             borderRadius: "16px",
+                            borderColor: "rgba(255, 255, 255, 0.2)",
+                            backgroundColor: "rgba(2, 2, 5, 0.95)",
+                            boxShadow:
+                              "0 32px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06)",
                           },
                     }}
                     transition={
                       prefersReducedMotion
                         ? { duration: 0.08, ease: "easeOut" }
                         : {
-                            type: "spring",
-                            stiffness: 360,
-                            damping: 34,
-                            mass: 0.9,
+                            type: "tween",
+                            duration: 0.42,
+                            ease: [0.16, 1, 0.3, 1],
                           }
                     }
                     style={{
-                      willChange: "top, left, width, height, opacity",
+                      willChange:
+                        "top, left, width, height, opacity, border-radius, box-shadow",
                     }}
                   >
-                    <button
+                    <motion.div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0"
+                      initial={{ opacity: prefersReducedMotion ? 0 : 1 }}
+                      animate={{ opacity: 0 }}
+                      exit={{ opacity: prefersReducedMotion ? 0 : 1 }}
+                      transition={{
+                        duration: prefersReducedMotion ? 0.08 : 0.24,
+                        ease: "easeOut",
+                      }}
+                      style={{
+                        backgroundColor: aiOverlayOrigin.backgroundColor,
+                        backgroundImage: aiOverlayOrigin.backgroundImage,
+                      }}
+                    />
+                    <motion.button
                       type="button"
                       onClick={closeAiOverlay}
                       aria-label="Close ILAV"
                       className="absolute right-4 top-4 z-10 rounded-full p-2 text-white/70 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+                      variants={{
+                        closed: { opacity: 0 },
+                        open: {
+                          opacity: 1,
+                          transition: {
+                            duration: prefersReducedMotion ? 0.08 : 0.18,
+                            delay: prefersReducedMotion ? 0 : 0.16,
+                            ease: "easeOut",
+                          },
+                        },
+                      }}
                     >
                       <X className="h-5 w-5" aria-hidden="true" />
-                    </button>
-                    <div className="flex min-h-[240px] flex-1 flex-col items-start justify-start px-6 py-5 pr-16 text-left">
+                    </motion.button>
+                    <motion.div
+                      className="relative flex min-h-[240px] flex-1 flex-col items-start justify-start px-6 py-5 pr-16 text-left"
+                      variants={{
+                        closed: { opacity: 0 },
+                        open: {
+                          opacity: 1,
+                          transition: {
+                            duration: prefersReducedMotion ? 0.08 : 0.2,
+                            delay: prefersReducedMotion ? 0 : 0.18,
+                            ease: "easeOut",
+                          },
+                        },
+                      }}
+                    >
                       <h2 className="text-sm font-semibold leading-tight text-white">
-                        Ilav
+                        Ilav - Personal Assistant
                       </h2>
                       <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/50">
                         COMING SOON
                       </p>
-                    </div>
+                    </motion.div>
                   </motion.div>
                 </motion.div>
               ) : null}

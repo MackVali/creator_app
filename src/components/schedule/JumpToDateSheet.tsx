@@ -3036,15 +3036,17 @@ export function JumpToDateSheet({
             </table>
           </div>
 
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={handleSelectToday}
-              className="rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-white/15"
-            >
-              Today
-            </button>
-          </div>
+          {variant !== "inline" && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleSelectToday}
+                className="rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-white/15"
+              >
+                Today
+              </button>
+            </div>
+          )}
         </div>
       </>
     );
