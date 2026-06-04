@@ -383,7 +383,7 @@ function DraggableGoalCard({
               onClick={() => onOpenChange?.(true)}
               className={`relative flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-white transition hover:border-white/18 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 sm:gap-2.5 sm:rounded-xl sm:px-2.5 sm:py-2 ${
                 isCompleted
-                  ? "border-emerald-400/55 bg-[linear-gradient(135deg,rgba(6,78,59,0.72),rgba(5,46,39,0.86))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                  ? "habit-card--completed habit-card--completed-gem border-emerald-300/24 shadow-[0_18px_34px_rgba(2,32,24,0.52)]"
                   : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
               }`}
               {...shellMotionProps}
@@ -400,9 +400,7 @@ function DraggableGoalCard({
             >
               <div
                 className={`flex h-7 w-7 shrink-0 touch-none items-center justify-center rounded-lg text-[10px] font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] cursor-grab active:cursor-grabbing sm:h-8 sm:w-8 sm:text-[11px] ${
-                  isCompleted
-                    ? "border border-emerald-300/50 bg-emerald-950/35 text-emerald-50"
-                    : "border border-white/10 bg-white/[0.04] text-white/80"
+                  "border border-white/12 bg-black/35 text-white/82"
                 }`}
                 {...attributes}
                 {...listeners}
@@ -432,9 +430,7 @@ function DraggableGoalCard({
 
               <span
                 className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${
-                  isCompleted
-                    ? "border-emerald-300/35 bg-emerald-300/10 text-emerald-50/85"
-                    : "border-white/8 bg-white/[0.03] text-white/42"
+                  "border-white/10 bg-black/35 text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
                 }`}
               >
                 {index + 1}

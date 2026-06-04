@@ -605,7 +605,7 @@ export function ProjectRow({
     ? "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(52,211,153,0.35),transparent_55%)]"
     : "bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]";
   const cardSurfaceClass = isCompleted
-    ? "border-emerald-400/55 bg-[linear-gradient(135deg,_rgba(30,204,163,0.95)_0%,_rgba(16,185,129,0.85)_45%,_rgba(4,120,87,0.92)_100%)] ring-1 ring-emerald-300/60 shadow-[0_18px_34px_rgba(2,32,24,0.52),inset_2px_0_0_rgba(209,250,229,0.22),inset_0_1px_0_rgba(255,255,255,0.12)]"
+    ? "border-emerald-300/24 ring-1 ring-emerald-900/20 shadow-[0_18px_34px_rgba(2,32,24,0.52)]"
     : isCompactNested
       ? "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.18)_0%,rgba(28,28,28,0.74)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-white/18 hover:bg-white/[0.04]"
       : "border-white/8 bg-[linear-gradient(180deg,rgba(66,66,66,0.22)_0%,rgba(46,46,46,0.4)_22%,rgba(28,28,28,0.92)_100%)] ring-1 ring-white/8 shadow-[inset_2px_0_0_rgba(255,255,255,0.08),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-10px_16px_rgba(0,0,0,0.14)]";
@@ -613,12 +613,12 @@ export function ProjectRow({
     ? "border-emerald-100/24 bg-emerald-950/35 ring-emerald-200/20 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-12px_18px_rgba(2,44,34,0.22)]"
     : "border-white/10 bg-[#030407] ring-white/10 text-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-12px_18px_rgba(0,0,0,0.18)]";
   const metaPillClass = isCompactNested
-    ? "border-white/8 bg-white/[0.03] text-white/42"
+    ? "border-white/10 bg-black/35 text-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
     : isCompleted
       ? "border-emerald-50/24 bg-emerald-950/14 text-emerald-50/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
       : "border-white/8 bg-white/[0.03] text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]";
   const identityClass = isCompactNested
-    ? "rounded-lg border-white/10 bg-white/[0.04] text-white/80 shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]"
+    ? "rounded-lg border-white/12 bg-black/35 text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-1px_0_rgba(0,0,0,0.22)]"
     : isCompleted
       ? "rounded-md border-emerald-50/28 bg-emerald-950/18 text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] sm:rounded-lg"
       : "rounded-md border-white/12 bg-black/25 text-white/82 shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)] sm:rounded-lg";
@@ -639,8 +639,8 @@ export function ProjectRow({
             ? "rounded-lg px-2 py-1.5 sm:rounded-xl sm:px-2.5 sm:py-2"
             : "rounded-lg px-1.5 py-1.5 sm:px-2.5 sm:py-2"
         } ${cardSurfaceClass} ${primaryTextClass} ${
-          completionPending ? "opacity-70" : ""
-        }`}
+          isCompleted ? "habit-card--completed habit-card--completed-gem" : ""
+        } ${completionPending ? "opacity-70" : ""}`}
         style={cardAnimationStyle}
       >
         {!isCompactNested && (
@@ -648,8 +648,14 @@ export function ProjectRow({
             className={`pointer-events-none absolute inset-0 rounded-lg [mask-image:linear-gradient(to_bottom,black,transparent_75%)] ${overlayGlowClass}`}
           />
         )}
+        {isCompleted && (
+          <span
+            className="pointer-events-none absolute inset-0 rounded-[inherit] focus-pomo-start-glint"
+            aria-hidden="true"
+          />
+        )}
         <div
-          className={`relative z-0 flex w-full items-center text-sm select-none ${
+          className={`relative z-[2] flex w-full items-center text-sm select-none ${
             isCompactNested ? "gap-2 sm:gap-2.5" : "gap-1 sm:gap-2"
           } ${primaryTextClass}`}
         >
@@ -672,7 +678,7 @@ export function ProjectRow({
               }`}
             >
               <div
-                className={`flex h-7 w-7 shrink-0 items-center justify-center border text-[10px] font-semibold leading-none sm:h-8 sm:w-8 sm:text-[11px] ${identityClass}`}
+                className={`relative z-[3] flex h-7 w-7 shrink-0 items-center justify-center border text-[10px] font-semibold leading-none sm:h-8 sm:w-8 sm:text-[11px] ${identityClass}`}
               >
                 {displayEmoji}
               </div>
@@ -729,7 +735,7 @@ export function ProjectRow({
           )}
           {isCompactNested && typeof projectOrder === "number" && (
             <span
-              className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${metaPillClass}`}
+              className={`relative z-[3] shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] sm:px-2 sm:text-[9px] ${metaPillClass}`}
             >
               {projectOrder}
             </span>
