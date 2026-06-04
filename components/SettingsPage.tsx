@@ -399,9 +399,11 @@ export default function SettingsPage() {
                     </span>
                   )}
                 </div>
-                <h2 className="mt-3 text-2xl font-semibold leading-tight tracking-normal text-white">
-                  {isPlus ? "CREATOR Pro is active." : "Upgrade when your system outgrows free."}
-                </h2>
+                {!isPlus && (
+                  <h2 className="mt-3 text-2xl font-semibold leading-tight tracking-normal text-white">
+                    Upgrade when your system outgrows free.
+                  </h2>
+                )}
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
                   {isPlus
                     ? "The full CREATOR Pro planning and execution layer is unlocked on this account."
@@ -561,8 +563,8 @@ export default function SettingsPage() {
             Settings
           </h1>
           {accessLevelLabel ? (
-            <span className="shrink-0 text-right text-sm font-extrabold leading-tight text-emerald-400">
-              {accessLevelLabel}
+            <span className="focus-pomo-start-glint relative inline-flex shrink-0 overflow-hidden text-right text-base font-black uppercase leading-tight tracking-[0.16em] text-emerald-300 drop-shadow-[0_0_10px_rgba(52,211,153,0.28)]">
+              <span>{accessLevelLabel}</span>
             </span>
           ) : (
             <span className="h-9 w-[76px] shrink-0" aria-hidden="true" />
