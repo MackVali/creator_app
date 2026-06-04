@@ -77,7 +77,7 @@ export function ScheduleTopBar({
   }, [onHeightChange]);
 
   const iconButtonClass =
-    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-colors hover:border-white/15 hover:bg-white/[0.12] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:opacity-30 disabled:hover:bg-white/[0.08]";
+    "inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_8px_22px_rgba(0,0,0,0.24)] backdrop-blur-xl transition-colors hover:border-white/15 hover:bg-white/[0.12] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:opacity-30 disabled:hover:bg-white/[0.08]";
 
   const rescheduleButtonClass =
     "group relative hidden sm:inline-flex items-center gap-2 rounded-full bg-[var(--accent-red)] px-5 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(190,18,60,0.45)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(190,18,60,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:pointer-events-none disabled:translate-y-0 disabled:opacity-60 disabled:shadow-none";
@@ -86,15 +86,15 @@ export function ScheduleTopBar({
     "hidden sm:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] px-3 py-2 text-xs font-semibold text-zinc-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:border-white/15 hover:bg-white/[0.12] hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]";
 
   const safeAreaPadding: CSSProperties = {
-    paddingTop: "calc(0.75rem + env(safe-area-inset-top, 0px))",
-    paddingBottom: "0.75rem",
+    paddingTop: "calc(0.45rem + env(safe-area-inset-top, 0px))",
+    paddingBottom: "0.45rem",
     paddingLeft: "calc(1rem + env(safe-area-inset-left, 0px))",
     paddingRight: "calc(1rem + env(safe-area-inset-right, 0px))",
   };
 
   return (
     <header
-      className="fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-3 bg-[var(--surface-elevated)]/95 shadow-sm border-b border-[var(--hairline)] supports-[backdrop-filter]:bg-[var(--surface-elevated)]/80 backdrop-blur"
+      className="fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-2 bg-[var(--surface-elevated)]/95 shadow-sm border-b border-[var(--hairline)] supports-[backdrop-filter]:bg-[var(--surface-elevated)]/80 backdrop-blur"
       style={safeAreaPadding}
       ref={headerRef}
     >
