@@ -420,7 +420,7 @@ export default function SettingsPage() {
               className={
                 isPlus
                   ? "inline-flex h-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.045] px-5 text-sm font-semibold text-zinc-100 transition hover:border-white/20 hover:bg-white/[0.075] focus:outline-none focus:ring-2 focus:ring-emerald-300/55"
-                  : "inline-flex h-12 items-center justify-center rounded-2xl border border-emerald-100/40 bg-[linear-gradient(145deg,#6ee7b7_0%,#22c55e_36%,#059669_68%,#064e3b_100%)] px-5 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.58),0_16px_32px_rgba(16,185,129,0.22)] transition hover:bg-[linear-gradient(145deg,#a7f3d0_0%,#34d399_40%,#10b981_70%,#047857_100%)] focus:outline-none focus:ring-2 focus:ring-emerald-200/60"
+                  : "focus-pomo-start-glint inline-flex h-12 items-center justify-center rounded-2xl border border-green-900/45 bg-[linear-gradient(155deg,rgba(34,197,94,0.94)_0%,rgba(22,163,74,0.97)_48%,rgba(21,128,61,0.98)_100%)] px-5 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(0,0,0,0.48),0_8px_18px_rgba(0,6,4,0.34),inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-green-800/45"
               }
             >
               {isPlus ? "Manage plan" : "Upgrade to CREATOR Pro"}

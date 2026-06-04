@@ -13685,6 +13685,7 @@ export function Fab({
 
   useEffect(() => {
     if (isOpen || isDirectCreationOpen) return;
+    if (editTarget) return;
     if (
       creationRequest &&
       openingCreationRequestIdRef.current === creationRequest.id
@@ -13707,6 +13708,7 @@ export function Fab({
     setSelected(null);
   }, [
     creationRequest,
+    editTarget,
     isDirectCreationOpen,
     isOpen,
   ]);
