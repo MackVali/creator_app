@@ -1795,9 +1795,22 @@ export default function SkillsCarousel() {
                     ref={communityContentContainerRef}
                     className="relative z-10 min-h-0 flex-1 overflow-hidden px-3 py-2 sm:px-4"
                     style={{ touchAction: "pan-y" }}
-                    onTouchStart={handleCommunitySwipeStart}
-                    onTouchMove={handleCommunitySwipeMove}
-                    onTouchEnd={handleCommunitySwipeEnd}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      handleCommunitySwipeStart(e);
+                    }}
+                    onTouchMove={(e) => {
+                      e.stopPropagation();
+                      handleCommunitySwipeMove(e);
+                    }}
+                    onTouchEnd={(e) => {
+                      e.stopPropagation();
+                      handleCommunitySwipeEnd();
+                    }}
+                    onTouchCancel={(e) => {
+                      e.stopPropagation();
+                      handleCommunitySwipeEnd();
+                    }}
                   >
                     {isCommunityCatalogLoading ? (
                       <div className="flex h-full items-center justify-center">

@@ -8,9 +8,9 @@ import {
   TransientResponseError,
 } from "@/lib/supabase/retry-fetch";
 import {
-  markMissedAndQueue,
-  scheduleBacklog,
-} from "@/lib/scheduler/reschedule";
+  runSchedulerForUser,
+  type RunSchedulerResult,
+} from "@/lib/scheduler/runSchedulerForUser";
 
 import { MAX_SCHEDULER_WRITE_DAYS } from "@/lib/scheduler/limits";
 
@@ -86,51 +86,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // HARD RESET: clear scheduled unlocked PROJECTS BEFORE any queuing
-  // First, get the instance IDs
-  const { data: instancesToMiss, error: fetchError } = await schedulingClient
-    .from("schedule_instances")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("source_type", "PROJECT")
-    .eq("status", "scheduled")
-    .eq("locked", false);
-
-  if (fetchError) {
-    return NextResponse.json({ error: fetchError.message }, { status: 500 });
-  }
-
-  const instanceIds = (instancesToMiss ?? [])
-    .map((instance) => instance.id)
-    .filter(
-      (id): id is string => typeof id === "string" && id.length > 0
-    );
-
-    if (instanceIds.length > 0) {
-      const { error: updateError } = await schedulingClient
-        .from("schedule_instances")
-        .update({
-          status: "unscheduled",
-          start_utc: null,
-          end_utc: null,
-          window_id: null,
-          day_type_time_block_id: null,
-          time_block_id: null,
-          updated_at: now,
-        })
-      .in("id", instanceIds);
-
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
-    }
-  }
-
-  const markResult = await markMissedAndQueue(user.id, now, schedulingClient);
-  if (markResult.error) {
-    // warn but do NOT exit
-    console.warn("[SCHEDULER] markMissedAndQueue failed", markResult.error);
-  }
-
   const profileTimeZone = await resolveProfileTimeZone(
     schedulingClient,
     user.id
@@ -138,9 +93,9 @@ export async function POST(request: NextRequest) {
   const metadataTimeZone = extractUserTimeZone(user);
   const userTimeZone = requestTimeZone ?? profileTimeZone ?? metadataTimeZone;
   const coordinates = extractUserCoordinates(user);
-  let scheduleResult;
+  let runResult: RunSchedulerResult | undefined;
   try {
-    scheduleResult = await scheduleBacklog(user.id, now, schedulingClient, {
+    runResult = await runSchedulerForUser(user.id, now, schedulingClient, {
       timeZone: userTimeZone,
       location: coordinates,
       utcOffsetMinutes,
@@ -150,15 +105,63 @@ export async function POST(request: NextRequest) {
       debug: includeDebugSummary,
       parity: enableParity,
     });
+
+    if (runResult.reset.error) {
+      return NextResponse.json({ error: runResult.reset.error.message }, { status: 500 });
+    }
+
     if (includeDebugSummary) {
       console.log("[SCHEDULER_HABIT_AUDIT_RESPONSE]", {
-        dueEvaluation: scheduleResult.debugSummary?.habitAudit?.dueEvaluation,
-        scheduling: scheduleResult.debugSummary?.habitAudit?.scheduling,
+        dueEvaluation: runResult.schedule.debugSummary?.habitAudit?.dueEvaluation,
+        scheduling: runResult.schedule.debugSummary?.habitAudit?.scheduling,
         windowCompatibility:
-          scheduleResult.debugSummary?.habitAudit?.windowCompatibility,
-        samples: scheduleResult.debugSummary?.habitAudit?.samples,
+          runResult.schedule.debugSummary?.habitAudit?.windowCompatibility,
+        samples: runResult.schedule.debugSummary?.habitAudit?.samples,
       });
     }
+
+    const scheduleResult = runResult.schedule;
+    // 🚫 DISABLED: project overlap cancellation is illegal during rebuild
+    // Overlaps are resolved by strict rank + greedy placement
+    // Habit overlap handling already happens earlier — do NOT rely on this filter
+    const status = scheduleResult.error ? 500 : 200;
+
+    let debugDisplay: SchedulerDebugDisplay | null = null;
+    if (includeDebugSummary) {
+      debugDisplay = await buildSchedulerDebugDisplay(schedulingClient, user.id);
+    }
+
+    const responsePayload: Record<string, unknown> = {
+      reset: runResult.reset,
+      marked: runResult.marked,
+      schedule: scheduleResult,
+    };
+    if (includeDebugSummary && scheduleResult.projectDebugSummary) {
+      responsePayload.debugProjectSummary = scheduleResult.projectDebugSummary;
+    }
+    if (includeDebugSummary && scheduleResult.debugSummary) {
+      responsePayload.debugSummary = scheduleResult.debugSummary;
+    }
+    if (includeDebugSummary) {
+      responsePayload.debug = {
+        placementTrace: scheduleResult.placementTrace ?? null,
+        display: debugDisplay ?? undefined,
+      };
+    }
+    if (includeDebugSummary) {
+      responsePayload.failures = (scheduleResult.failures ?? []).map(
+        ({ itemId, reason, detail }) => ({
+          itemId,
+          reason,
+          detail: formatFailureDetail(detail),
+        })
+      );
+    }
+    if (enableParity && scheduleResult.paritySummary) {
+      responsePayload.paritySummary = scheduleResult.paritySummary;
+    }
+
+    return NextResponse.json(responsePayload, { status });
   } catch (err) {
     const fatalPayload = buildSchedulerFatalPayload(err);
     console.error("SCHEDULER_FATAL", fatalPayload);
@@ -179,49 +182,6 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json(responsePayload, { status: 500 });
   }
-  // 🚫 DISABLED: project overlap cancellation is illegal during rebuild
-  // Overlaps are resolved by strict rank + greedy placement
-  // Habit overlap handling already happens earlier — do NOT rely on this filter
-  const status = scheduleResult.error ? 500 : 200;
-
-  let debugDisplay: SchedulerDebugDisplay | null = null;
-  if (includeDebugSummary) {
-    debugDisplay = await buildSchedulerDebugDisplay(schedulingClient, user.id);
-  }
-
-  const responsePayload: Record<string, unknown> = {
-    marked: {
-      count: markResult.count ?? null,
-      error: markResult.error ?? null,
-    },
-    schedule: scheduleResult,
-  };
-  if (includeDebugSummary && scheduleResult.projectDebugSummary) {
-    responsePayload.debugProjectSummary = scheduleResult.projectDebugSummary;
-  }
-  if (includeDebugSummary && scheduleResult.debugSummary) {
-    responsePayload.debugSummary = scheduleResult.debugSummary;
-  }
-  if (includeDebugSummary) {
-    responsePayload.debug = {
-      placementTrace: scheduleResult.placementTrace ?? null,
-      display: debugDisplay ?? undefined,
-    };
-  }
-  if (includeDebugSummary) {
-    responsePayload.failures = (scheduleResult.failures ?? []).map(
-      ({ itemId, reason, detail }) => ({
-        itemId,
-        reason,
-        detail: formatFailureDetail(detail),
-      })
-    );
-  }
-  if (enableParity && scheduleResult.paritySummary) {
-    responsePayload.paritySummary = scheduleResult.paritySummary;
-  }
-
-  return NextResponse.json(responsePayload, { status });
 }
 
 function extractUserTimeZone(user: {

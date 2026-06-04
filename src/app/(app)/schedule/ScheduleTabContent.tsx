@@ -195,6 +195,9 @@ const PX_PER_MIN_STOPS = [
 const VERTICAL_SCROLL_THRESHOLD_PX = 20;
 const VERTICAL_SCROLL_BIAS_PX = 8;
 const VERTICAL_SCROLL_SLOPE = 1.35;
+const INLINE_JUMP_REVEAL_HEIGHT_PX = 360;
+const INLINE_JUMP_PULL_THRESHOLD_PX = 145;
+const INLINE_JUMP_PULL_RESISTANCE = 0.55;
 const DEBUG_LONG_PRESS = true;
 const SCHEDULE_CARD_LONG_PRESS_MS = 650;
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280;
@@ -469,6 +472,270 @@ function parseScheduleDateParam(value: string | null) {
     key: formatLocalDateKey(fallback),
     wasValid: false,
   };
+}
+
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function InlineJumpToDate({
+  currentDate,
+  timeZone,
+  onSelectDate,
+  onClose,
+}: {
+  currentDate: Date;
+  timeZone: string;
+  onSelectDate: (date: Date) => void;
+  onClose: () => void;
+}) {
+  const todayDateKey = useMemo(() => dayKeyFromUtc(new Date(), timeZone), [timeZone]);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const { year, month } = getDateTimeParts(currentDate, timeZone);
+    return makeDateInTimeZone(
+      { year, month, day: 1, hour: 12, minute: 0 },
+      timeZone
+    );
+  });
+
+  const { year: cmYear, month: cmMonth } = useMemo(
+    () => getDateTimeParts(calendarMonth, timeZone),
+    [calendarMonth, timeZone]
+  );
+
+  const monthLabel = useMemo(() => {
+    const fmt = safeDateTimeFormat(undefined, timeZone, {
+      month: "long",
+      year: "numeric",
+    });
+    return fmt.format(calendarMonth);
+  }, [calendarMonth, timeZone]);
+
+  const currentDateKey = useMemo(
+    () => dayKeyFromUtc(currentDate, timeZone),
+    [currentDate, timeZone]
+  );
+
+  const goToPrevMonth = useCallback(() => {
+    setCalendarMonth((prev) => {
+      const { year, month } = getDateTimeParts(prev, timeZone);
+      const newMonth = month - 1;
+      if (newMonth < 1) {
+        return makeDateInTimeZone(
+          { year: year - 1, month: 12, day: 1, hour: 12, minute: 0 },
+          timeZone
+        );
+      }
+      return makeDateInTimeZone(
+        { year, month: newMonth, day: 1, hour: 12, minute: 0 },
+        timeZone
+      );
+    });
+  }, [timeZone]);
+
+  const goToNextMonth = useCallback(() => {
+    setCalendarMonth((prev) => {
+      const { year, month } = getDateTimeParts(prev, timeZone);
+      const newMonth = month + 1;
+      if (newMonth > 12) {
+        return makeDateInTimeZone(
+          { year: year + 1, month: 1, day: 1, hour: 12, minute: 0 },
+          timeZone
+        );
+      }
+      return makeDateInTimeZone(
+        { year, month: newMonth, day: 1, hour: 12, minute: 0 },
+        timeZone
+      );
+    });
+  }, [timeZone]);
+
+  const goToToday = useCallback(() => {
+    const today = new Date();
+    const { year, month } = getDateTimeParts(today, timeZone);
+    setCalendarMonth(
+      makeDateInTimeZone(
+        { year, month, day: 1, hour: 12, minute: 0 },
+        timeZone
+      )
+    );
+    onSelectDate(today);
+  }, [timeZone, onSelectDate]);
+
+  const daysInMonth = useMemo(() => {
+    const firstOfMonth = makeDateInTimeZone(
+      { year: cmYear, month: cmMonth, day: 1, hour: 12, minute: 0 },
+      timeZone
+    );
+    const totalDays = new Date(cmYear, cmMonth, 0).getDate();
+    const firstDayOfWeek = weekdayInTimeZone(firstOfMonth, timeZone);
+    const previousMonth = cmMonth === 1 ? 12 : cmMonth - 1;
+    const previousMonthYear = cmMonth === 1 ? cmYear - 1 : cmYear;
+    const previousMonthDays = new Date(previousMonthYear, previousMonth, 0).getDate();
+
+    const cells: Array<{
+      key: string;
+      day: number;
+      date: Date;
+      isCurrentMonth: boolean;
+      isToday: boolean;
+      isSelected: boolean;
+    }> = [];
+
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      const day = previousMonthDays - firstDayOfWeek + i + 1;
+      const cellDate = makeDateInTimeZone(
+        { year: previousMonthYear, month: previousMonth, day, hour: 12, minute: 0 },
+        timeZone
+      );
+      const cellKey = dayKeyFromUtc(cellDate, timeZone);
+      cells.push({
+        key: `prev-${cellKey}`,
+        day,
+        date: cellDate,
+        isCurrentMonth: false,
+        isToday: cellKey === todayDateKey,
+        isSelected: cellKey === currentDateKey,
+      });
+    }
+
+    for (let day = 1; day <= totalDays; day++) {
+      const cellDate = makeDateInTimeZone(
+        { year: cmYear, month: cmMonth, day, hour: 12, minute: 0 },
+        timeZone
+      );
+      const cellKey = dayKeyFromUtc(cellDate, timeZone);
+      cells.push({
+        key: cellKey,
+        day,
+        date: cellDate,
+        isCurrentMonth: true,
+        isToday: cellKey === todayDateKey,
+        isSelected: cellKey === currentDateKey,
+      });
+    }
+
+    const nextMonth = cmMonth === 12 ? 1 : cmMonth + 1;
+    const nextMonthYear = cmMonth === 12 ? cmYear + 1 : cmYear;
+    const remainingCells = 42 - cells.length;
+    for (let day = 1; day <= remainingCells; day++) {
+      const cellDate = makeDateInTimeZone(
+        { year: nextMonthYear, month: nextMonth, day, hour: 12, minute: 0 },
+        timeZone
+      );
+      const cellKey = dayKeyFromUtc(cellDate, timeZone);
+      cells.push({
+        key: `next-${cellKey}`,
+        day,
+        date: cellDate,
+        isCurrentMonth: false,
+        isToday: cellKey === todayDateKey,
+        isSelected: cellKey === currentDateKey,
+      });
+    }
+
+    return cells;
+  }, [cmYear, cmMonth, timeZone, todayDateKey, currentDateKey]);
+
+  return (
+    <div
+      className="flex flex-col gap-3 px-5 pt-3 pb-4"
+      aria-label="Inline jump to date"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={goToPrevMonth}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
+          aria-label="Previous month"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden
+          >
+            <path
+              d="M10 2L4 8L10 14"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        <span className="text-sm font-semibold text-white">
+          {monthLabel}
+        </span>
+        <button
+          type="button"
+          onClick={goToNextMonth}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
+          aria-label="Next month"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden
+          >
+            <path
+              d="M6 2L12 8L6 14"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+      <div className="grid grid-cols-7">
+        {WEEKDAY_LABELS.map((label) => (
+          <div
+            key={label}
+            className="flex h-8 items-center justify-center text-[11px] font-semibold text-white/50"
+          >
+            {label}
+          </div>
+        ))}
+        {daysInMonth.map((cell) => (
+          <button
+            key={cell.key}
+            type="button"
+            onClick={() => onSelectDate(cell.date)}
+            className={clsx(
+              "flex h-9 items-center justify-center rounded-full text-sm transition-colors",
+              cell.isCurrentMonth
+                ? "font-medium text-white/90 hover:bg-white/15"
+                : "text-white/30 hover:bg-white/10",
+              cell.isSelected &&
+                !cell.isToday &&
+                "bg-white/20 font-semibold text-white",
+              cell.isToday &&
+                "bg-amber-400/80 font-bold text-black"
+            )}
+          >
+            {cell.day}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={goToToday}
+        className="mx-auto mt-1 rounded-full bg-white/15 px-4 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/25"
+      >
+        Today
+      </button>
+      <button
+        type="button"
+        onClick={onClose}
+        className="mt-1 text-center text-[11px] font-medium text-white/40 hover:text-white/70"
+      >
+        Close calendar
+      </button>
+    </div>
+  );
 }
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
@@ -3429,6 +3696,22 @@ export default function ScheduleTabContent({
   const hasVerticalTouchMovement = useRef<boolean>(false);
   const swipeDeltaRef = useRef(0);
   const swipeScrollProgressRef = useRef<number | null>(null);
+  const jumpPullControls = useAnimationControls();
+  const [isInlineJumpToDateOpen, setIsInlineJumpToDateOpen] = useState(false);
+  const jumpPullStartYRef = useRef<number | null>(null);
+  const jumpPullDistanceRef = useRef(0);
+  const isJumpPullingRef = useRef(false);
+
+  const canInitiateJumpPull = useCallback(() => {
+    if (typeof window === "undefined") return false;
+    if (view !== "day") return false;
+    if (prefersReducedMotion) return false;
+    if (pinchActiveRef.current) return false;
+    if (manualPlacementSessionRef.current) return false;
+    const scrollY = window.scrollY ?? window.pageYOffset ?? 0;
+    return scrollY <= 2;
+  }, [view, prefersReducedMotion]);
+
   const navLock = useRef(false);
   const loadReqIdRef = useRef(0);
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {});
@@ -6065,6 +6348,46 @@ export default function ScheduleTabContent({
     }
 
     if (hasVerticalTouchMovement.current) {
+      const isDownward = touch.clientY > (touchStartY.current ?? touch.clientY);
+      if (
+        isDownward &&
+        (canInitiateJumpPull() ||
+          isJumpPullingRef.current ||
+          isInlineJumpToDateOpen)
+      ) {
+        if (touchStartX.current !== null || isSwipingDayView) {
+          touchStartX.current = null;
+          touchStartWidth.current = 0;
+          swipeDeltaRef.current = 0;
+          swipeScrollProgressRef.current = null;
+          sliderControls.set({ x: 0 });
+          if (isSwipingDayView) {
+            setIsSwipingDayView(false);
+          }
+          setPeekState((prev) => {
+            if (prev.direction === 0 && prev.offset === 0) {
+              return prev;
+            }
+            return { direction: 0, offset: 0 };
+          });
+        }
+        e.preventDefault();
+        isJumpPullingRef.current = true;
+        if (jumpPullStartYRef.current === null) {
+          jumpPullStartYRef.current = touchStartY.current ?? touch.clientY;
+        }
+        const rawDistance = touch.clientY - jumpPullStartYRef.current;
+        const distance = Math.round(
+          rawDistance * INLINE_JUMP_PULL_RESISTANCE
+        );
+        const clamped = Math.min(
+          Math.max(0, distance),
+          INLINE_JUMP_REVEAL_HEIGHT_PX
+        );
+        jumpPullDistanceRef.current = clamped;
+        jumpPullControls.set({ y: clamped });
+        return;
+      }
       if (touchStartX.current !== null || isSwipingDayView) {
         touchStartX.current = null;
         touchStartWidth.current = 0;
@@ -6136,6 +6459,44 @@ export default function ScheduleTabContent({
       hasVerticalTouchMovement.current = false;
       return;
     }
+    if (isJumpPullingRef.current) {
+      isJumpPullingRef.current = false;
+      const distance = jumpPullDistanceRef.current;
+      if (distance >= INLINE_JUMP_PULL_THRESHOLD_PX) {
+        setIsInlineJumpToDateOpen(true);
+        jumpPullControls.start({
+          y: INLINE_JUMP_REVEAL_HEIGHT_PX,
+          transition: {
+            type: "spring",
+            stiffness: 180,
+            damping: 24,
+            mass: 0.8,
+          },
+        });
+      } else {
+        setIsInlineJumpToDateOpen(false);
+        jumpPullControls.start({
+          y: 0,
+          transition: {
+            type: "spring",
+            stiffness: 180,
+            damping: 24,
+            mass: 0.8,
+          },
+        });
+      }
+      jumpPullStartYRef.current = null;
+      jumpPullDistanceRef.current = 0;
+      touchStartX.current = null;
+      touchStartWidth.current = 0;
+      touchStartY.current = null;
+      hasVerticalTouchMovement.current = false;
+      swipeDeltaRef.current = 0;
+      swipeScrollProgressRef.current = null;
+      setPeekState({ direction: 0, offset: 0 });
+      setIsSwipingDayView(false);
+      return;
+    }
     if (touchStartX.current === null) {
       setIsSwipingDayView(false);
       setPeekState({ direction: 0, offset: 0 });
@@ -6187,6 +6548,26 @@ export default function ScheduleTabContent({
     updateCurrentDate(date, { animate: false });
     navigate("day");
   };
+
+  const closeInlineJumpToDate = useCallback(() => {
+    if (!isInlineJumpToDateOpen) return;
+    setIsInlineJumpToDateOpen(false);
+    jumpPullControls.start({
+      y: 0,
+      transition: { type: "spring", stiffness: 180, damping: 24, mass: 0.8 },
+    });
+  }, [isInlineJumpToDateOpen, jumpPullControls]);
+
+  const handleInlineJumpToDateSelect = useCallback(
+    (date: Date) => {
+      setIsInlineJumpToDateOpen(false);
+      jumpPullControls.set({ y: 0 });
+      setSkipNextDayAnimation(true);
+      updateCurrentDate(date, { animate: false });
+      navigate("day");
+    },
+    [jumpPullControls, updateCurrentDate]
+  );
 
   const handleSearchResultSelect = ({
     instanceId,
@@ -9422,7 +9803,7 @@ export default function ScheduleTabContent({
           data-schedule-root
         >
           <div
-            className="relative bg-[var(--surface)]"
+            className="relative bg-[var(--surface)] overflow-hidden"
             ref={swipeContainerRef}
             style={{
               touchAction: manualPlacementSession ? "none" : TIMELINE_TOUCH_ACTION,
@@ -9438,74 +9819,96 @@ export default function ScheduleTabContent({
             }
             onTouchCancel={manualPlacementSession ? undefined : handleTouchCancel}
           >
-            <AnimatePresence mode="wait" initial={false}>
-              {view === "day" && (
-                <ScheduleViewShell key="day">
-                  {!dayTimelineModel ? (
-                    <div className="flex h-64 items-center justify-center text-zinc-500">
-                      Loading schedule...
-                    </div>
-                  ) : prefersReducedMotion ? (
-                    dayTimelineNode
-                  ) : isSwipingDayView ? (
-                    <div className="relative overflow-hidden">
-                      <motion.div animate={sliderControls} initial={false}>
-                        {dayTimelineNode}
-                      </motion.div>
-                      <DayPeekOverlays
-                        peekState={peekState}
-                        previousLabel={previousDayLabel}
-                        nextLabel={nextDayLabel}
-                        previousKey={previousDayKey}
-                        nextKey={nextDayKey}
-                        containerRef={dayTimelineContainerRef}
-                        previousModel={peekModels.previous}
-                        nextModel={peekModels.next}
-                        renderPreview={renderDayTimeline}
-                        scrollProgress={swipeScrollProgressRef.current}
-                        baseTimelineHeight={baseTimelineHeight}
-                        timelineChromeHeight={timelineChromeHeight}
-                        pxPerMin={pxPerMin}
-                      />
-                    </div>
-                  ) : skipNextDayAnimation ? (
-                    <div key={dayViewDateKey}>{dayTimelineNode}</div>
-                  ) : (
-                    <AnimatePresence
-                      mode="sync"
-                      initial={false}
-                      custom={dayTransitionDirection}
-                    >
-                      <motion.div
-                        key={dayViewDateKey}
+            <motion.div
+              animate={jumpPullControls}
+              initial={false}
+              onClick={
+                isInlineJumpToDateOpen ? closeInlineJumpToDate : undefined
+              }
+            >
+              <div
+                aria-hidden={!isInlineJumpToDateOpen}
+                style={{
+                  height: INLINE_JUMP_REVEAL_HEIGHT_PX,
+                  marginTop: -INLINE_JUMP_REVEAL_HEIGHT_PX,
+                }}
+              >
+                <InlineJumpToDate
+                  currentDate={currentDate}
+                  timeZone={effectiveTimeZone}
+                  onSelectDate={handleInlineJumpToDateSelect}
+                  onClose={closeInlineJumpToDate}
+                />
+              </div>
+              <AnimatePresence mode="wait" initial={false}>
+                {view === "day" && (
+                  <ScheduleViewShell key="day">
+                    {!dayTimelineModel ? (
+                      <div className="flex h-64 items-center justify-center text-zinc-500">
+                        Loading schedule...
+                      </div>
+                    ) : prefersReducedMotion ? (
+                      dayTimelineNode
+                    ) : isSwipingDayView ? (
+                      <div className="relative overflow-hidden">
+                        <motion.div animate={sliderControls} initial={false}>
+                          {dayTimelineNode}
+                        </motion.div>
+                        <DayPeekOverlays
+                          peekState={peekState}
+                          previousLabel={previousDayLabel}
+                          nextLabel={nextDayLabel}
+                          previousKey={previousDayKey}
+                          nextKey={nextDayKey}
+                          containerRef={dayTimelineContainerRef}
+                          previousModel={peekModels.previous}
+                          nextModel={peekModels.next}
+                          renderPreview={renderDayTimeline}
+                          scrollProgress={swipeScrollProgressRef.current}
+                          baseTimelineHeight={baseTimelineHeight}
+                          timelineChromeHeight={timelineChromeHeight}
+                          pxPerMin={pxPerMin}
+                        />
+                      </div>
+                    ) : skipNextDayAnimation ? (
+                      <div key={dayViewDateKey}>{dayTimelineNode}</div>
+                    ) : (
+                      <AnimatePresence
+                        mode="sync"
+                        initial={false}
                         custom={dayTransitionDirection}
-                        variants={dayTimelineVariants}
-                        initial="enter"
-                        animate="center"
-                        exit="exit"
-                        transition={dayTimelineTransition}
                       >
-                        {dayTimelineNode}
-                      </motion.div>
-                    </AnimatePresence>
-                  )}
-                  <FocusTimelineFab
-                    hidden={isJumpToDateOpen}
-                    editTarget={fabEditTarget}
-                    onEditClose={handleCloseEditSheet}
-                  />
-                </ScheduleViewShell>
-              )}
-              {view === "focus" && (
-                <ScheduleViewShell key="focus">
-                  <FocusTimeline
-                    hideFab={isJumpToDateOpen}
-                    editTarget={fabEditTarget}
-                    onEditClose={handleCloseEditSheet}
-                  />
-                </ScheduleViewShell>
-              )}
-            </AnimatePresence>
+                        <motion.div
+                          key={dayViewDateKey}
+                          custom={dayTransitionDirection}
+                          variants={dayTimelineVariants}
+                          initial="enter"
+                          animate="center"
+                          exit="exit"
+                          transition={dayTimelineTransition}
+                        >
+                          {dayTimelineNode}
+                        </motion.div>
+                      </AnimatePresence>
+                    )}
+                    <FocusTimelineFab
+                      hidden={isJumpToDateOpen || isInlineJumpToDateOpen}
+                      editTarget={fabEditTarget}
+                      onEditClose={handleCloseEditSheet}
+                    />
+                  </ScheduleViewShell>
+                )}
+                {view === "focus" && (
+                  <ScheduleViewShell key="focus">
+                    <FocusTimeline
+                      hideFab={isJumpToDateOpen || isInlineJumpToDateOpen}
+                      editTarget={fabEditTarget}
+                      onEditClose={handleCloseEditSheet}
+                    />
+                  </ScheduleViewShell>
+                )}
+              </AnimatePresence>
+            </motion.div>
           </div>
         </div>
       </ProtectedRoute>
